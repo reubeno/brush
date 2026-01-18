@@ -128,7 +128,7 @@ impl From<std::process::Output> for ExecutionResult {
 }
 
 /// Represents an exit code from execution.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum ExecutionExitCode {
     /// Indicates successful execution.
     #[default]

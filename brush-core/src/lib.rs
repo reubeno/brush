@@ -12,6 +12,9 @@ pub mod error;
 pub mod escape;
 pub mod expansion;
 mod extendedtests;
+pub mod extensions;
+#[cfg(feature = "experimental-filters")]
+pub mod filter;
 pub mod functions;
 pub mod history;
 pub mod int_utils;
@@ -60,3 +63,34 @@ pub use shell::{
 };
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
+
+#[cfg(feature = "experimental-filters")]
+pub use shell::ScriptArgs;
+
+#[cfg(feature = "experimental-filters")]
+pub use commands::{
+    CommandContext, CommandSubstitutionContext, CommandSubstitutionDecision, DispatchTarget,
+    PipelineContext, PolicyDecision, RedirectionInfo, RedirectionMode, RedirectionTarget,
+    SubstitutionSyntax,
+};
+
+/// Compatibility utilities module used by doctests and older call sites.
+pub mod utils {
+    pub use crate::int_utils::parse as parse_int;
+}
+
+/// Re-export `parse_known` at the crate root for convenience.
+pub use builtins::parse_known;
+
+/// No-op version of `with_filter!` when experimental-filters is disabled.
+///
+/// This macro expands directly to the body with zero overhead.
+#[cfg(not(feature = "experimental-filters"))]
+#[macro_export]
+macro_rules! with_filter {
+    ($shell:expr, $pre_method:ident, $post_method:ident, $input_val:expr, |$input_ident:ident| $body:expr) => {{
+        #[allow(clippy::redundant_locals)]
+        let $input_ident = $input_val;
+        $body
+    }};
+}

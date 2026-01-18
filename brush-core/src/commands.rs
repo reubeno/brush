@@ -1,4 +1,46 @@
-//! Command execution
+//! Command execution and policy hook types.
+//!
+//! This module provides types and functions for executing shell commands, including:
+//!
+//! - [`SimpleCommand`]: Represents a simple command to be executed
+//! - [`ExecutionContext`]: Context for command execution
+//! - [`CommandArg`]: Arguments to commands
+//! - [`ShellForCommand`]: Shell reference for command execution
+//!
+//! # Post-Expansion Policy Hook (experimental-filters)
+//!
+//! When the `experimental-filters` feature is enabled, this module also provides types
+//! for the post-expansion policy hook system, which allows security/policy enforcement
+//! against expansion-based command obfuscation:
+//!
+//! - [`CommandContext`]: Comprehensive context about a command after expansion
+//! - [`PipelineContext`]: Position information for commands in pipelines
+//! - [`RedirectionInfo`], [`RedirectionTarget`], [`RedirectionMode`]: I/O redirection details
+//! - [`DispatchTarget`]: Classification of command dispatch (builtin, function, external)
+//! - [`PolicyDecision`]: Hook result indicating whether to continue or return early
+//!
+//! ## Pre-Command-Substitution Hook
+//!
+//! The module also provides types for intercepting command substitutions before execution:
+//!
+//! - [`CommandSubstitutionContext`]: Context about a command substitution
+//! - [`SubstitutionSyntax`]: Whether `$(...)` or backticks were used
+//! - [`CommandSubstitutionDecision`]: How to handle the substitution
+//!
+//! ## Performance Characteristics
+//!
+//! The policy hook system is designed for near-zero overhead when unused:
+//!
+//! - Context construction only occurs when an extension opts in via `needs_command_context()`
+//! - When no extension needs context, the overhead is a single boolean check
+//! - Context types use borrowing where possible to minimize allocations
+//! - Allocations are bounded by the number of redirections in a command
+//!
+//! ## Feature Gating
+//!
+//! All policy hook types are gated behind the `experimental-filters` feature flag.
+//! When this feature is disabled, these types are not available and no overhead
+//! is incurred.
 
 use std::{
     borrow::Cow,
@@ -7,6 +49,9 @@ use std::{
     path::{Path, PathBuf},
     process::Stdio,
 };
+
+#[cfg(feature = "experimental-filters")]
+use std::sync::Arc;
 
 use brush_parser::ast;
 use itertools::Itertools;
@@ -21,6 +66,447 @@ use crate::{
     results::ExecutionSpawnResult,
     sys, trace_categories, traps, variables,
 };
+
+#[cfg(feature = "experimental-filters")]
+use crate::{filter, results};
+
+//
+// Post-expansion policy hook types (experimental-filters)
+//
+
+/// Context describing a command after expansion but before dispatch.
+///
+/// This type is used by the post-expansion policy hook to provide comprehensive
+/// information about a command for security/policy decisions. It borrows from
+/// the finalized `SimpleCommand` and tracks additional execution metadata.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of the borrowed data
+/// from the expanded command (executable, arguments, raw command, redirections).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug)]
+pub struct CommandContext<'a> {
+    /// The executable name (the first expanded word, `argv[0]`).
+    pub executable: &'a str,
+
+    /// The arguments list (expanded argv excluding the executable, `argv[1..]`).
+    pub arguments: &'a [CommandArg],
+
+    /// The raw command string before expansion, when available.
+    ///
+    /// This represents user input prior to expansion and splitting.
+    /// It is `None` when the raw command cannot be preserved.
+    pub raw_command: Option<Cow<'a, str>>,
+
+    /// Pipeline information when the command is part of a pipeline.
+    ///
+    /// This is `None` when the command is not part of a pipeline.
+    pub pipeline: Option<PipelineContext>,
+
+    /// The list of redirections associated with the command.
+    ///
+    /// Redirections preserve source order. The container is owned but
+    /// elements may borrow strings from the expanded redirect targets.
+    pub redirections: Vec<RedirectionInfo<'a>>,
+
+    /// The resolved dispatch target (builtin, function, or external).
+    ///
+    /// This classification is computed without unbounded filesystem probing.
+    pub dispatch_target: DispatchTarget,
+}
+
+/// Context describing a command's position within a pipeline.
+///
+/// For a pipeline like `cmd1 | cmd2 | cmd3`, each command receives a
+/// `PipelineContext` with its zero-indexed position and the total length.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineContext {
+    /// Zero-indexed position of the command in the pipeline.
+    ///
+    /// For `cmd1 | cmd2 | cmd3`:
+    /// - `cmd1` has position 0
+    /// - `cmd2` has position 1
+    /// - `cmd3` has position 2
+    pub position: usize,
+
+    /// Total number of commands in the pipeline.
+    ///
+    /// For a pipeline with N commands (N > 1), this equals N for all commands.
+    pub length: usize,
+}
+
+/// Structured representation of a single I/O redirection.
+///
+/// This type captures the destination file descriptor, what it redirects to,
+/// and how the redirection operates.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of borrowed strings
+/// in the redirection target (e.g., file paths, here-doc content).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RedirectionInfo<'a> {
+    /// Destination file descriptor number.
+    ///
+    /// Common values:
+    /// - 0 = stdin
+    /// - 1 = stdout
+    /// - 2 = stderr
+    pub fd: i32,
+
+    /// What the file descriptor redirects to.
+    pub target: RedirectionTarget<'a>,
+
+    /// How the redirection operates.
+    pub mode: RedirectionMode,
+}
+
+/// What a file descriptor redirects to.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of borrowed strings
+/// (file paths, here-doc content, here-string content).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RedirectionTarget<'a> {
+    /// Redirect to/from a file path (expanded value).
+    ///
+    /// Examples: `< input.txt`, `> output.txt`, `>> log.txt`
+    FilePath(Cow<'a, str>),
+
+    /// Redirect to/from another file descriptor.
+    ///
+    /// Examples: `2>&1` (stderr to stdout), `1>&2` (stdout to stderr)
+    FileDescriptor(i32),
+
+    /// Here-document content.
+    ///
+    /// Example:
+    /// ```sh
+    /// cat <<EOF
+    /// content here
+    /// EOF
+    /// ```
+    HereDoc(Cow<'a, str>),
+
+    /// Here-string content.
+    ///
+    /// Example: `cat <<< "hello world"`
+    HereString(Cow<'a, str>),
+}
+
+/// How a redirection operates.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedirectionMode {
+    /// Open for reading (`<`).
+    Read,
+
+    /// Open for writing, truncate (`>`).
+    Write,
+
+    /// Open for writing, append (`>>`).
+    Append,
+
+    /// Open for both reading and writing (`<>`).
+    ReadWrite,
+
+    /// Force overwrite even with `noclobber` (`>|`).
+    Clobber,
+}
+
+/// Dispatch classification for a command.
+///
+/// This indicates whether a command will dispatch to a builtin, function,
+/// or external executable. The classification is computed without unbounded
+/// filesystem probing.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DispatchTarget {
+    /// The command dispatches to a shell builtin.
+    Builtin,
+
+    /// The command dispatches to a shell function.
+    Function,
+
+    /// The command dispatches to an external executable.
+    ///
+    /// If the resolved path is already known without extra filesystem probing
+    /// (e.g., the executable contains a `/` and can be treated as a path),
+    /// it may be included.
+    External {
+        /// The resolved path to the external executable, if known without
+        /// additional filesystem probing.
+        resolved_path: Option<PathBuf>,
+    },
+}
+
+/// Policy decision returned by the post-expansion policy hook.
+///
+/// This type indicates whether command execution should continue or be
+/// short-circuited with an early return.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+pub enum PolicyDecision {
+    /// Proceed with command dispatch/execution.
+    Continue,
+
+    /// Skip dispatch/execution and return the provided result.
+    ///
+    /// The shell will use this result as if the command had executed
+    /// and returned it.
+    Return(ExecutionResult),
+}
+
+#[cfg(feature = "experimental-filters")]
+impl std::fmt::Debug for PolicyDecision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Continue => write!(f, "Continue"),
+            Self::Return(result) => write!(f, "Return(exit_code={:?})", result.exit_code),
+        }
+    }
+}
+
+/// Context passed to the pre-command-substitution policy hook.
+///
+/// This type provides information about a command substitution before
+/// its body is executed, allowing policy hooks to inspect or block
+/// substitution execution.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of borrowed strings
+/// (the raw substitution body).
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug)]
+pub struct CommandSubstitutionContext<'a> {
+    /// Raw source text of the substitution body, when available.
+    ///
+    /// This allows policy hooks to inspect the unevaluated command text.
+    /// If source spans are unavailable, this is `None`.
+    pub raw_body: Option<Cow<'a, str>>,
+
+    /// The syntax used for the command substitution.
+    pub syntax: SubstitutionSyntax,
+}
+
+/// The syntax form used for a command substitution.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubstitutionSyntax {
+    /// Modern `$(...)` syntax.
+    DollarParen,
+
+    /// Legacy backtick `` `...` `` syntax.
+    Backticks,
+}
+
+/// Decision returned by the pre-command-substitution policy hook.
+///
+/// This type indicates how the shell should handle a command substitution:
+/// execute it normally, replace its output, or abort with an error.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+#[derive(Debug)]
+pub enum CommandSubstitutionDecision {
+    /// Execute the substitution body normally.
+    ///
+    /// The shell will execute the command and use its output as the
+    /// substitution result.
+    Allow,
+
+    /// Do not execute the substitution body; use the provided output instead.
+    ///
+    /// This allows policy hooks to short-circuit substitution execution
+    /// and provide a replacement value.
+    ReplaceOutput {
+        /// The string to use as the substitution result instead of
+        /// executing the command.
+        output: String,
+    },
+
+    /// Abort the expansion with an error.
+    ///
+    /// This prevents the substitution from executing and propagates
+    /// the error to the caller.
+    Error(error::Error),
+
+    /// Abort the expansion with an error which has already been handled by
+    /// the extension (for example, the extension printed its own diagnostic
+    /// message). When this variant is returned the core should propagate a
+    /// silent failure to abort execution without printing an additional
+    /// top-level error message.
+    ErrorReported(error::Error),
+}
+
+/// Converts an AST I/O redirection to a `RedirectionInfo` with an expanded target.
+///
+/// This function is used to capture redirections for the post-expansion policy hook.
+/// It converts the AST representation to the structured `RedirectionInfo` format,
+/// using the expanded target value when available.
+///
+/// # Arguments
+///
+/// * `redirect` - The AST I/O redirection to convert.
+/// * `expanded_target` - The expanded target value (e.g., expanded filename).
+///
+/// # Returns
+///
+/// A `RedirectionInfo` with the expanded target, or `None` if the redirection
+/// type is not supported for capture (e.g., process substitutions).
+///
+/// # Feature Flag
+///
+/// This function is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+pub fn convert_redirect_to_info(
+    redirect: &ast::IoRedirect,
+    expanded_target: Option<&str>,
+) -> Option<RedirectionInfo<'static>> {
+    match redirect {
+        ast::IoRedirect::File(fd, kind, _target) => {
+            let fd_num = fd.unwrap_or_else(|| get_default_fd_for_redirect_kind(kind));
+            let mode = match kind {
+                ast::IoFileRedirectKind::Read => RedirectionMode::Read,
+                ast::IoFileRedirectKind::Write => RedirectionMode::Write,
+                ast::IoFileRedirectKind::Append => RedirectionMode::Append,
+                ast::IoFileRedirectKind::ReadAndWrite => RedirectionMode::ReadWrite,
+                ast::IoFileRedirectKind::Clobber => RedirectionMode::Clobber,
+                ast::IoFileRedirectKind::DuplicateInput
+                | ast::IoFileRedirectKind::DuplicateOutput => {
+                    // For fd duplication, we need to parse the target as an fd number.
+                    if let Some(target_str) = expanded_target {
+                        if let Ok(target_fd) = target_str.trim_end_matches('-').parse::<i32>() {
+                            return Some(RedirectionInfo {
+                                fd: fd_num,
+                                target: RedirectionTarget::FileDescriptor(target_fd),
+                                mode: if matches!(kind, ast::IoFileRedirectKind::DuplicateInput) {
+                                    RedirectionMode::Read
+                                } else {
+                                    RedirectionMode::Write
+                                },
+                            });
+                        }
+                    }
+                    return None;
+                }
+            };
+
+            let target = if let Some(path) = expanded_target {
+                RedirectionTarget::FilePath(Cow::Owned(path.to_string()))
+            } else {
+                return None;
+            };
+
+            Some(RedirectionInfo {
+                fd: fd_num,
+                target,
+                mode,
+            })
+        }
+        ast::IoRedirect::HereDocument(fd, here_doc) => {
+            let fd_num = fd.unwrap_or(0);
+            let content = if let Some(expanded) = expanded_target {
+                expanded.to_string()
+            } else {
+                here_doc.doc.flatten()
+            };
+
+            Some(RedirectionInfo {
+                fd: fd_num,
+                target: RedirectionTarget::HereDoc(Cow::Owned(content)),
+                mode: RedirectionMode::Read,
+            })
+        }
+        ast::IoRedirect::HereString(fd, _word) => {
+            let fd_num = fd.unwrap_or(0);
+            let content = expanded_target.map(|s| s.to_string()).unwrap_or_default();
+
+            Some(RedirectionInfo {
+                fd: fd_num,
+                target: RedirectionTarget::HereString(Cow::Owned(content)),
+                mode: RedirectionMode::Read,
+            })
+        }
+        ast::IoRedirect::OutputAndError(_word, append) => {
+            // This redirects both stdout and stderr to the same file.
+            // We represent this as a stdout redirection; the stderr part is implicit.
+            let mode = if *append {
+                RedirectionMode::Append
+            } else {
+                RedirectionMode::Write
+            };
+
+            let target = if let Some(path) = expanded_target {
+                RedirectionTarget::FilePath(Cow::Owned(path.to_string()))
+            } else {
+                return None;
+            };
+
+            Some(RedirectionInfo {
+                fd: 1, // stdout
+                target,
+                mode,
+            })
+        }
+    }
+}
+
+/// Returns the default file descriptor for a given redirect kind.
+#[cfg(feature = "experimental-filters")]
+const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> i32 {
+    match kind {
+        ast::IoFileRedirectKind::Read | ast::IoFileRedirectKind::ReadAndWrite => 0,
+        ast::IoFileRedirectKind::Write
+        | ast::IoFileRedirectKind::Append
+        | ast::IoFileRedirectKind::Clobber
+        | ast::IoFileRedirectKind::DuplicateOutput => 1,
+        ast::IoFileRedirectKind::DuplicateInput => 0,
+    }
+}
 
 /// Encapsulates the result of waiting for a command to complete.
 pub enum CommandWaitResult {
@@ -339,11 +825,47 @@ pub struct SimpleCommand<'a> {
     /// `None`, in which case the default behavior will be used.
     pub process_group_id: Option<i32>,
 
+    /// Pipeline context for the post-expansion policy hook.
+    ///
+    /// This is `Some` when the command is part of a pipeline with N > 1 commands,
+    /// and `None` when the command is not part of a pipeline (single command).
+    #[cfg(feature = "experimental-filters")]
+    pub pipeline_info: Option<PipelineContext>,
+
+    /// Raw pipeline text for policy hooks.
+    ///
+    /// When available, this contains the user-entered pipeline string (prior to
+    /// expansion) so filters can inspect the full pipeline layout.
+    #[cfg(feature = "experimental-filters")]
+    pub raw_command: Option<Arc<str>>,
+
+    /// Captured redirections for the post-expansion policy hook.
+    ///
+    /// These are the redirections associated with the command, converted from
+    /// AST form with expanded targets where available.
+    #[cfg(feature = "experimental-filters")]
+    pub redirections: Vec<RedirectionInfo<'static>>,
+
     /// Optionally provides a function that can run after execution occurs. Note
     /// that it is *not* invoked if the shell is discarded during the execution
     /// process.
     #[allow(clippy::type_complexity)]
     pub post_execute: Option<fn(&mut Shell) -> Result<(), error::Error>>,
+}
+
+/// Internal dispatch information used during command execution.
+///
+/// This enum captures the result of dispatch target determination,
+/// including the actual registration objects needed for execution.
+enum DispatchInfo {
+    /// A special builtin in POSIX mode (takes precedence over functions).
+    SpecialBuiltin(builtins::Registration),
+    /// A shell function.
+    Function(functions::Registration),
+    /// A regular builtin.
+    Builtin(builtins::Registration),
+    /// An external command (path resolution happens later).
+    External,
 }
 
 impl<'a> SimpleCommand<'a> {
@@ -369,33 +891,33 @@ impl<'a> SimpleCommand<'a> {
             use_functions: true,
             path_dirs: None,
             process_group_id: None,
+            #[cfg(feature = "experimental-filters")]
+            pipeline_info: None,
+            #[cfg(feature = "experimental-filters")]
+            raw_command: None,
+            #[cfg(feature = "experimental-filters")]
+            redirections: vec![],
             post_execute: None,
         }
     }
 
-    /// Executes the simple command.
+    /// Determines the dispatch target for this command.
     ///
-    /// The command may be a builtin, a shell function, or an externally
-    /// executed command. This function's implementation is responsible for
-    /// dispatching it appropriately according to the context provided.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "these unwrap calls should not panic"
-    )]
-    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+    /// This method checks builtins, functions, and external commands in the
+    /// appropriate order based on shell options (e.g., POSIX mode).
+    fn determine_dispatch_target(&self) -> DispatchInfo {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 
-        // If we're in POSIX mode and found a special builtin (that's not disabled), then invoke it
-        // without considering functions.
+        // If we're in POSIX mode and found a special builtin (that's not disabled),
+        // then it takes precedence over functions.
         if self.shell.options().posix_mode
             && builtin
                 .as_ref()
                 .is_some_and(|r| !r.disabled && r.special_builtin)
         {
             #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
-            let builtin = builtin.unwrap();
-            return self.execute_via_builtin(builtin).await;
+            return DispatchInfo::SpecialBuiltin(builtin.unwrap());
         }
 
         // Assuming we weren't requested not to do so, check if it's the name of
@@ -404,15 +926,144 @@ impl<'a> SimpleCommand<'a> {
             if let Some(func_registration) =
                 self.shell.funcs().get(self.command_name.as_str()).cloned()
             {
-                return self.execute_via_function(func_registration).await;
+                return DispatchInfo::Function(func_registration);
             }
         }
 
         // If we haven't yet resolved the command name and found a builtin that's not disabled,
-        // then invoke it.
+        // then use it.
         if let Some(builtin) = builtin {
             if !builtin.disabled {
+                return DispatchInfo::Builtin(builtin);
+            }
+        }
+
+        // External command (path resolution happens later).
+        DispatchInfo::External
+    }
+
+    /// Builds a `CommandContext` for the post-expansion policy hook.
+    ///
+    /// This method constructs the context with information about the command,
+    /// including the executable, arguments, and dispatch target classification.
+    #[cfg(feature = "experimental-filters")]
+    fn build_command_context(&self, dispatch_info: &DispatchInfo) -> CommandContext<'_> {
+        // Extract executable and arguments from args.
+        let (executable, arguments) = if let Some(CommandArg::String(exe)) = self.args.first() {
+            (exe.as_str(), &self.args[1..])
+        } else {
+            // Fallback to command_name if args is empty (shouldn't happen in practice).
+            (self.command_name.as_str(), &self.args[..])
+        };
+
+        // Convert dispatch info to dispatch target for the context.
+        let dispatch_target = match dispatch_info {
+            DispatchInfo::SpecialBuiltin(_) | DispatchInfo::Builtin(_) => DispatchTarget::Builtin,
+            DispatchInfo::Function(_) => DispatchTarget::Function,
+            DispatchInfo::External => {
+                // Check if the command name contains a path separator.
+                // If so, we can include it as the resolved path without extra probing.
+                let resolved_path = if self.command_name.contains(std::path::MAIN_SEPARATOR) {
+                    Some(PathBuf::from(&self.command_name))
+                } else {
+                    None
+                };
+                DispatchTarget::External { resolved_path }
+            }
+        };
+
+        // Convert captured redirections to borrowed form for the context.
+        let redirections: Vec<RedirectionInfo<'_>> = self
+            .redirections
+            .iter()
+            .map(|r| RedirectionInfo {
+                fd: r.fd,
+                target: match &r.target {
+                    RedirectionTarget::FilePath(p) => RedirectionTarget::FilePath(Cow::Borrowed(p)),
+                    RedirectionTarget::FileDescriptor(fd) => RedirectionTarget::FileDescriptor(*fd),
+                    RedirectionTarget::HereDoc(content) => {
+                        RedirectionTarget::HereDoc(Cow::Borrowed(content))
+                    }
+                    RedirectionTarget::HereString(content) => {
+                        RedirectionTarget::HereString(Cow::Borrowed(content))
+                    }
+                },
+                mode: r.mode,
+            })
+            .collect();
+
+        CommandContext {
+            executable,
+            arguments,
+            raw_command: self.raw_command.as_deref().map(Cow::Borrowed),
+            pipeline: self.pipeline_info, // Pipeline info from the execution context.
+            redirections,
+            dispatch_target,
+        }
+    }
+
+    /// Executes the simple command, applying any registered filters.
+    #[allow(
+        unused_mut,
+        reason = "mut needed when experimental-filters feature is enabled"
+    )]
+    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+        crate::with_filter!(
+            self.shell,
+            pre_exec_simple_command,
+            post_exec_simple_command,
+            self,
+            |cmd| cmd.execute_impl().await
+        )
+    }
+
+    /// Executes the simple command.
+    ///
+    /// The command may be a builtin, a shell function, or an externally
+    /// executed command. This function's implementation is responsible for
+    /// dispatching it appropriately according to the context provided.
+    async fn execute_impl(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+        // Determine the dispatch target for this command.
+        let dispatch_info = self.determine_dispatch_target();
+
+        // Check if any extension needs command context for the post-expansion policy hook.
+        #[cfg(feature = "experimental-filters")]
+        if self.shell.extensions().needs_command_context() {
+            // Build the command context for policy enforcement.
+            let context = self.build_command_context(&dispatch_info);
+
+            // Invoke the post-expansion policy hook.
+            match self
+                .shell
+                .extensions()
+                .post_expansion_pre_dispatch_simple_command(&self, &context)
+            {
+                PolicyDecision::Continue => {
+                    // Continue with dispatch.
+                }
+                PolicyDecision::Return(result) => {
+                    // Skip dispatch and return the provided result.
+                    if let Some(post_execute) = self.post_execute {
+                        let _ = post_execute(&mut self.shell);
+                    }
+                    return Ok(result.into());
+                }
+            }
+        }
+
+        // Dispatch based on the determined target.
+        match dispatch_info {
+            DispatchInfo::SpecialBuiltin(builtin) => {
                 return self.execute_via_builtin(builtin).await;
+            }
+            DispatchInfo::Function(func_registration) => {
+                return self.execute_via_function(func_registration).await;
+            }
+            DispatchInfo::Builtin(builtin) => {
+                return self.execute_via_builtin(builtin).await;
+            }
+            DispatchInfo::External => {
+                // Fall through to external command handling below.
             }
         }
 
@@ -432,7 +1083,7 @@ impl<'a> SimpleCommand<'a> {
             };
 
             if let Some(path) = path {
-                self.execute_via_external(&path)
+                self.execute_via_external(&path).await
             } else {
                 if let Some(post_execute) = self.post_execute {
                     let _ = post_execute(&mut self.shell);
@@ -442,7 +1093,7 @@ impl<'a> SimpleCommand<'a> {
             }
         } else {
             let command_name = PathBuf::from(self.command_name.clone());
-            self.execute_via_external(command_name.as_path())
+            self.execute_via_external(command_name.as_path()).await
         }
     }
 
@@ -532,7 +1183,7 @@ impl<'a> SimpleCommand<'a> {
         result
     }
 
-    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
+    async fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
 
         let cmd_context = ExecutionContext {
@@ -547,7 +1198,8 @@ impl<'a> SimpleCommand<'a> {
             resolved_path.as_ref(),
             self.process_group_id,
             &self.args[1..],
-        );
+        )
+        .await;
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
@@ -557,7 +1209,17 @@ impl<'a> SimpleCommand<'a> {
     }
 }
 
-pub(crate) fn execute_external_command(
+#[cfg(feature = "experimental-filters")]
+impl filter::FilterableOp for commands::SimpleCommand<'_> {
+    type Input = Self;
+    type Output = Result<results::ExecutionSpawnResult, error::Error>;
+}
+
+#[expect(
+    clippy::unused_async,
+    reason = "Async needed when experimental-filters feature is enabled"
+)]
+pub(crate) async fn execute_external_command(
     context: ExecutionContext<'_>,
     executable_path: &str,
     process_group_id: Option<i32>,
@@ -623,7 +1285,15 @@ pub(crate) fn execute_external_command(
             .join(" ")
     );
 
-    match sys::process::spawn(cmd) {
+    let spawn_result = crate::with_filter!(
+        context.shell,
+        pre_exec_external_command,
+        post_exec_external_command,
+        cmd,
+        |cmd| sys::process::spawn(cmd)
+    );
+
+    match spawn_result {
         Ok(child) => {
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
@@ -663,6 +1333,24 @@ pub(crate) fn execute_external_command(
             }
         }
     }
+}
+
+/// Marker type for external command execution filtering.
+///
+/// This type defines the input/output signature for filtering external
+/// command spawns. It does not contain execution logic; that is provided
+/// at the call site.
+///
+/// # Feature Flag
+///
+/// This type is only available when the `experimental-filters` feature is enabled.
+#[cfg(feature = "experimental-filters")]
+pub struct ExecuteExternalCommand;
+
+#[cfg(feature = "experimental-filters")]
+impl filter::FilterableOp for ExecuteExternalCommand {
+    type Input = std::process::Command;
+    type Output = Result<sys::process::Child, std::io::Error>;
 }
 
 async fn execute_builtin_command(

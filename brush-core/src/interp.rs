@@ -4,6 +4,9 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "experimental-filters")]
+use std::sync::Arc;
+
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope};
@@ -23,6 +26,15 @@ struct PipelineExecutionContext<'a> {
     shell: commands::ShellForCommand<'a>,
     /// Process group ID for spawned processes.
     process_group_id: Option<i32>,
+    /// Pipeline position and length information for policy hooks.
+    ///
+    /// This is `Some` when the command is part of a pipeline with N > 1 commands,
+    /// and `None` when the command is not part of a pipeline (single command).
+    #[cfg(feature = "experimental-filters")]
+    pipeline_info: Option<commands::PipelineContext>,
+    /// Raw pipeline text for policy hooks.
+    #[cfg(feature = "experimental-filters")]
+    raw_command: Option<Arc<str>>,
 }
 
 /// Parameters for execution.
@@ -199,7 +211,7 @@ impl Execute for ast::Program {
                 Ok(exec_result) => result = exec_result,
                 Err(err) => {
                     // Display the error and convert to an execution result.
-                    let _ = shell.display_error(&mut params.stderr(shell), &err).await;
+                    let _ = shell.display_error(&mut params.stderr(shell), &err);
                     result = err.into_result(shell);
                 }
             }
@@ -434,6 +446,10 @@ async fn spawn_pipeline_processes(
         pipe_readers.push(None);
     }
 
+    // Capture the raw pipeline text for policy hooks.
+    #[cfg(feature = "experimental-filters")]
+    let raw_pipeline: Option<Arc<str>> = Some(Arc::from(pipeline.to_string()));
+
     for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
         //
         // We run a command directly in the current shell if either of the following is true:
@@ -459,6 +475,18 @@ async fn spawn_pipeline_processes(
             cmd_params.open_files.set_fd(OpenFiles::STDOUT_FD, writer);
         }
 
+        // Compute pipeline info for policy hooks (only when experimental-filters is enabled).
+        // Pipeline info is Some when N > 1, None for single commands.
+        #[cfg(feature = "experimental-filters")]
+        let pipeline_info = if pipeline_len > 1 {
+            Some(commands::PipelineContext {
+                position: current_pipeline_index,
+                length: pipeline_len,
+            })
+        } else {
+            None
+        };
+
         let pipeline_context = if !run_in_current_shell {
             // Make sure that all commands in the pipeline are in the same process group.
             if current_pipeline_index > 0 {
@@ -471,11 +499,19 @@ async fn spawn_pipeline_processes(
                     parent: shell,
                 },
                 process_group_id,
+                #[cfg(feature = "experimental-filters")]
+                pipeline_info,
+                #[cfg(feature = "experimental-filters")]
+                raw_command: raw_pipeline.clone(),
             }
         } else {
             PipelineExecutionContext {
                 shell: commands::ShellForCommand::ParentShell(shell),
                 process_group_id,
+                #[cfg(feature = "experimental-filters")]
+                pipeline_info,
+                #[cfg(feature = "experimental-filters")]
+                raw_command: raw_pipeline.clone(),
             }
         };
 
@@ -657,7 +693,7 @@ impl Execute for ast::CompoundCommand {
                     Err(error) => {
                         // Display the error to stderr, but prevent fatal error propagation
                         let mut stderr = params.stderr(shell);
-                        let _ = shell.display_error(&mut stderr, &error).await;
+                        let _ = shell.display_error(&mut stderr, &error);
 
                         // Convert error to result in subshell context
                         error.into_result(&subshell)
@@ -1050,9 +1086,23 @@ impl ExecuteInPipeline for ast::SimpleCommand {
         let mut args: Vec<CommandArg> = vec![];
         let mut command_takes_assignments = false;
 
+        // Capture redirections for the post-expansion policy hook.
+        #[cfg(feature = "experimental-filters")]
+        let mut captured_redirections: Vec<commands::RedirectionInfo<'static>> = vec![];
+
         for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
+                    // Capture the redirection before setting it up.
+                    #[cfg(feature = "experimental-filters")]
+                    {
+                        if let Some(info) =
+                            capture_redirect_info(&mut context.shell, &params, redirect).await
+                        {
+                            captured_redirections.push(info);
+                        }
+                    }
+
                     if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
                     {
                         writeln!(params.stderr(&context.shell), "error: {e}")?;
@@ -1172,12 +1222,29 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             let context = PipelineExecutionContext {
                 shell,
                 process_group_id: context.process_group_id,
+                #[cfg(feature = "experimental-filters")]
+                pipeline_info: context.pipeline_info,
+                #[cfg(feature = "experimental-filters")]
+                raw_command: context.raw_command,
             };
 
-            match execute_command(context, params, cmd_name, assignments, args).await {
+            #[cfg(feature = "experimental-filters")]
+            let result = execute_command(
+                context,
+                params,
+                cmd_name,
+                assignments,
+                args,
+                captured_redirections,
+            )
+            .await;
+            #[cfg(not(feature = "experimental-filters"))]
+            let result = execute_command(context, params, cmd_name, assignments, args).await;
+
+            match result {
                 Ok(result) => Ok(result),
                 Err(err) => {
-                    let _ = parent_shell.display_error(&mut stderr, &err).await;
+                    let _ = parent_shell.display_error(&mut stderr, &err);
 
                     let result = err.into_result(parent_shell);
                     Ok(result.into())
@@ -1222,6 +1289,9 @@ async fn execute_command(
     cmd_name: String,
     assignments: Vec<&ast::Assignment>,
     args: Vec<CommandArg>,
+    #[cfg(feature = "experimental-filters")] captured_redirections: Vec<
+        commands::RedirectionInfo<'static>,
+    >,
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Push a new ephemeral environment scope for the duration of the command. We'll
     // set command-scoped variable assignments after doing so, and revert them before
@@ -1257,6 +1327,14 @@ async fn execute_command(
     // Construct the command struct.
     let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name, args);
     cmd.process_group_id = context.process_group_id;
+
+    // Pass pipeline info and captured redirections for the post-expansion policy hook.
+    #[cfg(feature = "experimental-filters")]
+    {
+        cmd.pipeline_info = context.pipeline_info;
+        cmd.raw_command = context.raw_command;
+        cmd.redirections = captured_redirections;
+    }
 
     // Arrange to pop off that ephemeral environment scope.
     cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
@@ -1497,6 +1575,185 @@ async fn apply_assignment(
     }
 
     shell.env_mut().add(variable_name, new_var, creation_scope)
+}
+
+/// Captures redirection information for the post-expansion policy hook.
+///
+/// This function expands the redirect target and converts the AST redirection
+/// to a `RedirectionInfo` structure. It's called before `setup_redirect` to
+/// capture the expanded target value.
+#[cfg(feature = "experimental-filters")]
+#[allow(clippy::too_many_lines)]
+async fn capture_redirect_info(
+    shell: &mut Shell,
+    params: &ExecutionParameters,
+    redirect: &ast::IoRedirect,
+) -> Option<commands::RedirectionInfo<'static>> {
+    use std::borrow::Cow;
+
+    match redirect {
+        ast::IoRedirect::OutputAndError(f, append) => {
+            let expanded_fields = expansion::full_expand_and_split_word(shell, params, f)
+                .await
+                .ok()?;
+            if expanded_fields.len() != 1 {
+                return None;
+            }
+            let expanded_path = expanded_fields.into_iter().next()?;
+
+            let mode = if *append {
+                commands::RedirectionMode::Append
+            } else {
+                commands::RedirectionMode::Write
+            };
+
+            Some(commands::RedirectionInfo {
+                fd: 1, // stdout (stderr is also redirected, but we represent this as stdout)
+                target: commands::RedirectionTarget::FilePath(Cow::Owned(expanded_path)),
+                mode,
+            })
+        }
+        ast::IoRedirect::File(specified_fd, kind, target) => {
+            let default_fd = get_default_fd_for_redirect_kind(kind);
+            let fd = specified_fd.unwrap_or(default_fd);
+
+            match target {
+                ast::IoFileRedirectTarget::Filename(f) => {
+                    let expanded_fields = expansion::full_expand_and_split_word(shell, params, f)
+                        .await
+                        .ok()?;
+                    if expanded_fields.len() != 1 {
+                        return None;
+                    }
+                    let expanded_path = expanded_fields.into_iter().next()?;
+
+                    let mode = match kind {
+                        ast::IoFileRedirectKind::Read => commands::RedirectionMode::Read,
+                        ast::IoFileRedirectKind::Write => commands::RedirectionMode::Write,
+                        ast::IoFileRedirectKind::Append => commands::RedirectionMode::Append,
+                        ast::IoFileRedirectKind::ReadAndWrite => {
+                            commands::RedirectionMode::ReadWrite
+                        }
+                        ast::IoFileRedirectKind::Clobber => commands::RedirectionMode::Clobber,
+                        ast::IoFileRedirectKind::DuplicateInput
+                        | ast::IoFileRedirectKind::DuplicateOutput => {
+                            // These are handled separately below
+                            return None;
+                        }
+                    };
+
+                    Some(commands::RedirectionInfo {
+                        fd,
+                        target: commands::RedirectionTarget::FilePath(Cow::Owned(expanded_path)),
+                        mode,
+                    })
+                }
+                ast::IoFileRedirectTarget::Fd(target_fd) => {
+                    let mode = match kind {
+                        ast::IoFileRedirectKind::DuplicateInput => commands::RedirectionMode::Read,
+                        ast::IoFileRedirectKind::DuplicateOutput => {
+                            commands::RedirectionMode::Write
+                        }
+                        _ => return None,
+                    };
+
+                    Some(commands::RedirectionInfo {
+                        fd,
+                        target: commands::RedirectionTarget::FileDescriptor(*target_fd),
+                        mode,
+                    })
+                }
+                ast::IoFileRedirectTarget::Duplicate(word) => {
+                    let expanded_fields =
+                        expansion::full_expand_and_split_word(shell, params, word)
+                            .await
+                            .ok()?;
+                    if expanded_fields.len() != 1 {
+                        return None;
+                    }
+                    let mut expanded = expanded_fields.into_iter().next()?;
+
+                    // Remove trailing dash if present (indicates close after dup)
+                    if expanded.ends_with('-') {
+                        expanded.pop();
+                    }
+
+                    if expanded.is_empty() {
+                        return None;
+                    }
+
+                    // Try to parse as fd number
+                    if let Ok(target_fd) = expanded.parse::<i32>() {
+                        let mode = match kind {
+                            ast::IoFileRedirectKind::DuplicateInput => {
+                                commands::RedirectionMode::Read
+                            }
+                            ast::IoFileRedirectKind::DuplicateOutput => {
+                                commands::RedirectionMode::Write
+                            }
+                            _ => return None,
+                        };
+
+                        Some(commands::RedirectionInfo {
+                            fd,
+                            target: commands::RedirectionTarget::FileDescriptor(target_fd),
+                            mode,
+                        })
+                    } else {
+                        // Not a valid fd number, treat as filename
+                        let mode = match kind {
+                            ast::IoFileRedirectKind::DuplicateOutput => {
+                                commands::RedirectionMode::Write
+                            }
+                            _ => return None,
+                        };
+
+                        Some(commands::RedirectionInfo {
+                            fd,
+                            target: commands::RedirectionTarget::FilePath(Cow::Owned(expanded)),
+                            mode,
+                        })
+                    }
+                }
+                ast::IoFileRedirectTarget::ProcessSubstitution(..) => {
+                    // Process substitutions are complex and not captured for policy hooks
+                    None
+                }
+            }
+        }
+        ast::IoRedirect::HereDocument(specified_fd, here_doc) => {
+            let fd = specified_fd.unwrap_or(0);
+
+            // Expand if required
+            let content = if here_doc.requires_expansion {
+                expansion::basic_expand_word(shell, params, &here_doc.doc)
+                    .await
+                    .ok()?
+            } else {
+                here_doc.doc.flatten()
+            };
+
+            Some(commands::RedirectionInfo {
+                fd,
+                target: commands::RedirectionTarget::HereDoc(Cow::Owned(content)),
+                mode: commands::RedirectionMode::Read,
+            })
+        }
+        ast::IoRedirect::HereString(specified_fd, word) => {
+            let fd = specified_fd.unwrap_or(0);
+
+            let mut expanded = expansion::basic_expand_word(shell, params, word)
+                .await
+                .ok()?;
+            expanded.push('\n');
+
+            Some(commands::RedirectionInfo {
+                fd,
+                target: commands::RedirectionTarget::HereString(Cow::Owned(expanded)),
+                mode: commands::RedirectionMode::Read,
+            })
+        }
+    }
 }
 
 #[expect(clippy::too_many_lines)]

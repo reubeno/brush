@@ -208,7 +208,7 @@ async fn run_async(
         Err(brush_interactive::ShellError::ShellError(e)) => {
             let shell = shell.lock().await;
             let mut stderr = shell.stderr();
-            let _ = shell.display_error(&mut stderr, &e).await;
+            let _ = shell.display_error(&mut stderr, &e);
             drop(shell);
             1
         }
@@ -461,7 +461,7 @@ async fn instantiate_shell_from_args(
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
-        .error_formatter(new_error_formatter(args))
+        .extensions(new_shell_extensions(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.
@@ -507,14 +507,27 @@ fn enable_xtrace_to_file(
     Ok(())
 }
 
-fn new_error_formatter(
-    args: &CommandLineArgs,
-) -> Arc<Mutex<dyn brush_core::error::ErrorFormatter>> {
-    let formatter = error_formatter::Formatter {
-        use_color: !args.disable_color,
-    };
+#[derive(Clone)]
+struct BrushShellExtensions {
+    use_color: bool,
+}
 
-    Arc::new(Mutex::new(formatter))
+impl brush_core::extensions::ShellExtensions for BrushShellExtensions {
+    fn format_error(&self, err: &brush_core::error::Error, shell: &brush_core::Shell) -> String {
+        error_formatter::format_error(err, shell, self.use_color)
+    }
+
+    fn clone_for_subshell(&self) -> Box<dyn brush_core::extensions::ShellExtensions> {
+        Box::new(self.clone())
+    }
+}
+
+fn new_shell_extensions(
+    args: &CommandLineArgs,
+) -> Box<dyn brush_core::extensions::ShellExtensions> {
+    Box::new(BrushShellExtensions {
+        use_color: !args.disable_color,
+    })
 }
 
 fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {

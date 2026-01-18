@@ -18,6 +18,7 @@ workspace = true
 
 [features]
 default = []
+experimental-filters = []
 serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
 
 [dependencies]
@@ -83,3 +84,7 @@ uuid = { version = "1.19.0", features = ["js"] }
 [dev-dependencies]
 anyhow = "1.0.100"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+
+[[example]]
+name = "custom-extensions"
+required-features = ["experimental-filters"]
