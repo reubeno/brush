@@ -25,9 +25,9 @@ pub(crate) struct HelpCommand {
 impl builtins::Command for HelpCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
@@ -43,7 +43,7 @@ impl builtins::Command for HelpCommand {
 
 impl HelpCommand {
     fn display_general_help(
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
         const COLUMN_COUNT: usize = 3;
 
@@ -75,7 +75,7 @@ impl HelpCommand {
 
     fn display_help_for_topic_pattern(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         topic_pattern: &str,
     ) -> Result<(), brush_core::Error> {
         let pattern = brush_core::patterns::Pattern::from(topic_pattern)
@@ -101,11 +101,11 @@ impl HelpCommand {
         Ok(())
     }
 
-    fn display_help_for_builtin(
+    fn display_help_for_builtin<SE: brush_core::ShellExtensions>(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, SE>,
         name: &str,
-        registration: &builtins::Registration,
+        registration: &builtins::Registration<SE>,
     ) -> Result<(), brush_core::Error> {
         let content_type = if self.short_description {
             builtins::ContentType::ShortDescription
@@ -136,9 +136,9 @@ impl HelpCommand {
     }
 }
 
-fn get_builtins_sorted_by_name<'a>(
-    context: &'a brush_core::ExecutionContext<'_>,
-) -> Vec<(&'a String, &'a builtins::Registration)> {
+fn get_builtins_sorted_by_name<'a, SE: brush_core::ShellExtensions>(
+    context: &'a brush_core::ExecutionContext<'_, SE>,
+) -> Vec<(&'a String, &'a builtins::Registration<SE>)> {
     context
         .shell
         .builtins()

@@ -20,9 +20,9 @@ pub(crate) struct PrintfCommand {
 impl builtins::Command for PrintfCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if let Some(variable_name) = &self.output_variable {
             // Format to a u8 vector.

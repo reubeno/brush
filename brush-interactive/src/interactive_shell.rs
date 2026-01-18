@@ -50,9 +50,9 @@ impl Default for InteractiveOptions {
 }
 
 /// Represents an interactive shell that displays prompts, interactively reads user input, etc.
-pub struct InteractiveShell<'a, IB: InputBackend> {
+pub struct InteractiveShell<'a, IB: InputBackend, SE: brush_core::ShellExtensions> {
     /// The underlying shell instance.
-    shell: crate::ShellRef,
+    shell: crate::ShellRef<SE>,
     /// The input backend to use.
     input: &'a mut IB,
     /// Terminal integration utility, if any.
@@ -61,7 +61,7 @@ pub struct InteractiveShell<'a, IB: InputBackend> {
     options: InteractiveOptions,
 }
 
-impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
+impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a, IB, SE> {
     /// Creates a new `InteractiveShell` wrapping the given shell instance.
     ///
     /// # Arguments
@@ -70,7 +70,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     /// * `input` - The input backend to use.
     /// * `options` - The user interface options to use.
     pub fn new(
-        shell: &crate::ShellRef,
+        shell: &crate::ShellRef<SE>,
         input: &'a mut IB,
         options: &InteractiveOptions,
     ) -> Result<Self, ShellError> {
@@ -135,7 +135,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
                     // Report the error, but continue to execute.
                     let shell = self.shell.lock().await;
                     let mut stderr = shell.stderr();
-                    let _ = shell.display_error(&mut stderr, &err).await;
+                    let _ = shell.display_error(&mut stderr, &err);
 
                     drop(shell);
                 }
@@ -212,7 +212,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn compose_prompt(
-        shell: &mut brush_core::Shell,
+        shell: &mut brush_core::Shell<SE>,
         terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
     ) -> Result<InteractivePrompt, ShellError> {
         // Now that we've done that, compose the prompt.
@@ -326,7 +326,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn run_pre_prompt_actions(
-        shell: &mut brush_core::Shell,
+        shell: &mut brush_core::Shell<SE>,
         options: &InteractiveOptions,
     ) -> Result<(), ShellError> {
         // Check for any completed jobs.
@@ -376,7 +376,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn run_pre_exec_actions(
-        shell: &mut brush_core::Shell,
+        shell: &mut brush_core::Shell<SE>,
         command_line: &str,
         options: &InteractiveOptions,
         terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
@@ -420,7 +420,7 @@ impl<'a, IB: InputBackend> InteractiveShell<'a, IB> {
     }
 
     async fn run_pre_prompt_command(
-        shell: &mut brush_core::Shell,
+        shell: &mut brush_core::Shell<SE>,
         prompt_cmd: String,
     ) -> Result<(), ShellError> {
         // Save (and later restore) the last exit status.

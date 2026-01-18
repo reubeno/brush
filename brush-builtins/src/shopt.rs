@@ -35,9 +35,9 @@ impl builtins::Command for ShoptCommand {
     type Error = brush_core::Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.set && self.unset {
             writeln!(

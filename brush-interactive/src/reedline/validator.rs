@@ -1,10 +1,10 @@
 use crate::refs;
 
-pub(crate) struct ReedlineValidator {
-    pub shell: refs::ShellRef,
+pub(crate) struct ReedlineValidator<SE: brush_core::ShellExtensions> {
+    pub shell: refs::ShellRef<SE>,
 }
 
-impl reedline::Validator for ReedlineValidator {
+impl<SE: brush_core::ShellExtensions> reedline::Validator for ReedlineValidator<SE> {
     fn validate(&self, line: &str) -> reedline::ValidationResult {
         let shell = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.shell.lock())

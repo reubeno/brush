@@ -14,9 +14,9 @@ pub(crate) struct SuspendCommand {
 impl builtins::Command for SuspendCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if context.shell.options().login_shell && !self.force {
             writeln!(context.stderr(), "login shell cannot be suspended")?;

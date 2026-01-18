@@ -124,9 +124,9 @@ impl builtins::Command for DeclareCommand {
 
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let verb = match context.command_name.as_str() {
             "local" => DeclareVerb::Local,
@@ -177,7 +177,7 @@ impl builtins::Command for DeclareCommand {
 impl DeclareCommand {
     fn try_display_declaration(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
@@ -239,7 +239,7 @@ impl DeclareCommand {
 
     fn process_declaration(
         &self,
-        context: &mut brush_core::ExecutionContext<'_>,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
@@ -424,7 +424,7 @@ impl DeclareCommand {
 
     fn display_matching_env_declarations(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         verb: DeclareVerb,
     ) -> Result<(), brush_core::Error> {
         //
@@ -542,7 +542,7 @@ impl DeclareCommand {
 
     fn display_matching_functions(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
         for (name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {

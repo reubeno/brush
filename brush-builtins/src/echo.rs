@@ -41,9 +41,9 @@ impl builtins::Command for EchoCommand {
         Ok(this)
     }
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut trailing_newline = !self.no_trailing_newline;
         let mut s;

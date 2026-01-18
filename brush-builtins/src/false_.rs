@@ -17,8 +17,8 @@ impl builtins::SimpleCommand for FalseCommand {
         }
     }
 
-    fn execute<I: Iterator<Item = S>, S: AsRef<str>>(
-        _context: brush_core::ExecutionContext<'_>,
+    fn execute<SE: brush_core::ShellExtensions, I: Iterator<Item = S>, S: AsRef<str>>(
+        _context: brush_core::ExecutionContext<'_, SE>,
         _args: I,
     ) -> Result<ExecutionResult, brush_core::Error> {
         Ok(ExecutionResult::general_error())

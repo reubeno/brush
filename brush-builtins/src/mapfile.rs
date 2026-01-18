@@ -47,9 +47,9 @@ pub(crate) struct MapFileCommand {
 impl builtins::Command for MapFileCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.origin != 0 {
             // This will require merging into a potentially already-existing array.

@@ -1,5 +1,5 @@
 use crate::{
-    ExecutionParameters, error, expansion,
+    ExecutionParameters, error, expansion, extensions,
     shell::Shell,
     sys::{self, users},
 };
@@ -10,7 +10,7 @@ const VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
 const VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 
 pub(crate) async fn expand_prompt(
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     spec: String,
 ) -> Result<String, error::Error> {
@@ -57,7 +57,7 @@ fn parse_prompt(
 }
 
 fn format_prompt_piece(
-    shell: &Shell,
+    shell: &Shell<impl extensions::ShellExtensions>,
     piece: brush_parser::prompt::PromptPiece,
 ) -> Result<String, error::Error> {
     let formatted = match piece {
@@ -158,7 +158,11 @@ fn format_prompt_piece(
     Ok(formatted)
 }
 
-fn format_current_working_directory(shell: &Shell, tilde_replaced: bool, basename: bool) -> String {
+fn format_current_working_directory(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    tilde_replaced: bool,
+    basename: bool,
+) -> String {
     let mut working_dir_str = shell.working_dir().to_string_lossy().to_string();
 
     if tilde_replaced {

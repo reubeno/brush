@@ -7,11 +7,12 @@ mod save;
 use brush_core::builtins::{self, builtin, decl_builtin, raw_arg_builtin, simple_builtin};
 
 /// Returns the set of experimental built-in commands.
-pub fn experimental_builtins() -> std::collections::HashMap<String, builtins::Registration> {
-    let mut m = std::collections::HashMap::<String, builtins::Registration>::new();
+pub fn experimental_builtins<SE: brush_core::extensions::ShellExtensions>()
+-> std::collections::HashMap<String, builtins::Registration<SE>> {
+    let mut m = std::collections::HashMap::<String, builtins::Registration<SE>>::new();
 
     #[cfg(feature = "builtin.save")]
-    m.insert("save".into(), builtin::<save::SaveCommand>());
+    m.insert("save".into(), builtin::<save::SaveCommand, SE>());
 
     m
 }
@@ -23,7 +24,9 @@ pub trait ShellBuilderExt {
     fn experimental_builtins(self) -> Self;
 }
 
-impl<S: brush_core::ShellBuilderState> ShellBuilderExt for brush_core::ShellBuilder<S> {
+impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderState> ShellBuilderExt
+    for brush_core::ShellBuilder<SE, S>
+{
     fn experimental_builtins(self) -> Self {
         self.builtins(crate::experimental_builtins())
     }

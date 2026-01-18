@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use rand::Rng;
 
-use crate::{Shell, ShellValue, ShellVariable, error, sys, variables};
+use crate::shell::ShellState;
+use crate::{Shell, ShellValue, ShellVariable, error, extensions, sys, variables};
 
 const BASH_MAJOR: u32 = 5;
 const BASH_MINOR: u32 = 2;
@@ -18,7 +19,9 @@ const DEFAULT_LINENO: usize = 1;
 /// # Arguments
 ///
 /// * `shell` - The shell instance to inherit environment variables into.
-pub(crate) fn inherit_env_vars(shell: &mut Shell) -> Result<(), error::Error> {
+pub(crate) fn inherit_env_vars(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+) -> Result<(), error::Error> {
     for (k, v) in std::env::vars() {
         // See if it's a function exported by an ancestor process.
         if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
@@ -49,7 +52,9 @@ pub(crate) fn inherit_env_vars(shell: &mut Shell) -> Result<(), error::Error> {
 }
 
 #[expect(clippy::too_many_lines)]
-pub(crate) fn init_well_known_vars(shell: &mut Shell) -> Result<(), error::Error> {
+pub(crate) fn init_well_known_vars(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+) -> Result<(), error::Error> {
     let shell_version = shell.version().clone();
     shell.env_mut().set_global(
         "BRUSH_VERSION",
@@ -517,21 +522,21 @@ fn get_current_user_gids() -> Vec<u32> {
     groups
 }
 
-fn get_random_value(_shell: &Shell) -> ShellValue {
+fn get_random_value(_shell: &dyn ShellState) -> ShellValue {
     let mut rng = rand::rng();
     let num = rng.random_range(0..32768);
     let str = num.to_string();
     str.into()
 }
 
-fn get_srandom_value(_shell: &Shell) -> ShellValue {
+fn get_srandom_value(_shell: &dyn ShellState) -> ShellValue {
     let mut rng = rand::rng();
     let num: u32 = rng.random();
     let str = num.to_string();
     str.into()
 }
 
-fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
+fn get_funcname_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
@@ -560,7 +565,7 @@ fn get_funcname_value(shell: &Shell) -> variables::ShellValue {
     }
 }
 
-fn get_bash_lineno_value(shell: &Shell) -> variables::ShellValue {
+fn get_bash_lineno_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     // BASH_LINENO[$i] contains the line number where FUNCNAME[$i] was called
@@ -597,7 +602,7 @@ fn get_bash_lineno_value(shell: &Shell) -> variables::ShellValue {
     }
 }
 
-fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
+fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
@@ -633,7 +638,7 @@ fn get_bash_source_value(shell: &Shell) -> variables::ShellValue {
     }
 }
 
-fn get_lineno(shell: &Shell) -> usize {
+fn get_lineno(shell: &dyn ShellState) -> usize {
     shell
         .call_stack()
         .current_frame()

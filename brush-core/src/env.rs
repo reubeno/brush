@@ -4,8 +4,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map;
 
+use crate::Shell;
 use crate::error;
-use crate::shell;
+use crate::extensions;
 use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
 
 /// Represents the policy for looking up variables in a shell environment.
@@ -44,20 +45,20 @@ impl std::fmt::Display for EnvironmentScope {
 }
 
 /// A guard that pushes a scope onto a shell environment and pops it when dropped.
-pub(crate) struct ScopeGuard<'a> {
+pub(crate) struct ScopeGuard<'a, SE: extensions::ShellExtensions> {
     scope_type: EnvironmentScope,
-    shell: &'a mut crate::Shell,
+    shell: &'a mut crate::Shell<SE>,
     detached: bool,
 }
 
-impl<'a> ScopeGuard<'a> {
+impl<'a, SE: extensions::ShellExtensions> ScopeGuard<'a, SE> {
     /// Creates a new scope guard, pushing the given scope type onto the environment.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell whose environment to modify.
     /// * `scope_type` - The type of scope to push.
-    pub fn new(shell: &'a mut crate::Shell, scope_type: EnvironmentScope) -> Self {
+    pub fn new(shell: &'a mut crate::Shell<SE>, scope_type: EnvironmentScope) -> Self {
         shell.env_mut().push_scope(scope_type);
         Self {
             scope_type,
@@ -67,7 +68,7 @@ impl<'a> ScopeGuard<'a> {
     }
 
     /// Returns a mutable reference to the shell.
-    pub const fn shell(&mut self) -> &mut crate::Shell {
+    pub const fn shell(&mut self) -> &mut crate::Shell<SE> {
         self.shell
     }
 
@@ -77,7 +78,7 @@ impl<'a> ScopeGuard<'a> {
     }
 }
 
-impl Drop for ScopeGuard<'_> {
+impl<SE: extensions::ShellExtensions> Drop for ScopeGuard<'_, SE> {
     fn drop(&mut self) {
         if !self.detached {
             let _ = self.shell.env_mut().pop_scope(self.scope_type);
@@ -269,7 +270,11 @@ impl ShellEnvironment {
     ///
     /// * `name` - The name of the variable to retrieve.
     /// * `shell` - The shell owning the environment.
-    pub fn get_str<S: AsRef<str>>(&self, name: S, shell: &shell::Shell) -> Option<Cow<'_, str>> {
+    pub fn get_str<S: AsRef<str>, SE: extensions::ShellExtensions>(
+        &self,
+        name: S,
+        shell: &Shell<SE>,
+    ) -> Option<Cow<'_, str>> {
         self.get(name.as_ref())
             .map(|(_, v)| v.value().to_cow_str(shell))
     }

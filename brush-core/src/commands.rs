@@ -14,7 +14,9 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, commands, env, error, escape, functions,
+    builtins, commands, env, error, escape,
+    extensions::{self, ShellExtensions},
+    functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
     pathsearch, processes,
@@ -31,16 +33,16 @@ pub enum CommandWaitResult {
 }
 
 /// Represents the context for executing a command.
-pub struct ExecutionContext<'a> {
+pub struct ExecutionContext<'a, SE: ShellExtensions = extensions::DefaultShellExtensions> {
     /// The shell in which the command is being executed.
-    pub shell: &'a mut Shell,
+    pub shell: &'a mut Shell<SE>,
     /// The name of the command being executed.    
     pub command_name: String,
     /// The parameters for the execution.
     pub params: ExecutionParameters,
 }
 
-impl ExecutionContext<'_> {
+impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
         self.params.stdin(self.shell)
@@ -71,7 +73,7 @@ impl ExecutionContext<'_> {
         self.params.iter_fds(self.shell)
     }
 
-    pub(crate) const fn should_cmd_lead_own_process_group(&self) -> bool {
+    pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
         self.shell.options().interactive
             && matches!(
                 self.params.process_group_policy,
@@ -130,21 +132,21 @@ impl CommandArg {
 }
 
 /// Encapsulates a possibly-owned reference to a `Shell` for command execution.
-pub enum ShellForCommand<'a> {
+pub enum ShellForCommand<'a, SE: extensions::ShellExtensions> {
     /// The command is run in the same shell as its parent; the provided
     /// mutable reference allows modifying the parent shell.
-    ParentShell(&'a mut Shell),
+    ParentShell(&'a mut Shell<SE>),
     /// The command is run in its own owned shell (which is also provided).
     OwnedShell {
         /// The owned shell.
-        target: Box<Shell>,
+        target: Box<Shell<SE>>,
         /// The parent shell.
-        parent: &'a mut Shell,
+        parent: &'a mut Shell<SE>,
     },
 }
 
-impl std::ops::Deref for ShellForCommand<'_> {
-    type Target = Shell;
+impl<SE: extensions::ShellExtensions> std::ops::Deref for ShellForCommand<'_, SE> {
+    type Target = Shell<SE>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -154,7 +156,7 @@ impl std::ops::Deref for ShellForCommand<'_> {
     }
 }
 
-impl std::ops::DerefMut for ShellForCommand<'_> {
+impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_, SE> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             ShellForCommand::ParentShell(shell) => shell,
@@ -176,8 +178,8 @@ impl std::ops::DerefMut for ShellForCommand<'_> {
 /// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
 ///   command will inherit environment variables marked as exported in the provided `Shell`.
 #[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
-pub fn compose_std_command<S: AsRef<OsStr>>(
-    context: &ExecutionContext<'_>,
+pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
+    context: &ExecutionContext<'_, SE>,
     command_name: &str,
     argv0: &str,
     args: &[S],
@@ -258,7 +260,7 @@ pub fn compose_std_command<S: AsRef<OsStr>>(
 }
 
 pub(crate) async fn on_preexecute(
-    cmd: &mut commands::SimpleCommand<'_>,
+    cmd: &mut commands::SimpleCommand<'_, impl extensions::ShellExtensions>,
 ) -> Result<(), error::Error> {
     // See if we have a DEBUG trap handler registered; call it if we do.
     invoke_debug_trap_handler_if_registered(&mut cmd.shell, &cmd.params, cmd.args.as_slice())
@@ -268,7 +270,7 @@ pub(crate) async fn on_preexecute(
 }
 
 async fn invoke_debug_trap_handler_if_registered(
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     args: &[CommandArg],
 ) -> Result<(), error::Error> {
@@ -314,9 +316,9 @@ async fn invoke_debug_trap_handler_if_registered(
 }
 
 /// Represents a simple command to be executed.
-pub struct SimpleCommand<'a> {
+pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
     /// The shell to run the command in.
-    shell: ShellForCommand<'a>,
+    shell: ShellForCommand<'a, SE>,
 
     /// The execution parameters for the command.
     pub params: ExecutionParameters,
@@ -343,10 +345,10 @@ pub struct SimpleCommand<'a> {
     /// that it is *not* invoked if the shell is discarded during the execution
     /// process.
     #[allow(clippy::type_complexity)]
-    pub post_execute: Option<fn(&mut Shell) -> Result<(), error::Error>>,
+    pub post_execute: Option<fn(&mut Shell<SE>) -> Result<(), error::Error>>,
 }
 
-impl<'a> SimpleCommand<'a> {
+impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
     /// Creates a new `SimpleCommand` instance.
     ///
     /// # Arguments
@@ -356,7 +358,7 @@ impl<'a> SimpleCommand<'a> {
     /// * `command_name` - The name of the command to execute.
     /// * `args` - The arguments to the command, including the command itself.
     pub const fn new(
-        shell: ShellForCommand<'a>,
+        shell: ShellForCommand<'a, SE>,
         params: ExecutionParameters,
         command_name: String,
         args: Vec<CommandArg>,
@@ -448,7 +450,7 @@ impl<'a> SimpleCommand<'a> {
 
     async fn execute_via_builtin(
         self,
-        builtin: builtins::Registration,
+        builtin: builtins::Registration<SE>,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         match self.shell {
             ShellForCommand::OwnedShell { target, .. } => {
@@ -467,9 +469,9 @@ impl<'a> SimpleCommand<'a> {
     }
 
     fn execute_via_builtin_in_owned_shell(
-        mut shell: Shell,
+        mut shell: Shell<SE>,
         params: ExecutionParameters,
-        builtin: builtins::Registration,
+        builtin: builtins::Registration<SE>,
         command_name: String,
         args: Vec<CommandArg>,
     ) -> ExecutionSpawnResult {
@@ -489,7 +491,7 @@ impl<'a> SimpleCommand<'a> {
 
     async fn execute_via_builtin_in_parent_shell(
         self,
-        builtin: builtins::Registration,
+        builtin: builtins::Registration<SE>,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
 
@@ -558,7 +560,7 @@ impl<'a> SimpleCommand<'a> {
 }
 
 pub(crate) fn execute_external_command(
-    context: ExecutionContext<'_>,
+    context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     executable_path: &str,
     process_group_id: Option<i32>,
     args: &[CommandArg],
@@ -665,9 +667,9 @@ pub(crate) fn execute_external_command(
     }
 }
 
-async fn execute_builtin_command(
-    builtin: &builtins::Registration,
-    context: ExecutionContext<'_>,
+async fn execute_builtin_command<SE: extensions::ShellExtensions>(
+    builtin: &builtins::Registration<SE>,
+    context: ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
     // In POSIX mode, special builtins that return errors are to be treated as fatal.
@@ -680,7 +682,7 @@ async fn execute_builtin_command(
 
 pub(crate) async fn invoke_shell_function(
     function: functions::Registration,
-    mut context: ExecutionContext<'_>,
+    mut context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function.definition().body;
@@ -734,7 +736,7 @@ pub(crate) async fn invoke_shell_function(
 }
 
 pub(crate) async fn invoke_command_in_subshell_and_get_output(
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     s: String,
 ) -> Result<String, error::Error> {
@@ -781,7 +783,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 }
 
 async fn run_substitution_command(
-    mut shell: Shell,
+    mut shell: Shell<impl extensions::ShellExtensions>,
     mut params: ExecutionParameters,
     command: String,
 ) -> Result<ExecutionResult, error::Error> {

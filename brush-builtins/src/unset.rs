@@ -39,9 +39,9 @@ impl UnsetNameInterpretation {
 impl builtins::Command for UnsetCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         //
         // TODO(nameref): implement nameref
@@ -94,7 +94,7 @@ impl builtins::Command for UnsetCommand {
 }
 
 fn unset_array_index(
-    shell: &mut Shell,
+    shell: &mut Shell<impl brush_core::ShellExtensions>,
     name: &str,
     index: &str,
 ) -> Result<bool, brush_core::Error> {

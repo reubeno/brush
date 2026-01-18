@@ -12,9 +12,9 @@ pub(crate) struct ShiftCommand {
 impl builtins::Command for ShiftCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let n = self.n.unwrap_or(1);
 

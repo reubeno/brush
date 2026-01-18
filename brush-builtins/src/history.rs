@@ -53,9 +53,9 @@ struct HistoryConfig {
 impl builtins::Command for HistoryCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {

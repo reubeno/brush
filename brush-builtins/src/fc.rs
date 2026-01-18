@@ -37,9 +37,9 @@ pub(crate) struct FcCommand {
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.substitute {
             return self.do_execute(context).await;
@@ -56,7 +56,7 @@ impl builtins::Command for FcCommand {
 impl FcCommand {
     fn do_list(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, brush_core::Error> {
         let history = context
             .shell
@@ -89,7 +89,7 @@ impl FcCommand {
 
     async fn do_execute(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, brush_core::Error> {
         let history = context
             .shell

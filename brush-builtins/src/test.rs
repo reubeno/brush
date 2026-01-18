@@ -30,9 +30,9 @@ impl builtins::Command for TestCommand {
         Ok(this)
     }
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut args = self.args.as_slice();
 
@@ -57,7 +57,7 @@ impl builtins::Command for TestCommand {
 }
 
 fn execute_test(
-    shell: &mut Shell,
+    shell: &mut Shell<impl brush_core::ShellExtensions>,
     params: &ExecutionParameters,
     args: &[String],
 ) -> Result<bool, brush_core::Error> {

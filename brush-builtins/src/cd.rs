@@ -33,9 +33,9 @@ pub(crate) struct CdCommand {
 impl builtins::Command for CdCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // TODO(cd): implement 'cd -@'
         if self.file_with_xattr_as_dir {

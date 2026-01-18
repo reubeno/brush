@@ -4,8 +4,8 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write};
 
-use crate::shell::Shell;
-use crate::{error, escape};
+use crate::shell::{Shell, ShellState};
+use crate::{error, escape, extensions};
 
 /// A shell variable.
 #[derive(Clone, Debug)]
@@ -522,7 +522,7 @@ impl ShellVariable {
     /// # Arguments
     ///
     /// * `shell` - The shell in which the variable is being resolved.
-    pub fn resolve_value(&self, shell: &Shell) -> ShellValue {
+    pub fn resolve_value(&self, shell: &Shell<impl extensions::ShellExtensions>) -> ShellValue {
         // N.B. We do *not* specially handle a dynamic value that resolves to a dynamic value.
         match &self.value {
             ShellValue::Dynamic { getter, .. } => getter(shell),
@@ -531,7 +531,7 @@ impl ShellVariable {
     }
 
     /// Returns the canonical attribute flag string for this variable.
-    pub fn attribute_flags(&self, shell: &Shell) -> String {
+    pub fn attribute_flags(&self, shell: &Shell<impl extensions::ShellExtensions>) -> String {
         let value = self.resolve_value(shell);
 
         let mut result = String::new();
@@ -587,8 +587,8 @@ impl ShellVariable {
     }
 }
 
-type DynamicValueGetter = fn(&Shell) -> ShellValue;
-type DynamicValueSetter = fn(&Shell) -> ();
+type DynamicValueGetter = fn(&dyn ShellState) -> ShellValue;
+type DynamicValueSetter = fn(&dyn ShellState) -> ();
 
 /// A shell value.
 #[derive(Clone, Debug)]
@@ -623,12 +623,12 @@ pub enum ShellValue {
 
 #[cfg(feature = "serde")]
 fn default_dynamic_value_getter() -> DynamicValueGetter {
-    |_shell: &Shell| ShellValue::String(String::new())
+    |_shell: &dyn ShellState| ShellValue::String(String::new())
 }
 
 #[cfg(feature = "serde")]
 fn default_dynamic_value_setter() -> DynamicValueSetter {
-    |_shell: &Shell| {}
+    |_shell: &dyn ShellState| {}
 }
 
 /// The type of an unset shell value.
@@ -843,7 +843,11 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `style` - The style to use for formatting the value.
-    pub fn format(&self, style: FormatStyle, shell: &Shell) -> Result<Cow<'_, str>, error::Error> {
+    pub fn format(
+        &self,
+        style: FormatStyle,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Result<Cow<'_, str>, error::Error> {
         match self {
             Self::Unset(_) => Ok("".into()),
             Self::String(s) => match style {
@@ -904,7 +908,11 @@ impl ShellValue {
     /// # Arguments
     ///
     /// * `index` - The index at which to retrieve the value.
-    pub fn get_at(&self, index: &str, shell: &Shell) -> Result<Option<Cow<'_, str>>, error::Error> {
+    pub fn get_at(
+        &self,
+        index: &str,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Result<Option<Cow<'_, str>>, error::Error> {
         match self {
             Self::Unset(_) => Ok(None),
             Self::String(s) => {
@@ -944,7 +952,7 @@ impl ShellValue {
     }
 
     /// Returns the keys of the elements in this variable.
-    pub fn element_keys(&self, shell: &Shell) -> Vec<String> {
+    pub fn element_keys(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Vec<String> {
         match self {
             Self::Unset(_) => vec![],
             Self::String(_) => vec!["0".to_owned()],
@@ -955,7 +963,7 @@ impl ShellValue {
     }
 
     /// Returns the values of the elements in this variable.
-    pub fn element_values(&self, shell: &Shell) -> Vec<String> {
+    pub fn element_values(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Vec<String> {
         match self {
             Self::Unset(_) => vec![],
             Self::String(s) => vec![s.to_owned()],
@@ -966,7 +974,7 @@ impl ShellValue {
     }
 
     /// Converts this value to a string.
-    pub fn to_cow_str(&self, shell: &Shell) -> Cow<'_, str> {
+    pub fn to_cow_str(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Cow<'_, str> {
         self.try_get_cow_str(shell).unwrap_or(Cow::Borrowed(""))
     }
 
@@ -977,7 +985,10 @@ impl ShellValue {
 
     /// Tries to convert this value to a string; returns `None` if the value is unset
     /// or otherwise doesn't exist.
-    pub fn try_get_cow_str(&self, shell: &Shell) -> Option<Cow<'_, str>> {
+    pub fn try_get_cow_str(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<Cow<'_, str>> {
         match self {
             Self::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);
@@ -1007,7 +1018,7 @@ impl ShellValue {
     pub fn to_assignable_str(
         &self,
         index: Option<&str>,
-        shell: &Shell,
+        shell: &Shell<impl extensions::ShellExtensions>,
     ) -> Result<String, error::Error> {
         match self {
             Self::Unset(_) => Ok(String::new()),

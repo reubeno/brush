@@ -26,9 +26,9 @@ pub(crate) struct ExecCommand {
 impl builtins::Command for ExecCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.args.is_empty() {
             // When no arguments are present, then there's nothing for us to execute -- but we need

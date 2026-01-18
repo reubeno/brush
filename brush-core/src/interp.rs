@@ -15,12 +15,14 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{ShellFd, error, expansion, extendedtests, ioutils, jobs, openfiles, sys, timing};
+use crate::{
+    ShellFd, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys, timing,
+};
 
 /// Encapsulates the context of execution in a command pipeline.
-struct PipelineExecutionContext<'a> {
+struct PipelineExecutionContext<'a, SE: extensions::ShellExtensions> {
     /// The shell in which the command should be executed.
-    shell: commands::ShellForCommand<'a>,
+    shell: commands::ShellForCommand<'a, SE>,
     /// Process group ID for spawned processes.
     process_group_id: Option<i32>,
 }
@@ -43,7 +45,10 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn stdin(&self, shell: &Shell) -> impl std::io::Read + 'static {
+    pub fn stdin(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> impl std::io::Read + 'static {
         self.try_stdin(shell).unwrap_or_else(|| {
             ioutils::FailingReaderWriter::new("standard input not available").into()
         })
@@ -54,7 +59,7 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn try_stdin(&self, shell: &Shell) -> Option<OpenFile> {
+    pub fn try_stdin(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Option<OpenFile> {
         self.try_fd(shell, openfiles::OpenFiles::STDIN_FD)
     }
 
@@ -66,7 +71,10 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn stdout(&self, shell: &Shell) -> impl std::io::Write + 'static {
+    pub fn stdout(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> impl std::io::Write + 'static {
         self.try_stdout(shell).unwrap_or_else(|| {
             ioutils::FailingReaderWriter::new("standard output not available").into()
         })
@@ -77,7 +85,7 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn try_stdout(&self, shell: &Shell) -> Option<OpenFile> {
+    pub fn try_stdout(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Option<OpenFile> {
         self.try_fd(shell, openfiles::OpenFiles::STDOUT_FD)
     }
 
@@ -88,7 +96,10 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn stderr(&self, shell: &Shell) -> impl std::io::Write + 'static {
+    pub fn stderr(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> impl std::io::Write + 'static {
         self.try_stderr(shell).unwrap_or_else(|| {
             ioutils::FailingReaderWriter::new("standard error not available").into()
         })
@@ -99,7 +110,7 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn try_stderr(&self, shell: &Shell) -> Option<OpenFile> {
+    pub fn try_stderr(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Option<OpenFile> {
         self.try_fd(shell, openfiles::OpenFiles::STDERR_FD)
     }
 
@@ -110,7 +121,11 @@ impl ExecutionParameters {
     ///
     /// * `shell` - The shell context.
     /// * `fd` - The file descriptor number to retrieve.
-    pub fn try_fd(&self, shell: &Shell, fd: ShellFd) -> Option<openfiles::OpenFile> {
+    pub fn try_fd(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+        fd: ShellFd,
+    ) -> Option<openfiles::OpenFile> {
         match self.open_files.fd_entry(fd) {
             openfiles::OpenFileEntry::Open(f) => Some(f.clone()),
             openfiles::OpenFileEntry::NotPresent => None,
@@ -137,7 +152,10 @@ impl ExecutionParameters {
     /// # Arguments
     ///
     /// * `shell` - The shell context.
-    pub fn iter_fds(&self, shell: &Shell) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
+    pub fn iter_fds(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         let our_fds = self.open_files.iter_fds();
         let shell_fds = shell
             .persistent_open_files()
@@ -168,16 +186,16 @@ pub enum ProcessGroupPolicy {
 pub trait Execute {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error>;
 }
 
 #[async_trait::async_trait]
-trait ExecuteInPipeline {
+trait ExecuteInPipeline<SE: extensions::ShellExtensions> {
     async fn execute_in_pipeline(
         &self,
-        context: PipelineExecutionContext<'_>,
+        context: PipelineExecutionContext<'_, SE>,
         params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error>;
 }
@@ -186,7 +204,7 @@ trait ExecuteInPipeline {
 impl Execute for ast::Program {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
@@ -199,7 +217,7 @@ impl Execute for ast::Program {
                 Ok(exec_result) => result = exec_result,
                 Err(err) => {
                     // Display the error and convert to an execution result.
-                    let _ = shell.display_error(&mut params.stderr(shell), &err).await;
+                    let _ = shell.display_error(&mut params.stderr(shell), &err);
                     result = err.into_result(shell);
                 }
             }
@@ -221,7 +239,7 @@ impl Execute for ast::Program {
 impl Execute for ast::CompoundList {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
@@ -257,9 +275,9 @@ impl Execute for ast::CompoundList {
     }
 }
 
-fn spawn_ao_list_in_task<'a>(
+fn spawn_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
     ao_list: &ast::AndOrList,
-    shell: &'a mut Shell,
+    shell: &'a mut Shell<SE>,
     params: &ExecutionParameters,
 ) -> &'a jobs::Job {
     // Clone the inputs.
@@ -287,7 +305,7 @@ fn spawn_ao_list_in_task<'a>(
 impl Execute for ast::AndOrList {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let has_operators = !self.additional.is_empty();
@@ -343,7 +361,7 @@ impl Execute for ast::AndOrList {
 impl Execute for ast::Pipeline {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // Capture current timing if so requested.
@@ -412,7 +430,7 @@ impl Execute for ast::Pipeline {
 
 async fn spawn_pipeline_processes(
     pipeline: &ast::Pipeline,
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
 ) -> Result<VecDeque<ExecutionSpawnResult>, error::Error> {
     let pipeline_len = pipeline.seq.len();
@@ -499,7 +517,7 @@ async fn spawn_pipeline_processes(
 async fn wait_for_pipeline_processes_and_update_status(
     pipeline: &ast::Pipeline,
     mut process_spawn_results: VecDeque<ExecutionSpawnResult>,
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
 ) -> Result<ExecutionResult, error::Error> {
     let mut result = ExecutionResult::success();
@@ -571,10 +589,10 @@ async fn wait_for_pipeline_processes_and_update_status(
 }
 
 #[async_trait::async_trait]
-impl ExecuteInPipeline for ast::Command {
+impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
     async fn execute_in_pipeline(
         &self,
-        mut pipeline_context: PipelineExecutionContext<'_>,
+        mut pipeline_context: PipelineExecutionContext<'_, SE>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         if pipeline_context.shell.options().do_not_execute_commands {
@@ -638,7 +656,7 @@ enum WhileOrUntil {
 impl Execute for ast::CompoundCommand {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         match self {
@@ -657,7 +675,7 @@ impl Execute for ast::CompoundCommand {
                     Err(error) => {
                         // Display the error to stderr, but prevent fatal error propagation
                         let mut stderr = params.stderr(shell);
-                        let _ = shell.display_error(&mut stderr, &error).await;
+                        let _ = shell.display_error(&mut stderr, &error);
 
                         // Convert error to result in subshell context
                         error.into_result(&subshell)
@@ -683,7 +701,7 @@ impl Execute for ast::CompoundCommand {
 impl Execute for ast::ForClauseCommand {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
@@ -754,7 +772,7 @@ impl Execute for ast::ForClauseCommand {
 impl Execute for ast::CaseClauseCommand {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // N.B. One would think it makes sense to trace the expanded value being switched
@@ -821,7 +839,7 @@ impl Execute for ast::CaseClauseCommand {
 impl Execute for ast::IfClauseCommand {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // Execute condition with errexit suppressed
@@ -874,7 +892,7 @@ impl Execute for ast::IfClauseCommand {
 impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let is_while = match self.0 {
@@ -932,7 +950,7 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
 impl Execute for ast::ArithmeticCommand {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let value = self.expr.eval(shell, params, true).await?;
@@ -952,7 +970,7 @@ impl Execute for ast::ArithmeticCommand {
 impl Execute for ast::ArithmeticForClauseCommand {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
@@ -994,7 +1012,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
 impl Execute for ast::FunctionDefinition {
     async fn execute(
         &self,
-        shell: &mut Shell,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let func_name = self.fname.value.clone();
@@ -1033,10 +1051,10 @@ impl Execute for ast::FunctionDefinition {
 
 #[async_trait::async_trait]
 #[allow(clippy::too_many_lines)]
-impl ExecuteInPipeline for ast::SimpleCommand {
+impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleCommand {
     async fn execute_in_pipeline(
         &self,
-        mut context: PipelineExecutionContext<'_>,
+        mut context: PipelineExecutionContext<'_, SE>,
         mut params: ExecutionParameters,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let prefix_iter = self.prefix.as_ref().map(|s| s.0.iter()).unwrap_or_default();
@@ -1177,7 +1195,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
-                    let _ = parent_shell.display_error(&mut stderr, &err).await;
+                    let _ = parent_shell.display_error(&mut stderr, &err);
 
                     let result = err.into_result(parent_shell);
                     Ok(result.into())
@@ -1217,7 +1235,7 @@ impl ExecuteInPipeline for ast::SimpleCommand {
 }
 
 async fn execute_command(
-    mut context: PipelineExecutionContext<'_>,
+    mut context: PipelineExecutionContext<'_, impl extensions::ShellExtensions>,
     params: ExecutionParameters,
     cmd_name: String,
     assignments: Vec<&ast::Assignment>,
@@ -1270,7 +1288,7 @@ async fn execute_command(
 }
 
 async fn expand_assignment(
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     assignment: &ast::Assignment,
 ) -> Result<ast::Assignment, error::Error> {
@@ -1284,7 +1302,7 @@ async fn expand_assignment(
 }
 
 async fn basic_expand_assignment_name(
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     name: &ast::AssignmentName,
 ) -> Result<ast::AssignmentName, error::Error> {
@@ -1305,7 +1323,7 @@ async fn basic_expand_assignment_name(
 }
 
 async fn expand_assignment_value(
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     value: &ast::AssignmentValue,
 ) -> Result<ast::AssignmentValue, error::Error> {
@@ -1346,7 +1364,7 @@ async fn expand_assignment_value(
 #[expect(clippy::too_many_lines)]
 async fn apply_assignment(
     assignment: &ast::Assignment,
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     mut export: bool,
     required_scope: Option<EnvironmentScope>,
@@ -1501,7 +1519,7 @@ async fn apply_assignment(
 
 #[expect(clippy::too_many_lines)]
 pub(crate) async fn setup_redirect(
-    shell: &mut Shell,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &'_ mut ExecutionParameters,
     redirect: &ast::IoRedirect,
 ) -> Result<(), error::Error> {
@@ -1739,7 +1757,7 @@ pub(crate) async fn setup_redirect(
 /// * `file_path` - The path to the file to redirect output and error to.
 /// * `append` - Whether to append. If `false`, the file will be truncated.
 fn setup_redirect_output_and_error_to(
-    shell: &Shell,
+    shell: &Shell<impl extensions::ShellExtensions>,
     params: &mut ExecutionParameters,
     file_path: &str,
     append: bool,
@@ -1783,7 +1801,7 @@ const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> She
 }
 
 fn setup_process_substitution(
-    shell: &Shell,
+    shell: &Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
     subshell_cmd: &ast::SubshellCommand,

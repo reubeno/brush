@@ -45,9 +45,9 @@ enum ResolvedType<'a> {
 impl builtins::Command for TypeCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
@@ -140,7 +140,11 @@ impl builtins::Command for TypeCommand {
 }
 
 impl TypeCommand {
-    fn resolve_types<'a>(&self, shell: &'a Shell, name: &str) -> Vec<ResolvedType<'a>> {
+    fn resolve_types<'a, SE: brush_core::ShellExtensions>(
+        &self,
+        shell: &'a Shell<SE>,
+        name: &str,
+    ) -> Vec<ResolvedType<'a>> {
         let mut types = vec![];
 
         if !self.force_path_search {

@@ -17,7 +17,7 @@ pub struct BasicInputBackend;
 impl InputBackend for BasicInputBackend {
     fn read_line(
         &mut self,
-        shell: &crate::ShellRef,
+        shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         if std::io::stdin().is_terminal() {
@@ -29,9 +29,9 @@ impl InputBackend for BasicInputBackend {
 }
 
 impl BasicInputBackend {
-    fn read_line_via<R: super::LineReader>(
+    fn read_line_via<R: super::LineReader, SE: brush_core::ShellExtensions>(
         &self,
-        shell_ref: &crate::ShellRef,
+        shell_ref: &crate::ShellRef<SE>,
         reader: &R,
         prompt: &InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
@@ -81,7 +81,7 @@ impl BasicInputBackend {
         std::io::stdin().is_terminal()
     }
 
-    fn is_valid_input(shell: &Shell, input: &str) -> bool {
+    fn is_valid_input(shell: &Shell<impl brush_core::ShellExtensions>, input: &str) -> bool {
         match shell.parse_string(input.to_owned()) {
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>
@@ -94,7 +94,7 @@ impl BasicInputBackend {
     }
 
     fn generate_completions(
-        shell: &mut Shell,
+        shell: &mut Shell<impl brush_core::ShellExtensions>,
         line: &str,
         cursor: usize,
     ) -> Result<brush_core::completion::Completions, ShellError> {
@@ -105,7 +105,7 @@ impl BasicInputBackend {
     }
 
     async fn generate_completions_async(
-        shell: &mut Shell,
+        shell: &mut Shell<impl brush_core::ShellExtensions>,
         line: &str,
         cursor: usize,
     ) -> Result<brush_core::completion::Completions, ShellError> {
