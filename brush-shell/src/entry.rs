@@ -464,7 +464,7 @@ async fn instantiate_shell_from_args(
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
-        .error_behavior(new_error_behavior(args))
+        .error_formatter(new_error_behavior(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.

@@ -6,25 +6,25 @@ use crate::{Shell, error, extensions};
 /// instantiate a shell into a single containing struct.
 pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
     /// Type of the error behavior implementation.
-    type ErrorBehavior: ErrorBehavior;
+    type ErrorFormatter: ErrorFormatter;
 }
 
 /// Shell extensions implementation constructed from component types.
 #[derive(Clone, Default)]
-pub struct ShellExtensionsImpl<EB: ErrorBehavior = DefaultErrorBehavior> {
-    _marker: std::marker::PhantomData<EB>,
+pub struct ShellExtensionsImpl<EF: ErrorFormatter = DefaultErrorFormatter> {
+    _marker: std::marker::PhantomData<EF>,
 }
 
-impl<EB: crate::ErrorBehavior> ShellExtensions for ShellExtensionsImpl<EB> {
-    type ErrorBehavior = EB;
+impl<EF: crate::ErrorFormatter> ShellExtensions for ShellExtensionsImpl<EF> {
+    type ErrorFormatter = EF;
 }
 
 /// Default shell extensions implementation.
 /// This is a type alias for the most common shell configuration.
-pub type DefaultShellExtensions = ShellExtensionsImpl<DefaultErrorBehavior>;
+pub type DefaultShellExtensions = ShellExtensionsImpl<DefaultErrorFormatter>;
 
 /// Trait for defining shell error behaviors.
-pub trait ErrorBehavior: Clone + Default + Send + Sync + 'static {
+pub trait ErrorFormatter: Clone + Default + Send + Sync + 'static {
     /// Format the given error for display within the context of the provided shell.
     ///
     /// # Arguments
@@ -43,9 +43,9 @@ pub trait ErrorBehavior: Clone + Default + Send + Sync + 'static {
 
 /// Default shell error behavior implementation.
 #[derive(Clone, Default)]
-pub struct DefaultErrorBehavior;
+pub struct DefaultErrorFormatter;
 
-impl ErrorBehavior for DefaultErrorBehavior {}
+impl ErrorFormatter for DefaultErrorFormatter {}
 
 /// Trait for placeholder behavior (stub for future extension).
 pub trait PlaceholderBehavior: Clone + Default + Send + Sync + 'static {}

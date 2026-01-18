@@ -15,7 +15,7 @@ use crate::results::ExecutionWaitResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ErrorBehavior, ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history,
+    ErrorFormatter, ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history,
     interfaces, ioutils, pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
@@ -150,8 +150,8 @@ pub trait ShellState {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExtensions> {
     /// Injected error behavior.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_behavior"))]
-    error_behavior: SE::ErrorBehavior,
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
+    error_formatter: SE::ErrorFormatter,
 
     /// Trap handler configuration for the shell.
     traps: traps::TrapHandlerConfig,
@@ -236,7 +236,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
 impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
-            error_behavior: self.error_behavior.clone(),
+            error_formatter: self.error_formatter.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -414,7 +414,7 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     pub vars: HashMap<String, ShellVariable>,
     /// Error behavior implementation.
     #[builder(default)]
-    pub error_behavior: SE::ErrorBehavior,
+    pub error_formatter: SE::ErrorFormatter,
     /// Disallow overwriting regular files via output redirection.
     #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
@@ -495,7 +495,7 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
 impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
     fn default() -> Self {
         Self {
-            error_behavior: SE::ErrorBehavior::default(),
+            error_formatter: SE::ErrorFormatter::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: PathBuf::default(),
@@ -551,7 +551,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
         // Instantiate the shell with some defaults.
         let mut shell = Self {
-            error_behavior: options.error_behavior,
+            error_formatter: options.error_formatter,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -1995,7 +1995,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         file: &mut impl std::io::Write,
         err: &error::Error,
     ) -> Result<(), error::Error> {
-        let str = self.error_behavior.format_error(err, self);
+        let str = self.error_formatter.format_error(err, self);
         write!(file, "{str}")?;
 
         Ok(())
@@ -2167,6 +2167,6 @@ fn repeated_char_str(c: char, count: usize) -> String {
 }
 
 #[cfg(feature = "serde")]
-fn default_error_behavior<EB: crate::ErrorBehavior>() -> EB {
-    EB::default()
+fn default_error_formatter<EF: crate::ErrorFormatter>() -> EF {
+    EF::default()
 }

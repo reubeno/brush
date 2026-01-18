@@ -3,7 +3,7 @@ pub(crate) struct Formatter {
     pub use_color: bool,
 }
 
-impl brush_core::extensions::ErrorBehavior for Formatter {
+impl brush_core::extensions::ErrorFormatter for Formatter {
     fn format_error(
         &self,
         err: &brush_core::error::Error,
