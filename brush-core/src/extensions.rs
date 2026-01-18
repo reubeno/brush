@@ -15,7 +15,7 @@ pub struct ShellExtensionsImpl<EF: ErrorFormatter = DefaultErrorFormatter> {
     _marker: std::marker::PhantomData<EF>,
 }
 
-impl<EF: crate::ErrorFormatter> ShellExtensions for ShellExtensionsImpl<EF> {
+impl<EF: ErrorFormatter> ShellExtensions for ShellExtensionsImpl<EF> {
     type ErrorFormatter = EF;
 }
 

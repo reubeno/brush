@@ -9,14 +9,15 @@ use tokio::sync::Mutex;
 
 use crate::arithmetic::Evaluatable;
 use crate::env::{EnvironmentLookup, EnvironmentScope, ShellEnvironment};
+use crate::extensions::ErrorFormatter as _;
 use crate::interp::{self, Execute, ExecutionParameters};
 use crate::options::RuntimeOptions;
 use crate::results::ExecutionWaitResult;
 use crate::sys::fs::PathExt;
 use crate::variables::{self, ShellVariable};
 use crate::{
-    ErrorFormatter, ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history,
-    interfaces, ioutils, pathcache, pathsearch, trace_categories, wellknownvars,
+    ExecutionControlFlow, ExecutionResult, ProcessGroupPolicy, callstack, history, interfaces,
+    ioutils, pathcache, pathsearch, trace_categories, wellknownvars,
 };
 use crate::{
     builtins, commands, completion, env, error, expansion, extensions, functions, jobs, keywords,
@@ -147,6 +148,13 @@ pub trait ShellState {
 }
 
 /// Represents an instance of a shell.
+///
+/// # Type Parameters
+///
+/// * `SE` - The shell extensions implementation to use. These extensions are statically
+///   injected into the shell at compile time to provide custom behavior. When
+///   unspecified, defaults to `DefaultShellExtensions`, which provide standard
+///   behavior.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExtensions> {
     /// Injected error behavior.
@@ -2167,6 +2175,6 @@ fn repeated_char_str(c: char, count: usize) -> String {
 }
 
 #[cfg(feature = "serde")]
-fn default_error_formatter<EF: crate::ErrorFormatter>() -> EF {
+fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
 }
