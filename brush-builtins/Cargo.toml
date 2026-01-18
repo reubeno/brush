@@ -131,7 +131,7 @@ workspace = true
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 brush-parser = { version = "^0.3.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
-chrono = "0.4.42"
+chrono = "0.4.43"
 clap = { version = "4.5.54", features = ["derive", "wrap_help"] }
 fancy-regex = "0.17.0"
 futures = "0.3.31"
