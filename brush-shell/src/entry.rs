@@ -20,6 +20,9 @@ use std::io::IsTerminal;
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
     LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
 
+type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<error_formatter::Formatter>;
+type BrushShell = brush_core::Shell<BrushShellExtensions>;
+
 // WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
 // after the `use clap::Parser`
 impl CommandLineArgs {
@@ -163,7 +166,7 @@ async fn run_async(
     // Instantiate an appropriately configured shell and wrap it in an `Arc`. Note that we do
     // *not* run any code in the shell yet. We'll delay loading profiles and such until after
     // we've set up everything else (in `run_in_shell`).
-    let shell = instantiate_shell(&args, cli_args).await?;
+    let shell: BrushShell = instantiate_shell(&args, cli_args).await?;
     let shell = Arc::new(Mutex::new(shell));
 
     // Run with the selected input backend. Each branch instantiates the concrete
@@ -339,7 +342,7 @@ async fn initialize_shell(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell<impl brush_core::ShellExtensions>, brush_interactive::ShellError> {
+) -> Result<BrushShell, brush_interactive::ShellError> {
     #[cfg(feature = "experimental-load")]
     if let Some(load_file) = &args.load_file {
         return instantiate_shell_from_file(load_file.as_path());
@@ -351,8 +354,8 @@ async fn instantiate_shell(
 #[cfg(feature = "experimental-load")]
 fn instantiate_shell_from_file(
     file_path: &Path,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
-    let mut shell: brush_core::Shell = serde_json::from_reader(std::fs::File::open(file_path)?)
+) -> Result<BrushShell, brush_interactive::ShellError> {
+    let mut shell: BrushShell = serde_json::from_reader(std::fs::File::open(file_path)?)
         .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
 
     // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
@@ -387,7 +390,7 @@ fn instantiate_shell_from_file(
 async fn instantiate_shell_from_args(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell<impl brush_core::ShellExtensions>, brush_interactive::ShellError> {
+) -> Result<BrushShell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
@@ -433,38 +436,36 @@ async fn instantiate_shell_from_args(
     // Set up the shell builder with the requested options.
     // NOTE: We skip loading profile and rc files here; that will be handled later after we've
     // fully instantiated everything we want set before running any code.
-    let shell = brush_core::Shell::builder_with_extensions::<
-        brush_core::extensions::ConstructedShellExtensions<crate::error_formatter::Formatter>,
-    >()
-    .disable_options(args.disabled_options.clone())
-    .disable_shopt_options(args.disabled_shopt_options.clone())
-    .disallow_overwriting_regular_files_via_output_redirection(
-        args.disallow_overwriting_regular_files_via_output_redirection,
-    )
-    .enable_options(args.enabled_options.clone())
-    .enable_shopt_options(args.enabled_shopt_options.clone())
-    .do_not_execute_commands(args.do_not_execute_commands)
-    .exit_after_one_command(args.exit_after_one_command)
-    .login(login)
-    .interactive(args.is_interactive())
-    .command_string_mode(args.command.is_some())
-    .no_editing(args.no_editing)
-    .profile(brush_core::ProfileLoadBehavior::Skip)
-    .rc(brush_core::RcLoadBehavior::Skip)
-    .do_not_inherit_env(args.do_not_inherit_env)
-    .fds(fds)
-    .maybe_shell_args(shell_args)
-    .posix(args.posix || args.sh_mode)
-    .print_commands_and_arguments(args.print_commands_and_arguments)
-    .read_commands_from_stdin(read_commands_from_stdin)
-    .maybe_shell_name(shell_name)
-    .shell_product_display_str(productinfo::get_product_display_str())
-    .sh_mode(args.sh_mode)
-    .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
-    .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
-    .verbose(args.verbose)
-    .error_behavior(new_error_behavior(args))
-    .shell_version(env!("CARGO_PKG_VERSION").to_string());
+    let shell = brush_core::Shell::builder_with_extensions::<BrushShellExtensions>()
+        .disable_options(args.disabled_options.clone())
+        .disable_shopt_options(args.disabled_shopt_options.clone())
+        .disallow_overwriting_regular_files_via_output_redirection(
+            args.disallow_overwriting_regular_files_via_output_redirection,
+        )
+        .enable_options(args.enabled_options.clone())
+        .enable_shopt_options(args.enabled_shopt_options.clone())
+        .do_not_execute_commands(args.do_not_execute_commands)
+        .exit_after_one_command(args.exit_after_one_command)
+        .login(login)
+        .interactive(args.is_interactive())
+        .command_string_mode(args.command.is_some())
+        .no_editing(args.no_editing)
+        .profile(brush_core::ProfileLoadBehavior::Skip)
+        .rc(brush_core::RcLoadBehavior::Skip)
+        .do_not_inherit_env(args.do_not_inherit_env)
+        .fds(fds)
+        .maybe_shell_args(shell_args)
+        .posix(args.posix || args.sh_mode)
+        .print_commands_and_arguments(args.print_commands_and_arguments)
+        .read_commands_from_stdin(read_commands_from_stdin)
+        .maybe_shell_name(shell_name)
+        .shell_product_display_str(productinfo::get_product_display_str())
+        .sh_mode(args.sh_mode)
+        .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
+        .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
+        .verbose(args.verbose)
+        .error_behavior(new_error_behavior(args))
+        .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.
     let shell = shell.default_builtins(builtin_set).brush_builtins();

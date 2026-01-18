@@ -3,33 +3,25 @@
 use crate::{Shell, error, extensions};
 
 /// Trait for static shell extensions. Collects all associated types needed to
-/// instantiate a shell.
+/// instantiate a shell into a single containing struct.
 pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
     /// Type of the error behavior implementation.
-    type ErrorBehavior: crate::ErrorBehavior;
-    /// Placeholder type for future extension.
-    type Placeholder: PlaceholderBehavior;
+    type ErrorBehavior: ErrorBehavior;
 }
 
 /// Shell extensions implementation constructed from component types.
 #[derive(Clone, Default)]
-pub struct ConstructedShellExtensions<
-    EB: crate::ErrorBehavior = DefaultErrorBehavior,
-    P: PlaceholderBehavior = DefaultPlaceholder,
-> {
-    _marker: std::marker::PhantomData<(EB, P)>,
+pub struct ShellExtensionsImpl<EB: ErrorBehavior = DefaultErrorBehavior> {
+    _marker: std::marker::PhantomData<EB>,
 }
 
-impl<EB: crate::ErrorBehavior, P: PlaceholderBehavior> ShellExtensions
-    for ConstructedShellExtensions<EB, P>
-{
+impl<EB: crate::ErrorBehavior> ShellExtensions for ShellExtensionsImpl<EB> {
     type ErrorBehavior = EB;
-    type Placeholder = P;
 }
 
 /// Default shell extensions implementation.
 /// This is a type alias for the most common shell configuration.
-pub type DefaultShellExtensions = ConstructedShellExtensions<DefaultErrorBehavior, DefaultPlaceholder>;
+pub type DefaultShellExtensions = ShellExtensionsImpl<DefaultErrorBehavior>;
 
 /// Trait for defining shell error behaviors.
 pub trait ErrorBehavior: Clone + Default + Send + Sync + 'static {

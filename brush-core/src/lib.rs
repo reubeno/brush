@@ -52,9 +52,7 @@ pub mod parser {
 
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::{BuiltinError, Error, ErrorKind};
-pub use extensions::{
-    DefaultErrorBehavior, DefaultPlaceholder, ErrorBehavior, PlaceholderBehavior, ShellExtensions,
-};
+pub use extensions::{DefaultErrorBehavior, ErrorBehavior, ShellExtensions};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
