@@ -221,9 +221,9 @@ pub(crate) struct CompleteCommand {
 impl builtins::Command for CompleteCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
@@ -249,7 +249,7 @@ impl builtins::Command for CompleteCommand {
 impl CompleteCommand {
     fn process_global(
         &self,
-        context: &mut brush_core::ExecutionContext<'_>,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
         // Read options before taking mutable borrow on completion_config
         let extended_globbing = context.shell.options().extended_globbing;
@@ -304,7 +304,7 @@ impl CompleteCommand {
     }
 
     fn try_display_spec_for_command(
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: &str,
     ) -> Result<bool, brush_core::Error> {
         if let Some(spec) = context.shell.completion_config().get(name) {
@@ -318,7 +318,7 @@ impl CompleteCommand {
 
     #[expect(clippy::too_many_lines)]
     fn display_spec(
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         special_name: Option<&str>,
         command_name: Option<&str>,
         spec: &Spec,
@@ -446,7 +446,7 @@ impl CompleteCommand {
 
     fn try_process_for_command(
         &self,
-        context: &mut brush_core::ExecutionContext<'_>,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: &str,
     ) -> Result<bool, brush_core::Error> {
         if self.print {
@@ -490,9 +490,9 @@ pub(crate) struct CompGenCommand {
 impl builtins::Command for CompGenCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut spec = self
             .common_args
@@ -570,9 +570,9 @@ pub(crate) struct CompOptCommand {
 impl builtins::Command for CompOptCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut options = HashMap::new();
         for option in &self.disabled_options {

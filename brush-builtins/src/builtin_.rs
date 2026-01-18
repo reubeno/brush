@@ -18,9 +18,9 @@ impl builtins::DeclarationCommand for BuiltinCommand {
 impl builtins::Command for BuiltinCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.args.is_empty() {
             return Ok(ExecutionResult::success());

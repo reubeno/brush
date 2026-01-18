@@ -208,7 +208,7 @@ async fn run_async(
         Err(brush_interactive::ShellError::ShellError(e)) => {
             let shell = shell.lock().await;
             let mut stderr = shell.stderr();
-            let _ = shell.display_error(&mut stderr, &e).await;
+            let _ = shell.display_error(&mut stderr, &e);
             drop(shell);
             1
         }
@@ -433,7 +433,7 @@ async fn instantiate_shell_from_args(
     // Set up the shell builder with the requested options.
     // NOTE: We skip loading profile and rc files here; that will be handled later after we've
     // fully instantiated everything we want set before running any code.
-    let shell = brush_core::Shell::builder()
+    let shell = brush_core::Shell::builder_with_extensions()
         .disable_options(args.disabled_options.clone())
         .disable_shopt_options(args.disabled_shopt_options.clone())
         .disallow_overwriting_regular_files_via_output_redirection(
@@ -461,7 +461,7 @@ async fn instantiate_shell_from_args(
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
-        .error_formatter(new_error_formatter(args))
+        .error_behavior(new_error_behavior(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.
@@ -507,14 +507,10 @@ fn enable_xtrace_to_file(
     Ok(())
 }
 
-fn new_error_formatter(
-    args: &CommandLineArgs,
-) -> Arc<Mutex<dyn brush_core::error::ErrorFormatter>> {
-    let formatter = error_formatter::Formatter {
+fn new_error_behavior(args: &CommandLineArgs) -> error_formatter::Formatter {
+    error_formatter::Formatter {
         use_color: !args.disable_color,
-    };
-
-    Arc::new(Mutex::new(formatter))
+    }
 }
 
 fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {

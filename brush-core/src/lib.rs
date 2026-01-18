@@ -52,13 +52,15 @@ pub mod parser {
 
 pub use commands::{CommandArg, ExecutionContext};
 pub use error::{BuiltinError, Error, ErrorKind};
-pub use extensions::{DefaultErrorBehavior, ErrorBehavior};
+pub use extensions::{
+    DefaultErrorBehavior, DefaultPlaceholder, ErrorBehavior, PlaceholderBehavior, ShellExtensions,
+};
 pub use interp::{ExecutionParameters, ProcessGroupPolicy};
 pub use parser::{SourcePosition, SourcePositionOffset, SourceSpan};
 pub use results::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult};
 pub use shell::{
     CreateOptions, ProfileLoadBehavior, RcLoadBehavior, Shell, ShellBuilder, ShellBuilderState,
-    ShellFd,
+    ShellFd, ShellState,
 };
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};

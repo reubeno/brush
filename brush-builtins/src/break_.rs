@@ -13,9 +13,9 @@ pub(crate) struct BreakCommand {
 impl builtins::Command for BreakCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        _context: brush_core::ExecutionContext<'_>,
+        _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // If specified, which_loop needs to be positive.
         if self.which_loop <= 0 {

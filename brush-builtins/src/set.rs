@@ -189,9 +189,9 @@ impl builtins::Command for SetCommand {
 
     #[expect(clippy::too_many_lines)]
     #[allow(clippy::useless_let_if_seq)]
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
 
@@ -408,7 +408,9 @@ impl builtins::Command for SetCommand {
     }
 }
 
-fn display_all(context: &brush_core::ExecutionContext<'_>) -> Result<(), brush_core::Error> {
+fn display_all(
+    context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+) -> Result<(), brush_core::Error> {
     // Display variables.
     for (name, var) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if !var.is_enumerable() {

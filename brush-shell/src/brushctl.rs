@@ -11,19 +11,19 @@ pub(crate) trait ShellBuilderBrushBuiltinExt {
     fn brush_builtins(self) -> Self;
 }
 
-impl<EB: brush_core::extensions::ErrorBehavior, S: brush_core::ShellBuilderState>
-    ShellBuilderBrushBuiltinExt for brush_core::ShellBuilder<EB, S>
+impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderState>
+    ShellBuilderBrushBuiltinExt for brush_core::ShellBuilder<SE, S>
 {
     fn brush_builtins(self) -> Self {
         // For compatibility with previous releases, we register the command under both
         // `brushctl` and `brushinfo` names. It will behave identically across the two.
         self.builtin(
             "brushctl",
-            brush_core::builtins::builtin::<BrushCtlCommand>(),
+            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
         )
         .builtin(
             "brushinfo",
-            brush_core::builtins::builtin::<BrushCtlCommand>(),
+            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
         )
     }
 }
@@ -114,9 +114,9 @@ enum ProcessCommand {
 impl brush_core::builtins::Command for BrushCtlCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         match &self.command_group {
             CommandGroup::Call(call) => call.execute(&context),
@@ -130,7 +130,7 @@ impl brush_core::builtins::Command for BrushCtlCommand {
 impl CallCommand {
     fn execute(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::ShowCallStack { detailed } => {
@@ -151,7 +151,7 @@ impl CallCommand {
 impl CompleteCommand {
     async fn execute(
         &self,
-        context: &mut brush_core::ExecutionContext<'_>,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::Line { cursor_index, line } => {
@@ -171,7 +171,7 @@ impl CompleteCommand {
 impl EventsCommand {
     fn execute(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let event_config = crate::entry::get_event_config();
 
@@ -203,7 +203,7 @@ impl EventsCommand {
 impl ProcessCommand {
     fn execute(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::ShowProcessId => {

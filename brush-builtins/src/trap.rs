@@ -21,9 +21,9 @@ pub(crate) struct TrapCommand {
 impl builtins::Command for TrapCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.list_signals {
             brush_core::traps::format_signals(context.stdout(), TrapSignal::iterator())
@@ -65,7 +65,7 @@ impl builtins::Command for TrapCommand {
 
 impl TrapCommand {
     fn display_all_handlers(
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
         for (signal, _) in context.shell.traps().iter_handlers() {
             Self::display_handlers_for(context, signal)?;
@@ -74,7 +74,7 @@ impl TrapCommand {
     }
 
     fn display_handlers_for(
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         signal_type: TrapSignal,
     ) -> Result<(), brush_core::Error> {
         if let Some(handler) = context.shell.traps().get_handler(signal_type) {
@@ -87,12 +87,15 @@ impl TrapCommand {
         Ok(())
     }
 
-    fn remove_all_handlers(context: &mut brush_core::ExecutionContext<'_>, signal: TrapSignal) {
+    fn remove_all_handlers(
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        signal: TrapSignal,
+    ) {
         context.shell.traps_mut().remove_handlers(signal);
     }
 
     fn register_handler(
-        context: &mut brush_core::ExecutionContext<'_>,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         signals: Vec<TrapSignal>,
         handler: &str,
     ) {

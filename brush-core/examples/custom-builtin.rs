@@ -85,9 +85,9 @@ impl builtins::Command for GreetCommand {
     // the default-provided `brush_core::Error` type.
     type Error = GreetError;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // Additional validation.
         if self.repeat_count == 0 || self.repeat_count > 10 {
@@ -118,10 +118,12 @@ impl builtins::Command for GreetCommand {
 // This example shows how to register and use your custom builtin.
 //
 
+type SE = brush_core::extensions::DefaultShellExtensions;
+
 async fn run_example() -> Result<()> {
     // Create a shell instance with custom builtin registered.
     let mut shell = brush_core::Shell::builder()
-        .builtin("greet", brush_core::builtins::builtin::<GreetCommand>())
+        .builtin("greet", brush_core::builtins::builtin::<GreetCommand, SE>())
         .build()
         .await?;
 

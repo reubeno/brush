@@ -132,6 +132,18 @@ pub trait ShellState {
 
     /// Returns a mutable reference to the shell's open files.
     fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles;
+
+    /// Returns the *current* name of the shell ($0).
+    fn current_shell_name(&self) -> Option<Cow<'_, str>>;
+
+    /// Returns the current subshell depth; 0 is returned if this shell is not a subshell.
+    fn depth(&self) -> usize;
+
+    /// Returns the call stack for the shell.
+    fn call_stack(&self) -> &callstack::CallStack;
+
+    /// Returns the shell's history, if it exists.
+    fn history(&self) -> Option<&history::History>;
 }
 
 /// Represents an instance of a shell.
@@ -268,12 +280,10 @@ impl<SE: extensions::ShellExtensions> AsMut<Self> for Shell<SE> {
 
 pub use shell_builder::State as ShellBuilderState;
 
-impl<EB: extensions::ErrorBehavior, S: shell_builder::IsComplete> ShellBuilder<EB, S> {
+impl<SE: extensions::ShellExtensions, S: shell_builder::IsComplete> ShellBuilder<SE, S> {
     /// Returns a new shell instance created with the options provided. Runs any
     /// configuration loading as well.
-    pub async fn build(
-        self,
-    ) -> Result<Shell<extensions::ConstructedShellExtensions<EB>>, error::Error> {
+    pub async fn build(self) -> Result<Shell<SE>, error::Error> {
         let mut options = self.build_settings();
 
         let profile = std::mem::take(&mut options.profile);
@@ -291,7 +301,7 @@ impl<EB: extensions::ErrorBehavior, S: shell_builder::IsComplete> ShellBuilder<E
     }
 }
 
-impl<EB: extensions::ErrorBehavior, S: shell_builder::State> ShellBuilder<EB, S> {
+impl<SE: extensions::ShellExtensions, S: shell_builder::State> ShellBuilder<SE, S> {
     /// Add a disabled option
     pub fn disable_option(mut self, option: impl Into<String>) -> Self {
         self.disabled_options.push(option.into());
@@ -345,11 +355,7 @@ impl<EB: extensions::ErrorBehavior, S: shell_builder::State> ShellBuilder<EB, S>
     }
 
     /// Add a single builtin registration
-    pub fn builtin(
-        mut self,
-        name: impl Into<String>,
-        reg: builtins::Registration<impl extensions::ShellExtensions>,
-    ) -> Self {
+    pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration<SE>) -> Self {
         self.builtins.insert(name.into(), reg);
         self
     }
@@ -357,12 +363,7 @@ impl<EB: extensions::ErrorBehavior, S: shell_builder::State> ShellBuilder<EB, S>
     /// Add many builtin registrations
     pub fn builtins(
         mut self,
-        builtins: impl IntoIterator<
-            Item = (
-                String,
-                builtins::Registration<impl extensions::ShellExtensions>,
-            ),
-        >,
+        builtins: impl IntoIterator<Item = (String, builtins::Registration<SE>)>,
     ) -> Self {
         self.builtins.extend(builtins);
         self
@@ -391,10 +392,7 @@ impl<EB: extensions::ErrorBehavior, S: shell_builder::State> ShellBuilder<EB, S>
         vis = "pub(self)"
     )
 )]
-pub struct CreateOptions<EB: extensions::ErrorBehavior = extensions::DefaultErrorBehavior> {
-    /// Error behavior implementation.
-    #[builder(start_fn)]
-    pub error_behavior: EB,
+pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultShellExtensions> {
     /// Disabled options.
     #[builder(field)]
     pub disabled_options: Vec<String>,
@@ -409,12 +407,14 @@ pub struct CreateOptions<EB: extensions::ErrorBehavior = extensions::DefaultErro
     pub enabled_shopt_options: Vec<String>,
     /// Registered builtins.
     #[builder(field)]
-    pub builtins:
-        HashMap<String, builtins::Registration<extensions::ConstructedShellExtensions<EB>>>,
+    pub builtins: HashMap<String, builtins::Registration<SE>>,
     /// Provides a set of variables to be initialized in the shell. If present, they
     /// are assigned *after* inherited or well-known variables are set (when applicable).
     #[builder(field)]
     pub vars: HashMap<String, ShellVariable>,
+    /// Error behavior implementation.
+    #[builder(default)]
+    pub error_behavior: SE::ErrorBehavior,
     /// Disallow overwriting regular files via output redirection.
     #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
@@ -527,8 +527,14 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
 
 impl Shell {
     /// Create an instance of [Shell] using the builder syntax
-    pub fn builder() -> ShellBuilder<extensions::DefaultErrorBehavior, shell_builder::Empty> {
-        CreateOptions::builder(crate::DefaultErrorBehavior)
+    pub fn builder() -> ShellBuilder<extensions::DefaultShellExtensions, shell_builder::Empty> {
+        CreateOptions::builder()
+    }
+
+    /// Create an instance of [Shell] using the builder syntax, with custom extensions.
+    pub fn builder_with_extensions<SE: extensions::ShellExtensions>()
+    -> ShellBuilder<SE, shell_builder::Empty> {
+        CreateOptions::builder()
     }
 }
 
@@ -539,12 +545,15 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// # Arguments
     ///
     /// * `options` - The options to use when creating the shell.
-    pub(crate) fn new(options: CreateOptions<SE::ErrorBehavior>) -> Result<Self, error::Error> {
+    pub(crate) fn new(options: CreateOptions<SE>) -> Result<Self, error::Error> {
+        // Compute runtime options before moving fields out of `options`.
+        let runtime_options = RuntimeOptions::defaults_from(&options);
+
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             error_behavior: options.error_behavior,
             open_files: openfiles::OpenFiles::new(),
-            options: RuntimeOptions::defaults_from(&options),
+            options: runtime_options,
             name: options.shell_name,
             args: options.shell_args.unwrap_or_default(),
             version: options.shell_version,
@@ -640,19 +649,6 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             .set_current_pos(cmd.location().map(|span| span.start));
     }
 
-    /// Returns the *current* name of the shell ($0).
-    /// Influenced by the current call stack.
-    pub fn current_shell_name(&self) -> Option<Cow<'_, str>> {
-        for frame in self.call_stack.iter() {
-            // Executed scripts shadow the shell name.
-            if frame.frame_type.is_run_script() {
-                return Some(frame.frame_type.name());
-            }
-        }
-
-        self.name.as_deref().map(|name| name.into())
-    }
-
     /// Returns the *current* positional arguments for the shell ($1 and beyond).
     /// Influenced by the current call stack.
     pub fn current_shell_args(&self) -> &[String] {
@@ -715,11 +711,6 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Returns the shell's official version string (if available).
     pub const fn version(&self) -> &Option<String> {
         &self.version
-    }
-
-    /// Returns the call stack for the shell.
-    pub const fn call_stack(&self) -> &callstack::CallStack {
-        &self.call_stack
     }
 
     /// Returns the exit status of the last command executed in this shell.
@@ -1983,11 +1974,6 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         }
     }
 
-    /// Returns the shell's history, if it exists.
-    pub const fn history(&self) -> Option<&history::History> {
-        self.history.as_ref()
-    }
-
     /// Returns a mutable reference to the shell's history, if it exists.
     pub const fn history_mut(&mut self) -> Option<&mut history::History> {
         self.history.as_mut()
@@ -1996,11 +1982,6 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Returns whether or not this shell is a subshell.
     pub const fn is_subshell(&self) -> bool {
         self.depth > 0
-    }
-
-    /// Returns the current subshell depth; 0 is returned if this shell is not a subshell.
-    pub const fn depth(&self) -> usize {
-        self.depth
     }
 
     /// Displays the given error to the user, using the shell's error display mechanisms.
@@ -2131,6 +2112,34 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
     /// Returns a mutable reference to the shell's open files.
     pub fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles {
         &mut self.open_files
+    }
+
+    /// Returns the *current* name of the shell ($0).
+    /// Influenced by the current call stack.
+    pub fn current_shell_name(&self) -> Option<Cow<'_, str>> {
+        for frame in self.call_stack.iter() {
+            // Executed scripts shadow the shell name.
+            if frame.frame_type.is_run_script() {
+                return Some(frame.frame_type.name());
+            }
+        }
+
+        self.name.as_deref().map(|name| name.into())
+    }
+
+    /// Returns the current subshell depth; 0 is returned if this shell is not a subshell.
+    pub fn depth(&self) -> usize {
+        self.depth
+    }
+
+    /// Returns the call stack for the shell.
+    pub fn call_stack(&self) -> &callstack::CallStack {
+        &self.call_stack
+    }
+
+    /// Returns the shell's history, if it exists.
+    pub fn history(&self) -> Option<&history::History> {
+        self.history.as_ref()
     }
 }
 

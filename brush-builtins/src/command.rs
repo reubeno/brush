@@ -35,9 +35,9 @@ impl CommandCommand {
 impl builtins::Command for CommandCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
@@ -92,7 +92,7 @@ impl Display for FoundCommand {
 
 impl CommandCommand {
     fn try_find_command(
-        shell: &mut brush_core::Shell,
+        shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
         command_name: &str,
         use_default_path: bool,
     ) -> Option<FoundCommand> {
@@ -129,7 +129,7 @@ impl CommandCommand {
 
     async fn execute_command(
         &self,
-        mut context: brush_core::ExecutionContext<'_>,
+        mut context: brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         command_name: &str,
         use_default_path: bool,
     ) -> Result<ExecutionResult, brush_core::Error> {

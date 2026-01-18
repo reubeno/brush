@@ -34,9 +34,9 @@ pub(crate) struct JobsCommand {
 impl builtins::Command for JobsCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.also_show_pids {
             return error::unimp("jobs -l");
@@ -60,7 +60,7 @@ impl builtins::Command for JobsCommand {
 impl JobsCommand {
     fn display_job(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         job: &jobs::Job,
     ) -> Result<(), brush_core::Error> {
         if self.running_jobs_only && !matches!(job.state, jobs::JobState::Running) {

@@ -12,6 +12,7 @@ use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
 ///
 /// * The context in which the command is being executed.
 /// * The arguments to the command.
+#[allow(type_alias_bounds)]
 pub type CommandExecuteFunc<SE: extensions::ShellExtensions> =
     fn(
         commands::ExecutionContext<'_, SE>,

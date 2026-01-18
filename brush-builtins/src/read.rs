@@ -79,9 +79,9 @@ pub(crate) struct ReadCommand {
 impl builtins::Command for ReadCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.use_readline {
             return error::unimp("read -e");
@@ -158,7 +158,7 @@ impl builtins::Command for ReadCommand {
 /// - Named variables: Split input by IFS and assign to each variable, with remainder to last
 /// - Default (`REPLY`): Assign entire input line to the `REPLY` variable
 fn assign_input_to_variables(
-    shell: &mut brush_core::Shell,
+    shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     input_line: Option<&str>,
     ifs: &str,
     skip_ifs_splitting: bool,
@@ -194,7 +194,7 @@ fn assign_input_to_variables(
 /// and assigned to the last variable. If there are more variables than fields,
 /// the extra variables are set to empty strings.
 fn assign_to_named_variables(
-    shell: &mut brush_core::Shell,
+    shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     input_line: Option<&str>,
     ifs: &str,
     skip_ifs_splitting: bool,
@@ -589,7 +589,7 @@ impl ReadCommand {
     /// TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
     fn validate_timeout(
         &self,
-        context: &brush_core::ExecutionContext<'_>,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<Option<brush_core::ExecutionResult>, brush_core::Error> {
         if let Some(timeout) = self.timeout_in_seconds {
             if timeout < 0.0 {

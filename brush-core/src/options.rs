@@ -208,8 +208,8 @@ impl RuntimeOptions {
     /// # Arguments
     ///
     /// * `create_options` - The options used to create the shell.
-    pub fn defaults_from<EB: extensions::ErrorBehavior>(
-        create_options: &CreateOptions<EB>,
+    pub fn defaults_from<SE: extensions::ShellExtensions>(
+        create_options: &CreateOptions<SE>,
     ) -> Self {
         // There's a set of options enabled by default for all shells.
         let mut options = Self {

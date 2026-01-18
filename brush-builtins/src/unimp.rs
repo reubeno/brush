@@ -15,9 +15,9 @@ pub(crate) struct UnimplementedCommand {
 impl builtins::Command for UnimplementedCommand {
     type Error = brush_core::Error;
 
-    async fn execute(
+    async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         tracing::warn!(target: trace_categories::UNIMPLEMENTED,
             "unimplemented built-in: {} {}",

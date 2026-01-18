@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use rand::Rng;
 
+use crate::shell::ShellState;
 use crate::{Shell, ShellValue, ShellVariable, error, extensions, sys, variables};
 
 const BASH_MAJOR: u32 = 5;
@@ -521,21 +522,21 @@ fn get_current_user_gids() -> Vec<u32> {
     groups
 }
 
-fn get_random_value(_shell: &Shell<impl extensions::ShellExtensions>) -> ShellValue {
+fn get_random_value(_shell: &dyn ShellState) -> ShellValue {
     let mut rng = rand::rng();
     let num = rng.random_range(0..32768);
     let str = num.to_string();
     str.into()
 }
 
-fn get_srandom_value(_shell: &Shell<impl extensions::ShellExtensions>) -> ShellValue {
+fn get_srandom_value(_shell: &dyn ShellState) -> ShellValue {
     let mut rng = rand::rng();
     let num: u32 = rng.random();
     let str = num.to_string();
     str.into()
 }
 
-fn get_funcname_value(shell: &Shell<impl extensions::ShellExtensions>) -> variables::ShellValue {
+fn get_funcname_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
@@ -564,7 +565,7 @@ fn get_funcname_value(shell: &Shell<impl extensions::ShellExtensions>) -> variab
     }
 }
 
-fn get_bash_lineno_value(shell: &Shell<impl extensions::ShellExtensions>) -> variables::ShellValue {
+fn get_bash_lineno_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     // BASH_LINENO[$i] contains the line number where FUNCNAME[$i] was called
@@ -601,7 +602,7 @@ fn get_bash_lineno_value(shell: &Shell<impl extensions::ShellExtensions>) -> var
     }
 }
 
-fn get_bash_source_value(shell: &Shell<impl extensions::ShellExtensions>) -> variables::ShellValue {
+fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
@@ -637,7 +638,7 @@ fn get_bash_source_value(shell: &Shell<impl extensions::ShellExtensions>) -> var
     }
 }
 
-fn get_lineno(shell: &Shell<impl extensions::ShellExtensions>) -> usize {
+fn get_lineno(shell: &dyn ShellState) -> usize {
     shell
         .call_stack()
         .current_frame()

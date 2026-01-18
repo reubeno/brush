@@ -525,7 +525,7 @@ impl ShellVariable {
     pub fn resolve_value(&self, shell: &Shell<impl extensions::ShellExtensions>) -> ShellValue {
         // N.B. We do *not* specially handle a dynamic value that resolves to a dynamic value.
         match &self.value {
-            ShellValue::Dynamic { getter, .. } => getter(Box::new(shell)),
+            ShellValue::Dynamic { getter, .. } => getter(shell),
             _ => self.value.clone(),
         }
     }
@@ -587,8 +587,8 @@ impl ShellVariable {
     }
 }
 
-type DynamicValueGetter = fn(Box<&dyn ShellState>) -> ShellValue;
-type DynamicValueSetter = fn(Box<&dyn ShellState>) -> ();
+type DynamicValueGetter = fn(&dyn ShellState) -> ShellValue;
+type DynamicValueSetter = fn(&dyn ShellState) -> ();
 
 /// A shell value.
 #[derive(Clone, Debug)]
@@ -623,12 +623,12 @@ pub enum ShellValue {
 
 #[cfg(feature = "serde")]
 fn default_dynamic_value_getter() -> DynamicValueGetter {
-    |_shell: Box<&dyn ShellState>| ShellValue::String(String::new())
+    |_shell: &dyn ShellState| ShellValue::String(String::new())
 }
 
 #[cfg(feature = "serde")]
 fn default_dynamic_value_setter() -> DynamicValueSetter {
-    |_shell: Box<&dyn ShellState>| {}
+    |_shell: &dyn ShellState| {}
 }
 
 /// The type of an unset shell value.
@@ -896,7 +896,7 @@ impl ShellValue {
                 Ok(result.into())
             }
             Self::Dynamic { getter, .. } => {
-                let dynamic_value = getter(Box::new(shell));
+                let dynamic_value = getter(shell);
                 let result = dynamic_value.format(style, shell)?.to_string();
                 Ok(result.into())
             }
@@ -944,7 +944,7 @@ impl ShellValue {
                 Ok(values.get(&index_value).map(|s| Cow::Borrowed(s.as_str())))
             }
             Self::Dynamic { getter, .. } => {
-                let dynamic_value = getter(Box::new(shell));
+                let dynamic_value = getter(shell);
                 let result = dynamic_value.get_at(index, shell)?;
                 Ok(result.map(|s| s.to_string().into()))
             }
@@ -958,7 +958,7 @@ impl ShellValue {
             Self::String(_) => vec!["0".to_owned()],
             Self::AssociativeArray(array) => array.keys().map(|k| k.to_owned()).collect(),
             Self::IndexedArray(array) => array.keys().map(|k| k.to_string()).collect(),
-            Self::Dynamic { getter, .. } => getter(Box::new(shell)).element_keys(shell),
+            Self::Dynamic { getter, .. } => getter(shell).element_keys(shell),
         }
     }
 
@@ -969,7 +969,7 @@ impl ShellValue {
             Self::String(s) => vec![s.to_owned()],
             Self::AssociativeArray(array) => array.values().map(|v| v.to_owned()).collect(),
             Self::IndexedArray(array) => array.values().map(|v| v.to_owned()).collect(),
-            Self::Dynamic { getter, .. } => getter(Box::new(shell)).element_values(shell),
+            Self::Dynamic { getter, .. } => getter(shell).element_values(shell),
         }
     }
 
@@ -991,7 +991,7 @@ impl ShellValue {
     ) -> Option<Cow<'_, str>> {
         match self {
             Self::Dynamic { getter, .. } => {
-                let dynamic_value = getter(Box::new(shell));
+                let dynamic_value = getter(shell);
                 dynamic_value
                     .try_get_cow_str(shell)
                     .map(|s| s.to_string().into())
@@ -1040,7 +1040,7 @@ impl ShellValue {
                     Ok(self.format(FormatStyle::DeclarePrint, shell)?.into_owned())
                 }
             }
-            Self::Dynamic { getter, .. } => getter(Box::new(shell)).to_assignable_str(index, shell),
+            Self::Dynamic { getter, .. } => getter(shell).to_assignable_str(index, shell),
         }
     }
 }

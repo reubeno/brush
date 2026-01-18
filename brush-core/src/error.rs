@@ -426,41 +426,6 @@ impl Error {
     }
 }
 
-/// Trait implementable by consumers of this crate to customize formatting errors into
-/// displayable text.
-pub trait ErrorFormatter: Send {
-    /// Format the given error for display within the context of the provided shell.
-    ///
-    /// # Arguments
-    ///
-    /// * `error` - The error to format.
-    /// * `shell` - The shell in which the error occurred.
-    fn format_error(
-        &self,
-        error: &Error,
-        shell: &Shell<impl extensions::ShellExtensions>,
-    ) -> String;
-}
-
-/// Default implementation of the [`ErrorFormatter`] trait.
-pub(crate) struct DefaultErrorFormatter {}
-
-impl DefaultErrorFormatter {
-    pub const fn new() -> Self {
-        Self {}
-    }
-}
-
-impl ErrorFormatter for DefaultErrorFormatter {
-    fn format_error(
-        &self,
-        err: &Error,
-        _shell: &Shell<impl extensions::ShellExtensions>,
-    ) -> String {
-        std::format!("error: {err:#}\n")
-    }
-}
-
 /// Convenience function for returning an error for unimplemented functionality.
 ///
 /// # Arguments

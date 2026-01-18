@@ -33,7 +33,7 @@ pub enum CommandWaitResult {
 }
 
 /// Represents the context for executing a command.
-pub struct ExecutionContext<'a, SE: ShellExtensions> {
+pub struct ExecutionContext<'a, SE: ShellExtensions = extensions::DefaultShellExtensions> {
     /// The shell in which the command is being executed.
     pub shell: &'a mut Shell<SE>,
     /// The name of the command being executed.    
