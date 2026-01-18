@@ -12,7 +12,7 @@ pub struct MinimalInputBackend;
 impl InputBackend for MinimalInputBackend {
     fn read_line(
         &mut self,
-        _shell_ref: &crate::ShellRef,
+        _shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         self.display_prompt(&prompt)?;

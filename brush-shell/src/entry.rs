@@ -242,7 +242,7 @@ const fn will_run_interactively(args: &CommandLineArgs) -> bool {
 /// * `input_backend` - The input backend to use.
 /// * `ui_options` - The user interface options to use.
 async fn run_in_shell(
-    shell_ref: &brush_interactive::ShellRef,
+    shell_ref: &brush_interactive::ShellRef<impl brush_core::ShellExtensions>,
     args: CommandLineArgs,
     input_backend: &mut impl brush_interactive::InputBackend,
     ui_options: &brush_interactive::UIOptions,
@@ -306,7 +306,7 @@ async fn run_in_shell(
 /// * `shell_ref` - A reference to the shell to initialize.
 /// * `args` - The parsed command-line arguments.
 async fn initialize_shell(
-    shell_ref: &brush_interactive::ShellRef,
+    shell_ref: &brush_interactive::ShellRef<impl brush_core::ShellExtensions>,
     args: &CommandLineArgs,
 ) -> Result<(), brush_interactive::ShellError> {
     // Compute desired profile-loading behavior.
@@ -339,7 +339,7 @@ async fn initialize_shell(
 async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+) -> Result<brush_core::Shell<impl brush_core::ShellExtensions>, brush_interactive::ShellError> {
     #[cfg(feature = "experimental-load")]
     if let Some(load_file) = &args.load_file {
         return instantiate_shell_from_file(load_file.as_path());
@@ -387,7 +387,7 @@ fn instantiate_shell_from_file(
 async fn instantiate_shell_from_args(
     args: &CommandLineArgs,
     cli_args: Vec<String>,
-) -> Result<brush_core::Shell, brush_interactive::ShellError> {
+) -> Result<brush_core::Shell<impl brush_core::ShellExtensions>, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
 
@@ -433,36 +433,38 @@ async fn instantiate_shell_from_args(
     // Set up the shell builder with the requested options.
     // NOTE: We skip loading profile and rc files here; that will be handled later after we've
     // fully instantiated everything we want set before running any code.
-    let shell = brush_core::Shell::builder_with_extensions()
-        .disable_options(args.disabled_options.clone())
-        .disable_shopt_options(args.disabled_shopt_options.clone())
-        .disallow_overwriting_regular_files_via_output_redirection(
-            args.disallow_overwriting_regular_files_via_output_redirection,
-        )
-        .enable_options(args.enabled_options.clone())
-        .enable_shopt_options(args.enabled_shopt_options.clone())
-        .do_not_execute_commands(args.do_not_execute_commands)
-        .exit_after_one_command(args.exit_after_one_command)
-        .login(login)
-        .interactive(args.is_interactive())
-        .command_string_mode(args.command.is_some())
-        .no_editing(args.no_editing)
-        .profile(brush_core::ProfileLoadBehavior::Skip)
-        .rc(brush_core::RcLoadBehavior::Skip)
-        .do_not_inherit_env(args.do_not_inherit_env)
-        .fds(fds)
-        .maybe_shell_args(shell_args)
-        .posix(args.posix || args.sh_mode)
-        .print_commands_and_arguments(args.print_commands_and_arguments)
-        .read_commands_from_stdin(read_commands_from_stdin)
-        .maybe_shell_name(shell_name)
-        .shell_product_display_str(productinfo::get_product_display_str())
-        .sh_mode(args.sh_mode)
-        .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
-        .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
-        .verbose(args.verbose)
-        .error_behavior(new_error_behavior(args))
-        .shell_version(env!("CARGO_PKG_VERSION").to_string());
+    let shell = brush_core::Shell::builder_with_extensions::<
+        brush_core::extensions::ConstructedShellExtensions<crate::error_formatter::Formatter>,
+    >()
+    .disable_options(args.disabled_options.clone())
+    .disable_shopt_options(args.disabled_shopt_options.clone())
+    .disallow_overwriting_regular_files_via_output_redirection(
+        args.disallow_overwriting_regular_files_via_output_redirection,
+    )
+    .enable_options(args.enabled_options.clone())
+    .enable_shopt_options(args.enabled_shopt_options.clone())
+    .do_not_execute_commands(args.do_not_execute_commands)
+    .exit_after_one_command(args.exit_after_one_command)
+    .login(login)
+    .interactive(args.is_interactive())
+    .command_string_mode(args.command.is_some())
+    .no_editing(args.no_editing)
+    .profile(brush_core::ProfileLoadBehavior::Skip)
+    .rc(brush_core::RcLoadBehavior::Skip)
+    .do_not_inherit_env(args.do_not_inherit_env)
+    .fds(fds)
+    .maybe_shell_args(shell_args)
+    .posix(args.posix || args.sh_mode)
+    .print_commands_and_arguments(args.print_commands_and_arguments)
+    .read_commands_from_stdin(read_commands_from_stdin)
+    .maybe_shell_name(shell_name)
+    .shell_product_display_str(productinfo::get_product_display_str())
+    .sh_mode(args.sh_mode)
+    .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
+    .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
+    .verbose(args.verbose)
+    .error_behavior(new_error_behavior(args))
+    .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.
     let shell = shell.default_builtins(builtin_set).brush_builtins();
@@ -483,7 +485,7 @@ async fn instantiate_shell_from_args(
 }
 
 fn enable_xtrace_to_file(
-    shell: &mut brush_core::Shell,
+    shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     file_path: &Path,
 ) -> Result<(), brush_interactive::ShellError> {
     let file = std::fs::OpenOptions::new()
@@ -507,7 +509,7 @@ fn enable_xtrace_to_file(
     Ok(())
 }
 
-fn new_error_behavior(args: &CommandLineArgs) -> error_formatter::Formatter {
+const fn new_error_behavior(args: &CommandLineArgs) -> error_formatter::Formatter {
     error_formatter::Formatter {
         use_color: !args.disable_color,
     }

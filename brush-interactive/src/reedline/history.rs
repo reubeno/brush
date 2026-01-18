@@ -1,18 +1,18 @@
 use crate::refs;
 
-pub(crate) struct ReedlineHistory {
-    pub shell: refs::ShellRef,
+pub(crate) struct ReedlineHistory<SE: brush_core::ShellExtensions> {
+    pub shell: refs::ShellRef<SE>,
 }
 
-impl ReedlineHistory {
-    fn lock_shell(&self) -> tokio::sync::MutexGuard<'_, brush_core::Shell> {
+impl<SE: brush_core::ShellExtensions> ReedlineHistory<SE> {
+    fn lock_shell(&self) -> tokio::sync::MutexGuard<'_, brush_core::Shell<SE>> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         })
     }
 }
 
-impl reedline::History for ReedlineHistory {
+impl<SE: brush_core::ShellExtensions> reedline::History for ReedlineHistory<SE> {
     /// Updates or adds a new item to the saved history.
     ///
     /// # Arguments
@@ -240,8 +240,8 @@ fn reedline_history_query_into_brush(
     Ok(result)
 }
 
-fn get_shell_history<'a>(
-    shell: &'a tokio::sync::MutexGuard<'_, brush_core::Shell>,
+fn get_shell_history<'a, SE: brush_core::ShellExtensions>(
+    shell: &'a tokio::sync::MutexGuard<'_, brush_core::Shell<SE>>,
 ) -> Result<&'a brush_core::history::History, reedline::ReedlineError> {
     shell.history().ok_or({
         reedline::ReedlineError(reedline::ReedlineErrorVariants::HistoryFeatureUnsupported {
@@ -251,8 +251,8 @@ fn get_shell_history<'a>(
     })
 }
 
-fn get_shell_history_mut<'a>(
-    shell: &'a mut tokio::sync::MutexGuard<'_, brush_core::Shell>,
+fn get_shell_history_mut<'a, SE: brush_core::ShellExtensions>(
+    shell: &'a mut tokio::sync::MutexGuard<'_, brush_core::Shell<SE>>,
 ) -> Result<&'a mut brush_core::history::History, reedline::ReedlineError> {
     shell.history_mut().ok_or({
         reedline::ReedlineError(reedline::ReedlineErrorVariants::HistoryFeatureUnsupported {

@@ -6,7 +6,7 @@ use brush_core::escape;
 
 #[allow(dead_code)]
 pub(crate) async fn complete_async(
-    shell: &mut brush_core::Shell,
+    shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     line: &str,
     pos: usize,
 ) -> brush_core::completion::Completions {
