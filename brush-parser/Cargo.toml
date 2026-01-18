@@ -40,7 +40,7 @@ utf8-chars = "3.0.6"
 [dev-dependencies]
 anyhow = "1.0.100"
 criterion = { version = "0.8.1", features = ["html_reports"] }
-insta = { version = "1.46.0", features = ["glob", "ron", "yaml"] }
+insta = { version = "1.46.1", features = ["glob", "ron", "yaml"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
