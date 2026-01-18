@@ -19,7 +19,10 @@ impl ReedlineInputBackend {
     ///
     /// * `options` - Options for creating the input backend.
     /// * `shell_ref` - Shell that the backend will be used with.
-    pub fn new(options: &crate::UIOptions, shell_ref: &refs::ShellRef<impl brush_core::ShellExtensions>) -> Result<Self, ShellError> {
+    pub fn new(
+        options: &crate::UIOptions,
+        shell_ref: &refs::ShellRef<impl brush_core::ShellExtensions>,
+    ) -> Result<Self, ShellError> {
         // Set up key bindings.
         let key_bindings = compose_key_bindings(COMPLETION_MENU_NAME);
 
