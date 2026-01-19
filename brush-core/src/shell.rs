@@ -1694,11 +1694,13 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// # Arguments
     ///
     /// * `candidate_name` - The name of the file to look for.
-    pub fn find_first_executable_in_path_using_cache<T: Into<String>>(
+    pub fn find_first_executable_in_path_using_cache<S: AsRef<str>>(
         &mut self,
-        candidate_name: T,
-    ) -> Option<PathBuf> {
-        let candidate_name = candidate_name.into();
+        candidate_name: S,
+    ) -> Option<PathBuf>
+    where
+        String: From<S>,
+    {
         if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
             Some(cached_path)
         } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
