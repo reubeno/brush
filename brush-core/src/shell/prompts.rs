@@ -24,7 +24,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         self.expand_prompt_var("PS1", self.default_prompt()).await
     }
 
-    /// Compose's the shell's alternate-side prompt, applying all appropriate expansions.
+    /// Composes the shell's alternate-side prompt, applying all appropriate expansions.
     pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
         // This is a brush extension.
         self.expand_prompt_var("BRUSH_PS_ALT", "").await
