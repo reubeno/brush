@@ -964,7 +964,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// * `path` - The path to the file to source.
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
-    pub async fn source_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
+    pub async fn source_script<S: Into<String>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
         path: P,
         args: I,
@@ -987,7 +987,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn parse_and_execute_script_file<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
+    async fn parse_and_execute_script_file<
+        S: Into<String>,
+        P: AsRef<Path>,
+        I: Iterator<Item = S>,
+    >(
         &mut self,
         path: P,
         args: I,
@@ -1040,7 +1044,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn source_file<F: Read, S: AsRef<str>, I: Iterator<Item = S>>(
+    async fn source_file<F: Read, S: Into<String>, I: Iterator<Item = S>>(
         &mut self,
         file: F,
         source_info: &crate::SourceInfo,
@@ -1054,7 +1058,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse_program();
 
-        let script_positional_args = args.map(|s| s.as_ref().to_owned());
+        let script_positional_args = args.map(Into::into);
 
         self.call_stack
             .push_script(call_type, source_info, script_positional_args);
@@ -1195,7 +1199,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     ///
     /// * `script_path` - The path to the script file to execute.
     /// * `args` - The arguments to pass to the script as positional parameters.
-    pub async fn run_script<S: AsRef<str>, P: AsRef<Path>, I: Iterator<Item = S>>(
+    pub async fn run_script<S: Into<String>, P: AsRef<Path>, I: Iterator<Item = S>>(
         &mut self,
         script_path: P,
         args: I,
@@ -1690,15 +1694,16 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// # Arguments
     ///
     /// * `candidate_name` - The name of the file to look for.
-    pub fn find_first_executable_in_path_using_cache<S: AsRef<str>>(
+    pub fn find_first_executable_in_path_using_cache<T: Into<String>>(
         &mut self,
-        candidate_name: S,
+        candidate_name: T,
     ) -> Option<PathBuf> {
+        let candidate_name = candidate_name.into();
         if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
             Some(cached_path)
         } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
             self.program_location_cache
-                .set(&candidate_name, found_path.clone());
+                .set(candidate_name, found_path.clone());
             Some(found_path)
         } else {
             None

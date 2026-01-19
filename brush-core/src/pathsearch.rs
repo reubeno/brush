@@ -5,11 +5,7 @@ use std::{collections::VecDeque, path::PathBuf};
 use crate::sys::fs::PathExt;
 
 /// Encapsulates the result of a path search.
-pub struct ExecutablePathSearch<PI, N>
-where
-    PI: AsRef<str>,
-    N: AsRef<str>,
-{
+pub struct ExecutablePathSearch<PI, N> {
     paths: VecDeque<PI>,
     filename: N,
 }
@@ -33,10 +29,7 @@ where
     }
 }
 
-pub(crate) struct ExecutablePathPrefixSearch<PI>
-where
-    PI: AsRef<str>,
-{
+pub(crate) struct ExecutablePathPrefixSearch<PI> {
     paths: VecDeque<PI>,
     queued_items: VecDeque<PathBuf>,
     filename_prefix: String,
