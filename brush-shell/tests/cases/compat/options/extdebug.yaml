@@ -1,0 +1,333 @@
+name: "Options: extdebug"
+cases:
+  #
+  # Basic extdebug option behavior
+  #
+  - name: "extdebug can be enabled"
+    stdin: |
+      shopt -s extdebug
+      shopt extdebug
+
+  - name: "extdebug can be disabled"
+    stdin: |
+      shopt -s extdebug
+      shopt extdebug | grep -q on && echo "enabled"
+      shopt -u extdebug
+      shopt extdebug | grep -q off && echo "disabled"
+
+  #
+  # extdebug implies functrace (-T)
+  #
+  - name: "extdebug implies functrace - DEBUG inherited in functions"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      shopt -s extdebug
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      myfunc() {
+        echo "in func"
+      }
+      echo "before"
+      myfunc
+      echo "after"
+
+  - name: "extdebug implies functrace - DEBUG inherited in subshells"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      shopt -s extdebug
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      echo "before"
+      (echo "in subshell")
+      echo "after"
+
+  #
+  # DEBUG trap return value effects (extdebug-specific)
+  #
+  - name: "DEBUG trap - returns 0 command executes normally"
+    known_failure: true # TODO(extdebug): return in trap handler not supported
+    stdin: |
+      shopt -s extdebug
+      trap 'return 0' DEBUG
+      echo "line 1"
+      echo "line 2"
+      echo "line 3"
+
+  - name: "DEBUG trap - returns 1 command is skipped"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      skip_next=false
+      trap '
+        if $skip_next; then
+          skip_next=false
+          return 1
+        fi
+        return 0
+      ' DEBUG
+      echo "line 1"
+      skip_next=true
+      echo "this should be skipped"
+      echo "line 3"
+
+  - name: "DEBUG trap - returns 2 simulates return from function"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      trap '
+        if [[ "${FUNCNAME[0]}" == "myfunc" && "$BASH_COMMAND" == *"should not"* ]]; then
+          return 2
+        fi
+        return 0
+      ' DEBUG
+      myfunc() {
+        echo "start of func"
+        echo "this should not print"
+        echo "also should not print"
+      }
+      myfunc
+      echo "after func: $?"
+
+  - name: "DEBUG trap - return value ignored without extdebug"
+    known_failure: true # TODO(extdebug): return in trap handler error message differs
+    stdin: |
+      shopt -u extdebug
+      trap 'return 1' DEBUG
+      echo "line 1"
+      echo "line 2"
+      echo "line 3"
+
+  #
+  # Command skipping scenarios (extdebug-specific)
+  #
+  - name: "Skip simple command"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      trap '[[ "$BASH_COMMAND" == *"skip"* ]] && return 1; return 0' DEBUG
+      echo "keep this"
+      echo "skip this"
+      echo "keep this too"
+
+  - name: "Skip in loop - iteration skipped but loop continues"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      trap '[[ "$BASH_COMMAND" == *"skip"* ]] && return 1; return 0' DEBUG
+      for i in 1 2 3; do
+        echo "iter $i"
+        echo "skip $i"
+        echo "after skip $i"
+      done
+      echo "done"
+
+  - name: "Skip in conditional"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      trap '[[ "$BASH_COMMAND" == *"skip"* ]] && return 1; return 0' DEBUG
+      if true; then
+        echo "in then"
+        echo "skip in then"
+        echo "after skip in then"
+      fi
+      echo "after if"
+
+  - name: "Return 2 in nested function - unwinds to caller"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      trap '
+        if [[ "${FUNCNAME[0]}" == "inner" && "$BASH_COMMAND" == *"inner cmd"* ]]; then
+          return 2
+        fi
+        return 0
+      ' DEBUG
+      inner() {
+        echo "inner start"
+        echo "inner cmd"
+        echo "inner end"
+      }
+      outer() {
+        echo "outer start"
+        inner
+        echo "outer after inner"
+      }
+      outer
+      echo "main after outer"
+
+  #
+  # BASH_ARGC and BASH_ARGV (extdebug-specific)
+  #
+  - name: "BASH_ARGC - contains argument counts per call frame"
+    known_failure: true # TODO(extdebug): BASH_ARGC not populated
+    stdin: |
+      shopt -s extdebug
+      show_argc() {
+        echo "BASH_ARGC: ${BASH_ARGC[*]}"
+      }
+      func_with_args() {
+        show_argc
+      }
+      func_with_args a b c
+
+  - name: "BASH_ARGV - contains arguments in reverse order"
+    known_failure: true # TODO(extdebug): BASH_ARGV not populated
+    stdin: |
+      shopt -s extdebug
+      show_argv() {
+        echo "BASH_ARGV: ${BASH_ARGV[*]}"
+      }
+      func_with_args() {
+        show_argv
+      }
+      func_with_args a b c
+
+  - name: "BASH_ARGC/ARGV - in nested calls"
+    known_failure: true # TODO(extdebug): BASH_ARGC/ARGV not populated
+    stdin: |
+      shopt -s extdebug
+      inner() {
+        echo "inner ARGC: ${BASH_ARGC[*]}"
+        echo "inner ARGV: ${BASH_ARGV[*]}"
+      }
+      outer() {
+        inner x y
+      }
+      outer a b c
+
+  - name: "BASH_ARGC/ARGV - empty when no arguments"
+    known_failure: true # TODO(extdebug): BASH_ARGC/ARGV not populated
+    stdin: |
+      shopt -s extdebug
+      no_args() {
+        echo "BASH_ARGC: '${BASH_ARGC[*]}'"
+        echo "BASH_ARGV: '${BASH_ARGV[*]}'"
+      }
+      no_args
+
+  #
+  # declare -F shows source info (extdebug-specific)
+  #
+  - name: "declare -F - shows function name only without extdebug"
+    stdin: |
+      myfunc() { echo hi; }
+      declare -F myfunc
+
+  - name: "declare -F - shows filename and line number with extdebug"
+    known_failure: true # TODO(extdebug): declare -F not showing source info
+    test_files:
+      - path: "funcs.sh"
+        contents: |
+          myfunc() {
+            echo hi
+          }
+    stdin: |
+      shopt -s extdebug
+      . ./funcs.sh
+      declare -F myfunc | sed 's/[0-9]*/N/'
+
+  #
+  # Interaction with other options
+  #
+  - name: "extdebug with errexit - skipped command doesn't trigger errexit"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      set -e
+      trap '[[ "$BASH_COMMAND" == "false" ]] && return 1; return 0' DEBUG
+      echo "before"
+      false
+      echo "after - should print because false was skipped"
+
+  - name: "extdebug disabled after being enabled"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      trap 'return 1' DEBUG
+      echo "line 1 - should be skipped"
+      shopt -u extdebug
+      echo "line 2 - should print"
+      echo "line 3 - should print"
+
+  - name: "extdebug with set -T - both affect DEBUG inheritance"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      shopt -s extdebug
+      set -T
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      myfunc() {
+        echo "in func"
+      }
+      myfunc
+      echo "done"
+
+  #
+  # DEBUG trap with extdebug in various contexts
+  #
+  - name: "DEBUG trap with extdebug in function"
+    known_failure: true # TODO(extdebug): return in trap handler not supported
+    stdin: |
+      shopt -s extdebug
+      count=0
+      trap '
+        ((count++))
+        echo "debug $count: $BASH_COMMAND"
+        return 0
+      ' DEBUG
+      myfunc() {
+        local x=1
+        echo "x=$x"
+      }
+      myfunc
+
+  - name: "DEBUG trap with extdebug controls command execution"
+    known_failure: true # TODO(extdebug): DEBUG trap return value not implemented
+    stdin: |
+      shopt -s extdebug
+      should_skip=false
+      trap '
+        if $should_skip; then
+          should_skip=false
+          echo "[skipping: $BASH_COMMAND]"
+          return 1
+        fi
+        return 0
+      ' DEBUG
+      echo "first"
+      should_skip=true
+      echo "second - will be skipped"
+      echo "third"
+
+  #
+  # Edge cases
+  #
+  - name: "extdebug with recursive function"
+    known_failure: true # TODO(extdebug): DEBUG trap firing count differs
+    stdin: |
+      shopt -s extdebug
+      trap 'echo "depth: ${#FUNCNAME[@]}"' DEBUG
+      recurse() {
+        local n=$1
+        if ((n > 0)); then
+          recurse $((n - 1))
+        fi
+      }
+      recurse 3
+
+  - name: "BASH_COMMAND shows compound command"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      shopt -s extdebug
+      trap 'echo "cmd: $BASH_COMMAND"' DEBUG
+      if true; then echo "in if"; fi
+
+  - name: "DEBUG trap can modify variables"
+    known_failure: true # TODO(extdebug): return in trap handler not supported
+    stdin: |
+      shopt -s extdebug
+      counter=0
+      trap '((counter++)); return 0' DEBUG
+      echo "a"
+      echo "b"
+      echo "c"
+      echo "counter: $counter"
+

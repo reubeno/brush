@@ -1,10 +1,23 @@
 name: "Options: errtrace (-E)"
 cases:
+  #
+  # Basic errtrace option behavior
+  #
   - name: "errtrace disabled by default"
     stdin: |
       set +E 2>/dev/null || true
       echo "errtrace test"
 
+  - name: "errtrace can be enabled and disabled"
+    stdin: |
+      set -E
+      echo "enabled: $-" | grep -q E && echo "E is set"
+      set +E
+      echo "disabled: $-" | grep -qv E && echo "E is unset"
+
+  #
+  # ERR trap inheritance in functions (core errtrace behavior)
+  #
   - name: "errtrace disabled - functions don't inherit ERR trap"
     known_failure: true # TODO(traps): ERR trap support
     stdin: |
@@ -33,7 +46,7 @@ cases:
       outer
       echo "after"
 
-  - name: "errtrace toggling"
+  - name: "errtrace toggling mid-script"
     known_failure: true # TODO(traps): ERR trap support
     stdin: |
       trap 'echo "ERR trapped"' ERR
@@ -46,57 +59,169 @@ cases:
       myfunc2
       echo "after second call"
 
-  - name: "errtrace with subshell"
-    known_failure: true # TODO(traps): ERR trap support
+  #
+  # ERR trap inheritance in subshells
+  #
+  - name: "errtrace disabled - subshell doesn't inherit ERR trap"
+    stdin: |
+      set +E
+      trap 'echo "ERR"' ERR
+      (
+        trap -p ERR
+        false
+        echo "no ERR trap fired"
+      )
+      echo "after"
+
+  - name: "errtrace enabled - subshell inherits ERR trap"
+    known_failure: true # TODO(traps): ERR trap not firing in subshell with errtrace
+    stdin: |
+      set -E
+      trap 'echo "ERR"' ERR
+      (
+        trap -p ERR | grep -q ERR && echo "ERR trap inherited"
+        false
+        echo "after false in subshell"
+      )
+      echo "after"
+
+  #
+  # ERR trap inheritance in command substitution
+  #
+  - name: "errtrace disabled - command substitution doesn't inherit ERR trap"
+    stdin: |
+      set +E
+      trap 'echo "[ERR trapped]" >&2' ERR
+      result=$(trap -p ERR; false; echo "no trap inherited")
+      echo "result: $result"
+
+  - name: "errtrace enabled - command substitution inherits ERR trap"
+    known_failure: true # TODO(errtrace): ERR trap not inherited in command substitution
+    stdin: |
+      set -E
+      trap 'echo "[ERR in subshell]" >&2' ERR
+      result=$(false; echo "after false in subshell")
+      echo "result: $result"
+
+  #
+  # ERR trap inheritance in pipelines
+  #
+  - name: "errtrace with pipeline - last command fails"
+    known_failure: true # TODO(errtrace): ERR trap not firing for pipeline failure
+    stdin: |
+      set -E
+      trap 'echo "[ERR: $?]" >&2' ERR
+      echo "data" | cat | false
+      echo "after pipeline"
+
+  - name: "errtrace with pipeline - middle command fails (pipefail)"
+    known_failure: true # TODO(errtrace): ERR trap not firing for pipeline failure
+    stdin: |
+      set -E
+      set -o pipefail
+      trap 'echo "[ERR: $?]" >&2' ERR
+      echo "data" | false | cat
+      echo "after pipeline"
+
+  - name: "errtrace - ERR trap in pipeline subshells"
+    known_failure: true # TODO(errtrace): ERR trap not inherited in pipeline subshells
+    stdin: |
+      set -E
+      trap 'echo "[ERR: $BASH_COMMAND]" >&2' ERR
+      echo "input" | { false; echo "after false in brace"; }
+      echo "done"
+
+  #
+  # ERR trap with errexit interaction
+  #
+  - name: "errtrace with errexit - ERR trap fires before exit"
+    known_failure: true # TODO(traps): ERR trap not firing before errexit
+    stdin: |
+      set -e
+      set -E
+      trap 'echo "ERR trap fired"' ERR
+      false
+      echo "should not print"
+
+  - name: "errtrace with errexit in function"
+    known_failure: true # TODO(traps): ERR trap not firing in function with errexit
+    stdin: |
+      set -e
+      set -E
+      trap 'echo "ERR trap"' ERR
+      myfunc() { false; }
+      myfunc
+      echo "should not print"
+
+  #
+  # ERR trap inheritance in deeply nested functions
+  #
+  - name: "errtrace - ERR trap in deeply nested function"
+    known_failure: true # TODO(errtrace): ERR trap not firing in nested functions
+    stdin: |
+      set -E
+      trap 'echo "ERR at level ${#FUNCNAME[@]}"' ERR
+      level3() { false; }
+      level2() { level3; }
+      level1() { level2; }
+      level1
+      echo "after"
+
+  #
+  # ERR trap modification within functions
+  #
+  - name: "errtrace - ERR trap can be changed inside function"
+    known_failure: true # TODO(traps): ERR trap not firing
+    stdin: |
+      set -E
+      trap 'echo "outer ERR"' ERR
+      myfunc() {
+        trap 'echo "inner ERR"' ERR
+        false
+      }
+      myfunc
+      false
+      echo "after"
+
+  - name: "errtrace - ERR trap can be cleared inside function"
+    stdin: |
+      set -E
+      trap 'echo "ERR"' ERR
+      myfunc() {
+        trap - ERR
+        false
+        echo "no ERR in func"
+      }
+      myfunc
+      false
+      echo "after"
+
+  #
+  # ERR trap in background jobs with errtrace
+  #
+  - name: "errtrace - ERR trap in background job"
+    known_failure: true # TODO(errtrace): ERR trap not firing in background job
+    stdin: |
+      set -E
+      trap 'echo "ERR" >&2' ERR
+      { false; echo "bg done"; } &
+      wait
+      echo "main done"
+
+  #
+  # Sourced scripts with errtrace
+  #
+  - name: "errtrace - ERR trap inherited in sourced script"
+    known_failure: true # TODO(errtrace): ERR trap not inherited in sourced scripts
+    test_files:
+      - path: "failing.sh"
+        contents: |
+          echo "in sourced"
+          false
+          echo "after false in sourced"
     stdin: |
       set -E
       trap 'echo "ERR trapped"' ERR
-      (
-        false
-      )
-      echo "after subshell"
+      . ./failing.sh
+      echo "after source"
 
-  - name: "ERR trap basic invocation without errtrace"
-    known_failure: true # TODO(traps): ERR trap support
-    stdin: |
-      trap 'echo "ERR: $?"' ERR
-      false
-      echo "continues"
-      false
-      echo "continues again"
-
-  - name: "ERR trap not triggered in conditional"
-    stdin: |
-      trap 'echo "ERR trapped"' ERR
-      if false; then
-        echo "then"
-      else
-        echo "else"
-      fi
-      echo "after"
-
-  - name: "ERR trap not triggered with && short-circuit"
-    stdin: |
-      trap 'echo "ERR trapped"' ERR
-      false && echo "not printed"
-      echo "after"
-
-  - name: "ERR trap not triggered with ||"
-    stdin: |
-      trap 'echo "ERR trapped"' ERR
-      false || echo "fallback"
-      echo "after"
-
-  - name: "ERR trap not triggered with negation"
-    stdin: |
-      trap 'echo "ERR trapped"' ERR
-      ! false
-      echo "after"
-
-  - name: "ERR trap triggered after && chain completes"
-    known_failure: true # TODO(traps): ERR trap support
-    stdin: |
-      trap 'echo "ERR trapped"' ERR
-      true && true
-      false
-      echo "after"
