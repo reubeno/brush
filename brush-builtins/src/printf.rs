@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::{io::Write, ops::ControlFlow};
+use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
@@ -83,12 +83,12 @@ fn format_special_case_for_percent_q(
 
 fn format_via_uucore(
     format_string: &str,
-    args: impl Iterator<Item = impl AsRef<str>>,
+    args: impl Iterator<Item = impl Into<OsString>>,
     mut writer: impl Write,
 ) -> Result<(), brush_core::Error> {
     // Convert string arguments to FormatArgument::Unparsed
     let format_args: Vec<_> = args
-        .map(|s| format::FormatArgument::Unparsed(s.as_ref().to_string().into()))
+        .map(|s| format::FormatArgument::Unparsed(s.into()))
         .collect();
 
     // Parse format string once.
@@ -149,7 +149,7 @@ mod tests {
 
     fn sprintf_via_uucore(
         format_string: &str,
-        args: impl Iterator<Item = impl AsRef<str>>,
+        args: impl Iterator<Item = impl Into<OsString>>,
     ) -> Result<String> {
         let mut result = vec![];
         format_via_uucore(format_string, args, &mut result)?;
