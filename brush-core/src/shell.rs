@@ -21,7 +21,7 @@ pub type ShellFd = i32;
 
 // NOTE: The submodule files below (e.g., `shell/traps.rs`, `shell/callstack.rs`) contain
 // `impl Shell<SE>` blocks that provide methods coordinating with types defined in the
-// corresponding top-level modules (e.g., `traps.rs`, `callstack.rs`). Thisis an intentional
+// corresponding top-level modules (e.g., `traps.rs`, `callstack.rs`). This is an intentional
 // layered architecture: top-level modules define domain types and data structures, while
 // shell/ submodules implement Shell methods that operate on those types.
 
