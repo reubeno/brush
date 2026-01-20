@@ -87,7 +87,7 @@ impl MinimalInputBackend {
 
     fn display_prompt(&self, prompt: &str) -> Result<(), ShellError> {
         if self.should_display_prompt() {
-            eprint!("{}", prompt);
+            eprint!("{prompt}");
             std::io::stderr().flush()?;
         }
 
