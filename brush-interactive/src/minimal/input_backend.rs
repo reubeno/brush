@@ -1,4 +1,4 @@
-use std::io::{IsTerminal, Write};
+use std::io::{BufRead, IsTerminal, Write};
 
 use crate::{
     InputBackend, ShellError,
@@ -15,12 +15,35 @@ impl InputBackend for MinimalInputBackend {
         shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
-        self.display_prompt(&prompt.prompt)?;
+        let interactive = std::io::stdin().is_terminal();
+        self.read_line_from(
+            shell_ref,
+            &prompt,
+            &mut std::io::stdin().lock(),
+            interactive,
+        )
+    }
+}
+
+impl MinimalInputBackend {
+    /// Core implementation that reads from any `BufRead` source.
+    /// When `interactive` is true, prompts are displayed to stderr.
+    #[doc(hidden)]
+    pub fn read_line_from<R: BufRead>(
+        &mut self,
+        shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        prompt: &InteractivePrompt,
+        reader: &mut R,
+        interactive: bool,
+    ) -> Result<ReadResult, ShellError> {
+        if interactive {
+            Self::display_prompt(&prompt.prompt)?;
+        }
 
         let mut input = String::new();
 
         loop {
-            let line = match Self::read_input_line()? {
+            let line = match Self::read_input_line_from(reader)? {
                 ReadResult::Input(s) => s,
                 ReadResult::BoundCommand(s) => s,
                 ReadResult::Eof => {
@@ -48,7 +71,9 @@ impl InputBackend for MinimalInputBackend {
             }
 
             // Input is incomplete, show continuation prompt and read more
-            self.display_prompt(&prompt.continuation_prompt)?;
+            if interactive {
+                Self::display_prompt(&prompt.continuation_prompt)?;
+            }
         }
 
         if input.is_empty() {
@@ -57,9 +82,7 @@ impl InputBackend for MinimalInputBackend {
             Ok(ReadResult::Input(input))
         }
     }
-}
 
-impl MinimalInputBackend {
     /// Check if the input is syntactically complete (not waiting for more input)
     fn is_input_complete(
         shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
@@ -80,23 +103,15 @@ impl MinimalInputBackend {
         }
     }
 
-    #[expect(clippy::unused_self)]
-    fn should_display_prompt(&self) -> bool {
-        std::io::stdin().is_terminal()
-    }
-
-    fn display_prompt(&self, prompt: &str) -> Result<(), ShellError> {
-        if self.should_display_prompt() {
-            eprint!("{prompt}");
-            std::io::stderr().flush()?;
-        }
-
+    fn display_prompt(prompt: &str) -> Result<(), ShellError> {
+        eprint!("{prompt}");
+        std::io::stderr().flush()?;
         Ok(())
     }
 
-    fn read_input_line() -> Result<ReadResult, ShellError> {
+    fn read_input_line_from<R: BufRead>(reader: &mut R) -> Result<ReadResult, ShellError> {
         let mut input = String::new();
-        let bytes_read = std::io::stdin()
+        let bytes_read = reader
             .read_line(&mut input)
             .map_err(ShellError::InputError)?;
 

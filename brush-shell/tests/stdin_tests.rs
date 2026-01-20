@@ -1,87 +1,136 @@
-//! Tests for stdin input handling with the minimal input backend.
+//! Tests for the minimal input backend's multi-line continuation handling.
 //!
-//! These tests verify multi-line continuation works when reading from stdin.
-//! They explicitly use `--input-backend=minimal` to test the minimal backend's
-//! handling of incomplete commands that span multiple lines.
+//! These tests verify that `MinimalInputBackend::read_line_from` correctly
+//! accumulates lines when the parser indicates incomplete input.
 
 #![cfg(unix)]
 #![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
+#![allow(clippy::panic)]
 
-use anyhow::Context;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::io::Cursor;
+use std::sync::Arc;
+
+use brush_interactive::{InteractivePrompt, MinimalInputBackend, ReadResult};
+use tokio::sync::Mutex;
 
 struct TestCase {
     name: &'static str,
     input: &'static str,
-    expected_words: &'static [&'static str],
+    expected: &'static str,
 }
 
 const CONTINUATION_TESTS: &[TestCase] = &[
     TestCase {
         name: "and_continuation",
         input: "echo one &&\necho two\n",
-        expected_words: &["one", "two"],
+        expected: "echo one &&\necho two\n",
     },
     TestCase {
         name: "or_continuation",
         input: "false ||\necho fallback\n",
-        expected_words: &["fallback"],
+        expected: "false ||\necho fallback\n",
     },
     TestCase {
         name: "pipe_then_and_continuation",
-        input: "echo one | cat\necho two | cat &&\necho three\n",
-        expected_words: &["one", "two", "three"],
+        input: "echo one | cat &&\necho two\n",
+        expected: "echo one | cat &&\necho two\n",
     },
 ];
 
-/// Tests that the minimal input backend correctly handles multi-line continuation.
-#[test]
-fn multiline_continuation_via_stdin() -> anyhow::Result<()> {
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
+async fn create_test_shell() -> brush_interactive::ShellRef {
+    let shell = brush_core::Shell::builder().build().await.unwrap();
+    Arc::new(Mutex::new(shell))
+}
+
+fn create_prompt() -> InteractivePrompt {
+    InteractivePrompt {
+        prompt: String::from("$ "),
+        alt_side_prompt: String::new(),
+        continuation_prompt: String::from("> "),
+    }
+}
+
+/// Tests that the minimal input backend correctly accumulates lines for
+/// incomplete commands (those ending with && or ||).
+#[tokio::test(flavor = "multi_thread")]
+async fn multiline_continuation() {
+    let shell_ref = create_test_shell().await;
+    let prompt = create_prompt();
 
     for test in CONTINUATION_TESTS {
-        let mut child = Command::new(shell_path)
-            .args([
-                "--norc",
-                "--noprofile",
-                "--no-config",
-                "--input-backend=minimal",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Failed to spawn brush")?;
+        let mut backend = MinimalInputBackend;
+        let mut reader = Cursor::new(test.input.as_bytes());
 
-        let stdin = child.stdin.as_mut().context("Failed to open stdin")?;
-        stdin.write_all(test.input.as_bytes())?;
-        drop(child.stdin.take());
+        let result = tokio::task::block_in_place(|| {
+            backend.read_line_from(&shell_ref, &prompt, &mut reader, false)
+        });
 
-        let output = child
-            .wait_with_output()
-            .context("Failed to wait for brush")?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        assert!(
-            output.status.success(),
-            "{}: brush should succeed, stderr: {}",
-            test.name,
-            stderr
-        );
-
-        for word in test.expected_words {
-            assert!(
-                stdout.contains(word),
-                "{}: expected '{}' in output, got: {}",
-                test.name,
-                word,
-                stdout
-            );
+        let name = test.name;
+        match result {
+            Ok(ReadResult::Input(input)) => {
+                assert_eq!(input, test.expected, "{name}: unexpected input");
+            }
+            Ok(ReadResult::Eof) => {
+                panic!("{name}: expected Input, got Eof");
+            }
+            Ok(ReadResult::Interrupted) => {
+                panic!("{name}: expected Input, got Interrupted");
+            }
+            Ok(ReadResult::BoundCommand(cmd)) => {
+                panic!("{name}: expected Input, got BoundCommand({cmd})");
+            }
+            Err(e) => {
+                panic!("{name}: unexpected error: {e}");
+            }
         }
     }
+}
 
-    Ok(())
+/// Tests that complete single-line commands are returned immediately.
+#[tokio::test(flavor = "multi_thread")]
+async fn complete_single_line() {
+    let shell_ref = create_test_shell().await;
+    let prompt = create_prompt();
+    let mut backend = MinimalInputBackend;
+    let mut reader = Cursor::new(b"echo hello\n" as &[u8]);
+
+    let result = tokio::task::block_in_place(|| {
+        backend.read_line_from(&shell_ref, &prompt, &mut reader, false)
+    });
+
+    match result {
+        Ok(ReadResult::Input(input)) => {
+            assert_eq!(input, "echo hello\n");
+        }
+        Ok(_) => {
+            panic!("expected Input, got other ReadResult variant");
+        }
+        Err(e) => {
+            panic!("unexpected error: {e}");
+        }
+    }
+}
+
+/// Tests that EOF on empty input returns Eof.
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_input_eof() {
+    let shell_ref = create_test_shell().await;
+    let prompt = create_prompt();
+    let mut backend = MinimalInputBackend;
+    let mut reader = Cursor::new(b"" as &[u8]);
+
+    let result = tokio::task::block_in_place(|| {
+        backend.read_line_from(&shell_ref, &prompt, &mut reader, false)
+    });
+
+    match result {
+        Ok(ReadResult::Eof) => {}
+        Ok(_) => {
+            panic!("expected Eof, got other ReadResult variant");
+        }
+        Err(e) => {
+            panic!("unexpected error: {e}");
+        }
+    }
 }
