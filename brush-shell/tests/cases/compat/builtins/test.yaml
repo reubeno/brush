@@ -312,13 +312,8 @@ cases:
       test 'a"b' = 'a"b' && echo "quotes match"
       test "a'b" = "a'b" && echo "single quotes match"
 
-  - name: "test: arithmetic comparison with whitespace in operand"
+  - name: "test: arithmetic comparison with spaces/tabs in operand"
     stdin: |
-      # Newline in argument
-      test 0 -eq ' 0
-      '
-      echo "newline trailing: $?"
-
       # Leading/trailing spaces
       test 0 -eq ' 0'
       echo "leading space: $?"
@@ -335,6 +330,14 @@ cases:
 
       test 0 -eq '0	'
       echo "trailing tab: $?"
+
+  - name: "test: arithmetic comparison with newline in operand"
+    min_oracle_version: "5.3"
+    stdin: |
+      # Newline trimming seems to have changed in or around bash 5.3
+      test 0 -eq ' 0
+      '
+      echo "newline trailing: $?"
 
   - name: "test: -t operator with whitespace in fd"
     stdin: |
