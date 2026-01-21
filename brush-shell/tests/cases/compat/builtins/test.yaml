@@ -311,3 +311,47 @@ cases:
       test "a	b" = "a	b" && echo "tabs match"
       test 'a"b' = 'a"b' && echo "quotes match"
       test "a'b" = "a'b" && echo "single quotes match"
+
+  - name: "test: arithmetic comparison with spaces/tabs in operand"
+    stdin: |
+      # Leading/trailing spaces
+      test 0 -eq ' 0'
+      echo "leading space: $?"
+
+      test 0 -eq '0 '
+      echo "trailing space: $?"
+
+      test 0 -eq ' 0 '
+      echo "both spaces: $?"
+
+      # Tabs
+      test 0 -eq '	0'
+      echo "leading tab: $?"
+
+      test 0 -eq '0	'
+      echo "trailing tab: $?"
+
+  - name: "test: arithmetic comparison with newline in operand"
+    min_oracle_version: "5.3"
+    stdin: |
+      # Newline trimming seems to have changed in or around bash 5.3
+      test 0 -eq ' 0
+      '
+      echo "newline trailing: $?"
+
+  - name: "test: -t operator with whitespace in fd"
+    stdin: |
+      # -t operator should trim whitespace before parsing fd number
+      # These should all behave identically (false since not a terminal)
+      test -t 0
+      r1=$?
+      test -t ' 0'
+      r2=$?
+      test -t '0 '
+      r3=$?
+      test -t ' 0 '
+      r4=$?
+
+      # All should have the same result
+      [ $r1 -eq $r2 ] && [ $r2 -eq $r3 ] && [ $r3 -eq $r4 ] && echo "All -t results match"
+

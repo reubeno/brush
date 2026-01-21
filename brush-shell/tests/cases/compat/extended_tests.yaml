@@ -340,3 +340,42 @@ cases:
   - name: "Regex with newline"
     stdin: |
       [[ $'\n' =~ . ]] && echo "1. Matches"
+
+  - name: "Arithmetic comparisons with whitespace in operands"
+    stdin: |
+      # Leading/trailing whitespace should be trimmed before comparison
+      [[ 0 -eq ' 0' ]] && echo "1. leading space"
+      [[ 0 -eq '0 ' ]] && echo "2. trailing space"
+      [[ 0 -eq ' 0 ' ]] && echo "3. both spaces"
+
+      # Tabs
+      [[ 0 -eq '	0' ]] && echo "4. leading tab"
+      [[ 0 -eq '0	' ]] && echo "5. trailing tab"
+
+      # Newlines
+      [[ 0 -eq ' 0
+      ' ]] && echo "6. newline"
+
+      # Other operators
+      [[ 5 -lt ' 10' ]] && echo "7. -lt with space"
+      [[ 10 -gt ' 5' ]] && echo "8. -gt with space"
+      [[ 5 -ne ' 6' ]] && echo "9. -ne with space"
+      [[ 5 -le ' 5' ]] && echo "10. -le with space"
+      [[ 5 -ge ' 5' ]] && echo "11. -ge with space"
+
+      # Negative numbers with whitespace
+      [[ -5 -eq ' -5' ]] && echo "12. negative with space"
+
+  - name: "Terminal fd check with whitespace"
+    stdin: |
+      # -t operator should trim whitespace before parsing fd number
+      # These should all behave identically (false since not a terminal)
+      [[ -t 0 ]]
+      r1=$?
+      [[ -t ' 0' ]]
+      r2=$?
+      [[ -t '0 ' ]]
+      r3=$?
+
+      # All should have the same result
+      [[ $r1 -eq $r2 && $r2 -eq $r3 ]] && echo "All -t results match"

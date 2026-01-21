@@ -126,7 +126,8 @@ pub(crate) fn apply_unary_predicate_to_str(
             }
         }
         ast::UnaryPredicate::FdIsOpenTerminal => {
-            if let Ok(fd) = operand.parse::<ShellFd>() {
+            // Trim whitespace before parsing, matching bash behavior.
+            if let Ok(fd) = operand.trim().parse::<ShellFd>() {
                 if let Some(open_file) = params.try_fd(shell, fd) {
                     Ok(open_file.is_terminal())
                 } else {
@@ -548,8 +549,9 @@ fn apply_test_binary_arithmetic_predicate(
     right: &str,
     op: fn(i64, i64) -> bool,
 ) -> bool {
-    let left: Result<i64, _> = left.parse();
-    let right: Result<i64, _> = right.parse();
+    // We trim leading/trailing whitespace (including newlines) before parsing integers.
+    let left: Result<i64, _> = left.trim().parse();
+    let right: Result<i64, _> = right.trim().parse();
 
     if let (Ok(left), Ok(right)) = (left, right) {
         op(left, right)
