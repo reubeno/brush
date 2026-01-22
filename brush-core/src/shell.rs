@@ -457,8 +457,8 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
     }
 
     /// Returns the shell's official version string (if available).
-    pub fn version(&self) -> &Option<String> {
-        &self.version
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
 
     /// Returns the exit status of the last command executed in this shell.
@@ -473,8 +473,8 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
     }
 
     /// Returns the key bindings helper for the shell.
-    pub fn key_bindings(&self) -> &Option<KeyBindingsHelper> {
-        &self.key_bindings
+    pub fn key_bindings(&self) -> Option<&KeyBindingsHelper> {
+        self.key_bindings.as_ref()
     }
 
     /// Sets the key bindings helper for the shell.
@@ -494,8 +494,8 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
     }
 
     /// Returns the product display name for this shell.
-    pub fn product_display_str(&self) -> &Option<String> {
-        &self.product_display_str
+    pub fn product_display_str(&self) -> Option<&str> {
+        self.product_display_str.as_deref()
     }
 }
 
