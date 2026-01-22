@@ -1068,6 +1068,10 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         let mut args: Vec<CommandArg> = vec![];
         let mut command_takes_assignments = false;
 
+        // Capture the status change count before expansion, so we can detect
+        // if expansion (e.g., command substitution) set an exit status.
+        let status_change_count_before_expansion = context.shell.last_exit_status_change_count();
+
         for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
@@ -1202,8 +1206,6 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 }
             }
         } else {
-            let status_change_count = context.shell.last_exit_status_change_count();
-
             // No command to run; assignments must be applied to this shell.
             for assignment in assignments {
                 // Apply the assignment. Don't mark as fatal - let errors be handled
@@ -1220,10 +1222,11 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
             }
 
             // We need to set the last exit status to indicate assignment success,
-            // but only if there was no status set during expansion. Ideally we'd
-            // have a cleaner way of determining if expansion caused a status change,
-            // but this will do for now.
-            if status_change_count == context.shell.last_exit_status_change_count() {
+            // but only if there was no status set during expansion. We use the
+            // status count captured before expansion to detect if command
+            // substitution (or other expansion) set an exit status.
+            if status_change_count_before_expansion == context.shell.last_exit_status_change_count()
+            {
                 context.shell.set_last_exit_status(0);
             }
 

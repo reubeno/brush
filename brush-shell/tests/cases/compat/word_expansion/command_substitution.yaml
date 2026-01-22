@@ -147,3 +147,38 @@ cases:
       echo "Some text" >file.txt
       x=`<file.txt`
       echo "x: $x"
+
+  - name: "Command substitution as simple command preserves exit code"
+    stdin: |
+      $(false)
+      echo "exit code: $?"
+
+      $(true)
+      echo "exit code: $?"
+
+      $(exit 42)
+      echo "exit code: $?"
+
+  - name: "Backtick substitution as simple command preserves exit code"
+    stdin: |
+      `false`
+      echo "exit code: $?"
+
+      `true`
+      echo "exit code: $?"
+
+  - name: "Command substitution with exec as simple command"
+    stdin: |
+      $(exec true)
+      echo "exit code: $?"
+
+      $(exec false)
+      echo "exit code: $?"
+
+  - name: "Nested command substitution exit code"
+    stdin: |
+      $($(false))
+      echo "exit code: $?"
+
+      $($(:))
+      echo "exit code: $?"
