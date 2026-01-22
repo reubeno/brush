@@ -552,7 +552,6 @@ cases:
   # trap -p edge cases
   #
   - name: "trap -p - with no args shows all traps"
-    known_failure: true # TODO(traps): bash shows SIGTTIN/SIGTTOU traps that brush doesn't
     stdin: |
       trap 'echo a' INT
       trap 'echo b' TERM
