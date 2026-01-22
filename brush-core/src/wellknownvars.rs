@@ -55,7 +55,7 @@ pub(crate) fn inherit_env_vars(
 pub(crate) fn init_well_known_vars(
     shell: &mut Shell<impl extensions::ShellExtensions>,
 ) -> Result<(), error::Error> {
-    let shell_version = shell.version().clone();
+    let shell_version = shell.version().map(ToString::to_string);
     shell.env_mut().set_global(
         "BRUSH_VERSION",
         ShellVariable::new(shell_version.unwrap_or_default()),

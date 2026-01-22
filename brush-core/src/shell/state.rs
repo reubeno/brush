@@ -98,7 +98,7 @@ pub trait ShellState {
     fn history_mut(&mut self) -> Option<&mut crate::history::History>;
 
     /// Returns the shell's official version string (if available).
-    fn version(&self) -> &Option<String>;
+    fn version(&self) -> Option<&str>;
 
     /// Returns the exit status of the last command executed in this shell.
     fn last_exit_status(&self) -> u8;
@@ -107,7 +107,7 @@ pub trait ShellState {
     fn set_last_exit_status(&mut self, status: u8);
 
     /// Returns the key bindings helper for the shell.
-    fn key_bindings(&self) -> &Option<KeyBindingsHelper>;
+    fn key_bindings(&self) -> Option<&KeyBindingsHelper>;
 
     /// Sets the key bindings helper for the shell.
     fn set_key_bindings(&mut self, key_bindings: Option<KeyBindingsHelper>);
@@ -120,5 +120,5 @@ pub trait ShellState {
     fn working_dir_mut(&mut self) -> &mut PathBuf;
 
     /// Returns the product display name for this shell.
-    fn product_display_str(&self) -> &Option<String>;
+    fn product_display_str(&self) -> Option<&str>;
 }

@@ -404,10 +404,9 @@ fn pattern_to_regex_str(
 ///
 /// * `s` - The string to remove the prefix from.
 /// * `pattern` - The pattern to match.
-#[expect(clippy::ref_option)]
 pub(crate) fn remove_largest_matching_prefix<'a>(
     s: &'a str,
-    pattern: &Option<Pattern>,
+    pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         let indices = s.char_indices().rev();
@@ -435,10 +434,9 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
 ///
 /// * `s` - The string to remove the prefix from.
 /// * `pattern` - The pattern to match.
-#[expect(clippy::ref_option)]
 pub(crate) fn remove_smallest_matching_prefix<'a>(
     s: &'a str,
-    pattern: &Option<Pattern>,
+    pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         let mut indices = s.char_indices();
@@ -464,10 +462,9 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 ///
 /// * `s` - The string to remove the suffix from.
 /// * `pattern` - The pattern to match.
-#[expect(clippy::ref_option)]
 pub(crate) fn remove_largest_matching_suffix<'a>(
     s: &'a str,
-    pattern: &Option<Pattern>,
+    pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         #[allow(
@@ -490,10 +487,9 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
 ///
 /// * `s` - The string to remove the suffix from.
 /// * `pattern` - The pattern to match.
-#[expect(clippy::ref_option)]
 pub(crate) fn remove_smallest_matching_suffix<'a>(
     s: &'a str,
-    pattern: &Option<Pattern>,
+    pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         #[allow(
@@ -584,27 +580,27 @@ mod tests {
     #[test]
     fn test_remove_largest_matching_prefix() -> Result<()> {
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("")))?,
+            remove_largest_matching_prefix("ooof", Some(&Pattern::from("")))?,
             "ooof"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("x")))?,
+            remove_largest_matching_prefix("ooof", Some(&Pattern::from("x")))?,
             "ooof"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o")))?,
+            remove_largest_matching_prefix("ooof", Some(&Pattern::from("o")))?,
             "oof"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o*o")))?,
+            remove_largest_matching_prefix("ooof", Some(&Pattern::from("o*o")))?,
             "f"
         );
         assert_eq!(
-            remove_largest_matching_prefix("ooof", &Some(Pattern::from("o*")))?,
+            remove_largest_matching_prefix("ooof", Some(&Pattern::from("o*")))?,
             ""
         );
         assert_eq!(
-            remove_largest_matching_prefix("🚀🚀🚀rocket", &Some(Pattern::from("🚀")))?,
+            remove_largest_matching_prefix("🚀🚀🚀rocket", Some(&Pattern::from("🚀")))?,
             "🚀🚀rocket"
         );
         Ok(())
@@ -613,31 +609,31 @@ mod tests {
     #[test]
     fn test_remove_smallest_matching_prefix() -> Result<()> {
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("")))?,
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("")))?,
             "ooof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("x")))?,
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("x")))?,
             "ooof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o")))?,
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("o")))?,
             "oof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o*o")))?,
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("o*o")))?,
             "of"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("o*")))?,
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("o*")))?,
             "oof"
         );
         assert_eq!(
-            remove_smallest_matching_prefix("ooof", &Some(Pattern::from("ooof")))?,
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("ooof")))?,
             ""
         );
         assert_eq!(
-            remove_smallest_matching_prefix("🚀🚀🚀rocket", &Some(Pattern::from("🚀")))?,
+            remove_smallest_matching_prefix("🚀🚀🚀rocket", Some(&Pattern::from("🚀")))?,
             "🚀🚀rocket"
         );
         Ok(())
@@ -646,27 +642,27 @@ mod tests {
     #[test]
     fn test_remove_largest_matching_suffix() -> Result<()> {
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("")))?,
+            remove_largest_matching_suffix("foo", Some(&Pattern::from("")))?,
             "foo"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("x")))?,
+            remove_largest_matching_suffix("foo", Some(&Pattern::from("x")))?,
             "foo"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("o")))?,
+            remove_largest_matching_suffix("foo", Some(&Pattern::from("o")))?,
             "fo"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("o*")))?,
+            remove_largest_matching_suffix("foo", Some(&Pattern::from("o*")))?,
             "f"
         );
         assert_eq!(
-            remove_largest_matching_suffix("foo", &Some(Pattern::from("foo")))?,
+            remove_largest_matching_suffix("foo", Some(&Pattern::from("foo")))?,
             ""
         );
         assert_eq!(
-            remove_largest_matching_suffix("rocket🚀🚀🚀", &Some(Pattern::from("🚀")))?,
+            remove_largest_matching_suffix("rocket🚀🚀🚀", Some(&Pattern::from("🚀")))?,
             "rocket🚀🚀"
         );
         Ok(())
@@ -675,31 +671,31 @@ mod tests {
     #[test]
     fn test_remove_smallest_matching_suffix() -> Result<()> {
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("")))?,
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("")))?,
             "fooo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("x")))?,
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("x")))?,
             "fooo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o")))?,
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("o")))?,
             "foo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o*o")))?,
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("o*o")))?,
             "fo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("o*")))?,
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("o*")))?,
             "foo"
         );
         assert_eq!(
-            remove_smallest_matching_suffix("fooo", &Some(Pattern::from("fooo")))?,
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("fooo")))?,
             ""
         );
         assert_eq!(
-            remove_smallest_matching_suffix("rocket🚀🚀🚀", &Some(Pattern::from("🚀")))?,
+            remove_smallest_matching_suffix("rocket🚀🚀🚀", Some(&Pattern::from("🚀")))?,
             "rocket🚀🚀"
         );
         Ok(())
