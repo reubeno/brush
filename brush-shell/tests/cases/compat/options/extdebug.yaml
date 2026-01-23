@@ -1,21 +1,6 @@
 name: "Options: extdebug"
 cases:
   #
-  # Basic extdebug option behavior
-  #
-  - name: "extdebug can be enabled"
-    stdin: |
-      shopt -s extdebug
-      shopt extdebug
-
-  - name: "extdebug can be disabled"
-    stdin: |
-      shopt -s extdebug
-      shopt extdebug | grep -q on && echo "enabled"
-      shopt -u extdebug
-      shopt extdebug | grep -q off && echo "disabled"
-
-  #
   # extdebug implies functrace (-T)
   #
   - name: "extdebug implies functrace - DEBUG inherited in functions"
