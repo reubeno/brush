@@ -1,0 +1,316 @@
+name: "Options: functrace (-T)"
+cases:
+  #
+  # Basic functrace option behavior
+  #
+  - name: "functrace can be enabled and disabled"
+    stdin: |
+      set -T
+      echo "enabled: $-" | grep -q T && echo "T is set"
+      set +T
+      echo "disabled: $-" | grep -qv T && echo "T is unset"
+
+  #
+  # DEBUG trap inheritance in functions
+  #
+  - name: "DEBUG trap - does not fire in function without set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      myfunc() {
+        echo "in func"
+      }
+      echo "before func"
+      myfunc
+      echo "after func"
+
+  - name: "DEBUG trap - fires in function with set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      set -T
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      myfunc() {
+        echo "in func"
+      }
+      echo "before func"
+      myfunc
+      echo "after func"
+
+  #
+  # DEBUG trap inheritance in subshells
+  #
+  - name: "DEBUG trap - does not fire in subshell without set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      echo "before subshell"
+      (echo "in subshell")
+      echo "after subshell"
+
+  - name: "DEBUG trap - fires in subshell with set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      set -T
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      echo "before subshell"
+      (echo "in subshell")
+      echo "after subshell"
+
+  #
+  # DEBUG trap inheritance in command substitution
+  #
+  - name: "DEBUG trap - does not fire in command substitution without set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]" >&2' DEBUG
+      echo "before"
+      result=$(echo "in substitution")
+      echo "result: $result"
+
+  - name: "DEBUG trap - fires in command substitution with set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      set -T
+      trap 'echo "[debug: $BASH_COMMAND]" >&2' DEBUG
+      echo "before"
+      result=$(echo "in substitution")
+      echo "result: $result"
+
+  #
+  # DEBUG trap inheritance in pipelines
+  #
+  - name: "DEBUG trap - does not fire in pipeline without set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]" >&2' DEBUG
+      echo "before"
+      echo "hello" | cat | cat
+      echo "after"
+
+  - name: "DEBUG trap - fires in pipeline with set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      set -T
+      trap 'echo "[debug: $BASH_COMMAND]" >&2' DEBUG
+      echo "before"
+      echo "hello" | cat | cat
+      echo "after"
+
+  #
+  # RETURN trap inheritance in functions
+  #
+  - name: "RETURN trap - does not fire in called function without set -T"
+    stdin: |
+      trap 'echo "[return: $FUNCNAME]"' RETURN
+      inner() {
+        echo "in inner"
+      }
+      outer() {
+        echo "in outer"
+        inner
+        echo "outer continuing"
+      }
+      outer
+      echo "after"
+
+  - name: "RETURN trap - fires in called function with set -T"
+    known_failure: true # TODO(functrace): RETURN trap inheritance not implemented
+    stdin: |
+      set -T
+      trap 'echo "[return: ${FUNCNAME:-main}]"' RETURN
+      inner() {
+        echo "in inner"
+      }
+      outer() {
+        echo "in outer"
+        inner
+        echo "outer continuing"
+      }
+      outer
+      echo "after"
+
+  - name: "RETURN trap - fires for each nested function return with set -T"
+    known_failure: true # TODO(functrace): RETURN trap inheritance not implemented
+    stdin: |
+      set -T
+      trap 'echo "[return: ${FUNCNAME:-main} -> $?]"' RETURN
+      level3() { echo "level3"; return 3; }
+      level2() { echo "level2"; level3; return 2; }
+      level1() { echo "level1"; level2; return 1; }
+      level1
+      echo "done"
+
+  #
+  # Function-specific trace attribute (declare -t)
+  #
+  - name: "declare -t - enables trace for specific function"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      traced_func() {
+        echo "in traced"
+      }
+      untraced_func() {
+        echo "in untraced"
+      }
+      declare -t traced_func
+      echo "calling untraced"
+      untraced_func
+      echo "calling traced"
+      traced_func
+      echo "done"
+
+  - name: "declare +t - disables trace for specific function"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      set -T
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      myfunc() {
+        echo "in func"
+      }
+      declare +t myfunc
+      echo "calling func"
+      myfunc
+      echo "done"
+
+  - name: "declare -f - shows trace attribute"
+    stdin: |
+      myfunc() { echo hi; }
+      declare -t myfunc
+      declare -f myfunc | head -1
+
+  #
+  # Toggling set -T mid-script
+  #
+  - name: "set -T enabled mid-script affects subsequent calls"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      func1() { echo "in func1"; }
+      func2() { echo "in func2"; }
+      echo "calling func1 without -T"
+      func1
+      set -T
+      echo "calling func2 with -T"
+      func2
+      echo "done"
+
+  - name: "set +T disables inheritance mid-script"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      set -T
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      func1() { echo "in func1"; }
+      func2() { echo "in func2"; }
+      echo "calling func1 with -T"
+      func1
+      set +T
+      echo "calling func2 without -T"
+      func2
+      echo "done"
+
+  #
+  # DEBUG trap inheritance in background jobs
+  #
+  - name: "DEBUG trap - in background job with set -T"
+    stdin: |
+      set -T
+      trap 'echo "[debug]" >&2' DEBUG
+      {
+        echo "in background"
+      } &
+      wait
+      echo "done"
+
+  #
+  # DEBUG trap inheritance in process substitution
+  #
+  - name: "DEBUG trap - in process substitution with set -T"
+    stdin: |
+      set -T
+      trap 'echo "[debug]" >&2' DEBUG
+      cat <(echo "from procsub")
+      echo "done"
+
+  #
+  # BASH_COMMAND visibility in DEBUG trap with functrace
+  #
+  - name: "BASH_COMMAND in function with set -T"
+    known_failure: true # TODO(BASH_COMMAND): quotes differ
+    stdin: |
+      set -T
+      trap 'echo "cmd: $BASH_COMMAND"' DEBUG
+      myfunc() {
+        local v=10
+        echo "v=$v"
+      }
+      myfunc
+
+  #
+  # Nested functions with varying trace states
+  #
+  - name: "Outer function traced, inner function not traced"
+    known_failure: true # TODO(functrace): selective function tracing not working
+    stdin: |
+      trap 'echo "[debug in ${FUNCNAME:-main}]"' DEBUG
+      inner() {
+        echo "inner"
+      }
+      outer() {
+        echo "outer start"
+        inner
+        echo "outer end"
+      }
+      declare -t outer
+      outer
+      echo "done"
+
+  - name: "Only inner function traced"
+    known_failure: true # TODO(functrace): selective function tracing not working
+    stdin: |
+      trap 'echo "[debug in ${FUNCNAME:-main}]"' DEBUG
+      inner() {
+        echo "inner"
+      }
+      outer() {
+        echo "outer start"
+        inner
+        echo "outer end"
+      }
+      declare -t inner
+      outer
+      echo "done"
+
+  #
+  # RETURN trap with sourced scripts and set -T
+  #
+  - name: "RETURN trap - fires for function in sourced script with set -T"
+    known_failure: true # TODO(functrace): RETURN trap inheritance not implemented
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          sourced_func() {
+            echo "in sourced_func"
+          }
+          sourced_func
+    stdin: |
+      set -T
+      trap 'echo "[return: ${FUNCNAME:-main}]"' RETURN
+      . ./sourced.sh
+      echo "after source"
+
+  #
+  # Edge cases
+  #
+  - name: "DEBUG trap - count in deeply nested function calls with set -T"
+    known_failure: true # TODO(functrace): DEBUG trap count differs
+    stdin: |
+      set -T
+      count=0
+      trap 'count=$((count + 1))' DEBUG
+      a() { b; }
+      b() { c; }
+      c() { echo "deep"; }
+      a
+      echo "debug count: $count"
+
