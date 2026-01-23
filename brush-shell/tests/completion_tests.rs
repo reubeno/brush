@@ -498,8 +498,8 @@ async fn native_complete_path_after_variable() -> Result<()> {
         .await?;
     let results: Vec<String> = completions.candidates.into_iter().collect();
     let expected = [
-        format!("{}/file1.txt", temp_path),
-        format!("{}/file2.txt", temp_path),
+        std::format!("{temp_path}/file1.txt"),
+        std::format!("{temp_path}/file2.txt"),
     ];
     assert_eq!(results, expected);
 

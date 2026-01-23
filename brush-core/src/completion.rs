@@ -455,7 +455,8 @@ impl Spec {
                     }
                 }
                 CompleteAction::Command => {
-                    let mut command_completions = get_command_completions(shell, context);
+                    let mut command_completions =
+                        get_external_command_completions(shell, context.token_to_complete);
                     candidates.append(&mut command_completions);
                 }
                 CompleteAction::Directory => {
@@ -1176,15 +1177,15 @@ async fn get_file_completions(
         .collect()
 }
 
-fn get_command_completions(
+fn get_external_command_completions(
     shell: &Shell<impl extensions::ShellExtensions>,
-    context: &Context<'_>,
+    prefix: &str,
 ) -> IndexSet<String> {
     let mut candidates = IndexSet::new();
 
     // Look for external commands.
     for path in shell.find_executables_in_path_with_prefix(
-        context.token_to_complete,
+        prefix,
         shell.options().case_insensitive_pathname_expansion,
     ) {
         if let Some(file_name) = path.file_name() {
@@ -1195,97 +1196,123 @@ fn get_command_completions(
     candidates.into_iter().collect()
 }
 
+/// Attempts to complete a variable name from the given token.
+/// Returns `Some(Answer)` if the token looks like a variable reference being typed,
+/// or `None` if file/command completion should be used instead.
+///
+/// # Arguments
+///
+/// * `shell` - The shell instance to use for variable lookup.
+/// * `token` - The token being completed. May be empty.
+fn try_get_variable_completions(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    token: &str,
+) -> Option<Answer> {
+    // Determine if this is a braced or unbraced variable reference
+    let (var_prefix, use_braces) = if let Some(prefix) = token.strip_prefix("${") {
+        // For braced: only complete if brace isn't closed yet
+        if prefix.contains('}') {
+            return None;
+        }
+        (prefix, true)
+    } else if let Some(prefix) = token.strip_prefix('$') {
+        (prefix, false)
+    } else {
+        return None;
+    };
+
+    // If there's a path separator, this is a path like $HOME/foo, not a variable to complete
+    if var_prefix.contains(std::path::MAIN_SEPARATOR) {
+        return None;
+    }
+
+    // Find matching variables
+    let mut candidates: IndexSet<String> = shell
+        .env()
+        .iter()
+        .filter(|(key, _)| key.starts_with(var_prefix))
+        .map(|(key, _)| {
+            if use_braces {
+                format!("${{{key}}}")
+            } else {
+                format!("${key}")
+            }
+        })
+        .collect();
+    candidates.sort();
+
+    // Variable completions should not be treated as filenames (no escaping needed)
+    let options = ProcessingOptions {
+        treat_as_filenames: false,
+        ..ProcessingOptions::default()
+    };
+
+    Some(Answer::Candidates(candidates, options))
+}
+
+/// Adds command-position completions to candidates.
+/// This includes external commands, builtins, functions, aliases, and keywords.
+fn add_command_completions(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    prefix: &str,
+    candidates: &mut IndexSet<String>,
+) {
+    // Add external commands.
+    let mut command_completions = get_external_command_completions(shell, prefix);
+    candidates.append(&mut command_completions);
+
+    // Add built-in commands.
+    for (name, registration) in shell.builtins() {
+        if !registration.disabled && name.starts_with(prefix) {
+            candidates.insert(name.to_owned());
+        }
+    }
+
+    // Add shell functions.
+    for (name, _) in shell.funcs().iter() {
+        if name.starts_with(prefix) {
+            candidates.insert(name.to_owned());
+        }
+    }
+
+    // Add aliases.
+    for name in shell.aliases().keys() {
+        if name.starts_with(prefix) {
+            candidates.insert(name.to_owned());
+        }
+    }
+
+    // Add keywords.
+    for keyword in shell.get_keywords() {
+        if keyword.starts_with(prefix) {
+            candidates.insert(keyword.to_string());
+        }
+    }
+}
+
 async fn get_completions_using_basic_lookup(
     shell: &Shell<impl extensions::ShellExtensions>,
     context: &Context<'_>,
 ) -> Answer {
-    // Check for variable completion (token starts with ${ or $)
-    // Only do variable completion if:
-    // - For ${...}: the variable name is incomplete (no closing brace) and no path separator
-    // - For $...: no path separator (otherwise it's a path like $HOME/foo)
-    if let Some(var_prefix) = context.token_to_complete.strip_prefix("${") {
-        // Only complete if the brace isn't closed and there's no path separator
-        if !var_prefix.contains('}') && !var_prefix.contains(std::path::MAIN_SEPARATOR) {
-            // Complete variables with braces: ${VAR} format (include closing brace)
-            let mut candidates = IndexSet::new();
-            for (key, _) in shell.env().iter() {
-                if key.starts_with(var_prefix) {
-                    candidates.insert(format!("${{{key}}}"));
-                }
-            }
-            candidates.sort();
-            // Variable completions should not be treated as filenames (no escaping needed)
-            let options = ProcessingOptions {
-                treat_as_filenames: false,
-                ..ProcessingOptions::default()
-            };
-            return Answer::Candidates(candidates, options);
-        }
-    } else if let Some(var_prefix) = context.token_to_complete.strip_prefix('$') {
-        // Only complete if there's no path separator
-        if !var_prefix.contains(std::path::MAIN_SEPARATOR) {
-            // Complete variables without braces: $VAR format
-            let mut candidates = IndexSet::new();
-            for (key, _) in shell.env().iter() {
-                if key.starts_with(var_prefix) {
-                    candidates.insert(format!("${key}"));
-                }
-            }
-            candidates.sort();
-            // Variable completions should not be treated as filenames (no escaping needed)
-            let options = ProcessingOptions {
-                treat_as_filenames: false,
-                ..ProcessingOptions::default()
-            };
-            return Answer::Candidates(candidates, options);
-        }
+    let token = context.token_to_complete;
+
+    // Try variable completion first (e.g., $HO -> $HOME, ${HO -> ${HOME})
+    if let Some(answer) = try_get_variable_completions(shell, token) {
+        return answer;
     }
 
-    let mut candidates = get_file_completions(shell, context.token_to_complete, false).await;
+    // File completions
+    let mut candidates = get_file_completions(shell, token, false).await;
 
     // If this appears to be the command token (and if there's *some* prefix without
     // a path separator) then also consider whether we should search the path for
     // completions too.
     // TODO(completions): Do a better job than just checking if index == 0.
-    if context.token_index == 0
-        && !context.token_to_complete.is_empty()
-        && !context
-            .token_to_complete
-            .contains(std::path::MAIN_SEPARATOR)
-    {
-        // Add external commands.
-        let mut command_completions = get_command_completions(shell, context);
-        candidates.append(&mut command_completions);
+    let is_command_position =
+        context.token_index == 0 && !token.is_empty() && !token.contains(std::path::MAIN_SEPARATOR);
 
-        // Add built-in commands.
-        for (name, registration) in shell.builtins() {
-            if !registration.disabled && name.starts_with(context.token_to_complete) {
-                candidates.insert(name.to_owned());
-            }
-        }
-
-        // Add shell functions.
-        for (name, _) in shell.funcs().iter() {
-            if name.starts_with(context.token_to_complete) {
-                candidates.insert(name.to_owned());
-            }
-        }
-
-        // Add aliases.
-        for name in shell.aliases().keys() {
-            if name.starts_with(context.token_to_complete) {
-                candidates.insert(name.to_owned());
-            }
-        }
-
-        // Add keywords.
-        for keyword in shell.get_keywords() {
-            if keyword.starts_with(context.token_to_complete) {
-                candidates.insert(keyword.to_string());
-            }
-        }
-
-        // Sort.
+    if is_command_position {
+        add_command_completions(shell, token, &mut candidates);
         candidates.sort();
     }
 
