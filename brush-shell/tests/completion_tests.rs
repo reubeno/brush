@@ -390,3 +390,124 @@ async fn complete_quoted_filenames() -> Result<()> {
 
     Ok(())
 }
+
+// Tests for native completion fallback (without bash-completion installed)
+
+struct TestShellNative {
+    shell: brush_core::Shell,
+    temp_dir: assert_fs::TempDir,
+}
+
+impl TestShellNative {
+    async fn new() -> Result<Self> {
+        let mut shell = brush_core::Shell::builder()
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
+            .default_builtins(brush_builtins::BuiltinSet::BashMode)
+            .build()
+            .await?;
+
+        let temp_dir = assert_fs::TempDir::new()?;
+        shell.set_working_dir(temp_dir.path())?;
+
+        Ok(Self { shell, temp_dir })
+    }
+
+    pub async fn complete_end_of_line_full(
+        &mut self,
+        line: &str,
+    ) -> Result<brush_core::completion::Completions> {
+        Ok(self.shell.complete(line, line.len()).await?)
+    }
+
+    pub fn set_var(&mut self, name: &str, value: &str) -> Result<()> {
+        self.shell
+            .env_mut()
+            .set_global(name, brush_core::ShellVariable::new(value))?;
+        Ok(())
+    }
+}
+
+/// Tests native variable completion without braces (e.g., $VAR)
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_variable_names() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    // Set test variables.
+    test_shell.set_var("TESTVAR1", "value1")?;
+    test_shell.set_var("TESTVAR2", "value2")?;
+
+    // Complete.
+    let completions = test_shell
+        .complete_end_of_line_full("echo $TESTVAR")
+        .await?;
+    let results: Vec<String> = completions.candidates.into_iter().collect();
+    assert_eq!(results, ["$TESTVAR1", "$TESTVAR2"]);
+
+    // Variable completions should not be treated as filenames (to avoid escaping $)
+    assert!(
+        !completions.options.treat_as_filenames,
+        "variable completions should not be treated as filenames"
+    );
+
+    Ok(())
+}
+
+/// Tests native variable completion with braces (e.g., ${VAR})
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_variable_names_with_braces() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    // Set test variables.
+    test_shell.set_var("TESTVAR1", "value1")?;
+    test_shell.set_var("TESTVAR2", "value2")?;
+
+    // Complete.
+    let completions = test_shell
+        .complete_end_of_line_full("echo ${TESTVAR")
+        .await?;
+    let results: Vec<String> = completions.candidates.into_iter().collect();
+    assert_eq!(results, ["${TESTVAR1}", "${TESTVAR2}"]);
+
+    // Variable completions should not be treated as filenames (to avoid escaping $)
+    assert!(
+        !completions.options.treat_as_filenames,
+        "variable completions should not be treated as filenames"
+    );
+
+    Ok(())
+}
+
+/// Tests that file completion works after a variable (e.g., $VAR/path)
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_path_after_variable() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    // Create files in temp dir.
+    test_shell.temp_dir.child("file1.txt").touch()?;
+    test_shell.temp_dir.child("file2.txt").touch()?;
+
+    // Set a variable pointing to the temp dir.
+    let temp_path = test_shell.temp_dir.path().to_str().unwrap().to_owned();
+    test_shell.set_var("MYDIR", &temp_path)?;
+
+    // Complete files after variable expansion.
+    // The completion system expands variables before completing, so results use expanded paths.
+    let completions = test_shell
+        .complete_end_of_line_full("ls $MYDIR/file")
+        .await?;
+    let results: Vec<String> = completions.candidates.into_iter().collect();
+    let expected = [
+        std::format!("{temp_path}/file1.txt"),
+        std::format!("{temp_path}/file2.txt"),
+    ];
+    assert_eq!(results, expected);
+
+    // Path completions should be treated as filenames
+    assert!(
+        completions.options.treat_as_filenames,
+        "path completions should be treated as filenames"
+    );
+
+    Ok(())
+}
