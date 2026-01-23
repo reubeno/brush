@@ -1199,6 +1199,48 @@ async fn get_completions_using_basic_lookup(
     shell: &Shell<impl extensions::ShellExtensions>,
     context: &Context<'_>,
 ) -> Answer {
+    // Check for variable completion (token starts with ${ or $)
+    // Only do variable completion if:
+    // - For ${...}: the variable name is incomplete (no closing brace) and no path separator
+    // - For $...: no path separator (otherwise it's a path like $HOME/foo)
+    if let Some(var_prefix) = context.token_to_complete.strip_prefix("${") {
+        // Only complete if the brace isn't closed and there's no path separator
+        if !var_prefix.contains('}') && !var_prefix.contains(std::path::MAIN_SEPARATOR) {
+            // Complete variables with braces: ${VAR} format (include closing brace)
+            let mut candidates = IndexSet::new();
+            for (key, _) in shell.env().iter() {
+                if key.starts_with(var_prefix) {
+                    candidates.insert(format!("${{{key}}}"));
+                }
+            }
+            candidates.sort();
+            // Variable completions should not be treated as filenames (no escaping needed)
+            let options = ProcessingOptions {
+                treat_as_filenames: false,
+                ..ProcessingOptions::default()
+            };
+            return Answer::Candidates(candidates, options);
+        }
+    } else if let Some(var_prefix) = context.token_to_complete.strip_prefix('$') {
+        // Only complete if there's no path separator
+        if !var_prefix.contains(std::path::MAIN_SEPARATOR) {
+            // Complete variables without braces: $VAR format
+            let mut candidates = IndexSet::new();
+            for (key, _) in shell.env().iter() {
+                if key.starts_with(var_prefix) {
+                    candidates.insert(format!("${key}"));
+                }
+            }
+            candidates.sort();
+            // Variable completions should not be treated as filenames (no escaping needed)
+            let options = ProcessingOptions {
+                treat_as_filenames: false,
+                ..ProcessingOptions::default()
+            };
+            return Answer::Candidates(candidates, options);
+        }
+    }
+
     let mut candidates = get_file_completions(shell, context.token_to_complete, false).await;
 
     // If this appears to be the command token (and if there's *some* prefix without
