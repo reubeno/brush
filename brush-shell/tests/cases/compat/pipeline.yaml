@@ -51,6 +51,10 @@ cases:
       foo() { cat dfgdfg; } |& wc -l
 
   - name: "Possible broken pipe case"
-    skip: true # TODO(pipeline): look into suppressing error?
     stdin: |
       echo hello | var=value
+
+  - name: "printf broken pipe returns 141 in PIPESTATUS"
+    stdin: |
+      printf '%s\n' {0..10000} | x=1
+      echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
