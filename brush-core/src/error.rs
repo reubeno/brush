@@ -316,10 +316,22 @@ pub enum ErrorKind {
     },
 }
 
-impl BuiltinError for Error {}
-
 /// Trait implementable by built-in commands to represent errors.
-pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {}
+pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {
+    /// Try to extract a reference to the underlying `std::io::Error`, if any.
+    /// Implementations should return `None` if there is no inner I/O error.
+    /// They should not attempt to *synthesize* an I/O error if one does not
+    /// naturally exist.
+    fn as_io_error(&self) -> Option<&std::io::Error> {
+        None
+    }
+}
+
+impl BuiltinError for Error {
+    fn as_io_error(&self) -> Option<&std::io::Error> {
+        self.as_io_error()
+    }
+}
 
 /// Helper trait for converting values to exit codes.
 pub trait ConvertibleToExitCode {
@@ -348,8 +360,19 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             ErrorKind::TestCommandParseError(..) => Self::InvalidUsage,
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
             ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
+            ErrorKind::IoError(io_err) => io_err.into(),
             ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
             _ => Self::GeneralError,
+        }
+    }
+}
+
+impl From<&std::io::Error> for results::ExecutionExitCode {
+    fn from(io_err: &std::io::Error) -> Self {
+        if io_err.kind() == std::io::ErrorKind::BrokenPipe {
+            Self::BrokenPipe
+        } else {
+            Self::GeneralError
         }
     }
 }
@@ -388,6 +411,15 @@ impl Error {
     /// Returns a reference to the error kind.
     pub const fn kind(&self) -> &ErrorKind {
         &self.kind
+    }
+
+    /// Try to extract a reference to the underlying `std::io::Error`, if any.
+    pub fn as_io_error(&self) -> Option<&std::io::Error> {
+        match &self.kind {
+            ErrorKind::IoError(io_err) => Some(io_err),
+            ErrorKind::BuiltinError(inner, _) => inner.as_io_error(),
+            _ => None,
+        }
     }
 
     /// Converts this error into the appropriate control flow based on the shell's current state.

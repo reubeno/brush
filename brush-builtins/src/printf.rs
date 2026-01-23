@@ -104,10 +104,13 @@ fn format_via_uucore(
         for item in &format_items {
             let control_flow = item
                 .write(&mut writer, &mut format_args_wrapper)
-                .map_err(|e| {
-                    Error::from(ErrorKind::PrintfInvalidUsage(std::format!(
-                        "printf formatting error: {e}"
-                    )))
+                .map_err(|e| match e {
+                    // Propagate I/O errors directly so they can be handled appropriately
+                    format::FormatError::IoError(io_err) => Error::from(io_err),
+                    // Wrap other format errors
+                    other => Error::from(ErrorKind::PrintfInvalidUsage(std::format!(
+                        "printf formatting error: {other}"
+                    ))),
                 })?;
 
             if control_flow == ControlFlow::Break(()) {

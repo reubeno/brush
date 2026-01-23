@@ -143,6 +143,8 @@ pub enum ExecutionExitCode {
     NotFound,
     /// Indicates execution was interrupted.
     Interrupted,
+    /// Indicates a broken pipe (SIGPIPE) was encountered.
+    BrokenPipe,
     /// Indicates unimplemented functionality was encountered.
     Unimplemented,
     /// A custom exit code.
@@ -166,6 +168,7 @@ impl From<u8> for ExecutionExitCode {
             126 => Self::CannotExecute,
             127 => Self::NotFound,
             130 => Self::Interrupted,
+            141 => Self::BrokenPipe,
             code => Self::Custom(code),
         }
     }
@@ -187,6 +190,7 @@ impl From<&ExecutionExitCode> for u8 {
             ExecutionExitCode::CannotExecute => 126,
             ExecutionExitCode::NotFound => 127,
             ExecutionExitCode::Interrupted => 130,
+            ExecutionExitCode::BrokenPipe => 141,
             ExecutionExitCode::Custom(code) => *code,
         }
     }

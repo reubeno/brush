@@ -13,8 +13,8 @@ use itertools::Itertools;
 use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
-    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
-    builtins, commands, env, error, escape,
+    ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
+    Shell, ShellFd, builtins, commands, env, error, escape,
     extensions::{self, ShellExtensions},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
@@ -675,9 +675,19 @@ async fn execute_builtin_command<SE: extensions::ShellExtensions>(
     // In POSIX mode, special builtins that return errors are to be treated as fatal.
     let mark_errors_fatal = builtin.special_builtin && context.shell.options().posix_mode;
 
-    (builtin.execute_func)(context, args)
-        .await
-        .map_err(|e| if mark_errors_fatal { e.into_fatal() } else { e })
+    match (builtin.execute_func)(context, args).await {
+        Ok(result) => Ok(result),
+        Err(e) => {
+            // Broken pipe errors should silently return the appropriate exit code
+            if let Some(io_err) = e.as_io_error() {
+                if io_err.kind() == std::io::ErrorKind::BrokenPipe {
+                    return Ok(ExecutionExitCode::from(io_err).into());
+                }
+            }
+
+            Err(if mark_errors_fatal { e.into_fatal() } else { e })
+        }
+    }
 }
 
 pub(crate) async fn invoke_shell_function(
