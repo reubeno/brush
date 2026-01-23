@@ -319,7 +319,7 @@ cases:
       cat <(trap -p INT)
 
   - name: "process substitution output trap inheritance"
-    known_failure: true # TODO: process substitution trap inheritance
+    skip: true # TODO: process substitution trap inheritance / inconsistent across distros
     stdin: |
       trap 'echo "[int]"' INT
       echo "data" > >(trap -p INT; cat > /dev/null)
