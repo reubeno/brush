@@ -1,10 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+};
 
 use indexmap::IndexSet;
 
 use brush_core::escape;
 
-#[allow(dead_code)]
 pub(crate) async fn complete_async(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     line: &str,
@@ -58,18 +60,22 @@ pub(crate) async fn complete_async(
         }
     }
 
-    // TODO(completion): Consider optimizing this out when not needed?
+    // Store the quote context for later use when inserting completions
+    completions.options.quote_char = quote_char;
+
+    // Postprocess candidates: add directory suffix and trailing space, but do NOT
+    // escape special characters here. Escaping is done only when inserting a single
+    // completion (not when displaying multiple options).
     let completing_end_of_line = pos == line.len();
     completions.candidates = completions
         .candidates
         .into_iter()
         .map(|candidate| {
-            postprocess_completion_candidate(
+            postprocess_completion_candidate_for_display(
                 candidate,
                 &completions.options,
                 working_dir.as_ref(),
                 completing_end_of_line,
-                quote_char,
             )
         })
         .collect();
@@ -77,13 +83,14 @@ pub(crate) async fn complete_async(
     completions
 }
 
-#[allow(dead_code)]
-fn postprocess_completion_candidate(
+/// Postprocess a completion candidate for display purposes.
+/// Adds directory suffix and trailing space, but does NOT escape special characters.
+/// This is used when showing multiple completion options to the user.
+fn postprocess_completion_candidate_for_display(
     mut candidate: String,
     options: &brush_core::completion::ProcessingOptions,
     working_dir: &Path,
     completing_end_of_line: bool,
-    quote_char: Option<char>,
 ) -> String {
     if options.treat_as_filenames {
         // Check if it's a directory.
@@ -99,17 +106,8 @@ fn postprocess_completion_candidate(
                 candidate.push(std::path::MAIN_SEPARATOR);
             }
         }
-
-        if !options.no_autoquote_filenames {
-            let quote_mode = match quote_char {
-                Some('\'') => escape::QuoteMode::SingleQuote,
-                Some('\"') => escape::QuoteMode::DoubleQuote,
-                _ => escape::QuoteMode::BackslashEscape,
-            };
-
-            candidate = escape::quote_if_needed(&candidate, quote_mode).to_string();
-        }
     }
+
     if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
         if !options.treat_as_filenames || !candidate.ends_with(std::path::MAIN_SEPARATOR) {
             candidate.push(' ');
@@ -117,4 +115,23 @@ fn postprocess_completion_candidate(
     }
 
     candidate
+}
+
+/// Escape a completion candidate for insertion into the command line.
+/// This applies appropriate quoting based on the quote context.
+pub(crate) fn escape_completion_for_insertion<'a>(
+    candidate: &'a str,
+    options: &brush_core::completion::ProcessingOptions,
+) -> Cow<'a, str> {
+    if options.treat_as_filenames && !options.no_autoquote_filenames {
+        let quote_mode = match options.quote_char {
+            Some('\'') => escape::QuoteMode::SingleQuote,
+            Some('\"') => escape::QuoteMode::DoubleQuote,
+            _ => escape::QuoteMode::BackslashEscape,
+        };
+
+        escape::quote_if_needed(candidate, quote_mode)
+    } else {
+        Cow::Borrowed(candidate)
+    }
 }

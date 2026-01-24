@@ -232,6 +232,10 @@ impl<'a> ReadLineState<'a> {
             return Ok(());
         }
 
+        // Escape the candidate for insertion (handles special chars like spaces)
+        let escaped_candidate =
+            crate::completion::escape_completion_for_insertion(candidate, &completions.options);
+
         let mut delete_count = completions.delete_count;
         let mut redisplay_offset = completions.insertion_index;
 
@@ -239,7 +243,8 @@ impl<'a> ReadLineState<'a> {
         // completion's prefix that
         // is identical to what we already had in the token-being-completed.
         if delete_count > 0
-            && candidate.starts_with(&self.line[redisplay_offset..redisplay_offset + delete_count])
+            && escaped_candidate
+                .starts_with(&self.line[redisplay_offset..redisplay_offset + delete_count])
         {
             redisplay_offset += delete_count;
             delete_count = 0;
@@ -247,11 +252,11 @@ impl<'a> ReadLineState<'a> {
 
         let mut updated_line = self.line.clone();
         updated_line.truncate(completions.insertion_index);
-        updated_line.push_str(candidate);
+        updated_line.push_str(&escaped_candidate);
         updated_line.push_str(&self.line[self.cursor..]);
         self.line = updated_line;
 
-        self.cursor = completions.insertion_index + candidate.len();
+        self.cursor = completions.insertion_index + escaped_candidate.len();
 
         let move_left = repeated_char_str(BACKSPACE, delete_count);
         eprint!("{move_left}{}", &self.line[redisplay_offset..]);
