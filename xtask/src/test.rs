@@ -142,6 +142,24 @@ pub struct BashCompletionArgs {
     #[clap(long)]
     bash_completion_path: PathBuf,
 
+    /// List available tests without running them.
+    #[clap(long)]
+    list: bool,
+
+    /// Filter tests by name pattern (passed to pytest -k).
+    /// Supports pytest expression syntax, e.g., `"test_alias"`, `"test_alias and test_1"`.
+    #[clap(long, short = 't')]
+    test_filter: Option<String>,
+
+    /// Run only specific test file(s). Can be specified multiple times.
+    /// Example: `-f test_alias.py -f test_bash.py`
+    #[clap(long, short = 'f')]
+    file: Vec<String>,
+
+    /// Stop on first test failure.
+    #[clap(long, short = 'x')]
+    stop_on_first: bool,
+
     /// Output file for JSON test results.
     #[clap(long, short = 'o')]
     output: Option<PathBuf>,
@@ -155,7 +173,8 @@ pub struct BashCompletionArgs {
     #[clap(long)]
     summary_script: Option<PathBuf>,
 
-    /// Number of parallel test workers.
+    /// Number of parallel test workers (requires pytest-xdist).
+    /// Use -j 1 to disable parallel execution.
     #[clap(long, short = 'j', default_value = "128")]
     jobs: u32,
 }
@@ -367,6 +386,47 @@ fn run_tests_with_coverage(
     Ok(())
 }
 
+/// List available bash-completion tests without running them.
+fn list_bash_completion_tests(sh: &Shell, args: &BashCompletionArgs, verbose: bool) -> Result<()> {
+    eprintln!("Collecting bash-completion tests...");
+
+    // Determine test targets - specific files or all tests
+    let test_targets: Vec<String> = if args.file.is_empty() {
+        vec!["./t".to_string()]
+    } else {
+        args.file
+            .iter()
+            .map(|f| {
+                if f.starts_with("./t/") || f.starts_with("t/") {
+                    f.clone()
+                } else {
+                    format!("./t/{f}")
+                }
+            })
+            .collect()
+    };
+
+    let mut pytest_args = vec!["--collect-only".to_string(), "-q".to_string()];
+
+    // Add test filter if specified
+    if let Some(filter) = &args.test_filter {
+        pytest_args.push("-k".to_string());
+        pytest_args.push(filter.clone());
+    }
+
+    // Add test targets
+    pytest_args.extend(test_targets);
+
+    if verbose {
+        eprintln!("Running: pytest {}", pytest_args.join(" "));
+    }
+
+    // Run pytest --collect-only and display results
+    cmd!(sh, "pytest").args(&pytest_args).run()?;
+
+    Ok(())
+}
+
 /// Run the bash-completion project's test suite against brush.
 ///
 /// This runs pytest on the bash-completion test suite with brush as the shell,
@@ -382,11 +442,8 @@ fn run_bash_completion_tests(
     binary_args: &BinaryArgs,
     verbose: bool,
 ) -> Result<()> {
-    eprintln!("Running bash-completion test suite...");
-
     // Find the brush binary (use explicit path or auto-detect from target dir)
     let brush_path = binary_args.find_brush_binary()?;
-    eprintln!("Using brush binary: {}", brush_path.display());
 
     let test_dir = args.bash_completion_path.join("test");
     if !test_dir.exists() {
@@ -396,34 +453,72 @@ fn run_bash_completion_tests(
         );
     }
 
-    // Get workspace root for script path resolution (fail hard if not found)
-    let workspace_root = find_workspace_root()?;
-
-    let brush_path_str = brush_path.display().to_string();
-    let jobs = args.jobs.to_string();
-
     // Build the pytest command
     let dir_guard = sh.push_dir(&test_dir);
 
     // Set environment variable for the test suite
+    let brush_path_str = brush_path.display().to_string();
     let _env = sh.push_env(
         "BASH_COMPLETION_TEST_BASH",
         format!("{brush_path_str} --noprofile --no-config --input-backend=basic"),
     );
 
-    // Determine output arguments
-    let json_output = args.output.as_ref().map_or_else(
-        || "test-results-bash-completion.json".to_string(),
-        |p| p.display().to_string(),
-    );
+    // Handle --list mode: just collect and display tests
+    if args.list {
+        return list_bash_completion_tests(sh, args, verbose);
+    }
 
-    // Build the json report file argument
-    let json_report_arg = format!("--json-report-file={json_output}");
+    eprintln!("Running bash-completion test suite...");
+    eprintln!("Using brush binary: {}", brush_path.display());
+
+    // Determine test targets - specific files or all tests
+    let test_targets: Vec<String> = if args.file.is_empty() {
+        vec!["./t".to_string()]
+    } else {
+        args.file
+            .iter()
+            .map(|f| {
+                if f.starts_with("./t/") || f.starts_with("t/") {
+                    f.clone()
+                } else {
+                    format!("./t/{f}")
+                }
+            })
+            .collect()
+    };
 
     // Build pytest args
-    let mut pytest_args = vec!["-n", &jobs, "--json-report", &json_report_arg, "./t"];
+    let mut pytest_args: Vec<String> = Vec::new();
+
+    // Add parallel execution flag if jobs > 1 (requires pytest-xdist)
+    if args.jobs > 1 {
+        pytest_args.push("-n".to_string());
+        pytest_args.push(args.jobs.to_string());
+    }
+
+    // Add JSON report if output is requested (requires pytest-json-report)
+    let json_output = args.output.as_ref().map(|p| p.display().to_string());
+    if let Some(ref output) = json_output {
+        pytest_args.push("--json-report".to_string());
+        pytest_args.push(format!("--json-report-file={output}"));
+    }
+
+    // Add optional flags
     if verbose {
-        pytest_args.insert(0, "-v");
+        pytest_args.push("-v".to_string());
+    }
+    if args.stop_on_first {
+        pytest_args.push("-x".to_string());
+    }
+    if let Some(filter) = &args.test_filter {
+        pytest_args.push("-k".to_string());
+        pytest_args.push(filter.clone());
+    }
+
+    // Add test targets at the end
+    pytest_args.extend(test_targets);
+
+    if verbose {
         eprintln!("Running: pytest {}", pytest_args.join(" "));
     }
 
@@ -434,8 +529,11 @@ fn run_bash_completion_tests(
         eprintln!("Some tests failed, but continuing to generate reports...");
     }
 
-    // Generate summary report if requested
-    if let Some(summary_path) = &args.summary_output {
+    // Generate summary report if requested (requires JSON output)
+    if let (Some(summary_path), Some(output)) = (&args.summary_output, &json_output) {
+        // Get workspace root for script path resolution
+        let workspace_root = find_workspace_root()?;
+
         let summary_path_str = summary_path.display().to_string();
 
         // Determine the script path - use provided path or default to workspace root
@@ -451,10 +549,10 @@ fn run_bash_completion_tests(
 
         let title = "Test Summary: bash-completion test suite";
         if verbose {
-            eprintln!("Running: python3 {script_path_str} -r {json_output} --title \"{title}\"");
+            eprintln!("Running: python3 {script_path_str} -r {output} --title \"{title}\"");
         }
         let summary_result = cmd!(sh, "python3 {script_path_str}")
-            .args(["-r", &json_output, "--title", title])
+            .args(["-r", output, "--title", title])
             .read();
 
         match summary_result {
@@ -466,10 +564,14 @@ fn run_bash_completion_tests(
                 eprintln!("Warning: Failed to generate summary report: {e}");
             }
         }
+    } else if args.summary_output.is_some() && json_output.is_none() {
+        eprintln!("Warning: --summary-output requires --output for JSON results");
     }
 
     eprintln!("bash-completion test suite completed.");
-    eprintln!("Results written to: {json_output}");
+    if let Some(ref output) = json_output {
+        eprintln!("Results written to: {output}");
+    }
 
     // Propagate test failure after reports are generated
     if pytest_failed {
