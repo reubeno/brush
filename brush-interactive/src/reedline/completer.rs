@@ -74,8 +74,11 @@ impl<SE: brush_core::ShellExtensions> ReedlineCompleter<SE> {
             candidate.pop();
         }
 
+        // Escape the candidate for insertion (handles special chars like spaces).
+        let escaped_candidate = completion::escape_completion_for_insertion(&candidate, options);
+
         reedline::Suggestion {
-            value: candidate,
+            value: escaped_candidate.to_string(),
             description: None,
             style: Some(style),
             extra: None,
