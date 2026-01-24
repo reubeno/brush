@@ -147,12 +147,12 @@ pub struct BashCompletionArgs {
     list: bool,
 
     /// Filter tests by name pattern (passed to pytest -k).
-    /// Supports pytest expression syntax, e.g., "test_alias", "test_alias and test_1".
+    /// Supports pytest expression syntax, e.g., `"test_alias"`, `"test_alias and test_1"`.
     #[clap(long, short = 't')]
     test_filter: Option<String>,
 
     /// Run only specific test file(s). Can be specified multiple times.
-    /// Example: -f test_alias.py -f test_bash.py
+    /// Example: `-f test_alias.py -f test_bash.py`
     #[clap(long, short = 'f')]
     file: Vec<String>,
 
