@@ -83,6 +83,15 @@ cases:
       test_pattern "abab" "+(ab|ac)"
       test_pattern "ad" "+(ab|ac)"
 
+  - name: "Extglob with escaping"
+    stdin: |
+      shopt -s extglob
+
+      [[ \( == +(\() ]] && echo "1. Matched"
+      [[ x  == +(\() ]] && echo "2. Matched"
+      [[ \) == +(\)) ]] && echo "3. Matched"
+      [[ x  == +(\)) ]] && echo "4. Matched"
+
   - name: "Patterns: quoting"
     stdin: |
       [[ "abc" == "a"* ]] && echo "1. Matched"
