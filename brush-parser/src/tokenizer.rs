@@ -1058,6 +1058,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 state.append_char(c);
 
                 let mut paren_depth = 1;
+                let mut in_escape = false;
 
                 // Keep consuming until we see the matching end ')'.
                 while paren_depth > 0 {
@@ -1065,12 +1066,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         // Include it in the token.
                         state.append_char(extglob_char);
 
-                        // Look for ')' to terminate.
-                        // TODO(tokenizer): handle escaping?
-                        if extglob_char == '(' {
-                            paren_depth += 1;
-                        } else if extglob_char == ')' {
-                            paren_depth -= 1;
+                        match extglob_char {
+                            _ if in_escape => in_escape = false,
+                            '\\' => in_escape = true,
+                            '(' => paren_depth += 1,
+                            ')' => paren_depth -= 1,
+                            _ => (),
                         }
                     } else {
                         return Err(TokenizerError::UnterminatedExtendedGlob(
