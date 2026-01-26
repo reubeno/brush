@@ -113,9 +113,29 @@ cases:
 
   - name: "Pattern matching: character ranges"
     stdin: |
-      [[ "x" == [a-z] ]] && echo "1. Matched"
-      [[ "x" == [0-9] ]] && echo "2. Matched"
-      [[ "-" == [---] ]] && echo "3. Matched"
+      [[ "x" == [a-z]   ]] && echo "1. Matched"
+      [[ "x" == [0-9]   ]] && echo "2. Matched"
+      [[ "-" == [---]   ]] && echo "3. Matched"
+      [[ "*" == [\*-\*] ]] && echo "4. Matched"
+      [[ "-" == [\*-\*] ]] && echo "5. Matched"
+      [[ "." == [\*-/]  ]] && echo "6. Matched"
+
+  - name: "Pattern matching: invalid character ranges"
+    stdin: |
+      [[ "a" == [f-a] ]] && echo "1. Matched"
+      [[ "b" == [f-a] ]] && echo "2. Matched"
+      [[ "f" == [f-a] ]] && echo "3. Matched"
+      [[ "g" == [f-a] ]] && echo "4. Matched"
+
+  - name: "Pattern matching: escaped hyphen in bracket"
+    stdin: |
+      [[ "-" == [a\-\*] ]] && echo "1. Matched"
+      [[ "*" == [a\-\*] ]] && echo "2. Matched"
+      [[ "a" == [a\-\*] ]] && echo "3. Matched"
+      [[ "b" == [a\-\*] ]] && echo "4. Matched"
+      [[ "a" == [a\-f]  ]] && echo "5. Matched"
+      [[ "b" == [a\-f]  ]] && echo "6. Matched"
+      [[ "f" == [a\-f]  ]] && echo "7. Matched"
 
   - name: "Pattern matching: character sets"
     stdin: |
