@@ -34,7 +34,7 @@ miette = { version = "7.6.0", optional = true, default-features = false, feature
 ] }
 peg = "0.8.5"
 serde = { version = "1.0.228", optional = true, features = ["derive", "rc"] }
-thiserror = "2.0.17"
+thiserror = "2.0.18"
 tracing = "0.1.44"
 utf8-chars = "3.0.6"
 
