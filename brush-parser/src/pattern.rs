@@ -56,21 +56,36 @@ peg::parser! {
 
         rule bracket_expression() -> String =
             "[" invert:(invert_char()?) members:bracket_member()+ "]" {
-                let mut members = members;
-                if invert.is_some() {
-                    members.insert(0, String::from("^"));
-                }
+                let mut members = members.into_iter().flatten().collect::<Vec<_>>();
 
-                std::format!("[{}]", members.join(""))
+                // If we completed the parse but ended up with no valid members
+                // of the bracket expression, then return a regex that matches nothing.
+                // (Or in the inverted case, matches everything.)
+                if members.is_empty() {
+                    if invert.is_some() {
+                        String::from(".")
+                    } else {
+                        String::from("(?!)")
+                    }
+                } else {
+                    if invert.is_some() {
+                        members.insert(0, String::from("^"));
+                    }
+
+                    std::format!("[{}]", members.join(""))
+                }
             }
 
         rule invert_char() -> bool =
             ['!' | '^'] { true }
 
-        rule bracket_member() -> String =
-            char_class_expression() /
-            char_range() /
-            single_char_bracket_member()
+        rule bracket_member() -> Option<String> =
+            e:char_class_expression() { Some(e) } /
+            r:char_range() { r } /
+            m:single_char_bracket_member() {
+                let (char_str, _) = m;
+                Some(char_str)
+            }
 
         rule char_class_expression() -> String =
             e:$("[:" char_class() ":]") { e.to_owned() }
@@ -78,13 +93,26 @@ peg::parser! {
         rule char_class() =
             "alnum" / "alpha" / "blank" / "cntrl" / "digit" / "graph" / "lower" / "print" / "punct" / "space" / "upper"/ "xdigit"
 
-        rule char_range() -> String =
-            range:$([_] "-" [c if c != ']']) { range.to_owned() }
+        rule char_range() -> Option<String> =
+            from:single_char_bracket_member() "-" to:single_char_bracket_member() {
+                let (from_str, from_c) = from;
+                let (to_str, to_c) = to;
 
-        rule single_char_bracket_member() -> String =
-            s:$(['\\'] [c]) { s.to_owned() } /
-            ['['] { String::from(r"\[") } /
-            [c if c != ']'] { c.to_string() }
+                // Evaluate if the range is valid.
+                if from_c <= to_c {
+                    Some(std::format!("{from_str}-{to_str}"))
+                } else {
+                    None
+                }
+            }
+
+        rule single_char_bracket_member() -> (String, char) =
+            // Preserve escaped characters as-is.
+            ['\\'] [c] { (std::format!("\\{c}"), c) } /
+            // Escape opening bracket.
+            ['['] { (String::from(r"\["), '[') } /
+            // Any other character except closing bracket gets added as-is.
+            [c if c != ']'] { (c.to_string(), c) }
 
         rule wildcard() -> String =
             "?" { String::from(".") } /
@@ -154,7 +182,7 @@ peg::parser! {
 pub const fn regex_char_needs_escaping(c: char) -> bool {
     matches!(
         c,
-        '[' | ']' | '(' | ')' | '{' | '}' | '*' | '?' | '.' | '+' | '^' | '$' | '|' | '\\'
+        '[' | ']' | '(' | ')' | '{' | '}' | '*' | '?' | '.' | '+' | '^' | '$' | '|' | '\\' | '-'
     )
 }
 
@@ -167,12 +195,17 @@ mod tests {
     #[test]
     fn test_bracket_exprs() -> Result<()> {
         assert_eq!(pattern_to_regex_str("[a-z]", true)?, "[a-z]");
+        assert_eq!(pattern_to_regex_str("[z-a]", true)?, "(?!)");
+        assert_eq!(pattern_to_regex_str("[+-/]", true)?, "[+-/]");
+        assert_eq!(pattern_to_regex_str(r"[\*-/]", true)?, r"[\*-/]");
         assert_eq!(pattern_to_regex_str("[abc]", true)?, "[abc]");
         assert_eq!(pattern_to_regex_str(r"[\(]", true)?, r"[\(]");
         assert_eq!(pattern_to_regex_str(r"[(]", true)?, "[(]");
         assert_eq!(pattern_to_regex_str("[[:digit:]]", true)?, "[[:digit:]]");
         assert_eq!(pattern_to_regex_str(r"[-(),!]*", true)?, r"[-(),!].*");
         assert_eq!(pattern_to_regex_str(r"[-\(\),\!]*", true)?, r"[-\(\),\!].*");
+        assert_eq!(pattern_to_regex_str(r"[a\-b]", true)?, r"[a\-b]");
+        assert_eq!(pattern_to_regex_str(r"[a\-\*]", true)?, r"[a\-\*]");
         Ok(())
     }
 

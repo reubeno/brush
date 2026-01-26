@@ -329,6 +329,11 @@ pub(crate) async fn basic_expand_pattern(
     word_str: impl AsRef<str>,
 ) -> Result<patterns::Pattern, error::Error> {
     let mut expander = WordExpander::new(shell, params);
+
+    // When expanding patterns, we do not want backslash removal to occur in unquoted
+    // contexts, as that would interfere with pattern syntax.
+    expander.disable_unquoted_backslash_removal = true;
+
     expander.basic_expand_pattern(word_str.as_ref()).await
 }
 
@@ -462,11 +467,19 @@ pub async fn assign_to_named_parameter(
 }
 
 struct WordExpander<'a, SE: extensions::ShellExtensions> {
+    /// The shell in which to perform expansion.
     shell: &'a mut Shell<SE>,
+    /// The execution parameters to use during expansion.
     params: &'a ExecutionParameters,
+    /// The parser options to use during expansion.
     parser_options: brush_parser::ParserOptions,
+    /// Whether to forcibly disable brace expansion.
     force_disable_brace_expansion: bool,
+    /// Whether to disable command substitutions.
     disable_command_substitutions: bool,
+    /// Whether to disable backslash removal in unquoted contexts.
+    disable_unquoted_backslash_removal: bool,
+    /// Whether we are currently expanding inside a double-quoted context.
     in_double_quotes: bool,
 }
 
@@ -479,6 +492,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             parser_options,
             force_disable_brace_expansion: false,
             disable_command_substitutions: false,
+            disable_unquoted_backslash_removal: false,
             in_double_quotes: false,
         }
     }
@@ -501,6 +515,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             parser_options,
             force_disable_brace_expansion: !options.brace_expand,
             disable_command_substitutions: !options.execute_command_substitutions,
+            disable_unquoted_backslash_removal: false,
             in_double_quotes: false,
         }
     }
@@ -849,7 +864,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
                 if let Some(escaped) = s.strip_prefix('\\') {
-                    // We expect a backslash here; remove it.
+                    // If we are *not* in a double-quoted context and we were requested to skip
+                    // unquoted backslash removal, then we need to skip removing backslashes here.
+                    if !self.in_double_quotes && self.disable_unquoted_backslash_removal {
+                        return Ok(Expansion::from(ExpansionPiece::Splittable(s)));
+                    }
+
+                    // Otherwise, we expect a backslash here; remove it.
                     Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
                 } else {
                     // We don't ever expect this case, as it breaks our invariant--but
