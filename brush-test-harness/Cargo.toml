@@ -45,4 +45,4 @@ walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dependencies]
 expectrl = "0.8.0"
-nix = { version = "0.30.1", features = ["process"] }
+nix = { version = "0.31.1", features = ["process"] }
