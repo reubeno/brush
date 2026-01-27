@@ -84,6 +84,7 @@ impl MinimalInputBackend {
     }
 
     /// Check if the input is syntactically complete (not waiting for more input)
+    #[cfg(not(target_family = "wasm"))]
     fn is_input_complete(
         shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
         input: &str,
@@ -101,6 +102,16 @@ impl MinimalInputBackend {
             Err(brush_parser::ParseError::ParsingAtEndOfInput) => false,
             _ => true,
         }
+    }
+
+    /// On WASM, block_in_place is not available (no multi-thread runtime),
+    /// so we treat every line as complete (no multi-line continuation).
+    #[cfg(target_family = "wasm")]
+    fn is_input_complete(
+        _shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        _input: &str,
+    ) -> bool {
+        true
     }
 
     fn display_prompt(prompt: &str) -> Result<(), ShellError> {
