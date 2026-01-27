@@ -480,7 +480,7 @@ async fn exec_builtin_impl<T: Command + Send + Sync, SE: extensions::ShellExtens
     let command = match result {
         Ok(command) => command,
         Err(e) => {
-            writeln!(context.stderr(), "{e}")?;
+            let _ = writeln!(context.stderr(), "{e}");
             return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };
@@ -523,7 +523,7 @@ async fn exec_declaration_builtin_impl<
     let mut command = match result {
         Ok(command) => command,
         Err(e) => {
-            writeln!(context.stderr(), "{e}")?;
+            let _ = writeln!(context.stderr(), "{e}");
             return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };
