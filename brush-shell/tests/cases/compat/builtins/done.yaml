@@ -1,0 +1,5 @@
+name: "done (){ ;: }"
+cases:
+  - name: "done (){ ;: }"
+    stdin: |
+      done (){ :; }; echo "done (){ :; }" => $?"

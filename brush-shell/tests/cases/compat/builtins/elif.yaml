@@ -1,0 +1,5 @@
+name: "elif (){ ;: }"
+cases:
+  - name: "elif (){ ;: }"
+    stdin: |
+      elif (){ :; }; echo "elif (){ :; }" => $?"

@@ -1,0 +1,5 @@
+name: "then (){ ;: }"
+cases:
+  - name: "then (){ ;: }"
+    stdin: |
+      then (){ :; }; echo "then (){ :; }" => $?"

@@ -1,0 +1,5 @@
+name: "case (){ ;: }"
+cases:
+  - name: "case (){ ;: }"
+    stdin: |
+      case (){ :; }; echo "case (){ :; }" => $?"

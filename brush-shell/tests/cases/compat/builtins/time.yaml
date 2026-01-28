@@ -1,0 +1,5 @@
+name: "time (){ ;: }"
+cases:
+  - name: "time (){ ;: }"
+    stdin: |
+      time (){ :; }; echo "time (){ :; }" => $?"

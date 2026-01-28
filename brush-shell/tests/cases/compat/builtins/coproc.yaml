@@ -1,0 +1,5 @@
+name: "coproc (){ ;: }"
+cases:
+  - name: "coproc (){ ;: }"
+    stdin: |
+      coproc (){ :; }; echo "coproc (){ :; }" => $?"
