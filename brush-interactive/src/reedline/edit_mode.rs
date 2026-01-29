@@ -262,13 +262,11 @@ impl UpdatableBindings {
                     return Ok(());
                 }
 
-                // Create a single action: either the action itself, or a Sequence if multiple.
-                let action = match actions.len() {
-                    1 => actions
-                        .into_iter()
-                        .next()
-                        .unwrap_or_else(|| unreachable!("actions.len() == 1 but no element found")),
-                    _ => KeyAction::Sequence(actions),
+                // Create a single action: either the action itself (if just one), or a Sequence.
+                let action = if let [single] = actions.as_slice() {
+                    single.clone()
+                } else {
+                    KeyAction::Sequence(actions)
                 };
 
                 self.do_bind(seq, action, false)?;
