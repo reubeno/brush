@@ -1,0 +1,66 @@
+# Tests for the filter-test-shell example
+#
+# These tests verify that the filter infrastructure works correctly when
+# integrated into a shell. They use non-oracle testing since filters are
+# a brush-specific extension.
+#
+# Note: These tests use removed_default_args to clear the test harness's default
+# args (--norc, --noprofile, etc.) since filter-test-shell is a minimal shell
+# that only accepts -c 'command'.
+name: filter/example-shell
+
+# Default removed args for all test cases - filter-test-shell only accepts -c
+default_removed_args: &removed_args
+  - "--norc"
+  - "--noprofile"
+  - "--no-config"
+  - "--input-backend=basic"
+  - "--disable-bracketed-paste"
+  - "--disable-color"
+
+cases:
+  - name: "basic echo command is audited"
+    shell_binary: "examples/filter-test-shell"
+    args: ["-c", "echo hello"]
+    removed_default_args: *removed_args
+    skip_oracle: true
+    expected_stdout: "hello\n"
+    expected_stderr: "[AUDIT] → echo\n[AUDIT] ✓ ok\n"
+    expected_exit_code: 0
+
+  - name: "blocked command returns error"
+    shell_binary: "examples/filter-test-shell"
+    args: ["-c", "blocked"]
+    removed_default_args: *removed_args
+    skip_oracle: true
+    expected_stdout: ""
+    expected_stderr: "[AUDIT] BLOCKED: blocked\nerror: command not found: blocked (by filter)\n"
+    expected_exit_code: 127
+
+  - name: "multiple commands are all audited"
+    shell_binary: "examples/filter-test-shell"
+    args: ["-c", "echo one; echo two"]
+    removed_default_args: *removed_args
+    skip_oracle: true
+    expected_stdout: "one\ntwo\n"
+    # Each echo gets its own audit entry
+    expected_stderr: "[AUDIT] → echo\n[AUDIT] ✓ ok\n[AUDIT] → echo\n[AUDIT] ✓ ok\n"
+    expected_exit_code: 0
+
+  - name: "true builtin passes through filter"
+    shell_binary: "examples/filter-test-shell"
+    args: ["-c", "true"]
+    removed_default_args: *removed_args
+    skip_oracle: true
+    expected_stdout: ""
+    expected_stderr: "[AUDIT] → true\n[AUDIT] ✓ ok\n"
+    expected_exit_code: 0
+
+  - name: "false builtin passes through filter with error"
+    shell_binary: "examples/filter-test-shell"
+    args: ["-c", "false"]
+    removed_default_args: *removed_args
+    skip_oracle: true
+    expected_stdout: ""
+    expected_stderr: "[AUDIT] → false\n[AUDIT] ✓ ok\n"
+    expected_exit_code: 1

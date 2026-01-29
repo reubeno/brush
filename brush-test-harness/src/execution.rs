@@ -26,12 +26,27 @@ pub struct RunResult {
 
 impl TestCase {
     /// Runs this test case with the given shell configuration.
+    ///
+    /// If this test case has a `shell_binary` field set, that binary will be used
+    /// instead of the one from `shell_config`.
     pub async fn run_shell(
         &self,
         shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
     ) -> Result<RunResult> {
-        let test_cmd = self.create_command_for_shell(shell_config, working_dir);
+        // Use per-test shell_binary if specified, otherwise use the config's shell
+        let effective_config = if let Some(shell_binary) = &self.shell_binary {
+            let binary_path = Self::resolve_shell_binary(shell_binary)?;
+            ShellConfig {
+                which: WhichShell::ShellUnderTest(binary_path),
+                default_args: shell_config.default_args.clone(),
+                default_path_var: shell_config.default_path_var.clone(),
+            }
+        } else {
+            shell_config.clone()
+        };
+
+        let test_cmd = self.create_command_for_shell(&effective_config, working_dir);
 
         let result = if self.pty {
             self.run_command_with_pty(test_cmd).await?
@@ -40,6 +55,49 @@ impl TestCase {
         };
 
         Ok(result)
+    }
+
+    /// Resolves a shell binary path.
+    ///
+    /// If the path is relative, it's resolved against the workspace target directory.
+    /// If the path is absolute, it's used as-is.
+    fn resolve_shell_binary(shell_binary: &std::path::Path) -> Result<PathBuf> {
+        if shell_binary.is_absolute() {
+            return Ok(shell_binary.to_path_buf());
+        }
+
+        // Resolve relative paths against the target directory
+        let cli_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let default_target_dir = || cli_dir.parent().unwrap().join("target");
+        let target_dir = std::env::var("CARGO_TARGET_DIR")
+            .ok()
+            .map_or_else(default_target_dir, PathBuf::from);
+
+        // For example paths like "debug/examples/custom-shell" or just "custom-shell"
+        // Check target/debug first, then target/release
+        let debug_path = target_dir.join("debug").join(shell_binary);
+        if debug_path.exists() {
+            return Ok(debug_path);
+        }
+
+        let release_path = target_dir.join("release").join(shell_binary);
+        if release_path.exists() {
+            return Ok(release_path);
+        }
+
+        // Try directly under target (for profile-qualified paths like "debug/examples/foo")
+        let direct_path = target_dir.join(shell_binary);
+        if direct_path.exists() {
+            return Ok(direct_path);
+        }
+
+        Err(anyhow::anyhow!(
+            "Could not find shell binary '{}'. Searched:\n  - {}\n  - {}\n  - {}",
+            shell_binary.display(),
+            debug_path.display(),
+            release_path.display(),
+            direct_path.display()
+        ))
     }
 
     /// Creates the test files in the given temporary directory.

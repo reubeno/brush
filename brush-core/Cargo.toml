@@ -83,4 +83,10 @@ uuid = { version = "1.20.0", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.100"
+criterion = { version = "0.5", features = ["async_tokio"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+tokio = { version = "1.49.0", features = ["rt", "macros"] }
+
+[[bench]]
+name = "filter_overhead"
+harness = false

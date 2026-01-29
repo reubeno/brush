@@ -46,6 +46,14 @@ pub struct TestCase {
     #[serde(default)]
     pub invocation: ShellInvocation,
 
+    /// Custom shell binary path for this test case.
+    ///
+    /// If specified, this test will use this binary instead of the default brush binary.
+    /// The path is resolved relative to the workspace target directory.
+    /// This is useful for testing examples or custom shell builds.
+    #[serde(default)]
+    pub shell_binary: Option<PathBuf>,
+
     /// Command-line arguments to the shell.
     #[serde(default)]
     pub args: Vec<String>,

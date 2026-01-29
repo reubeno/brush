@@ -13,6 +13,9 @@ use crate::{
     wellknownvars,
 };
 
+#[cfg(feature = "serde")]
+use crate::filter;
+
 /// Type for storing a key bindings helper.
 pub type KeyBindingsHelper = Arc<Mutex<dyn interfaces::KeyBindings>>;
 
@@ -61,6 +64,14 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Injected error behavior.
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: SE::ErrorFormatter,
+
+    /// Command execution filter.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_cmd_exec_filter"))]
+    cmd_exec_filter: SE::CmdExecFilter,
+
+    /// Source filter.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_source_filter"))]
+    source_filter: SE::SourceFilter,
 
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
@@ -146,6 +157,8 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
             error_formatter: self.error_formatter.clone(),
+            cmd_exec_filter: self.cmd_exec_filter.clone(),
+            source_filter: self.source_filter.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -201,6 +214,8 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             error_formatter: options.error_formatter,
+            cmd_exec_filter: options.cmd_exec_filter,
+            source_filter: options.source_filter,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -299,6 +314,16 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         } else {
             keywords::KEYWORDS.contains(s)
         }
+    }
+
+    /// Returns the command execution filter.
+    pub const fn cmd_exec_filter(&self) -> &SE::CmdExecFilter {
+        &self.cmd_exec_filter
+    }
+
+    /// Returns the source filter.
+    pub const fn source_filter(&self) -> &SE::SourceFilter {
+        &self.source_filter
     }
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
@@ -502,4 +527,14 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_cmd_exec_filter<CF: filter::CmdExecFilter>() -> CF {
+    CF::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_source_filter<SF: filter::SourceFilter>() -> SF {
+    SF::default()
 }

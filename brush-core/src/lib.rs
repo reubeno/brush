@@ -13,6 +13,34 @@ pub mod escape;
 pub mod expansion;
 mod extendedtests;
 pub mod extensions;
+/// Filter infrastructure for intercepting shell operations.
+///
+/// This module provides zero-cost abstractions for pre/post operation filtering,
+/// enabling custom hooks for command execution, script sourcing, and more.
+///
+/// For architecture details and usage examples, see:
+/// - [`filter`] module documentation
+/// - `docs/reference/filter-architecture.md` in the repository
+///
+/// # Quick Start
+///
+/// ```ignore
+/// use brush_core::filter::{CmdExecFilter, PreFilterResult, SimpleCmdParams};
+///
+/// #[derive(Clone, Default)]
+/// struct MyFilter;
+///
+/// impl CmdExecFilter for MyFilter {
+///     async fn pre_simple_cmd<'a, SE: ShellExtensions>(
+///         &self,
+///         params: SimpleCmdParams<'a, SE>,
+///     ) -> PreFilterResult<SimpleCmdParams<'a, SE>, SimpleCmdOutput> {
+///         println!("Executing: {}", params.command_name());
+///         PreFilterResult::Continue(params)
+///     }
+/// }
+/// ```
+pub mod filter;
 pub mod functions;
 pub mod history;
 pub mod int_utils;
