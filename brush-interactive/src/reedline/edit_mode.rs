@@ -54,11 +54,9 @@ impl reedline::EditMode for MutableEditMode {
 pub(crate) struct UpdatableBindings {
     bindings: reedline::Keybindings,
     edit_mode: Box<dyn reedline::EditMode>,
-    /// Tracks mapped raw byte sequences; this map maps from a simple formatted
-    /// version of the bytes.
-    raw_mappings: HashMap<String, interfaces::KeyAction>,
-    /// Trie for prefix-matching raw byte sequences during macro resolution.
-    raw_mappings_trie: Trie<Vec<u8>, interfaces::KeyAction>,
+    /// Trie for raw byte sequences. Supports both exact lookups and prefix matching
+    /// during macro resolution.
+    raw_mappings: Trie<Vec<u8>, interfaces::KeyAction>,
     /// Tracks defined macros.
     macros: HashMap<interfaces::KeySequence, interfaces::KeySequence>,
 }
@@ -71,8 +69,7 @@ impl UpdatableBindings {
         Self {
             bindings,
             edit_mode,
-            raw_mappings: HashMap::new(),
-            raw_mappings_trie: Trie::new(),
+            raw_mappings: Trie::new(),
             macros: HashMap::new(),
         }
     }
@@ -137,8 +134,7 @@ impl interfaces::KeyBindings for UpdatableBindings {
     }
 
     fn get_untranslated(&self, bytes: &[u8]) -> Option<&KeyAction> {
-        let bytes = bytes.to_vec();
-        self.raw_mappings.get(&format_raw_key_bytes(&[bytes]))
+        self.raw_mappings.get(bytes)
     }
 
     fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error> {
@@ -166,12 +162,8 @@ impl interfaces::KeyBindings for UpdatableBindings {
                 }
             }
             interfaces::KeySequence::Bytes(ref bytes) => {
-                let key_str = format_raw_key_bytes(bytes);
-                let removed_raw = self.raw_mappings.remove(&key_str).is_some();
-
-                // Also remove from trie.
                 let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
-                self.raw_mappings_trie.remove(&flat_bytes);
+                let removed_raw = self.raw_mappings.remove(&flat_bytes).is_some();
 
                 removed_raw || removed_macro
             }
@@ -225,13 +217,8 @@ impl UpdatableBindings {
                 }
             }
             interfaces::KeySequence::Bytes(ref bytes) => {
-                let key_str = format_raw_key_bytes(bytes);
-                self.raw_mappings.insert(key_str, action.clone());
-
-                // Also insert into the trie for prefix matching during macro resolution.
-                // The trie key is the flattened byte sequence.
                 let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
-                self.raw_mappings_trie.insert(flat_bytes, action);
+                self.raw_mappings.insert(flat_bytes, action);
 
                 Ok(())
             }
@@ -316,7 +303,7 @@ impl UpdatableBindings {
         // Try each prefix length from 1 to bytes.len().
         for len in 1..=bytes.len() {
             let prefix: Vec<u8> = bytes[..len].to_vec();
-            if let Some(action) = self.raw_mappings_trie.get(&prefix) {
+            if let Some(action) = self.raw_mappings.get(&prefix) {
                 best_match = Some((prefix, action));
             }
         }
@@ -335,12 +322,6 @@ impl UpdatableBindings {
             other => actions.push(other),
         }
     }
-}
-
-fn format_raw_key_bytes(bytes: &[Vec<u8>]) -> String {
-    #[allow(clippy::format_collect)]
-    let key_str: String = bytes.iter().flatten().map(|b| format!("{b:02X}")).collect();
-    key_str
 }
 
 fn translate_key_sequence_to_reedline(
