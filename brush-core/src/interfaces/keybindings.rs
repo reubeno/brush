@@ -11,7 +11,7 @@ pub enum KeyAction {
     /// Execute an input "function".
     DoInputFunction(InputFunction),
     /// Execute a sequence of actions (in order).
-    Sequence(Vec<KeyAction>),
+    Sequence(Vec<Self>),
 }
 
 impl Display for KeyAction {

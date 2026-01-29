@@ -1,5 +1,5 @@
 use brush_core::{
-    interfaces::{self, InputFunction, Key, KeyAction, KeySequence, KeyStroke},
+    interfaces::{self, InputFunction, Key, KeyAction, KeyBindings as _, KeySequence, KeyStroke},
     trace_categories,
 };
 use radix_trie::Trie;
@@ -242,7 +242,10 @@ impl UpdatableBindings {
             // and what it will do. Subsequent changes to other key binding might invalidate
             // this. We also are *extremely* limited in what we support here.
             interfaces::KeySequence::Strokes(key_strokes) => {
-                if !key_strokes.is_empty() {
+                if key_strokes.is_empty() {
+                    // Empty macro target - unbind any existing binding for this sequence.
+                    self.try_unbind(seq);
+                } else {
                     return Err(std::io::Error::other(
                         "binding key sequence to readline macro with strokes",
                     ));
@@ -254,15 +257,18 @@ impl UpdatableBindings {
                 let actions = self.resolve_macro_body(&flat_bytes);
 
                 if actions.is_empty() {
-                    // No actions resolved - nothing to bind.
+                    // No actions resolved - unbind any existing binding for this sequence.
+                    self.try_unbind(seq);
                     return Ok(());
                 }
 
                 // Create a single action: either the action itself, or a Sequence if multiple.
-                let action = if actions.len() == 1 {
-                    actions.into_iter().next().expect("checked len == 1")
-                } else {
-                    KeyAction::Sequence(actions)
+                let action = match actions.len() {
+                    1 => actions
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(|| unreachable!("actions.len() == 1 but no element found")),
+                    _ => KeyAction::Sequence(actions),
                 };
 
                 self.do_bind(seq, action, false)?;
