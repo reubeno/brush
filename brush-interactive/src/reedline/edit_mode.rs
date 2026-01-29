@@ -1,7 +1,8 @@
 use brush_core::{
-    interfaces::{self, InputFunction, Key, KeyAction, KeyBindings as _, KeySequence, KeyStroke},
+    interfaces::{self, InputFunction, Key, KeyAction, KeySequence, KeyStroke},
     trace_categories,
 };
+use radix_trie::Trie;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -56,6 +57,8 @@ pub(crate) struct UpdatableBindings {
     /// Tracks mapped raw byte sequences; this map maps from a simple formatted
     /// version of the bytes.
     raw_mappings: HashMap<String, interfaces::KeyAction>,
+    /// Trie for prefix-matching raw byte sequences during macro resolution.
+    raw_mappings_trie: Trie<Vec<u8>, interfaces::KeyAction>,
     /// Tracks defined macros.
     macros: HashMap<interfaces::KeySequence, interfaces::KeySequence>,
 }
@@ -69,6 +72,7 @@ impl UpdatableBindings {
             bindings,
             edit_mode,
             raw_mappings: HashMap::new(),
+            raw_mappings_trie: Trie::new(),
             macros: HashMap::new(),
         }
     }
@@ -161,9 +165,15 @@ impl interfaces::KeyBindings for UpdatableBindings {
                     removed_macro
                 }
             }
-            interfaces::KeySequence::Bytes(bytes) => {
-                let key_str = format_raw_key_bytes(&bytes);
-                self.raw_mappings.remove(&key_str).is_some() || removed_macro
+            interfaces::KeySequence::Bytes(ref bytes) => {
+                let key_str = format_raw_key_bytes(bytes);
+                let removed_raw = self.raw_mappings.remove(&key_str).is_some();
+
+                // Also remove from trie.
+                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
+                self.raw_mappings_trie.remove(&flat_bytes);
+
+                removed_raw || removed_macro
             }
         }
     }
@@ -214,9 +224,15 @@ impl UpdatableBindings {
                     Err(std::io::Error::other(KeyError::UnsupportedKeySequence(seq)))
                 }
             }
-            interfaces::KeySequence::Bytes(bytes) => {
-                let key_str = format_raw_key_bytes(&bytes);
-                self.raw_mappings.insert(key_str, action);
+            interfaces::KeySequence::Bytes(ref bytes) => {
+                let key_str = format_raw_key_bytes(bytes);
+                self.raw_mappings.insert(key_str, action.clone());
+
+                // Also insert into the trie for prefix matching during macro resolution.
+                // The trie key is the flattened byte sequence.
+                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
+                self.raw_mappings_trie.insert(flat_bytes, action);
+
                 Ok(())
             }
         }
@@ -246,24 +262,78 @@ impl UpdatableBindings {
                 }
             }
             interfaces::KeySequence::Bytes(items) => {
-                let actions: Vec<_> = items
-                    .iter()
-                    .filter_map(|item| self.get_untranslated(item))
-                    .collect();
+                // Flatten all byte sequences into one contiguous buffer for prefix matching.
+                let flat_bytes: Vec<u8> = items.iter().flatten().copied().collect();
+                let actions = self.resolve_macro_body(&flat_bytes);
 
-                if actions.len() > 1 {
-                    return Err(std::io::Error::other(
-                        "readline macro with multiple actions",
-                    ));
+                if actions.is_empty() {
+                    // No actions resolved - nothing to bind.
+                    return Ok(());
                 }
 
-                if let Some(action) = actions.first() {
-                    self.do_bind(seq, (*action).clone(), false)?;
-                }
+                // Create a single action: either the action itself, or a Sequence if multiple.
+                let action = if actions.len() == 1 {
+                    actions.into_iter().next().expect("checked len == 1")
+                } else {
+                    KeyAction::Sequence(actions)
+                };
+
+                self.do_bind(seq, action, false)?;
             }
         }
 
         Ok(())
+    }
+
+    /// Resolve a macro body (byte sequence) into a sequence of actions using prefix matching.
+    /// Returns a flattened vector of actions (any nested Sequences are expanded).
+    fn resolve_macro_body(&self, bytes: &[u8]) -> Vec<KeyAction> {
+        let mut actions = Vec::new();
+        let mut remaining = bytes;
+
+        while !remaining.is_empty() {
+            // Find the longest prefix match in the trie.
+            if let Some((matched_key, action)) = self.find_longest_prefix_match(remaining) {
+                // Flatten any nested Sequence actions.
+                Self::flatten_action_into(&mut actions, action.clone());
+                remaining = &remaining[matched_key.len()..];
+            } else {
+                // No match found - skip one byte and continue.
+                // This handles unbound byte sequences gracefully.
+                remaining = &remaining[1..];
+            }
+        }
+
+        actions
+    }
+
+    /// Find the longest prefix match in the trie for the given bytes.
+    fn find_longest_prefix_match(&self, bytes: &[u8]) -> Option<(Vec<u8>, &KeyAction)> {
+        // radix_trie's get_ancestor returns the longest prefix that has a value.
+        // We need to search for progressively longer prefixes.
+        let mut best_match: Option<(Vec<u8>, &KeyAction)> = None;
+
+        // Try each prefix length from 1 to bytes.len().
+        for len in 1..=bytes.len() {
+            let prefix: Vec<u8> = bytes[..len].to_vec();
+            if let Some(action) = self.raw_mappings_trie.get(&prefix) {
+                best_match = Some((prefix, action));
+            }
+        }
+
+        best_match
+    }
+
+    /// Flatten an action into the actions vector, expanding any Sequence variants.
+    fn flatten_action_into(actions: &mut Vec<KeyAction>, action: KeyAction) {
+        match action {
+            KeyAction::Sequence(inner_actions) => {
+                for inner in inner_actions {
+                    Self::flatten_action_into(actions, inner);
+                }
+            }
+            other => actions.push(other),
+        }
     }
 }
 
@@ -320,6 +390,21 @@ fn translate_action_to_reedline_event(action: &KeyAction) -> Option<reedline::Re
             format_reedline_host_command(cmd.as_str()),
         )),
         KeyAction::DoInputFunction(func) => translate_input_function_to_reedline_event(func),
+        KeyAction::Sequence(actions) => {
+            // Convert each action in the sequence to a reedline event.
+            let events: Vec<_> = actions
+                .iter()
+                .filter_map(translate_action_to_reedline_event)
+                .collect();
+
+            if events.is_empty() {
+                None
+            } else if events.len() == 1 {
+                events.into_iter().next()
+            } else {
+                Some(reedline::ReedlineEvent::Multiple(events))
+            }
+        }
     }
 }
 
