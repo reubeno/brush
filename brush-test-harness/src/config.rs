@@ -1,7 +1,7 @@
 //! Configuration types for the test harness.
 
 use clap::Parser;
-use std::path::PathBuf;
+use std::{ffi::OsString, path::PathBuf};
 
 /// Which shell to use for a test.
 #[derive(Clone, Debug)]
@@ -25,7 +25,7 @@ pub struct ShellConfig {
 
 impl ShellConfig {
     /// Computes the PATH variable to use for tests.
-    pub fn compute_test_path_var(&self) -> String {
+    pub fn compute_test_path_var(&self) -> OsString {
         let mut dirs = vec![];
 
         // Start with any default we were provided.
@@ -56,7 +56,8 @@ impl ShellConfig {
             }
         }
 
-        dirs.join(":")
+        std::env::join_paths(dirs.iter().map(|s| PathBuf::from(s.as_str())))
+            .unwrap_or_else(|_| PathBuf::from("").into())
     }
 }
 

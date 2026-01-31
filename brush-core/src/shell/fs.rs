@@ -91,9 +91,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         filename: &'a str,
     ) -> impl Iterator<Item = PathBuf> + 'a {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = path_var.split(':').map(|s| s.to_owned());
+        let paths = std::env::split_paths(path_var.as_ref());
 
-        pathsearch::search_for_executable(paths.into_iter(), filename)
+        pathsearch::search_for_executable(paths, filename)
     }
 
     /// Finds executables in the shell's current default PATH, with filenames matching the
@@ -108,13 +108,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         case_insensitive: bool,
     ) -> impl Iterator<Item = PathBuf> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = path_var.split(':').map(|s| s.to_owned());
+        let paths = std::env::split_paths(path_var.as_ref());
 
-        pathsearch::search_for_executable_with_prefix(
-            paths.into_iter(),
-            filename_prefix,
-            case_insensitive,
-        )
+        pathsearch::search_for_executable_with_prefix(paths, filename_prefix, case_insensitive)
     }
 
     /// Determines whether the given filename is the name of an executable in one of the
@@ -127,8 +123,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         &self,
         candidate_name: S,
     ) -> Option<PathBuf> {
-        for dir_str in self.env_str("PATH").unwrap_or_default().split(':') {
-            let candidate_path = Path::new(dir_str).join(candidate_name.as_ref());
+        let path = self.env_str("PATH").unwrap_or_default();
+        for dir_str in std::env::split_paths(path.as_ref()) {
+            let candidate_path = dir_str.join(candidate_name.as_ref());
             if candidate_path.executable() {
                 return Some(candidate_path);
             }
