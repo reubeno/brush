@@ -47,6 +47,10 @@ brush/
 
 ## Build & Validation Commands
 
+### Terminal Command Execution
+
+When running commands that may take more than a few seconds (cargo build, cargo check, cargo test, cargo clippy, cargo xtask, etc.), **run them in background mode and poll for results** rather than blocking. This prevents commands from being cancelled due to timeouts. Use `isBackground: true` with `run_in_terminal`, then use `get_terminal_output` to check results.
+
 ### Using xtask (Recommended)
 
 The project provides a `cargo xtask` command that centralizes common development tasks. This is the recommended approach for running checks and tests.

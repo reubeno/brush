@@ -300,11 +300,9 @@ impl UpdatableBindings {
 
     /// Find the longest prefix match in the trie for the given bytes.
     fn find_longest_prefix_match(&self, bytes: &[u8]) -> Option<(Vec<u8>, &KeyAction)> {
-        // radix_trie's get_ancestor returns the longest prefix that has a value.
-        // We need to search for progressively longer prefixes.
+        // Search for progressively longer prefixes, keeping the longest match found.
         let mut best_match: Option<(Vec<u8>, &KeyAction)> = None;
 
-        // Try each prefix length from 1 to bytes.len().
         for len in 1..=bytes.len() {
             let prefix = &bytes[..len];
             if let Some(action) = self.raw_mappings.get(prefix) {
