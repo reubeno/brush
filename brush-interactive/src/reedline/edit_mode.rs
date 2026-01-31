@@ -306,9 +306,9 @@ impl UpdatableBindings {
 
         // Try each prefix length from 1 to bytes.len().
         for len in 1..=bytes.len() {
-            let prefix: Vec<u8> = bytes[..len].to_vec();
-            if let Some(action) = self.raw_mappings.get(&prefix) {
-                best_match = Some((prefix, action));
+            let prefix = &bytes[..len];
+            if let Some(action) = self.raw_mappings.get(prefix) {
+                best_match = Some((prefix.to_vec(), action));
             }
         }
 
