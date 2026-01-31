@@ -335,7 +335,7 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
 
     /// Optional list of directories to search for external commands. If left
     /// `None`, the default search logic will be used.
-    pub path_dirs: Option<Vec<String>>,
+    pub path_dirs: Option<Vec<PathBuf>>,
 
     /// The process group ID to use for externally executed commands. This may be
     /// `None`, in which case the default behavior will be used.
@@ -423,11 +423,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             // All else failed; if we were given path directories to search, try to look through
             // them for a matching executable. Otherwise, use our default search logic.
             let path = if let Some(path_dirs) = &self.path_dirs {
-                pathsearch::search_for_executable(
-                    path_dirs.iter().map(String::as_str),
-                    self.command_name.as_str(),
-                )
-                .next()
+                pathsearch::search_for_executable(path_dirs.iter(), self.command_name.as_str())
+                    .next()
             } else {
                 self.shell
                     .find_first_executable_in_path_using_cache(&self.command_name)
