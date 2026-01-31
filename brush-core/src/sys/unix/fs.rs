@@ -2,23 +2,11 @@
 
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::FileTypeExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error;
 
 pub use std::os::unix::fs::MetadataExt;
-
-const DEFAULT_EXECUTABLE_SEARCH_PATHS: &[&str] = &[
-    "/usr/local/sbin",
-    "/usr/local/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/sbin",
-    "/bin",
-];
-
-const DEFAULT_STANDARD_UTILS_PATHS: &[&str] =
-    &["/bin", "/usr/bin", "/sbin", "/usr/sbin", "/etc", "/usr/etc"];
 
 impl crate::sys::fs::PathExt for Path {
     fn readable(&self) -> bool {
@@ -81,40 +69,47 @@ fn try_get_file_mode(path: &Path) -> Option<u32> {
     path.metadata().map(|metadata| metadata.mode()).ok()
 }
 
-pub(crate) fn get_default_executable_search_paths() -> Vec<String> {
-    DEFAULT_EXECUTABLE_SEARCH_PATHS
-        .iter()
-        .map(|s| (*s).to_owned())
-        .collect()
+pub(crate) fn get_default_executable_search_paths() -> Vec<PathBuf> {
+    // standard hard-coded defaults for executable search path
+    vec![
+        "/usr/local/sbin".into(),
+        "/usr/local/bin".into(),
+        "/usr/sbin".into(),
+        "/usr/bin".into(),
+        "/sbin".into(),
+        "/bin".into(),
+    ]
 }
 
 /// Retrieves the platform-specific set of paths that should contain standard system
 /// utilities. Used by `command -p`, for example.
-pub fn get_default_standard_utils_paths() -> Vec<String> {
+pub fn get_default_standard_utils_paths() -> Vec<PathBuf> {
     //
     // Try to call confstr(_CS_PATH). If that fails, can't find a string value, or
     // finds an empty string, then we'll fall back to hard-coded defaults.
     //
 
     if let Ok(Some(cs_path)) = confstr_cs_path() {
-        if !cs_path.is_empty() {
-            return cs_path.split(':').map(|s| s.to_string()).collect();
+        if !cs_path.as_os_str().is_empty() {
+            return std::env::split_paths(&cs_path).collect();
         }
     }
-
-    DEFAULT_STANDARD_UTILS_PATHS
-        .iter()
-        .map(|s| (*s).to_owned())
-        .collect()
+    // standard hard-coded defaults
+    vec![
+        "/bin".into(),
+        "/usr/bin".into(),
+        "/sbin".into(),
+        "/usr/sbin".into(),
+        "/etc".into(),
+        "/usr/etc".into(),
+    ]
 }
 
-fn confstr_cs_path() -> Result<Option<String>, std::io::Error> {
+fn confstr_cs_path() -> Result<Option<PathBuf>, std::io::Error> {
     let value = confstr(nix::libc::_CS_PATH)?;
 
     if let Some(value) = value {
-        let value_str = value
-            .into_string()
-            .map_err(|_err| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid data"))?;
+        let value_str = PathBuf::from(value);
         Ok(Some(value_str))
     } else {
         Ok(None)

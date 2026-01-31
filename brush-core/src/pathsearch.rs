@@ -1,6 +1,9 @@
 //! Path searching utilities.
 
-use std::{collections::VecDeque, path::PathBuf};
+use std::{
+    collections::VecDeque,
+    path::{Path, PathBuf},
+};
 
 use crate::sys::fs::PathExt;
 
@@ -12,8 +15,8 @@ pub struct ExecutablePathSearch<PI, N> {
 
 impl<PI, N> Iterator for ExecutablePathSearch<PI, N>
 where
-    PI: AsRef<str>,
-    N: AsRef<str>,
+    PI: AsRef<Path>,
+    N: AsRef<Path>,
 {
     type Item = PathBuf;
 
@@ -38,7 +41,7 @@ pub(crate) struct ExecutablePathPrefixSearch<PI> {
 
 impl<PI> Iterator for ExecutablePathPrefixSearch<PI>
 where
-    PI: AsRef<str>,
+    PI: AsRef<Path>,
 {
     type Item = PathBuf;
 
@@ -91,8 +94,8 @@ where
 pub fn search_for_executable<P, PI, N>(paths: P, filename: N) -> ExecutablePathSearch<PI, N>
 where
     P: Iterator<Item = PI>,
-    PI: AsRef<str>,
-    N: AsRef<str>,
+    PI: AsRef<Path>,
+    N: AsRef<Path>,
 {
     ExecutablePathSearch {
         paths: paths.collect(),
@@ -107,7 +110,7 @@ pub(crate) fn search_for_executable_with_prefix<P, PI>(
 ) -> ExecutablePathPrefixSearch<PI>
 where
     P: Iterator<Item = PI>,
-    PI: AsRef<str>,
+    PI: AsRef<Path>,
 {
     let stored_prefix = if case_insensitive {
         filename_prefix.to_ascii_lowercase()

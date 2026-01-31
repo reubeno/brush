@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fmt::{Display, Write};
 
 use crate::shell::{Shell, ShellState};
@@ -1060,6 +1061,12 @@ impl From<&String> for ShellValue {
 impl From<String> for ShellValue {
     fn from(value: String) -> Self {
         Self::String(value)
+    }
+}
+
+impl From<OsString> for ShellValue {
+    fn from(value: OsString) -> Self {
+        Self::String(value.to_string_lossy().into_owned())
     }
 }
 

@@ -1,7 +1,7 @@
 //! Configuration types for the test harness.
 
 use clap::Parser;
-use std::path::PathBuf;
+use std::{ffi::OsString, path::PathBuf};
 
 /// Which shell to use for a test.
 #[derive(Clone, Debug)]
@@ -25,14 +25,12 @@ pub struct ShellConfig {
 
 impl ShellConfig {
     /// Computes the PATH variable to use for tests.
-    pub fn compute_test_path_var(&self) -> String {
+    pub fn compute_test_path_var(&self) -> OsString {
         let mut dirs = vec![];
 
         // Start with any default we were provided.
         if let Some(default_path_var) = &self.default_path_var {
-            dirs.extend(
-                std::env::split_paths(default_path_var).map(|p| p.to_string_lossy().to_string()),
-            );
+            dirs.extend(std::env::split_paths(default_path_var));
         }
 
         // Add hard-coded paths that will work on *most* Unix-like systems.
@@ -49,14 +47,13 @@ impl ShellConfig {
         // For example, NixOS has an interesting set of paths that must be consulted.
         if let Some(host_path) = std::env::var_os("PATH") {
             for path in std::env::split_paths(&host_path) {
-                let path_str = path.to_string_lossy().to_string();
-                if !dirs.contains(&path_str) && path.join("sh").is_file() {
-                    dirs.push(path_str);
+                if !dirs.contains(&path) && path.join("sh").is_file() {
+                    dirs.push(path);
                 }
             }
         }
 
-        dirs.join(":")
+        std::env::join_paths(dirs).unwrap_or_else(|_| PathBuf::from("").into())
     }
 }
 

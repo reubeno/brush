@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use rand::Rng;
 
@@ -372,7 +373,8 @@ pub(crate) fn init_well_known_vars(
 
     // PATH (if not already set)
     if !shell.env().is_set("PATH") {
-        let default_path_str = sys::fs::get_default_executable_search_paths().join(":");
+        let default_path_str = std::env::join_paths(sys::fs::get_default_executable_search_paths())
+            .unwrap_or_else(|_| PathBuf::from("").into());
         shell
             .env_mut()
             .set_global("PATH", ShellVariable::new(default_path_str))?;
