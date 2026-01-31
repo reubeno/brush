@@ -124,8 +124,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         candidate_name: S,
     ) -> Option<PathBuf> {
         let path = self.env_str("PATH").unwrap_or_default();
-        for dir_str in std::env::split_paths(path.as_ref()) {
-            let candidate_path = dir_str.join(candidate_name.as_ref());
+        for one_dir in std::env::split_paths(path.as_ref()) {
+            let candidate_path = one_dir.join(candidate_name.as_ref());
             if candidate_path.executable() {
                 return Some(candidate_path);
             }
