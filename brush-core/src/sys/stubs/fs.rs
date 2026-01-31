@@ -60,13 +60,13 @@ pub(crate) trait MetadataExt {
 
 impl MetadataExt for std::fs::Metadata {}
 
-pub(crate) fn get_default_executable_search_paths() -> Vec<PathBuf> {
+pub(crate) fn get_default_executable_search_paths() -> Vec<std::path::PathBuf> {
     vec![]
 }
 
 /// Returns the default paths where standard Unix utilities are typically installed.
 /// This is a stub implementation that returns an empty vector.
-pub fn get_default_standard_utils_paths() -> Vec<PathBuf> {
+pub fn get_default_standard_utils_paths() -> Vec<std::path::PathBuf> {
     vec![]
 }
 
