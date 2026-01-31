@@ -142,32 +142,7 @@ impl interfaces::KeyBindings for UpdatableBindings {
     }
 
     fn try_unbind(&mut self, seq: KeySequence) -> bool {
-        // Also remove from macros.
-        let removed_macro = self.macros.remove(&seq).is_some();
-
-        match seq {
-            interfaces::KeySequence::Strokes(_) => {
-                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) {
-                    let found = self.bindings.find_binding(modifiers, key_code).is_some();
-
-                    if found {
-                        self.update(|bindings| {
-                            let _ = bindings.remove_binding(modifiers, key_code);
-                        });
-                    }
-
-                    found || removed_macro
-                } else {
-                    removed_macro
-                }
-            }
-            interfaces::KeySequence::Bytes(ref bytes) => {
-                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
-                let removed_raw = self.raw_mappings.remove(&flat_bytes).is_some();
-
-                removed_raw || removed_macro
-            }
-        }
+        self.try_unbind_impl(&seq, true)
     }
 
     fn define_macro(
@@ -187,6 +162,41 @@ impl interfaces::KeyBindings for UpdatableBindings {
 }
 
 impl UpdatableBindings {
+    /// Internal implementation that optionally removes from the macros map.
+    /// When updating bindings for macros, we don't want to remove the macro definition itself.
+    fn try_unbind_impl(&mut self, seq: &KeySequence, remove_from_macros: bool) -> bool {
+        // Optionally remove from macros.
+        let removed_macro = if remove_from_macros {
+            self.macros.remove(seq).is_some()
+        } else {
+            false
+        };
+
+        match seq {
+            interfaces::KeySequence::Strokes(_) => {
+                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(seq) {
+                    let found = self.bindings.find_binding(modifiers, key_code).is_some();
+
+                    if found {
+                        self.update(|bindings| {
+                            let _ = bindings.remove_binding(modifiers, key_code);
+                        });
+                    }
+
+                    found || removed_macro
+                } else {
+                    removed_macro
+                }
+            }
+            interfaces::KeySequence::Bytes(bytes) => {
+                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
+                let removed_raw = self.raw_mappings.remove(&flat_bytes).is_some();
+
+                removed_raw || removed_macro
+            }
+        }
+    }
+
     fn do_bind(
         &mut self,
         seq: KeySequence,
@@ -257,8 +267,9 @@ impl UpdatableBindings {
                 let actions = self.resolve_macro_body(&flat_bytes);
 
                 if actions.is_empty() {
-                    // No actions resolved - unbind any existing binding for this sequence.
-                    self.try_unbind(seq);
+                    // No actions resolved - unbind any existing key binding for this sequence,
+                    // but keep the macro definition so it shows up in `bind -s/-S`.
+                    self.try_unbind_impl(&seq, false);
                     return Ok(());
                 }
 
@@ -291,6 +302,11 @@ impl UpdatableBindings {
             } else {
                 // No match found - skip one byte and continue.
                 // This handles unbound byte sequences gracefully.
+                tracing::debug!(
+                    target: trace_categories::INPUT,
+                    "skipping unbound byte in macro resolution: 0x{:02x}",
+                    remaining[0]
+                );
                 remaining = &remaining[1..];
             }
         }
@@ -299,18 +315,16 @@ impl UpdatableBindings {
     }
 
     /// Find the longest prefix match in the trie for the given bytes.
+    /// Uses the trie's native `get_ancestor` method which efficiently finds
+    /// the longest matching prefix.
     fn find_longest_prefix_match(&self, bytes: &[u8]) -> Option<(Vec<u8>, &KeyAction)> {
-        // Search for progressively longer prefixes, keeping the longest match found.
-        let mut best_match: Option<(Vec<u8>, &KeyAction)> = None;
+        use radix_trie::TrieCommon;
 
-        for len in 1..=bytes.len() {
-            let prefix = &bytes[..len];
-            if let Some(action) = self.raw_mappings.get(prefix) {
-                best_match = Some((prefix.to_vec(), action));
-            }
-        }
-
-        best_match
+        self.raw_mappings.get_ancestor(bytes).and_then(|subtrie| {
+            let key = subtrie.key()?.clone();
+            let value = subtrie.value()?;
+            Some((key, value))
+        })
     }
 
     /// Flatten an action into the actions vector, expanding any Sequence variants.
