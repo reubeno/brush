@@ -70,15 +70,15 @@ fn try_get_file_mode(path: &Path) -> Option<u32> {
 }
 
 pub(crate) fn get_default_executable_search_paths() -> Vec<PathBuf> {
-    let default_executable_search_paths = [
+    // standard hard-coded defaults for executable search path
+    vec![
         "/usr/local/sbin".into(),
         "/usr/local/bin".into(),
         "/usr/sbin".into(),
         "/usr/bin".into(),
         "/sbin".into(),
         "/bin".into(),
-    ];
-    default_executable_search_paths.to_vec()
+    ]
 }
 
 /// Retrieves the platform-specific set of paths that should contain standard system
@@ -94,15 +94,15 @@ pub fn get_default_standard_utils_paths() -> Vec<PathBuf> {
             return std::env::split_paths(&cs_path).collect();
         }
     }
-    let default_standard_utils_paths = [
+    // standard hard-coded defaults
+    vec![
         "/bin".into(),
         "/usr/bin".into(),
         "/sbin".into(),
         "/usr/sbin".into(),
         "/etc".into(),
         "/usr/etc".into(),
-    ];
-    default_standard_utils_paths.to_vec()
+    ]
 }
 
 fn confstr_cs_path() -> Result<Option<PathBuf>, std::io::Error> {
