@@ -1,0 +1,89 @@
+name: Compatibility Bug Report
+description: Report a case where brush behaves differently from bash
+labels: ["bug", "area: compat"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve brush's compatibility!
+
+        This template is for reporting cases where brush produces different behavior
+        than bash for the same input. Before submitting, please
+        [search existing issues](https://github.com/reubeno/brush/issues) to check
+        if this has already been reported.
+
+  - type: input
+    id: brush-version
+    attributes:
+      label: brush version
+      description: The version of brush you're using. You can find this with `brush --version`.
+      placeholder: "e.g., brush 0.2.9"
+    validations:
+      required: true
+
+  - type: input
+    id: bash-version
+    attributes:
+      label: bash version (for comparison)
+      description: The version of bash you compared against, if applicable. You can find this with `bash --version`.
+      placeholder: "e.g., GNU bash, version 5.2.21(1)-release"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform / OS
+      options:
+        - Linux
+        - macOS
+        - WSL
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Provide the shell commands, script, or other usage details that
+        reproduced the issue. If you can narrow it down to a minimal
+        reproducing example, that's very helpful but not required.
+      placeholder: |
+        # Example:
+        brush -c 'some command'
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior (brush)
+      description: What did brush do in this case?
+      placeholder: Describe or paste the brush output...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: |
+        What did you expect to happen? If relevant, what does bash or another
+        comparable shell do in this case?
+      placeholder: Describe or paste the expected output or behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: |
+        Is there anything else you think is important to share? You might consider
+        including additional environment specifics (e.g., relevant .bashrc config),
+        workarounds, related issues, any additional debugging you've performed, etc.
+    validations:
+      required: false

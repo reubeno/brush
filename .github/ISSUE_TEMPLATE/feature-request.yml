@@ -1,0 +1,58 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for brush
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest an improvement to brush! We welcome and appreciate
+        all input and feedback. While we can't commit to prioritizing or implementing all such
+        requests, we'd rather you make the suggestion than not.
+
+        Our only requests: (1) please ensure you follow our project's
+        [Code of Conduct](https://github.com/reubeno/brush#coc-ov-file), and
+        (2) before submitting, please [search existing issues](https://github.com/reubeno/brush/issues)
+        to check if a similar request already exists. If it does, feel free to add a comment
+        to the existing issue instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature description
+      description: A clear and concise description of the feature or enhancement you'd like.
+      placeholder: Describe the feature...
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case / motivation
+      description: |
+        Why is this feature important to you? What problem does it solve?
+        How would you use it? Providing context helps us understand the value
+        and prioritize accordingly.
+      placeholder: Explain why this feature would be useful...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: |
+        If you have ideas on how this could be implemented or how it should work,
+        share them here. Note that this is purely optional.
+      placeholder: Describe how you think this could work...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: |
+        Any other context, references, or screenshots that would help us understand your request.
+        For example, links to relevant documentation, other shells that implement this, etc.
+    validations:
+      required: false

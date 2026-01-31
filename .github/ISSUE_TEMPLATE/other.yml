@@ -1,0 +1,25 @@
+name: Other Issue
+description: "Report an issue that doesn't fit the other templates"
+labels: ["state: triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If your issue is a **feature request**, please use the
+        [Feature Request](https://github.com/reubeno/brush/issues/new?template=feature-request.yml)
+        template instead. If it's about **brush behaving differently from bash** or another compatibility
+        issue, please use the
+        [Compatibility Bug Report](https://github.com/reubeno/brush/issues/new?template=compatibility-bug.yml)
+        template instead.
+
+        For general questions or discussion, consider using
+        [GitHub Discussions](https://github.com/reubeno/brush/discussions).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Please describe the issue in detail.
+      placeholder: Describe the issue...
+    validations:
+      required: true
