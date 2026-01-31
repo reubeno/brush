@@ -1066,7 +1066,7 @@ impl From<String> for ShellValue {
 
 impl From<OsString> for ShellValue {
     fn from(value: OsString) -> Self {
-        Self::String(value.to_string_lossy().to_string())
+        Self::String(value.to_string_lossy().into_owned())
     }
 }
 
