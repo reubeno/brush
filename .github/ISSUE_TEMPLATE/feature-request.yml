@@ -28,7 +28,7 @@ body:
     id: use-case
     attributes:
       label: Use case / motivation
-      description: |
+      description: >
         Why is this feature important to you? What problem does it solve?
         How would you use it? Providing context helps us understand the value
         and prioritize accordingly.
@@ -40,7 +40,7 @@ body:
     id: proposed-solution
     attributes:
       label: Proposed solution
-      description: |
+      description: >
         If you have ideas on how this could be implemented or how it should work,
         share them here. Note that this is purely optional.
       placeholder: Describe how you think this could work...
@@ -51,7 +51,7 @@ body:
     id: additional-context
     attributes:
       label: Additional context
-      description: |
+      description: >
         Any other context, references, or screenshots that would help us understand your request.
         For example, links to relevant documentation, other shells that implement this, etc.
     validations:

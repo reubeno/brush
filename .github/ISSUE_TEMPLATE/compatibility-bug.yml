@@ -47,7 +47,7 @@ body:
     id: reproduction
     attributes:
       label: Steps to reproduce
-      description: |
+      description: >
         Provide the shell commands, script, or other usage details that
         reproduced the issue. If you can narrow it down to a minimal
         reproducing example, that's very helpful but not required.
@@ -70,7 +70,7 @@ body:
     id: expected-behavior
     attributes:
       label: Expected behavior
-      description: |
+      description: >
         What did you expect to happen? If relevant, what does bash or another
         comparable shell do in this case?
       placeholder: Describe or paste the expected output or behavior
@@ -81,7 +81,7 @@ body:
     id: additional-context
     attributes:
       label: Additional context
-      description: |
+      description: >
         Is there anything else you think is important to share? You might consider
         including additional environment specifics (e.g., relevant .bashrc config),
         workarounds, related issues, any additional debugging you've performed, etc.
