@@ -2,6 +2,7 @@ use brush_core::{
     interfaces::{self, InputFunction, Key, KeyAction, KeyBindings as _, KeySequence, KeyStroke},
     trace_categories,
 };
+use radix_trie::Trie;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -53,9 +54,9 @@ impl reedline::EditMode for MutableEditMode {
 pub(crate) struct UpdatableBindings {
     bindings: reedline::Keybindings,
     edit_mode: Box<dyn reedline::EditMode>,
-    /// Tracks mapped raw byte sequences; this map maps from a simple formatted
-    /// version of the bytes.
-    raw_mappings: HashMap<String, interfaces::KeyAction>,
+    /// Trie for raw byte sequences. Supports both exact lookups and prefix matching
+    /// during macro resolution.
+    raw_mappings: Trie<Vec<u8>, interfaces::KeyAction>,
     /// Tracks defined macros.
     macros: HashMap<interfaces::KeySequence, interfaces::KeySequence>,
 }
@@ -68,7 +69,7 @@ impl UpdatableBindings {
         Self {
             bindings,
             edit_mode,
-            raw_mappings: HashMap::new(),
+            raw_mappings: Trie::new(),
             macros: HashMap::new(),
         }
     }
@@ -133,8 +134,7 @@ impl interfaces::KeyBindings for UpdatableBindings {
     }
 
     fn get_untranslated(&self, bytes: &[u8]) -> Option<&KeyAction> {
-        let bytes = bytes.to_vec();
-        self.raw_mappings.get(&format_raw_key_bytes(&[bytes]))
+        self.raw_mappings.get(bytes)
     }
 
     fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error> {
@@ -142,30 +142,7 @@ impl interfaces::KeyBindings for UpdatableBindings {
     }
 
     fn try_unbind(&mut self, seq: KeySequence) -> bool {
-        // Also remove from macros.
-        let removed_macro = self.macros.remove(&seq).is_some();
-
-        match seq {
-            interfaces::KeySequence::Strokes(_) => {
-                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) {
-                    let found = self.bindings.find_binding(modifiers, key_code).is_some();
-
-                    if found {
-                        self.update(|bindings| {
-                            let _ = bindings.remove_binding(modifiers, key_code);
-                        });
-                    }
-
-                    found || removed_macro
-                } else {
-                    removed_macro
-                }
-            }
-            interfaces::KeySequence::Bytes(bytes) => {
-                let key_str = format_raw_key_bytes(&bytes);
-                self.raw_mappings.remove(&key_str).is_some() || removed_macro
-            }
-        }
+        self.try_unbind_impl(&seq, true)
     }
 
     fn define_macro(
@@ -185,6 +162,41 @@ impl interfaces::KeyBindings for UpdatableBindings {
 }
 
 impl UpdatableBindings {
+    /// Internal implementation that optionally removes from the macros map.
+    /// When updating bindings for macros, we don't want to remove the macro definition itself.
+    fn try_unbind_impl(&mut self, seq: &KeySequence, remove_from_macros: bool) -> bool {
+        // Optionally remove from macros.
+        let removed_macro = if remove_from_macros {
+            self.macros.remove(seq).is_some()
+        } else {
+            false
+        };
+
+        match seq {
+            interfaces::KeySequence::Strokes(_) => {
+                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(seq) {
+                    let found = self.bindings.find_binding(modifiers, key_code).is_some();
+
+                    if found {
+                        self.update(|bindings| {
+                            let _ = bindings.remove_binding(modifiers, key_code);
+                        });
+                    }
+
+                    found || removed_macro
+                } else {
+                    removed_macro
+                }
+            }
+            interfaces::KeySequence::Bytes(bytes) => {
+                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
+                let removed_raw = self.raw_mappings.remove(&flat_bytes).is_some();
+
+                removed_raw || removed_macro
+            }
+        }
+    }
+
     fn do_bind(
         &mut self,
         seq: KeySequence,
@@ -214,9 +226,10 @@ impl UpdatableBindings {
                     Err(std::io::Error::other(KeyError::UnsupportedKeySequence(seq)))
                 }
             }
-            interfaces::KeySequence::Bytes(bytes) => {
-                let key_str = format_raw_key_bytes(&bytes);
-                self.raw_mappings.insert(key_str, action);
+            interfaces::KeySequence::Bytes(ref bytes) => {
+                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
+                self.raw_mappings.insert(flat_bytes, action);
+
                 Ok(())
             }
         }
@@ -239,38 +252,92 @@ impl UpdatableBindings {
             // and what it will do. Subsequent changes to other key binding might invalidate
             // this. We also are *extremely* limited in what we support here.
             interfaces::KeySequence::Strokes(key_strokes) => {
-                if !key_strokes.is_empty() {
+                if key_strokes.is_empty() {
+                    // Empty macro target - unbind any existing binding for this sequence.
+                    self.try_unbind(seq);
+                } else {
                     return Err(std::io::Error::other(
                         "binding key sequence to readline macro with strokes",
                     ));
                 }
             }
             interfaces::KeySequence::Bytes(items) => {
-                let actions: Vec<_> = items
-                    .iter()
-                    .filter_map(|item| self.get_untranslated(item))
-                    .collect();
+                // Flatten all byte sequences into one contiguous buffer for prefix matching.
+                let flat_bytes: Vec<u8> = items.iter().flatten().copied().collect();
+                let actions = self.resolve_macro_body(&flat_bytes);
 
-                if actions.len() > 1 {
-                    return Err(std::io::Error::other(
-                        "readline macro with multiple actions",
-                    ));
+                if actions.is_empty() {
+                    // No actions resolved - unbind any existing key binding for this sequence,
+                    // but keep the macro definition so it shows up in `bind -s/-S`.
+                    self.try_unbind_impl(&seq, false);
+                    return Ok(());
                 }
 
-                if let Some(action) = actions.first() {
-                    self.do_bind(seq, (*action).clone(), false)?;
-                }
+                // Create a single action: either the action itself (if just one), or a Sequence.
+                let action = if let [single] = actions.as_slice() {
+                    single.clone()
+                } else {
+                    KeyAction::Sequence(actions)
+                };
+
+                self.do_bind(seq, action, false)?;
             }
         }
 
         Ok(())
     }
-}
 
-fn format_raw_key_bytes(bytes: &[Vec<u8>]) -> String {
-    #[allow(clippy::format_collect)]
-    let key_str: String = bytes.iter().flatten().map(|b| format!("{b:02X}")).collect();
-    key_str
+    /// Resolve a macro body (byte sequence) into a sequence of actions using prefix matching.
+    /// Returns a flattened vector of actions (any nested Sequences are expanded).
+    fn resolve_macro_body(&self, bytes: &[u8]) -> Vec<KeyAction> {
+        let mut actions = Vec::new();
+        let mut remaining = bytes;
+
+        while !remaining.is_empty() {
+            // Find the longest prefix match in the trie.
+            if let Some((matched_key, action)) = self.find_longest_prefix_match(remaining) {
+                // Flatten any nested Sequence actions.
+                Self::flatten_action_into(&mut actions, action.clone());
+                remaining = &remaining[matched_key.len()..];
+            } else {
+                // No match found - skip one byte and continue.
+                // This handles unbound byte sequences gracefully.
+                tracing::debug!(
+                    target: trace_categories::INPUT,
+                    "skipping unbound byte in macro resolution: 0x{:02x}",
+                    remaining[0]
+                );
+                remaining = &remaining[1..];
+            }
+        }
+
+        actions
+    }
+
+    /// Find the longest prefix match in the trie for the given bytes.
+    /// Uses the trie's native `get_ancestor` method which efficiently finds
+    /// the longest matching prefix.
+    fn find_longest_prefix_match(&self, bytes: &[u8]) -> Option<(Vec<u8>, &KeyAction)> {
+        use radix_trie::TrieCommon;
+
+        self.raw_mappings.get_ancestor(bytes).and_then(|subtrie| {
+            let key = subtrie.key()?.clone();
+            let value = subtrie.value()?;
+            Some((key, value))
+        })
+    }
+
+    /// Flatten an action into the actions vector, expanding any Sequence variants.
+    fn flatten_action_into(actions: &mut Vec<KeyAction>, action: KeyAction) {
+        match action {
+            KeyAction::Sequence(inner_actions) => {
+                for inner in inner_actions {
+                    Self::flatten_action_into(actions, inner);
+                }
+            }
+            other => actions.push(other),
+        }
+    }
 }
 
 fn translate_key_sequence_to_reedline(
@@ -320,6 +387,21 @@ fn translate_action_to_reedline_event(action: &KeyAction) -> Option<reedline::Re
             format_reedline_host_command(cmd.as_str()),
         )),
         KeyAction::DoInputFunction(func) => translate_input_function_to_reedline_event(func),
+        KeyAction::Sequence(actions) => {
+            // Convert each action in the sequence to a reedline event.
+            let events: Vec<_> = actions
+                .iter()
+                .filter_map(translate_action_to_reedline_event)
+                .collect();
+
+            if events.is_empty() {
+                None
+            } else if events.len() == 1 {
+                events.into_iter().next()
+            } else {
+                Some(reedline::ReedlineEvent::Multiple(events))
+            }
+        }
     }
 }
 
