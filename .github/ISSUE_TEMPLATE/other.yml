@@ -5,15 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        If your issue is a **feature request**, please use the
-        [Feature Request](https://github.com/reubeno/brush/issues/new?template=feature-request.yml)
-        template instead. If it's about **brush behaving differently from bash** or another compatibility
-        issue, please use the
-        [Compatibility Bug Report](https://github.com/reubeno/brush/issues/new?template=compatibility-bug.yml)
-        template instead.
+        If your issue is a **feature request**, please use the [Feature Request](https://github.com/reubeno/brush/issues/new?template=feature-request.yml) template instead. If it's about **brush behaving differently from bash** or another compatibility issue, please use the [Compatibility Bug Report](https://github.com/reubeno/brush/issues/new?template=compatibility-bug.yml) template instead.
 
-        For general questions or discussion, consider using
-        [GitHub Discussions](https://github.com/reubeno/brush/discussions).
+        For general questions or discussion, consider using [GitHub Discussions](https://github.com/reubeno/brush/discussions).
 
   - type: textarea
     id: description

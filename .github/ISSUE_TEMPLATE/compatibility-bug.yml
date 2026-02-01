@@ -7,10 +7,7 @@ body:
       value: |
         Thanks for helping improve brush's compatibility!
 
-        This template is for reporting cases where brush produces different behavior
-        than bash for the same input. Before submitting, please
-        [search existing issues](https://github.com/reubeno/brush/issues) to check
-        if this has already been reported.
+        This template is for reporting cases where brush produces different behavior than bash for the same input. Before submitting, please [search existing issues](https://github.com/reubeno/brush/issues) to check if this has already been reported.
 
   - type: input
     id: brush-version
