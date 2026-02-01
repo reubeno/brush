@@ -20,7 +20,7 @@ env:
 
 permissions:
   actions: read
-  contents: read
+  contents: write # publish from main
 
 # Only allow one run of the workflow per branch / PR at a time.
 concurrency:
@@ -136,8 +136,21 @@ jobs:
         if: ${{ matrix.target != '' }}
         env:
           TARGET: ${{ matrix.target }}
+          BIN: ${{ matrix.binary_name }}
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cross build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
+        run: |
+          cross build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
+          ln LICENSE -t target/${TARGET}/release
+          ZSTD_CLEVEL=19 tar --zstd -caf brush-${TARGET}.tar.zst -C target/${TARGET}/release ${BIN} LICENSE
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          tag_name: main
+          draft: false
+          prerelease: true
+          files: brush-${{ matrix.target }}.tar.zst
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
