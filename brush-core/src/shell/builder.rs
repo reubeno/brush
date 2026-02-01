@@ -146,6 +146,12 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Error behavior implementation.
     #[builder(default)]
     pub error_formatter: SE::ErrorFormatter,
+    /// Command execution filter.
+    #[builder(default)]
+    pub cmd_exec_filter: SE::CmdExecFilter,
+    /// Source filter.
+    #[builder(default)]
+    pub source_filter: SE::SourceFilter,
     /// Disallow overwriting regular files via output redirection.
     #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
@@ -227,6 +233,8 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
     fn default() -> Self {
         Self {
             error_formatter: SE::ErrorFormatter::default(),
+            cmd_exec_filter: SE::CmdExecFilter::default(),
+            source_filter: SE::SourceFilter::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: PathBuf::default(),
