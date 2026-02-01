@@ -1,5 +1,6 @@
 //! Definition of shell behavior traits and defaults.
 
+use crate::filter::{CmdExecFilter, NoOpCmdExecFilter, NoOpSourceFilter, SourceFilter};
 use crate::{Shell, error, extensions};
 
 /// Trait for static shell extensions. Collects all associated types needed to
@@ -7,16 +8,47 @@ use crate::{Shell, error, extensions};
 pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
     /// Type of the error behavior implementation.
     type ErrorFormatter: ErrorFormatter;
+    /// Type of the command execution filter.
+    type CmdExecFilter: CmdExecFilter;
+    /// Type of the source filter.
+    type SourceFilter: SourceFilter;
 }
 
 /// Shell extensions implementation constructed from component types.
 #[derive(Clone, Default)]
-pub struct ShellExtensionsImpl<EF: ErrorFormatter = DefaultErrorFormatter> {
-    _marker: std::marker::PhantomData<EF>,
+pub struct ShellExtensionsImpl<
+    EF: ErrorFormatter = DefaultErrorFormatter,
+    CF: CmdExecFilter = NoOpCmdExecFilter,
+    SF: SourceFilter = NoOpSourceFilter,
+> {
+    error_formatter: EF,
+    cmd_exec_filter: CF,
+    source_filter: SF,
 }
 
-impl<EF: ErrorFormatter> ShellExtensions for ShellExtensionsImpl<EF> {
+impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter> ShellExtensions
+    for ShellExtensionsImpl<EF, CF, SF>
+{
     type ErrorFormatter = EF;
+    type CmdExecFilter = CF;
+    type SourceFilter = SF;
+}
+
+impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter> ShellExtensionsImpl<EF, CF, SF> {
+    /// Returns a reference to the error formatter.
+    pub const fn error_formatter(&self) -> &EF {
+        &self.error_formatter
+    }
+
+    /// Returns a reference to the command execution filter.
+    pub const fn cmd_exec_filter(&self) -> &CF {
+        &self.cmd_exec_filter
+    }
+
+    /// Returns a reference to the source filter.
+    pub const fn source_filter(&self) -> &SF {
+        &self.source_filter
+    }
 }
 
 /// Default shell extensions implementation.
@@ -46,12 +78,3 @@ pub trait ErrorFormatter: Clone + Default + Send + Sync + 'static {
 pub struct DefaultErrorFormatter;
 
 impl ErrorFormatter for DefaultErrorFormatter {}
-
-/// Trait for placeholder behavior (stub for future extension).
-pub trait PlaceholderBehavior: Clone + Default + Send + Sync + 'static {}
-
-/// Default placeholder implementation.
-#[derive(Clone, Default)]
-pub struct DefaultPlaceholder;
-
-impl PlaceholderBehavior for DefaultPlaceholder {}
