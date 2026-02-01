@@ -10,6 +10,8 @@ pub enum KeyAction {
     ShellCommand(String),
     /// Execute an input "function".
     DoInputFunction(InputFunction),
+    /// Execute a sequence of actions (in order).
+    Sequence(Vec<Self>),
 }
 
 impl Display for KeyAction {
@@ -17,6 +19,16 @@ impl Display for KeyAction {
         match self {
             Self::ShellCommand(command) => write!(f, "shell command: {command}"),
             Self::DoInputFunction(function) => function.fmt(f),
+            Self::Sequence(actions) => {
+                write!(f, "sequence[")?;
+                for (i, action) in actions.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    action.fmt(f)?;
+                }
+                write!(f, "]")
+            }
         }
     }
 }
