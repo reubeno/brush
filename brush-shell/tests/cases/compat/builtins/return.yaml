@@ -5,6 +5,14 @@ cases:
     stdin: |
       return 42
 
+  - name: "Return outside function with stderr to /dev/full"
+    ignore_stderr: true
+    stdin: |
+      # /dev/full may not be available on all platforms.
+      [[ -e /dev/full ]] || exit 0
+      return 2>/dev/full
+      echo "exit: $?"
+
   - name: "Return in directly invoked script"
     ignore_stderr: true
     test_files:
