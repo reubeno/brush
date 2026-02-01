@@ -22,6 +22,7 @@ arbitrary = ["dep:arbitrary"]
 debug-tracing = ["peg/trace"]
 diagnostics = ["dep:miette"]
 serde = ["dep:serde"]
+winnow-parser = ["dep:winnow"]
 
 [dependencies]
 arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }
@@ -37,6 +38,7 @@ serde = { version = "1.0.228", optional = true, features = ["derive", "rc"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
 utf8-chars = "3.0.6"
+winnow = { version = "0.7.14", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
@@ -45,7 +47,7 @@ uuid = { version = "1.20.0", features = ["js"] }
 [dev-dependencies]
 anyhow = "1.0.100"
 criterion = { version = "0.8.1", features = ["html_reports"] }
-insta = { version = "1.46.2", features = ["glob", "ron", "yaml"] }
+insta = { version = "1.46.2", features = ["glob", "ron", "yaml", "redactions"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }

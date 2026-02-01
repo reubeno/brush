@@ -13,7 +13,7 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 
 fn create_test_shell_config(options: &TestOptions) -> ShellConfig {
-    let default_args = vec![
+    let mut default_args = vec![
         "--norc".into(),
         "--noprofile".into(),
         "--no-config".into(),
@@ -21,6 +21,11 @@ fn create_test_shell_config(options: &TestOptions) -> ShellConfig {
         "--disable-bracketed-paste".into(),
         "--disable-color".into(),
     ];
+
+    // Add any additional brush args specified.
+    options.brush_args.split_whitespace().for_each(|arg| {
+        default_args.push(arg.into());
+    });
 
     ShellConfig {
         which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),

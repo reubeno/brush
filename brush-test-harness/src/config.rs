@@ -203,6 +203,10 @@ pub struct TestOptions {
     #[clap(long = "brush-path", default_value = "", env = "BRUSH_PATH")]
     pub brush_path: String,
 
+    /// Optionally specify additional arguments for brush.
+    #[clap(long = "brush-args", default_value = "", env = "BRUSH_ARGS")]
+    pub brush_args: String,
+
     /// Optionally specify path to test cases.
     #[clap(long = "test-cases-path", env = "BRUSH_TEST_CASES")]
     pub test_cases_path: Option<PathBuf>,

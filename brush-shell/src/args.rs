@@ -182,6 +182,11 @@ pub struct CommandLineArgs {
     #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS, default_value_t = crate::entry::DEFAULT_ENABLE_HIGHLIGHTING)]
     pub enable_highlighting: bool,
 
+    /// Enable experimental parser (not ready for use).
+    #[cfg(feature = "experimental-parser")]
+    #[clap(long = "experimental-parser", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    pub experimental_parser: bool,
+
     /// Enable terminal integration (**experimental**).
     #[clap(long = "enable-terminal-integration", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub terminal_shell_integration: bool,

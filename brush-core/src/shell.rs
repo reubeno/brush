@@ -134,6 +134,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Last "SECONDS" offset requested.
     last_stopwatch_offset: u32,
 
+    /// Parser implementation to use.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    parser_impl: crate::parser::ParserImpl,
+
     /// Key bindings for the shell, optionally implemented by an interactive shell.
     #[cfg_attr(feature = "serde", serde(skip))]
     key_bindings: Option<KeyBindingsHelper>,
@@ -168,6 +172,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
+            parser_impl: self.parser_impl,
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
@@ -209,6 +214,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             product_display_str: options.shell_product_display_str,
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
             builtins: options.builtins,
+            parser_impl: options.parser,
             key_bindings: options.key_bindings,
             ..Self::default()
         };

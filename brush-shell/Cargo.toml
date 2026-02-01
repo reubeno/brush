@@ -54,9 +54,17 @@ default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
-experimental = ["experimental-builtins", "experimental-load"]
+experimental = [
+    "experimental-builtins",
+    "experimental-load",
+    "experimental-parser",
+]
 experimental-builtins = ["dep:brush-experimental-builtins"]
 experimental-load = ["dep:serde_json", "brush-core/serde"]
+experimental-parser = [
+    "brush-core/experimental-parser",
+    "brush-parser/winnow-parser",
+]
 schema = ["dep:schemars"]
 
 [lints]
