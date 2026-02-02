@@ -120,6 +120,23 @@ cases:
       .
       echo "Call result: $?"
 
+  - name: "Reserved words cannot be used as function names without function keyword"
+    ignore_stderr: true
+    stdin: |
+      for (){ :; }
+      echo "exit: $?"
+
+  - name: "Reserved words can be used as function names with function keyword"
+    stdin: |
+      function for { echo "custom for"; }
+      for x in 1; do echo "normal for: $x"; done
+
+  - name: "Reserved words can be used as function names with function keyword and parens"
+    stdin: |
+      function while() { echo "custom while"; }
+      while false; do echo "nope"; done
+      echo "done"
+
   - name: "Functions shadowing builtins (POSIX mode)"
     ignore_stderr: true
     stdin: |
