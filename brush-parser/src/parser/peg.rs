@@ -412,8 +412,14 @@ peg::parser! {
             }
 
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
+        // N.B. Without the 'function' keyword, reserved words cannot be used as function names
+        // (bash rejects e.g. `for (){ :; }`). With the 'function' keyword, reserved words are
+        // allowed as function names (bash accepts e.g. `function for { :; }`).
         rule function_definition() -> ast::FunctionDefinition =
-            specific_word("function")? fname:fname() body:function_parens_and_body() {
+            specific_word("function") fname:fname() body:function_parens_and_body() {
+                ast::FunctionDefinition { fname, body }
+            } /
+            fname:non_reserved_fname() body:function_parens_and_body() {
                 ast::FunctionDefinition { fname, body }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
@@ -432,6 +438,9 @@ peg::parser! {
             // misinterpreting certain declaration assignments as function definitions.
             // TODO(parser): Find a way to make this still work without requiring this targeted exception.
             w:[Token::Word(word, l) if !word.ends_with('=')] { ast::Word::with_location(word, l) }
+
+        rule non_reserved_fname() -> ast::Word =
+            !reserved_word() w:fname() { w }
 
         rule brace_group() -> ast::BraceGroupCommand =
             start:specific_word("{") list:compound_list() end:specific_word("}") {
