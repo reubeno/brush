@@ -4,7 +4,7 @@
 
 **brush** (Bourne Rusty Shell) is a POSIX- and bash-compatible shell implemented in Rust. It's a multi-crate workspace (~60K lines of Rust code) targeting Linux, macOS, and WSL, with experimental Windows and WASM support. The project emphasizes compatibility testing against bash as an oracle.
 
-**Key Stats:** Rust 2024 edition, MSRV 1.87.0, 5 main crates, 675+ compatibility test cases, published to crates.io.
+**Key Stats:** Rust 2024 edition, MSRV 1.87.0, 5 main crates, 1400+ compatibility test cases, published to crates.io.
 
 ## Critical: Read AGENTS.md First
 
