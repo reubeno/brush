@@ -28,7 +28,7 @@ bon = "3.8.2"
 cached = "0.56.0"
 cfg-if = "1.0.4"
 chrono = "0.4.43"
-clap = { version = "4.5.54", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.56", features = ["derive", "wrap_help"] }
 color-print = "0.3.7"
 fancy-regex = "0.17.0"
 futures = "0.3.31"
@@ -60,7 +60,7 @@ tokio = { version = "1.49.0", features = [
 ] }
 
 [target.'cfg(windows)'.dependencies]
-whoami = "2.0.2"
+whoami = "2.1.0"
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.2"
