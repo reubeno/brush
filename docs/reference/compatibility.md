@@ -151,7 +151,7 @@ wait -n  # Wait for whichever finishes first
 
 ### `BASH_COMMAND` Variable
 
-The special variable `BASH_COMMAND` that contains the currently executing command is not implemented.
+The special variable `BASH_COMMAND` that contains the currently executing command is currently only available in trap contexts.
 
 ### `disown` and `logout`
 
@@ -177,10 +177,6 @@ Some advanced `printf` format specifiers behave differently (~8 known cases), pa
 
 - Division by zero handling may differ in `errexit` mode
 - `$(( exit N ))` syntax edge case
-
-### LINENO in Interactive Mode
-
-`LINENO` tracking in `PROMPT_COMMAND` and interactive contexts has some differences.
 
 ### Aliases
 
