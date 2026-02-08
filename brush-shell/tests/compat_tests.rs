@@ -63,6 +63,11 @@ fn create_test_shell_config(options: &TestOptions, oracle_name: &str) -> ShellCo
         default_args.insert(0, "--sh".into());
     }
 
+    // Add any additional brush args specified.
+    options.brush_args.split_whitespace().for_each(|arg| {
+        default_args.push(arg.into());
+    });
+
     ShellConfig {
         which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
         default_args,

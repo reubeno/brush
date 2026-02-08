@@ -114,7 +114,7 @@ fn check_unused_deps(sh: &Shell, verbose: bool) -> Result<()> {
 
 fn check_build(sh: &Shell, verbose: bool) -> Result<()> {
     eprintln!("Checking that code compiles...");
-    let mut args = vec!["check", "--all-features", "--all-targets"];
+    let mut args = vec!["check", "--all-features", "--all-targets", "--workspace"];
     if verbose {
         args.push("--verbose");
         eprintln!("Running: cargo {}", args.join(" "));

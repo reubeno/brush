@@ -433,6 +433,17 @@ async fn instantiate_shell_from_args(
         .filter_map(|&fd| brush_core::sys::fd::try_get_file_for_open_fd(fd).map(|file| (fd, file)))
         .collect();
 
+    // Select parser implementation to use.
+    #[cfg(feature = "experimental-parser")]
+    let parser_impl = if args.experimental_parser {
+        brush_core::parser::ParserImpl::Winnow
+    } else {
+        brush_core::parser::ParserImpl::Peg
+    };
+
+    #[cfg(not(feature = "experimental-parser"))]
+    let parser_impl = brush_core::parser::ParserImpl::Peg;
+
     // Set up the shell builder with the requested options.
     // NOTE: We skip loading profile and rc files here; that will be handled later after we've
     // fully instantiated everything we want set before running any code.
@@ -464,6 +475,7 @@ async fn instantiate_shell_from_args(
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
         .verbose(args.verbose)
+        .parser(parser_impl)
         .error_formatter(new_error_behavior(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 

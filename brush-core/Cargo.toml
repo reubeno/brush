@@ -19,6 +19,7 @@ workspace = true
 [features]
 default = []
 serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
+experimental-parser = ["brush-parser/winnow-parser"]
 
 [dependencies]
 async-recursion = "1.1.1"

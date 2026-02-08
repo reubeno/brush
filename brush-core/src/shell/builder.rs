@@ -212,6 +212,9 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Whether to print verbose output.
     #[builder(default)]
     pub verbose: bool,
+    /// Parser implementation to use.
+    #[builder(default)]
+    pub parser: crate::parser::ParserImpl,
     /// Whether the shell is in command string mode (-c).
     #[builder(default)]
     pub command_string_mode: bool,
@@ -250,6 +253,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
+            parser_impl: crate::parser::ParserImpl::default(),
             key_bindings: None,
             history: None,
         }
