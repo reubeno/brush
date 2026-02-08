@@ -22,5 +22,5 @@ workspace = true
 
 [dependencies]
 brush-core = { version = "^0.4.0", path = "../brush-core" }
-clap = { version = "4.5.56", features = ["derive", "wrap_help"] }
+clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
 serde_json = { version = "1.0.149", optional = true }
