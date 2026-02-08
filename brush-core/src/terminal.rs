@@ -27,10 +27,10 @@ impl TerminalControl {
 
     fn try_release(&mut self) {
         // Restore the previous foreground process group.
-        if let Some(pid) = self.prev_fg_pid {
-            if sys::terminal::move_to_foreground(pid).is_ok() {
-                self.prev_fg_pid = None;
-            }
+        if let Some(pid) = self.prev_fg_pid
+            && sys::terminal::move_to_foreground(pid).is_ok()
+        {
+            self.prev_fg_pid = None;
         }
     }
 }

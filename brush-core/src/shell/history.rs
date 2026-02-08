@@ -52,20 +52,20 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
     /// Saves history back to any backing storage.
     pub fn save_history(&mut self) -> Result<(), error::Error> {
-        if let Some(history_file_path) = self.history_file_path() {
-            if let Some(history) = &mut self.history {
-                // See if there's *any* time format configured. That triggers writing out
-                // timestamps.
-                let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
+        if let Some(history_file_path) = self.history_file_path()
+            && let Some(history) = &mut self.history
+        {
+            // See if there's *any* time format configured. That triggers writing out
+            // timestamps.
+            let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
 
-                // TODO(history): Observe options.append_to_history_file
-                history.flush(
-                    history_file_path,
-                    true, /* append? */
-                    true, /* unsaved items only? */
-                    write_timestamps,
-                )?;
-            }
+            // TODO(history): Observe options.append_to_history_file
+            history.flush(
+                history_file_path,
+                true, /* append? */
+                true, /* unsaved items only? */
+                write_timestamps,
+            )?;
         }
 
         Ok(())

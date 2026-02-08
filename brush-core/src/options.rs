@@ -295,10 +295,10 @@ impl RuntimeOptions {
         let mut cs = vec![];
 
         for o in namedoptions::options(namedoptions::ShellOptionKind::Set).iter() {
-            if o.definition.get(self) {
-                if let Some(c) = o.name.chars().next() {
-                    cs.push(c);
-                }
+            if o.definition.get(self)
+                && let Some(c) = o.name.chars().next()
+            {
+                cs.push(c);
             }
         }
 

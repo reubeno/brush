@@ -49,24 +49,22 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             }
         }
 
-        // Resolve which file descriptor to use for tracing. We default to stderr.
-        let mut trace_file = params.try_stderr(self);
-
-        // If BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
-        if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD") {
-            let xtracefd_value = xtracefd_var.value().to_cow_str(self);
-            if let Ok(fd) = xtracefd_value.parse::<super::ShellFd>() {
-                if let Some(file) = self.open_files.try_fd(fd) {
-                    trace_file = Some(file.clone());
-                }
-            }
-        }
+        // Resolve which file descriptor to use for tracing. We default to stderr,
+        // but if BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
+        let trace_file = if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD")
+            && let Ok(fd) = xtracefd_var.value().to_cow_str(self).parse::<super::ShellFd>()
+            && let Some(file) = self.open_files.try_fd(fd)
+        {
+            Some(file.clone())
+        } else {
+            params.try_stderr(self)
+        };
 
         // If we have a valid trace file, write to it.
-        if let Some(trace_file) = trace_file {
-            if let Ok(mut trace_file) = trace_file.try_clone() {
-                let _ = writeln!(trace_file, "{prefix}{}", command.as_ref());
-            }
+        if let Some(trace_file) = trace_file
+            && let Ok(mut trace_file) = trace_file.try_clone()
+        {
+            let _ = writeln!(trace_file, "{prefix}{}", command.as_ref());
         }
     }
 

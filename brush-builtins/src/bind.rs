@@ -511,10 +511,10 @@ fn find_key_seqs_bound_to_function(
     let mut found_seqs = vec![];
 
     for (seq, action) in &bindings.get_current() {
-        if let KeyAction::DoInputFunction(func) = action {
-            if *func == func_to_find {
-                found_seqs.push(seq.clone());
-            }
+        if let KeyAction::DoInputFunction(func) = action
+            && *func == func_to_find
+        {
+            found_seqs.push(seq.clone());
         }
     }
 

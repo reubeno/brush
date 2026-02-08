@@ -82,10 +82,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: impl IntoIterator<Item = String>,
         _params: &ExecutionParameters,
     ) -> Result<(), error::Error> {
-        if let Some(max_call_depth) = self.options.max_function_call_depth {
-            if self.call_stack.function_call_depth() >= max_call_depth {
-                return Err(error::ErrorKind::MaxFunctionCallDepthExceeded.into());
-            }
+        if let Some(max_call_depth) = self.options.max_function_call_depth
+            && self.call_stack.function_call_depth() >= max_call_depth
+        {
+            return Err(error::ErrorKind::MaxFunctionCallDepthExceeded.into());
         }
 
         if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {

@@ -318,25 +318,25 @@ impl Spec {
         }
 
         // Apply filter pattern, if present. Anything the filter selects gets removed.
-        if let Some(filter_pattern) = &self.filter_pattern {
-            if !filter_pattern.is_empty() {
-                let mut updated = IndexSet::new();
+        if let Some(filter_pattern) = &self.filter_pattern
+            && !filter_pattern.is_empty()
+        {
+            let mut updated = IndexSet::new();
 
-                for candidate in candidates {
-                    let matches = completion_filter_pattern_matches(
-                        filter_pattern.as_str(),
-                        candidate.as_str(),
-                        context.token_to_complete,
-                        shell,
-                    )?;
+            for candidate in candidates {
+                let matches = completion_filter_pattern_matches(
+                    filter_pattern.as_str(),
+                    candidate.as_str(),
+                    context.token_to_complete,
+                    shell,
+                )?;
 
-                    if self.filter_pattern_excludes != matches {
-                        updated.insert(candidate);
-                    }
+                if self.filter_pattern_excludes != matches {
+                    updated.insert(candidate);
                 }
-
-                candidates = updated;
             }
+
+            candidates = updated;
         }
 
         // Add prefix and/or suffix, if present.

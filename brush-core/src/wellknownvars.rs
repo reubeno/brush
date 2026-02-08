@@ -25,18 +25,18 @@ pub(crate) fn inherit_env_vars(
 ) -> Result<(), error::Error> {
     for (k, v) in std::env::vars() {
         // See if it's a function exported by an ancestor process.
-        if let Some(func_name) = k.strip_prefix("BASH_FUNC_") {
-            if let Some(func_name) = func_name.strip_suffix("%%") {
-                // Intentionally best-effort; don't fail out of the shell if we can't
-                // parse an incoming function.
-                if shell.define_func_from_str(func_name, v.as_str()).is_ok() {
-                    if let Some(func) = shell.func_mut(func_name) {
-                        func.export();
-                    }
-                }
-
-                continue;
+        if let Some(func_name) = k.strip_prefix("BASH_FUNC_")
+            && let Some(func_name) = func_name.strip_suffix("%%")
+        {
+            // Intentionally best-effort; don't fail out of the shell if we can't
+            // parse an incoming function.
+            if shell.define_func_from_str(func_name, v.as_str()).is_ok()
+                && let Some(func) = shell.func_mut(func_name)
+            {
+                func.export();
             }
+
+            continue;
         }
 
         // Special case OLDPWD for bash compatibility.
@@ -297,14 +297,14 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global("HISTCMD", histcmd_var)?;
 
     // HISTFILE (if not already set)
-    if !shell.env().is_set("HISTFILE") {
-        if let Some(home_dir) = shell.home_dir() {
-            let histfile = home_dir.join(".brush_history");
-            shell.env_mut().set_global(
-                "HISTFILE",
-                ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
-            )?;
-        }
+    if !shell.env().is_set("HISTFILE")
+        && let Some(home_dir) = shell.home_dir()
+    {
+        let histfile = home_dir.join(".brush_history");
+        shell.env_mut().set_global(
+            "HISTFILE",
+            ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
+        )?;
     }
 
     // HOSTNAME
