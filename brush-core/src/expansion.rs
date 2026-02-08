@@ -1658,8 +1658,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
                 // Index into the array.
                 if let Some((_, var)) = self.shell.env().get(name)
-                    && let Ok(Some(value)) =
-                        var.value().get_at(index_to_use.as_str(), self.shell)
+                    && let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell)
                 {
                     Ok(Expansion::from(value.to_string()))
                 } else {

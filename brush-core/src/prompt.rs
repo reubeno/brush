@@ -110,9 +110,7 @@ fn format_prompt_piece(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            if only_up_to_first_dot
-                && let Some((first, _)) = hn.split_once('.')
-            {
+            if only_up_to_first_dot && let Some((first, _)) = hn.split_once('.') {
                 return Ok(first.to_owned());
             }
             hn
@@ -169,9 +167,7 @@ fn format_current_working_directory(
         working_dir_str = shell.tilde_shorten(working_dir_str);
     }
 
-    if basename
-        && let Some(filename) = Path::new(&working_dir_str).file_name()
-    {
+    if basename && let Some(filename) = Path::new(&working_dir_str).file_name() {
         working_dir_str = filename.to_string_lossy().to_string();
     }
 
