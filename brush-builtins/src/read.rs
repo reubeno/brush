@@ -453,20 +453,20 @@ fn read_line_with_reader(
                         pending_backslash = false;
 
                         // Backslash-delimiter is line continuation.
-                        if let Some(delim) = config.delimiter {
-                            if ch == delim {
-                                continue; // Line continuation.
-                            }
+                        if let Some(delim) = config.delimiter
+                            && ch == delim
+                        {
+                            continue; // Line continuation.
                         }
 
                         // For other chars, add char literally (backslash consumed).
                         line.push(ch);
 
                         // Check character limit (based on output length).
-                        if let Some(limit) = config.char_limit {
-                            if line.len() >= limit {
-                                return Ok(ReadResult::Line(line));
-                            }
+                        if let Some(limit) = config.char_limit
+                            && line.len() >= limit
+                        {
+                            return Ok(ReadResult::Line(line));
                         }
                         continue;
                     }
@@ -478,10 +478,10 @@ fn read_line_with_reader(
                 }
 
                 // Check for delimiter.
-                if let Some(delim) = config.delimiter {
-                    if ch == delim {
-                        return Ok(ReadResult::Line(line));
-                    }
+                if let Some(delim) = config.delimiter
+                    && ch == delim
+                {
+                    return Ok(ReadResult::Line(line));
                 }
 
                 // Ignore non-whitespace control characters.
@@ -492,10 +492,10 @@ fn read_line_with_reader(
                 line.push(ch);
 
                 // Check character limit (based on output length).
-                if let Some(limit) = config.char_limit {
-                    if line.len() >= limit {
-                        return Ok(ReadResult::Line(line));
-                    }
+                if let Some(limit) = config.char_limit
+                    && line.len() >= limit
+                {
+                    return Ok(ReadResult::Line(line));
                 }
             }
         }

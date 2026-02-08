@@ -198,10 +198,8 @@ impl History {
                     continue;
                 }
 
-                if write_timestamps {
-                    if let Some(timestamp) = item.timestamp {
-                        writeln!(file, "#{}", timestamp.timestamp())?;
-                    }
+                if write_timestamps && let Some(timestamp) = item.timestamp {
+                    writeln!(file, "#{}", timestamp.timestamp())?;
                 }
 
                 writeln!(file, "{}", item.command_line)?;

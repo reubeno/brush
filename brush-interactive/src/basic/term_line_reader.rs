@@ -48,10 +48,10 @@ impl super::LineReader for TermLineReader {
         state.display_prompt()?;
 
         loop {
-            if let crossterm::event::Event::Key(event) = crossterm::event::read()? {
-                if let Some(result) = state.on_key(event, &mut completion_handler)? {
-                    return Ok(result);
-                }
+            if let crossterm::event::Event::Key(event) = crossterm::event::read()?
+                && let Some(result) = state.on_key(event, &mut completion_handler)?
+            {
+                return Ok(result);
             }
         }
     }

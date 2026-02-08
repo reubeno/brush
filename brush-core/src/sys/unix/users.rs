@@ -16,20 +16,20 @@ pub(crate) fn get_user_home_dir(username: &str) -> Option<PathBuf> {
 }
 
 pub(crate) fn get_current_user_home_dir() -> Option<PathBuf> {
-    if let Some(username) = uzers::get_current_username() {
-        if let Some(user_info) = uzers::get_user_by_name(&username) {
-            return Some(user_info.home_dir().to_path_buf());
-        }
+    if let Some(username) = uzers::get_current_username()
+        && let Some(user_info) = uzers::get_user_by_name(&username)
+    {
+        return Some(user_info.home_dir().to_path_buf());
     }
 
     None
 }
 
 pub(crate) fn get_current_user_default_shell() -> Option<PathBuf> {
-    if let Some(username) = uzers::get_current_username() {
-        if let Some(user_info) = uzers::get_user_by_name(&username) {
-            return Some(user_info.shell().to_path_buf());
-        }
+    if let Some(username) = uzers::get_current_username()
+        && let Some(user_info) = uzers::get_user_by_name(&username)
+    {
+        return Some(user_info.shell().to_path_buf());
     }
 
     None

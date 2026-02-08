@@ -63,10 +63,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// * `s` - The string to shorten.
     pub fn tilde_shorten(&self, s: String) -> String {
-        if let Some(home_dir) = self.home_dir() {
-            if let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref()) {
-                return format!("~{stripped}");
-            }
+        if let Some(home_dir) = self.home_dir()
+            && let Some(stripped) = s.strip_prefix(home_dir.to_string_lossy().as_ref())
+        {
+            return format!("~{stripped}");
         }
         s
     }
@@ -190,16 +190,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // See if this is a reference to a file descriptor, in which case the actual
         // /dev/fd* file path for this process may not match with what's in the execution
         // parameters.
-        if let Some(parent) = path_to_open.parent() {
-            if parent == Path::new("/dev/fd") {
-                if let Some(filename) = path_to_open.file_name() {
-                    if let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<ShellFd>() {
-                        if let Some(open_file) = params.try_fd(self, fd_num) {
-                            return open_file.try_clone();
-                        }
-                    }
-                }
-            }
+        if let Some(parent) = path_to_open.parent()
+            && parent == Path::new("/dev/fd")
+            && let Some(filename) = path_to_open.file_name()
+            && let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<ShellFd>()
+            && let Some(open_file) = params.try_fd(self, fd_num)
+        {
+            return open_file.try_clone();
         }
 
         Ok(options.open(path_to_open)?.into())

@@ -401,26 +401,26 @@ impl Execute for ast::Pipeline {
         }
 
         // If requested, report timing.
-        if let (Some(timed), Some(stopwatch)) = (&self.timed, &stopwatch) {
-            if let Some(mut stderr) = params.try_fd(shell, openfiles::OpenFiles::STDERR_FD) {
-                let timing = stopwatch.stop()?;
-                if timed.is_posix_output() {
-                    std::write!(
-                        stderr,
-                        "real {}\nuser {}\nsys {}\n",
-                        timing::format_duration_posixly(&timing.wall),
-                        timing::format_duration_posixly(&timing.user),
-                        timing::format_duration_posixly(&timing.system),
-                    )?;
-                } else {
-                    std::write!(
-                        stderr,
-                        "\nreal\t{}\nuser\t{}\nsys\t{}\n",
-                        timing::format_duration_non_posixly(&timing.wall),
-                        timing::format_duration_non_posixly(&timing.user),
-                        timing::format_duration_non_posixly(&timing.system),
-                    )?;
-                }
+        if let (Some(timed), Some(stopwatch)) = (&self.timed, &stopwatch)
+            && let Some(mut stderr) = params.try_fd(shell, openfiles::OpenFiles::STDERR_FD)
+        {
+            let timing = stopwatch.stop()?;
+            if timed.is_posix_output() {
+                std::write!(
+                    stderr,
+                    "real {}\nuser {}\nsys {}\n",
+                    timing::format_duration_posixly(&timing.wall),
+                    timing::format_duration_posixly(&timing.user),
+                    timing::format_duration_posixly(&timing.system),
+                )?;
+            } else {
+                std::write!(
+                    stderr,
+                    "\nreal\t{}\nuser\t{}\nsys\t{}\n",
+                    timing::format_duration_non_posixly(&timing.wall),
+                    timing::format_duration_non_posixly(&timing.user),
+                    timing::format_duration_non_posixly(&timing.system),
+                )?;
             }
         }
 

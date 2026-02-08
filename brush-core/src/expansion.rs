@@ -636,26 +636,21 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             // When inside double-quotes, we need to parse the word with double-quote semantics.
             // If the word already starts with a double-quote, we need to remove those quotes
             // and expand what's inside with normal (non-double-quote) semantics.
-            if let Some(stripped) = word.strip_prefix('"') {
-                if let Some(inner) = stripped.strip_suffix('"') {
-                    // Remove the surrounding double-quotes and expand the content normally
-                    // This requires us to temporarily clear in_double_quotes so the inner
-                    // content gets normal processing.
-                    let previously_in_double_quotes = self.in_double_quotes;
-                    self.in_double_quotes = false;
+            if let Some(stripped) = word.strip_prefix('"')
+                && let Some(inner) = stripped.strip_suffix('"')
+            {
+                // Remove the surrounding double-quotes and expand the content normally
+                // This requires us to temporarily clear in_double_quotes so the inner
+                // content gets normal processing.
+                let previously_in_double_quotes = self.in_double_quotes;
+                self.in_double_quotes = false;
 
-                    // Now perform the expansion and make sure to restore the previous state,
-                    // even if the expansion fails.
-                    let result = self.basic_expand(inner).await;
-                    self.in_double_quotes = previously_in_double_quotes;
+                // Now perform the expansion and make sure to restore the previous state,
+                // even if the expansion fails.
+                let result = self.basic_expand(inner).await;
+                self.in_double_quotes = previously_in_double_quotes;
 
-                    result
-                } else {
-                    // Not double-quoted - wrap in double-quotes to get double-quote parsing
-                    // semantics
-                    let wrapped = std::format!("\"{word}\"");
-                    self.basic_expand(&wrapped).await
-                }
+                result
             } else {
                 // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
                 let wrapped = std::format!("\"{word}\"");
@@ -931,10 +926,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
 
                 let dir_stack_count = self.shell.directory_stack().len();
-                if dir_stack_count >= *n {
-                    if let Some(dir) = self.shell.directory_stack().get(dir_stack_count - *n) {
-                        return Ok(dir.to_string_lossy().to_string());
-                    }
+                if dir_stack_count >= *n
+                    && let Some(dir) = self.shell.directory_stack().get(dir_stack_count - *n)
+                {
+                    return Ok(dir.to_string_lossy().to_string());
                 }
 
                 let plus_or_nothing = if *plus_used { "+" } else { "" };
@@ -993,11 +988,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .map(|piece| piece.make_unsplittable())
                     .collect();
 
-                if i == 0 {
-                    if let Some(WordField(last_pieces)) = fields.last_mut() {
-                        last_pieces.append(&mut next_pieces);
-                        continue;
-                    }
+                if i == 0
+                    && let Some(WordField(last_pieces)) = fields.last_mut()
+                {
+                    last_pieces.append(&mut next_pieces);
+                    continue;
                 }
 
                 fields.push(WordField(next_pieces));
@@ -1662,12 +1657,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .await?;
 
                 // Index into the array.
-                if let Some((_, var)) = self.shell.env().get(name) {
-                    if let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell) {
-                        Ok(Expansion::from(value.to_string()))
-                    } else {
-                        self.undefined_expansion(parameter, allow_unset_vars)
-                    }
+                if let Some((_, var)) = self.shell.env().get(name)
+                    && let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell)
+                {
+                    Ok(Expansion::from(value.to_string()))
                 } else {
                     self.undefined_expansion(parameter, allow_unset_vars)
                 }
@@ -1744,10 +1737,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Expansion::from(std::process::id().to_string())
             }
             brush_parser::word::SpecialParameter::LastBackgroundProcessId => {
-                if let Some(job) = self.shell.jobs().current_job() {
-                    if let Some(pid) = job.representative_pid() {
-                        return Expansion::from(pid.to_string());
-                    }
+                if let Some(job) = self.shell.jobs().current_job()
+                    && let Some(pid) = job.representative_pid()
+                {
+                    return Expansion::from(pid.to_string());
                 }
                 Expansion::from(String::new())
             }

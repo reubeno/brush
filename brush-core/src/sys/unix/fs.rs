@@ -89,10 +89,10 @@ pub fn get_default_standard_utils_paths() -> Vec<PathBuf> {
     // finds an empty string, then we'll fall back to hard-coded defaults.
     //
 
-    if let Ok(Some(cs_path)) = confstr_cs_path() {
-        if !cs_path.as_os_str().is_empty() {
-            return std::env::split_paths(&cs_path).collect();
-        }
+    if let Ok(Some(cs_path)) = confstr_cs_path()
+        && !cs_path.as_os_str().is_empty()
+    {
+        return std::env::split_paths(&cs_path).collect();
     }
     // standard hard-coded defaults
     vec![
