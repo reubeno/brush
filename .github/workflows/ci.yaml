@@ -298,7 +298,7 @@ jobs:
     strategy:
       matrix:
         # Test latest stable as well as MSRV.
-        rust-version: ["stable", "1.87.0"]
+        rust-version: ["stable", "1.88.0"]
         # Run checks on Linux, Windows, and macOS.
         os: ["ubuntu-24.04", "windows-2025", "macos-latest"]
 
