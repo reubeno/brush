@@ -84,7 +84,7 @@ jobs:
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: "brush-docs.tar.gz*"
 
@@ -144,7 +144,7 @@ jobs:
 
       - name: "Setup cross-compiling toolchain"
         if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
-        uses: taiki-e/setup-cross-toolchain-action@d30d20f04a3b09718e138524795d0d6ab7703dcb # v1.37.1
+        uses: taiki-e/setup-cross-toolchain-action@b8d1a322a6009a2b7220f53996695778eef89b41 # v1.38.0
         with:
           target: ${{ matrix.target }}
 
@@ -185,7 +185,7 @@ jobs:
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: "${{ steps.upload-release.outputs.archive }}.*"
 
