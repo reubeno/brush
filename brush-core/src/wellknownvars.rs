@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use rand::Rng;
+use rand::RngExt as _;
 
 use crate::shell::ShellState;
 use crate::{Shell, ShellValue, ShellVariable, error, extensions, sys, variables};
