@@ -13,6 +13,7 @@ pub mod escape;
 pub mod expansion;
 mod extendedtests;
 pub mod extensions;
+pub mod filter;
 pub mod functions;
 pub mod history;
 pub mod int_utils;
