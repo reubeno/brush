@@ -403,3 +403,201 @@ cases:
       for arg in "$@"; do
         echo "[$arg]"
       done
+
+  # Cases below test IFS behavior with empty/unset IFS across different
+  # expansion types: variable, brace, mixed, arithmetic, command substitution.
+
+  - name: "Empty IFS disables splitting of variable expansion"
+    stdin: |
+      str="a b c"
+      IFS=""
+      arr=( $str )
+      echo "split: ${#arr[@]} elements"
+
+  - name: "Unset IFS uses default splitting"
+    stdin: |
+      str="a b c"
+      unset IFS
+      arr=( $str )
+      echo "split: ${#arr[@]} elements"
+
+  - name: "Local IFS=: then unset restores default splitting"
+    stdin: |
+      test_func() {
+          local str2="a b c"
+          local IFS=:
+          unset IFS
+          local arr=( $str2 )
+          echo "split: ${#arr[@]} elements"
+          for (( i=0; i<${#arr[@]}; i++ )); do
+              echo "  [$i]='${arr[$i]}'"
+          done
+      }
+      test_func
+
+  - name: "Local IFS='' disables splitting of variable"
+    stdin: |
+      test_func() {
+          local str2="a b c"
+          local IFS=""
+          local arr=( $str2 )
+          echo "split: ${#arr[@]} elements"
+          for (( i=0; i<${#arr[@]}; i++ )); do
+              echo "  [$i]='${arr[$i]}'"
+          done
+      }
+      test_func
+
+  - name: "Brace expansion with local IFS=: then unset"
+    stdin: |
+      test_func() {
+          local IFS=:
+          unset IFS
+          set -- python3_{11..14}
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Brace expansion with local IFS=''"
+    stdin: |
+      test_func() {
+          local IFS=""
+          set -- python3_{11..14}
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Mixed variable and brace expansion with local IFS=''"
+    stdin: |
+      test_func() {
+          local str="python3_"
+          local IFS=""
+          set -- ${str}{11..14}
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Command substitution with local IFS=''"
+    stdin: |
+      test_func() {
+          local IFS=""
+          set -- $(echo "a b c")
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Arithmetic expansion with local IFS=''"
+    stdin: |
+      test_func() {
+          local IFS=""
+          set -- $((1+1)) $((2+2))
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Special parameters with local IFS=''"
+    stdin: |
+      test_func() {
+          local IFS=""
+          set -- $*
+          echo "Count: $#"
+      }
+      test_func
+
+  - name: "Complex mixed variable and brace expansion with local IFS=''"
+    stdin: |
+      test_func() {
+          local str="file"
+          local IFS=""
+          set -- ${str}{1..3}.txt
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Empty IFS with set -- variable splitting"
+    stdin: |
+      test_func() {
+          local var="a b c"
+          local IFS=""
+          set -- $var
+          echo "Count: $#"
+          echo "[$1]"
+      }
+      test_func
+
+  - name: "Empty IFS with for-loop variable splitting"
+    stdin: |
+      test_func() {
+          local var="x y z"
+          local IFS=""
+          for word in $var; do
+              echo "[$word]"
+          done
+      }
+      test_func
+
+  - name: "Empty IFS with comma brace expansion"
+    stdin: |
+      test_func() {
+          local IFS=""
+          set -- {a,b,c}
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Empty IFS with sequence brace expansion"
+    stdin: |
+      test_func() {
+          local IFS=""
+          set -- {1..5}
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func
+
+  - name: "Empty IFS with parameter default value expansion"
+    stdin: |
+      test_func() {
+          local var="a b c"
+          local IFS=""
+          set -- ${var:-default}
+          echo "Count: $#"
+          echo "[$1]"
+      }
+      test_func
+
+  - name: "Empty IFS scoping across nested functions"
+    stdin: |
+      inner() {
+          local IFS=""
+          local var="a b c"
+          set -- $var
+          echo "Inner count: $#"
+      }
+      outer() {
+          local var="a b c"
+          set -- $var
+          echo "Outer before count: $#"
+          inner
+          set -- $var
+          echo "Outer after count: $#"
+      }
+      outer
+
+  - name: "Empty IFS with positional parameters expansion"
+    stdin: |
+      test_func() {
+          local IFS=""
+          set -- a b c
+          set -- $@
+          echo "Count: $#"
+          for arg in "$@"; do echo "[$arg]"; done
+      }
+      test_func

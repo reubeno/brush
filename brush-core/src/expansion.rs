@@ -648,33 +648,56 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
 
         // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
-        let brace_expanded = self.brace_expand_if_needed(word)?;
-        if tracing::enabled!(target: trace_categories::EXPANSION, tracing::Level::DEBUG)
-            && brace_expanded != word
-        {
-            tracing::debug!(target: trace_categories::EXPANSION, "  => brace expanded to '{brace_expanded}'");
-        }
-
-        // Expand: tildes, parameters, command substitutions, arithmetic.
-        let pieces = if self.heredoc_mode {
-            // Heredoc mode only affects top-level parsing (literal quotes); recursive
-            // expansion of parameter words (e.g., ${var:-"default"}) uses normal semantics.
-            self.heredoc_mode = false;
-
-            brush_parser::word::parse_heredoc(brace_expanded.as_ref(), &self.parser_options)?
+        let brace_words = if self.heredoc_mode {
+            vec![Cow::Borrowed(word)]
         } else {
-            brush_parser::word::parse(brace_expanded.as_ref(), &self.parser_options)?
+            self.brace_expand_to_words(word)?
         };
 
-        let mut expansions = vec![];
-        for piece in pieces {
-            let piece_expansion = self.expand_word_piece(piece.piece).await?;
-            expansions.push(piece_expansion);
+        if tracing::enabled!(target: trace_categories::EXPANSION, tracing::Level::DEBUG)
+            && (brace_words.len() > 1 || brace_words.first().is_some_and(|w| w.as_ref() != word))
+        {
+            tracing::debug!(target: trace_categories::EXPANSION, "  => brace expanded to {brace_words:?}");
         }
 
-        let coalesced = coalesce_expansions(expansions);
+        // When there's no actual brace expansion (single word), preserve all expansion
+        // properties (concatenate, from_array, etc.) from the inner expansion. This is
+        // important for e.g. "${var[@]}" where concatenate=false enables per-element iteration.
+        if brace_words.len() == 1 {
+            let mut expansions = vec![];
+            let pieces = if self.heredoc_mode {
+                // Heredoc mode only affects top-level parsing (literal quotes); recursive
+                // expansion of parameter words (e.g., ${var:-"default"}) uses normal semantics.
+                self.heredoc_mode = false;
+                brush_parser::word::parse_heredoc(brace_words[0].as_ref(), &self.parser_options)?
+            } else {
+                brush_parser::word::parse(brace_words[0].as_ref(), &self.parser_options)?
+            };
+            for piece in pieces {
+                let piece_expansion = self.expand_word_piece(piece.piece).await?;
+                expansions.push(piece_expansion);
+            }
 
-        Ok(coalesced)
+            return Ok(coalesce_expansions(expansions));
+        }
+
+        // Multiple brace words: each becomes its own field(s).
+        let mut all_fields: Vec<WordField> = vec![];
+        for brace_word in &brace_words {
+            let mut expansions = vec![];
+            for piece in brush_parser::word::parse(brace_word.as_ref(), &self.parser_options)? {
+                let piece_expansion = self.expand_word_piece(piece.piece).await?;
+                expansions.push(piece_expansion);
+            }
+
+            let coalesced = coalesce_expansions(expansions);
+            all_fields.extend(coalesced.fields);
+        }
+
+        Ok(Expansion {
+            fields: all_fields,
+            ..Expansion::default()
+        })
     }
 
     /// Expand a word used inside a parameter expansion (like the word in ${param:+word}).
@@ -712,35 +735,41 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
     }
 
-    fn brace_expand_if_needed(&self, word: &'a str) -> Result<Cow<'a, str>, error::Error> {
+    fn brace_expand_to_words(&self, word: &'a str) -> Result<Vec<Cow<'a, str>>, error::Error> {
         // We perform a non-authoritative check to see if the string *may* contain braces
         // to expand. There may be false positives, but must be no false negatives.
         if self.disable_brace_expansion
             || !self.shell.options().perform_brace_expansion
             || !may_contain_braces_to_expand(word)
         {
-            return Ok(word.into());
+            return Ok(vec![word.into()]);
         }
 
         let parse_result = brush_parser::word::parse_brace_expansions(word, &self.parser_options);
         if parse_result.is_err() {
             tracing::error!("failed to parse for brace expansion: {parse_result:?}");
-            return Ok(word.into());
+            return Ok(vec![word.into()]);
         }
 
         let brace_expansion_pieces = parse_result?;
         let Some(brace_expansion_pieces) = brace_expansion_pieces else {
-            return Ok(word.into());
+            return Ok(vec![word.into()]);
         };
 
         tracing::debug!(target: trace_categories::EXPANSION, "Brace expansion pieces: {brace_expansion_pieces:?}");
 
-        let result = braceexpansion::generate_and_combine_brace_expansions(brace_expansion_pieces)
+        let words = braceexpansion::generate_and_combine_brace_expansions(brace_expansion_pieces)
             .into_iter()
-            .map(|s| if s.is_empty() { "\"\"".into() } else { s })
-            .join(" ");
+            .map(|s| -> Cow<'a, str> {
+                if s.is_empty() {
+                    "\"\"".into()
+                } else {
+                    s.into()
+                }
+            })
+            .collect();
 
-        Ok(result.into())
+        Ok(words)
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -2136,14 +2165,26 @@ mod tests {
         let params = shell.default_exec_params();
         let expander = WordExpander::new(&mut shell, &params);
 
-        assert_eq!(expander.brace_expand_if_needed("abc")?, "abc");
-        assert_eq!(expander.brace_expand_if_needed("a{,b}d")?, "ad abd");
-        assert_eq!(expander.brace_expand_if_needed("a{b,c}d")?, "abd acd");
-        assert_eq!(expander.brace_expand_if_needed("a{1..3}d")?, "a1d a2d a3d");
-        assert_eq!(expander.brace_expand_if_needed(r#""{a,b}""#)?, r#""{a,b}""#);
-        assert_eq!(expander.brace_expand_if_needed("a{}b")?, "a{}b");
-        assert_eq!(expander.brace_expand_if_needed("a{ }b")?, "a{ }b");
-        assert_eq!(expander.brace_expand_if_needed("{a,b{1,2}}")?, "a b1 b2");
+        assert_eq!(expander.brace_expand_to_words("abc")?, vec!["abc"]);
+        assert_eq!(expander.brace_expand_to_words("a{,b}d")?, vec!["ad", "abd"]);
+        assert_eq!(
+            expander.brace_expand_to_words("a{b,c}d")?,
+            vec!["abd", "acd"]
+        );
+        assert_eq!(
+            expander.brace_expand_to_words("a{1..3}d")?,
+            vec!["a1d", "a2d", "a3d"]
+        );
+        assert_eq!(
+            expander.brace_expand_to_words(r#""{a,b}""#)?,
+            vec![r#""{a,b}""#]
+        );
+        assert_eq!(expander.brace_expand_to_words("a{}b")?, vec!["a{}b"]);
+        assert_eq!(expander.brace_expand_to_words("a{ }b")?, vec!["a{ }b"]);
+        assert_eq!(
+            expander.brace_expand_to_words("{a,b{1,2}}")?,
+            vec!["a", "b1", "b2"]
+        );
 
         Ok(())
     }
