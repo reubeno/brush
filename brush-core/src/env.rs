@@ -276,7 +276,7 @@ impl ShellEnvironment {
         shell: &Shell<SE>,
     ) -> Option<Cow<'_, str>> {
         self.get(name.as_ref())
-            .map(|(_, v)| v.value().to_cow_str(shell))
+            .and_then(|(_, v)| v.value().try_get_cow_str(shell))
     }
 
     /// Checks if a variable of the given name is set in the environment.
