@@ -389,7 +389,9 @@ pub(crate) async fn basic_expand_heredoc_word(
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
-    expander.basic_expand_heredoc_to_str(word_str.as_ref()).await
+    expander
+        .basic_expand_heredoc_to_str(word_str.as_ref())
+        .await
 }
 
 /// Applies all basic expansion to the given word (represented as a string),
@@ -546,10 +548,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
     /// Apply parameter expansion, command substitution, and arithmetic expansion
     /// to a heredoc body, preserving literal quotes.
-    async fn basic_expand_heredoc_to_str(
-        &mut self,
-        word: &str,
-    ) -> Result<String, error::Error> {
+    async fn basic_expand_heredoc_to_str(&mut self, word: &str) -> Result<String, error::Error> {
         Ok(String::from(self.basic_expand_heredoc(word).await?))
     }
 
