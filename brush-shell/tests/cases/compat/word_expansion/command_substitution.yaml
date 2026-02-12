@@ -182,3 +182,55 @@ cases:
 
       $($(:))
       echo "exit code: $?"
+
+  - name: "Nested command substitution output"
+    stdin: |
+      echo "$(echo "$(echo hello)")"
+
+  - name: "Deeply nested command substitution"
+    stdin: |
+      echo "$(echo "$(echo "$(echo deep)")")"
+
+  - name: "Nested command substitution with variable"
+    stdin: |
+      x="inner"
+      result="$(echo "prefix-$(echo "$x")-suffix")"
+      echo "$result"
+
+  - name: "Nested command substitution with pipe"
+    stdin: |
+      result=$(echo "hello world" | $(echo cat))
+      echo "$result"
+
+  - name: "Command substitution in arithmetic"
+    stdin: |
+      echo "$(( $(echo 10) + $(echo 20) ))"
+
+  - name: "Nested command substitution with process substitution"
+    stdin: |
+      result=$(cat <(echo "from proc sub"))
+      echo "$result"
+
+  - name: "Triple nested command substitution"
+    stdin: |
+      echo "$(echo "a$(echo "b$(echo c)b")a")"
+
+  - name: "Command substitution with loop"
+    stdin: |
+      result=$(for i in 1 2 3; do echo "$i"; done)
+      echo "$result"
+
+  - name: "Nested backtick and dollar-paren substitution"
+    stdin: |
+      echo "$(echo `echo mixed`)"
+
+  - name: "Command substitution with conditional"
+    stdin: |
+      x=5
+      result=$(if [[ $x -gt 3 ]]; then echo "big"; else echo "small"; fi)
+      echo "$result"
+
+  - name: "Command substitution capturing stderr via redirection"
+    stdin: |
+      result=$(echo "error msg" >&2 2>&1)
+      echo "result: $result"

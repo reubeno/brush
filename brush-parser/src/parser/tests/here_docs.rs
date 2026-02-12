@@ -129,12 +129,10 @@ EOF
 }
 
 // The following tests exercise heredoc bodies containing `)` inside `$()`
-// command substitutions.  The PEG parser mis-parses the `)` in the heredoc
-// body as closing the command substitution; the winnow parser should handle
-// this correctly.  We therefore test each parser independently.
+// command substitutions.  Both parsers should handle this correctly.
 
 #[test]
-fn parse_here_doc_with_parens_in_command_substitution_peg() {
+fn parse_here_doc_with_parens_in_command_substitution_peg() -> Result<()> {
     use super::{ParserConfig, parse_with_config};
     use crate::parser::ParserImpl;
 
@@ -148,9 +146,13 @@ echo "$X"
         name: "peg",
         parser_impl: ParserImpl::Peg,
     };
-    // PEG parser is known to fail on this pattern.
-    let result = parse_with_config(input, &config);
-    assert!(result.is_err(), "expected PEG parser to fail on heredoc with ) inside $()");
+    let result = parse_with_config(input, &config)
+        .map_err(|e| anyhow::anyhow!("PEG parser failed: {e}\nInput: {input}"))?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
 }
 
 #[cfg(feature = "winnow-parser")]
@@ -179,7 +181,7 @@ echo "$X"
 }
 
 #[test]
-fn parse_here_doc_tab_stripped_with_parens_in_command_substitution_peg() {
+fn parse_here_doc_tab_stripped_with_parens_in_command_substitution_peg() -> Result<()> {
     use super::{ParserConfig, parse_with_config};
     use crate::parser::ParserImpl;
 
@@ -188,8 +190,13 @@ fn parse_here_doc_tab_stripped_with_parens_in_command_substitution_peg() {
         name: "peg",
         parser_impl: ParserImpl::Peg,
     };
-    let result = parse_with_config(input, &config);
-    assert!(result.is_err(), "expected PEG parser to fail on heredoc with ) inside $()");
+    let result = parse_with_config(input, &config)
+        .map_err(|e| anyhow::anyhow!("PEG parser failed: {e}\nInput: {input}"))?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
 }
 
 #[cfg(feature = "winnow-parser")]
@@ -213,7 +220,7 @@ fn parse_here_doc_tab_stripped_with_parens_in_command_substitution_winnow() -> R
 }
 
 #[test]
-fn parse_here_doc_in_command_substitution_eclass_pattern_peg() {
+fn parse_here_doc_in_command_substitution_eclass_pattern_peg() -> Result<()> {
     use super::{ParserConfig, parse_with_config};
     use crate::parser::ParserImpl;
 
@@ -229,8 +236,13 @@ fn parse_here_doc_in_command_substitution_eclass_pattern_peg() {
         name: "peg",
         parser_impl: ParserImpl::Peg,
     };
-    let result = parse_with_config(input, &config);
-    assert!(result.is_err(), "expected PEG parser to fail on eclass heredoc pattern");
+    let result = parse_with_config(input, &config)
+        .map_err(|e| anyhow::anyhow!("PEG parser failed: {e}\nInput: {input}"))?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
 }
 
 #[cfg(feature = "winnow-parser")]
