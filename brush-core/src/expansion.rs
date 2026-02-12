@@ -373,6 +373,27 @@ pub(crate) async fn basic_expand_word(
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
+/// Applies heredoc-appropriate expansion to the given word.
+///
+/// Unlike [`basic_expand_word`], this treats `"` and `'` as literal characters
+/// (no quote removal), which is correct for heredoc bodies with unquoted delimiters per POSIX.
+///
+/// # Arguments
+///
+/// * `shell` - The shell in which to perform expansion.
+/// * `params` - The execution parameters to use during expansion.
+/// * `word_str` - The heredoc body to expand, as a string.
+pub(crate) async fn basic_expand_heredoc_word(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    word_str: impl AsRef<str>,
+) -> Result<String, error::Error> {
+    let mut expander = WordExpander::new(shell, params);
+    expander
+        .basic_expand_heredoc_to_str(word_str.as_ref())
+        .await
+}
+
 /// Applies all basic expansion to the given word (represented as a string),
 /// with custom expander options.
 ///
@@ -523,6 +544,28 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
         Ok(String::from(self.basic_expand(word).await?))
+    }
+
+    /// Apply parameter expansion, command substitution, and arithmetic expansion
+    /// to a heredoc body, preserving literal quotes.
+    async fn basic_expand_heredoc_to_str(&mut self, word: &str) -> Result<String, error::Error> {
+        Ok(String::from(self.basic_expand_heredoc(word).await?))
+    }
+
+    async fn basic_expand_heredoc(&mut self, word: &str) -> Result<Expansion, error::Error> {
+        tracing::debug!(target: trace_categories::EXPANSION, "Heredoc expanding: '{word}'");
+
+        if !word.contains(['$', '`', '\\']) {
+            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
+        }
+
+        let mut expansions = vec![];
+        for piece in brush_parser::word::parse_heredoc(word, &self.parser_options)? {
+            let piece_expansion = self.expand_word_piece(piece.piece).await?;
+            expansions.push(piece_expansion);
+        }
+
+        Ok(coalesce_expansions(expansions))
     }
 
     async fn basic_expand_opt_pattern(
