@@ -3481,6 +3481,12 @@ pub fn program<'a>(
                 .parse_next(input)?
                 .unwrap_or_default();
         linebreak().parse_next(input)?;
+        // Consume any trailing whitespace/comment that isn't followed by a newline
+        // (e.g., a comment at the end of a file without a trailing newline).
+        let _: &str =
+            winnow::token::take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
+        winnow::combinator::opt(comment()).parse_next(input)?;
+        winnow::combinator::eof.parse_next(input)?;
         Ok(ast::Program {
             complete_commands,
         })
