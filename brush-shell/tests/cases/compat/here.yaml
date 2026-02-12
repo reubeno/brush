@@ -189,7 +189,6 @@ cases:
       EOF
 
   - name: "Here doc in a command substitution with parentheses"
-    known_failure: true # Issue #419
     stdin: |
       test1=$(cat <<EOF
       (something)
@@ -225,3 +224,30 @@ cases:
       )
 
       echo "${test1}"
+
+  - name: "Tab-stripped here doc in command substitution"
+    stdin: "result=$(\n\tcat <<-EOF\n\t\ttab-indented line\n\tEOF\n)\necho \"$result\"\n"
+
+  - name: "Tab-stripped here doc in double-quoted command substitution"
+    stdin: "result=\"$(\n\tcat <<-EOF\n\t\thello world\n\tEOF\n)\"\necho \"$result\"\n"
+
+  - name: "Tab-stripped here doc with multiple lines in command substitution"
+    stdin: "result=$(\n\tcat <<-EOF\n\t\tline one\n\t\tline two\n\t\tline three\n\tEOF\n)\necho \"$result\"\n"
+
+  - name: "Tab-stripped here doc with expansion in command substitution"
+    stdin: "VAR=world\nresult=$(\n\tcat <<-EOF\n\t\thello $VAR\n\tEOF\n)\necho \"$result\"\n"
+
+  - name: "Tab-stripped here doc with quoted delimiter in command substitution"
+    stdin: "VAR=world\nresult=$(\n\tcat <<-'EOF'\n\t\thello $VAR\n\tEOF\n)\necho \"$result\"\n"
+
+  - name: "Tab-stripped here doc in command substitution inside function"
+    stdin: "f() {\n\tlocal result=$(\n\t\tcat <<-EOF\n\t\t\tindented content\n\t\tEOF\n\t)\n\techo \"$result\"\n}\nf\n"
+
+  - name: "Tab-stripped here doc piped in command substitution"
+    stdin: "result=$(\n\tcat <<-EOF | tr a-z A-Z\n\t\thello world\n\tEOF\n)\necho \"$result\"\n"
+
+  - name: "Tab-stripped here doc with space before delimiter"
+    stdin: "result=$(\n\tcat <<-\tEOF\n\t\tindented\n\tEOF\n)\necho \"$result\"\n"
+
+  - name: "Tab-stripped here doc eclass pattern"
+    stdin: "PYTHON=\"echo\"\nEPREFIX=\"/usr\"\nresult=$(\n\t\"${PYTHON}\" - \"${EPREFIX}\" <<-EOF\n\t\thello from eclass\n\tEOF\n)\necho \"$result\"\n"

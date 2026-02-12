@@ -246,6 +246,52 @@ cases:
 
       echo "c[1] += 3 => $((c[1] += 3))"
 
+  - name: "Nested conditional operator"
+    stdin: |
+      echo "1 ? (1 ? 10 : 20) : 30 == $((1 ? (1 ? 10 : 20) : 30))"
+      echo "1 ? (0 ? 10 : 20) : 30 == $((1 ? (0 ? 10 : 20) : 30))"
+      echo "0 ? (1 ? 10 : 20) : 30 == $((0 ? (1 ? 10 : 20) : 30))"
+
+  - name: "Chained conditional operator"
+    stdin: |
+      a=1; b=0; c=1
+      echo "$((a ? 100 : b ? 200 : c ? 300 : 400))"
+      a=0; b=0; c=0
+      echo "$((a ? 100 : b ? 200 : c ? 300 : 400))"
+      a=0; b=1; c=0
+      echo "$((a ? 100 : b ? 200 : c ? 300 : 400))"
+
+  - name: "Conditional with side effects"
+    stdin: |
+      x=0
+      echo "$((1 ? (x=10) : (x=20)))"
+      echo "x=$x"
+      echo "$((0 ? (x=10) : (x=20)))"
+      echo "x=$x"
+
+  - name: "Comma operator multiple expressions"
+    stdin: |
+      echo "$((1, 2, 3, 4, 5))"
+      x=0
+      echo "$((x=1, x+=2, x*=3))"
+      echo "x=$x"
+
+  - name: "Arithmetic in for loop C-style"
+    stdin: |
+      for ((i=0, j=10; i<3; i++, j--)); do
+        echo "i=$i j=$j"
+      done
+
+  - name: "Compound assignment operators"
+    stdin: |
+      x=100
+      echo "$((x /= 3))"
+      echo "x=$x"
+      echo "$((x <<= 2))"
+      echo "x=$x"
+      echo "$((x >>= 1))"
+      echo "x=$x"
+
   - name: "Basic arithmetic comparison"
     stdin: |
       echo "0  < 1: $((0 < 1))"
