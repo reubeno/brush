@@ -159,7 +159,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        parser:
+          - name: "peg"
+            features: ""
+            brush_args: ""
+          - name: "winnow"
+            features: "experimental-parser"
+            brush_args: "--experimental-parser"
+        host_config:
           - host: "ubuntu-24.04"
             variant: "linux-x86_64"
             artifact_suffix: "linux-x86_64"
@@ -178,8 +185,8 @@ jobs:
             name_suffix: "(macOS)"
             homebrew_supported: true
 
-    name: "Test ${{ matrix.name_suffix }}"
-    runs-on: ${{ matrix.host }}
+    name: "Test ${{ matrix.host_config.name_suffix }} [${{ matrix.parser.name }}]"
+    runs-on: ${{ matrix.host_config.host }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -197,6 +204,7 @@ jobs:
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
+          key: "${{ matrix.parser.name }}"
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
@@ -209,7 +217,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Set up Homebrew
-        if: ${{ matrix.homebrew_supported }}
+        if: ${{ matrix.host_config.homebrew_supported }}
         id: set-up-homebrew
         # We ignore the stale-action-refs check because this action does not have any releases or tags.
         # We're forced to pick a specific commit.
@@ -218,7 +226,7 @@ jobs:
           stable: true
 
       - name: "Install recent bash for tests"
-        if: ${{ matrix.homebrew_supported }}
+        if: ${{ matrix.host_config.homebrew_supported }}
         run: |
           set -x
 
@@ -248,16 +256,28 @@ jobs:
 
       - name: Test
         env:
-          VARIANT: ${{ matrix.variant }}
+          VARIANT: ${{ matrix.host_config.variant }}
+          PARSER_NAME: ${{ matrix.parser.name }}
+          PARSER_FEATURES: ${{ matrix.parser.features }}
+          PARSER_BRUSH_ARGS: ${{ matrix.parser.brush_args }}
         run: |
           set -euxo pipefail
 
+          # Build xtask command with optional parser flags
+          XTASK_ARGS="test integration --coverage --coverage-output ./codecov-${VARIANT}-${PARSER_NAME}.xml"
+          if [ -n "${PARSER_FEATURES}" ]; then
+            XTASK_ARGS="${XTASK_ARGS} --features ${PARSER_FEATURES}"
+          fi
+          if [ -n "${PARSER_BRUSH_ARGS}" ]; then
+            XTASK_ARGS="${XTASK_ARGS} --brush-args=${PARSER_BRUSH_ARGS}"
+          fi
+
           # Run tests with coverage collection
           result=0
-          cargo xtask test integration --coverage --coverage-output ./codecov-${VARIANT}.xml || result=$?
+          cargo xtask ${XTASK_ARGS} || result=$?
 
           # Rename test results for CI reporting
-          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}.xml
+          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}-${PARSER_NAME}.xml
 
           # Report the actual test results
           exit ${result}
@@ -266,7 +286,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
-          name: test-reports${{ matrix.artifact_suffix }}
+          name: test-reports${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
@@ -275,8 +295,8 @@ jobs:
         id: "code_coverage_report"
         with:
           artifact_download_workflow_names: "CI"
-          artifact_name: coverage-%name%${{ matrix.artifact_suffix }}
-          filename: codecov-${{ matrix.variant }}.xml
+          artifact_name: coverage-%name%${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
+          filename: codecov-${{ matrix.host_config.variant }}-${{ matrix.parser.name }}.xml
           overall_coverage_fail_threshold: 70
           only_list_changed_files: ${{ github.event_name == 'pull_request' }}
           fail_on_negative_difference: true
@@ -287,7 +307,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
-          name: codecov-reports${{ matrix.artifact_suffix }}
+          name: codecov-reports${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
           path: code-coverage-results.md
 
   # Static analysis of the code.
