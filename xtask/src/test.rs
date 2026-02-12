@@ -275,7 +275,14 @@ pub fn run_integration_tests(
             verbose,
         )
     } else {
-        run_nextest(sh, profile, None, args.features.as_deref(), args.brush_args.as_deref(), verbose)?;
+        run_nextest(
+            sh,
+            profile,
+            None,
+            args.features.as_deref(),
+            args.brush_args.as_deref(),
+            verbose,
+        )?;
         eprintln!("Integration tests passed.");
         Ok(())
     }

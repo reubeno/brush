@@ -616,7 +616,10 @@ fn parse_heredoc_dash_in_command_substitution() -> Result<()> {
     use super::parse_with_config;
     use crate::parser::ParserImpl;
     let input = "RESULT=$(\n\tcat <<-EOF\n\t\thello world\n\tEOF\n)";
-    let peg_cfg = super::ParserConfig { name: "peg", parser_impl: ParserImpl::Peg };
+    let peg_cfg = super::ParserConfig {
+        name: "peg",
+        parser_impl: ParserImpl::Peg,
+    };
     let result = parse_with_config(input, &peg_cfg)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -659,7 +662,11 @@ fn winnow_parse_python_utils_eclass_if_guard() -> Result<()> {
     let program = parse_with_config(&content, &winnow_cfg)
         .map_err(|e| anyhow::anyhow!("Failed to parse python-utils-r1.eclass: {e}"))?;
 
-    assert_eq!(program.complete_commands.len(), 1, "Expected 1 top-level command");
+    assert_eq!(
+        program.complete_commands.len(),
+        1,
+        "Expected 1 top-level command"
+    );
 
     // The first (and only) top-level command should be the if-guard
     let first_cmd = &program.complete_commands[0].0[0].0.first.seq[0];
@@ -669,7 +676,10 @@ fn winnow_parse_python_utils_eclass_if_guard() -> Result<()> {
             "The outer if-guard then-body is EMPTY — regression!"
         );
     } else {
-        panic!("Expected top-level IfClause, got: {:?}", std::mem::discriminant(first_cmd));
+        panic!(
+            "Expected top-level IfClause, got: {:?}",
+            std::mem::discriminant(first_cmd)
+        );
     }
 
     Ok(())

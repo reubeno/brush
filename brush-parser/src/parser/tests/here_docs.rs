@@ -119,16 +119,24 @@ fn parse_here_doc_in_double_quoted_command_substitution_partial_must_fail() {
 
     let partial = "test1=\"$(cat <<EOF\n";
     let configs = [
-        ParserConfig { name: "peg", parser_impl: ParserImpl::Peg },
+        ParserConfig {
+            name: "peg",
+            parser_impl: ParserImpl::Peg,
+        },
         #[cfg(feature = "winnow-parser")]
-        ParserConfig { name: "winnow", parser_impl: ParserImpl::Winnow },
+        ParserConfig {
+            name: "winnow",
+            parser_impl: ParserImpl::Winnow,
+        },
     ];
     for config in &configs {
         let result = parse_with_config(partial, config);
         assert!(
             result.is_err(),
             "{} parser should reject partial input {:?}, but got: {:?}",
-            config.name, partial, result
+            config.name,
+            partial,
+            result
         );
     }
 }
