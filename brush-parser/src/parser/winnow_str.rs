@@ -554,11 +554,9 @@ pub fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> 
                     // balanced unit because the body can span multiple lines
                     // (e.g., heredocs). If the closing `)` is missing, that's a
                     // hard error — not optional.
-                    if winnow::combinator::peek::<_, _, PError, _>(
-                        winnow::combinator::not("(("),
-                    )
-                    .parse_next(input)
-                    .is_ok()
+                    if winnow::combinator::peek::<_, _, PError, _>(winnow::combinator::not("(("))
+                        .parse_next(input)
+                        .is_ok()
                         && winnow::combinator::peek::<_, _, PError, _>('(')
                             .parse_next(input)
                             .is_ok()
@@ -2916,8 +2914,7 @@ fn ext_test_word<'a>(
                 // Single-quoted segment: capture with quotes
                 '\'' => {
                     let quote: char = '\''.parse_next(input)?;
-                    let content: &str =
-                        take_while(0.., |c: char| c != '\'').parse_next(input)?;
+                    let content: &str = take_while(0.., |c: char| c != '\'').parse_next(input)?;
                     let end_quote: char = '\''.parse_next(input)?;
                     word.push(quote);
                     word.push_str(content);
@@ -2933,8 +2930,7 @@ fn ext_test_word<'a>(
                 // Backslash escape: consume \ and next char
                 '\\' => {
                     winnow::token::any.parse_next(input)?;
-                    let escaped: Result<char, PError> =
-                        winnow::token::any.parse_next(input);
+                    let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
                     if let Ok(c) = escaped {
                         if c == '\n' {
                             // Backslash-newline is line continuation — skip both
@@ -3531,10 +3527,9 @@ pub fn program<'a>(
 ) -> impl Parser<StrStream<'a>, ast::Program, PError> + 'a {
     move |input: &mut StrStream<'a>| {
         linebreak().parse_next(input)?;
-        let complete_commands =
-            winnow::combinator::opt(complete_commands(ctx, tracker))
-                .parse_next(input)?
-                .unwrap_or_default();
+        let complete_commands = winnow::combinator::opt(complete_commands(ctx, tracker))
+            .parse_next(input)?
+            .unwrap_or_default();
         linebreak().parse_next(input)?;
         // Consume any trailing whitespace/comment that isn't followed by a newline
         // (e.g., a comment at the end of a file without a trailing newline).
@@ -3542,9 +3537,7 @@ pub fn program<'a>(
             winnow::token::take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
         winnow::combinator::opt(comment()).parse_next(input)?;
         winnow::combinator::eof.parse_next(input)?;
-        Ok(ast::Program {
-            complete_commands,
-        })
+        Ok(ast::Program { complete_commands })
     }
 }
 
