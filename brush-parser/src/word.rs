@@ -546,6 +546,23 @@ fn cacheable_parse(
     Ok(pieces)
 }
 
+/// Parse a heredoc body into its constituent pieces.
+///
+/// Unlike [`parse`], this treats `"` and `'` as literal characters (no quote removal),
+/// which is correct for heredoc bodies with unquoted delimiters per POSIX.
+///
+/// # Arguments
+///
+/// * `word` - The heredoc body to parse.
+/// * `options` - The parser options to use.
+pub fn parse_heredoc(
+    word: &str,
+    options: &ParserOptions,
+) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
+    expansion_parser::unexpanded_heredoc_word(word, options)
+        .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
+}
+
 /// Parse the given word into a parameter expression.
 ///
 /// # Arguments
@@ -834,6 +851,30 @@ peg::parser! {
 
         rule double_quote_body_text() -> &'input str =
             $((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
+
+        // Heredoc body parsing: like double-quoted content, but " and ' are literal characters.
+        pub(crate) rule unexpanded_heredoc_word() -> Vec<WordPieceWithSource> =
+            traced(<heredoc_word(<![_]>)>)
+
+        rule heredoc_word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
+            pieces:heredoc_word_piece_with_source(<stop_condition()>)* { pieces }
+
+        rule heredoc_word_piece_with_source<T>(stop_condition: rule<T>) -> WordPieceWithSource =
+            !stop_condition() start_index:position!() piece:heredoc_word_piece() end_index:position!() {
+                WordPieceWithSource { piece, start_index, end_index }
+            }
+
+        rule heredoc_word_piece() -> WordPiece =
+            arithmetic_expansion() /
+            command_substitution() /
+            parameter_expansion() /
+            double_quoted_escape_sequence() /
+            heredoc_literal_text()
+
+        rule heredoc_literal_text() -> WordPiece =
+            s:$((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'`'])+) {
+                WordPiece::Text(s.to_owned())
+            }
 
         rule normal_escape_sequence() -> WordPiece =
             s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
