@@ -1,0 +1,54 @@
+---
+source: brush-parser/src/parser/tests/here_docs.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "test1=\"$(cat <<EOF\nsomething\nEOF\n)\"\necho \"${test1}\"\n",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("test1"),
+                    value: Scalar(Word(
+                      value: "\"$(cat <<EOF\nsomething\nEOF\n)\"",
+                      loc: "[location]",
+                    )),
+                    loc: "[location]",
+                  ), Word(
+                    value: "test1=\"$(cat <<EOF\nsomething\nEOF\n)\"",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "echo",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "\"${test1}\"",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

@@ -525,23 +525,75 @@ pub fn single_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> 
 /// Parse a double-quoted string: "text".
 ///
 /// Returns the full string including quotes (e.g., `"text"`).
-/// Handles backslash escape sequences inside the string (`\"`, `\\`, `\$`, etc.).
+/// Handles backslash escape sequences and `$(...)` command substitutions
+/// (which may span multiple lines for heredocs) inside the string.
 pub fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> {
-    (
-        '"',
-        winnow::combinator::repeat::<_, _, (), _, _>(
-            0..,
-            winnow::combinator::alt((
-                // Escape sequence: \<any-char>  (handles \", \\, \$, \`, \newline, etc.)
-                ('\\', winnow::token::any).void(),
-                // Regular characters (not " or \)
-                take_while(1.., |c: char| c != '"' && c != '\\').void(),
-            )),
-        ),
-        '"',
-    )
-        .take()
-        .map(|s: &str| s.to_string())
+    move |input: &mut StrStream<'a>| {
+        let start = input.checkpoint();
+
+        // Match opening quote
+        '"'.parse_next(input)?;
+
+        loop {
+            // Try to match closing quote
+            if winnow::combinator::opt::<_, _, PError, _>('"')
+                .parse_next(input)?
+                .is_some()
+            {
+                break;
+            }
+
+            match winnow::token::any::<_, PError>.parse_next(input) {
+                Ok('\\') => {
+                    // Escape sequence: skip the next character
+                    let _ = winnow::token::any::<_, PError>.parse_next(input);
+                }
+                Ok('$') => {
+                    // Check if this starts a $(...) command substitution (not
+                    // $((...)) arithmetic). If so, we MUST consume it as a
+                    // balanced unit because the body can span multiple lines
+                    // (e.g., heredocs). If the closing `)` is missing, that's a
+                    // hard error — not optional.
+                    if winnow::combinator::peek::<_, _, PError, _>(
+                        winnow::combinator::not("(("),
+                    )
+                    .parse_next(input)
+                    .is_ok()
+                        && winnow::combinator::peek::<_, _, PError, _>('(')
+                            .parse_next(input)
+                            .is_ok()
+                    {
+                        // Committed: $( was detected, must find closing )
+                        parse_balanced_delimiters("(", Some('('), ')', 1)
+                            .void()
+                            .parse_next(input)?;
+                    }
+                    // Otherwise $ was just a plain character — already consumed.
+                }
+                Ok('`') => {
+                    // Backtick substitution — consume until matching backtick
+                    let _: Result<&str, PError> =
+                        take_while(0.., |c: char| c != '`').parse_next(input);
+                    let _ = winnow::combinator::opt::<_, _, PError, _>('`').parse_next(input);
+                }
+                Ok(_) => {
+                    // Regular character — already consumed
+                }
+                Err(_) => {
+                    // Hit end of input without closing quote
+                    return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                }
+            }
+        }
+
+        // Get the full slice from start to current position
+        let end = input.checkpoint();
+        let consumed_len = end.offset_from(&start);
+        input.reset(&start);
+        let result: &str = winnow::token::take(consumed_len).parse_next(input)?;
+
+        Ok(result.to_string())
+    }
 }
 
 /// Parse an escape sequence: \c
@@ -1460,8 +1512,11 @@ pub fn simple_command<'a>(
         // Try to parse optional prefix (assignments and/or redirects)
         let prefix = winnow::combinator::opt(cmd_prefix(ctx, tracker)).parse_next(input)?;
 
-        // Try to parse optional command name (must not be reserved word)
-        let word_or_name = non_reserved_word(ctx, tracker).parse_next(input).ok();
+        // Try to parse optional command name (must not be reserved word).
+        // N.B. Must use opt() rather than .ok() so the input position is
+        // restored on failure — .ok() discards errors without backtracking.
+        let word_or_name =
+            winnow::combinator::opt(non_reserved_word(ctx, tracker)).parse_next(input)?;
 
         // Try to parse optional suffix (args and/or redirects)
         let suffix = winnow::combinator::opt(cmd_suffix(ctx, tracker)).parse_next(input)?;

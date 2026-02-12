@@ -100,6 +100,40 @@ EOF
 }
 
 #[test]
+fn parse_here_doc_in_double_quoted_command_substitution() -> Result<()> {
+    let input = "test1=\"$(cat <<EOF\nsomething\nEOF\n)\"\necho \"${test1}\"\n";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+/// Verify that partial double-quoted heredoc input is rejected (not silently
+/// truncated), so the shell accumulation loop keeps reading more lines.
+#[test]
+fn parse_here_doc_in_double_quoted_command_substitution_partial_must_fail() {
+    use super::{ParserConfig, parse_with_config};
+    use crate::parser::ParserImpl;
+
+    let partial = "test1=\"$(cat <<EOF\n";
+    let configs = [
+        ParserConfig { name: "peg", parser_impl: ParserImpl::Peg },
+        #[cfg(feature = "winnow-parser")]
+        ParserConfig { name: "winnow", parser_impl: ParserImpl::Winnow },
+    ];
+    for config in &configs {
+        let result = parse_with_config(partial, config);
+        assert!(
+            result.is_err(),
+            "{} parser should reject partial input {:?}, but got: {:?}",
+            config.name, partial, result
+        );
+    }
+}
+
+#[test]
 fn parse_here_doc_with_command_after() -> Result<()> {
     let input = r"cat <<EOF | grep hello
 hello world
