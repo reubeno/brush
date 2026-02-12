@@ -114,7 +114,6 @@ cases:
       echo "${test1}"
 
   - name: "Here doc in a command substitution with quotes"
-    known_failure: true # Issue #421
     stdin: |
       test1=$(cat <<EOF
       something "quoted"
