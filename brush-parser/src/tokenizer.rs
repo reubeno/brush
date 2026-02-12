@@ -433,13 +433,15 @@ impl TokenParseState {
                     token: Some(self.pop(&cross_token_state.cursor)),
                 });
 
-                // Then queue up the (end) here-tag.
+                // Then queue up the (end) here-tag. Use the unquoted form so that
+                // when the token text is re-parsed inside $() command substitutions,
+                // the end tag matches the delimiter the parser expects.
                 let end_tag = if completed_here_tag.tag_was_escaped_or_quoted {
-                    unquote_str(&completed_here_tag.tag)
+                    unquote_str(completed_here_tag.tag.trim_end_matches('\n'))
                 } else {
-                    completed_here_tag.tag
+                    completed_here_tag.tag.trim_end_matches('\n').to_string()
                 };
-                self.append_str(end_tag.trim_end_matches('\n'));
+                self.append_str(&end_tag);
                 cross_token_state.queued_tokens.push(TokenizeResult {
                     reason: TokenEndReason::HereDocumentEndTag,
                     token: Some(self.pop(&cross_token_state.cursor)),
@@ -760,6 +762,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     .delimit_current_token(TokenEndReason::EndOfInput, &mut self.cross_state)?;
             //
             // Handle being in a here document.
+            // N.B. This must be checked before the terminating char check below,
+            // because heredoc body content can contain characters like ')' that
+            // would otherwise be mistaken for the end of a $() command
+            // substitution.
             //
             } else if matches!(self.cross_state.here_state, HereState::InHereDocs) {
                 //
