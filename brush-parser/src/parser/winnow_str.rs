@@ -2898,6 +2898,149 @@ fn ext_test_consume_balanced(
     Ok(())
 }
 
+/// Parse a single-quoted string segment and append to word
+fn ext_test_parse_single_quoted(
+    input: &mut StrStream<'_>,
+    word: &mut String,
+) -> Result<(), PError> {
+    let quote: char = '\''.parse_next(input)?;
+    let content: &str = take_while(0.., |c: char| c != '\'').parse_next(input)?;
+    let end_quote: char = '\''.parse_next(input)?;
+    word.push(quote);
+    word.push_str(content);
+    word.push(end_quote);
+    Ok(())
+}
+
+/// Parse a double-quoted string segment and append to word
+fn ext_test_parse_double_quoted(
+    input: &mut StrStream<'_>,
+    word: &mut String,
+) -> Result<(), PError> {
+    let s = double_quoted_string().parse_next(input)?;
+    word.push_str(&s);
+    Ok(())
+}
+
+/// Parse a backslash escape sequence and append to word
+fn ext_test_parse_backslash_escape(
+    input: &mut StrStream<'_>,
+    word: &mut String,
+) -> Result<(), PError> {
+    winnow::token::any.parse_next(input)?;
+    let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
+    if let Ok(c) = escaped {
+        if c == '\n' {
+            // Backslash-newline is line continuation — skip both
+        } else {
+            word.push('\\');
+            word.push(c);
+        }
+    } else {
+        word.push('\\');
+    }
+    Ok(())
+}
+
+/// Parse a dollar expansion ($var, $(...), $((...)), ${...}) and append to word
+#[allow(clippy::branches_sharing_code)]
+fn ext_test_parse_dollar_expansion(
+    input: &mut StrStream<'_>,
+    word: &mut String,
+) -> Result<(), PError> {
+    word.push('$');
+    winnow::token::any.parse_next(input)?;
+    match peek_char().parse_next(input).ok() {
+        Some('(') => {
+            winnow::token::any.parse_next(input)?;
+            // Check for $(( arithmetic )) vs $( command )
+            if peek_char().parse_next(input).ok() == Some('(') {
+                // $(( ... )) — arithmetic expansion
+                word.push('(');
+                word.push('(');
+                winnow::token::any.parse_next(input)?;
+                ext_test_consume_balanced(input, word, '(', ')')?;
+                // Consume the second closing )
+                if peek_char().parse_next(input).ok() == Some(')') {
+                    word.push(')');
+                    winnow::token::any.parse_next(input)?;
+                }
+            } else {
+                // $( ... ) — command substitution
+                word.push('(');
+                ext_test_consume_balanced(input, word, '(', ')')?;
+            }
+        }
+        Some('{') => {
+            // ${ ... } — braced variable
+            word.push('{');
+            winnow::token::any.parse_next(input)?;
+            ext_test_consume_balanced(input, word, '{', '}')?;
+        }
+        _ => {
+            // $var or $!, $?, etc. — already consumed $
+        }
+    }
+    Ok(())
+}
+
+/// Parse special characters (&, |, !) and handle accordingly
+fn ext_test_parse_special_char(
+    input: &mut StrStream<'_>,
+    word: &mut String,
+    ch: char,
+) -> Result<bool, PError> {
+    // Returns Ok(true) if parsing should continue, Ok(false) if should stop
+    match ch {
+        '&' => {
+            let checkpoint = input.checkpoint();
+            winnow::token::any.parse_next(input)?;
+            if peek_char().parse_next(input).ok() == Some('&') {
+                // This is &&, stop here
+                input.reset(&checkpoint);
+                Ok(false)
+            } else {
+                // Single &, include it
+                input.reset(&checkpoint);
+                word.push('&');
+                winnow::token::any.parse_next(input)?;
+                Ok(true)
+            }
+        }
+        '|' => {
+            let checkpoint = input.checkpoint();
+            winnow::token::any.parse_next(input)?;
+            if peek_char().parse_next(input).ok() == Some('|') {
+                // This is ||, stop here
+                input.reset(&checkpoint);
+                Ok(false)
+            } else {
+                // Single |, include it
+                input.reset(&checkpoint);
+                word.push('|');
+                winnow::token::any.parse_next(input)?;
+                Ok(true)
+            }
+        }
+        '!' => {
+            let checkpoint = input.checkpoint();
+            winnow::token::any.parse_next(input)?;
+            if peek_char().parse_next(input).ok() == Some('=') {
+                // This is !=, include both characters
+                word.push('!');
+                word.push('=');
+                winnow::token::any.parse_next(input)?;
+                Ok(true)
+            } else {
+                // Standalone !, stop here
+                input.reset(&checkpoint);
+                Ok(false)
+            }
+        }
+        _ => unreachable!(), // Should only be called for &, |, !
+    }
+}
+
 fn ext_test_word<'a>(
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::Word, PError> + 'a {
@@ -2913,114 +3056,27 @@ fn ext_test_word<'a>(
             match ch {
                 // Single-quoted segment: capture with quotes
                 '\'' => {
-                    let quote: char = '\''.parse_next(input)?;
-                    let content: &str = take_while(0.., |c: char| c != '\'').parse_next(input)?;
-                    let end_quote: char = '\''.parse_next(input)?;
-                    word.push(quote);
-                    word.push_str(content);
-                    word.push(end_quote);
+                    ext_test_parse_single_quoted(input, &mut word)?;
                 }
                 // Double-quoted segment: capture with quotes, handling escapes
                 '"' => {
-                    let s = double_quoted_string().parse_next(input)?;
-                    word.push_str(&s);
+                    ext_test_parse_double_quoted(input, &mut word)?;
                 }
                 // Stop on whitespace
                 ' ' | '\t' | '\n' => break,
                 // Backslash escape: consume \ and next char
                 '\\' => {
-                    winnow::token::any.parse_next(input)?;
-                    let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
-                    if let Ok(c) = escaped {
-                        if c == '\n' {
-                            // Backslash-newline is line continuation — skip both
-                        } else {
-                            word.push('\\');
-                            word.push(c);
-                        }
-                    } else {
-                        word.push('\\');
-                    }
+                    ext_test_parse_backslash_escape(input, &mut word)?;
                 }
                 // $ starts expansions that may contain parentheses
                 '$' => {
-                    word.push('$');
-                    winnow::token::any.parse_next(input)?;
-                    match peek_char().parse_next(input).ok() {
-                        Some('(') => {
-                            winnow::token::any.parse_next(input)?;
-                            // Check for $(( arithmetic )) vs $( command )
-                            if peek_char().parse_next(input).ok() == Some('(') {
-                                // $(( ... )) — arithmetic expansion
-                                word.push('(');
-                                word.push('(');
-                                winnow::token::any.parse_next(input)?;
-                                ext_test_consume_balanced(input, &mut word, '(', ')')?;
-                                // Consume the second closing )
-                                if peek_char().parse_next(input).ok() == Some(')') {
-                                    word.push(')');
-                                    winnow::token::any.parse_next(input)?;
-                                }
-                            } else {
-                                // $( ... ) — command substitution
-                                word.push('(');
-                                ext_test_consume_balanced(input, &mut word, '(', ')')?;
-                            }
-                        }
-                        Some('{') => {
-                            // ${ ... } — braced variable
-                            word.push('{');
-                            winnow::token::any.parse_next(input)?;
-                            ext_test_consume_balanced(input, &mut word, '{', '}')?;
-                        }
-                        _ => {
-                            // $var or $!, $?, etc. — already consumed $
-                        }
-                    }
+                    ext_test_parse_dollar_expansion(input, &mut word)?;
                 }
                 // Stop on bare parentheses (used for grouping in [[ ]])
                 '(' | ')' => break,
-                // & is only valid if followed by another & (&&), otherwise stop
-                '&' => {
-                    let checkpoint = input.checkpoint();
-                    winnow::token::any.parse_next(input)?;
-                    if peek_char().parse_next(input).ok() == Some('&') {
-                        // This is &&, stop here
-                        input.reset(&checkpoint);
-                        break;
-                    }
-                    // Single &, include it
-                    input.reset(&checkpoint);
-                    word.push('&');
-                    winnow::token::any.parse_next(input)?;
-                }
-                // | is only valid if NOT followed by another | (||), otherwise stop
-                '|' => {
-                    let checkpoint = input.checkpoint();
-                    winnow::token::any.parse_next(input)?;
-                    if peek_char().parse_next(input).ok() == Some('|') {
-                        // This is ||, stop here
-                        input.reset(&checkpoint);
-                        break;
-                    }
-                    // Single |, include it
-                    input.reset(&checkpoint);
-                    word.push('|');
-                    winnow::token::any.parse_next(input)?;
-                }
-                // ! is special: if followed by =, it's part of the word (!=)
-                // Otherwise it's the NOT operator, so stop
-                '!' => {
-                    let checkpoint = input.checkpoint();
-                    winnow::token::any.parse_next(input)?;
-                    if peek_char().parse_next(input).ok() == Some('=') {
-                        // This is !=, include both characters
-                        word.push('!');
-                        word.push('=');
-                        winnow::token::any.parse_next(input)?;
-                    } else {
-                        // Standalone !, stop here
-                        input.reset(&checkpoint);
+                // &, |, ! are special characters
+                '&' | '|' | '!' => {
+                    if !ext_test_parse_special_char(input, &mut word, ch)? {
                         break;
                     }
                 }
