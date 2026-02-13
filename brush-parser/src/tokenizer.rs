@@ -325,13 +325,12 @@ impl TokenParseState {
         self.token_so_far = s;
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn delimit_current_token(
         &mut self,
         reason: TokenEndReason,
         cross_token_state: &mut CrossTokenParseState,
     ) -> Result<Option<TokenizeResult>, TokenizerError> {
-        // If we don't have anything in the token, then don't yield an empty string token
-        // *unless* it's the body of a here document.
         if !self.started_token() && !matches!(reason, TokenEndReason::HereDocumentBodyEnd) {
             return Ok(Some(TokenizeResult {
                 reason,
@@ -339,12 +338,9 @@ impl TokenParseState {
             }));
         }
 
-        // TODO(tokenizer): Make sure the here-tag meets criteria (and isn't a newline).
         let current_here_state = std::mem::take(&mut cross_token_state.here_state);
         match current_here_state {
             HereState::NextTokenIsHereTag { remove_tabs } => {
-                // Don't yield the operator as a token yet. We need to make sure we collect
-                // up everything we need for all the here-documents with tags on this line.
                 let operator_token_result = TokenizeResult {
                     reason,
                     token: Some(self.pop(&cross_token_state.cursor)),
@@ -369,7 +365,6 @@ impl TokenParseState {
 
                 cross_token_state.here_state = HereState::NextLineIsHereDoc;
 
-                // Include the trailing \n in the here tag so it's easier to check against.
                 let tag = std::format!("{}\n", self.current_token().trim_ascii_start());
                 let tag_was_escaped_or_quoted = tag.contains(is_quoting_char);
 
