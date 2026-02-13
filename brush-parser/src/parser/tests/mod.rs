@@ -14,6 +14,9 @@ mod pipelines;
 mod redirections;
 mod simple_commands;
 
+#[cfg(feature = "winnow-parser")]
+mod winnow_issues;
+
 use crate::ast::Program;
 use crate::error::ParseError;
 use crate::parser::{Parser, ParserImpl, ParserOptions};
