@@ -1,0 +1,597 @@
+# Winnow Parser Test Cases - Failing Examples
+# These test cases fail with the winnow parser but work with the PEG parser
+# They can be used to debug and improve the winnow parser implementation
+
+=== Array Index Assignment (arrays.yaml) ===
+x=(3 2 1)
+y[${x[0]}]=10
+y[x[1]]=11
+declare -p y
+
+=== ANSI-C Quotes (quotes.yaml) ===
+single_quoted='\n'
+echo "Single quoted len: ${#single_quoted}"
+echo -n '\n' | hexdump -C
+
+ansi_c_quoted=$'\n'
+echo "ANSI-C quoted len: ${#ansi_c_quoted}"
+echo -n $'\n' | hexdump -C
+
+=== ANSI-C Quotes with Escape Sequences (quotes.yaml) ===
+echo -n "0.  "$'\x' | hexdump -C
+echo -n "1.  "$'\x65' | hexdump -C
+echo -n "2.  "$'\xgg' | hexdump -C
+echo -n "3.  "$'\x{65}' | hexdump -C
+echo -n "4.  "$'\x{65' | hexdump -C
+echo -n "5.  "$'\x{65R}' | hexdump -C
+echo -n "6.  "$'\x{}R' | hexdump -C
+echo -n "7.  "$'\x{ }' | hexdump -C
+echo -n "8.  "$'\x{965}' | hexdump -C
+
+=== gettext style quotes (quotes.yaml) ===
+quoted=$"Hello, world"
+echo "Content: [${quoted}]"
+
+=== printf %f (float) (printf.yaml) ===
+printf "%f\n" 3.14159
+printf "%.2f\n" 3.14159
+printf "%6.2f\n" 3.14159
+
+=== printf %e and %E (scientific) (printf.yaml) ===
+printf "%e\n" 1234.5
+printf "%E\n" 1234.5
+
+=== printf %g and %G (general) (printf.yaml) ===
+printf "%g\n" 1234.5
+printf "%G\n" 0.00012345
+
+=== printf scientific notation edge cases (printf.yaml) ===
+printf "%e\n" 0.0
+printf "%E\n" 0.0
+printf "%g\n" 0.0000001
+printf "%G\n" 1000000.0
+
+=== Arithmetic for with alternate syntax ===
+for ((i=0; i<5; i++)); do echo $i; done
+
+=== for loop without in ===
+for x in a b c; do echo $x; done
+
+=== for loop without in but spaces ===
+for x  in  a  b  c  ; do echo $x; done
+
+=== Display vars with interesting chars 2 ===
+testvar=$'a\nb'
+echo "testvar: $testvar"
+
+=== IFS tests ===
+# IFS only newline character
+IFS=$'\n'
+echo "test1 test2 test3" | read a b c
+echo "a=$a b=$b c=$c"
+
+# IFS only tab character
+IFS=$'\t'
+echo -e "test1\ttest2\ttest3" | read a b c
+echo "a=$a b=$b c=$c"
+
+# IFS with command substitution multiline
+IFS=$'\n'
+read -a arr <<< $'line1\nline2\nline3'
+echo "arr[0]=${arr[0]}"
+echo "arr[1]=${arr[1]}"
+echo "arr[2]=${arr[2]}"
+
+=== Pattern matching tests ===
+# Pattern matching: character sets
+case "abc" in
+  [a-z]*) echo "matches";;
+  *) echo "no match";;
+esac
+
+# Pattern matching: stars in negative extglobs
+shopt -s extglob
+case "hello" in
+  !(*.txt)) echo "not a txt file";;
+  *) echo "txt file";;
+esac
+
+=== Extglob tests ===
+shopt -s extglob
+# Optional patterns
+ls *(a) 2>/dev/null || echo "no files"
+
+# Plus patterns
+ls +(a) 2>/dev/null || echo "no files"
+
+# extglob disabled
+shopt -u extglob
+ls @(*.txt|*.md) 2>/dev/null || echo "no files"
+
+=== Function names with interesting characters ===
+function "test-func"() {
+  echo "test-func called"
+}
+"test-func"
+
+function "123func"() {
+  echo "123func called"
+}
+"123func"
+
+=== Functions shadowing builtins ===
+function echo() {
+  builtin echo "shadowed: $@"
+}
+echo "test"
+
+=== test: arithmetic comparison with newline in operand ===
+if [ $((1 + 1)) -eq 2 ]; then
+  echo "true"
+fi
+
+=== Simple date ===
+date "+%Y-%m-%d"
+
+=== Date format with year ===
+date "+%a %b %d{%Y}"
+
+=== kill -l ===
+kill -l
+
+=== read -a with empty lines ===
+read -a arr <<< ""
+echo "arr length: ${#arr[@]}"
+
+=== shopt interactive defaults ===
+shopt -p | grep -E "(interactive|xtrace|verbose)"
+
+=== Standalone negation (no command) ===
+!
+
+=== case with extglob pattern ===
+shopt -s extglob
+case "test.txt" in
+  *.@(txt|md)) echo "match";;
+  *) echo "no match";;
+esac
+
+=== case with extglob no match ===
+shopt -s extglob
+case "test.pdf" in
+  *.@(txt|md)) echo "match";;
+  *) echo "no match";;
+esac
+
+=== Pathname expansion: Optional patterns ===
+shopt -s extglob
+echo *(a)
+
+=== Pathname expansion: Plus patterns ===
+shopt -s extglob
+echo +(a)
+
+=== Pathname expansion: extglob disabled ===
+shopt -u extglob
+echo @(*.txt|*.md)
+
+=== Extglob with escaping ===
+shopt -s extglob
+echo \@(pattern)
+
+=== Pattern matching: character sets ===
+case "abc" in
+  [[:alpha:]]*) echo "alpha";;
+  *) echo "not alpha";;
+esac
+
+=== Pattern matching: stars in negative extglobs ===
+shopt -s extglob
+case "hello" in
+  !(*.txt)) echo "not txt";;
+  *) echo "txt";;
+esac
+
+=== Ignore quotes in comment in command substitution ===
+echo "test # \"comment\""
+echo 'test # \'comment\''
+echo "test # (comment)"
+
+=== Parameter expression: advanced alternative value ===
+var="value"
+echo "${var:-default}"
+echo "${var:+alternative}"
+
+=== Binary string matching with expansion ===
+[[ "hello" == "hello" ]] && echo "match"
+[[ "hello" =~ ^hell ]] && echo "regex match"
+
+=== Empty and space checks ===
+[[ -z "" ]] && echo "empty"
+[[ -n "text" ]] && echo "not empty"
+[[ "a b" =~ .* ]] && echo "spaces match"
+
+=== File extended tests ===
+# Test file operations
+ls /tmp 2>/dev/null | head -1
+test -f /tmp && echo "tmp exists"
+
+=== Unset odd function names ===
+unset -f "test-func" "123func"
+
+=== Shell language syntax error (interactive) ===
+# This should cause a syntax error
+echo "incomplete quote
+
+=== existing history file ===
+# Test history functionality
+history -c
+history | head -5
+
+=== IFS newline handling ===
+IFS=$'\n'
+data="line1
+line2
+line3"
+for line in $data; do
+  echo "Line: $line"
+done
+
+=== IFS tab handling ===
+IFS=$'\t'
+data="col1\tcol2\tcol3"
+for col in $data; do
+  echo "Col: $col"
+done
+
+=== IFS only whitespace multiple chars ===
+IFS='   '
+data="a    b     c"
+for word in $data; do
+  echo "Word: $word"
+done
+
+=== IFS only newline character ===
+IFS=$'\n'
+data=$'word1\nword2\nword3'
+for word in $data; do
+  echo "Word: $word"
+done
+
+=== IFS only tab character ===
+IFS=$'\t'
+data=$'word1\tword2\tword3'
+for word in $data; do
+  echo "Word: $word"
+done
+
+=== IFS with command substitution multiline ===
+IFS=$'\n'
+read -a arr <<< $'item1\nitem2\nitem3'
+echo "Items: ${arr[@]}"
+
+=== case with extglob pattern ===
+shopt -s extglob
+case "file.txt" in
+  *.@(txt|md|json)) echo "code file";;
+  *) echo "other file";;
+esac
+
+=== case with extglob no match ===
+shopt -s extglob
+case "file.pdf" in
+  *.@(txt|md|json)) echo "code file";;
+  *) echo "other file";;
+esac
+
+=== Pathname expansion: Optional patterns ===
+shopt -s extglob
+echo Pattern: *(a)
+
+=== Pathname expansion: Plus patterns ===
+shopt -s extglob
+echo Pattern: +(a)
+
+=== Pathname expansion: extglob disabled ===
+shopt -u extglob
+echo Pattern: @(*.txt|*.md)
+
+=== Extglob with escaping ===
+shopt -s extglob
+echo Escaped: \@(pattern)
+
+=== Pattern matching: character sets ===
+case "abc123" in
+  [[:alnum:]]*) echo "alnum";;
+  *) echo "not alnum";;
+esac
+
+=== Pattern matching: stars in negative extglobs ===
+shopt -s extglob
+case "document.txt" in
+  !(*.jpg|*.png)) echo "not image";;
+  *) echo "image";;
+esac
+
+=== Ignore single quote in comment in command substitution ===
+echo "test # 'comment' in $(echo test)"
+
+=== Ignore double quote in comment in command substitution ===
+echo "test # \"comment\" in $(echo test)"
+
+=== Ignore parentheses in comment in command substitution ===
+echo "test # (comment) in $(echo test)"
+
+=== Parameter expression: advanced alternative value ===
+value=""
+echo "Default: ${value:-default}"
+echo "Alternative: ${value:+alt}"
+
+=== Binary string matching with expansion ===
+string="hello world"
+[[ "$string" == "hello"* ]] && echo "prefix match"
+[[ "$string" == *"world" ]] && echo "suffix match"
+
+=== Empty and space checks ===
+[[ -z "" ]] && echo "empty string"
+[[ -n "text" ]] && echo "non-empty"
+[[ "  " =~ \s+ ]] && echo "whitespace"
+
+=== File extended tests ===
+touch /tmp/testfile.txt 2>/dev/null || echo "cannot create file"
+ls /tmp/testfile.txt 2>/dev/null
+test -f /tmp/testfile.txt && echo "file exists" && rm /tmp/testfile.txt
+
+=== Unset odd function names ===
+my-func() { echo "func"; }
+unset -f my-func
+
+=== Shell language syntax error (interactive) ===
+# This should be a syntax error in interactive mode
+echo "unclosed quote
+
+=== existing history file ===
+# Test history with existing file
+history -a
+history -n
+history | tail -3
+
+=== IFS newline handling ===
+IFS=$'\n'
+data="a
+b
+c"
+set -- $data
+echo "1: $1, 2: $2, 3: $3"
+
+=== IFS tab handling ===
+IFS=$'\t'
+data="a\tb\tc"
+set -- $data
+echo "1: $1, 2: $2, 3: $3"
+
+=== IFS only whitespace multiple chars ===
+IFS='   '
+data="x   y    z"
+set -- $data
+echo "1: $1, 2: $2, 3: $3"
+
+=== IFS only newline character ===
+IFS=$'\n'
+data=$'x
+y
+z'
+set -- $data
+echo "1: $1, 2: $2, 3: $3"
+
+=== IFS only tab character ===
+IFS=$'\t'
+data=$'x\ty\tz'
+set -- $data
+echo "1: $1, 2: $2, 3: $3"
+
+=== IFS with command substitution multiline ===
+IFS=$'\n'
+arr=($(echo -e "a\nb\nc"))
+echo "Array: ${arr[@]}"
+
+=== case with extglob pattern ===
+shopt -s extglob
+case "image.png" in
+  *.@(png|jpg|gif)) echo "image file";;
+  *) echo "not image";;
+esac
+
+=== case with extglob no match ===
+shopt -s extglob
+case "document.pdf" in
+  *.@(png|jpg|gif)) echo "image file";;
+  *) echo "not image";;
+esac
+
+=== Pathname expansion: Optional patterns ===
+shopt -s extglob
+echo Files: *(a)
+
+=== Pathname expansion: Plus patterns ===
+shopt -s extglob
+echo Files: +(a)
+
+=== Pathname expansion: extglob disabled ===
+shopt -u extglob
+echo Files: @(*.txt|*.md)
+
+=== Extglob with escaping ===
+shopt -s extglob
+echo Escaped: \@(pattern)
+
+=== Pattern matching: character sets ===
+case "ABC" in
+  [[:upper:]]*) echo "uppercase";;
+  *) echo "not uppercase";;
+esac
+
+=== Pattern matching: stars in negative extglobs ===
+shopt -s extglob
+case "file.log" in
+  !(*.txt)) echo "not txt";;
+  *) echo "txt";;
+esac
+
+=== Ignore single quote in comment in command substitution ===
+echo "result: $(echo 'test # single quote')"
+
+=== Ignore double quote in comment in command substitution ===
+echo "result: $(echo "test # double quote")"
+
+=== Ignore parentheses in comment in command substitution ===
+echo "result: $(echo 'test # (parens)')"
+
+=== Parameter expression: advanced alternative value ===
+var=""
+echo "empty var: ${var:-default_value}"
+echo "empty var alt: ${var:+alternative_value}"
+
+=== Binary string matching with expansion ===
+[[ "hello" == "hell"* ]] && echo "prefix match"
+[[ "hello" == *"llo" ]] && echo "suffix match"
+
+=== Empty and space checks ===
+[[ -z "" ]] && echo "empty string"
+[[ -n "x" ]] && echo "non-empty"
+[[ "  " =~ ' +' ]] && echo "spaces"
+
+=== File extended tests ===
+# Test various file operations
+ls /tmp/*.txt 2>/dev/null | head -1
+find /tmp -name "*.txt" 2>/dev/null | head -1
+stat /tmp 2>/dev/null | head -1
+
+=== Unset odd function names ===
+func-name() { echo "func"; }
+unset -f func-name
+
+=== Shell language syntax error (interactive) ===
+# Syntax error test
+echo "missing quote
+
+=== existing history file ===
+# History test
+history -w
+history -r
+history | tail -2
+
+=== IFS newline handling ===
+IFS=$'\n'
+data="line1
+line2"
+read -a lines <<< "$data"
+echo "Lines: ${lines[@]}"
+
+=== IFS tab handling ===
+IFS=$'\t'
+data="col1\tcol2"
+read -a cols <<< "$data"
+echo "Cols: ${cols[@]}"
+
+=== IFS only whitespace multiple chars ===
+IFS='   '
+data="a    b     c"
+read -a words <<< "$data"
+echo "Words: ${words[@]}"
+
+=== IFS only newline character ===
+IFS=$'\n'
+data=$'x
+y'
+read -a items <<< "$data"
+echo "Items: ${items[@]}"
+
+=== IFS only tab character ===
+IFS=$'\t'
+data=$'x\ty'
+read -a items <<< "$data"
+echo "Items: ${items[@]}"
+
+=== IFS with command substitution multiline ===
+IFS=$'\n'
+mapfile -t lines < <(echo -e "a\nb")
+echo "Mapped lines: ${lines[@]}"
+
+=== case with extglob pattern ===
+shopt -s extglob
+case "archive.tar.gz" in
+  *.@(gz|bz2|xz)) echo "compressed";;
+  *) echo "not compressed";;
+esac
+
+=== case with extglob no match ===
+shopt -s extglob
+case "document.pdf" in
+  *.@(gz|bz2|xz)) echo "compressed";;
+  *) echo "not compressed";;
+esac
+
+=== Pathname expansion: Optional patterns ===
+shopt -s extglob
+echo Optional: *(a)
+
+=== Pathname expansion: Plus patterns ===
+shopt -s extglob
+echo Plus: +(a)
+
+=== Pathname expansion: extglob disabled ===
+shopt -u extglob
+echo Disabled: @(*.txt|*.md)
+
+=== Extglob with escaping ===
+shopt -s extglob
+echo Escaped pattern: \@(test)
+
+=== Pattern matching: character sets ===
+case "test123" in
+  [[:alnum:]]*) echo "alnum match";;
+  *) echo "no match";;
+esac
+
+=== Pattern matching: stars in negative extglobs ===
+shopt -s extglob
+case "file.txt" in
+  !(*.log)) echo "not log";;
+  *) echo "log file";;
+esac
+
+=== Ignore single quote in comment in command substitution ===
+echo "test: $(echo \"test # 'quote'\")"
+
+=== Ignore double quote in command substitution ===
+echo "test: $(echo 'test # "quote"')"
+
+=== Ignore parentheses in command substitution ===
+echo "test: $(echo \"test # (parens)\")"
+
+=== Parameter expression: advanced alternative value ===
+val=""
+echo "default: ${val:-default}"
+echo "alternative: ${val:+alt}"
+
+=== Binary string matching with expansion ===
+[[ "hello world" == "hello"* ]] && echo "match"
+
+=== Empty and space checks ===
+[[ -z "" ]] && echo "empty"
+[[ "text" =~ .+ ]] && echo "has text"
+
+=== File extended tests ===
+# Final file test
+touch /tmp/winnow_test.txt 2>/dev/null
+ls /tmp/winnow_test.txt 2>/dev/null
+rm /tmp/winnow_test.txt 2>/dev/null
+
+=== Unset odd function names ===
+odd-func() { :; }
+unset -f odd-func
+
+=== Shell language syntax error (interactive) ===
+# Final syntax error test
+echo "end
