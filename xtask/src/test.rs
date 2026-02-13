@@ -120,7 +120,7 @@ pub struct IntegrationTestArgs {
     pub features: Option<String>,
 
     /// Extra arguments to pass to the brush binary during test runs.
-    /// Set as the BRUSH_ARGS environment variable before running nextest.
+    /// Set as the `BRUSH_ARGS` environment variable before running nextest.
     #[clap(long)]
     pub brush_args: Option<String>,
 }
