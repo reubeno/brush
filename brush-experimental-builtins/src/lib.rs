@@ -1,5 +1,7 @@
 //! Experimental builtins.
 
+#[cfg(feature = "builtin.ls")]
+mod ls;
 #[cfg(feature = "builtin.save")]
 mod save;
 
@@ -11,6 +13,8 @@ pub fn experimental_builtins<SE: brush_core::extensions::ShellExtensions>()
 -> std::collections::HashMap<String, builtins::Registration<SE>> {
     let mut m = std::collections::HashMap::<String, builtins::Registration<SE>>::new();
 
+    #[cfg(feature = "builtin.ls")]
+    m.insert("ls".into(), builtin::<ls::LsCommand, SE>());
     #[cfg(feature = "builtin.save")]
     m.insert("save".into(), builtin::<save::SaveCommand, SE>());
 
