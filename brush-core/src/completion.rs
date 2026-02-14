@@ -367,6 +367,7 @@ impl Spec {
             treat_as_filenames: options.file_names,
             no_autoquote_filenames: options.no_quote,
             no_trailing_space_at_end_of_line: options.no_space,
+            quote_char: None, // Will be set by the interactive layer
         };
 
         if options.plus_dirs || options.dir_names {
@@ -790,6 +791,8 @@ pub struct ProcessingOptions {
     pub no_autoquote_filenames: bool,
     /// Don't append a trailing space to completions at the end of the input line.
     pub no_trailing_space_at_end_of_line: bool,
+    /// The quote character context (if completing inside quotes).
+    pub quote_char: Option<char>,
 }
 
 /// Represents a token in the input line being completed.
@@ -819,6 +822,7 @@ impl Default for ProcessingOptions {
             treat_as_filenames: true,
             no_autoquote_filenames: false,
             no_trailing_space_at_end_of_line: false,
+            quote_char: None,
         }
     }
 }
