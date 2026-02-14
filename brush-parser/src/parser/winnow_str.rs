@@ -19,6 +19,6 @@ mod types;
 mod words;
 
 // Re-export public API
+pub use position::PositionTracker;
 pub use program::parse_program;
 pub use types::{ParseContext, StrStream};
-pub use position::PositionTracker;

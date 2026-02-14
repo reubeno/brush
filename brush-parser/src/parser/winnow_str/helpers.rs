@@ -186,7 +186,7 @@ pub(super) fn spaces1<'a>() -> impl Parser<StrStream<'a>, (), PError> {
                 ("\\", '\n').void(), // backslash-newline continuation
             )),
         ),
-        winnow::combinator::opt(comment()),               // Optional comment after spaces
+        winnow::combinator::opt(comment()), // Optional comment after spaces
     )
         .void()
 }
