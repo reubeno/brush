@@ -18,6 +18,7 @@ workspace = true
 bench = false
 
 [features]
+default = ["winnow-parser"]
 arbitrary = ["dep:arbitrary"]
 debug-tracing = ["peg/trace"]
 diagnostics = ["dep:miette"]
