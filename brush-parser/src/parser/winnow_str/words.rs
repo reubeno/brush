@@ -121,6 +121,13 @@ pub(super) fn single_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
         .map(|s: &str| s.to_string())
 }
 
+/// Parse an ANSI-C quoted string: $'text'.
+/// Returns the full string including the $'...' syntax (e.g., `$'text'`).
+/// In ANSI-C quotes, backslash escapes are processed specially.
+pub(super) fn ansi_c_quoted_string<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
+    parse_balanced_delimiters("$'", None, '\'', 1)
+}
+
 /// Parse a double-quoted string: "text".
 ///
 /// Returns the full string including quotes (e.g., `"text"`).
@@ -216,15 +223,18 @@ pub(super) fn word_part<'a>(
         match ch {
             '\'' => single_quoted_string().map(Cow::Owned).parse_next(input),
             '"' => double_quoted_string().map(Cow::Owned).parse_next(input),
-            '$' => winnow::combinator::alt((
-                arithmetic_expansion(), // $(( before $(
-                command_substitution(), // $(
-                braced_variable(),      // ${ before $
-                special_parameter(),    // $1, $?, etc. before simple $VAR
-                simple_variable(),      // $VAR
-            ))
-            .map(Cow::Borrowed)
-            .parse_next(input),
+            '$' => {
+                winnow::combinator::alt((
+                    ansi_c_quoted_string(), // $'
+                    arithmetic_expansion(), // $(( before $(
+                    command_substitution(), // $(
+                    braced_variable(),      // ${ before $
+                    special_parameter(),    // $1, $?, etc. before simple $VAR
+                    simple_variable(),      // $VAR
+                ))
+                .map(Cow::Borrowed)
+                .parse_next(input)
+            }
             '`' => backtick_substitution().map(Cow::Borrowed).parse_next(input),
             '\\' => escape_sequence()
                 .map(|c| Cow::Owned(format!("\\{c}")))
@@ -313,5 +323,27 @@ pub(super) fn wordlist<'a>(
 ) -> impl Parser<StrStream<'a>, Vec<ast::Word>, PError> + 'a {
     move |input: &mut StrStream<'a>| {
         winnow::combinator::separated(1.., word_as_ast(ctx, tracker), spaces1()).parse_next(input)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::winnow_str::types::StrStream;
+
+    #[test]
+    fn test_ansi_c_quoted_string_simple() {
+        let input = StrStream::new("$'hello'");
+        let result = super::ansi_c_quoted_string().parse_next(&mut input.clone());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "$'hello'");
+    }
+
+    #[test]
+    fn test_ansi_c_quoted_string_with_escape() {
+        let input = StrStream::new("$'\\n'");
+        let result = super::ansi_c_quoted_string().parse_next(&mut input.clone());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "$'\\n'");
     }
 }
