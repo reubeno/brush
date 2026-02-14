@@ -4,20 +4,17 @@ use winnow::token::take_while;
 
 use crate::ast;
 
+use super::arithmetic::for_or_arithmetic_for;
 use super::arithmetic::paren_compound;
 use super::compound::{
-    brace_group, case_clause, if_clause, process_substitution,
-    until_clause, while_clause,
+    brace_group, case_clause, if_clause, process_substitution, until_clause, while_clause,
 };
-use super::arithmetic::for_or_arithmetic_for;
 use super::extended_test::extended_test_command;
 use super::helpers::{
-    array_spaces, peek_char, peek_first_word, spaces, spaces1,
+    array_spaces, parse_balanced_delimiters, peek_char, peek_first_word, spaces, spaces1,
 };
 use super::position::PositionTracker;
-use super::redirections::{
-    here_documents, io_number, io_redirect, optional_redirects,
-};
+use super::redirections::{here_documents, io_number, io_redirect, optional_redirects};
 use super::types::{PError, ParseContext, StrStream};
 use super::words::{non_reserved_word, word_as_ast, word_part};
 
@@ -65,18 +62,18 @@ fn array_element<'a>(
 
         // Try to parse indexed element: [index]=value
         let checkpoint = input.checkpoint();
-        let has_bracket = winnow::combinator::opt::<_, _, PError, _>('[')
-            .parse_next(input)?
-            .is_some();
+        let has_bracket = winnow::combinator::peek::<_, _, PError, _>('[')
+            .parse_next(input)
+            .is_ok();
 
         if has_bracket {
-            // Parse index (everything until ])
-            let index_str = winnow::token::take_while::<_, _, PError>(0.., |c: char| c != ']')
-                .parse_next(input)?;
+            // Parse index using parse_balanced_delimiters to handle nested brackets
+            let index_str_with_brackets =
+                parse_balanced_delimiters("[", Some('['), ']', 1).parse_next(input)?;
+            // Strip the outer brackets to match PEG parser behavior
+            let index_str = &index_str_with_brackets[1..index_str_with_brackets.len() - 1];
 
-            let has_close = winnow::combinator::opt::<_, _, PError, _>(']')
-                .parse_next(input)?
-                .is_some();
+            let has_close = true; // parse_balanced_delimiters already consumed the ']'
             let has_equals = winnow::combinator::opt::<_, _, PError, _>('=')
                 .parse_next(input)?
                 .is_some();
@@ -119,13 +116,15 @@ fn assignment_word<'a>(
             .parse_next(input)?;
 
         // Check for array element syntax: var[index]
-        let array_index = if winnow::combinator::opt::<_, _, PError, _>('[')
-            .parse_next(input)?
-            .is_some()
+        let array_index = if winnow::combinator::peek::<_, _, PError, _>('[')
+            .parse_next(input)
+            .is_ok()
         {
-            // Parse the index (everything until ']')
-            let index = winnow::token::take_while(1.., |c: char| c != ']').parse_next(input)?;
-            ']'.parse_next(input)?;
+            // Parse the index using parse_balanced_delimiters to handle nested brackets
+            let index_with_brackets =
+                parse_balanced_delimiters("[", Some('['), ']', 1).parse_next(input)?;
+            // Strip the outer brackets to match PEG parser behavior
+            let index = &index_with_brackets[1..index_with_brackets.len() - 1];
             Some(index.to_string())
         } else {
             None
@@ -539,7 +538,8 @@ pub(super) fn command<'a>(
 
                             if is_func_def {
                                 winnow::combinator::alt((
-                                    super::compound::function_definition(ctx, tracker).map(ast::Command::Function),
+                                    super::compound::function_definition(ctx, tracker)
+                                        .map(ast::Command::Function),
                                     simple_command(ctx, tracker).map(ast::Command::Simple),
                                 ))
                                 .parse_next(input)
@@ -547,7 +547,8 @@ pub(super) fn command<'a>(
                                 // Regular command - try simple command first
                                 winnow::combinator::alt((
                                     simple_command(ctx, tracker).map(ast::Command::Simple),
-                                    super::compound::function_definition(ctx, tracker).map(ast::Command::Function),
+                                    super::compound::function_definition(ctx, tracker)
+                                        .map(ast::Command::Function),
                                 ))
                                 .parse_next(input)
                             }
