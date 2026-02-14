@@ -49,7 +49,8 @@ pub(super) fn non_reserved_word<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::Word, PError> + 'a {
-    word_as_ast(ctx, tracker).verify(|word: &ast::Word| !super::helpers::is_reserved_word(&word.value))
+    word_as_ast(ctx, tracker)
+        .verify(|word: &ast::Word| !super::helpers::is_reserved_word(&word.value))
 }
 
 // ============================================================================
