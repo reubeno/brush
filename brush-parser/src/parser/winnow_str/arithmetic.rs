@@ -53,8 +53,8 @@ fn normalize_arithmetic_expr(s: &str) -> String {
     result
 }
 
-pub(super) fn arithmetic_expression<'a>() -> impl Parser<StrStream<'a>, ast::UnexpandedArithmeticExpr, PError>
-{
+pub(super) fn arithmetic_expression<'a>()
+-> impl Parser<StrStream<'a>, ast::UnexpandedArithmeticExpr, PError> {
     move |input: &mut StrStream<'a>| {
         let mut expr_str = String::new();
         let mut paren_depth = 0;

@@ -4,7 +4,7 @@
 //! but work with the PEG parser. They are designed to help debug and fix
 //! winnow parser implementation issues.
 
-use super::{test_with_snapshot, ParseResult};
+use super::{ParseResult, test_with_snapshot};
 use crate::assert_snapshot_redacted;
 use anyhow::Result;
 
