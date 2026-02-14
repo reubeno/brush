@@ -7,8 +7,8 @@ use crate::ast;
 use super::and_or::and_or;
 use super::arithmetic::for_or_arithmetic_for;
 use super::helpers::{
-    fname, is_reserved_word, keyword, linebreak, name, newline, peek_char,
-    separator, sequential_sep, spaces, spaces1,
+    fname, is_reserved_word, keyword, linebreak, name, newline, peek_char, separator,
+    sequential_sep, spaces, spaces1,
 };
 use super::position::PositionTracker;
 use super::redirections::redirect_list;
