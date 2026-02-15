@@ -39,7 +39,7 @@ pub(super) fn bare_word<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
             ' ' | '\t' | '\n' | '\r' |  // Whitespace
             '|' | '&' | ';' | '<' | '>' | '(' | ')' |  // Operators (note: { } removed to allow brace expansion)
             '$' | '`' | '\'' | '"' | '\\' | // Quote/expansion starts
-            '@' | '?' | '*' | '+' | '!'  // Extglob prefixes — stop so word_part can dispatch
+            '@' | '?' | '*' | '+' | '!' // Extglob prefixes — stop so word_part can dispatch
         )
     })
 }
@@ -201,13 +201,35 @@ pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
     }
 }
 
-/// Parse an escape sequence: \c
-/// Returns the escaped character (simplified version)
-pub(super) fn escape_sequence<'a>() -> impl Parser<StrStream<'a>, char, PError> {
-    winnow::combinator::preceded(
-        '\\',
-        winnow::token::any, // For now, just return the escaped character as-is
-    )
+/// Parse an escape sequence: `\c`, or `\<extglob_prefix>(…)` when extglob is
+/// enabled.
+///
+/// The tokenizer enters extglob mode whenever the last consumed character can
+/// start an extglob and the next character is `(`, even when the prefix was
+/// escaped.  We mirror that here: `\@(pattern)` is returned as a single slice
+/// `\@(pattern)` so it stays in the same word.
+///
+/// Returns the full consumed slice including the leading backslash.
+pub(super) fn escape_sequence<'a>(
+    extglob_enabled: bool,
+) -> impl Parser<StrStream<'a>, &'a str, PError> {
+    move |input: &mut StrStream<'a>| {
+        let start = input.checkpoint();
+        '\\'.parse_next(input)?;
+        let c = winnow::token::any::<_, PError>.parse_next(input)?;
+
+        // If the escaped char is an extglob prefix and '(' follows, consume
+        // the balanced parens so the whole construct stays in this word.
+        if extglob_enabled && matches!(c, '@' | '?' | '*' | '+' | '!') {
+            let _ = winnow::combinator::opt(parse_balanced_delimiters("(", Some('('), ')', 1))
+                .parse_next(input)?;
+        }
+
+        let end = input.checkpoint();
+        let len = end.offset_from(&start);
+        input.reset(&start);
+        winnow::token::take(len).parse_next(input)
+    }
 }
 
 /// Parse a word part (bare text, single quote, double quote, escape, or expansion)
@@ -237,8 +259,8 @@ pub(super) fn word_part<'a>(
                 .parse_next(input)
             }
             '`' => backtick_substitution().map(Cow::Borrowed).parse_next(input),
-            '\\' => escape_sequence()
-                .map(|c| Cow::Owned(format!("\\{c}")))
+            '\\' => escape_sequence(ctx.options.enable_extended_globbing)
+                .map(Cow::Borrowed)
                 .parse_next(input),
             // Tilde after colon: ~user or ~ expansion
             '~' if ctx.options.tilde_expansion_after_colon && last_char == Some(':') => {
