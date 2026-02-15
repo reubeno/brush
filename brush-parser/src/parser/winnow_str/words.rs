@@ -129,6 +129,13 @@ pub(super) fn ansi_c_quoted_string<'a>() -> impl Parser<StrStream<'a>, &'a str, 
     parse_balanced_delimiters("$'", None, '\'', 1)
 }
 
+/// Parse a gettext-style double-quoted string: $"text".
+/// Returns the full string including the $"..." syntax (e.g., `$"text"`).
+/// This is used for localization in bash.
+pub(super) fn gettext_double_quoted_string<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
+    parse_balanced_delimiters("$\"", None, '"', 1)
+}
+
 /// Parse a double-quoted string: "text".
 ///
 /// Returns the full string including quotes (e.g., `"text"`).
@@ -248,12 +255,13 @@ pub(super) fn word_part<'a>(
             '"' => double_quoted_string().map(Cow::Owned).parse_next(input),
             '$' => {
                 winnow::combinator::alt((
-                    ansi_c_quoted_string(), // $'
-                    arithmetic_expansion(), // $(( before $(
-                    command_substitution(), // $(
-                    braced_variable(),      // ${ before $
-                    special_parameter(),    // $1, $?, etc. before simple $VAR
-                    simple_variable(),      // $VAR
+                    ansi_c_quoted_string(),         // $'
+                    gettext_double_quoted_string(), // $" before $(
+                    arithmetic_expansion(),         // $(( before $(
+                    command_substitution(),         // $(
+                    braced_variable(),              // ${ before $
+                    special_parameter(),            // $1, $?, etc. before simple $VAR
+                    simple_variable(),              // $VAR
                 ))
                 .map(Cow::Borrowed)
                 .parse_next(input)
