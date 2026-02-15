@@ -327,6 +327,11 @@ fn parse_array_assignment_multiline() -> Result<()> {
 #[test]
 #[cfg(feature = "winnow-parser")]
 fn winnow_parse_all_eclasses() -> Result<()> {
+    // Track expected failures: the eof check in program() correctly rejects
+    // eclasses that use constructs the winnow parser doesn't yet support.
+    // This count should decrease as the parser improves.
+    const EXPECTED_FAILURES: usize = 62;
+
     use super::parse_with_config;
     use crate::parser::ParserImpl;
 
@@ -363,11 +368,6 @@ fn winnow_parse_all_eclasses() -> Result<()> {
         }
     }
 
-    // Track expected failures: the eof check in program() correctly rejects
-    // eclasses that use constructs the winnow parser doesn't yet support.
-    // This count should decrease as the parser improves.
-    const EXPECTED_FAILURES: usize = 62;
-
     failures.sort();
     let failure_count = failures.len();
 
@@ -379,10 +379,11 @@ fn winnow_parse_all_eclasses() -> Result<()> {
     }
 
     if failure_count > EXPECTED_FAILURES {
-        panic!(
-            "Regression: {failure_count}/{total} eclasses failed (expected at most {EXPECTED_FAILURES})",
-        );
-    } else if failure_count < EXPECTED_FAILURES {
+        return Err(anyhow::anyhow!(
+            "Regression: {failure_count}/{total} eclasses failed (expected at most {EXPECTED_FAILURES})"
+        ));
+    }
+    if failure_count < EXPECTED_FAILURES {
         eprintln!(
             "Progress! Only {failure_count}/{total} eclasses failed (expected {EXPECTED_FAILURES}). \
              Please update EXPECTED_FAILURES."
@@ -429,7 +430,7 @@ fn winnow_parse_rust_ebuild() -> Result<()> {
 /// Two function definitions inside an if-then block
 #[test]
 fn parse_functions_inside_if() -> Result<()> {
-    let input = r#"if [[ -z ${FOO} ]]; then
+    let input = r"if [[ -z ${FOO} ]]; then
 FOO=1
 myfunc1() {
     echo a
@@ -441,7 +442,7 @@ myfunc2() {
     fi
 }
 fi
-"#;
+";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -595,11 +596,11 @@ fn parse_heredoc_dash_in_function() -> Result<()> {
 ///   )
 #[test]
 fn parse_heredoc_in_command_substitution() -> Result<()> {
-    let input = r#"RESULT=$(
+    let input = r"RESULT=$(
     cat <<EOF
 hello world
 EOF
-)"#;
+)";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -630,11 +631,11 @@ fn parse_heredoc_dash_in_command_substitution() -> Result<()> {
 
 /// Regression test: parse python-utils-r1.eclass and verify the outer
 /// if-guard body is non-empty.  This eclass wraps its entire body in:
-///   if [[ -z ${_PYTHON_UTILS_R1_ECLASS} ]]; then ... fi
+///   if [[ -z ${`_PYTHON_UTILS_R1_ECLASS`} ]]; then ... fi
 /// The winnow parser was previously producing an AST where the then-body
 /// was empty, causing all definitions inside to be lost at runtime.
-/// Root causes: (1) ext_test_word couldn't parse multi-segment words like
-/// "declare -a"*, (2) io_redirect couldn't parse process substitution
+/// Root causes: (1) `ext_test_word` couldn't parse multi-segment words like
+/// "declare -a"*, (2) `io_redirect` couldn't parse process substitution
 /// targets like < <(cmd).
 #[test]
 #[cfg(feature = "winnow-parser")]
@@ -662,24 +663,22 @@ fn winnow_parse_python_utils_eclass_if_guard() -> Result<()> {
     let program = parse_with_config(&content, &winnow_cfg)
         .map_err(|e| anyhow::anyhow!("Failed to parse python-utils-r1.eclass: {e}"))?;
 
-    assert_eq!(
-        program.complete_commands.len(),
-        1,
-        "Expected 1 top-level command"
-    );
+    if program.complete_commands.len() != 1 {
+        return Err(anyhow::anyhow!(
+            "Expected 1 top-level command, got {}",
+            program.complete_commands.len()
+        ));
+    }
 
     // The first (and only) top-level command should be the if-guard
     let first_cmd = &program.complete_commands[0].0[0].0.first.seq[0];
-    if let Command::Compound(CompoundCommand::IfClause(if_cmd), _) = first_cmd {
-        assert!(
-            !if_cmd.then.0.is_empty(),
+    let Command::Compound(CompoundCommand::IfClause(if_cmd), _) = first_cmd else {
+        return Err(anyhow::anyhow!("Expected top-level IfClause"));
+    };
+    if if_cmd.then.0.is_empty() {
+        return Err(anyhow::anyhow!(
             "The outer if-guard then-body is EMPTY — regression!"
-        );
-    } else {
-        panic!(
-            "Expected top-level IfClause, got: {:?}",
-            std::mem::discriminant(first_cmd)
-        );
+        ));
     }
 
     Ok(())
