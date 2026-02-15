@@ -1,4 +1,5 @@
 use winnow::combinator::repeat;
+use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::stream::LocatingSlice;
 
@@ -179,18 +180,23 @@ pub(super) fn pipeline<'a>(
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::Pipeline, PError> + 'a {
     move |input: &mut StrStream<'a>| {
-        (
-            pipeline_timed(tracker),
-            pipeline_bang(),
-            pipe_sequence(ctx, tracker),
-        )
-            .map(|(timed, bang_count, seq)| {
-                ast::Pipeline {
-                    timed,
-                    bang: bang_count % 2 == 1, // Odd number of bangs = inverted
-                    seq,
-                }
-            })
-            .parse_next(input)
+        let (timed, bang_count) = (pipeline_timed(tracker), pipeline_bang()).parse_next(input)?;
+
+        // pipe_sequence is optional - it may fail if there's no command
+        // (e.g., standalone '!' or 'time')
+        let seq = winnow::combinator::opt(pipe_sequence(ctx, tracker))
+            .parse_next(input)?
+            .unwrap_or_default();
+
+        // Validate: at least one of timed, bang, or seq must be present
+        if timed.is_none() && bang_count == 0 && seq.is_empty() {
+            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+        }
+
+        Ok(ast::Pipeline {
+            timed,
+            bang: bang_count % 2 == 1,
+            seq,
+        })
     }
 }
