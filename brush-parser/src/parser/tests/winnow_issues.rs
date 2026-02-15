@@ -12,10 +12,10 @@ use anyhow::Result;
 
 #[test]
 fn parse_array_index_assignment_with_variable_expansion() -> Result<()> {
-    let input = r#"x=(3 2 1)
+    let input = r"x=(3 2 1)
 y[${x[0]}]=10
 y[x[1]]=11
-declare -p y"#;
+declare -p y";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -26,9 +26,9 @@ declare -p y"#;
 
 #[test]
 fn parse_array_index_with_unquoted_variable() -> Result<()> {
-    let input = r#"x=(3 2 1)
+    let input = r"x=(3 2 1)
 y[x[0]]=10
-declare -p y"#;
+declare -p y";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -134,7 +134,7 @@ printf "%G\n" 1000000.0"#;
 
 #[test]
 fn parse_c_style_for_loop() -> Result<()> {
-    let input = r#"for ((i=0; i<5; i++)); do echo $i; done"#;
+    let input = r"for ((i=0; i<5; i++)); do echo $i; done";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -145,7 +145,7 @@ fn parse_c_style_for_loop() -> Result<()> {
 
 #[test]
 fn parse_for_loop_without_in() -> Result<()> {
-    let input = r#"for x in a b c; do echo $x; done"#;
+    let input = r"for x in a b c; do echo $x; done";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -156,7 +156,7 @@ fn parse_for_loop_without_in() -> Result<()> {
 
 #[test]
 fn parse_for_loop_with_extra_whitespace() -> Result<()> {
-    let input = r#"for x  in  a  b  c  ; do echo $x; done"#;
+    let input = r"for x  in  a  b  c  ; do echo $x; done";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -241,8 +241,8 @@ esac"#;
 
 #[test]
 fn parse_extglob_optional_patterns() -> Result<()> {
-    let input = r#"shopt -s extglob
-echo *(a)"#;
+    let input = r"shopt -s extglob
+echo *(a)";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -253,8 +253,8 @@ echo *(a)"#;
 
 #[test]
 fn parse_extglob_plus_patterns() -> Result<()> {
-    let input = r#"shopt -s extglob
-echo +(a)"#;
+    let input = r"shopt -s extglob
+echo +(a)";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -265,8 +265,8 @@ echo +(a)"#;
 
 #[test]
 fn parse_extglob_disabled() -> Result<()> {
-    let input = r#"shopt -u extglob
-echo @(*.txt|*.md)"#;
+    let input = r"shopt -u extglob
+echo @(*.txt|*.md)";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -277,8 +277,8 @@ echo @(*.txt|*.md)"#;
 
 #[test]
 fn parse_extglob_escaping() -> Result<()> {
-    let input = r#"shopt -s extglob
-echo \@(pattern)"#;
+    let input = r"shopt -s extglob
+echo \@(pattern)";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -334,6 +334,7 @@ echo "test""#;
 // Parameter expansion tests
 
 #[test]
+#[allow(clippy::literal_string_with_formatting_args)]
 fn parse_parameter_expansion_default_value() -> Result<()> {
     let input = r#"var="value"
 echo "${var:-default}"
@@ -347,6 +348,7 @@ echo "${var:+alternative}""#;
 }
 
 #[test]
+#[allow(clippy::literal_string_with_formatting_args)]
 fn parse_parameter_expansion_empty_variable() -> Result<()> {
     let input = r#"value=""
 echo "Default: ${value:-default}"
@@ -520,7 +522,7 @@ fn parse_date_with_complex_format() -> Result<()> {
 
 #[test]
 fn parse_kill_list_command() -> Result<()> {
-    let input = r#"kill -l"#;
+    let input = r"kill -l";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -560,7 +562,7 @@ fn parse_shopt_interactive_defaults() -> Result<()> {
 
 #[test]
 fn parse_standalone_negation() -> Result<()> {
-    let input = r#"!"#;
+    let input = r"!";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
@@ -573,8 +575,8 @@ fn parse_standalone_negation() -> Result<()> {
 
 #[test]
 fn parse_history_commands() -> Result<()> {
-    let input = r#"history -c
-history | head -5"#;
+    let input = r"history -c
+history | head -5";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
