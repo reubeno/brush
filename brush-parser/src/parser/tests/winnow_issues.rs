@@ -291,10 +291,10 @@ echo \@(pattern)"#;
 
 #[test]
 fn parse_function_with_hyphen() -> Result<()> {
-    let input = r#"function "test-func"() {
+    let input = r#"function test-func() {
   echo "test-func called"
 }
-"test-func""#;
+test-func"#;
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
