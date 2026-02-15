@@ -323,19 +323,19 @@ pub(super) fn is_valid_name(s: &str) -> bool {
 /// Check if a string is a valid bash function name.
 ///
 /// Bash function names may contain any characters that are valid in a word
-/// (including hyphens and dots), unlike variable names which are restricted
-/// to `[a-zA-Z_][a-zA-Z0-9_]*`.  The only restrictions are that the name
-/// must not be empty, must start with a letter or underscore, and must not
-/// end with `=` (to avoid ambiguity with assignments).
+/// (including hyphens, dots, and digits at the start), unlike variable names
+/// which are restricted to `[a-zA-Z_][a-zA-Z0-9_]*`. The name must not end
+/// with `=` (to avoid ambiguity with assignments) and must not be a single
+/// shell metacharacter like `{` or `}`.
 pub(super) fn is_valid_fname(s: &str) -> bool {
-    if s.is_empty() {
+    if s.is_empty() || s.ends_with('=') {
         return false;
     }
-    if s.ends_with('=') {
+    // Reject single metacharacters that bare_word might match
+    if s == "{" || s == "}" {
         return false;
     }
-    let first = s.chars().next().unwrap();
-    first.is_ascii_alphabetic() || first == '_'
+    true
 }
 
 /// Parse a valid variable name
