@@ -305,10 +305,10 @@ test-func"#;
 
 #[test]
 fn parse_function_with_number() -> Result<()> {
-    let input = r#"function "123func"() {
+    let input = r#"function 123func() {
   echo "123func called"
 }
-"123func""#;
+123func"#;
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
