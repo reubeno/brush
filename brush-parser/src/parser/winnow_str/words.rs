@@ -38,7 +38,8 @@ pub(super) fn bare_word<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
             c,
             ' ' | '\t' | '\n' | '\r' |  // Whitespace
             '|' | '&' | ';' | '<' | '>' | '(' | ')' |  // Operators (note: { } removed to allow brace expansion)
-            '$' | '`' | '\'' | '"' | '\\' // Quote/expansion starts
+            '$' | '`' | '\'' | '"' | '\\' | // Quote/expansion starts
+            '@' | '?' | '*' | '+' | '!'  // Extglob prefixes — stop so word_part can dispatch
         )
     })
 }
@@ -254,7 +255,12 @@ pub(super) fn word_part<'a>(
                 {
                     Ok(Cow::Borrowed(pattern))
                 } else {
-                    bare_word().map(Cow::Borrowed).parse_next(input)
+                    // Not an extglob — consume just the prefix char as a literal.
+                    // bare_word() stops at these chars, so the next word_part
+                    // iteration will continue with whatever follows.
+                    winnow::token::take(1usize)
+                        .map(Cow::Borrowed)
+                        .parse_next(input)
                 }
             }
             // Default: parse as bare word (most common case)
