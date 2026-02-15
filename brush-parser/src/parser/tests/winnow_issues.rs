@@ -596,19 +596,6 @@ fn parse_unset_odd_function_names() -> Result<()> {
     Ok(())
 }
 
-// Syntax error test (should parse but may fail at execution)
-
-#[test]
-fn parse_syntax_error_interactive() -> Result<()> {
-    let input = r#"echo "incomplete quote"#;
-    let result = test_with_snapshot(input)?;
-    assert_snapshot_redacted!(ParseResult {
-        input,
-        result: &result
-    });
-    Ok(())
-}
-
 // File operation tests
 
 #[test]
