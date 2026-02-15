@@ -278,7 +278,7 @@ pub(super) fn separator<'a>() -> impl Parser<StrStream<'a>, Option<SeparatorOper
 /// Corresponds to: winnow.rs `sequential_sep()`
 #[inline]
 pub(super) fn sequential_sep<'a>() -> impl Parser<StrStream<'a>, (), PError> {
-    winnow::combinator::alt(((';', linebreak()).void(), newline_list().void()))
+    winnow::combinator::alt(((spaces(), ';', linebreak()).void(), newline_list().void()))
 }
 
 /// Match a specific keyword (shell reserved word)
