@@ -71,7 +71,10 @@ fn array_element<'a>(
             let index_str_with_brackets =
                 parse_balanced_delimiters("[", Some('['), ']', 1).parse_next(input)?;
             // Strip the outer brackets to match PEG parser behavior
-            let index_str = &index_str_with_brackets[1..index_str_with_brackets.len() - 1];
+            let index_str = index_str_with_brackets
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(index_str_with_brackets);
 
             let has_close = true; // parse_balanced_delimiters already consumed the ']'
             let has_equals = winnow::combinator::opt::<_, _, PError, _>('=')
@@ -124,7 +127,10 @@ fn assignment_word<'a>(
             let index_with_brackets =
                 parse_balanced_delimiters("[", Some('['), ']', 1).parse_next(input)?;
             // Strip the outer brackets to match PEG parser behavior
-            let index = &index_with_brackets[1..index_with_brackets.len() - 1];
+            let index = index_with_brackets
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(index_with_brackets);
             Some(index.to_string())
         } else {
             None
