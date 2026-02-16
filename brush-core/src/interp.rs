@@ -1725,7 +1725,7 @@ pub(crate) async fn setup_redirect(
 
             // Expand if required.
             let io_here_doc = if io_here.requires_expansion {
-                expansion::basic_expand_word(shell, params, &io_here.doc).await?
+                expansion::basic_expand_heredoc_word(shell, params, &io_here.doc).await?
             } else {
                 io_here.doc.flatten()
             };

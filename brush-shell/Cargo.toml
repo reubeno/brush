@@ -133,6 +133,7 @@ test-with = { version = "0.15.7", default-features = false, features = [
 ] }
 version-compare = "0.2.1"
 walkdir = "2.5.0"
+which = "8.0.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.31.1" }
