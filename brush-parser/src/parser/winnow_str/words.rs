@@ -131,6 +131,22 @@ pub(super) fn dollar_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PErr
     ))
 }
 
+/// Parse a dollar-prefixed expansion inside a double-quoted string.
+///
+/// Unlike `dollar_expansion`, this excludes `$'` and `$"` because those
+/// are standalone quote constructs that cannot be nested inside double quotes.
+/// In `"..."`, `$'` and `$"` would incorrectly match the closing `"` or `'`.
+pub(super) fn dollar_expansion_in_double_quotes<'a>()
+-> impl Parser<StrStream<'a>, &'a str, PError> + 'a {
+    winnow::combinator::alt((
+        arithmetic_expansion(), // $((
+        command_substitution(), // $(
+        braced_variable(),      // ${
+        special_parameter(),    // $1, $?, etc.
+        simple_variable(),      // $VAR
+    ))
+}
+
 // ============================================================================
 // Tier 7: Quoted Strings
 // ============================================================================
@@ -186,9 +202,10 @@ pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
                     let _ = winnow::token::any::<_, PError>.parse_next(input); // consume escaped char
                 }
                 '$' => {
-                    // dollar_expansion will consume the $ and the expansion content
+                    // Use dollar_expansion_in_double_quotes which excludes $' and $"
+                    // because those would incorrectly match the closing quote.
                     // This handles ${...} with nested quotes, $(...), $((...)), etc.
-                    let _ = dollar_expansion().parse_next(input);
+                    let _ = dollar_expansion_in_double_quotes().parse_next(input);
                 }
                 '`' => {
                     '`'.parse_next(input)?; // consume opening backtick
