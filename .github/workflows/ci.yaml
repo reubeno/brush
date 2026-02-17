@@ -564,6 +564,21 @@ jobs:
       # Reference: https://github.com/Azure/azure-cli/issues/29835
       GNUPGHOME: /root/.gnupg
     steps:
+      # Workaround for containerd v2.2.0+ regression with absolute symlinks.
+      # Reference: https://github.com/containerd/containerd/issues/12683
+      - name: "Fix absolute symlinks (NixOS)"
+        if: ${{ matrix.container == 'nixos/nix:latest' }}
+        run: |
+          for file in /etc/passwd /etc/group; do
+            if [ -L "$file" ]; then
+              target=$(readlink "$file")
+              if [ "${target:0:1}" = "/" ]; then
+                relative_target=$(realpath --relative-to="$(dirname "$file")" "$target")
+                ln -sf "$relative_target" "$file"
+              fi
+            fi
+          done
+
       # Install prerequisites *first*; may need some of them for checkout itself.
       - name: Install prerequisites
         if: ${{ matrix.prereqs_command != '' }}
