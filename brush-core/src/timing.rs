@@ -130,7 +130,7 @@ mod tests {
             "0m0.000s"
         );
         assert_eq!(
-            format_duration_non_posixly(&Duration::from_millis(1)),
+            format_duration_non_posixly(&Duration::from_micros(1001)),
             "0m0.001s"
         );
     }
