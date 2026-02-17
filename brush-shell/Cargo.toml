@@ -50,7 +50,7 @@ path = "benches/shell.rs"
 harness = false
 
 [features]
-default = ["basic", "reedline", "minimal"]
+default = ["basic", "reedline", "minimal", "experimental-parser"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
