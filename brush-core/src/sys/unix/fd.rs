@@ -35,28 +35,24 @@ cfg_if::cfg_if! {
     target_os = "openbsd"
 ))]
 pub fn try_iter_open_fds() -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
-    let mut opened_entries = vec![];
+    std::fs::read_dir(FD_DIR_PATH)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let fd: RawFd = entry.file_name().to_str()?.parse().ok()?;
 
-    if let Ok(fd_dir) = std::fs::read_dir(FD_DIR_PATH) {
-        for entry in fd_dir.into_iter().flatten() {
-            if let Ok(filename) = entry.file_name().into_string() {
-                if let Ok(fd_num) = filename.parse::<RawFd>() {
-                    // SAFETY:
-                    // We are trying to open the file descriptor we found listed
-                    // in the filesystem, but there's a risk that it's not the same one
-                    // that we enumerated or that it's since been closed. For the purposes
-                    // of this function, either of those outcomes are acceptable. We
-                    // simply skip any fds that we can't open, and the function's purpose
-                    // is to make a best-effort attempt to open all available fds.
-                    if let Ok(file) = unsafe { open_file_by_fd(fd_num) } {
-                        opened_entries.push((fd_num, file));
-                    }
-                }
-            }
-        }
-    }
+            // SAFETY:
+            // We are trying to open the file descriptor we found listed
+            // in the filesystem, but there's a risk that it's not the same one
+            // that we enumerated or that it's since been closed. For the purposes
+            // of this function, either of those outcomes are acceptable. We
+            // simply skip any fds that we can't open, and the function's purpose
+            // is to make a best-effort attempt to open all available fds.
+            let file = unsafe { open_file_by_fd(fd) }.ok()?;
 
-    opened_entries.into_iter()
+            Some((fd, file))
+        })
 }
 
 /// Attempts to retrieve an `OpenFile` representation for the given already-open file descriptor.
