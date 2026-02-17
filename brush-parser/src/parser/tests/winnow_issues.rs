@@ -712,3 +712,53 @@ esac"#;
     });
     Ok(())
 }
+
+// Nested double quotes in parameter expansion
+
+#[test]
+#[allow(clippy::literal_string_with_formatting_args)]
+fn parse_parameter_expansion_nested_double_quotes_with_space() -> Result<()> {
+    let input = r#": "${VAR:="hello world"}""#;
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::literal_string_with_formatting_args)]
+fn parse_parameter_expansion_nested_double_quotes_simple() -> Result<()> {
+    let input = r#": "${VAR:="hello"}""#;
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::literal_string_with_formatting_args)]
+fn parse_parameter_expansion_assignment_nested_quotes() -> Result<()> {
+    let input = r#": "${VAR:="a b c"}""#;
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+#[allow(clippy::literal_string_with_formatting_args)]
+fn parse_parameter_expansion_default_nested_quotes() -> Result<()> {
+    let input = r#": "${VAR:-"default value"}""#;
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}

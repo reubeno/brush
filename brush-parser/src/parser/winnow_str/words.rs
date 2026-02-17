@@ -109,6 +109,28 @@ pub(super) fn special_parameter<'a>() -> impl Parser<StrStream<'a>, &'a str, PEr
         .take()
 }
 
+/// Parse a dollar-prefixed expansion: $VAR, ${...}, $(...), $((...)), $', $"
+///
+/// This is the central dispatcher for all `$`-initiated constructs.
+/// Returns the expansion text including the leading `$`.
+///
+/// Order matters: more specific patterns must come before more general ones:
+/// - `$'` (ANSI-C quote) before `$` followed by anything
+/// - `$"` (gettext quote) before `$` followed by anything  
+/// - `$((` (arithmetic) before `$(` (command substitution)
+/// - `${` (braced variable) before `$VAR` (simple variable)
+pub(super) fn dollar_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> + 'a {
+    winnow::combinator::alt((
+        ansi_c_quoted_string(),         // $'
+        gettext_double_quoted_string(), // $"
+        arithmetic_expansion(),         // $((
+        command_substitution(),         // $(
+        braced_variable(),              // ${
+        special_parameter(),            // $1, $?, etc.
+        simple_variable(),              // $VAR
+    ))
+}
+
 // ============================================================================
 // Tier 7: Quoted Strings
 // ============================================================================
@@ -139,7 +161,7 @@ pub(super) fn gettext_double_quoted_string<'a>() -> impl Parser<StrStream<'a>, &
 /// Parse a double-quoted string: "text".
 ///
 /// Returns the full string including quotes (e.g., `"text"`).
-/// Handles backslash escape sequences and `$(...)` command substitutions
+/// Handles backslash escape sequences and dollar expansions
 /// (which may span multiple lines for heredocs) inside the string.
 pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> {
     move |input: &mut StrStream<'a>| {
@@ -149,51 +171,34 @@ pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
         '"'.parse_next(input)?;
 
         loop {
-            // Try to match closing quote
-            if winnow::combinator::opt::<_, _, PError, _>('"')
-                .parse_next(input)?
-                .is_some()
-            {
-                break;
-            }
+            let Ok(ch) = peek_char().parse_next(input) else {
+                // Hit end of input without closing quote
+                return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            };
 
-            match winnow::token::any::<_, PError>.parse_next(input) {
-                Ok('\\') => {
-                    // Escape sequence: skip the next character
-                    let _ = winnow::token::any::<_, PError>.parse_next(input);
+            match ch {
+                '"' => {
+                    '"'.parse_next(input)?; // consume closing quote
+                    break;
                 }
-                Ok('$') => {
-                    // Check if this starts a $(...) command substitution (not
-                    // $((...)) arithmetic). If so, we MUST consume it as a
-                    // balanced unit because the body can span multiple lines
-                    // (e.g., heredocs). If the closing `)` is missing, that's a
-                    // hard error — not optional.
-                    if winnow::combinator::peek::<_, _, PError, _>(winnow::combinator::not("(("))
-                        .parse_next(input)
-                        .is_ok()
-                        && winnow::combinator::peek::<_, _, PError, _>('(')
-                            .parse_next(input)
-                            .is_ok()
-                    {
-                        // Committed: $( was detected, must find closing )
-                        parse_balanced_delimiters("(", Some('('), ')', 1)
-                            .void()
-                            .parse_next(input)?;
-                    }
-                    // Otherwise $ was just a plain character — already consumed.
+                '\\' => {
+                    '\\'.parse_next(input)?; // consume backslash
+                    let _ = winnow::token::any::<_, PError>.parse_next(input); // consume escaped char
                 }
-                Ok('`') => {
-                    // Backtick substitution — consume until matching backtick
+                '$' => {
+                    // dollar_expansion will consume the $ and the expansion content
+                    // This handles ${...} with nested quotes, $(...), $((...)), etc.
+                    let _ = dollar_expansion().parse_next(input);
+                }
+                '`' => {
+                    '`'.parse_next(input)?; // consume opening backtick
+                    // Consume until matching backtick
                     let _: Result<&str, PError> =
                         take_while(0.., |c: char| c != '`').parse_next(input);
                     let _ = winnow::combinator::opt::<_, _, PError, _>('`').parse_next(input);
                 }
-                Ok(_) => {
-                    // Regular character — already consumed
-                }
-                Err(_) => {
-                    // Hit end of input without closing quote
-                    return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                _ => {
+                    winnow::token::any::<_, PError>.parse_next(input)?; // consume regular char
                 }
             }
         }
@@ -253,19 +258,7 @@ pub(super) fn word_part<'a>(
         match ch {
             '\'' => single_quoted_string().map(Cow::Owned).parse_next(input),
             '"' => double_quoted_string().map(Cow::Owned).parse_next(input),
-            '$' => {
-                winnow::combinator::alt((
-                    ansi_c_quoted_string(),         // $'
-                    gettext_double_quoted_string(), // $" before $(
-                    arithmetic_expansion(),         // $(( before $(
-                    command_substitution(),         // $(
-                    braced_variable(),              // ${ before $
-                    special_parameter(),            // $1, $?, etc. before simple $VAR
-                    simple_variable(),              // $VAR
-                ))
-                .map(Cow::Borrowed)
-                .parse_next(input)
-            }
+            '$' => dollar_expansion().map(Cow::Borrowed).parse_next(input),
             '`' => backtick_substitution().map(Cow::Borrowed).parse_next(input),
             '\\' => escape_sequence(ctx.options.enable_extended_globbing)
                 .map(Cow::Borrowed)
