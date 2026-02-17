@@ -435,10 +435,10 @@ async fn instantiate_shell_from_args(
 
     // Select parser implementation to use.
     #[cfg(feature = "experimental-parser")]
-    let parser_impl = if args.experimental_parser {
-        brush_core::parser::ParserImpl::Winnow
-    } else {
+    let parser_impl = if args.peg_parser {
         brush_core::parser::ParserImpl::Peg
+    } else {
+        brush_core::parser::ParserImpl::Winnow
     };
 
     #[cfg(not(feature = "experimental-parser"))]

@@ -182,10 +182,10 @@ pub struct CommandLineArgs {
     #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS, default_value_t = crate::entry::DEFAULT_ENABLE_HIGHLIGHTING)]
     pub enable_highlighting: bool,
 
-    /// Enable experimental parser (not ready for use).
+    /// Use legacy PEG parser instead of the default winnow parser.
     #[cfg(feature = "experimental-parser")]
-    #[clap(long = "experimental-parser", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
-    pub experimental_parser: bool,
+    #[clap(long = "peg-parser", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    pub peg_parser: bool,
 
     /// Enable terminal integration (**experimental**).
     #[clap(long = "enable-terminal-integration", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
