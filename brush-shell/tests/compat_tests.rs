@@ -89,6 +89,13 @@ async fn run_compat_tests(mut options: TestOptions) -> Result<bool> {
         ));
     }
 
+    // Resolve bash path to absolute path to avoid issues when env is cleared.
+    if options.bash_path.is_relative() || options.bash_path.as_path() == Path::new("bash") {
+        if let Ok(resolved) = which::which(&options.bash_path) {
+            options.bash_path = resolved;
+        }
+    }
+
     // Resolve test cases directory (now under compat/).
     let test_cases_dir = options.test_cases_path.as_deref().map_or_else(
         || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/compat"),

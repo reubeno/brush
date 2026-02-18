@@ -492,6 +492,7 @@ dependencies = [
  "uuid",
  "version-compare",
  "walkdir",
+ "which",
 ]
 
 [[package]]
