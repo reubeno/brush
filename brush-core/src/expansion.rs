@@ -377,10 +377,25 @@ pub(crate) async fn basic_expand_word(
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
-/// Applies heredoc-appropriate expansion to the given word.
+/// Expands a heredoc body according to POSIX rules.
 ///
-/// Unlike [`basic_expand_word`], this treats `"` and `'` as literal characters
-/// (no quote removal), which is correct for heredoc bodies with unquoted delimiters per POSIX.
+/// Performs parameter expansion, command substitution, and arithmetic expansion
+/// on the heredoc content while preserving literal quote characters. Unlike
+/// [`basic_expand_word`], this treats `"` and `'` as literal characters rather
+/// than quote delimiters.
+///
+/// # POSIX Compliance
+///
+/// According to POSIX, when a heredoc delimiter is unquoted (e.g., `<<EOF`),
+/// the heredoc body undergoes:
+/// - Parameter expansion: `$var` and `${var}` are expanded
+/// - Command substitution: `$(command)` and `` `command` `` are executed
+/// - Arithmetic expansion: `$((expression))` is evaluated
+/// - Backslash escaping: `\newline` continues lines, `\$` produces literal `$`
+///
+/// However, quote characters (`"` and `'`) remain literal and are not processed
+/// as quote delimiters. This differs from regular word expansion where quotes
+/// create quoted regions and are removed from the output.
 ///
 /// # Arguments
 ///
@@ -559,6 +574,20 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(String::from(self.basic_expand_heredoc(word).await?))
     }
 
+    /// Expand a heredoc body with POSIX-compliant quote handling.
+    ///
+    /// Per POSIX, heredoc bodies with unquoted delimiters undergo:
+    /// - Parameter expansion (`$var`, `${var}`)
+    /// - Command substitution (`$(...)`, `` `...` ``)
+    /// - Arithmetic expansion (`$((...))`)
+    /// - Backslash escaping (`\newline` for line continuation, `\$` for literal `$`)
+    ///
+    /// However, quote characters (`"` and `'`) are NOT treated as quote delimiters.
+    /// They remain as literal characters in the output. This differs from regular
+    /// word expansion where quotes are parsed, create quoted regions, and are removed.
+    ///
+    /// Uses `brush_parser::word::parse_heredoc()` which implements this special
+    /// parsing mode where `"` and `'` are regular word characters.
     async fn basic_expand_heredoc(&mut self, word: &str) -> Result<Expansion, error::Error> {
         tracing::debug!(target: trace_categories::EXPANSION, "Heredoc expanding: '{word}'");
 
