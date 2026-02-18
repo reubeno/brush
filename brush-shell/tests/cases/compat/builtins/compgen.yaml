@@ -221,3 +221,34 @@ cases:
       touch cfile
       mkdir cdir
       compgen -W 'completion' -o plusdirs -o default -S suffix -- c | sort
+  - name: "compgen -A command with executable symlink"
+    stdin: |
+      #             pwd
+      #  drwxr-xr-x ├──  test-bin
+      # .rwxr-xr-x  │   ├──  dummy_exe
+      # .rw-r--r--  │   └──  dummy_non_exe
+      # drwxr-xr-x  └──  test-links
+      # lrwxrwxrwx      ├──  link_valid         ⇒ $(pwd)/test-bin/dummy_exe
+      # lrwxrwxrwx      └──  link_valid_exe_rec ⇒ $(pwd)/test-links/link_valid
+      # lrwxrwxrwx      ├──  link_non_exec      ⇒ $(pwd)/test-bin/dummy_non_exe
+      # lrwxrwxrwx      ├──  link_broken        ⇒ $(pwd)/test-bin/dummy_non_exist
+      #
+      mkdir test-bin
+      touch test-bin/dummy_exe
+      touch test-bin/dummy_non_exe
+      chmod +x test-bin/dummy_exe
+
+      mkdir test-links
+      ln -s $(pwd)/test-bin/dummy_exe       $(pwd)/test-links/link_valid
+      ln -s $(pwd)/test-links/link_vaild    $(pwd)/test-links/link_valid_rec
+      ln -s $(pwd)/test-bin/dummy_non_exe   $(pwd)/test-links/link_non_exec
+      ln -s $(pwd)/test-bin/dummy_non_exist $(pwd)/test-links/link_broken
+
+      PATH="$(pwd)/test-links:$PATH"
+
+      echo "[Valid]"
+      compgen -A command -- link_valid | sort
+
+      echo "[Invalid]"
+      compgen -A command -- link_non_exec
+      compgen -A command -- link_broken
