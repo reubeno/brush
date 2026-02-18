@@ -244,7 +244,9 @@ impl DeclareCommand {
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
         let create_var_local = matches!(verb, DeclareVerb::Local)
-            || (context.shell.in_function() && !self.create_global);
+            || (matches!(verb, DeclareVerb::Declare)
+                && context.shell.in_function()
+                && !self.create_global);
 
         if self.function_names_or_defs_only || self.function_names_only {
             return self.try_display_declaration(context, declaration, verb);
