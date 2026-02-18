@@ -5,7 +5,9 @@ use winnow::token::take_while;
 
 use crate::ast;
 
-use super::helpers::{comment, peek_char, spaces};
+use super::helpers::{
+    comment, peek_char, skip_double_quoted_content, skip_single_quoted_content, spaces,
+};
 use super::position::PositionTracker;
 use super::types::{PError, ParseContext, StrStream};
 use super::words::double_quoted_string;
@@ -107,37 +109,18 @@ fn ext_test_consume_balanced(
             c if c == open => depth += 1,
             c if c == close => depth -= 1,
             '\\' => {
-                // Escape: consume next char too
                 let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
                 if let Ok(c) = escaped {
                     out.push(c);
                 }
             }
             '\'' => {
-                // Single-quoted string: consume until closing quote
-                loop {
-                    let c = winnow::token::any.parse_next(input)?;
-                    out.push(c);
-                    if c == '\'' {
-                        break;
-                    }
-                }
+                let content = skip_single_quoted_content().parse_next(input)?;
+                out.push_str(content);
             }
             '"' => {
-                // Double-quoted string: consume until closing quote, handling escapes
-                loop {
-                    let c = winnow::token::any.parse_next(input)?;
-                    out.push(c);
-                    if c == '"' {
-                        break;
-                    }
-                    if c == '\\' {
-                        let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
-                        if let Ok(ec) = escaped {
-                            out.push(ec);
-                        }
-                    }
-                }
+                let content = skip_double_quoted_content().parse_next(input)?;
+                out.push_str(content);
             }
             _ => {}
         }
