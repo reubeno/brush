@@ -56,6 +56,43 @@ pub(super) fn extglob_pattern<'a>() -> impl Parser<StrStream<'a>, &'a str, PErro
 }
 
 // ============================================================================
+// Helper: Quote Skipping Parsers
+// ============================================================================
+
+/// Skip the content of a single-quoted string, assuming the opening quote was already consumed.
+/// Returns the content (without quotes) followed by the closing quote.
+pub(super) fn skip_single_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
+    (take_while(0.., |c: char| c != '\''), '\'').take()
+}
+
+/// Skip the content of a double-quoted string, assuming the opening quote was already consumed.
+/// Handles backslash escapes (\" and \\). Returns the content (without opening quote) followed by
+/// the closing quote.
+pub(super) fn skip_double_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
+    move |input: &mut StrStream<'a>| {
+        let start = input.checkpoint();
+
+        loop {
+            match winnow::token::any::<_, PError>.parse_next(input) {
+                Ok('"') => break,
+                Ok('\\') => {
+                    let _ = winnow::token::any::<_, PError>.parse_next(input);
+                }
+                Err(_) => {
+                    return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                }
+                _ => {}
+            }
+        }
+
+        let end = input.checkpoint();
+        let consumed_len = end.offset_from(&start);
+        input.reset(&start);
+        Ok(winnow::token::take(consumed_len).parse_next(input)?)
+    }
+}
+
+// ============================================================================
 // Helper: Balanced Delimiter Parsing
 // ============================================================================
 
@@ -99,27 +136,12 @@ pub(super) fn parse_balanced_delimiters<'a>(
                 Ok('\\') => {
                     let _ = winnow::token::any::<_, PError>.parse_next(input);
                 }
-                Ok('\'') => loop {
-                    match winnow::token::any::<_, PError>.parse_next(input) {
-                        Ok('\'') => break,
-                        Err(_) => {
-                            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
-                        }
-                        _ => {}
-                    }
-                },
-                Ok('"') => loop {
-                    match winnow::token::any::<_, PError>.parse_next(input) {
-                        Ok('"') => break,
-                        Ok('\\') => {
-                            let _ = winnow::token::any::<_, PError>.parse_next(input);
-                        }
-                        Err(_) => {
-                            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
-                        }
-                        _ => {}
-                    }
-                },
+                Ok('\'') => {
+                    let _ = skip_single_quoted_content().parse_next(input)?;
+                }
+                Ok('"') => {
+                    let _ = skip_double_quoted_content().parse_next(input)?;
+                }
                 Ok(_) => {}
                 Err(_) => {
                     return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
