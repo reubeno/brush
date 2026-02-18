@@ -601,3 +601,24 @@ cases:
           for arg in "$@"; do echo "[$arg]"; done
       }
       test_func
+
+  - name: "Brace expansion preserves array[@] element separation"
+    stdin: |
+      arr=(1 2 3)
+      set -- {a,b}"${arr[@]}"
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Brace expansion with array[*] concatenates elements"
+    stdin: |
+      arr=(1 2 3)
+      set -- {a,b}"${arr[*]}"
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Brace expansion with unquoted array[@] splits elements"
+    stdin: |
+      arr=(1 2 3)
+      set -- {a,b}${arr[@]}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
