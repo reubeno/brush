@@ -99,6 +99,15 @@ pub(super) fn parse_balanced_delimiters<'a>(
                 Ok('\\') => {
                     let _ = winnow::token::any::<_, PError>.parse_next(input);
                 }
+                Ok('\'') => loop {
+                    match winnow::token::any::<_, PError>.parse_next(input) {
+                        Ok('\'') => break,
+                        Err(_) => {
+                            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                        }
+                        _ => {}
+                    }
+                },
                 Ok('"') => loop {
                     match winnow::token::any::<_, PError>.parse_next(input) {
                         Ok('"') => break,

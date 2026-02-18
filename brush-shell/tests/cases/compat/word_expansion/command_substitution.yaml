@@ -241,3 +241,10 @@ cases:
         echo $(echo ")")
       }
       f
+
+  - name: "Command substitution with quoted opening paren"
+    stdin: |
+      f() {
+        echo $(echo '(')
+      }
+      f
