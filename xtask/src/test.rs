@@ -320,15 +320,11 @@ fn run_tests_with_coverage(
         .context("Failed to get llvm-cov environment. Is cargo-llvm-cov installed?")?;
 
     // Parse and set environment variables from llvm-cov output
-    for line in env_output.lines() {
-        if let Some(rest) = line.strip_prefix("export ") {
-            if let Some((key, value)) = rest.split_once('=') {
-                // Remove quotes if present
-                let value = value.trim_matches('"').trim_matches('\'');
-                sh.set_var(key, value);
-            }
-        }
-    }
+    env_output
+        .lines()
+        .filter_map(|line| line.strip_prefix("export "))
+        .filter_map(|rest| rest.split_once('='))
+        .for_each(|(k, v)| sh.set_var(k, v.trim_matches(['"', '\''])));
 
     // Clean previous coverage data
     if verbose {
