@@ -97,14 +97,22 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     depth -= 1;
                 }
                 Ok('\\') => {
-                    // Skip escaped character
                     let _ = winnow::token::any::<_, PError>.parse_next(input);
                 }
-                Ok(_) => {
-                    // Regular character
-                }
+                Ok('"') => loop {
+                    match winnow::token::any::<_, PError>.parse_next(input) {
+                        Ok('"') => break,
+                        Ok('\\') => {
+                            let _ = winnow::token::any::<_, PError>.parse_next(input);
+                        }
+                        Err(_) => {
+                            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                        }
+                        _ => {}
+                    }
+                },
+                Ok(_) => {}
                 Err(_) => {
-                    // Hit end of input without closing delimiter
                     return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
                 }
             }

@@ -234,3 +234,10 @@ cases:
     stdin: |
       result=$(echo "error msg" >&2 2>&1)
       echo "result: $result"
+
+  - name: "Command substitution with quoted closing paren"
+    stdin: |
+      f() {
+        echo $(echo ")")
+      }
+      f
