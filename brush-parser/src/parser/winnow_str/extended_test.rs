@@ -338,6 +338,7 @@ fn ext_test_regex_word<'a>(
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
         let mut result = String::new();
+        let mut bracket_depth: usize = 0;
 
         loop {
             // Skip whitespace between parts
@@ -348,13 +349,15 @@ fn ext_test_regex_word<'a>(
             let checkpoint = input.checkpoint();
 
             // Check if we hit a stop condition (&&, ||, ]], or end)
-            if winnow::combinator::opt::<_, _, PError, _>(winnow::combinator::alt((
-                ("&", "&").map(|_| ()),
-                ("|", "|").map(|_| ()),
-                ("]", "]").map(|_| ()), // ]] stops the regex
-            )))
-            .parse_next(input)?
-            .is_some()
+            // Only check for ]] when not inside a bracket expression
+            if bracket_depth == 0
+                && winnow::combinator::opt::<_, _, PError, _>(winnow::combinator::alt((
+                    ("&", "&").map(|_| ()),
+                    ("|", "|").map(|_| ()),
+                    ("]", "]").map(|_| ()), // ]] stops the regex
+                )))
+                .parse_next(input)?
+                .is_some()
             {
                 input.reset(&checkpoint);
                 break;
@@ -371,7 +374,21 @@ fn ext_test_regex_word<'a>(
                         let word = ext_test_word(tracker).parse_next(input)?;
                         result.push_str(&word.value);
                     }
-                    '(' | ')' | '[' | ']' => {
+                    '[' => {
+                        // Start of bracket expression in regex
+                        bracket_depth += 1;
+                        result.push(ch);
+                        winnow::token::any.parse_next(input)?;
+                    }
+                    ']' => {
+                        // End of bracket expression in regex
+                        if bracket_depth > 0 {
+                            bracket_depth -= 1;
+                        }
+                        result.push(ch);
+                        winnow::token::any.parse_next(input)?;
+                    }
+                    '(' | ')' => {
                         // These are allowed in regex patterns
                         result.push(ch);
                         winnow::token::any.parse_next(input)?;
