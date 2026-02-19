@@ -376,9 +376,6 @@ fn ext_test_regex_word<'a>(
                 match ch {
                     '\'' | '"' => {
                         // Quoted string
-                        if !result.is_empty() {
-                            result.push(' ');
-                        }
                         let word = ext_test_word(tracker).parse_next(input)?;
                         result.push_str(&word.value);
                     }

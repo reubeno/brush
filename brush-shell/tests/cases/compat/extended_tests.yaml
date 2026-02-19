@@ -199,7 +199,6 @@ cases:
       [[ "abc" != "a*" ]] && echo "2. Matches"
 
   - name: "Pattern matching with spaces in glob"
-    known_failure: true  # Runtime bug: pattern matching with spaces in variable expansion
     stdin: |
       USE="foo bar"
       flag="bar"
