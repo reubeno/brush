@@ -198,6 +198,13 @@ cases:
       [[ "abc" == "a*" ]] && echo "1. Matches"
       [[ "abc" != "a*" ]] && echo "2. Matches"
 
+  - name: "Pattern matching with spaces in glob"
+    known_failure: true  # Runtime bug: pattern matching with spaces in variable expansion
+    stdin: |
+      USE="foo bar"
+      flag="bar"
+      [[ " ${USE} " == *" ${flag} "* ]] && echo "found"
+
   - name: "Tilde binary string matching"
     stdin: |
       x='~/'
