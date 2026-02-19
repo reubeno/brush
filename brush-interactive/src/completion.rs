@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use indexmap::IndexSet;
-
 use brush_core::escape;
 
 #[allow(dead_code)]
@@ -29,7 +27,7 @@ pub(crate) async fn complete_async(
     let mut completions = result.unwrap_or_else(|_| brush_core::completion::Completions {
         insertion_index: pos,
         delete_count: 0,
-        candidates: IndexSet::new(),
+        candidates: Vec::new(),
         options: brush_core::completion::ProcessingOptions::default(),
     });
 
@@ -58,10 +56,13 @@ pub(crate) async fn complete_async(
         }
     }
 
-    // TODO(completion): Consider optimizing this out when not needed?
     let completing_end_of_line = pos == line.len();
+
+    // Deduplicate the candidates (retaining order), then postprocess them.
     completions.candidates = completions
         .candidates
+        .into_iter()
+        .collect::<indexmap::IndexSet<_>>()
         .into_iter()
         .map(|candidate| {
             postprocess_completion_candidate(

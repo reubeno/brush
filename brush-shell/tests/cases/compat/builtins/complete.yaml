@@ -102,5 +102,13 @@ cases:
 
       complete -r -E
       echo $?
-      
+
       complete -p
+
+  - name: "compgen -W preserves duplicates"
+    stdin: |
+      compgen -W "a b a c b"
+
+  - name: "compgen -W preserves order"
+    stdin: |
+      compgen -W "z y x a"

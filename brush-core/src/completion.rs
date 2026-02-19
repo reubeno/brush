@@ -1,7 +1,6 @@
 //! Implements programmable command completion support.
 
 use clap::ValueEnum;
-use indexmap::IndexSet;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -317,7 +316,7 @@ impl Spec {
             .await?;
             for word in words {
                 if word.starts_with(context.token_to_complete) {
-                    candidates.insert(word);
+                    candidates.push(word);
                 }
             }
         }
@@ -336,7 +335,7 @@ impl Spec {
                 .into_paths();
 
             for expansion in expansions {
-                candidates.insert(expansion);
+                candidates.push(expansion);
             }
         }
         if let Some(function_name) = &self.function_name {
@@ -362,7 +361,7 @@ impl Spec {
         if let Some(filter_pattern) = &self.filter_pattern
             && !filter_pattern.is_empty()
         {
-            let mut updated = IndexSet::new();
+            let mut updated = Vec::new();
 
             for candidate in candidates {
                 let matches = completion_filter_pattern_matches(
@@ -373,7 +372,7 @@ impl Spec {
                 )?;
 
                 if self.filter_pattern_excludes != matches {
-                    updated.insert(candidate);
+                    updated.push(candidate);
                 }
             }
 
@@ -386,9 +385,9 @@ impl Spec {
             let prefix = self.prefix.as_ref().unwrap_or(&empty);
             let suffix = self.suffix.as_ref().unwrap_or(&empty);
 
-            let mut updated = IndexSet::new();
+            let mut updated = Vec::new();
             for candidate in candidates {
-                updated.insert(std::format!("{prefix}{candidate}{suffix}"));
+                updated.push(std::format!("{prefix}{candidate}{suffix}"));
             }
 
             candidates = updated;
@@ -459,8 +458,8 @@ impl Spec {
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
         context: &Context<'_>,
-    ) -> Result<IndexSet<String>, error::Error> {
-        let mut candidates = IndexSet::new();
+    ) -> Result<Vec<String>, error::Error> {
+        let mut candidates = Vec::new();
 
         let token = context.token_to_complete;
 
@@ -469,14 +468,14 @@ impl Spec {
                 CompleteAction::Alias => {
                     for name in shell.aliases().keys() {
                         if name.starts_with(token) {
-                            candidates.insert(name.clone());
+                            candidates.push(name.clone());
                         }
                     }
                 }
                 CompleteAction::ArrayVar => {
                     for (name, var) in shell.env().iter() {
                         if var.value().is_array() && name.starts_with(token) {
-                            candidates.insert(name.to_owned());
+                            candidates.push(name.to_owned());
                         }
                     }
                 }
@@ -484,14 +483,14 @@ impl Spec {
                     for input_func in interfaces::InputFunction::iter() {
                         let name: &'static str = input_func.into();
                         if name.starts_with(token) {
-                            candidates.insert(name.to_string());
+                            candidates.push(name.to_string());
                         }
                     }
                 }
                 CompleteAction::Builtin => {
                     for name in shell.builtins().keys() {
                         if name.starts_with(token) {
-                            candidates.insert(name.to_owned());
+                            candidates.push(name.to_owned());
                         }
                     }
                 }
@@ -508,21 +507,21 @@ impl Spec {
                 CompleteAction::Disabled => {
                     for (name, registration) in shell.builtins() {
                         if registration.disabled && name.starts_with(token) {
-                            candidates.insert(name.to_owned());
+                            candidates.push(name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Enabled => {
                     for (name, registration) in shell.builtins() {
                         if !registration.disabled && name.starts_with(token) {
-                            candidates.insert(name.to_owned());
+                            candidates.push(name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Export => {
                     for (key, value) in shell.env().iter() {
                         if value.is_exported() && key.starts_with(token) {
-                            candidates.insert(key.to_owned());
+                            candidates.push(key.to_owned());
                         }
                     }
                 }
@@ -533,13 +532,13 @@ impl Spec {
                 }
                 CompleteAction::Function => {
                     for (name, _) in shell.funcs().iter() {
-                        candidates.insert(name.to_owned());
+                        candidates.push(name.to_owned());
                     }
                 }
                 CompleteAction::Group => {
                     for group_name in users::get_all_groups()? {
                         if group_name.starts_with(token) {
-                            candidates.insert(group_name);
+                            candidates.push(group_name);
                         }
                     }
                 }
@@ -547,7 +546,7 @@ impl Spec {
                     // For now, we only have help topics for built-in commands.
                     for name in shell.builtins().keys() {
                         if name.starts_with(token) {
-                            candidates.insert(name.to_owned());
+                            candidates.push(name.to_owned());
                         }
                     }
                 }
@@ -556,7 +555,7 @@ impl Spec {
                     if let Ok(name) = sys::network::get_hostname() {
                         let name = name.to_string_lossy();
                         if name.starts_with(token) {
-                            candidates.insert(name.to_string());
+                            candidates.push(name.to_string());
                         }
                     }
                 }
@@ -564,14 +563,14 @@ impl Spec {
                     for job in &shell.jobs().jobs {
                         let command_name = job.command_name();
                         if command_name.starts_with(token) {
-                            candidates.insert(command_name.to_owned());
+                            candidates.push(command_name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Keyword => {
                     for keyword in shell.get_keywords() {
                         if keyword.starts_with(token) {
-                            candidates.insert(keyword.to_string());
+                            candidates.push(keyword.to_string());
                         }
                     }
                 }
@@ -580,7 +579,7 @@ impl Spec {
                         if matches!(job.state, jobs::JobState::Running) {
                             let command_name = job.command_name();
                             if command_name.starts_with(token) {
-                                candidates.insert(command_name.to_owned());
+                                candidates.push(command_name.to_owned());
                             }
                         }
                     }
@@ -592,7 +591,7 @@ impl Spec {
                     for option in namedoptions::options(namedoptions::ShellOptionKind::SetO).iter()
                     {
                         if option.name.starts_with(token) {
-                            candidates.insert(option.name.to_owned());
+                            candidates.push(option.name.to_owned());
                         }
                     }
                 }
@@ -600,14 +599,14 @@ impl Spec {
                     for option in namedoptions::options(namedoptions::ShellOptionKind::Shopt).iter()
                     {
                         if option.name.starts_with(token) {
-                            candidates.insert(option.name.to_owned());
+                            candidates.push(option.name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Signal => {
                     for signal in traps::TrapSignal::iterator() {
                         if signal.as_str().starts_with(token) {
-                            candidates.insert(signal.as_str().to_string());
+                            candidates.push(signal.as_str().to_string());
                         }
                     }
                 }
@@ -616,7 +615,7 @@ impl Spec {
                         if matches!(job.state, jobs::JobState::Stopped) {
                             let command_name = job.command_name();
                             if command_name.starts_with(token) {
-                                candidates.insert(job.command_name().to_owned());
+                                candidates.push(job.command_name().to_owned());
                             }
                         }
                     }
@@ -624,14 +623,14 @@ impl Spec {
                 CompleteAction::User => {
                     for user_name in users::get_all_users()? {
                         if user_name.starts_with(token) {
-                            candidates.insert(user_name);
+                            candidates.push(user_name);
                         }
                     }
                 }
                 CompleteAction::Variable => {
                     for (key, _) in shell.env().iter() {
                         if key.starts_with(token) {
-                            candidates.insert(key.to_owned());
+                            candidates.push(key.to_owned());
                         }
                     }
                 }
@@ -646,7 +645,7 @@ impl Spec {
         shell: &Shell<impl extensions::ShellExtensions>,
         command_name: &str,
         context: &Context<'_>,
-    ) -> Result<IndexSet<String>, error::Error> {
+    ) -> Result<Vec<String>, error::Error> {
         // Move to a subshell so we can start filling out variables.
         let mut shell = shell.clone();
 
@@ -696,9 +695,9 @@ impl Spec {
                 .await?;
 
         // Split results.
-        let mut candidates = IndexSet::new();
+        let mut candidates = Vec::new();
         for line in output.lines() {
-            candidates.insert(line.to_owned());
+            candidates.push(line.to_owned());
         }
 
         Ok(candidates)
@@ -790,19 +789,14 @@ impl Spec {
                         ));
                     }
                     variables::ShellValue::String(s) => {
-                        let mut candidates = IndexSet::new();
-                        candidates.insert(s.to_owned());
-
+                        let candidates = vec![s.to_owned()];
                         return Ok(Answer::Candidates(candidates, ProcessingOptions::default()));
                     }
                     _ => (),
                 }
             }
 
-            Ok(Answer::Candidates(
-                IndexSet::new(),
-                ProcessingOptions::default(),
-            ))
+            Ok(Answer::Candidates(Vec::new(), ProcessingOptions::default()))
         }
     }
 }
@@ -817,7 +811,7 @@ pub struct Completions {
     /// Represented as a byte count; must capture an exact character boundary.
     pub delete_count: usize,
     /// The ordered set of completions.
-    pub candidates: IndexSet<String>,
+    pub candidates: Vec<String>,
     /// Options for processing the candidates.
     pub options: ProcessingOptions,
 }
@@ -868,7 +862,7 @@ impl Default for ProcessingOptions {
 pub enum Answer {
     /// The completion process generated a set of candidates along with options
     /// controlling how to process them.
-    Candidates(IndexSet<String>, ProcessingOptions),
+    Candidates(Vec<String>, ProcessingOptions),
     /// The completion process needs to be restarted.
     RestartCompletionProcess,
 }
@@ -1105,7 +1099,7 @@ impl Config {
             Answer::RestartCompletionProcess => Ok(Completions {
                 insertion_index,
                 delete_count: 0,
-                candidates: IndexSet::new(),
+                candidates: Vec::new(),
                 options: ProcessingOptions::default(),
             }),
         }
@@ -1169,9 +1163,7 @@ impl Config {
             spec.to_owned()
                 .get_completions(shell, &context)
                 .await
-                .unwrap_or_else(|_err| {
-                    Answer::Candidates(IndexSet::new(), ProcessingOptions::default())
-                })
+                .unwrap_or_else(|_err| Answer::Candidates(Vec::new(), ProcessingOptions::default()))
         } else {
             // If we didn't find a spec, then fall back to basic completion.
             get_completions_using_basic_lookup(shell, &context).await
@@ -1183,7 +1175,7 @@ async fn get_file_completions(
     shell: &Shell<impl extensions::ShellExtensions>,
     token_to_complete: &str,
     must_be_dir: bool,
-) -> IndexSet<String> {
+) -> Vec<String> {
     // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
     let mut throwaway_shell = shell.clone();
     let params = throwaway_shell.default_exec_params();
@@ -1223,8 +1215,8 @@ async fn get_file_completions(
 fn get_external_command_completions(
     shell: &Shell<impl extensions::ShellExtensions>,
     prefix: &str,
-) -> IndexSet<String> {
-    let mut candidates = IndexSet::new();
+) -> Vec<String> {
+    let mut candidates = Vec::new();
 
     // Look for external commands.
     for path in shell.find_executables_in_path_with_prefix(
@@ -1232,7 +1224,7 @@ fn get_external_command_completions(
         shell.options().case_insensitive_pathname_expansion,
     ) {
         if let Some(file_name) = path.file_name() {
-            candidates.insert(file_name.to_string_lossy().to_string());
+            candidates.push(file_name.to_string_lossy().to_string());
         }
     }
 
@@ -1270,7 +1262,7 @@ fn try_get_variable_completions(
     }
 
     // Find matching variables
-    let mut candidates: IndexSet<String> = shell
+    let mut candidates: Vec<String> = shell
         .env()
         .iter()
         .filter(|(key, _)| key.starts_with(var_prefix))
@@ -1298,7 +1290,7 @@ fn try_get_variable_completions(
 fn add_command_completions(
     shell: &Shell<impl extensions::ShellExtensions>,
     prefix: &str,
-    candidates: &mut IndexSet<String>,
+    candidates: &mut Vec<String>,
 ) {
     // Add external commands.
     let mut command_completions = get_external_command_completions(shell, prefix);
@@ -1307,28 +1299,28 @@ fn add_command_completions(
     // Add built-in commands.
     for (name, registration) in shell.builtins() {
         if !registration.disabled && name.starts_with(prefix) {
-            candidates.insert(name.to_owned());
+            candidates.push(name.to_owned());
         }
     }
 
     // Add shell functions.
     for (name, _) in shell.funcs().iter() {
         if name.starts_with(prefix) {
-            candidates.insert(name.to_owned());
+            candidates.push(name.to_owned());
         }
     }
 
     // Add aliases.
     for name in shell.aliases().keys() {
         if name.starts_with(prefix) {
-            candidates.insert(name.to_owned());
+            candidates.push(name.to_owned());
         }
     }
 
     // Add keywords.
     for keyword in shell.get_keywords() {
         if keyword.starts_with(prefix) {
-            candidates.insert(keyword.to_string());
+            candidates.push(keyword.to_string());
         }
     }
 }
