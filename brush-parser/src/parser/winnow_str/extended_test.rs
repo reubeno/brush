@@ -37,7 +37,7 @@ fn ext_test_spaces<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 fn parse_unary_operator(op: &str) -> Option<ast::UnaryPredicate> {
     use ast::UnaryPredicate;
     match op {
-        "-e" => Some(UnaryPredicate::FileExists),
+        "-a" | "-e" => Some(UnaryPredicate::FileExists),
         "-b" => Some(UnaryPredicate::FileExistsAndIsBlockSpecialFile),
         "-c" => Some(UnaryPredicate::FileExistsAndIsCharSpecialFile),
         "-d" => Some(UnaryPredicate::FileExistsAndIsDir),
@@ -339,6 +339,7 @@ fn ext_test_regex_word<'a>(
         let start_offset = tracker.offset_from_locating(input);
         let mut result = String::new();
         let mut bracket_depth: usize = 0;
+        let mut paren_depth: usize = 0;
 
         loop {
             // Skip whitespace between parts
@@ -349,8 +350,9 @@ fn ext_test_regex_word<'a>(
             let checkpoint = input.checkpoint();
 
             // Check if we hit a stop condition (&&, ||, ]], or end)
-            // Only check for ]] when not inside a bracket expression
+            // Only check for ]] when not inside a bracket expression or parentheses
             if bracket_depth == 0
+                && paren_depth == 0
                 && winnow::combinator::opt::<_, _, PError, _>(winnow::combinator::alt((
                     ("&", "&").map(|_| ()),
                     ("|", "|").map(|_| ()),
@@ -388,8 +390,17 @@ fn ext_test_regex_word<'a>(
                         result.push(ch);
                         winnow::token::any.parse_next(input)?;
                     }
-                    '(' | ')' => {
-                        // These are allowed in regex patterns
+                    '(' => {
+                        // Start of group or extglob pattern
+                        paren_depth += 1;
+                        result.push(ch);
+                        winnow::token::any.parse_next(input)?;
+                    }
+                    ')' => {
+                        // End of group or extglob pattern
+                        if paren_depth > 0 {
+                            paren_depth -= 1;
+                        }
                         result.push(ch);
                         winnow::token::any.parse_next(input)?;
                     }
@@ -482,10 +493,16 @@ fn ext_test_primary<'a>(
         if let Ok(op_word) = ext_test_word(tracker).parse_next(input) {
             if let Some(mut binary_pred) = parse_binary_operator(&op_word.value) {
                 let is_regex_op = matches!(binary_pred, ast::BinaryPredicate::StringMatchesRegex);
+                let is_pattern_op = matches!(
+                    binary_pred,
+                    ast::BinaryPredicate::StringExactlyMatchesPattern
+                        | ast::BinaryPredicate::StringDoesNotExactlyMatchPattern
+                );
                 ext_test_spaces().parse_next(input)?;
 
                 // For =~ operator, use regex word parser that allows | ( )
-                let right_word = if is_regex_op {
+                // For == and != operators, also use regex word parser to support extglob patterns
+                let right_word = if is_regex_op || is_pattern_op {
                     ext_test_regex_word(tracker).parse_next(input)?
                 } else {
                     ext_test_word(tracker).parse_next(input)?
