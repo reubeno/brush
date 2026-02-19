@@ -511,7 +511,19 @@ impl ShellVariable {
             ShellValue::String(_) => Err(error::ErrorKind::NotArray.into()),
             ShellValue::AssociativeArray(values) => Ok(values.remove(index).is_some()),
             ShellValue::IndexedArray(values) => {
-                let key = index.parse::<u64>().unwrap_or(0);
+                let original_index = index.parse::<i64>().unwrap_or(0);
+                let mut index_value = original_index;
+
+                #[expect(clippy::cast_possible_wrap)]
+                if index_value < 0 {
+                    index_value += values.len() as i64;
+                    if index_value < 0 {
+                        return Err(error::ErrorKind::BadArraySubscript(original_index).into());
+                    }
+                }
+
+                #[expect(clippy::cast_sign_loss)]
+                let key = index_value as u64;
                 Ok(values.remove(&key).is_some())
             }
             ShellValue::Dynamic { .. } => Ok(false),

@@ -260,6 +260,10 @@ pub enum ErrorKind {
     #[error("array index out of range: {0}")]
     ArrayIndexOutOfRange(i64),
 
+    /// Bad array subscript.
+    #[error("bad array subscript: [{0}]")]
+    BadArraySubscript(i64),
+
     /// Unhandled key code.
     #[error("unhandled key code: {0:?}")]
     UnhandledKeyCode(Vec<u8>),
