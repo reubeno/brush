@@ -204,10 +204,11 @@ cases:
       flag="bar"
       [[ " ${USE} " == *" ${flag} "* ]] && echo "found"
 
-  - name: "Tilde binary string matching"
+  - name: "Command substitution in pattern matching"
     stdin: |
-      x='~/'
-      [[ $x == ~* ]] && echo "1. Matches"
+      SLOT="0"
+      get_slot() { echo "0"; }
+      [[ ${SLOT} = $(get_slot) ]] && echo "match"
 
   - name: "Arithmetic extended tests"
     stdin: |
