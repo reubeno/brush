@@ -1,5 +1,10 @@
 name: "Builtins: bind"
 cases:
+  - name: "bind succeeds in non-interactive mode"
+    stdin: |
+      bind > /dev/null 2>&1
+      echo "exit: $?"
+
   - name: "bind -l"
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]
