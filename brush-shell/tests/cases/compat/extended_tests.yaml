@@ -385,3 +385,13 @@ cases:
       # POSIX character classes like [:print:] in regex
       [[ "hello" =~ ^[[:print:]]+$ ]] && echo "printable"
       [[ $'\x01' =~ [[:print:]] ]] || echo "control char not printable"
+
+  - name: "Extended test -a flag for file existence"
+    stdin: |
+      [[ -a /tmp ]] && echo "/tmp exists"
+      [[ -a /nonexistent ]] || echo "nonexistent does not exist"
+
+  - name: "Extended test extglob pattern matching"
+    stdin: |
+      exclude="0123456789"
+      [[ "8675309" == +([$exclude]) ]] && echo "matches digits"
