@@ -282,41 +282,29 @@ fn ext_test_word<'a>(
 ) -> impl Parser<StrStream<'a>, ast::Word, PError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
-        // Collect a word that may consist of multiple adjacent segments:
-        // quoted strings, bare characters, and expansions — without any
-        // whitespace in between.  For example: "declare -a"* is one word
-        // with a double-quoted segment followed by a bare glob character.
         let mut word = String::new();
 
         while let Ok(ch) = peek_char().parse_next(input) {
             match ch {
-                // Single-quoted segment: capture with quotes
                 '\'' => {
                     ext_test_parse_single_quoted(input, &mut word)?;
                 }
-                // Double-quoted segment: capture with quotes, handling escapes
                 '"' => {
                     ext_test_parse_double_quoted(input, &mut word)?;
                 }
-                // Stop on whitespace
                 ' ' | '\t' | '\n' => break,
-                // Backslash escape: consume \ and next char
                 '\\' => {
                     ext_test_parse_backslash_escape(input, &mut word)?;
                 }
-                // $ starts expansions that may contain parentheses
                 '$' => {
                     ext_test_parse_dollar_expansion(input, &mut word)?;
                 }
-                // Stop on bare parentheses (used for grouping in [[ ]])
                 '(' | ')' => break,
-                // &, |, ! are special characters
                 '&' | '|' | '!' => {
                     if !ext_test_parse_special_char(input, &mut word, ch)? {
                         break;
                     }
                 }
-                // Any other character is part of the word
                 _ => {
                     word.push(ch);
                     winnow::token::any.parse_next(input)?;
@@ -378,6 +366,10 @@ fn ext_test_regex_word<'a>(
                         // Quoted string
                         let word = ext_test_word(tracker).parse_next(input)?;
                         result.push_str(&word.value);
+                    }
+                    '$' => {
+                        // Dollar expansion
+                        ext_test_parse_dollar_expansion(input, &mut result)?;
                     }
                     '[' => {
                         // Start of bracket expression in regex
