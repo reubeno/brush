@@ -14,3 +14,13 @@ cases:
 
       echo "Invoking declare -p..."
       declare -p my_var
+
+  - name: "readonly array after append"
+    stdin: |
+      ARR=()
+      f() {
+          ARR+=("a" "b")
+          readonly ARR
+          echo "${#ARR[@]}"
+      }
+      f
