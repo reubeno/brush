@@ -245,3 +245,30 @@ cases:
       echo "1 != 0: $((1 != 0))"
       echo "1  > 0: $((1 > 0))"
       echo "1 >= 0: $((1 >= 0))"
+
+  - name: "Legacy bracket arithmetic syntax"
+    stdin: |
+      x=5
+      x=$[x + 1]
+      echo "x after increment: $x"
+      echo "Direct: $[1 + 2]"
+
+  - name: "Legacy bracket arithmetic in extended test"
+    stdin: |
+      number=4
+      [[ $[number % 2] == 0 ]] && echo "even" || echo "odd"
+      number=5
+      [[ $[number % 2] == 0 ]] && echo "even" || echo "odd"
+
+  - name: "Legacy bracket arithmetic in double-quoted string"
+    stdin: |
+      echo "Quoted: result: $[2 * 3]"
+
+  - name: "Legacy bracket arithmetic complex expression"
+    stdin: |
+      echo "Complex: $[1 + 2 * 3 - 4 / 2 % 2]"
+
+  - name: "Legacy bracket arithmetic with array subscript"
+    stdin: |
+      arr=(10 20 30)
+      echo "Array elem: $[arr[1] + 5]"
