@@ -172,7 +172,7 @@ fn ext_test_parse_backslash_escape(
     Ok(())
 }
 
-/// Parse a dollar expansion ($var, $(...), $((...)), ${...}) and append to word
+/// Parse a dollar expansion ($var, $(...), $((...)), ${...}, $[...]) and append to word
 #[allow(clippy::branches_sharing_code)]
 fn ext_test_parse_dollar_expansion(
     input: &mut StrStream<'_>,
@@ -200,6 +200,12 @@ fn ext_test_parse_dollar_expansion(
                 word.push('(');
                 ext_test_consume_balanced(input, word, '(', ')')?;
             }
+        }
+        Some('[') => {
+            // $[ ... ] — legacy arithmetic expansion
+            word.push('[');
+            winnow::token::any.parse_next(input)?;
+            ext_test_consume_balanced(input, word, '[', ']')?;
         }
         Some('{') => {
             // ${ ... } — braced variable
