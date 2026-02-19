@@ -129,17 +129,72 @@ impl builtins::Command for BindCommand {
         if let Some(key_bindings) = context.shell.key_bindings() {
             Ok(self.execute_impl(key_bindings, &context).await?)
         } else {
-            writeln!(
-                context.stderr(),
-                "bind: key bindings not supported in this config"
-            )?;
-
-            Ok(ExecutionExitCode::Unimplemented.into())
+            // When key bindings aren't supported (e.g., basic input backend),
+            // we can still handle some operations that don't require key bindings.
+            self.execute_without_key_bindings(&context)
         }
     }
 }
 
 impl BindCommand {
+    /// Handle bind operations that don't require key binding support.
+    /// This allows `bind -v` to work even with basic input backend,
+    /// which is needed for bash-completion scripts that check readline variables.
+    fn execute_without_key_bindings<SE: brush_core::ShellExtensions>(
+        &self,
+        context: &brush_core::ExecutionContext<'_, SE>,
+    ) -> Result<ExecutionResult, BindError> {
+        // We can handle -V and -v (list variables) without key bindings
+        // since these are stored in the shell's completion config.
+        if self.list_vars || self.list_vars_reusable {
+            self.display_vars(context)?;
+            return Ok(ExecutionResult::success());
+        }
+
+        // For other operations that require key bindings, print an error message.
+        writeln!(
+            context.stderr(),
+            "bind: key bindings not supported in this config"
+        )?;
+        Ok(ExecutionExitCode::Unimplemented.into())
+    }
+
+    /// Display readline variables (-V or -v).
+    fn display_vars<SE: brush_core::ShellExtensions>(
+        &self,
+        context: &brush_core::ExecutionContext<'_, SE>,
+    ) -> Result<(), BindError> {
+        let options = &context.shell.completion_config().fallback_options;
+
+        if self.list_vars {
+            writeln!(
+                context.stdout(),
+                "mark-directories is set to `{}'",
+                to_onoff(options.mark_directories)
+            )?;
+            writeln!(
+                context.stdout(),
+                "mark-symlinked-directories is set to `{}'",
+                to_onoff(options.mark_symlinked_directories)
+            )?;
+        }
+
+        if self.list_vars_reusable {
+            writeln!(
+                context.stdout(),
+                "set mark-directories {}",
+                to_onoff(options.mark_directories)
+            )?;
+            writeln!(
+                context.stdout(),
+                "set mark-symlinked-directories {}",
+                to_onoff(options.mark_symlinked_directories)
+            )?;
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_lines)]
     async fn execute_impl(
         &self,
@@ -170,36 +225,8 @@ impl BindCommand {
             display_macros(&*bindings, context, true /* reusable? */)?;
         }
 
-        if self.list_vars {
-            let options = &context.shell.completion_config().fallback_options;
-
-            // For now we'll just display a few items and show defaults.
-            writeln!(
-                context.stdout(),
-                "mark-directories is set to `{}'",
-                to_onoff(options.mark_directories)
-            )?;
-            writeln!(
-                context.stdout(),
-                "mark-symlinked-directories is set to `{}'",
-                to_onoff(options.mark_symlinked_directories)
-            )?;
-        }
-
-        if self.list_vars_reusable {
-            let options = &context.shell.completion_config().fallback_options;
-
-            // For now we'll just display a few items and show defaults.
-            writeln!(
-                context.stdout(),
-                "set mark-directories {}",
-                to_onoff(options.mark_directories)
-            )?;
-            writeln!(
-                context.stdout(),
-                "set mark-symlinked-directories {}",
-                to_onoff(options.mark_symlinked_directories)
-            )?;
+        if self.list_vars || self.list_vars_reusable {
+            self.display_vars(context)?;
         }
 
         if let Some(func_str) = &self.query_func_bindings {
