@@ -761,11 +761,13 @@ peg::parser! {
 
         rule dollar_sign_word_piece() -> WordPiece =
             arithmetic_expansion() /
+            legacy_arithmetic_expansion() /
             command_substitution() /
             parameter_expansion()
 
         rule double_quoted_word_piece() -> WordPiece =
             arithmetic_expansion() /
+            legacy_arithmetic_expansion() /
             command_substitution() /
             parameter_expansion() /
             double_quoted_escape_sequence() /
@@ -1043,6 +1045,9 @@ peg::parser! {
 
         rule arithmetic_expansion() -> WordPiece =
             "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+
+        rule legacy_arithmetic_expansion() -> WordPiece =
+            "$[" e:$(arithmetic_word(<"]">)) "]" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
 
         rule substring_offset() -> ast::UnexpandedArithmeticExpr =
             s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }

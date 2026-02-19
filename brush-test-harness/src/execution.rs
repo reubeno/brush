@@ -137,6 +137,8 @@ impl TestCase {
         // Clear all environment vars for consistency.
         test_cmd.args(&self.args).env_clear();
 
+        // Set locale to C for consistent behavior across systems.
+        test_cmd.env("LC_ALL", "C");
         // Hard-code a well known prompt for PS1.
         test_cmd.env("PS1", "test$ ");
         // Try to get decent backtraces when problems get hit.

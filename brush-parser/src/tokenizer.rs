@@ -116,6 +116,10 @@ pub enum TokenizerError {
     #[error("unterminated command substitution")]
     UnterminatedCommandSubstitution,
 
+    /// An unterminated arithmetic or other expansion was encountered at the end of the input stream.
+    #[error("unterminated expansion")]
+    UnterminatedExpansion,
+
     /// An error occurred decoding UTF-8 characters in the input stream.
     #[error("failed to decode UTF-8 characters")]
     FailedDecoding,
@@ -149,6 +153,7 @@ impl TokenizerError {
                 | Self::UnterminatedDoubleQuote(..)
                 | Self::UnterminatedBackquote(..)
                 | Self::UnterminatedCommandSubstitution
+                | Self::UnterminatedExpansion
                 | Self::UnterminatedVariable
                 | Self::UnterminatedExtendedGlob(..)
                 | Self::UnterminatedHereDocuments(..)
@@ -583,6 +588,85 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         self.next_token_until(None, false /* include space? */)
     }
 
+    /// Consumes a nested construct (e.g., `$((...))` or `$[...]`), handling nested delimiters
+    /// and here-documents.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - The current token parse state to append characters to.
+    /// * `terminating_char` - The character that terminates the construct (e.g., `)` or `]`).
+    /// * `nesting_open` - The character that increases nesting depth when encountered (e.g., `(` or `[`).
+    /// * `initial_nesting` - The initial nesting count (e.g., 2 for `$((`, 1 for `$[`).
+    fn consume_nested_construct(
+        &mut self,
+        state: &mut TokenParseState,
+        terminating_char: char,
+        nesting_open: &str,
+        mut nesting_count: u32,
+    ) -> Result<(), TokenizerError> {
+        let mut pending_here_doc_tokens = vec![];
+        let mut drain_here_doc_tokens = false;
+
+        loop {
+            let cur_token = if drain_here_doc_tokens && !pending_here_doc_tokens.is_empty() {
+                if pending_here_doc_tokens.len() == 1 {
+                    drain_here_doc_tokens = false;
+                }
+                pending_here_doc_tokens.remove(0)
+            } else {
+                let cur_token = self.next_token_until(Some(terminating_char), true)?;
+
+                if matches!(
+                    cur_token.reason,
+                    TokenEndReason::HereDocumentBodyStart
+                        | TokenEndReason::HereDocumentBodyEnd
+                        | TokenEndReason::HereDocumentEndTag
+                ) {
+                    pending_here_doc_tokens.push(cur_token);
+                    continue;
+                }
+                cur_token
+            };
+
+            if matches!(cur_token.reason, TokenEndReason::UnescapedNewLine)
+                && !pending_here_doc_tokens.is_empty()
+            {
+                pending_here_doc_tokens.push(cur_token);
+                drain_here_doc_tokens = true;
+                continue;
+            }
+
+            if let Some(cur_token_value) = cur_token.token {
+                state.append_str(cur_token_value.to_str());
+
+                if matches!(cur_token_value, Token::Operator(o, _) if o == nesting_open) {
+                    nesting_count += 1;
+                }
+            }
+
+            match cur_token.reason {
+                TokenEndReason::HereDocumentBodyStart => {
+                    state.append_char('\n');
+                }
+                TokenEndReason::NonNewLineBlank => state.append_char(' '),
+                TokenEndReason::SpecifiedTerminatingChar => {
+                    nesting_count -= 1;
+                    if nesting_count == 0 {
+                        break;
+                    }
+                    state.append_char(self.next_char()?.unwrap());
+                }
+                TokenEndReason::EndOfInput => {
+                    return Err(TokenizerError::UnterminatedExpansion);
+                }
+                _ => (),
+            }
+        }
+
+        state.append_char(self.next_char()?.unwrap());
+        Ok(())
+    }
+
     /// Returns the next token from the input stream, optionally stopping early when a specified
     /// terminating character is encountered.
     ///
@@ -826,106 +910,40 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                             // Check to see if this is possibly an arithmetic expression
                             // (i.e., one that starts with `$((`).
-                            let mut required_end_parens = 1;
-                            if matches!(self.peek_char()?, Some('(')) {
-                                // Consume the second '(' and add it to the token.
-                                state.append_char(self.next_char()?.unwrap());
-                                // Keep track that we'll need to see *2* end parentheses
-                                // to leave this construct.
-                                required_end_parens = 2;
-                                // Keep track that we're in an arithmetic expression, since
-                                // some text will be interpreted differently as a result
-                                // (e.g., << is a left shift operator and not a here doc
-                                // input redirection operator).
+                            let (initial_nesting, is_arithmetic) =
+                                if matches!(self.peek_char()?, Some('(')) {
+                                    // Consume the second '(' and add it to the token.
+                                    state.append_char(self.next_char()?.unwrap());
+                                    (2, true)
+                                } else {
+                                    (1, false)
+                                };
+
+                            if is_arithmetic {
                                 self.cross_state.arithmetic_expansion = true;
                             }
 
-                            let mut pending_here_doc_tokens = vec![];
-                            let mut drain_here_doc_tokens = false;
+                            self.consume_nested_construct(&mut state, ')', "(", initial_nesting)?;
 
-                            loop {
-                                let cur_token = if drain_here_doc_tokens
-                                    && !pending_here_doc_tokens.is_empty()
-                                {
-                                    if pending_here_doc_tokens.len() == 1 {
-                                        drain_here_doc_tokens = false;
-                                    }
-
-                                    pending_here_doc_tokens.remove(0)
-                                } else {
-                                    let cur_token = self.next_token_until(
-                                        Some(')'),
-                                        true, /* include space? */
-                                    )?;
-
-                                    // See if this is a here-document-related token we need to hold
-                                    // onto until after we've seen all the tokens that need to show
-                                    // up before we get to the body.
-                                    if matches!(
-                                        cur_token.reason,
-                                        TokenEndReason::HereDocumentBodyStart
-                                            | TokenEndReason::HereDocumentBodyEnd
-                                            | TokenEndReason::HereDocumentEndTag
-                                    ) {
-                                        pending_here_doc_tokens.push(cur_token);
-                                        continue;
-                                    }
-
-                                    cur_token
-                                };
-
-                                if matches!(cur_token.reason, TokenEndReason::UnescapedNewLine)
-                                    && !pending_here_doc_tokens.is_empty()
-                                {
-                                    pending_here_doc_tokens.push(cur_token);
-                                    drain_here_doc_tokens = true;
-                                    continue;
-                                }
-
-                                if let Some(cur_token_value) = cur_token.token {
-                                    state.append_str(cur_token_value.to_str());
-
-                                    // If we encounter an embedded open parenthesis, then note that
-                                    // we'll have to see the matching end to it before we worry
-                                    // about the end of the
-                                    // containing construct.
-                                    if matches!(cur_token_value, Token::Operator(o, _) if o == "(")
-                                    {
-                                        required_end_parens += 1;
-                                    }
-                                }
-
-                                match cur_token.reason {
-                                    TokenEndReason::HereDocumentBodyStart => {
-                                        state.append_char('\n');
-                                    }
-                                    TokenEndReason::NonNewLineBlank => state.append_char(' '),
-                                    TokenEndReason::SpecifiedTerminatingChar => {
-                                        // We hit the ')' we were looking for. If this is the last
-                                        // end parenthesis we needed to find, then we'll exit the
-                                        // loop and consume
-                                        // and append it.
-                                        required_end_parens -= 1;
-                                        if required_end_parens == 0 {
-                                            break;
-                                        }
-
-                                        // This wasn't the *last* end parenthesis char, so let's
-                                        // consume and append it here before we loop around again.
-                                        state.append_char(self.next_char()?.unwrap());
-                                    }
-                                    TokenEndReason::EndOfInput => {
-                                        return Err(
-                                            TokenizerError::UnterminatedCommandSubstitution,
-                                        );
-                                    }
-                                    _ => (),
-                                }
+                            if is_arithmetic {
+                                self.cross_state.arithmetic_expansion = false;
                             }
+                        }
+
+                        Some('[') => {
+                            // Add the '$' we already consumed to the token.
+                            state.append_char('$');
+
+                            // Consume the '[' and add it to the token.
+                            state.append_char(self.next_char()?.unwrap());
+
+                            // Keep track that we're in an arithmetic expression, since
+                            // some text will be interpreted differently as a result.
+                            self.cross_state.arithmetic_expansion = true;
+
+                            self.consume_nested_construct(&mut state, ']', "[", 1)?;
 
                             self.cross_state.arithmetic_expansion = false;
-
-                            state.append_char(self.next_char()?.unwrap());
                         }
 
                         Some('{') => {
@@ -1535,9 +1553,27 @@ HERE2
 
     #[test]
     fn tokenize_unterminated_command_substitution() {
+        // $( is consumed before the tokenizer knows whether it's $( or $((,
+        // so it goes through consume_nested_construct and yields UnterminatedExpansion.
         assert_matches!(
             tokenize_str("$("),
-            Err(TokenizerError::UnterminatedCommandSubstitution)
+            Err(TokenizerError::UnterminatedExpansion)
+        );
+    }
+
+    #[test]
+    fn tokenize_unterminated_arithmetic_expansion() {
+        assert_matches!(
+            tokenize_str("$(("),
+            Err(TokenizerError::UnterminatedExpansion)
+        );
+    }
+
+    #[test]
+    fn tokenize_unterminated_legacy_arithmetic_expansion() {
+        assert_matches!(
+            tokenize_str("$["),
+            Err(TokenizerError::UnterminatedExpansion)
         );
     }
 
