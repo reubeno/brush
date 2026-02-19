@@ -80,6 +80,12 @@ pub(super) fn arithmetic_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, 
     parse_balanced_delimiters("$((", Some('('), ')', 2)
 }
 
+/// Parse a legacy arithmetic expansion: $[expr]
+/// Returns the expansion text including $[ ]
+pub(super) fn legacy_arithmetic_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
+    parse_balanced_delimiters("$[", Some('['), ']', 1)
+}
+
 /// Parse a command substitution: $(cmd)
 /// Returns the expansion text including $( )
 pub(super) fn command_substitution<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
@@ -124,6 +130,7 @@ pub(super) fn dollar_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PErr
         ansi_c_quoted_string(),         // $'
         gettext_double_quoted_string(), // $"
         arithmetic_expansion(),         // $((
+        legacy_arithmetic_expansion(),  // $[
         command_substitution(),         // $(
         braced_variable(),              // ${
         special_parameter(),            // $1, $?, etc.
@@ -139,11 +146,12 @@ pub(super) fn dollar_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PErr
 pub(super) fn dollar_expansion_in_double_quotes<'a>()
 -> impl Parser<StrStream<'a>, &'a str, PError> + 'a {
     winnow::combinator::alt((
-        arithmetic_expansion(), // $((
-        command_substitution(), // $(
-        braced_variable(),      // ${
-        special_parameter(),    // $1, $?, etc.
-        simple_variable(),      // $VAR
+        arithmetic_expansion(),        // $((
+        legacy_arithmetic_expansion(), // $[
+        command_substitution(),        // $(
+        braced_variable(),             // ${
+        special_parameter(),           // $1, $?, etc.
+        simple_variable(),             // $VAR
     ))
 }
 
