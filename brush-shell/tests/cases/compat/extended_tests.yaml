@@ -379,3 +379,9 @@ cases:
 
       # All should have the same result
       [[ $r1 -eq $r2 && $r2 -eq $r3 ]] && echo "All -t results match"
+
+  - name: "Regex match with POSIX character class"
+    stdin: |
+      # POSIX character classes like [:print:] in regex
+      [[ "hello" =~ ^[[:print:]]+$ ]] && echo "printable"
+      [[ $'\x01' =~ [[:print:]] ]] || echo "control char not printable"
