@@ -90,6 +90,63 @@ cases:
       declare -p myarray
       echo
 
+  - name: "Unset array element with negative index"
+    stdin: |
+      declare -a myarray=(a b c d e)
+
+      echo "Initial array:"
+      declare -p myarray
+      echo
+
+      unset "myarray[-1]"
+      echo "After removing last element (index -1):"
+      declare -p myarray
+      echo
+
+      unset "myarray[-1]"
+      echo "After removing new last element (index -1 again):"
+      declare -p myarray
+      echo
+
+      unset "myarray[-2]"
+      echo "After removing second-to-last element (index -2):"
+      declare -p myarray
+      echo
+
+  - name: "Unset array element with negative index out of bounds"
+    ignore_stderr: true
+    stdin: |
+      declare -a myarray=(a b c)
+
+      echo "Initial array:"
+      declare -p myarray
+      echo
+
+      unset "myarray[-4]"
+      echo "After attempting to remove with index -4 (out of bounds):"
+      declare -p myarray
+      echo "Return code: $?"
+
+  - name: "Unset array element with variable negative index"
+    stdin: |
+      declare -a myarray=(10 20 30 40 50)
+
+      echo "Initial array:"
+      declare -p myarray
+      echo
+
+      i=-1
+      unset "myarray[i]"
+      echo "After removing with variable index i=-1:"
+      declare -p myarray
+      echo
+
+      i=-2
+      unset "myarray[i]"
+      echo "After removing with variable index i=-2:"
+      declare -p myarray
+      echo
+
   - name: "Unset local in same function"
     stdin: |
       var="global"
