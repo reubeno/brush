@@ -230,6 +230,34 @@ pub struct Spec {
     pub suffix: Option<String>,
 }
 
+/// Describes what triggered the completion process.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum CompletionTrigger {
+    /// Interactive completion triggered by Tab key (normal completion).
+    #[default]
+    InteractiveComplete,
+    /// Programmatic generation via the `compgen` builtin.
+    Programmatic,
+}
+
+impl CompletionTrigger {
+    /// Returns the `COMP_TYPE` value for this trigger.
+    pub const fn comp_type(self) -> i32 {
+        match self {
+            Self::InteractiveComplete => 9, // TAB = normal completion
+            Self::Programmatic => 0,
+        }
+    }
+
+    /// Returns the `COMP_KEY` value for this trigger.
+    pub const fn comp_key(self) -> i32 {
+        match self {
+            Self::InteractiveComplete => 9, // TAB key
+            Self::Programmatic => 0,
+        }
+    }
+}
+
 /// Encapsulates context used during completion generation.
 #[derive(Debug)]
 pub struct Context<'a> {
@@ -250,6 +278,9 @@ pub struct Context<'a> {
     pub cursor_index: usize,
     /// The tokens in the input line.
     pub tokens: &'a [&'a CompletionToken<'a>],
+
+    /// What triggered the completion.
+    pub trigger: CompletionTrigger,
 }
 
 impl Spec {
@@ -612,8 +643,8 @@ impl Spec {
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
-            // TODO(completions): add COMP_KEY
-            // TODO(completions): add COMP_TYPE
+            ("COMP_KEY", context.trigger.comp_key().to_string().into()),
+            ("COMP_TYPE", context.trigger.comp_type().to_string().into()),
         ];
 
         // Fill out variables.
@@ -673,8 +704,8 @@ impl Spec {
         let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
-            // TODO(completions): add COMP_KEY
-            // TODO(completions): add COMP_TYPE
+            ("COMP_KEY", context.trigger.comp_key().to_string().into()),
+            ("COMP_TYPE", context.trigger.comp_type().to_string().into()),
             (
                 "COMP_WORDS",
                 context
@@ -1044,6 +1075,7 @@ impl Config {
                 token_index: completion_token_index,
                 tokens: adjusted_tokens.as_slice(),
                 cursor_index: position,
+                trigger: CompletionTrigger::InteractiveComplete,
             };
 
             result = self
