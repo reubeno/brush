@@ -129,12 +129,13 @@ impl builtins::Command for BindCommand {
         if let Some(key_bindings) = context.shell.key_bindings() {
             Ok(self.execute_impl(key_bindings, &context).await?)
         } else {
-            writeln!(
-                context.stderr(),
-                "bind: key bindings not supported in this config"
-            )?;
+            tracing::debug!(target: trace_categories::INPUT,
+                 "bind: key bindings not supported in this config");
 
-            Ok(ExecutionExitCode::Unimplemented.into())
+            // Silently succeed when key bindings are unavailable (e.g., in
+            // non-interactive mode or with an input backend that doesn't
+            // yet support them).
+            Ok(ExecutionExitCode::Success.into())
         }
     }
 }
