@@ -379,9 +379,7 @@ fn ext_test_regex_word<'a>(
                     }
                     ']' => {
                         // End of bracket expression in regex
-                        if bracket_depth > 0 {
-                            bracket_depth -= 1;
-                        }
+                        bracket_depth = bracket_depth.saturating_sub(1);
                         result.push(ch);
                         winnow::token::any.parse_next(input)?;
                     }
@@ -393,9 +391,7 @@ fn ext_test_regex_word<'a>(
                     }
                     ')' => {
                         // End of group or extglob pattern
-                        if paren_depth > 0 {
-                            paren_depth -= 1;
-                        }
+                        paren_depth = paren_depth.saturating_sub(1);
                         result.push(ch);
                         winnow::token::any.parse_next(input)?;
                     }
