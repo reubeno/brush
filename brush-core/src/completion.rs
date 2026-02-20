@@ -305,8 +305,16 @@ impl Spec {
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
             let params = shell.default_exec_params();
-            let words =
-                crate::expansion::full_expand_and_split_word(shell, &params, word_list).await?;
+            // Per POSIX / bash docs, -W word list is subject to shell expansion
+            // and field splitting but NOT pathname expansion (globbing).
+            let options = crate::expansion::ExpanderOptions {
+                pathname_expand: false,
+                ..Default::default()
+            };
+            let words = crate::expansion::full_expand_and_split_word_with_options(
+                shell, &params, word_list, &options,
+            )
+            .await?;
             for word in words {
                 if word.starts_with(context.token_to_complete) {
                     candidates.insert(word);

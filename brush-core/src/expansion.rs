@@ -33,6 +33,9 @@ pub(crate) struct ExpanderOptions {
     /// Whether to perform command substitutions. If disabled, command substitutions
     /// are replaced with an empty string.
     pub execute_command_substitutions: bool,
+    /// Whether to perform pathname expansion (globbing). If disabled, glob patterns
+    /// are returned as literal strings.
+    pub pathname_expand: bool,
 }
 
 impl Default for ExpanderOptions {
@@ -41,6 +44,7 @@ impl Default for ExpanderOptions {
             tilde_expand: true,
             brace_expand: true,
             execute_command_substitutions: true,
+            pathname_expand: true,
         }
     }
 }
@@ -352,7 +356,7 @@ pub(crate) async fn basic_expand_regex(
     let mut expander = WordExpander::new(shell, params);
 
     // Brace expansion does not appear to be used in regexes.
-    expander.force_disable_brace_expansion = true;
+    expander.disable_brace_expansion = true;
 
     expander.basic_expand_regex(word_str.as_ref()).await
 }
@@ -417,7 +421,6 @@ pub(crate) async fn full_expand_and_split_word(
 /// * `params` - The execution parameters to use during expansion.
 /// * `word_str` - The word to expand, as a string.
 /// * `options` - Options to customize the behavior of the expander.
-#[allow(dead_code, reason = "intended future use")]
 pub(crate) async fn full_expand_and_split_word_with_options(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
@@ -473,12 +476,14 @@ struct WordExpander<'a, SE: extensions::ShellExtensions> {
     params: &'a ExecutionParameters,
     /// The parser options to use during expansion.
     parser_options: brush_parser::ParserOptions,
-    /// Whether to forcibly disable brace expansion.
-    force_disable_brace_expansion: bool,
+    /// Whether to disable brace expansion.
+    disable_brace_expansion: bool,
     /// Whether to disable command substitutions.
     disable_command_substitutions: bool,
     /// Whether to disable backslash removal in unquoted contexts.
     disable_unquoted_backslash_removal: bool,
+    /// Whether to disable pathname expansion (globbing).
+    disable_pathname_expansion: bool,
     /// Whether we are currently expanding inside a double-quoted context.
     in_double_quotes: bool,
 }
@@ -490,9 +495,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             shell,
             params,
             parser_options,
-            force_disable_brace_expansion: false,
+            disable_brace_expansion: false,
             disable_command_substitutions: false,
             disable_unquoted_backslash_removal: false,
+            disable_pathname_expansion: false,
             in_double_quotes: false,
         }
     }
@@ -513,9 +519,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             shell,
             params,
             parser_options,
-            force_disable_brace_expansion: !options.brace_expand,
+            disable_brace_expansion: !options.brace_expand,
             disable_command_substitutions: !options.execute_command_substitutions,
             disable_unquoted_backslash_removal: false,
+            disable_pathname_expansion: !options.pathname_expand,
             in_double_quotes: false,
         }
     }
@@ -665,7 +672,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     fn brace_expand_if_needed(&self, word: &'a str) -> Result<Cow<'a, str>, error::Error> {
         // We perform a non-authoritative check to see if the string *may* contain braces
         // to expand. There may be false positives, but must be no false negatives.
-        if self.force_disable_brace_expansion
+        if self.disable_brace_expansion
             || !self.shell.options().perform_brace_expansion
             || !may_contain_braces_to_expand(word)
         {
@@ -709,7 +716,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let result = fields
             .into_iter()
             .flat_map(|field| {
-                if self.shell.options().disable_filename_globbing {
+                if self.disable_pathname_expansion || self.shell.options().disable_filename_globbing
+                {
                     vec![String::from(field)]
                 } else {
                     self.expand_pathnames_in_field(field)

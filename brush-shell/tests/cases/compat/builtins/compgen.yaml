@@ -74,6 +74,16 @@ cases:
       echo "2. compgen -W with expansion"
       myvar=value compgen -W '${myvar}'
 
+  - name: "compgen -W does not pathname-expand"
+    stdin: |
+      touch foo.txt bar.txt baz.log
+
+      echo "[glob pattern should be literal]"
+      compgen -W '*.txt' | sort
+
+      echo "[question mark glob should be literal]"
+      compgen -W '?.log' | sort
+
   - name: "compgen -W with unsorted values"
     stdin: |
       compgen -W 'c b d a'
