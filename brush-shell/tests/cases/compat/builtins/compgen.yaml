@@ -252,3 +252,9 @@ cases:
       echo "[Invalid]"
       compgen -A command -- link_non_exec
       compgen -A command -- link_broken
+
+  - name: "compgen -F sets COMP_KEY and COMP_TYPE to 0"
+    ignore_stderr: true
+    stdin: |
+      _comp() { echo "KEY=${COMP_KEY:-unset} TYPE=${COMP_TYPE:-unset}"; COMPREPLY=(); }
+      compgen -F _comp mycmd

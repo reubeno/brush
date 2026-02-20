@@ -515,6 +515,7 @@ impl builtins::Command for CompGenCommand {
             }],
             input_line: token_to_complete,
             cursor_index: token_to_complete.len(),
+            trigger: completion::CompletionTrigger::Programmatic,
         };
 
         let result = spec
