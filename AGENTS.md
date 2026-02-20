@@ -155,6 +155,55 @@ cargo test --test brush-compat-tests -- '<name of test case>'
 - Examples: In `examples/` directories (must be runnable)
 - Shell script tests: YAML-based test cases in `brush-shell/tests/cases/`
 
+### YAML Test Format
+
+Shell compatibility tests are defined in YAML files under `brush-shell/tests/cases/compat/`. Each file has this structure:
+
+```yaml
+name: "Test suite name"
+cases:
+  - name: "Individual test case name"
+    stdin: |
+      echo "test script here"
+      # Multiple lines are supported
+
+  - name: "Test with expected failure"
+    known_failure: true  # Mark as known issue, won't fail CI
+    stdin: |
+      some_unsupported_feature
+
+  - name: "Test ignoring stderr"
+    ignore_stderr: true  # Only compare stdout
+    stdin: |
+      command_that_writes_to_stderr
+
+  - name: "Test with test files"
+    test_files:
+      - path: file.txt
+        contents: |
+          File contents here
+    stdin: |
+      cat file.txt
+```
+
+**Key fields:**
+
+- `name`: Test case identifier (required)
+- `stdin`: Shell script to execute (required)
+- `known_failure`: Mark test as expected to fail (optional)
+- `ignore_stderr`: Don't compare stderr output (optional)
+- `test_files`: Create files before running the test (optional)
+
+**Running specific YAML tests:**
+
+```bash
+# Run all tests in a specific YAML file
+cargo test --test brush-compat-tests -- 'command_substitution'
+
+# Run a specific test case by name
+cargo test --test brush-compat-tests -- 'Ignore single quote in comment'
+```
+
 ### Performance Testing
 
 **Performance regression testing:**
