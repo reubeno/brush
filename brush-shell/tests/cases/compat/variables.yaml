@@ -30,3 +30,15 @@ cases:
       declare -i myint
       myint+=abc
       echo "myint: ${myint}"
+
+  - name: "Parameter length of unset variable with nounset"
+    ignore_stderr: true
+    stdin: |
+      set -u
+      echo "${#unset_var}" 2>&1 || true
+      arr=()
+      echo "${#arr[0]}"
+      echo "${#arr[@]}"
+      arr2=(hello world)
+      echo "${#arr2[5]}"
+      echo "${#arr2[0]}"

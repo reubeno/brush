@@ -1112,7 +1112,23 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 parameter,
                 indirect,
             } => {
-                let expansion = self.expand_parameter(&parameter, indirect).await?;
+                // In bash, ${#arr[i]} returns 0 for unset elements of a
+                // declared array even with `set -u`. But ${#unset_var} still
+                // errors. Allow unset only for array element/all-indices
+                // access on variables that exist.
+                let allow_unset = match &parameter {
+                    brush_parser::word::Parameter::NamedWithIndex { name, .. }
+                    | brush_parser::word::Parameter::NamedWithAllIndices { name, .. } => {
+                        self.shell.env().get(name).is_some()
+                    }
+                    _ => false,
+                };
+                let expansion = if allow_unset {
+                    self.expand_parameter_allowing_unset(&parameter, indirect)
+                        .await?
+                } else {
+                    self.expand_parameter(&parameter, indirect).await?
+                };
                 Ok(Expansion::from(expansion.polymorphic_len().to_string()))
             }
             brush_parser::word::ParameterExpr::RemoveSmallestSuffixPattern {
