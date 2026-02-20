@@ -40,6 +40,22 @@ cases:
       var=(a b c)
       echo "var[-4]: ${var[-4]}"
 
+  - name: "Negative indexed array access (set)"
+    stdin: |
+      var=(a b c d e f g)
+      var[-1]=x
+      var[-3]=z
+      echo "var[*]: ${var[*]}"
+      declare -p var
+
+  - name: "Too large negative indexed array access (set)"
+    ignore_stderr: true
+    stdin: |
+      var=(a b c)
+      var[-4]=x
+      echo "var[*]: ${var[*]}"
+      declare -p var
+
   - name: "Define array with expansion"
     stdin: |
       body='a b'

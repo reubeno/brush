@@ -258,11 +258,7 @@ pub enum ErrorKind {
 
     /// Array index out of range.
     #[error("array index out of range: {0}")]
-    ArrayIndexOutOfRange(i64),
-
-    /// Bad array subscript.
-    #[error("bad array subscript: [{0}]")]
-    BadArraySubscript(i64),
+    ArrayIndexOutOfRange(String),
 
     /// Unhandled key code.
     #[error("unhandled key code: {0:?}")]

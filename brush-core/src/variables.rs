@@ -395,7 +395,7 @@ impl ShellVariable {
 
         match &mut self.value {
             ShellValue::IndexedArray(arr) => {
-                let key: u64 = array_index.parse().unwrap_or(0);
+                let key = get_key_for_indexed_array(arr, array_index.as_str())?;
 
                 if append {
                     let existing_value = arr.get(&key).map_or_else(|| "", |v| v.as_str());
@@ -511,19 +511,7 @@ impl ShellVariable {
             ShellValue::String(_) => Err(error::ErrorKind::NotArray.into()),
             ShellValue::AssociativeArray(values) => Ok(values.remove(index).is_some()),
             ShellValue::IndexedArray(values) => {
-                let original_index = index.parse::<i64>().unwrap_or(0);
-                let mut index_value = original_index;
-
-                #[expect(clippy::cast_possible_wrap)]
-                if index_value < 0 {
-                    index_value += values.len() as i64;
-                    if index_value < 0 {
-                        return Err(error::ErrorKind::BadArraySubscript(original_index).into());
-                    }
-                }
-
-                #[expect(clippy::cast_sign_loss)]
-                let key = index_value as u64;
+                let key = get_key_for_indexed_array(values, index)?;
                 Ok(values.remove(&key).is_some())
             }
             ShellValue::Dynamic { .. } => Ok(false),
@@ -939,22 +927,8 @@ impl ShellValue {
                 Ok(values.get(index).map(|s| Cow::Borrowed(s.as_str())))
             }
             Self::IndexedArray(values) => {
-                let mut index_value = index.parse::<i64>().unwrap_or(0);
-
-                #[expect(clippy::cast_possible_wrap)]
-                if index_value < 0 {
-                    index_value += values.len() as i64;
-                    if index_value < 0 {
-                        return Err(error::ErrorKind::ArrayIndexOutOfRange(index_value).into());
-                    }
-                }
-
-                // Now that we've confirmed that the index is non-negative, we can safely convert it
-                // to a u64 without any fuss.
-                #[expect(clippy::cast_sign_loss)]
-                let index_value = index_value as u64;
-
-                Ok(values.get(&index_value).map(|s| Cow::Borrowed(s.as_str())))
+                let key = get_key_for_indexed_array(values, index)?;
+                Ok(values.get(&key).map(|s| Cow::Borrowed(s.as_str())))
             }
             Self::Dynamic { getter, .. } => {
                 let dynamic_value = getter(shell);
@@ -1056,6 +1030,27 @@ impl ShellValue {
             Self::Dynamic { getter, .. } => getter(shell).to_assignable_str(index, shell),
         }
     }
+}
+
+fn get_key_for_indexed_array(
+    values: &BTreeMap<u64, String>,
+    index_str: &str,
+) -> Result<u64, error::Error> {
+    let mut index_value = index_str.parse::<i64>().unwrap_or(0);
+
+    // Handle negative indices, but check for out-of-range values.
+    #[expect(clippy::cast_possible_wrap)]
+    if index_value < 0 {
+        index_value += values.len() as i64;
+        if index_value < 0 {
+            return Err(error::ErrorKind::ArrayIndexOutOfRange(index_str.to_owned()).into());
+        }
+    }
+
+    // Now that we've confirmed that the index is non-negative, we can safely convert it
+    // to a u64 without any fuss.
+    #[expect(clippy::cast_sign_loss)]
+    Ok(index_value as u64)
 }
 
 impl From<&str> for ShellValue {
