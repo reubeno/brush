@@ -88,7 +88,7 @@ pub(super) fn skip_double_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a
         let end = input.checkpoint();
         let consumed_len = end.offset_from(&start);
         input.reset(&start);
-        Ok(winnow::token::take(consumed_len).parse_next(input)?)
+        winnow::token::take(consumed_len).parse_next(input)
     }
 }
 
@@ -123,26 +123,44 @@ pub(super) fn parse_balanced_delimiters<'a>(
         winnow::token::literal(prefix).parse_next(input)?;
 
         // Parse balanced delimiters
+        // Track whether # would start a comment (after whitespace/newline/start)
         let mut depth = initial_depth;
+        let mut at_comment_start = true;
 
         while depth > 0 {
             match winnow::token::any::<_, PError>.parse_next(input) {
                 Ok(ch) if Some(ch) == open_char => {
                     depth += 1;
+                    at_comment_start = false;
                 }
                 Ok(ch) if ch == close_char => {
                     depth -= 1;
+                    at_comment_start = false;
                 }
                 Ok('\\') => {
                     let _ = winnow::token::any::<_, PError>.parse_next(input);
+                    at_comment_start = false;
                 }
                 Ok('\'') => {
                     let _ = skip_single_quoted_content().parse_next(input)?;
+                    at_comment_start = false;
                 }
                 Ok('"') => {
                     let _ = skip_double_quoted_content().parse_next(input)?;
+                    at_comment_start = false;
                 }
-                Ok(_) => {}
+                Ok('#') if at_comment_start => {
+                    // Skip comment content (everything until newline, not consuming newline)
+                    while let Ok(c) = winnow::token::any::<_, PError>.parse_next(input) {
+                        if c == '\n' {
+                            at_comment_start = true;
+                            break;
+                        }
+                    }
+                }
+                Ok(ch) => {
+                    at_comment_start = matches!(ch, ' ' | '\t' | '\n');
+                }
                 Err(_) => {
                     return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
                 }
