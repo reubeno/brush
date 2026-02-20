@@ -391,7 +391,7 @@ async fn complete_quoted_filenames() -> Result<()> {
     Ok(())
 }
 
-/// Tests that interactive completion sets COMP_KEY and COMP_TYPE to 9 (TAB).
+/// Tests that interactive completion sets `COMP_KEY` and `COMP_TYPE` to 9 (TAB).
 #[tokio::test(flavor = "multi_thread")]
 async fn interactive_completion_sets_comp_key_and_comp_type() -> Result<()> {
     let mut shell = brush_core::Shell::builder()
@@ -406,14 +406,14 @@ async fn interactive_completion_sets_comp_key_and_comp_type() -> Result<()> {
     let source_info = brush_core::SourceInfo::default();
     shell
         .run_string(
-            r#"
+            r"
 _test_comp() {
     CAPTURED_COMP_KEY=$COMP_KEY
     CAPTURED_COMP_TYPE=$COMP_TYPE
     COMPREPLY=(done)
 }
 complete -F _test_comp mycmd
-"#
+"
             .to_string(),
             &source_info,
             &exec_params,

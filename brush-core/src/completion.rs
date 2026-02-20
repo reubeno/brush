@@ -241,7 +241,7 @@ pub enum CompletionTrigger {
 }
 
 impl CompletionTrigger {
-    /// Returns the COMP_TYPE value for this trigger.
+    /// Returns the `COMP_TYPE` value for this trigger.
     pub const fn comp_type(self) -> i32 {
         match self {
             Self::InteractiveComplete => 9, // TAB = normal completion
@@ -249,7 +249,7 @@ impl CompletionTrigger {
         }
     }
 
-    /// Returns the COMP_KEY value for this trigger.
+    /// Returns the `COMP_KEY` value for this trigger.
     pub const fn comp_key(self) -> i32 {
         match self {
             Self::InteractiveComplete => 9, // TAB key
