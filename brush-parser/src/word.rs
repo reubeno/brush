@@ -801,7 +801,8 @@ peg::parser! {
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
-            !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
+            is_true(in_command) !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`' | '#'] {} /
+            is_false(in_command) !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
 
         rule enabled_tilde_expr_after_colon() -> WordPiece =
             tilde_exprs_after_colon_enabled() last_char_is_colon() piece:tilde_expression_piece() { piece }
@@ -821,6 +822,7 @@ peg::parser! {
         }}
 
         rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
+        rule is_false(value: bool) = &[_] {? if !value { Ok(()) } else { Err("not false") } }
 
         rule extglob_pattern() =
             ("@" / "!" / "?" / "+" / "*") "(" extglob_body_piece()* ")" {}
@@ -1033,7 +1035,8 @@ peg::parser! {
 
         pub(crate) rule command_piece() -> () =
             word_piece(<[')']>, true /*in_command*/) {} /
-            ([' ' | '\t'])+ {}
+            ([' ' | '\t' | '\n'])+ {} /
+            "#" [^'\n']* {}
 
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }

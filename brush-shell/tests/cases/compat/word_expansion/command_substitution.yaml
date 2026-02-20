@@ -182,3 +182,16 @@ cases:
 
       $($(:))
       echo "exit code: $?"
+
+  - name: "Comment in command substitution without newline fails"
+    known_failure: true
+    stdin: |
+      x=$(echo # must fail)
+
+  - name: "Comment in command substitution with newline"
+    stdin: |
+      x=$(
+        echo "a" # comment with "quote
+        echo "b"
+      )
+      echo "$x"
