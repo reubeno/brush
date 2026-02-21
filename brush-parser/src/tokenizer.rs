@@ -1701,4 +1701,16 @@ HERE2
         assert_eq!(unquote_str(r#""hel\"lo""#), r#"hel"lo"#);
         assert_eq!(unquote_str(r"'hel\'lo'"), r"hel'lo");
     }
+
+    #[test]
+    fn tokenize_unterminated_single_quote_with_newline() {
+        let input = "test 0 -eq ' 0\n";
+        let result = tokenize_str(input);
+        match &result {
+            Err(TokenizerError::UnterminatedSingleQuote(_)) => {
+                assert!(result.as_ref().unwrap_err().is_incomplete());
+            }
+            _ => panic!("Expected UnterminatedSingleQuote error"),
+        }
+    }
 }
