@@ -358,7 +358,6 @@ dependencies = [
  "futures",
  "getrandom 0.4.1",
  "hostname",
- "indexmap",
  "inherent",
  "itertools 0.14.0",
  "libc",

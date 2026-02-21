@@ -33,7 +33,6 @@ clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
 color-print = "0.3.7"
 fancy-regex = "0.17.0"
 futures = "0.3.31"
-indexmap = "2.13.0"
 inherent = "1.0.13"
 itertools = "0.14.0"
 normalize-path = "0.2.1"
