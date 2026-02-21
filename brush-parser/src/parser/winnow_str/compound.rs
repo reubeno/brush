@@ -315,30 +315,39 @@ pub(super) fn for_clause<'a>(
 
         linebreak().parse_next(input)?;
 
-        // Optional "in" wordlist
-        let values = if keyword("in").parse_next(input).is_ok() {
-            // Parse space-separated words (preceded by spaces to consume leading space after "in")
-            winnow::combinator::opt(winnow::combinator::preceded(
+        if keyword("in").parse_next(input).is_ok() {
+            let values = winnow::combinator::opt(winnow::combinator::preceded(
                 spaces(),
                 winnow::combinator::separated(1.., word_as_ast(ctx, tracker), spaces1()),
             ))
-            .parse_next(input)?
+            .parse_next(input)?;
+
+            sequential_sep().parse_next(input)?;
+            let body = do_group(ctx, tracker).parse_next(input)?;
+
+            let end_offset = tracker.offset_from_locating(input);
+            let loc = tracker.range_to_span(start_offset..end_offset);
+
+            Ok(ast::ForClauseCommand {
+                variable_name: var_name,
+                values,
+                body,
+                loc,
+            })
         } else {
-            None
-        };
+            winnow::combinator::opt(sequential_sep()).parse_next(input)?;
+            let body = do_group(ctx, tracker).parse_next(input)?;
 
-        sequential_sep().parse_next(input)?;
-        let body = do_group(ctx, tracker).parse_next(input)?;
+            let end_offset = tracker.offset_from_locating(input);
+            let loc = tracker.range_to_span(start_offset..end_offset);
 
-        let end_offset = tracker.offset_from_locating(input);
-        let loc = tracker.range_to_span(start_offset..end_offset);
-
-        Ok(ast::ForClauseCommand {
-            variable_name: var_name,
-            values,
-            body,
-            loc,
-        })
+            Ok(ast::ForClauseCommand {
+                variable_name: var_name,
+                values: None,
+                body,
+                loc,
+            })
+        }
     }
 }
 
