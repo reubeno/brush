@@ -244,7 +244,6 @@ cases:
       echo "Command 2"
 
   - name: "Trap handler - DEBUG in function"
-    known_failure: true # TODO(traps): review debug trap invocation across func boundaries
     stdin: |
       source callstack_helpers.sh
 
@@ -581,7 +580,6 @@ cases:
       echo "Top level BASH_LINENO[*]: '${BASH_LINENO[*]}'"
 
   - name: "Call stack in trap with function call"
-    known_failure: true # TODO(traps): review debug trap invocation across func boundaries
     stdin: |
       source callstack_helpers.sh
 

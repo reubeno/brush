@@ -250,7 +250,6 @@ cases:
   # Nested functions with varying trace states
   #
   - name: "Outer function traced, inner function not traced"
-    known_failure: true # TODO(functrace): selective function tracing not working
     stdin: |
       trap 'echo "[debug in ${FUNCNAME:-main}]"' DEBUG
       inner() {
@@ -266,7 +265,6 @@ cases:
       echo "done"
 
   - name: "Only inner function traced"
-    known_failure: true # TODO(functrace): selective function tracing not working
     stdin: |
       trap 'echo "[debug in ${FUNCNAME:-main}]"' DEBUG
       inner() {
