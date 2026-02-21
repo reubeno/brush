@@ -470,6 +470,7 @@ dependencies = [
  "glob",
  "human-panic",
  "indent",
+ "indexmap",
  "junit-report",
  "nix 0.31.1",
  "os-release",
