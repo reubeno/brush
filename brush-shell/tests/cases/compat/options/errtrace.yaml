@@ -19,7 +19,6 @@ cases:
   # ERR trap inheritance in functions (core errtrace behavior)
   #
   - name: "errtrace disabled - functions don't inherit ERR trap"
-    known_failure: true # TODO(traps): ERR trap support
     stdin: |
       set +E
       trap 'echo "ERR trapped"' ERR
@@ -28,7 +27,6 @@ cases:
       echo "after"
 
   - name: "errtrace enabled - functions inherit ERR trap"
-    known_failure: true # TODO(traps): ERR trap support
     stdin: |
       set -E
       trap 'echo "ERR trapped"' ERR
@@ -37,7 +35,6 @@ cases:
       echo "after"
 
   - name: "errtrace with nested functions"
-    known_failure: true # TODO(traps): ERR trap support
     stdin: |
       set -E
       trap 'echo "ERR trapped"' ERR
@@ -47,7 +44,6 @@ cases:
       echo "after"
 
   - name: "errtrace toggling mid-script"
-    known_failure: true # TODO(traps): ERR trap support
     stdin: |
       trap 'echo "ERR trapped"' ERR
       set -E
@@ -74,7 +70,6 @@ cases:
       echo "after"
 
   - name: "errtrace enabled - subshell inherits ERR trap"
-    known_failure: true # TODO(traps): ERR trap not firing in subshell with errtrace
     stdin: |
       set -E
       trap 'echo "ERR"' ERR
@@ -96,7 +91,6 @@ cases:
       echo "result: $result"
 
   - name: "errtrace enabled - command substitution inherits ERR trap"
-    known_failure: true # TODO(errtrace): ERR trap not inherited in command substitution
     stdin: |
       set -E
       trap 'echo "[ERR in subshell]" >&2' ERR
@@ -107,7 +101,6 @@ cases:
   # ERR trap inheritance in pipelines
   #
   - name: "errtrace with pipeline - last command fails"
-    known_failure: true # TODO(errtrace): ERR trap not firing for pipeline failure
     stdin: |
       set -E
       trap 'echo "[ERR: $?]" >&2' ERR
@@ -115,7 +108,6 @@ cases:
       echo "after pipeline"
 
   - name: "errtrace with pipeline - middle command fails (pipefail)"
-    known_failure: true # TODO(errtrace): ERR trap not firing for pipeline failure
     stdin: |
       set -E
       set -o pipefail
@@ -124,7 +116,6 @@ cases:
       echo "after pipeline"
 
   - name: "errtrace - ERR trap in pipeline subshells"
-    known_failure: true # TODO(errtrace): ERR trap not inherited in pipeline subshells
     stdin: |
       set -E
       trap 'echo "[ERR: $BASH_COMMAND]" >&2' ERR
@@ -135,7 +126,6 @@ cases:
   # ERR trap with errexit interaction
   #
   - name: "errtrace with errexit - ERR trap fires before exit"
-    known_failure: true # TODO(traps): ERR trap not firing before errexit
     stdin: |
       set -e
       set -E
@@ -157,7 +147,6 @@ cases:
   # ERR trap inheritance in deeply nested functions
   #
   - name: "errtrace - ERR trap in deeply nested function"
-    known_failure: true # TODO(errtrace): ERR trap not firing in nested functions
     stdin: |
       set -E
       trap 'echo "ERR at level ${#FUNCNAME[@]}"' ERR
@@ -171,7 +160,6 @@ cases:
   # ERR trap modification within functions
   #
   - name: "errtrace - ERR trap can be changed inside function"
-    known_failure: true # TODO(traps): ERR trap not firing
     stdin: |
       set -E
       trap 'echo "outer ERR"' ERR
@@ -200,7 +188,6 @@ cases:
   # ERR trap in background jobs with errtrace
   #
   - name: "errtrace - ERR trap in background job"
-    known_failure: true # TODO(errtrace): ERR trap not firing in background job
     stdin: |
       set -E
       trap 'echo "ERR" >&2' ERR
@@ -212,7 +199,6 @@ cases:
   # Sourced scripts with errtrace
   #
   - name: "errtrace - ERR trap inherited in sourced script"
-    known_failure: true # TODO(errtrace): ERR trap not inherited in sourced scripts
     test_files:
       - path: "failing.sh"
         contents: |

@@ -8,7 +8,7 @@ use itertools::Itertools as _;
 use crate::{error, sys};
 
 /// Type of signal that can be trapped in the shell.
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TrapSignal {
     /// A system signal.
     Signal(sys::signal::Signal),
