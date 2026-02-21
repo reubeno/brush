@@ -32,6 +32,32 @@ pub(crate) struct FilenameExpansionOptions {
     pub require_dot_in_pattern_to_match_dot_files: bool,
 }
 
+/// Result of a pattern expansion, distinguishing "no glob metacharacters" from
+/// "glob expansion attempted but found no matches".
+#[derive(Debug, Default)]
+pub(crate) enum PatternExpansionResult {
+    /// No glob metacharacters found; no expansion was attempted.
+    #[default]
+    NoGlob,
+    /// Glob expansion was attempted. Contains matching paths (may be empty).
+    Expanded(Vec<String>),
+}
+
+impl PatternExpansionResult {
+    /// Returns the expansion results, regardless of variant.
+    pub fn into_paths(self) -> Vec<String> {
+        match self {
+            Self::NoGlob => vec![],
+            Self::Expanded(paths) => paths,
+        }
+    }
+
+    /// Returns true if glob expansion was attempted but produced no results.
+    pub const fn is_unmatched_glob(&self) -> bool {
+        matches!(self, Self::Expanded(paths) if paths.is_empty())
+    }
+}
+
 /// Encapsulates a shell pattern.
 #[derive(Clone, Debug)]
 pub struct Pattern {
@@ -144,29 +170,33 @@ impl Pattern {
         working_dir: &Path,
         path_filter: Option<&PF>,
         options: &FilenameExpansionOptions,
-    ) -> Result<Vec<String>, error::Error>
+    ) -> Result<PatternExpansionResult, error::Error>
     where
         PF: Fn(&Path) -> bool,
     {
         // If the pattern is completely empty, then short-circuit the function; there's
         // no reason to proceed onward when we know there's no expansions.
         if self.is_empty() {
-            return Ok(vec![]);
+            return Ok(PatternExpansionResult::NoGlob);
 
         // Similarly, if we're *confident* the pattern doesn't require expansion, then we
         // know there's a single expansion (before filtering).
         } else if !self.pieces.iter().any(|piece| {
-            matches!(piece, PatternPiece::Pattern(_)) && requires_expansion(piece.as_str())
+            matches!(piece, PatternPiece::Pattern(_))
+                && requires_expansion(piece.as_str(), self.enable_extended_globbing)
         }) {
             let concatenated: String = self.pieces.iter().map(|piece| piece.as_str()).collect();
 
             if let Some(filter) = path_filter
                 && !filter(Path::new(&concatenated))
             {
-                return Ok(vec![]);
+                // No globs, but the literal was filtered out. Return NoGlob
+                // (not Expanded) so that callers don't mistake this for a
+                // failed glob match (which would trigger failglob).
+                return Ok(PatternExpansionResult::NoGlob);
             }
 
-            return Ok(vec![concatenated]);
+            return Ok(PatternExpansionResult::Expanded(vec![concatenated]));
         }
 
         tracing::debug!(target: trace_categories::PATTERN, "expanding pattern: {self:?}");
@@ -222,7 +252,8 @@ impl Pattern {
 
         for component in components {
             if !component.iter().any(|piece| {
-                matches!(piece, PatternPiece::Pattern(_)) && requires_expansion(piece.as_str())
+                matches!(piece, PatternPiece::Pattern(_))
+                    && requires_expansion(piece.as_str(), self.enable_extended_globbing)
             }) {
                 for p in &mut paths_so_far {
                     let flattened = component
@@ -299,7 +330,7 @@ impl Pattern {
 
         tracing::debug!(target: trace_categories::PATTERN, "  => results: {results:?}");
 
-        Ok(results)
+        Ok(PatternExpansionResult::Expanded(results))
     }
 
     /// Converts the pattern to a regular expression string.
@@ -383,9 +414,11 @@ impl Pattern {
     }
 }
 
-fn requires_expansion(s: &str) -> bool {
-    // TODO(patterns): Make this more accurate.
-    s.contains(['*', '?', '[', ']', '(', ')'])
+/// Checks whether a string contains glob metacharacters that would trigger
+/// pathname expansion. Delegates to the pattern parser's grammar, which is
+/// the single source of truth for what constitutes a glob metacharacter.
+fn requires_expansion(s: &str, enable_extended_globbing: bool) -> bool {
+    brush_parser::pattern::pattern_has_glob_metacharacters(s, enable_extended_globbing)
 }
 
 fn pattern_to_regex_str(
@@ -870,5 +903,17 @@ mod tests {
         assert!(!make_extglob("+(x+(ab)y)").exactly_matches("xyxy")?);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_requires_expansion() {
+        // Delegates to the PEG grammar; thorough coverage is in brush-parser.
+        // Here we just verify the integration works.
+        assert!(requires_expansion("*", false));
+        assert!(requires_expansion("[abc]", false));
+        assert!(!requires_expansion("]", false));
+        assert!(!requires_expansion("hello", false));
+        assert!(!requires_expansion("@(a)", false));
+        assert!(requires_expansion("@(a)", true));
     }
 }

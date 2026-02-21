@@ -1,0 +1,79 @@
+name: "Options: failglob"
+cases:
+  - name: "failglob errors on unmatched glob"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob
+      echo non-existent-*.txt 2>/dev/null
+      echo "exit=$?"
+
+  - name: "failglob does not affect matching glob"
+    stdin: |
+      touch realfile.txt
+      shopt -s failglob
+      echo real*.txt
+
+  - name: "failglob does not affect quoted glob chars"
+    stdin: |
+      shopt -s failglob
+      echo 'non-existent-*.txt'
+
+  - name: "failglob with negation"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob
+      ! echo non-existent-*.txt 2>/dev/null
+      echo "exit=$?"
+
+  - name: "failglob in subshell"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob
+      (echo non-existent-*.txt; echo "inner=$?")
+      echo "outer=$?"
+
+  - name: "failglob lone ] is not a glob"
+    stdin: |
+      shopt -s failglob
+      echo foo]
+
+  - name: "failglob lone [ is not a glob"
+    stdin: |
+      shopt -s failglob
+      echo [abc
+
+  - name: "failglob aborts compound list"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob
+      echo *.nomatch; echo "after"
+
+  - name: "failglob in multi-member pipeline"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob
+      echo *.nomatch | cat
+      echo "after"
+
+  - name: "failglob extglob pattern"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob
+      shopt -s extglob
+      echo @(nomatch_pattern_xyz)
+      echo "after"
+
+  - name: "failglob takes precedence over nullglob"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob nullglob
+      echo non-existent-*.txt 2>/dev/null
+      echo "exit=$?"
+
+  - name: "failglob on unquoted variable with glob chars"
+    ignore_stderr: true
+    stdin: |
+      shopt -s failglob
+      x='*.nomatch_xyz'
+      echo $x 2>/dev/null
+      echo "exit=$?"

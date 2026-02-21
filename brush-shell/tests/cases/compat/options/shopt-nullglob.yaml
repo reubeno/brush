@@ -1,0 +1,79 @@
+name: "Options: nullglob"
+cases:
+  - name: "nullglob removes unmatched glob"
+    stdin: |
+      shopt -s nullglob
+      echo "result:" non-existent-*.txt
+
+  - name: "nullglob does not affect matching glob"
+    stdin: |
+      touch realfile.txt
+      shopt -s nullglob
+      echo real*.txt
+
+  - name: "nullglob does not affect quoted glob chars"
+    stdin: |
+      shopt -s nullglob
+      echo 'non-existent-*.txt'
+
+  - name: "nullglob does not affect literal text without glob chars"
+    stdin: |
+      shopt -s nullglob
+      echo hello world
+
+  - name: "nullglob with multiple unmatched patterns"
+    stdin: |
+      shopt -s nullglob
+      echo "result:" *.zzz *.yyy *.xxx
+
+  - name: "nullglob with mix of matched and unmatched"
+    stdin: |
+      touch realfile.txt
+      shopt -s nullglob
+      echo real*.txt *.zzz
+
+  - name: "nullglob with question mark glob"
+    stdin: |
+      shopt -s nullglob
+      echo "result:" ?.nonexistent
+
+  - name: "nullglob with bracket glob"
+    stdin: |
+      shopt -s nullglob
+      echo "result:" [abc].nonexistent
+
+  - name: "nullglob disabled by default"
+    stdin: |
+      echo *.nonexistent
+
+  - name: "nullglob can be toggled"
+    stdin: |
+      shopt -s nullglob
+      echo "on:" *.nonexistent
+      shopt -u nullglob
+      echo "off:" *.nonexistent
+
+  - name: "nullglob in subshell"
+    stdin: |
+      shopt -s nullglob
+      (echo "inner:" *.nonexistent)
+      echo "outer:" *.nonexistent
+
+  - name: "nullglob with for loop"
+    stdin: |
+      shopt -s nullglob
+      for f in *.nonexistent; do
+        echo "unexpected: $f"
+      done
+      echo "done"
+
+  - name: "nullglob with array assignment"
+    stdin: |
+      shopt -s nullglob
+      arr=(*.nonexistent)
+      echo "count: ${#arr[@]}"
+
+  - name: "nullglob with directory glob"
+    stdin: |
+      shopt -s nullglob
+      echo "result:" nonexistent_dir/*/
