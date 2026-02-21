@@ -332,3 +332,8 @@ cases:
     stdin: |
       printf "%d\n" "abc"
       echo "Result: $?"
+
+  - name: "printf %q with empty string"
+    stdin: |
+      printf '%q\n' ''
+      printf '~%q\n' ''

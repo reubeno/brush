@@ -348,7 +348,10 @@ pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
 }
 
 fn backslash_escape(s: &str) -> Cow<'_, str> {
-    if !s.chars().any(needs_escaping) {
+    if s.is_empty() {
+        // An empty string must be represented as '' to be a valid shell word.
+        Cow::Owned("''".to_string())
+    } else if !s.chars().any(needs_escaping) {
         Cow::Borrowed(s)
     } else {
         let mut output = String::with_capacity(s.len());
@@ -479,7 +482,7 @@ mod tests {
     fn test_backslash_escape() {
         assert_eq!(quote_if_needed("a", QuoteMode::BackslashEscape), "a");
         assert_eq!(quote_if_needed("a b", QuoteMode::BackslashEscape), r"a\ b");
-        assert_eq!(quote_if_needed("", QuoteMode::BackslashEscape), "");
+        assert_eq!(quote_if_needed("", QuoteMode::BackslashEscape), "''");
     }
 
     #[test]
