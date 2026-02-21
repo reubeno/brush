@@ -108,9 +108,23 @@ pub(crate) fn init_well_known_vars(
         }),
     )?;
 
-    // TODO(vars): when extdebug is enabled, BASH_ARGC and BASH_ARGV are set to valid values
-    // TODO(vars): implement BASH_ARGC
-    // TODO(vars): implement BASH_ARGV
+    // BASH_ARGC
+    shell.env_mut().set_global(
+        "BASH_ARGC",
+        ShellVariable::new(ShellValue::Dynamic {
+            getter: |shell| get_bash_argc_value(shell),
+            setter: |_| (),
+        }),
+    )?;
+
+    // BASH_ARGV
+    shell.env_mut().set_global(
+        "BASH_ARGV",
+        ShellVariable::new(ShellValue::Dynamic {
+            getter: |shell| get_bash_argv_value(shell),
+            setter: |_| (),
+        }),
+    )?;
 
     // BASH_ARGV0
     shell.env_mut().set_global(
@@ -638,6 +652,53 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
             .collect::<Vec<_>>()
             .into()
     }
+}
+
+fn get_bash_argc_value(shell: &dyn ShellState) -> variables::ShellValue {
+    if !shell.options().enable_debugger {
+        return ShellValue::indexed_array_from_strs(&[]);
+    }
+
+    let stack = shell.call_stack();
+    stack
+        .iter()
+        .filter_map(|frame| match &frame.frame_type {
+            crate::callstack::FrameType::Function(..)
+            | crate::callstack::FrameType::Script(..)
+            | crate::callstack::FrameType::CommandString
+            | crate::callstack::FrameType::InteractiveSession => Some(frame.args.len().to_string()),
+            crate::callstack::FrameType::TrapHandler | crate::callstack::FrameType::Eval => None,
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
+fn get_bash_argv_value(shell: &dyn ShellState) -> variables::ShellValue {
+    if !shell.options().enable_debugger {
+        return ShellValue::indexed_array_from_strs(&[]);
+    }
+
+    let stack = shell.call_stack();
+    let mut argv = Vec::new();
+
+    for frame in stack.iter() {
+        let include = match &frame.frame_type {
+            crate::callstack::FrameType::Function(..)
+            | crate::callstack::FrameType::Script(..)
+            | crate::callstack::FrameType::CommandString
+            | crate::callstack::FrameType::InteractiveSession => true,
+            crate::callstack::FrameType::TrapHandler | crate::callstack::FrameType::Eval => false,
+        };
+
+        if include {
+            // Push args in reverse order per frame (last arg at lowest index = top of stack)
+            for arg in frame.args.iter().rev() {
+                argv.push(arg.clone());
+            }
+        }
+    }
+
+    argv.into()
 }
 
 fn get_lineno(shell: &dyn ShellState) -> usize {
