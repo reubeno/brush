@@ -327,11 +327,13 @@ impl Spec {
                 .set_extended_globbing(shell.options().extended_globbing)
                 .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
-            let expansions = pattern.expand(
-                shell.working_dir(),
-                Some(&patterns::Pattern::accept_all_expand_filter),
-                &patterns::FilenameExpansionOptions::default(),
-            )?;
+            let expansions = pattern
+                .expand(
+                    shell.working_dir(),
+                    Some(&patterns::Pattern::accept_all_expand_filter),
+                    &patterns::FilenameExpansionOptions::default(),
+                )?
+                .into_paths();
 
             for expansion in expansions {
                 candidates.insert(expansion);
@@ -1213,6 +1215,7 @@ async fn get_file_completions(
             &patterns::FilenameExpansionOptions::default(),
         )
         .unwrap_or_default()
+        .into_paths()
         .into_iter()
         .collect()
 }

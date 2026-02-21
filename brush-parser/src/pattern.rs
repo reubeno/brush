@@ -171,7 +171,39 @@ peg::parser! {
             pieces:(!['|' | ')'] piece:pattern_piece() { piece })+ {
                 pieces.join("")
             }
+
+        // A glob metacharacter construct: wildcard, bracket expression, or extglob.
+        rule glob_piece() =
+            bracket_expression() /
+            extglob_enabled() extended_glob_pattern() /
+            wildcard()
+
+        // A non-glob piece: an escape sequence or any character not starting a glob.
+        rule non_glob_piece() =
+            escape_sequence() /
+            !glob_piece() [_]
+
+        // Succeeds (returning true) if the pattern contains at least one glob
+        // metacharacter. The same bracket_expression, wildcard, and
+        // extended_glob_pattern rules used for regex conversion are reused here
+        // via negative lookaheads, keeping a single source of truth.
+        pub(crate) rule has_glob_metacharacters() -> bool =
+            non_glob_piece()* glob_piece() [_]* { true }
     }
+}
+
+/// Returns whether a pattern string contains any glob metacharacters.
+///
+/// Uses the same PEG grammar rules that `pattern_to_regex_str` uses, keeping
+/// a single source of truth for what constitutes a glob metacharacter.
+///
+/// # Arguments
+///
+/// * `pattern` - The shell pattern to check.
+/// * `enable_extended_globbing` - Whether to enable extended globbing (extglob).
+pub fn pattern_has_glob_metacharacters(pattern: &str, enable_extended_globbing: bool) -> bool {
+    pattern_to_regex_translator::has_glob_metacharacters(pattern, enable_extended_globbing)
+        .unwrap_or(false)
 }
 
 /// Returns whether or not a given character needs to be escaped in a regular expression.
@@ -242,5 +274,52 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_has_glob_metacharacters() {
+        // Basic metacharacters.
+        assert!(pattern_has_glob_metacharacters("*", false));
+        assert!(pattern_has_glob_metacharacters("?", false));
+        assert!(pattern_has_glob_metacharacters("a*b", false));
+        assert!(pattern_has_glob_metacharacters("a?b", false));
+
+        // Valid bracket expressions.
+        assert!(pattern_has_glob_metacharacters("[abc]", false));
+        assert!(pattern_has_glob_metacharacters("[a-z]", false));
+        assert!(pattern_has_glob_metacharacters("[!a]", false));
+
+        // Lone `]` is NOT a glob metacharacter.
+        assert!(!pattern_has_glob_metacharacters("]", false));
+        assert!(!pattern_has_glob_metacharacters("foo]", false));
+        assert!(!pattern_has_glob_metacharacters("a]b", false));
+
+        // Lone `[` without matching `]` is NOT a glob metacharacter.
+        assert!(!pattern_has_glob_metacharacters("[", false));
+        assert!(!pattern_has_glob_metacharacters("[abc", false));
+        assert!(!pattern_has_glob_metacharacters("a[b", false));
+
+        // Plain text — no glob chars.
+        assert!(!pattern_has_glob_metacharacters("hello", false));
+        assert!(!pattern_has_glob_metacharacters("", false));
+
+        // Backslash-escaped metacharacters are not globs.
+        assert!(!pattern_has_glob_metacharacters(r"\*", false));
+        assert!(!pattern_has_glob_metacharacters(r"\?", false));
+        assert!(!pattern_has_glob_metacharacters(r"\[abc]", false));
+
+        // Extglob patterns — not detected without extended globbing.
+        assert!(!pattern_has_glob_metacharacters("@(a)", false));
+        assert!(!pattern_has_glob_metacharacters("!(a)", false));
+        assert!(!pattern_has_glob_metacharacters("+(a)", false));
+
+        // Extglob patterns — detected with extended globbing.
+        assert!(pattern_has_glob_metacharacters("@(a)", true));
+        assert!(pattern_has_glob_metacharacters("!(a)", true));
+        assert!(pattern_has_glob_metacharacters("+(a)", true));
+
+        // *( and ?( are already caught by * and ? checks.
+        assert!(pattern_has_glob_metacharacters("*(a)", false));
+        assert!(pattern_has_glob_metacharacters("?(a)", false));
     }
 }

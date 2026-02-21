@@ -314,6 +314,10 @@ pub enum ErrorKind {
         /// Name of the function.
         name: String,
     },
+
+    /// A glob pattern failed to match any files (failglob).
+    #[error("no match: {0}")]
+    NoMatch(String),
 }
 
 /// Trait implementable by built-in commands to represent errors.

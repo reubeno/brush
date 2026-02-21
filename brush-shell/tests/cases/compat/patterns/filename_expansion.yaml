@@ -210,6 +210,115 @@ cases:
       echo ".*  : " .*
       echo "./.*: " ./.*
 
+  - name: "Glob results are sorted"
+    test_files:
+      - path: "cherry.txt"
+      - path: "apple.txt"
+      - path: "banana.txt"
+    stdin: |
+      echo *.txt
+
+  - name: "Multiple globs on one command line"
+    test_files:
+      - path: "a.txt"
+      - path: "b.txt"
+      - path: "x.log"
+      - path: "y.log"
+    stdin: |
+      echo *.txt *.log
+
+  - name: "Glob does not expand in variable assignment"
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
+    stdin: |
+      x=*.txt
+      echo "$x"
+
+  - name: "Glob expands in unquoted variable use"
+    test_files:
+      - path: "file1.txt"
+      - path: "file2.txt"
+    stdin: |
+      x=*.txt
+      echo $x
+
+  - name: "Glob with trailing slash matches directories"
+    known_failure: true
+    test_files:
+      - path: "mydir/file.txt"
+      - path: "myfile.txt"
+    stdin: |
+      echo */
+
+  - name: "Globstar disabled by default"
+    known_failure: true
+    test_files:
+      - path: "a/b/c.txt"
+    stdin: |
+      shopt -u globstar
+      echo **/c.txt
+
+  - name: "Globstar recursive matching"
+    known_failure: true
+    test_files:
+      - path: "a/b/c.txt"
+      - path: "a/d.txt"
+      - path: "e.txt"
+    stdin: |
+      shopt -s globstar
+      echo **/*.txt
+
+  - name: "GLOBIGNORE filters glob results"
+    known_failure: true
+    test_files:
+      - path: "a.txt"
+      - path: "b.txt"
+      - path: "c.txt"
+    stdin: |
+      GLOBIGNORE="b.txt"
+      echo *.txt
+
+  - name: "GLOBIGNORE with multiple patterns"
+    known_failure: true
+    test_files:
+      - path: "a.txt"
+      - path: "b.txt"
+      - path: "c.txt"
+      - path: "d.log"
+    stdin: |
+      GLOBIGNORE="b.txt:c.txt"
+      echo *.txt
+      echo *.log
+
+  - name: "GLOBIGNORE implicitly enables dotglob"
+    known_failure: true
+    min_oracle_version: 5.2
+    test_files:
+      - path: "a.txt"
+      - path: ".hidden.txt"
+    stdin: |
+      GLOBIGNORE="a.txt"
+      echo *.txt
+
+  - name: "Unsetting GLOBIGNORE restores behavior"
+    known_failure: true
+    test_files:
+      - path: "a.txt"
+      - path: "b.txt"
+    stdin: |
+      GLOBIGNORE="a.txt"
+      echo *.txt
+      unset GLOBIGNORE
+      echo *.txt
+
+  - name: "Star does not match slash in path"
+    test_files:
+      - path: "dir/file.txt"
+      - path: "top.txt"
+    stdin: |
+      echo *.txt
+
   - name: "Pathname expansion: dot files (with dotglob)"
     min_oracle_version: 5.2
     stdin: |

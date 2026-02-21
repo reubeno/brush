@@ -713,17 +713,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let fields: Vec<WordField> = self.split_fields(basic_expansion);
 
         // Now expand pathnames if necessary. This also unquotes as a side effect.
-        let result = fields
-            .into_iter()
-            .flat_map(|field| {
-                if self.disable_pathname_expansion || self.shell.options().disable_filename_globbing
-                {
-                    vec![String::from(field)]
-                } else {
-                    self.expand_pathnames_in_field(field)
-                }
-            })
-            .collect();
+        let mut result = Vec::new();
+        for field in fields {
+            if self.disable_pathname_expansion || self.shell.options().disable_filename_globbing {
+                result.push(String::from(field));
+            } else {
+                result.extend(self.expand_pathnames_in_field(field)?);
+            }
+        }
 
         Ok(result)
     }
@@ -768,7 +765,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         fields
     }
 
-    fn expand_pathnames_in_field(&self, field: WordField) -> Vec<String> {
+    fn expand_pathnames_in_field(&self, field: WordField) -> Result<Vec<String>, error::Error> {
         let pattern = patterns::Pattern::from(field.clone())
             .set_extended_globbing(self.parser_options.enable_extended_globbing)
             .set_case_insensitive(self.shell.options().case_insensitive_pathname_expansion);
@@ -777,7 +774,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             require_dot_in_pattern_to_match_dot_files: !self.shell.options().glob_matches_dotfiles,
         };
 
-        let expansions = pattern
+        // On error (e.g. malformed pattern), default to NoGlob so the field
+        // passes through as a literal rather than triggering failglob.
+        let expansion = pattern
             .expand(
                 self.shell.working_dir(),
                 Some(&patterns::Pattern::accept_all_expand_filter),
@@ -785,10 +784,22 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             )
             .unwrap_or_default();
 
-        if expansions.is_empty() && !self.shell.options().expand_non_matching_patterns_to_null {
-            vec![String::from(field)]
+        if expansion.is_unmatched_glob()
+            && self.shell.options().fail_expansion_on_globs_without_match
+        {
+            let field_str = String::from(field);
+            return Err(error::ErrorKind::NoMatch(field_str).into());
+        }
+
+        let paths = expansion.into_paths();
+        if paths.is_empty() {
+            if self.shell.options().expand_non_matching_patterns_to_null {
+                Ok(vec![])
+            } else {
+                Ok(vec![String::from(field)])
+            }
         } else {
-            expansions
+            Ok(paths)
         }
     }
 
