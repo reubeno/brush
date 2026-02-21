@@ -546,10 +546,7 @@ fn cacheable_parse(
     Ok(pieces)
 }
 
-/// Parse a heredoc body into its constituent pieces.
-///
-/// Unlike [`parse`], this treats `"` and `'` as literal characters (no quote removal),
-/// which is correct for heredoc bodies with unquoted delimiters per POSIX.
+/// Parse a heredoc body, treating `"` and `'` as literal characters.
 ///
 /// # Arguments
 ///
@@ -868,13 +865,17 @@ peg::parser! {
 
         rule heredoc_word_piece() -> WordPiece =
             arithmetic_expansion() /
+            legacy_arithmetic_expansion() /
             command_substitution() /
             parameter_expansion() /
-            double_quoted_escape_sequence() /
+            heredoc_escape_sequence() /
             heredoc_literal_text()
 
+        rule heredoc_escape_sequence() -> WordPiece =
+            s:$("\\" ['$' | '`' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
+
         rule heredoc_literal_text() -> WordPiece =
-            s:$((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'`'])+) {
+            s:$((!heredoc_escape_sequence() !dollar_sign_word_piece() [^'`'])+) {
                 WordPiece::Text(s.to_owned())
             }
 
