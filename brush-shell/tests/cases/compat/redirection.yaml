@@ -249,3 +249,26 @@ cases:
       fi
 
       $0 $args test.sh 3>output.txt
+
+  - name: "Redirect without space after command"
+    stdin: |
+      echo hello>/tmp/test_no_space.txt
+      cat /tmp/test_no_space.txt
+
+  - name: "Redirect without space after colon command"
+    stdin: |
+      :>/tmp/test_colon.txt
+      test -f /tmp/test_colon.txt && echo "file exists"
+
+  - name: "Append redirect without space"
+    stdin: |
+      echo first>/tmp/test_append.txt
+      echo second>>/tmp/test_append.txt
+      cat /tmp/test_append.txt
+
+  - name: "Input redirect without space"
+    test_files:
+      - path: "input.txt"
+        contents: "hello world"
+    stdin: |
+      cat<input.txt
