@@ -378,25 +378,12 @@ pub(crate) async fn basic_expand_word(
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
-/// Expands a heredoc body according to POSIX rules.
+/// Expands a heredoc body.
 ///
 /// Performs parameter expansion, command substitution, and arithmetic expansion
 /// on the heredoc content while preserving literal quote characters. Unlike
 /// [`basic_expand_word`], this treats `"` and `'` as literal characters rather
 /// than quote delimiters.
-///
-/// # POSIX Compliance
-///
-/// According to POSIX, when a heredoc delimiter is unquoted (e.g., `<<EOF`),
-/// the heredoc body undergoes:
-/// - Parameter expansion: `$var` and `${var}` are expanded
-/// - Command substitution: `$(command)` and `` `command` `` are executed
-/// - Arithmetic expansion: `$((expression))` is evaluated
-/// - Backslash escaping: `\newline` continues lines, `\$` produces literal `$`
-///
-/// However, quote characters (`"` and `'`) remain literal and are not processed
-/// as quote delimiters. This differs from regular word expansion where quotes
-/// create quoted regions and are removed from the output.
 ///
 /// # Arguments
 ///
@@ -409,9 +396,9 @@ pub(crate) async fn basic_expand_heredoc_word(
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
-    expander
-        .basic_expand_heredoc_to_str(word_str.as_ref())
-        .await
+    expander.heredoc_mode = true;
+    expander.disable_brace_expansion = true;
+    expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
 /// Applies all basic expansion to the given word (represented as a string),
@@ -523,6 +510,8 @@ struct WordExpander<'a, SE: extensions::ShellExtensions> {
     disable_pathname_expansion: bool,
     /// Whether we are currently expanding inside a double-quoted context.
     in_double_quotes: bool,
+    /// Whether to use heredoc expansion semantics (literal quotes, no brace expansion).
+    heredoc_mode: bool,
 }
 
 impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
@@ -537,6 +526,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             disable_unquoted_backslash_removal: false,
             disable_pathname_expansion: false,
             in_double_quotes: false,
+            heredoc_mode: false,
         }
     }
 
@@ -561,48 +551,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             disable_unquoted_backslash_removal: false,
             disable_pathname_expansion: !options.pathname_expand,
             in_double_quotes: false,
+            heredoc_mode: false,
         }
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
         Ok(String::from(self.basic_expand(word).await?))
-    }
-
-    /// Apply parameter expansion, command substitution, and arithmetic expansion
-    /// to a heredoc body, preserving literal quotes.
-    async fn basic_expand_heredoc_to_str(&mut self, word: &str) -> Result<String, error::Error> {
-        Ok(String::from(self.basic_expand_heredoc(word).await?))
-    }
-
-    /// Expand a heredoc body with POSIX-compliant quote handling.
-    ///
-    /// Per POSIX, heredoc bodies with unquoted delimiters undergo:
-    /// - Parameter expansion (`$var`, `${var}`)
-    /// - Command substitution (`$(...)`, `` `...` ``)
-    /// - Arithmetic expansion (`$((...))`)
-    /// - Backslash escaping (`\newline` for line continuation, `\$` for literal `$`)
-    ///
-    /// However, quote characters (`"` and `'`) are NOT treated as quote delimiters.
-    /// They remain as literal characters in the output. This differs from regular
-    /// word expansion where quotes are parsed, create quoted regions, and are removed.
-    ///
-    /// Uses `brush_parser::word::parse_heredoc()` which implements this special
-    /// parsing mode where `"` and `'` are regular word characters.
-    async fn basic_expand_heredoc(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        tracing::debug!(target: trace_categories::EXPANSION, "Heredoc expanding: '{word}'");
-
-        if !word.contains(['$', '`', '\\']) {
-            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
-        }
-
-        let mut expansions = vec![];
-        for piece in brush_parser::word::parse_heredoc(word, &self.parser_options)? {
-            let piece_expansion = self.expand_word_piece(piece.piece).await?;
-            expansions.push(piece_expansion);
-        }
-
-        Ok(coalesce_expansions(expansions))
     }
 
     async fn basic_expand_opt_pattern(
@@ -683,11 +638,17 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // understood to be the *only* ones indicative of *possible* expansion. There's
         // still a possibility no expansion needs to be done, but that's okay; we'll still
         // yield a correct result.
-        if !word.contains(['$', '`', '\\', '\'', '\"', '~', '{']) {
+        let expansion_chars: &[char] = if self.heredoc_mode {
+            // Heredoc bodies treat quotes as literal; only $, `, and \ trigger expansion.
+            &['$', '`', '\\']
+        } else {
+            &['$', '`', '\\', '\'', '\"', '~', '{']
+        };
+        if !word.contains(expansion_chars) {
             return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
         }
 
-        // Apply brace expansion first, before anything else.
+        // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
         let brace_expanded = self.brace_expand_if_needed(word)?;
         if tracing::enabled!(target: trace_categories::EXPANSION, tracing::Level::DEBUG)
             && brace_expanded != word
@@ -696,8 +657,18 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
 
         // Expand: tildes, parameters, command substitutions, arithmetic.
+        let pieces = if self.heredoc_mode {
+            // Heredoc mode only affects top-level parsing (literal quotes); recursive
+            // expansion of parameter words (e.g., ${var:-"default"}) uses normal semantics.
+            self.heredoc_mode = false;
+
+            brush_parser::word::parse_heredoc(brace_expanded.as_ref(), &self.parser_options)?
+        } else {
+            brush_parser::word::parse(brace_expanded.as_ref(), &self.parser_options)?
+        };
+
         let mut expansions = vec![];
-        for piece in brush_parser::word::parse(brace_expanded.as_ref(), &self.parser_options)? {
+        for piece in pieces {
             let piece_expansion = self.expand_word_piece(piece.piece).await?;
             expansions.push(piece_expansion);
         }
