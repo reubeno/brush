@@ -114,7 +114,6 @@ cases:
       echo "${test1}"
 
   - name: "Here doc in a command substitution with quotes"
-    known_failure: true # Issue #421
     stdin: |
       test1=$(cat <<EOF
       something "quoted"
@@ -122,6 +121,72 @@ cases:
       )
 
       echo "${test1}"
+
+  - name: "Here doc with parameter default containing quotes"
+    stdin: |
+      cat <<EOF
+      ${unset_var:-"default value"}
+      EOF
+
+  - name: "Here doc preserves literal double quotes"
+    stdin: |
+      cat <<EOF
+      "double quoted"
+      she said "hello"
+      EOF
+
+  - name: "Here doc preserves literal single quotes"
+    stdin: |
+      cat <<EOF
+      'single quoted'
+      it's a test
+      EOF
+
+  - name: "Here doc with mixed quotes and expansion"
+    stdin: |
+      x=world
+      cat <<EOF
+      "hello $x"
+      "$x" and more
+      EOF
+
+  - name: "Here doc does not perform brace expansion"
+    stdin: |
+      cat <<EOF
+      {a,b,c}
+      {1..3}
+      EOF
+
+  - name: "Here doc does not perform tilde expansion"
+    stdin: |
+      cat <<EOF
+      ~
+      ~/path
+      EOF
+
+  - name: "Here doc escape sequences"
+    stdin: |
+      cat <<EOF
+      \$HOME
+      \\backslash
+      \n not a newline
+      \"not unquoted\"
+      \'not unquoted\'
+      EOF
+
+  - name: "Here doc with command substitution containing quotes"
+    stdin: |
+      cat <<EOF
+      $(echo "hello world")
+      $(echo 'single')
+      EOF
+
+  - name: "Here doc with arithmetic expansion"
+    stdin: |
+      cat <<EOF
+      $((2 + 3))
+      $((10 * 2))
+      EOF
 
   - name: "Here doc in a command substitution with parentheses"
     known_failure: true # Issue #419
