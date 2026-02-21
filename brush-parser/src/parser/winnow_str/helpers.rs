@@ -43,7 +43,7 @@ pub(super) fn extglob_pattern<'a>() -> impl Parser<StrStream<'a>, &'a str, PErro
 
         // Use the helper to parse balanced parens starting from the '('
         let _balanced =
-            parse_balanced_delimiters("(", Some('('), ')', 1, false).parse_next(input)?;
+            parse_balanced_delimiters("(", Some('('), ')', 1, false, false).parse_next(input)?;
 
         // Get the full pattern including prefix character
         let end = input.checkpoint();
@@ -106,18 +106,20 @@ pub(super) fn skip_double_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a
 /// - `close_char`: Character that decreases depth (e.g., ')' or '}' or backtick)
 /// - `initial_depth`: Starting depth (e.g., 1 for most, 2 for arithmetic `$((`)
 /// - `allow_comments`: Whether to recognize `#` as starting a comment (true for command substitutions)
+/// - `allow_heredocs`: Whether to recognize heredocs (true for command substitutions)
 ///
 /// # Examples
-/// - Command substitution: `parse_balanced_delimiters("$(", Some('('), ')', 1, true)`
-/// - Arithmetic: `parse_balanced_delimiters("$((", Some('('), ')', 2, false)`
-/// - Braced variable: `parse_balanced_delimiters("${", Some('{'), '}', 1, false)`
-/// - Backtick: `parse_balanced_delimiters("`", None, '`', 1, true)`
+/// - Command substitution: `parse_balanced_delimiters("$(", Some('('), ')', 1, true, true)`
+/// - Arithmetic: `parse_balanced_delimiters("$((", Some('('), ')', 2, false, false)`
+/// - Braced variable: `parse_balanced_delimiters("${", Some('{'), '}', 1, false, false)`
+/// - Backtick: `parse_balanced_delimiters("`", None, '`', 1, true, true)`
 pub(super) fn parse_balanced_delimiters<'a>(
     prefix: &'a str,
     open_char: Option<char>,
     close_char: char,
     initial_depth: usize,
     allow_comments: bool,
+    allow_heredocs: bool,
 ) -> impl Parser<StrStream<'a>, &'a str, PError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start = input.checkpoint();
@@ -131,7 +133,56 @@ pub(super) fn parse_balanced_delimiters<'a>(
         let mut depth = initial_depth;
         let mut at_comment_start = allow_comments;
 
+        // Track heredocs: list of (delimiter, remove_tabs) pairs waiting for their content
+        let mut pending_heredocs: Vec<(String, bool)> = Vec::new();
+        // Track if we're currently consuming heredoc body content
+        let mut in_heredoc_body = false;
+
         while depth > 0 {
+            // If we're in heredoc body mode, consume lines until we find all delimiters
+            if in_heredoc_body && !pending_heredocs.is_empty() {
+                // Only check the FIRST pending heredoc's delimiter
+                let (delimiter, remove_tabs) = &pending_heredocs[0];
+
+                // Skip leading tabs if remove_tabs is true
+                if *remove_tabs {
+                    let _: Result<&str, PError> =
+                        winnow::token::take_while(0.., '\t').parse_next(input);
+                }
+
+                // Try to match the delimiter at line start
+                let checkpoint = input.checkpoint();
+                if let Ok(line_content) =
+                    winnow::token::take_while::<_, _, PError>(0.., |c| c != '\n').parse_next(input)
+                {
+                    if line_content == delimiter {
+                        // Found the delimiter - remove this heredoc from the list
+                        pending_heredocs.remove(0);
+                        // Consume the newline after the delimiter
+                        let _ = winnow::token::any::<_, PError>.parse_next(input);
+                        // If no more pending heredocs, exit heredoc body mode
+                        if pending_heredocs.is_empty() {
+                            in_heredoc_body = false;
+                        }
+                        continue;
+                    }
+                }
+                input.reset(&checkpoint);
+
+                // Not the delimiter - this line is content for the current heredoc
+                // Consume the entire line (including newline)
+                loop {
+                    match winnow::token::any::<_, PError>.parse_next(input) {
+                        Ok('\n') => break,
+                        Ok(_) => {}
+                        Err(_) => {
+                            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                        }
+                    }
+                }
+                continue;
+            }
+
             match winnow::token::any::<_, PError>.parse_next(input) {
                 Ok(ch) if Some(ch) == open_char => {
                     depth += 1;
@@ -162,6 +213,39 @@ pub(super) fn parse_balanced_delimiters<'a>(
                         }
                     }
                 }
+                Ok('<') if allow_heredocs && depth == initial_depth => {
+                    // Check for heredoc operator <<
+                    let checkpoint = input.checkpoint();
+                    if let Ok('<') = winnow::token::any::<_, PError>.parse_next(input) {
+                        // Check for <<- (remove leading tabs) vs <<
+                        // Use peek to check without consuming
+                        let remove_tabs =
+                            winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('-'))
+                                .parse_next(input)
+                                .is_ok();
+                        if remove_tabs {
+                            // Consume the '-'
+                            let _ = winnow::token::any::<_, PError>.parse_next(input);
+                        }
+
+                        // Parse the heredoc delimiter
+                        let delimiter = parse_heredoc_delimiter_in_balanced(input)?;
+                        if !delimiter.is_empty() {
+                            pending_heredocs.push((delimiter, remove_tabs));
+                        }
+                        at_comment_start = false;
+                    } else {
+                        input.reset(&checkpoint);
+                        at_comment_start = allow_comments && matches!('<', ' ' | '\t' | '\n');
+                    }
+                }
+                Ok('\n') => {
+                    at_comment_start = allow_comments;
+                    // After a newline, if we have pending heredocs, start consuming their content
+                    if !pending_heredocs.is_empty() {
+                        in_heredoc_body = true;
+                    }
+                }
                 Ok(ch) => {
                     at_comment_start = allow_comments && matches!(ch, ' ' | '\t' | '\n');
                 }
@@ -180,6 +264,73 @@ pub(super) fn parse_balanced_delimiters<'a>(
 
         Ok(result)
     }
+}
+
+/// Parse a heredoc delimiter (the word after << or <<-)
+/// Returns the delimiter string (with quotes stripped for matching)
+fn parse_heredoc_delimiter_in_balanced(input: &mut StrStream<'_>) -> Result<String, PError> {
+    let mut delimiter = String::new();
+
+    // Skip optional whitespace before delimiter
+    let _: Result<&str, PError> =
+        winnow::token::take_while(0.., |c| c == ' ' || c == '\t').parse_next(input);
+
+    // Read the delimiter word
+    while !input.is_empty() {
+        let checkpoint = input.checkpoint();
+
+        // Check for end of delimiter (whitespace, newline, or operators)
+        if let Ok(_ch) =
+            winnow::token::one_of::<_, _, PError>([' ', '\t', '\n', ')', '|', '&', ';'])
+                .parse_next(input)
+        {
+            input.reset(&checkpoint);
+            break;
+        }
+        input.reset(&checkpoint);
+
+        let ch: char = winnow::token::any.parse_next(input)?;
+
+        match ch {
+            '\'' => {
+                // Single-quoted delimiter - read until closing quote
+                loop {
+                    match winnow::token::any::<_, PError>.parse_next(input) {
+                        Ok('\'') => break,
+                        Ok(c) => delimiter.push(c),
+                        Err(_) => break,
+                    }
+                }
+            }
+            '"' => {
+                // Double-quoted delimiter - read until closing quote
+                loop {
+                    match winnow::token::any::<_, PError>.parse_next(input) {
+                        Ok('"') => break,
+                        Ok('\\') => {
+                            // Handle escape in double quotes
+                            if let Ok(next) = winnow::token::any::<_, PError>.parse_next(input) {
+                                delimiter.push(next);
+                            }
+                        }
+                        Ok(c) => delimiter.push(c),
+                        Err(_) => break,
+                    }
+                }
+            }
+            '\\' => {
+                // Escaped character
+                if let Ok(next) = winnow::token::any::<_, PError>.parse_next(input) {
+                    delimiter.push(next);
+                }
+            }
+            _ => {
+                delimiter.push(ch);
+            }
+        }
+    }
+
+    Ok(delimiter)
 }
 
 /// Check if character is valid in a username for tilde expansion
