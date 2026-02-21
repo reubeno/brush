@@ -3,7 +3,7 @@ use winnow::prelude::*;
 use crate::ast;
 
 use super::compound::{brace_group, do_group, for_clause, subshell};
-use super::helpers::{keyword, sequential_sep, spaces};
+use super::helpers::{keyword, linebreak, sequential_sep, spaces};
 use super::position::PositionTracker;
 use super::types::{PError, ParseContext, StrStream};
 
@@ -194,16 +194,25 @@ fn arithmetic_for_body<'a>(
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::DoGroupCommand, PError> + 'a {
     move |input: &mut StrStream<'a>| {
+        // Consume optional linebreak (spaces, newlines, comments) before trying to match the body
+        // This is needed because both do_group (via keyword) and brace_group
+        // may have leading whitespace
+        let _ = linebreak().parse_next(input);
+
         winnow::combinator::alt((
+            // Try brace_group first (alternate syntax with braces)
+            // Must come before do_group to avoid keyword("do") consuming spaces
+            // Precede with spaces to handle leading whitespace
+            winnow::combinator::preceded(spaces(), brace_group(ctx, tracker)).map(|bg| {
+                ast::DoGroupCommand {
+                    list: bg.list,
+                    loc: bg.loc,
+                }
+            }),
             // Try sequential_sep followed by do_group (for "; do" or "\n do")
             winnow::combinator::preceded(sequential_sep(), do_group(ctx, tracker)),
             // Try do_group directly (for " do" - spaces consumed by keyword)
             do_group(ctx, tracker),
-            // Try brace_group (convert to DoGroupCommand)
-            brace_group(ctx, tracker).map(|bg| ast::DoGroupCommand {
-                list: bg.list,
-                loc: bg.loc,
-            }),
         ))
         .parse_next(input)
     }
