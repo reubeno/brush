@@ -70,7 +70,12 @@ impl TestShellWithBashCompletion {
 
     pub async fn complete(&mut self, line: &str, pos: usize) -> Result<Vec<String>> {
         let completions = self.shell.complete(line, pos).await?;
-        Ok(completions.candidates.into_iter().collect())
+        Ok(completions
+            .candidates
+            .into_iter()
+            .collect::<indexmap::IndexSet<_>>()
+            .into_iter()
+            .collect())
     }
 
     pub fn set_var(&mut self, name: &str, value: &str) -> Result<()> {

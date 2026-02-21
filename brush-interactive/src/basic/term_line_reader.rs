@@ -224,7 +224,7 @@ impl<'a> ReadLineState<'a> {
         &mut self,
         completions: &brush_core::completion::Completions,
     ) -> Result<(), ShellError> {
-        let Some(candidate) = completions.candidates.iter().next() else {
+        let Some(candidate) = completions.candidates.first() else {
             return Ok(());
         };
 
