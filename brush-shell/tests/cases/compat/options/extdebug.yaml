@@ -143,7 +143,6 @@ cases:
   # BASH_ARGC and BASH_ARGV (extdebug-specific)
   #
   - name: "BASH_ARGC - contains argument counts per call frame"
-    known_failure: true # TODO(extdebug): BASH_ARGC not populated
     stdin: |
       shopt -s extdebug
       show_argc() {
@@ -155,7 +154,6 @@ cases:
       func_with_args a b c
 
   - name: "BASH_ARGV - contains arguments in reverse order"
-    known_failure: true # TODO(extdebug): BASH_ARGV not populated
     stdin: |
       shopt -s extdebug
       show_argv() {
@@ -167,7 +165,6 @@ cases:
       func_with_args a b c
 
   - name: "BASH_ARGC/ARGV - in nested calls"
-    known_failure: true # TODO(extdebug): BASH_ARGC/ARGV not populated
     stdin: |
       shopt -s extdebug
       inner() {
@@ -180,7 +177,6 @@ cases:
       outer a b c
 
   - name: "BASH_ARGC/ARGV - empty when no arguments"
-    known_failure: true # TODO(extdebug): BASH_ARGC/ARGV not populated
     stdin: |
       shopt -s extdebug
       no_args() {
