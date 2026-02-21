@@ -42,7 +42,8 @@ pub(super) fn extglob_pattern<'a>() -> impl Parser<StrStream<'a>, &'a str, PErro
         let _prefix_char = winnow::token::one_of(['@', '!', '?', '+', '*']).parse_next(input)?;
 
         // Use the helper to parse balanced parens starting from the '('
-        let _balanced = parse_balanced_delimiters("(", Some('('), ')', 1).parse_next(input)?;
+        let _balanced =
+            parse_balanced_delimiters("(", Some('('), ')', 1, false).parse_next(input)?;
 
         // Get the full pattern including prefix character
         let end = input.checkpoint();
@@ -104,17 +105,19 @@ pub(super) fn skip_double_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a
 /// - `open_char`: Character that increases depth (e.g., '(' or '{'), or None for backticks
 /// - `close_char`: Character that decreases depth (e.g., ')' or '}' or backtick)
 /// - `initial_depth`: Starting depth (e.g., 1 for most, 2 for arithmetic `$((`)
+/// - `allow_comments`: Whether to recognize `#` as starting a comment (true for command substitutions)
 ///
 /// # Examples
-/// - Command substitution: `parse_balanced_delimiters("$(", Some('('), ')', 1)`
-/// - Arithmetic: `parse_balanced_delimiters("$((", Some('('), ')', 2)`
-/// - Braced variable: `parse_balanced_delimiters("${", Some('{'), '}', 1)`
-/// - Backtick: `parse_balanced_delimiters("`", None, '`', 1)`
+/// - Command substitution: `parse_balanced_delimiters("$(", Some('('), ')', 1, true)`
+/// - Arithmetic: `parse_balanced_delimiters("$((", Some('('), ')', 2, false)`
+/// - Braced variable: `parse_balanced_delimiters("${", Some('{'), '}', 1, false)`
+/// - Backtick: `parse_balanced_delimiters("`", None, '`', 1, true)`
 pub(super) fn parse_balanced_delimiters<'a>(
     prefix: &'a str,
     open_char: Option<char>,
     close_char: char,
     initial_depth: usize,
+    allow_comments: bool,
 ) -> impl Parser<StrStream<'a>, &'a str, PError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start = input.checkpoint();
@@ -124,8 +127,9 @@ pub(super) fn parse_balanced_delimiters<'a>(
 
         // Parse balanced delimiters
         // Track whether # would start a comment (after whitespace/newline/start)
+        // Only relevant when allow_comments is true
         let mut depth = initial_depth;
-        let mut at_comment_start = true;
+        let mut at_comment_start = allow_comments;
 
         while depth > 0 {
             match winnow::token::any::<_, PError>.parse_next(input) {
@@ -159,7 +163,7 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     }
                 }
                 Ok(ch) => {
-                    at_comment_start = matches!(ch, ' ' | '\t' | '\n');
+                    at_comment_start = allow_comments && matches!(ch, ' ' | '\t' | '\n');
                 }
                 Err(_) => {
                     return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
