@@ -66,6 +66,14 @@ cases:
       echo {a..f..2}
       echo
 
+      echo "{a..f..0} =>"
+      echo {a..f..0}
+      echo
+
+      echo "{m..f} =>"
+      echo {m..f}
+      echo
+
   - name: "Expansion with curly braces: numeric ranges"
     stdin: |
       echo "{2..9} =>"
@@ -84,6 +92,10 @@ cases:
       echo {2..1}
       echo
 
+      echo "{10..2..0} =>"
+      echo {10..2..0}
+      echo
+
       echo "{10..2..2} =>"
       echo {10..2..2}
       echo
@@ -96,12 +108,20 @@ cases:
       echo {2..9..2}
       echo
 
+      echo "{2..9..0} =>"
+      echo {2..9..0}
+      echo
+
       echo "{-1..-10} =>"
       echo {-1..-10}
       echo
 
       echo "{-10..-1} =>"
       echo {-10..-1}
+      echo
+
+      echo "{-1..-10..2} =>"
+      echo {-1..-10..2}
       echo
 
   - name: "Expansion with curly braces: nested"

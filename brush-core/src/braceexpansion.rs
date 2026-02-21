@@ -35,18 +35,23 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             end,
             increment,
         } => {
-            let increment = increment.unsigned_abs() as usize;
+            let mut increment = increment.unsigned_abs() as usize;
+            if increment == 0 {
+                increment = 1;
+            }
 
             if start <= end {
                 Box::new((start..=end).step_by(increment).map(|n| n.to_string()))
             } else {
+                // Iterate from start down to end by decrementing.
+                #[allow(clippy::cast_possible_wrap)]
+                let increment = increment as i64;
                 Box::new(
-                    (end..=start)
-                        .step_by(increment)
-                        .map(|n| n.to_string())
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev(),
+                    std::iter::successors(Some(start), move |&n| {
+                        let next = n - increment;
+                        (next >= end).then_some(next)
+                    })
+                    .map(|n| n.to_string()),
                 )
             }
         }
@@ -56,18 +61,22 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             end,
             increment,
         } => {
-            let increment = increment.unsigned_abs() as usize;
+            let mut increment = increment.unsigned_abs() as usize;
+            if increment == 0 {
+                increment = 1;
+            }
 
             if start <= end {
                 Box::new((start..=end).step_by(increment).map(|c| c.to_string()))
             } else {
+                // Iterate from start down to end by decrementing.
+                let increment = increment as u32;
                 Box::new(
-                    (end..=start)
-                        .step_by(increment)
-                        .map(|c| c.to_string())
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev(),
+                    std::iter::successors(Some(start), move |&c| {
+                        let next = char::from_u32(c as u32 - increment)?;
+                        (next >= end).then_some(next)
+                    })
+                    .map(|c| c.to_string()),
                 )
             }
         }
