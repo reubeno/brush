@@ -67,7 +67,7 @@ fn array_element<'a>(
         if has_bracket {
             // Parse index using parse_balanced_delimiters to handle nested brackets
             let index_str_with_brackets =
-                parse_balanced_delimiters("[", Some('['), ']', 1).parse_next(input)?;
+                parse_balanced_delimiters("[", Some('['), ']', 1, false).parse_next(input)?;
             // Strip the outer brackets to match PEG parser behavior
             let index_str = index_str_with_brackets
                 .strip_prefix('[')
@@ -123,7 +123,7 @@ fn assignment_word<'a>(
         {
             // Parse the index using parse_balanced_delimiters to handle nested brackets
             let index_with_brackets =
-                parse_balanced_delimiters("[", Some('['), ']', 1).parse_next(input)?;
+                parse_balanced_delimiters("[", Some('['), ']', 1, false).parse_next(input)?;
             // Strip the outer brackets to match PEG parser behavior
             let index = index_with_brackets
                 .strip_prefix('[')
