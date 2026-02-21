@@ -402,19 +402,29 @@ pub(super) fn cmd_suffix<'a>(
             // If we can't parse words, only try redirects
             if can_parse_words || all_items.is_empty() {
                 // Try to parse a single suffix item
-                match single_suffix_item(ctx, tracker).parse_next(input) {
+                let result = single_suffix_item(ctx, tracker).parse_next(input);
+                match result {
                     Ok(item) => {
                         all_items.push(item);
                         spaces().parse_next(input)?;
+                    }
+                    Err(winnow::error::ErrMode::Cut(e)) => {
+                        // Cut errors are fatal - propagate them
+                        return Err(winnow::error::ErrMode::Cut(e));
                     }
                     Err(_) => break,
                 }
             } else {
                 // After first redirect without space, only try redirects
-                match io_redirect(ctx, tracker).parse_next(input) {
+                let result = io_redirect(ctx, tracker).parse_next(input);
+                match result {
                     Ok(r) => {
                         all_items.push(ast::CommandPrefixOrSuffixItem::IoRedirect(r.redirect));
                         spaces().parse_next(input)?;
+                    }
+                    Err(winnow::error::ErrMode::Cut(e)) => {
+                        // Cut errors are fatal - propagate them
+                        return Err(winnow::error::ErrMode::Cut(e));
                     }
                     Err(_) => break,
                 }

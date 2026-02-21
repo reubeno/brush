@@ -162,10 +162,27 @@ pub(super) fn dollar_expansion_in_double_quotes<'a>()
 /// Parse a single-quoted string: 'text'
 /// In single quotes, everything is literal except the closing quote
 /// Returns the full string including quotes (e.g., "'text'")
-pub(super) fn single_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> {
-    ('\'', take_while(0.., |c: char| c != '\''), '\'')
-        .take()
-        .map(|s: &str| s.to_string())
+///
+/// Once we see the opening quote, we're committed to parsing the string.
+/// An unterminated string is a fatal error (Cut), not backtrackable.
+pub(super) fn single_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        // Once we see the opening quote, we're committed to parsing the string
+        let _ = winnow::token::literal("'").parse_next(input)?;
+
+        // Parse content until closing quote
+        let content = take_while(0.., |c: char| c != '\'').parse_next(input)?;
+
+        // Try to match closing quote - if it fails, this is a fatal error
+        let closing = winnow::combinator::opt(winnow::token::literal("'")).parse_next(input)?;
+        if closing.is_none() {
+            // Unterminated string - this is a fatal error
+            tracing::debug!("single_quoted_string: unterminated string, returning Cut error");
+            return Err(winnow::error::ErrMode::Cut(ContextError::default()));
+        }
+
+        Ok(format!("'{}'", content))
+    }
 }
 
 /// Parse an ANSI-C quoted string: $'text'.
@@ -187,7 +204,10 @@ pub(super) fn gettext_double_quoted_string<'a>() -> impl Parser<StrStream<'a>, &
 /// Returns the full string including quotes (e.g., `"text"`).
 /// Handles backslash escape sequences and dollar expansions
 /// (which may span multiple lines for heredocs) inside the string.
-pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> {
+///
+/// Uses `cut` semantics - once we see the opening quote, we're committed
+/// to parsing the string. An unterminated string is a fatal error.
+pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, PError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start = input.checkpoint();
 
@@ -196,8 +216,9 @@ pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
 
         loop {
             let Ok(ch) = peek_char().parse_next(input) else {
-                // Hit end of input without closing quote
-                return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                // Hit end of input without closing quote - this is a fatal error
+                // because we're committed to the string once we see the opening quote
+                return Err(winnow::error::ErrMode::Cut(ContextError::default()));
             };
 
             match ch {
@@ -348,16 +369,29 @@ pub(super) fn word_as_ast<'a>(
         }
 
         // Parse remaining word parts, tracking last character for tilde-after-colon detection
-        while let Ok(part) = word_part(ctx, last_char).parse_next(input) {
-            // Update last_char efficiently - just get the last char of the new part
-            last_char = part.chars().last().or(last_char);
+        loop {
+            let result = word_part(ctx, last_char).parse_next(input);
+            match result {
+                Ok(part) => {
+                    // Update last_char efficiently - just get the last char of the new part
+                    last_char = part.chars().last().or(last_char);
 
-            // Optimize: avoid allocation if this is the first and only part
-            if value.is_empty() {
-                value = part;
-            } else {
-                // Need to combine parts - must allocate
-                value.to_mut().push_str(&part);
+                    // Optimize: avoid allocation if this is the first and only part
+                    if value.is_empty() {
+                        value = part;
+                    } else {
+                        // Need to combine parts - must allocate
+                        value.to_mut().push_str(&part);
+                    }
+                }
+                Err(winnow::error::ErrMode::Cut(e)) => {
+                    // Cut errors are fatal - propagate them
+                    return Err(winnow::error::ErrMode::Cut(e));
+                }
+                Err(_) => {
+                    // Backtrack errors are not fatal - just stop parsing word parts
+                    break;
+                }
             }
         }
 
