@@ -674,7 +674,6 @@ cases:
   # Trap with multiple signals
   #
   - name: "trap - clear multiple signals at once"
-    known_failure: true # TODO(traps): trap - with multiple signals doesn't clear all
     stdin: |
       trap 'echo "[handler]"' INT TERM USR1
       trap -p INT
