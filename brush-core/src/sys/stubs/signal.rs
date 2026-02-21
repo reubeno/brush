@@ -4,7 +4,7 @@ use crate::{error, sys, traps};
 
 /// A stub enum representing system signals on unsupported platforms.
 #[allow(unnameable_types)]
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Signal {}
 
 impl Signal {
