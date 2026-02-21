@@ -71,19 +71,19 @@ pub(super) fn simple_variable<'a>() -> impl Parser<StrStream<'a>, &'a str, PErro
 /// Parse a braced variable reference: ${VAR}
 /// Returns the expansion text including ${ }
 pub(super) fn braced_variable<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    parse_balanced_delimiters("${", Some('{'), '}', 1)
+    parse_balanced_delimiters("${", Some('{'), '}', 1, false)
 }
 
 /// Parse an arithmetic expansion: $((expr))
 /// Returns the expansion text including $(( ))
 pub(super) fn arithmetic_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    parse_balanced_delimiters("$((", Some('('), ')', 2)
+    parse_balanced_delimiters("$((", Some('('), ')', 2, false)
 }
 
 /// Parse a legacy arithmetic expansion: $[expr]
 /// Returns the expansion text including $[ ]
 pub(super) fn legacy_arithmetic_expansion<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    parse_balanced_delimiters("$[", Some('['), ']', 1)
+    parse_balanced_delimiters("$[", Some('['), ']', 1, false)
 }
 
 /// Parse a command substitution: $(cmd)
@@ -92,14 +92,14 @@ pub(super) fn command_substitution<'a>() -> impl Parser<StrStream<'a>, &'a str, 
     // Need to be careful: $(( is arithmetic, $( is command substitution
     winnow::combinator::preceded(
         winnow::combinator::peek(winnow::combinator::not("$((")),
-        parse_balanced_delimiters("$(", Some('('), ')', 1),
+        parse_balanced_delimiters("$(", Some('('), ')', 1, true),
     )
 }
 
 /// Parse a backtick command substitution: `cmd`
 /// Returns the expansion text including backticks
 pub(super) fn backtick_substitution<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    parse_balanced_delimiters("`", None, '`', 1)
+    parse_balanced_delimiters("`", None, '`', 1, true)
 }
 
 /// Parse special parameter: $0, $1, $?, $@, etc.
@@ -172,14 +172,14 @@ pub(super) fn single_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
 /// Returns the full string including the $'...' syntax (e.g., `$'text'`).
 /// In ANSI-C quotes, backslash escapes are processed specially.
 pub(super) fn ansi_c_quoted_string<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    parse_balanced_delimiters("$'", None, '\'', 1)
+    parse_balanced_delimiters("$'", None, '\'', 1, false)
 }
 
 /// Parse a gettext-style double-quoted string: $"text".
 /// Returns the full string including the $"..." syntax (e.g., `$"text"`).
 /// This is used for localization in bash.
 pub(super) fn gettext_double_quoted_string<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
-    parse_balanced_delimiters("$\"", None, '"', 1)
+    parse_balanced_delimiters("$\"", None, '"', 1, false)
 }
 
 /// Parse a double-quoted string: "text".
@@ -258,8 +258,9 @@ pub(super) fn escape_sequence<'a>(
         // If the escaped char is an extglob prefix and '(' follows, consume
         // the balanced parens so the whole construct stays in this word.
         if extglob_enabled && matches!(c, '@' | '?' | '*' | '+' | '!') {
-            let _ = winnow::combinator::opt(parse_balanced_delimiters("(", Some('('), ')', 1))
-                .parse_next(input)?;
+            let _ =
+                winnow::combinator::opt(parse_balanced_delimiters("(", Some('('), ')', 1, false))
+                    .parse_next(input)?;
         }
 
         let end = input.checkpoint();
