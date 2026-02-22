@@ -113,6 +113,7 @@ pub(super) fn skip_double_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a
 /// - Arithmetic: `parse_balanced_delimiters("$((", Some('('), ')', 2, false, false)`
 /// - Braced variable: `parse_balanced_delimiters("${", Some('{'), '}', 1, false, false)`
 /// - Backtick: `parse_balanced_delimiters("`", None, '`', 1, true, true)`
+#[allow(clippy::too_many_lines)]
 pub(super) fn parse_balanced_delimiters<'a>(
     prefix: &'a str,
     open_char: Option<char>,
@@ -216,7 +217,7 @@ pub(super) fn parse_balanced_delimiters<'a>(
                 Ok('<') if allow_heredocs && depth == initial_depth => {
                     // Check for heredoc operator <<
                     let checkpoint = input.checkpoint();
-                    if let Ok('<') = winnow::token::any::<_, PError>.parse_next(input) {
+                    if winnow::token::any::<_, PError>.parse_next(input) == Ok('<') {
                         // Check for <<- (remove leading tabs) vs <<
                         // Use peek to check without consuming
                         let remove_tabs =
