@@ -1,11 +1,12 @@
 //! Trap handling for the shell.
 
-use crate::{ExecutionResult, ProcessGroupPolicy, error, traps::TrapSignal};
+use crate::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error, traps::TrapSignal};
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Runs any exit steps for the shell.
     pub async fn on_exit(&mut self) -> Result<(), error::Error> {
-        self.invoke_trap_handler(TrapSignal::Exit).await?;
+        self.invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
+            .await?;
 
         Ok(())
     }
@@ -26,9 +27,16 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * **`$?` preservation** — `last_exit_status` is saved before and
     ///   restored after the handler runs so the trap does not clobber the
     ///   status that triggered it.
+    ///
+    /// # Arguments
+    ///
+    /// * `signal`: Signal to run handler for.
+    ///
+    /// * `params`: Execution parameters to use for handler.
     pub(crate) async fn invoke_trap_handler(
         &mut self,
         signal: TrapSignal,
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // Per-signal self-recursion guard: don't re-enter a trap that is
         // already being handled. Different traps *can* fire from each
@@ -55,7 +63,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             return Ok(ExecutionResult::success());
         };
 
-        let mut params = self.default_exec_params();
+        let mut params = params.clone();
         params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
         // Preserve $? across trap handler execution so the handler doesn't

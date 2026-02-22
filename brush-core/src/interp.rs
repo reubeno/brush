@@ -398,7 +398,7 @@ impl Execute for ast::Pipeline {
         // Fire the ERR trap if the pipeline failed in a non-conditional context.
         if !result.is_success() && !params.suppress_errexit && !self.bang {
             shell
-                .invoke_trap_handler(crate::traps::TrapSignal::Err)
+                .invoke_trap_handler(crate::traps::TrapSignal::Err, &params)
                 .await?;
         }
 

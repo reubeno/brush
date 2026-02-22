@@ -276,7 +276,7 @@ pub(crate) async fn on_preexecute(
     // Fire the DEBUG trap if one is registered.
     let _ = cmd
         .shell
-        .invoke_trap_handler(traps::TrapSignal::Debug)
+        .invoke_trap_handler(traps::TrapSignal::Debug, &cmd.params)
         .await?;
 
     Ok(())
