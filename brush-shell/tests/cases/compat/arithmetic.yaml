@@ -325,3 +325,12 @@ cases:
 
       # Wrapping increment/decrement near boundaries
       echo "$(( 9223372036854775807 + 1 ))"   # wraps to INT64_MIN
+
+  - name: "Recursive variable evaluation with depth limit"
+    ignore_stderr: true
+    stdin: |
+      # Recursive variables should not cause stack overflow
+      a=b
+      b=a
+      echo "$(( a ))"
+      echo "exit: $?"
