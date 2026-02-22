@@ -16,6 +16,7 @@ use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
     extensions::{self, ShellExtensions},
+    filter::{CmdExecFilter as _, ExternalCmdParams, ExternalCommand, SimpleCmdParams},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
@@ -384,7 +385,26 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         clippy::missing_panics_doc,
         reason = "these unwrap calls should not panic"
     )]
-    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+    pub async fn execute(self) -> Result<ExecutionSpawnResult, error::Error> {
+        // Create filter params with lazy arg conversion - no allocation unless filter inspects args
+        let filter_params = SimpleCmdParams::from_command_args(
+            &*self.shell,
+            self.command_name.as_str(),
+            &self.args,
+        );
+
+        crate::with_filter!(
+            self.shell,
+            cmd_exec_filter,
+            pre_simple_cmd,
+            post_simple_cmd,
+            filter_params,
+            self.execute_impl().await
+        )
+    }
+
+    /// Internal implementation of command execution (called after pre-filter).
+    async fn execute_impl(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 
@@ -431,7 +451,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             };
 
             if let Some(path) = path {
-                self.execute_via_external(&path)
+                self.execute_via_external(&path).await
             } else {
                 if let Some(post_execute) = self.post_execute {
                     let _ = post_execute(&mut self.shell);
@@ -441,7 +461,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             }
         } else {
             let command_name = PathBuf::from(self.command_name.clone());
-            self.execute_via_external(command_name.as_path())
+            self.execute_via_external(command_name.as_path()).await
         }
     }
 
@@ -531,28 +551,56 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         result
     }
 
-    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
-        let mut shell = self.shell;
-
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
-
-        let resolved_path = path.to_string_lossy();
-        let result = execute_external_command(
-            cmd_context,
-            resolved_path.as_ref(),
-            self.process_group_id,
-            &self.args[1..],
-        );
-
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
+    async fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
+        // Build an ExternalCommand for the filter to inspect/modify.
+        let mut ext_cmd = ExternalCommand::new(path);
+        for arg in &self.args[1..] {
+            if let CommandArg::String(s) = arg {
+                ext_cmd.arg(s);
+            }
         }
 
-        result
+        // Extract fields from self before creating params (which borrows shell).
+        let mut shell = self.shell;
+        let command_name = self.command_name;
+        let params = self.params;
+        let process_group_id = self.process_group_id;
+        let post_execute = self.post_execute;
+
+        // Create filter params.
+        let filter_params = ExternalCmdParams::new(&shell, ext_cmd);
+
+        crate::with_filter!(
+            shell,
+            cmd_exec_filter,
+            pre_external_cmd,
+            post_external_cmd,
+            filter_params,
+            p => {
+                // Extract the (possibly modified) command info.
+                let ext_cmd = p.command;
+                let new_path = PathBuf::from(ext_cmd.program());
+                let new_args: Vec<CommandArg> = ext_cmd
+                    .args()
+                    .iter()
+                    .map(|a| CommandArg::String(a.to_string_lossy().to_string()))
+                    .collect();
+
+                let cmd_context = ExecutionContext {
+                    shell: &mut shell,
+                    command_name,
+                    params,
+                };
+
+                let resolved_path = new_path.to_string_lossy();
+                execute_external_command(cmd_context, resolved_path.as_ref(), process_group_id, &new_args)
+            },
+            finally {
+                if let Some(post_execute) = post_execute {
+                    let _ = post_execute(&mut shell);
+                }
+            }
+        )
     }
 }
 
