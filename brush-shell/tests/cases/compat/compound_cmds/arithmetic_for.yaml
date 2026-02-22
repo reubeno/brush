@@ -5,6 +5,28 @@ cases:
       for ((i = 0; i < 5; i++)); do echo $i; done
       echo "Result: $?"
 
+  - name: "Arithmetic for loop without separator"
+    stdin: |
+      for ((i = 0; i < 5; i++)) do echo $i; done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with empty condition"
+    stdin: |
+      for (( ; ; )); do
+        echo "In loop; status: $?"
+        break
+      done
+    echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;;"
+    known_failure: true
+    stdin: |
+      for ((;;)); do
+        echo "In loop; status: $?"
+        break
+      done
+    echo "Result: $?"
+
   - name: "Break in arithmetic for loop"
     stdin: |
       for ((i = 0; i < 5; i++)); do
@@ -73,3 +95,6 @@ cases:
         echo "Iteration $i"
       }
 
+  - name: "Arithmetic for with alternate syntax (one line)"
+    stdin: |
+      for ((i = 0; i < 5; i++)) { echo "Iteration $i"; }

@@ -980,7 +980,8 @@ impl Execute for ast::ArithmeticForClauseCommand {
 
         loop {
             if let Some(condition) = &self.condition {
-                if condition.eval(shell, params, true).await? == 0 {
+                // An empty condition (e.g., `for (( ; ; ))`) means "always true".
+                if !condition.value.is_empty() && condition.eval(shell, params, true).await? == 0 {
                     break;
                 }
             }
