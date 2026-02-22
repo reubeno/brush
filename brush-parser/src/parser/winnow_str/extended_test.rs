@@ -416,7 +416,8 @@ fn ext_test_regex_word<'a>(
                         if !result.is_empty() {
                             let last_ch = result.chars().last();
                             // Don't add space after structural characters: ( ) [ ] |
-                            if !matches!(last_ch, Some('(' | ')' | '[' | ']' | '|')) {
+                            // Also don't add space after $ (variable expansion prefix)
+                            if !matches!(last_ch, Some('(' | ')' | '[' | ']' | '|' | '$')) {
                                 result.push(' ');
                             }
                         }
