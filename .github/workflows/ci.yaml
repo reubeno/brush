@@ -256,16 +256,18 @@ jobs:
           result=0
 
           # Run tests with PEG parser (accumulates coverage)
+          # Use --peg-parser to override the default Winnow parser
           echo "Running tests with PEG parser..."
-          cargo xtask test integration --coverage --coverage-no-report --coverage-output ./codecov-${VARIANT}.xml || result=$?
+          cargo xtask test integration --coverage --coverage-no-report --coverage-output ./codecov-${VARIANT}.xml \
+            --brush-args=--peg-parser || result=$?
 
           # Run tests with Winnow parser (accumulates more coverage)
           # --coverage-no-clean preserves coverage from PEG run
           # --coverage-no-report skips report generation
+          # Winnow is the default parser, no extra args needed
           echo "Running tests with Winnow parser..."
           cargo xtask test integration --coverage --coverage-no-clean --coverage-no-report \
-            --coverage-output ./codecov-${VARIANT}.xml \
-            --features experimental-parser --brush-args=--experimental-parser || result=$?
+            --coverage-output ./codecov-${VARIANT}.xml || result=$?
 
           # Generate merged coverage report from accumulated data
           echo "Generating merged coverage report..."
