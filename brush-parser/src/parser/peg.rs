@@ -194,7 +194,7 @@ peg::parser! {
             }
 
         rule arithmetic_for_body() -> ast::DoGroupCommand =
-            sequential_sep() body:do_group() { body } /
+            sequential_sep()? body:do_group() { body } /
             body:brace_group() { ast::DoGroupCommand { list: body.list, loc: body.loc } }
 
         rule extended_test_command() -> ast::ExtendedTestExprCommand =
