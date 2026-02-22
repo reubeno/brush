@@ -159,13 +159,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        parser:
-          - name: "peg"
-            features: ""
-            brush_args: ""
-          - name: "winnow"
-            features: "experimental-parser"
-            brush_args: "--experimental-parser"
         host_config:
           - host: "ubuntu-24.04"
             variant: "linux-x86_64"
@@ -185,7 +178,7 @@ jobs:
             name_suffix: "(macOS)"
             homebrew_supported: true
 
-    name: "Test ${{ matrix.host_config.name_suffix }} [${{ matrix.parser.name }}]"
+    name: "Test ${{ matrix.host_config.name_suffix }}"
     runs-on: ${{ matrix.host_config.host }}
     steps:
       - name: Checkout
@@ -204,7 +197,6 @@ jobs:
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
-          key: "${{ matrix.parser.name }}"
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
@@ -257,27 +249,30 @@ jobs:
       - name: Test
         env:
           VARIANT: ${{ matrix.host_config.variant }}
-          PARSER_NAME: ${{ matrix.parser.name }}
-          PARSER_FEATURES: ${{ matrix.parser.features }}
-          PARSER_BRUSH_ARGS: ${{ matrix.parser.brush_args }}
         run: |
           set -euxo pipefail
 
-          # Build xtask command with optional parser flags
-          XTASK_ARGS="test integration --coverage --coverage-output ./codecov-${VARIANT}-${PARSER_NAME}.xml"
-          if [ -n "${PARSER_FEATURES}" ]; then
-            XTASK_ARGS="${XTASK_ARGS} --features ${PARSER_FEATURES}"
-          fi
-          if [ -n "${PARSER_BRUSH_ARGS}" ]; then
-            XTASK_ARGS="${XTASK_ARGS} --brush-args=${PARSER_BRUSH_ARGS}"
-          fi
-
-          # Run tests with coverage collection
+          # Initialize result tracking
           result=0
-          cargo xtask ${XTASK_ARGS} || result=$?
+
+          # Run tests with PEG parser (accumulates coverage)
+          echo "Running tests with PEG parser..."
+          cargo xtask test integration --coverage --coverage-no-report --coverage-output ./codecov-${VARIANT}.xml || result=$?
+
+          # Run tests with Winnow parser (accumulates more coverage)
+          # --coverage-no-clean preserves coverage from PEG run
+          # --coverage-no-report skips report generation
+          echo "Running tests with Winnow parser..."
+          cargo xtask test integration --coverage --coverage-no-clean --coverage-no-report \
+            --coverage-output ./codecov-${VARIANT}.xml \
+            --features experimental-parser --brush-args=--experimental-parser || result=$?
+
+          # Generate merged coverage report from accumulated data
+          echo "Generating merged coverage report..."
+          cargo xtask test integration --coverage-report-only --coverage-output ./codecov-${VARIANT}.xml
 
           # Rename test results for CI reporting
-          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}-${PARSER_NAME}.xml
+          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}.xml
 
           # Report the actual test results
           exit ${result}
@@ -286,7 +281,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
-          name: test-reports${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
+          name: test-reports${{ matrix.host_config.artifact_suffix }}
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
@@ -295,8 +290,8 @@ jobs:
         id: "code_coverage_report"
         with:
           artifact_download_workflow_names: "CI"
-          artifact_name: coverage-%name%${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
-          filename: codecov-${{ matrix.host_config.variant }}-${{ matrix.parser.name }}.xml
+          artifact_name: coverage-%name%${{ matrix.host_config.artifact_suffix }}
+          filename: codecov-${{ matrix.host_config.variant }}.xml
           overall_coverage_fail_threshold: 70
           only_list_changed_files: ${{ github.event_name == 'pull_request' }}
           fail_on_negative_difference: true
@@ -307,7 +302,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
-          name: codecov-reports${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
+          name: codecov-reports${{ matrix.host_config.artifact_suffix }}
           path: code-coverage-results.md
 
   # Static analysis of the code.
