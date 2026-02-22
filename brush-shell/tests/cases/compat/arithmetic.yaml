@@ -21,13 +21,34 @@ cases:
   - name: "Arithmetic literals with explicit bases"
     stdin: |
       echo "$((2#1010))"
-      echo "$((8#16))"
-      echo "$((16#faf))"
-      echo "$((36#vvv))"
 
-  - name: "Arithmetic literals with base 64 encoding"
-    known_failure: true # Not currently handled.
-    stdin: |
+      echo "$((8#16))"
+
+      echo "$((16#faf))"
+      echo "$((16#FAF))"
+
+      echo "$((36#vvv))"
+      echo "$((36#VVV))"
+
+      # Base 37: A-Z map to 36-61
+      echo "$((37#a))" 
+      echo "$((37#a0))" 
+      echo "$((37#A))"
+
+      # Base 62: a-z=10-35, A-Z=36-61
+      echo "$((62#A))"
+      echo "$((62#a))"
+      echo "$((62#Z))"
+      echo "$((62#z))"
+
+      # Base 63: @ = 62
+      echo "$((63#@))"
+      echo "$((63#@9))"
+
+      # Base 64: _ = 63
+      echo "$((64#_))"
+      echo "$((64#@))"
+      echo "$((64#_1))"
       echo "$((64#zzz))"
 
   - name: "Unary arithmetic operators with space"
