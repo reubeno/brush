@@ -105,16 +105,8 @@ peg::parser! {
 
         rule literal_number() -> i64 =
             // Literal with explicit radix (format: <base>#<literal>)
-            radix:decimal_literal() "#" s:$(['0'..='9' | 'a'..='z' | 'A'..='Z']+) {?
-                // TODO(arithmetic): Support bases larger than 36. from_str_radix can't handle that.
-                if !(2..=36).contains(&radix) {
-                    return Err("invalid base");
-                }
-
-                // Okay to ignore these warnings; we've already checked that the radix is valid.
-                #[expect(clippy::cast_possible_truncation)]
-                #[expect(clippy::cast_sign_loss)]
-                i64::from_str_radix(s, radix as u32).or(Err("i64"))
+            radix:decimal_literal() "#" s:$(['0'..='9' | 'a'..='z' | 'A'..='Z' | '@' | '_']+) {?
+                parse_shell_literal_number(s, radix.cast_unsigned())
             } /
             // Hex literal
             "0" ['x' | 'X'] s:$(['0'..='9' | 'a'..='f' | 'A'..='F']*) {?
@@ -135,4 +127,45 @@ peg::parser! {
                 s.parse::<u64>().map(|v| v.cast_signed()).or(Err("i64"))
             }
     }
+}
+
+fn parse_shell_literal_number(s: &str, radix: u64) -> Result<i64, &'static str> {
+    if !(2..=64).contains(&radix) {
+        return Err("invalid base");
+    }
+
+    // For bases <= 36: case-insensitive (a-z and A-Z both map to 10-35)
+    // For bases > 36 (bash extension):
+    //   0-9 = 0-9, a-z = 10-35, A-Z = 36-61, @ = 62, _ = 63
+    let mut result: i64 = 0;
+
+    for ch in s.chars() {
+        let digit_val = if radix <= 36 {
+            match ch {
+                '0'..='9' => (ch as u64) - ('0' as u64),
+                'a'..='z' => (ch as u64) - ('a' as u64) + 10,
+                'A'..='Z' => (ch as u64) - ('A' as u64) + 10,
+                _ => return Err("invalid digit"),
+            }
+        } else {
+            match ch {
+                '0'..='9' => (ch as u64) - ('0' as u64),
+                'a'..='z' => (ch as u64) - ('a' as u64) + 10,
+                'A'..='Z' => (ch as u64) - ('A' as u64) + 36,
+                '@' => 62,
+                '_' => 63,
+                _ => return Err("invalid digit"),
+            }
+        };
+
+        if digit_val >= radix {
+            return Err("value too great for base");
+        }
+
+        result = result
+            .wrapping_mul(radix.cast_signed())
+            .wrapping_add(digit_val.cast_signed());
+    }
+
+    Ok(result)
 }
