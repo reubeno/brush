@@ -325,13 +325,12 @@ impl TokenParseState {
         self.token_so_far = s;
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn delimit_current_token(
         &mut self,
         reason: TokenEndReason,
         cross_token_state: &mut CrossTokenParseState,
     ) -> Result<Option<TokenizeResult>, TokenizerError> {
-        // If we don't have anything in the token, then don't yield an empty string token
-        // *unless* it's the body of a here document.
         if !self.started_token() && !matches!(reason, TokenEndReason::HereDocumentBodyEnd) {
             return Ok(Some(TokenizeResult {
                 reason,
@@ -339,12 +338,9 @@ impl TokenParseState {
             }));
         }
 
-        // TODO(tokenizer): Make sure the here-tag meets criteria (and isn't a newline).
         let current_here_state = std::mem::take(&mut cross_token_state.here_state);
         match current_here_state {
             HereState::NextTokenIsHereTag { remove_tabs } => {
-                // Don't yield the operator as a token yet. We need to make sure we collect
-                // up everything we need for all the here-documents with tags on this line.
                 let operator_token_result = TokenizeResult {
                     reason,
                     token: Some(self.pop(&cross_token_state.cursor)),
@@ -369,7 +365,6 @@ impl TokenParseState {
 
                 cross_token_state.here_state = HereState::NextLineIsHereDoc;
 
-                // Include the trailing \n in the here tag so it's easier to check against.
                 let tag = std::format!("{}\n", self.current_token().trim_ascii_start());
                 let tag_was_escaped_or_quoted = tag.contains(is_quoting_char);
 
@@ -431,8 +426,15 @@ impl TokenParseState {
                     token: Some(self.pop(&cross_token_state.cursor)),
                 });
 
-                // Then queue up the (end) here-tag.
-                self.append_str(completed_here_tag.tag.trim_end_matches('\n'));
+                // Then queue up the (end) here-tag. Use the unquoted form so that
+                // when the token text is re-parsed inside $() command substitutions,
+                // the end tag matches the delimiter the parser expects.
+                let end_tag = if completed_here_tag.tag_was_escaped_or_quoted {
+                    unquote_str(completed_here_tag.tag.trim_end_matches('\n'))
+                } else {
+                    completed_here_tag.tag.trim_end_matches('\n').to_string()
+                };
+                self.append_str(&end_tag);
                 cross_token_state.queued_tokens.push(TokenizeResult {
                     reason: TokenEndReason::HereDocumentEndTag,
                     token: Some(self.pop(&cross_token_state.cursor)),
@@ -751,15 +753,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 result = state
                     .delimit_current_token(TokenEndReason::EndOfInput, &mut self.cross_state)?;
             //
-            // Look for the specially specified terminating char.
-            //
-            } else if state.unquoted() && terminating_char == Some(c) {
-                result = state.delimit_current_token(
-                    TokenEndReason::SpecifiedTerminatingChar,
-                    &mut self.cross_state,
-                )?;
-            //
             // Handle being in a here document.
+            // N.B. This must be checked before the terminating char check below,
+            // because heredoc body content can contain characters like ')' that
+            // would otherwise be mistaken for the end of a $() command
+            // substitution.
             //
             } else if matches!(self.cross_state.here_state, HereState::InHereDocs) {
                 //
@@ -782,6 +780,14 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         self.remove_here_end_tag(&mut state, &mut result, true)?;
                     }
                 }
+            //
+            // Look for the specially specified terminating char.
+            //
+            } else if state.unquoted() && terminating_char == Some(c) {
+                result = state.delimit_current_token(
+                    TokenEndReason::SpecifiedTerminatingChar,
+                    &mut self.cross_state,
+                )?;
             } else if state.in_operator() {
                 //
                 // We're in an operator. See if this character continues an operator, or if it
@@ -1694,5 +1700,19 @@ HERE2
         assert_eq!(unquote_str(r"'hello'"), "hello");
         assert_eq!(unquote_str(r#""hel\"lo""#), r#"hel"lo"#);
         assert_eq!(unquote_str(r"'hel\'lo'"), r"hel'lo");
+    }
+
+    #[test]
+    fn tokenize_unterminated_single_quote_with_newline() {
+        let input = "test 0 -eq ' 0\n";
+        let result = tokenize_str(input);
+        match &result {
+            Err(TokenizerError::UnterminatedSingleQuote(_)) => {
+                assert!(result.as_ref().unwrap_err().is_incomplete());
+            }
+            _ => {
+                unreachable!("Expected UnterminatedSingleQuote error");
+            }
+        }
     }
 }

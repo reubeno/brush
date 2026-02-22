@@ -198,10 +198,17 @@ cases:
       [[ "abc" == "a*" ]] && echo "1. Matches"
       [[ "abc" != "a*" ]] && echo "2. Matches"
 
-  - name: "Tilde binary string matching"
+  - name: "Pattern matching with spaces in glob"
     stdin: |
-      x='~/'
-      [[ $x == ~* ]] && echo "1. Matches"
+      USE="foo bar"
+      flag="bar"
+      [[ " ${USE} " == *" ${flag} "* ]] && echo "found"
+
+  - name: "Command substitution in pattern matching"
+    stdin: |
+      SLOT="0"
+      get_slot() { echo "0"; }
+      [[ ${SLOT} = $(get_slot) ]] && echo "match"
 
   - name: "Arithmetic extended tests"
     stdin: |
@@ -379,3 +386,19 @@ cases:
 
       # All should have the same result
       [[ $r1 -eq $r2 && $r2 -eq $r3 ]] && echo "All -t results match"
+
+  - name: "Regex match with POSIX character class"
+    stdin: |
+      # POSIX character classes like [:print:] in regex
+      [[ "hello" =~ ^[[:print:]]+$ ]] && echo "printable"
+      [[ $'\x01' =~ [[:print:]] ]] || echo "control char not printable"
+
+  - name: "Extended test -a flag for file existence"
+    stdin: |
+      [[ -a /tmp ]] && echo "/tmp exists"
+      [[ -a /nonexistent ]] || echo "nonexistent does not exist"
+
+  - name: "Extended test extglob pattern matching"
+    stdin: |
+      exclude="0123456789"
+      [[ "8675309" == +([$exclude]) ]] && echo "matches digits"

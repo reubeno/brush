@@ -11,7 +11,7 @@
 //! Both unit and integration tests support optional coverage collection via
 //! `cargo-llvm-cov`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
@@ -113,6 +113,16 @@ pub struct IntegrationTestArgs {
     /// Coverage options.
     #[clap(flatten)]
     pub coverage: CoverageArgs,
+
+    /// Additional Cargo features to enable (e.g., "experimental-parser").
+    /// Passed through as `--features <value>` to cargo nextest.
+    #[clap(long)]
+    pub features: Option<String>,
+
+    /// Extra arguments to pass to the brush binary during test runs.
+    /// Set as the `BRUSH_ARGS` environment variable before running nextest.
+    #[clap(long)]
+    pub brush_args: Option<String>,
 }
 
 /// Arguments for coverage collection.
@@ -126,6 +136,22 @@ pub struct CoverageArgs {
     /// Only used when --coverage is specified.
     #[clap(long, short = 'o', default_value = "codecov.xml")]
     pub coverage_output: PathBuf,
+
+    /// Skip cleaning previous coverage data.
+    /// Use this when running multiple test suites to accumulate coverage.
+    #[clap(long)]
+    pub coverage_no_clean: bool,
+
+    /// Run tests but do not generate coverage report.
+    /// Use this to accumulate coverage across multiple test runs, then run
+    /// with --coverage-report-only to generate the final merged report.
+    #[clap(long)]
+    pub coverage_no_report: bool,
+
+    /// Only generate coverage report from previously accumulated data.
+    /// Use after running tests with --coverage --coverage-no-report.
+    #[clap(long)]
+    pub coverage_report_only: bool,
 }
 
 /// External test suite commands.
@@ -229,11 +255,13 @@ pub fn run_unit_tests(
             sh,
             profile,
             Some(&filter_expr),
-            &args.coverage.coverage_output,
+            &args.coverage,
+            None,
+            None,
             verbose,
         )
     } else {
-        run_nextest(sh, profile, Some(&filter_expr), verbose)?;
+        run_nextest(sh, profile, Some(&filter_expr), None, None, verbose)?;
         eprintln!("Unit tests passed.");
         Ok(())
     }
@@ -253,9 +281,24 @@ pub fn run_integration_tests(
     eprintln!("Running integration tests ({profile:?} profile)...");
 
     if args.coverage.coverage {
-        run_tests_with_coverage(sh, profile, None, &args.coverage.coverage_output, verbose)
+        run_tests_with_coverage(
+            sh,
+            profile,
+            None,
+            &args.coverage,
+            args.features.as_deref(),
+            args.brush_args.as_deref(),
+            verbose,
+        )
     } else {
-        run_nextest(sh, profile, None, verbose)?;
+        run_nextest(
+            sh,
+            profile,
+            None,
+            args.features.as_deref(),
+            args.brush_args.as_deref(),
+            verbose,
+        )?;
         eprintln!("Integration tests passed.");
         Ok(())
     }
@@ -266,6 +309,8 @@ fn run_nextest(
     sh: &Shell,
     profile: BuildProfile,
     filter_expr: Option<&str>,
+    features: Option<&str>,
+    brush_args: Option<&str>,
     verbose: bool,
 ) -> Result<()> {
     let mut args = vec!["nextest", "run", "--workspace", "--no-fail-fast"];
@@ -281,9 +326,19 @@ fn run_nextest(
         args.push(value);
     }
 
+    // Add features if provided
+    let features_value = features.map(str::to_string);
+    if let Some(ref value) = features_value {
+        args.push("--features");
+        args.push(value);
+    }
+
     if verbose {
         eprintln!("Running: cargo {}", args.join(" "));
     }
+
+    // Set BRUSH_ARGS env var if provided
+    let _env_guard = brush_args.map(|val| sh.push_env("BRUSH_ARGS", val));
 
     cmd!(sh, "cargo {args...}").run().context("Tests failed")?;
     Ok(())
@@ -293,19 +348,37 @@ fn run_nextest(
 ///
 /// The coverage workflow:
 /// 1. Source environment variables from `cargo llvm-cov show-env`
-/// 2. Clean previous coverage data
+/// 2. Clean previous coverage data (unless --coverage-no-clean)
 /// 3. Run tests (continuing even if tests fail to still generate report)
-/// 4. Generate Cobertura XML report for CI integration
+/// 4. Generate Cobertura XML report for CI integration (unless --coverage-no-report)
 ///
 /// Requires `cargo-llvm-cov` to be installed: `cargo install cargo-llvm-cov`
 fn run_tests_with_coverage(
     sh: &Shell,
     profile: BuildProfile,
     filter_expr: Option<&str>,
-    output: &Path,
+    coverage_args: &CoverageArgs,
+    features: Option<&str>,
+    brush_args: Option<&str>,
     verbose: bool,
 ) -> Result<()> {
-    let output_path = output.display().to_string();
+    let output_path = coverage_args.coverage_output.display().to_string();
+
+    // Handle --coverage-report-only: just generate report from existing data
+    if coverage_args.coverage_report_only {
+        eprintln!("Generating coverage report from accumulated data...");
+        if verbose {
+            eprintln!("Running: cargo llvm-cov report --cobertura --output-path {output_path}");
+        }
+        cmd!(
+            sh,
+            "cargo llvm-cov report --cobertura --output-path {output_path}"
+        )
+        .run()
+        .context("Failed to generate coverage report")?;
+        eprintln!("Coverage report written to: {output_path}");
+        return Ok(());
+    }
 
     eprintln!("Running tests with coverage ({profile:?} profile)...");
     eprintln!("Coverage output: {output_path}");
@@ -326,13 +399,15 @@ fn run_tests_with_coverage(
         .filter_map(|rest| rest.split_once('='))
         .for_each(|(k, v)| sh.set_var(k, v.trim_matches(['"', '\''])));
 
-    // Clean previous coverage data
-    if verbose {
-        eprintln!("Running: cargo llvm-cov clean --workspace");
+    // Clean previous coverage data (unless --coverage-no-clean)
+    if !coverage_args.coverage_no_clean {
+        if verbose {
+            eprintln!("Running: cargo llvm-cov clean --workspace");
+        }
+        cmd!(sh, "cargo llvm-cov clean --workspace")
+            .run()
+            .context("Failed to clean coverage data")?;
     }
-    cmd!(sh, "cargo llvm-cov clean --workspace")
-        .run()
-        .context("Failed to clean coverage data")?;
 
     // Build cargo nextest args
     let mut test_args = vec!["nextest", "run", "--workspace", "--no-fail-fast"];
@@ -347,9 +422,19 @@ fn run_tests_with_coverage(
         test_args.push(value);
     }
 
+    // Add features if provided
+    let features_value = features.map(str::to_string);
+    if let Some(ref value) = features_value {
+        test_args.push("--features");
+        test_args.push(value);
+    }
+
     if verbose {
         eprintln!("Running: cargo {}", test_args.join(" "));
     }
+
+    // Set BRUSH_ARGS env var if provided
+    let _env_guard = brush_args.map(|val| sh.push_env("BRUSH_ARGS", val));
 
     // Run tests - let output pass through naturally, but continue on failure to generate coverage report
     let test_result = cmd!(sh, "cargo {test_args...}").run();
@@ -359,19 +444,24 @@ fn run_tests_with_coverage(
         eprintln!("Tests failed, but continuing to generate coverage report...");
     }
 
-    // Generate coverage report (always attempt this)
-    eprintln!("Generating coverage report...");
-    if verbose {
-        eprintln!("Running: cargo llvm-cov report --cobertura --output-path {output_path}");
-    }
-    cmd!(
-        sh,
-        "cargo llvm-cov report --cobertura --output-path {output_path}"
-    )
-    .run()
-    .context("Failed to generate coverage report")?;
+    // Generate coverage report (unless --coverage-no-report)
+    if coverage_args.coverage_no_report {
+        eprintln!("Skipping coverage report generation (--coverage-no-report)");
+        eprintln!("Coverage data accumulated. Run with --coverage-report-only to generate report.");
+    } else {
+        eprintln!("Generating coverage report...");
+        if verbose {
+            eprintln!("Running: cargo llvm-cov report --cobertura --output-path {output_path}");
+        }
+        cmd!(
+            sh,
+            "cargo llvm-cov report --cobertura --output-path {output_path}"
+        )
+        .run()
+        .context("Failed to generate coverage report")?;
 
-    eprintln!("Coverage report written to: {output_path}");
+        eprintln!("Coverage report written to: {output_path}");
+    }
 
     // Now propagate test failure if tests failed
     if test_failed {

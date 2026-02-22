@@ -255,3 +255,71 @@ fn parse_extended_test_arith_greater_than() -> Result<()> {
     });
     Ok(())
 }
+
+#[test]
+fn parse_extended_test_arithmetic_expansion() -> Result<()> {
+    let input = "[[ $((1+2)) -eq 3 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_command_substitution() -> Result<()> {
+    let input = "[[ $(echo hi) == hi ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_arithmetic_with_vars() -> Result<()> {
+    let input = "[[ $((${x} + ${y})) -ge 10 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+// Multi-line tests
+
+#[test]
+fn parse_extended_test_multiline_and() -> Result<()> {
+    let input = "[[ -z ${a} &&\n\t-z ${b} ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_backslash_continuation() -> Result<()> {
+    let input = "[[ -n ${x} && $((1+2)) \\\n\t-ge 3 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_multiline_complex() -> Result<()> {
+    let input = "[[ -z ${a} &&\n\t\t\t-z ${b} &&\n\t\t\t-z ${c} &&\n\t\t\t-z ${d} ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}

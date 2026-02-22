@@ -1,0 +1,47 @@
+---
+source: brush-parser/src/parser/tests/winnow_issues.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "[[ \"a b\" =~ .* ]] && echo \"spaces match\"",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              ExtendedTest(ExtendedTestExprCommand(
+                expr: BinaryTest(StringMatchesRegex, Word(
+                  value: "\"a b\"",
+                  loc: "[location]",
+                ), Word(
+                  value: ".*",
+                  loc: "[location]",
+                )),
+                loc: "[location]",
+              ), None),
+            ],
+          ),
+          additional: [
+            And(Pipeline(
+              seq: [
+                Simple(SimpleCommand(
+                  word_or_name: Some(Word(
+                    value: "echo",
+                    loc: "[location]",
+                  )),
+                  suffix: Some(CommandSuffix([
+                    Word(Word(
+                      value: "\"spaces match\"",
+                      loc: "[location]",
+                    )),
+                  ])),
+                )),
+              ],
+            )),
+          ],
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
