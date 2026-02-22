@@ -202,7 +202,7 @@ fn apply_unary_op(
 
     match op {
         ast::UnaryOperator::UnaryPlus => Ok(operand_eval),
-        ast::UnaryOperator::UnaryMinus => Ok(-operand_eval),
+        ast::UnaryOperator::UnaryMinus => Ok(operand_eval.wrapping_neg()),
         ast::UnaryOperator::BitwiseNot => Ok(!operand_eval),
         ast::UnaryOperator::LogicalNot => Ok(bool_to_i64(operand_eval == 0)),
     }
@@ -266,7 +266,7 @@ fn apply_binary_op(
             if right == 0 {
                 Err(EvalError::DivideByZero)
             } else {
-                Ok(left % right)
+                Ok(left.wrapping_rem(right))
             }
         }
         ast::BinaryOperator::Comma => Ok(right),
@@ -297,22 +297,22 @@ fn apply_unary_assignment_op(
 
     match op {
         ast::UnaryAssignmentOperator::PrefixIncrement => {
-            let new_value = value + 1;
+            let new_value = value.wrapping_add(1);
             assign(shell, lvalue, new_value)?;
             Ok(new_value)
         }
         ast::UnaryAssignmentOperator::PrefixDecrement => {
-            let new_value = value - 1;
+            let new_value = value.wrapping_sub(1);
             assign(shell, lvalue, new_value)?;
             Ok(new_value)
         }
         ast::UnaryAssignmentOperator::PostfixIncrement => {
-            let new_value = value + 1;
+            let new_value = value.wrapping_add(1);
             assign(shell, lvalue, new_value)?;
             Ok(value)
         }
         ast::UnaryAssignmentOperator::PostfixDecrement => {
-            let new_value = value - 1;
+            let new_value = value.wrapping_sub(1);
             assign(shell, lvalue, new_value)?;
             Ok(value)
         }

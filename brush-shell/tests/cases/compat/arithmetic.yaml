@@ -287,3 +287,20 @@ cases:
       echo "y after ++ y: $y"
       (( -- y ))
       echo "y after -- y: $y"
+
+  - name: "INT64_MIN and wrapping arithmetic"
+    stdin: |
+      # INT64_MIN via unary minus of the literal
+      echo "$(( -9223372036854775808 ))"
+
+      # Wrapping negation of INT64_MIN
+      echo "$(( - (-9223372036854775808) ))"
+
+      # INT64_MIN % -1 should be 0 (not crash)
+      echo "$(( (-9223372036854775808) % (-1) ))"
+
+      # INT64_MIN / -1 wraps
+      echo "$(( (-9223372036854775808) / (-1) ))"
+
+      # Wrapping increment/decrement near boundaries
+      echo "$(( 9223372036854775807 + 1 ))"   # wraps to INT64_MIN
