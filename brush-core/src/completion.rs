@@ -751,17 +751,17 @@ impl Spec {
             args.push(preceding_token);
         }
 
-        // TODO(completions): Find a more appropriate interlock here. For now we use the existing
-        // handler depth count to suppress any debug traps.
-        shell.enter_trap_handler(None);
+        // Suppress trap delivery during completion function invocation.
+        shell.acquire_trap_delivery_block();
 
         let params = shell.default_exec_params();
         let invoke_result = shell
             .invoke_function(function_name, args.iter(), &params)
             .await;
+
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 
-        shell.leave_trap_handler();
+        shell.release_trap_delivery_block();
 
         // Make a best-effort attempt to unset the temporary variables.
         for var_name in vars_to_remove {

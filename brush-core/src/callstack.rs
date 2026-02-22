@@ -1,7 +1,11 @@
 //! Call stack representations.
 
 use crate::{functions, traps};
-use std::{borrow::Cow, collections::VecDeque, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{HashSet, VecDeque},
+    sync::Arc,
+};
 
 use brush_parser::ast::SourceLocation;
 
@@ -51,7 +55,7 @@ pub enum FrameType {
     /// A function was called.
     Function(FunctionCall),
     /// A trap handler was invoked.
-    TrapHandler,
+    TrapHandler(traps::TrapSignal),
     /// A string was eval'd.
     Eval,
     /// A command-line string (i.e., -c) was executed.
@@ -66,7 +70,7 @@ impl FrameType {
         match self {
             Self::Script(call) => call.name(),
             Self::Function(call) => call.name(),
-            Self::TrapHandler => "trap".into(),
+            Self::TrapHandler(_) => "trap".into(),
             Self::Eval => "eval".into(),
             Self::CommandString => "-c".into(),
             Self::InteractiveSession => "interactive".into(),
@@ -85,7 +89,7 @@ impl FrameType {
 
     /// Returns `true` if the frame is for a trap handler.
     pub const fn is_trap_handler(&self) -> bool {
-        matches!(self, Self::TrapHandler)
+        matches!(self, Self::TrapHandler(_))
     }
 
     /// Returns `true` if the frame is for an interactive session.
@@ -114,7 +118,7 @@ impl std::fmt::Display for FrameType {
         match self {
             Self::Script(call) => call.fmt(f),
             Self::Function(call) => call.fmt(f),
-            Self::TrapHandler => write!(f, "trap"),
+            Self::TrapHandler(_) => write!(f, "trap"),
             Self::Eval => write!(f, "eval"),
             Self::CommandString => write!(f, "-c"),
             Self::InteractiveSession => write!(f, "interactive"),
@@ -283,7 +287,8 @@ pub struct CallStack {
     frames: VecDeque<Frame>,
     func_call_depth: usize,
     script_source_depth: usize,
-    trap_handler_depth: usize,
+    active_trap_signals: HashSet<traps::TrapSignal>,
+    trap_delivery_suppress_count: usize,
 }
 
 impl CallStack {
@@ -393,8 +398,8 @@ impl CallStack {
             self.script_source_depth = self.script_source_depth.saturating_sub(1);
         }
 
-        if frame.frame_type.is_trap_handler() {
-            self.trap_handler_depth = self.trap_handler_depth.saturating_sub(1);
+        if let FrameType::TrapHandler(signal) = &frame.frame_type {
+            self.active_trap_signals.remove(signal);
         }
 
         Some(frame)
@@ -469,12 +474,21 @@ impl CallStack {
     }
 
     /// Pushes a new trap handler frame onto the stack.
-    pub fn push_trap_handler(&mut self, handler: Option<&traps::TrapHandler>) {
+    ///
+    /// # Arguments
+    ///
+    /// * `signal` - The signal being handled.
+    /// * `handler` - The trap handler being invoked, if any.
+    pub fn push_trap_handler(
+        &mut self,
+        signal: traps::TrapSignal,
+        handler: Option<&traps::TrapHandler>,
+    ) {
         let source_info =
             handler.map_or_else(crate::SourceInfo::default, |h| h.source_info.clone());
 
         self.frames.push_front(Frame {
-            frame_type: FrameType::TrapHandler,
+            frame_type: FrameType::TrapHandler(signal),
             args: vec![],
             source_info,
             current_line_offset: 0,
@@ -482,7 +496,7 @@ impl CallStack {
             entry: None,   // TODO(source-info): fill this out
         });
 
-        self.trap_handler_depth += 1;
+        self.active_trap_signals.insert(signal);
     }
 
     /// Pushes a new eval frame onto the stack.
@@ -588,9 +602,28 @@ impl CallStack {
         self.script_source_depth
     }
 
-    /// Returns the current depth of trap handlers in the call stack.
-    pub const fn trap_handler_depth(&self) -> usize {
-        self.trap_handler_depth
+    /// Returns whether the given trap signal is currently being handled
+    /// (i.e., there is an active frame on the stack for this signal).
+    pub fn is_trap_signal_active(&self, signal: traps::TrapSignal) -> bool {
+        self.active_trap_signals.contains(&signal)
+    }
+
+    /// Returns whether the given trap signal is currently suppressed.
+    pub const fn is_trap_delivery_suppressed(&self) -> bool {
+        self.trap_delivery_suppress_count > 0
+    }
+
+    /// Acquires a block on trap delivery, preventing traps from being delivered until
+    /// the block is released. Multiple blocks may be acquired, and trap delivery will
+    /// remain suppressed until all blocks have been released.
+    pub const fn acquire_trap_delivery_block(&mut self) {
+        self.trap_delivery_suppress_count += 1;
+    }
+
+    /// Releases a block on trap delivery; note that trap delivery will remain
+    /// suppressed until all blocks have been released.
+    pub const fn release_trap_delivery_block(&mut self) {
+        self.trap_delivery_suppress_count = self.trap_delivery_suppress_count.saturating_sub(1);
     }
 
     /// Returns whether or not the shell is actively executing in a shell function.

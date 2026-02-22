@@ -63,7 +63,6 @@ cases:
       trap -p ERR
 
   - name: "trap ERR - basic invocation"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |
       trap 'echo "ERR: $?"' ERR
       false
@@ -108,7 +107,6 @@ cases:
       echo "after while"
 
   - name: "trap ERR - not triggered in until condition"
-    known_failure: true # TODO(traps): ERR trap firing unexpectedly in until
     stdin: |
       trap 'echo "ERR"' ERR
       count=0
@@ -134,7 +132,6 @@ cases:
       echo "after"
 
   - name: "trap ERR - triggered after && chain completes then fails"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |
       trap 'echo "ERR trapped"' ERR
       true && true
@@ -149,7 +146,6 @@ cases:
       echo "result: $result"
 
   - name: "trap ERR - multiple failures trigger multiple traps"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |
       count=0
       trap '((count++)); echo "ERR $count"' ERR
@@ -159,7 +155,6 @@ cases:
       echo "total: $count"
 
   - name: "trap ERR - has access to exit status"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |
       trap 'echo "ERR with status: $?"' ERR
       (exit 42)
@@ -213,7 +208,6 @@ cases:
       (trap -p EXIT)
 
   - name: "subshell inherits DEBUG trap"
-    known_failure: true # TODO(traps): DEBUG trap inheritance in subshells
     stdin: |
       trap 'echo "[debug]"' DEBUG
       trap -p DEBUG
@@ -221,7 +215,6 @@ cases:
       (trap -p DEBUG)
 
   - name: "subshell does not execute inherited DEBUG trap"
-    known_failure: true # TODO(traps): DEBUG trap inheritance in subshells
     stdin: |
       trap 'echo "[debug]"' DEBUG
       echo "parent"

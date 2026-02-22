@@ -58,12 +58,29 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Ok(())
     }
 
-    pub(crate) fn enter_trap_handler(&mut self, handler: Option<&crate::traps::TrapHandler>) {
-        self.call_stack.push_trap_handler(handler);
+    pub(crate) fn enter_trap_handler(
+        &mut self,
+        signal: crate::traps::TrapSignal,
+        handler: Option<&crate::traps::TrapHandler>,
+    ) {
+        self.call_stack.push_trap_handler(signal, handler);
     }
 
     pub(crate) fn leave_trap_handler(&mut self) {
         self.call_stack.pop();
+    }
+
+    /// Acquires a block on trap delivery, preventing traps from being delivered until
+    /// the block is released. Multiple blocks may be acquired, and trap delivery will
+    /// remain suppressed until all blocks have been released.
+    pub(crate) const fn acquire_trap_delivery_block(&mut self) {
+        self.call_stack.acquire_trap_delivery_block();
+    }
+
+    /// Releases a block on trap delivery; note that trap delivery will remain
+    /// suppressed until all blocks have been released.
+    pub(crate) const fn release_trap_delivery_block(&mut self) {
+        self.call_stack.release_trap_delivery_block();
     }
 
     /// Updates the shell's internal tracking state to reflect that a new shell

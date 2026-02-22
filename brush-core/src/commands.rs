@@ -262,36 +262,10 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
 pub(crate) async fn on_preexecute(
     cmd: &mut commands::SimpleCommand<'_, impl extensions::ShellExtensions>,
 ) -> Result<(), error::Error> {
-    // See if we have a DEBUG trap handler registered; call it if we do.
-    invoke_debug_trap_handler_if_registered(&mut cmd.shell, &cmd.params, cmd.args.as_slice())
-        .await?;
-
-    Ok(())
-}
-
-async fn invoke_debug_trap_handler_if_registered(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    params: &ExecutionParameters,
-    args: &[CommandArg],
-) -> Result<(), error::Error> {
-    if shell.call_stack().trap_handler_depth() > 0 {
-        return Ok(());
-    }
-
-    let Some(debug_trap_handler) = shell.traps().get_handler(traps::TrapSignal::Debug).cloned()
-    else {
-        return Ok(());
-    };
-
-    // TODO(traps): Confirm whether trap handlers should be executed in the same process
-    // group.
-    let mut handler_params = params.clone();
-    handler_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
-
-    let full_cmd = args.iter().map(|arg| arg.to_string()).join(" ");
-
-    // TODO(well-known-vars): This shouldn't *just* be set in a trap situation.
-    shell.env_mut().update_or_add(
+    // Set BASH_COMMAND before invoking the DEBUG trap (and generally before
+    // executing commands).
+    let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
+    cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
         variables::ShellValueLiteral::Scalar(full_cmd),
         |_| Ok(()),
@@ -299,18 +273,11 @@ async fn invoke_debug_trap_handler_if_registered(
         env::EnvironmentScope::Global,
     )?;
 
-    shell.enter_trap_handler(Some(&debug_trap_handler));
-
-    // TODO(traps): Discard result?
-    let _ = shell
-        .run_string(
-            &debug_trap_handler.command,
-            &debug_trap_handler.source_info,
-            &handler_params,
-        )
-        .await;
-
-    shell.leave_trap_handler();
+    // Fire the DEBUG trap if one is registered.
+    let _ = cmd
+        .shell
+        .invoke_trap_handler(traps::TrapSignal::Debug, &cmd.params)
+        .await?;
 
     Ok(())
 }
