@@ -272,3 +272,18 @@ cases:
     stdin: |
       arr=(10 20 30)
       echo "Array elem: $[arr[1] + 5]"
+
+  - name: "Prefix increment/decrement with space before lvalue"
+    stdin: |
+      x=5
+      echo "++ x => $(( ++ x ))"
+      echo "x is now $x"
+      echo "-- x => $(( -- x ))"
+      echo "x is now $x"
+
+      # Also test in (( )) command form
+      y=10
+      (( ++ y ))
+      echo "y after ++ y: $y"
+      (( -- y ))
+      echo "y after -- y: $y"
