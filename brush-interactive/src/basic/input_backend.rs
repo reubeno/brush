@@ -83,12 +83,15 @@ impl BasicInputBackend {
 
     fn is_valid_input(shell: &Shell<impl brush_core::ShellExtensions>, input: &str) -> bool {
         match shell.parse_string(input.to_owned()) {
+            // Incomplete tokenizing (unclosed quotes, etc.) - need more input
             Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
                 if inner.is_incomplete() =>
             {
                 false
             }
+            // Parse error at end of input - could be incomplete
             Err(brush_parser::ParseError::ParsingAtEndOfInput) => false,
+            // Parse error at a specific position OR successful parse - complete
             _ => true,
         }
     }
