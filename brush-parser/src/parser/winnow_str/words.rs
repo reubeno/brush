@@ -181,7 +181,7 @@ pub(super) fn single_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
             return Err(winnow::error::ErrMode::Cut(ContextError::default()));
         }
 
-        Ok(format!("'{}'", content))
+        Ok(format!("'{content}'"))
     }
 }
 
