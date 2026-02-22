@@ -571,7 +571,7 @@ pub(super) fn command<'a>(
                             let is_func_def = winnow::combinator::peek::<_, _, PError, _>((
                                 take_while(1.., |c: char| {
                                     c.is_alphanumeric()
-                                        || matches!(c, '_' | '-' | '.' | ':' | '+' | '@')
+                                        || matches!(c, '_' | '-' | '.' | ':' | '+' | '@' | '/')
                                 }),
                                 take_while(0.., |c| c == ' ' || c == '\t'),
                                 "()",
@@ -605,12 +605,37 @@ pub(super) fn command<'a>(
                 }
             }
 
-            // Other characters: likely simple command (variable assignment, redirect, etc.)
-            _ => winnow::combinator::alt((
-                simple_command(ctx, tracker).map(ast::Command::Simple),
-                super::compound::function_definition(ctx, tracker).map(ast::Command::Function),
-            ))
-            .parse_next(input),
+            // Other characters: could be function definition or simple command
+            _ => {
+                // Peek for function definition pattern: name + optional_spaces + "()"
+                // Function names may contain dots, hyphens, slashes, and other non-metacharacters
+                let is_func_def = winnow::combinator::peek::<_, _, PError, _>((
+                    take_while(1.., |c: char| {
+                        c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':' | '+' | '@' | '/')
+                    }),
+                    take_while(0.., |c| c == ' ' || c == '\t'),
+                    "()",
+                ))
+                .parse_next(input)
+                .is_ok();
+
+                if is_func_def {
+                    winnow::combinator::alt((
+                        super::compound::function_definition(ctx, tracker)
+                            .map(ast::Command::Function),
+                        simple_command(ctx, tracker).map(ast::Command::Simple),
+                    ))
+                    .parse_next(input)
+                } else {
+                    // Regular command - try simple command first
+                    winnow::combinator::alt((
+                        simple_command(ctx, tracker).map(ast::Command::Simple),
+                        super::compound::function_definition(ctx, tracker)
+                            .map(ast::Command::Function),
+                    ))
+                    .parse_next(input)
+                }
+            }
         }
     }
 }
