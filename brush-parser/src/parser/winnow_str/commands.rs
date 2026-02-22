@@ -102,6 +102,7 @@ fn array_element<'a>(
 
 /// Parse an assignment word (VAR=value or VAR+=value or VAR[idx]=value or VAR=(array elements))
 /// Returns (Assignment, original word as `ast::Word`)
+#[allow(clippy::too_many_lines)]
 fn assignment_word<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
