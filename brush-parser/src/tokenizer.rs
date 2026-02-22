@@ -1710,7 +1710,9 @@ HERE2
             Err(TokenizerError::UnterminatedSingleQuote(_)) => {
                 assert!(result.as_ref().unwrap_err().is_incomplete());
             }
-            _ => panic!("Expected UnterminatedSingleQuote error"),
+            _ => {
+                unreachable!("Expected UnterminatedSingleQuote error");
+            }
         }
     }
 }

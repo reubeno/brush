@@ -256,11 +256,19 @@ pub(super) fn parse_balanced_delimiters<'a>(
         }
 
         // Get the full slice from start to current position
+        // Use byte-based slicing to handle multi-byte UTF-8 characters correctly
         let end = input.checkpoint();
-        let consumed_len = end.offset_from(&start);
+        let consumed_bytes = end.offset_from(&start);
 
         input.reset(&start);
-        let result = winnow::token::take(consumed_len).parse_next(input)?;
+        let bytes = input.as_bytes();
+        let result = std::str::from_utf8(&bytes[..consumed_bytes])
+            .map_err(|_| winnow::error::ErrMode::Backtrack(ContextError::default()))?;
+
+        // Advance input by the consumed bytes
+        // We need to count characters because take() works on characters, not bytes
+        let consumed_chars = result.chars().count();
+        let _ = winnow::token::take(consumed_chars).parse_next(input)?;
 
         Ok(result)
     }
@@ -497,17 +505,41 @@ pub(super) fn sequential_sep<'a>() -> impl Parser<StrStream<'a>, (), PError> {
 /// Keywords must be followed by a delimiter (space, tab, newline, semicolon, etc.)
 /// to avoid matching them as part of a larger word
 pub(super) fn keyword<'a>(word: &'static str) -> impl Parser<StrStream<'a>, &'a str, PError> {
-    winnow::combinator::preceded(
-        spaces(),
-        winnow::token::literal(word).verify(|_: &str| true), // Will be followed by delimiter check
-    )
-    .context(winnow::error::StrContext::Label("keyword"))
-    .verify(move |_: &str| {
-        // After matching the keyword, check that it's followed by a delimiter
-        // We can't easily peek ahead in winnow without consuming, so we rely on
-        // the fact that bare_word won't match delimiters
-        true // TODO: Add proper word boundary check
-    })
+    move |input: &mut StrStream<'a>| {
+        // Save checkpoint at the start so we can restore if keyword doesn't match
+        let start = input.checkpoint();
+
+        // Skip leading whitespace
+        spaces().parse_next(input)?;
+
+        // Match the literal keyword
+        let matched = winnow::token::literal(word).parse_next(input)?;
+
+        // Check that the keyword is followed by a delimiter (whitespace, operator, etc.)
+        // This prevents matching "time" in "times" or "if" in "iffy"
+        let checkpoint = input.checkpoint();
+        let next_char = winnow::token::any::<_, PError>.parse_next(input);
+        input.reset(&checkpoint);
+
+        match next_char {
+            Ok(c)
+                if c.is_whitespace()
+                    || matches!(c, ';' | '&' | '|' | '<' | '>' | '(' | ')' | '{' | '}') =>
+            {
+                Ok(matched)
+            }
+            Ok(_) => {
+                // Not a delimiter - this is not a keyword match
+                // Reset input position since we're backtracking
+                input.reset(&start);
+                Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+            }
+            Err(_) => {
+                // End of input - that's also a valid delimiter
+                Ok(matched)
+            }
+        }
+    }
 }
 
 /// Peek the first word without consuming input (for keyword dispatch)
