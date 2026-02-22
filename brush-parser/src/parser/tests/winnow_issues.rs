@@ -762,3 +762,17 @@ fn parse_parameter_expansion_default_nested_quotes() -> Result<()> {
     });
     Ok(())
 }
+
+#[test]
+fn parse_here_string_in_command_substitution() -> Result<()> {
+    let input = r"x=$(
+        cat <<<text
+  )
+echo done";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
