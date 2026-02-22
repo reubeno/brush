@@ -129,7 +129,10 @@ peg::parser! {
 
         rule decimal_literal() -> i64 =
             s:$(['1'..='9'] ['0'..='9']*) {?
-                s.parse().or(Err("i64"))
+                // Parse as u64 first, then cast to i64. This handles values like
+                // 9223372036854775808 (i64::MAX + 1) which is needed for INT64_MIN
+                // when preceded by unary minus: -(9223372036854775808) wraps to i64::MIN.
+                s.parse::<u64>().map(|v| v.cast_signed()).or(Err("i64"))
             }
     }
 }
