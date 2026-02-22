@@ -1,12 +1,11 @@
-use crate::Token;
 use crate::tokenizer;
 
 /// Represents an error that occurred while parsing tokens.
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
-    /// A parsing error occurred near the given token.
-    #[error("syntax error near token `{}' (line {} col {})", .0.to_str(), .0.location().start.line, .0.location().start.column)]
-    ParsingNearToken(Token),
+    /// A parsing error occurred near the given position.
+    #[error("syntax error at line {} col {}", .0.line, .0.column)]
+    ParsingNear(crate::SourcePosition),
 
     /// A parsing error occurred at the end of the input.
     #[error("syntax error at end of input")]
@@ -34,11 +33,9 @@ pub mod miette {
         pub fn to_pretty_error(self, input: impl Into<String>) -> PrettyError {
             let input = input.into();
             let location = match self {
-                Self::ParsingNearToken(ref token) => Some(SourceOffset::from_location(
-                    &input,
-                    token.location().start.line,
-                    token.location().start.column,
-                )),
+                Self::ParsingNear(ref pos) => {
+                    Some(SourceOffset::from_location(&input, pos.line, pos.column))
+                }
                 Self::Tokenizing { ref position, .. } => position
                     .as_ref()
                     .map(|p| SourceOffset::from_location(&input, p.line, p.column)),
@@ -122,12 +119,13 @@ pub enum BindingParseError {
 
 pub(crate) fn convert_peg_parse_error(
     err: &peg::error::ParseError<usize>,
-    tokens: &[Token],
+    tokens: &[crate::Token],
 ) -> ParseError {
     let approx_token_index = err.location;
 
     if approx_token_index < tokens.len() {
-        ParseError::ParsingNearToken(tokens[approx_token_index].clone())
+        let token = &tokens[approx_token_index];
+        ParseError::ParsingNear((*token.location().start).clone())
     } else {
         ParseError::ParsingAtEndOfInput
     }
