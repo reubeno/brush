@@ -251,3 +251,25 @@ cases:
 
   - name: "Tab-stripped here doc eclass pattern"
     stdin: "PYTHON=\"echo\"\nEPREFIX=\"/usr\"\nresult=$(\n\t\"${PYTHON}\" - \"${EPREFIX}\" <<-EOF\n\t\thello from eclass\n\tEOF\n)\necho \"$result\"\n"
+
+  - name: "Here string in command substitution"
+    stdin: |
+      x=$(
+              cat <<<text
+        )
+      echo "x=$x"
+
+  - name: "Here string in command substitution multiline"
+    stdin: |
+      result=$(
+        cat <<<"hello world"
+      )
+      echo "result=$result"
+
+  - name: "Here string with variable in command substitution"
+    stdin: |
+      var=text
+      x=$(
+        cat <<<"$var"
+      )
+      echo "x=$x"

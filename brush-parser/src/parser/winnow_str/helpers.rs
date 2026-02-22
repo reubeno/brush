@@ -215,26 +215,39 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     }
                 }
                 Ok('<') if allow_heredocs && depth == initial_depth => {
-                    // Check for heredoc operator <<
+                    // Check for heredoc operator << or here-string <<<
                     let checkpoint = input.checkpoint();
                     if winnow::token::any::<_, PError>.parse_next(input) == Ok('<') {
-                        // Check for <<- (remove leading tabs) vs <<
-                        // Use peek to check without consuming
-                        let remove_tabs =
-                            winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('-'))
+                        // Check for <<< (here-string) - NOT a heredoc
+                        if winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('<'))
+                            .parse_next(input)
+                            .is_ok()
+                        {
+                            // It's <<< (here-string), not a heredoc
+                            // Consume the third < and continue - the here-string will be
+                            // parsed later by io_redirect when the command substitution is executed
+                            let _ = winnow::token::any::<_, PError>.parse_next(input);
+                            at_comment_start = false;
+                        } else {
+                            // It's << (heredoc) - check for <<- (remove leading tabs)
+                            let remove_tabs =
+                                winnow::combinator::peek(winnow::token::one_of::<_, _, PError>(
+                                    '-',
+                                ))
                                 .parse_next(input)
                                 .is_ok();
-                        if remove_tabs {
-                            // Consume the '-'
-                            let _ = winnow::token::any::<_, PError>.parse_next(input);
-                        }
+                            if remove_tabs {
+                                // Consume the '-'
+                                let _ = winnow::token::any::<_, PError>.parse_next(input);
+                            }
 
-                        // Parse the heredoc delimiter
-                        let delimiter = parse_heredoc_delimiter_in_balanced(input)?;
-                        if !delimiter.is_empty() {
-                            pending_heredocs.push((delimiter, remove_tabs));
+                            // Parse the heredoc delimiter
+                            let delimiter = parse_heredoc_delimiter_in_balanced(input)?;
+                            if !delimiter.is_empty() {
+                                pending_heredocs.push((delimiter, remove_tabs));
+                            }
+                            at_comment_start = false;
                         }
-                        at_comment_start = false;
                     } else {
                         input.reset(&checkpoint);
                         at_comment_start = allow_comments && matches!('<', ' ' | '\t' | '\n');
