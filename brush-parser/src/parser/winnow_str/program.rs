@@ -1,4 +1,4 @@
-use winnow::combinator::repeat;
+use winnow::combinator::{opt, repeat, trace};
 use winnow::prelude::*;
 use winnow::stream::LocatingSlice;
 
@@ -20,7 +20,7 @@ pub(super) fn complete_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::CompleteCommand, PError> + 'a {
-    move |input: &mut StrStream<'a>| {
+    trace("complete_command", move |input: &mut StrStream<'a>| {
         // Parse first and_or (required)
         let first_ao = and_or(ctx, tracker).parse_next(input)?;
 
@@ -62,7 +62,7 @@ pub(super) fn complete_command<'a>(
         }
 
         Ok(ast::CompoundList(items))
-    }
+    })
 }
 
 /// Parse a newline-separated complete command continuation
@@ -106,9 +106,9 @@ pub(super) fn program<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::Program, PError> + 'a {
-    move |input: &mut StrStream<'a>| {
+    trace("program", move |input: &mut StrStream<'a>| {
         linebreak().parse_next(input)?;
-        let complete_commands = winnow::combinator::opt(complete_commands(ctx, tracker))
+        let complete_commands = opt(complete_commands(ctx, tracker))
             .parse_next(input)?
             .unwrap_or_default();
         linebreak().parse_next(input)?;
@@ -116,10 +116,10 @@ pub(super) fn program<'a>(
         // (e.g., a comment at the end of a file without a trailing newline).
         let _: &str =
             winnow::token::take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
-        winnow::combinator::opt(comment()).parse_next(input)?;
+        opt(comment()).parse_next(input)?;
         winnow::combinator::eof.parse_next(input)?;
         Ok(ast::Program { complete_commands })
-    }
+    })
 }
 
 /// Parse a shell program from a string with full source location tracking
