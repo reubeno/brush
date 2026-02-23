@@ -66,6 +66,7 @@ experimental-parser = [
     "brush-parser/winnow-parser",
 ]
 schema = ["dep:schemars"]
+debug-tracing = ["brush-parser/debug-tracing"]
 
 [lints]
 workspace = true
