@@ -134,7 +134,7 @@ cfg-if = "1.0.4"
 chrono = "0.4.43"
 clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
 fancy-regex = "0.17.0"
-futures = "0.3.31"
+futures = "0.3.32"
 itertools = "0.14.0"
 strum = "0.27.2"
 strum_macros = "0.27.2"

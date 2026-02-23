@@ -26,7 +26,7 @@ winnow-parser = ["dep:winnow"]
 
 [dependencies]
 arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }
-bon = "3.8.2"
+bon = "3.9.0"
 cached = "0.56.0"
 indenter = "0.3.4"
 insta = { version = "1.46.3", features = ["redactions"] }
@@ -42,7 +42,7 @@ winnow = { version = "0.7.14", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.1", features = ["wasm_js"] }
-uuid = { version = "1.20.0", features = ["js"] }
+uuid = { version = "1.21.0", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.101"

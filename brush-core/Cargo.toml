@@ -25,14 +25,14 @@ experimental-parser = ["brush-parser/winnow-parser"]
 async-recursion = "1.1.1"
 async-trait = "0.1.89"
 brush-parser = { version = "^0.3.0", path = "../brush-parser" }
-bon = "3.8.2"
+bon = "3.9.0"
 cached = "0.56.0"
 cfg-if = "1.0.4"
 chrono = "0.4.43"
 clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
 color-print = "0.3.7"
 fancy-regex = "0.17.0"
-futures = "0.3.31"
+futures = "0.3.32"
 inherent = "1.0.13"
 itertools = "0.14.0"
 normalize-path = "0.2.1"
@@ -79,7 +79,7 @@ uzers = "0.12.2"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.1", features = ["wasm_js"] }
-uuid = { version = "1.20.0", features = ["js"] }
+uuid = { version = "1.21.0", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.101"

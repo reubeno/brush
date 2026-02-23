@@ -26,7 +26,7 @@ highlighting = []
 workspace = true
 
 [dependencies]
-bon = "3.8.2"
+bon = "3.9.0"
 brush-parser = { version = "^0.3.0", path = "../brush-parser" }
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 crossterm = { version = "0.29.0", features = ["serde"], optional = true }
