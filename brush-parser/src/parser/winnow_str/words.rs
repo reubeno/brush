@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use winnow::combinator::trace;
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::stream::Offset;
@@ -352,7 +353,7 @@ pub(super) fn word_as_ast<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::Word, PError> + 'a {
-    move |input: &mut StrStream<'a>| {
+    trace("word_as_ast", move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
         // Check for tilde at word start if enabled
@@ -407,7 +408,7 @@ pub(super) fn word_as_ast<'a>(
             value: value.into_owned(),
             loc: Some(loc),
         })
-    }
+    })
 }
 
 /// Parse a wordlist (one or more words separated by spaces)

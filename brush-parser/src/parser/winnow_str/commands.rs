@@ -1,3 +1,4 @@
+use winnow::combinator::trace;
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::token::take_while;
@@ -447,7 +448,7 @@ pub(super) fn simple_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::SimpleCommand, PError> + 'a {
-    move |input: &mut StrStream<'a>| {
+    trace("simple_command", move |input: &mut StrStream<'a>| {
         // Try to parse optional prefix (assignments and/or redirects)
         let prefix = winnow::combinator::opt(cmd_prefix(ctx, tracker)).parse_next(input)?;
 
@@ -470,7 +471,7 @@ pub(super) fn simple_command<'a>(
             word_or_name,
             suffix,
         })
-    }
+    })
 }
 
 /// Parse a command (simple or compound).
@@ -483,7 +484,7 @@ pub(super) fn command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::Command, PError> + 'a {
-    move |input: &mut StrStream<'a>| {
+    trace("command", move |input: &mut StrStream<'a>| {
         spaces().parse_next(input)?; // Consume optional leading spaces
 
         // Fast path: dispatch based on first character
@@ -638,5 +639,5 @@ pub(super) fn command<'a>(
                 }
             }
         }
-    }
+    })
 }
