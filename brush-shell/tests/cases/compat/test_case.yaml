@@ -1,0 +1,53 @@
+name: "Case statement parsing edge cases"
+cases:
+  - name: "busybox_config_enabled function with minimal case"
+    stdin: |
+      busybox_config_enabled() {
+          local val="test"
+          case ${val} in
+          "") return 1 ;;
+          esac
+      }
+
+  - name: "Case with empty pattern and no default"
+    stdin: |
+      val="test"
+      case $val in
+      "") echo "empty";;
+      esac
+
+  - name: "Case with variable expansion in pattern"
+    stdin: |
+      pattern="test"
+      case "test" in
+      $pattern) echo "matched";;
+      esac
+
+  - name: "Case with complex empty pattern"
+    stdin: |
+      case "" in
+      "") echo "empty string matched";;
+      *) echo "not empty";;
+      esac
+
+  - name: "busybox_config_enabled with command substitution"
+    test_files:
+      - path: ".config"
+        contents: |
+          CONFIG_test="some_value"
+    stdin: |
+      busybox_config_enabled() {
+          local val=$(sed -n "/^CONFIG_test=/s:^[^=]*=::p" .config)
+          case ${val} in
+          "") return 1 ;;
+          *)  echo "${val}" | sed -r 's:^"(.*)"$:\1:' ;;
+          esac
+      }
+      busybox_config_enabled
+
+  - name: "Invalid case pattern with triple quotes (should fail)"
+    known_failure: true
+    stdin: |
+      case "test" in
+      """) echo "matched";;
+      esac
