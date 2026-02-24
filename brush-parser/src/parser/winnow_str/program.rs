@@ -143,7 +143,7 @@ pub fn parse_program(
     input: &str,
     options: &ParserOptions,
     source_info: &SourceInfo,
-) -> Result<ast::Program, PError> {
+) -> Result<ast::Program, crate::error::ParseError> {
     let pending_heredoc_trailing = std::cell::RefCell::new(None);
     let ctx = ParseContext {
         options,
@@ -152,5 +152,45 @@ pub fn parse_program(
     };
     let tracker = PositionTracker::new(input);
     let mut stream = LocatingSlice::new(input);
-    program(&ctx, &tracker).parse_next(&mut stream)
+    let result = program(&ctx, &tracker).parse_next(&mut stream);
+    result.map_err(|e| {
+        use winnow::stream::Location;
+        let offset = stream.current_token_start();
+        match e {
+            winnow::error::ErrMode::Cut(_) => {
+                // Committed parse that failed - report the error position
+                if offset >= input.len() {
+                    crate::error::ParseError::ParsingAtEndOfInput
+                } else {
+                    let (line, column) = calculate_line_column(input, offset);
+                    crate::error::ParseError::ParsingNear(crate::SourcePosition {
+                        index: offset,
+                        line,
+                        column,
+                    })
+                }
+            }
+            // Backtrack or Incomplete - might be incomplete input, signal "need more"
+            winnow::error::ErrMode::Backtrack(_) | winnow::error::ErrMode::Incomplete(_) => {
+                crate::error::ParseError::ParsingAtEndOfInput
+            }
+        }
+    })
+}
+
+fn calculate_line_column(input: &str, offset: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut col = 1;
+    for (i, c) in input.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if c == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
 }

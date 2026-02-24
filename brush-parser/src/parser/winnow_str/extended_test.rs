@@ -628,16 +628,17 @@ pub(super) fn extended_test_command<'a>(
         '['.parse_next(input)?;
         '['.parse_next(input)?;
 
+        // Once we've seen [[, we're committed - any error should not backtrack
+        // This ensures parse errors are reported at the actual error location, not "end of input"
         ext_test_spaces().parse_next(input)?;
-
-        // Parse the expression directly using winnow parsers
-        let expr = ext_test_or_expr(tracker).parse_next(input)?;
-
-        ext_test_spaces().parse_next(input)?;
-
-        // Parse ]]
-        ']'.parse_next(input)?;
-        ']'.parse_next(input)?;
+        let expr = ext_test_or_expr(tracker)
+            .parse_next(input)
+            .map_err(|e: PError| e.cut())?;
+        ext_test_spaces()
+            .parse_next(input)
+            .map_err(|e: PError| e.cut())?;
+        ']'.parse_next(input).map_err(|e: PError| e.cut())?;
+        ']'.parse_next(input).map_err(|e: PError| e.cut())?;
 
         let end_offset = tracker.offset_from_locating(input);
         let loc = tracker.range_to_span(start_offset..end_offset);
