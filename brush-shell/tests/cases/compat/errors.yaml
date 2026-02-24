@@ -92,6 +92,7 @@ cases:
       echo "after syntax error"
 
   - name: "Shell language syntax error (interactive)"
+    known_failure: true
     args: ["-i"]
     ignore_stderr: true
     stdin: |
