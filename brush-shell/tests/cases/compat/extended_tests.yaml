@@ -402,3 +402,16 @@ cases:
     stdin: |
       exclude="0123456789"
       [[ "8675309" == +([$exclude]) ]] && echo "matches digits"
+
+  - name: "Escaped double quote in pattern"
+    known_failure: true
+    stdin: |
+      flag='"test'
+      [[ ${flag} != \"* ]] && echo "does not start with quote"
+      [[ ${flag} = \"* ]] || echo "starts with quote check"
+
+  - name: "Escaped double quote literal in extended test"
+    known_failure: true
+    stdin: |
+      [[ a = \" ]] || echo "escaped quote comparison"
+      [[ a != \"* ]] && echo "escaped quote in glob pattern"
