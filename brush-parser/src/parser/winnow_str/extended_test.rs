@@ -406,6 +406,10 @@ fn ext_test_regex_word<'a>(
                         }
                         result.push('|');
                     }
+                    '\\' => {
+                        let word = ext_test_word(tracker).parse_next(input)?;
+                        result.push_str(&word.value);
+                    }
                     ' ' | '\t' | '\n' if !result.is_empty() => {
                         // Stop on whitespace after we've collected something
                         break;
