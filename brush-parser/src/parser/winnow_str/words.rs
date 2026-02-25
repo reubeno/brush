@@ -45,6 +45,20 @@ pub(super) fn bare_word<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
     })
 }
 
+/// Parse a bare word for function names.
+/// Unlike `bare_word()`, this allows extglob prefix characters (`@`, `?`, `*`, `+`, `!`)
+/// since function names can contain these characters.
+pub(super) fn fname_word<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
+    take_while(1.., |c: char| {
+        !matches!(
+            c,
+            ' ' | '\t' | '\n' | '\r' |  // Whitespace
+            '|' | '&' | ';' | '<' | '>' | '(' | ')' |  // Operators
+            '$' | '`' | '\'' | '"' | '\\' // Quote/expansion starts
+        )
+    })
+}
+
 /// Parse a non-reserved word (for use as command names)
 /// Reserved words cannot be used as command names in simple commands
 pub(super) fn non_reserved_word<'a>(
