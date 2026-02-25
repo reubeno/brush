@@ -326,6 +326,7 @@ fn ext_test_word<'a>(
 }
 
 /// Parse a regex word in extended test context (allows | ( ) [ ] in the pattern)
+#[allow(clippy::too_many_lines)]
 fn ext_test_regex_word<'a>(
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, ast::Word, PError> + 'a {
@@ -373,7 +374,11 @@ fn ext_test_regex_word<'a>(
                     }
                     '[' => {
                         // Start of bracket expression in regex
-                        bracket_depth += 1;
+                        // Only increment if not already inside a bracket expression
+                        // (in ERE, bracket expressions don't nest - [ inside [...] is literal)
+                        if bracket_depth == 0 {
+                            bracket_depth += 1;
+                        }
                         result.push(ch);
                         winnow::token::any.parse_next(input)?;
                     }
@@ -410,9 +415,17 @@ fn ext_test_regex_word<'a>(
                         let word = ext_test_word(tracker).parse_next(input)?;
                         result.push_str(&word.value);
                     }
-                    ' ' | '\t' | '\n' if !result.is_empty() => {
+                    ' ' | '\t' | '\n'
+                        if !result.is_empty() && bracket_depth == 0 && paren_depth == 0 =>
+                    {
                         // Stop on whitespace after we've collected something
+                        // But not if we're inside a bracket expression or parentheses
                         break;
+                    }
+                    ' ' | '\t' | '\n' if bracket_depth > 0 || paren_depth > 0 => {
+                        // Whitespace inside bracket expression or parentheses is part of the regex
+                        result.push(ch);
+                        winnow::token::any.parse_next(input)?;
                     }
                     _ => {
                         // Regular word character
