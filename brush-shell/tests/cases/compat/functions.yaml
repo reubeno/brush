@@ -109,6 +109,20 @@ cases:
 
       my/func
 
+  - name: "Function names with plus sign"
+    stdin: |
+      f+g() {
+          echo "In f+g"
+      }
+
+      f+g
+
+      _junit5_src_test_scan-classpath+pattern() {
+          echo "In complex function"
+      }
+
+      _junit5_src_test_scan-classpath+pattern
+
   - name: "Functions shadowing builtins"
     stdin: |
       .() {
