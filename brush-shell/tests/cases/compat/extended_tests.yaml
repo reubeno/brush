@@ -241,6 +241,13 @@ cases:
       [[ a =~ ^(a|b)$ ]] && echo "4. Pass"
       [[ a =~ c ]]       && echo "5. Pass"
 
+  - name: "Regex with bracket expression containing space"
+    stdin: |
+      [[ "hello" =~ ([^ ]+) ]] && echo "1. Pass"
+      [[ "hello world" =~ ([^ ]+)\ (.+) ]] && echo "2. Pass"
+      link="../foo bar/bin/test"
+      [[ ${link} =~ (../[^ ]+)\ (bin/.+) ]] && echo "3. Pass: ${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"
+
   - name: "Regex with case insensitivity"
     stdin: |
       shopt -u nocasematch
