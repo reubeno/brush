@@ -606,7 +606,7 @@ pub(super) fn name<'a>() -> impl Parser<StrStream<'a>, String, PError> {
 
 /// Parse a function name.
 pub(super) fn fname<'a>() -> impl Parser<StrStream<'a>, String, PError> {
-    winnow::combinator::preceded(spaces(), super::words::bare_word())
+    winnow::combinator::preceded(spaces(), super::words::fname_word())
         .verify(|s: &str| is_valid_fname(s))
         .map(|s: &str| s.to_string())
 }
