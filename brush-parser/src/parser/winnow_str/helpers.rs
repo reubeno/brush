@@ -205,6 +205,43 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     let _ = skip_double_quoted_content().parse_next(input)?;
                     at_comment_start = false;
                 }
+                Ok('$') => {
+                    // Handle nested expansions: $(...), ${...}, $((...))
+                    let checkpoint = input.checkpoint();
+                    if winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('('))
+                        .parse_next(input)
+                        .is_ok()
+                    {
+                        // It's $( or $((
+                        let _ = winnow::token::any::<_, PError>.parse_next(input)?; // consume '('
+                        // Check for $(( (arithmetic)
+                        if winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('('))
+                            .parse_next(input)
+                            .is_ok()
+                        {
+                            // It's $(( - consume second '(' and parse arithmetic
+                            let _ = winnow::token::any::<_, PError>.parse_next(input)?;
+                            let _ = parse_balanced_delimiters("", Some('('), ')', 2, false, false)
+                                .parse_next(input)?;
+                        } else {
+                            // It's $( - parse command substitution
+                            let _ = parse_balanced_delimiters("", Some('('), ')', 1, true, true)
+                                .parse_next(input)?;
+                        }
+                    } else if winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('{'))
+                        .parse_next(input)
+                        .is_ok()
+                    {
+                        // It's ${ - parse braced variable
+                        let _ = winnow::token::any::<_, PError>.parse_next(input)?; // consume '{'
+                        let _ = parse_balanced_delimiters("", Some('{'), '}', 1, false, false)
+                            .parse_next(input)?;
+                    } else {
+                        // Just a $ followed by something else, or end of input
+                        input.reset(&checkpoint);
+                    }
+                    at_comment_start = false;
+                }
                 Ok('#') if at_comment_start => {
                     // Skip comment content (everything until newline, not consuming newline)
                     while let Ok(c) = winnow::token::any::<_, PError>.parse_next(input) {
