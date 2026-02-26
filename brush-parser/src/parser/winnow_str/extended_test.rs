@@ -363,10 +363,88 @@ fn ext_test_regex_word<'a>(
             // Try to parse next component
             if let Ok(ch) = peek_char().parse_next(input) {
                 match ch {
-                    '\'' | '"' => {
-                        // Quoted string
-                        let word = ext_test_word(tracker).parse_next(input)?;
-                        result.push_str(&word.value);
+                    '\'' => {
+                        // Single-quoted string - parse it and continue for more word chars
+                        result.push('\'');
+                        winnow::token::any.parse_next(input)?; // consume opening '
+                        let content = take_while(0.., |c: char| c != '\'').parse_next(input)?;
+                        result.push_str(content);
+                        if peek_char().parse_next(input).ok() == Some('\'') {
+                            result.push('\'');
+                            winnow::token::any.parse_next(input)?; // consume closing '
+                        }
+                        // Continue parsing word characters after the quoted string
+                        // (like ext_test_word does), but stop at ] if inside bracket
+                        while let Ok(ch) = peek_char().parse_next(input) {
+                            match ch {
+                                ' ' | '\t' | '\n' | '&' | '|' | '(' | ')' => break,
+                                ']' if bracket_depth > 0 => break,
+                                '\'' | '"' => break, // Next quoted string
+                                '\\' => {
+                                    winnow::token::any.parse_next(input)?;
+                                    if let Ok(c) = winnow::token::any::<_, PError>.parse_next(input)
+                                    {
+                                        result.push('\\');
+                                        result.push(c);
+                                    }
+                                }
+                                _ => {
+                                    result.push(ch);
+                                    winnow::token::any.parse_next(input)?;
+                                }
+                            }
+                        }
+                    }
+                    '"' => {
+                        // Double-quoted string - parse it and continue for more word chars
+                        result.push('"');
+                        winnow::token::any.parse_next(input)?; // consume opening "
+                        loop {
+                            match peek_char().parse_next(input).ok() {
+                                Some('"') => {
+                                    result.push('"');
+                                    winnow::token::any.parse_next(input)?; // consume closing "
+                                    break;
+                                }
+                                Some('\\') => {
+                                    result.push('\\');
+                                    winnow::token::any.parse_next(input)?; // consume \
+                                    if let Ok(c) = winnow::token::any::<_, PError>.parse_next(input)
+                                    {
+                                        result.push(c);
+                                    }
+                                }
+                                Some('$') => {
+                                    ext_test_parse_dollar_expansion(input, &mut result)?;
+                                }
+                                Some(c) => {
+                                    result.push(c);
+                                    winnow::token::any.parse_next(input)?;
+                                }
+                                None => break,
+                            }
+                        }
+                        // Continue parsing word characters after the quoted string
+                        // (like ext_test_word does), but stop at ] if inside bracket
+                        while let Ok(ch) = peek_char().parse_next(input) {
+                            match ch {
+                                ' ' | '\t' | '\n' | '&' | '|' | '(' | ')' => break,
+                                ']' if bracket_depth > 0 => break,
+                                '\'' | '"' => break, // Next quoted string
+                                '\\' => {
+                                    winnow::token::any.parse_next(input)?;
+                                    if let Ok(c) = winnow::token::any::<_, PError>.parse_next(input)
+                                    {
+                                        result.push('\\');
+                                        result.push(c);
+                                    }
+                                }
+                                _ => {
+                                    result.push(ch);
+                                    winnow::token::any.parse_next(input)?;
+                                }
+                            }
+                        }
                     }
                     '$' => {
                         // Dollar expansion
@@ -412,8 +490,14 @@ fn ext_test_regex_word<'a>(
                         result.push('|');
                     }
                     '\\' => {
-                        let word = ext_test_word(tracker).parse_next(input)?;
-                        result.push_str(&word.value);
+                        // Handle backslash escape directly to avoid ext_test_word
+                        // consuming too much (e.g., the closing ] of a bracket expression)
+                        winnow::token::any.parse_next(input)?; // consume \
+                        let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
+                        result.push('\\');
+                        if let Ok(c) = escaped {
+                            result.push(c);
+                        }
                     }
                     ' ' | '\t' | '\n'
                         if !result.is_empty() && bracket_depth == 0 && paren_depth == 0 =>
@@ -434,7 +518,13 @@ fn ext_test_regex_word<'a>(
                             let last_ch = result.chars().last();
                             // Don't add space after structural characters: ( ) [ ] |
                             // Also don't add space after $ (variable expansion prefix)
-                            if !matches!(last_ch, Some('(' | ')' | '[' | ']' | '|' | '$')) {
+                            // or if the last character was part of an escape sequence (preceded by \)
+                            let chars: Vec<char> = result.chars().collect();
+                            let len = chars.len();
+                            let is_escaped = len >= 2 && chars[len - 2] == '\\';
+                            if !matches!(last_ch, Some('(' | ')' | '[' | ']' | '|' | '$'))
+                                && !is_escaped
+                            {
                                 result.push(' ');
                             }
                         }
