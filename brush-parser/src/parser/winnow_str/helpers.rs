@@ -1,12 +1,36 @@
 use winnow::combinator::{peek, repeat};
 use winnow::error::ContextError;
 use winnow::prelude::*;
-use winnow::stream::Offset;
+use winnow::stream::{Checkpoint, Offset, Stream};
 use winnow::token::take_while;
 
 use crate::ast::SeparatorOperator;
 
 use super::types::{PError, StrStream};
+
+// ============================================================================
+// Helper: Byte-to-Character conversion for LocatingSlice<&str>
+// ============================================================================
+
+/// Take a slice from input using byte offset from checkpoints.
+///
+/// Winnow's `offset_from()` returns byte offsets, but `take()` expects character counts.
+/// This helper correctly handles multi-byte UTF-8 by converting bytes to characters.
+pub(super) fn take_slice_from_checkpoints<'a>(
+    input: &mut StrStream<'a>,
+    start: &Checkpoint<<&'a str as Stream>::Checkpoint, StrStream<'a>>,
+) -> Result<&'a str, PError> {
+    let end = input.checkpoint();
+    let consumed_bytes = end.offset_from(start);
+
+    input.reset(start);
+    let bytes = input.as_bytes();
+    let result = std::str::from_utf8(&bytes[..consumed_bytes])
+        .map_err(|_| winnow::error::ErrMode::Backtrack(ContextError::default()))?;
+
+    let consumed_chars = result.chars().count();
+    winnow::token::take(consumed_chars).parse_next(input)
+}
 
 // ============================================================================
 // Tier 0: Character-level parsers (leaf functions)
@@ -35,24 +59,22 @@ pub(super) fn peek_char<'a>() -> impl Parser<StrStream<'a>, char, PError> {
 /// Returns the entire pattern including the prefix and parentheses
 pub(super) fn extglob_pattern<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
     move |input: &mut StrStream<'a>| {
-        // Save starting checkpoint to capture the prefix char too
         let start = input.checkpoint();
 
         // Match the prefix character (@, !, ?, +, *)
         let _prefix_char = winnow::token::one_of(['@', '!', '?', '+', '*']).parse_next(input)?;
 
         // Use the helper to parse balanced parens starting from the '('
-        let _balanced =
+        // This returns the consumed slice including the parens
+        let balanced =
             parse_balanced_delimiters("(", Some('('), ')', 1, false, false).parse_next(input)?;
 
-        // Get the full pattern including prefix character
-        let end = input.checkpoint();
-        let consumed_len = end.offset_from(&start);
+        // Total character count: 1 for prefix + chars in balanced content
+        let char_count = 1 + balanced.chars().count();
 
+        // Reset and take the full pattern
         input.reset(&start);
-        let pattern = winnow::token::take(consumed_len).parse_next(input)?;
-
-        Ok(pattern)
+        winnow::token::take(char_count).parse_next(input)
     }
 }
 
@@ -72,24 +94,29 @@ pub(super) fn skip_single_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a
 pub(super) fn skip_double_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
     move |input: &mut StrStream<'a>| {
         let start = input.checkpoint();
+        let mut char_count: usize = 0;
 
         loop {
             match winnow::token::any::<_, PError>.parse_next(input) {
-                Ok('"') => break,
+                Ok('"') => {
+                    char_count += 1;
+                    break;
+                }
                 Ok('\\') => {
                     let _ = winnow::token::any::<_, PError>.parse_next(input);
+                    char_count += 2;
                 }
                 Err(_) => {
                     return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
                 }
-                _ => {}
+                Ok(_) => {
+                    char_count += 1;
+                }
             }
         }
 
-        let end = input.checkpoint();
-        let consumed_len = end.offset_from(&start);
         input.reset(&start);
-        winnow::token::take(consumed_len).parse_next(input)
+        winnow::token::take(char_count).parse_next(input)
     }
 }
 
@@ -306,22 +333,7 @@ pub(super) fn parse_balanced_delimiters<'a>(
             }
         }
 
-        // Get the full slice from start to current position
-        // Use byte-based slicing to handle multi-byte UTF-8 characters correctly
-        let end = input.checkpoint();
-        let consumed_bytes = end.offset_from(&start);
-
-        input.reset(&start);
-        let bytes = input.as_bytes();
-        let result = std::str::from_utf8(&bytes[..consumed_bytes])
-            .map_err(|_| winnow::error::ErrMode::Backtrack(ContextError::default()))?;
-
-        // Advance input by the consumed bytes
-        // We need to count characters because take() works on characters, not bytes
-        let consumed_chars = result.chars().count();
-        let _ = winnow::token::take(consumed_chars).parse_next(input)?;
-
-        Ok(result)
+        super::helpers::take_slice_from_checkpoints(input, &start)
     }
 }
 

@@ -111,3 +111,10 @@ cases:
       echo "5: '$x'"
       x="hello \\world"
       echo "6: '$x'"
+
+  - name: "UTF-8 in double-quoted strings"
+    stdin: |
+      # UTF-8 characters in double-quoted strings
+      f() { echo "Hazaña"; }
+      f
+      echo "Test: ñ"

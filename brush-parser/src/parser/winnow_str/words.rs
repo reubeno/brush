@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use winnow::combinator::trace;
 use winnow::error::ContextError;
 use winnow::prelude::*;
-use winnow::stream::Offset;
 use winnow::token::take_while;
 
 use crate::ast;
@@ -264,12 +263,7 @@ pub(super) fn double_quoted_string<'a>() -> impl Parser<StrStream<'a>, String, P
             }
         }
 
-        // Get the full slice from start to current position
-        let end = input.checkpoint();
-        let consumed_len = end.offset_from(&start);
-        input.reset(&start);
-        let result: &str = winnow::token::take(consumed_len).parse_next(input)?;
-
+        let result = super::helpers::take_slice_from_checkpoints(input, &start)?;
         Ok(result.to_string())
     }
 }
@@ -305,10 +299,7 @@ pub(super) fn escape_sequence<'a>(
             .parse_next(input)?;
         }
 
-        let end = input.checkpoint();
-        let len = end.offset_from(&start);
-        input.reset(&start);
-        winnow::token::take(len).parse_next(input)
+        super::helpers::take_slice_from_checkpoints(input, &start)
     }
 }
 
