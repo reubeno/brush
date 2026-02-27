@@ -423,12 +423,12 @@ pub(super) fn optional_redirects<'a>(
     tracker: &'a PositionTracker,
 ) -> impl Parser<StrStream<'a>, Option<ast::RedirectList>, PError> + 'a {
     move |input: &mut StrStream<'a>| {
-        // Peek ahead to check for redirect operators (after consuming whitespace)
-        // Scan past any spaces/tabs to find the next meaningful character
-        let remaining = input.as_ref().trim_start_matches([' ', '\t'].as_ref());
+        // First, consume spaces and line continuations to see what follows
+        super::helpers::spaces().parse_next(input)?;
 
         // Check if next char is a redirect operator or digit (for fd redirects like 2>)
-        let has_redirect = remaining
+        let has_redirect = input
+            .as_ref()
             .chars()
             .next()
             .is_some_and(|c| c == '<' || c == '>' || c.is_ascii_digit());
