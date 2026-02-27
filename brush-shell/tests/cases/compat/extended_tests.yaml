@@ -420,3 +420,10 @@ cases:
     stdin: |
       [[ a = \" ]] || echo "escaped quote comparison"
       [[ a != \"* ]] && echo "escaped quote in glob pattern"
+
+  - name: "Regex with escaped space in pattern"
+    stdin: |
+      # Escaped space in regex pattern
+      [[ "a b" =~ a\ b ]] && echo "1. Matched escaped space"
+      f() { [[ "a b" =~ a\ b ]]; }
+      echo "result: $?"
