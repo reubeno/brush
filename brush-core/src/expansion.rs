@@ -966,6 +966,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         return Ok(Expansion::from(ExpansionPiece::Splittable(s)));
                     }
 
+                    // Handle \<newline> line continuation - remove both characters
+                    if escaped == "\n" {
+                        return Ok(Expansion::from(ExpansionPiece::Unsplittable(String::new())));
+                    }
+
                     // Otherwise, we expect a backslash here; remove it.
                     Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
                 } else {

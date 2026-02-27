@@ -784,8 +784,13 @@ peg::parser! {
             legacy_arithmetic_expansion() /
             command_substitution() /
             parameter_expansion() /
+            double_quoted_line_continuation() /
             double_quoted_escape_sequence() /
             double_quoted_text()
+
+        // Line continuation inside double quotes: \<newline> - both characters are removed
+        rule double_quoted_line_continuation() -> WordPiece =
+            "\\" "\n" { WordPiece::Text(String::new()) }
 
         rule double_quoted_sequence() -> Vec<WordPieceWithSource> =
             "\"" i:double_quoted_sequence_inner()* "\"" { i }
@@ -851,7 +856,7 @@ peg::parser! {
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
+            $((!double_quoted_line_continuation() !double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
 
         // Heredoc body parsing: like double-quoted content, but " and ' are literal characters.
         pub(crate) rule unexpanded_heredoc_word() -> Vec<WordPieceWithSource> =

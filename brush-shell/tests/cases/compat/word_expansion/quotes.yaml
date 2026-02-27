@@ -82,3 +82,32 @@ cases:
     stdin: |
       quoted=$"Hello, world"
       echo "Content: [${quoted}]"
+
+  - name: "Line continuation in double-quoted strings"
+    stdin: |
+      # Line continuation inside double quotes: \<newline> is removed
+      x="hello \
+      world"
+      echo "1: '$x'"
+
+      # Line continuation at beginning
+      x="\
+      hello"
+      echo "2: '$x'"
+
+      # Line continuation at end
+      x="hello\
+      "
+      echo "3: '$x'"
+
+      # Multiple line continuations
+      x="hello \
+      world\
+      !"
+      echo "4: '$x'"
+
+      # Other escapes still work
+      x="hello \$world"
+      echo "5: '$x'"
+      x="hello \\world"
+      echo "6: '$x'"
