@@ -531,7 +531,17 @@ fn ext_test_regex_word<'a>(
                         let word = take_while(1.., |c: char| {
                             !matches!(
                                 c,
-                                ' ' | '\t' | '\n' | '&' | '|' | '(' | ')' | '[' | ']' | '\'' | '"'
+                                ' ' | '\t'
+                                    | '\n'
+                                    | '&'
+                                    | '|'
+                                    | '('
+                                    | ')'
+                                    | '['
+                                    | ']'
+                                    | '\''
+                                    | '"'
+                                    | '\\'
                             )
                         })
                         .parse_next(input)?;
