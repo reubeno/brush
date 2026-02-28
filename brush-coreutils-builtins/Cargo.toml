@@ -1,0 +1,274 @@
+[package]
+name = "brush-coreutils-builtins"
+description = "Optional coreutils builtins for brush-shell (powered by uutils/coreutils)"
+version = "0.1.0"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+bench = false
+
+[features]
+default = ['coreutils.all']
+
+'coreutils.all' = [
+    'coreutils.arch',
+    'coreutils.base32',
+    'coreutils.base64',
+    'coreutils.basename',
+    'coreutils.basenc',
+    'coreutils.cat',
+    'coreutils.cksum',
+    'coreutils.b2sum',
+    'coreutils.md5sum',
+    'coreutils.sha1sum',
+    'coreutils.sha224sum',
+    'coreutils.sha256sum',
+    'coreutils.sha384sum',
+    'coreutils.sha512sum',
+    'coreutils.comm',
+    'coreutils.cp',
+    'coreutils.csplit',
+    'coreutils.cut',
+    'coreutils.date',
+    'coreutils.dd',
+    'coreutils.df',
+    'coreutils.dir',
+    'coreutils.dircolors',
+    'coreutils.dirname',
+    'coreutils.du',
+    'coreutils.echo',
+    'coreutils.env',
+    'coreutils.expand',
+    'coreutils.expr',
+    'coreutils.factor',
+    'coreutils.false',
+    'coreutils.fmt',
+    'coreutils.fold',
+    'coreutils.head',
+    'coreutils.hostname',
+    'coreutils.join',
+    'coreutils.link',
+    'coreutils.ln',
+    'coreutils.ls',
+    'coreutils.mkdir',
+    'coreutils.mktemp',
+    'coreutils.more',
+    'coreutils.mv',
+    'coreutils.nl',
+    'coreutils.nproc',
+    'coreutils.numfmt',
+    'coreutils.od',
+    'coreutils.paste',
+    'coreutils.pr',
+    'coreutils.printenv',
+    'coreutils.printf',
+    'coreutils.ptx',
+    'coreutils.pwd',
+    'coreutils.readlink',
+    'coreutils.realpath',
+    'coreutils.rm',
+    'coreutils.rmdir',
+    'coreutils.seq',
+    'coreutils.shred',
+    'coreutils.shuf',
+    'coreutils.sleep',
+    'coreutils.sort',
+    'coreutils.split',
+    'coreutils.sum',
+    'coreutils.sync',
+    'coreutils.tac',
+    'coreutils.tail',
+    'coreutils.tee',
+    'coreutils.test',
+    'coreutils.touch',
+    'coreutils.tr',
+    'coreutils.true',
+    'coreutils.truncate',
+    'coreutils.tsort',
+    'coreutils.uname',
+    'coreutils.unexpand',
+    'coreutils.uniq',
+    'coreutils.unlink',
+    'coreutils.vdir',
+    'coreutils.wc',
+    'coreutils.whoami',
+    'coreutils.yes',
+]
+
+'coreutils.arch' = ["dep:uu_arch"]
+'coreutils.base32' = ["dep:uu_base32"]
+'coreutils.base64' = ["dep:uu_base64"]
+'coreutils.basename' = ["dep:uu_basename"]
+'coreutils.basenc' = ["dep:uu_basenc"]
+'coreutils.cat' = ["dep:uu_cat"]
+'coreutils.cksum' = ["dep:uu_cksum"]
+'coreutils.b2sum' = ["dep:uu_b2sum"]
+'coreutils.md5sum' = ["dep:uu_md5sum"]
+'coreutils.sha1sum' = ["dep:uu_sha1sum"]
+'coreutils.sha224sum' = ["dep:uu_sha224sum"]
+'coreutils.sha256sum' = ["dep:uu_sha256sum"]
+'coreutils.sha384sum' = ["dep:uu_sha384sum"]
+'coreutils.sha512sum' = ["dep:uu_sha512sum"]
+'coreutils.comm' = ["dep:uu_comm"]
+'coreutils.cp' = ["dep:uu_cp"]
+'coreutils.csplit' = ["dep:uu_csplit"]
+'coreutils.cut' = ["dep:uu_cut"]
+'coreutils.date' = ["dep:uu_date"]
+'coreutils.dd' = ["dep:uu_dd"]
+'coreutils.df' = ["dep:uu_df"]
+'coreutils.dir' = ["dep:uu_dir"]
+'coreutils.dircolors' = ["dep:uu_dircolors"]
+'coreutils.dirname' = ["dep:uu_dirname"]
+'coreutils.du' = ["dep:uu_du"]
+'coreutils.echo' = ["dep:uu_echo"]
+'coreutils.env' = ["dep:uu_env"]
+'coreutils.expand' = ["dep:uu_expand"]
+'coreutils.expr' = ["dep:uu_expr"]
+'coreutils.factor' = ["dep:uu_factor"]
+'coreutils.false' = ["dep:uu_false"]
+'coreutils.fmt' = ["dep:uu_fmt"]
+'coreutils.fold' = ["dep:uu_fold"]
+'coreutils.head' = ["dep:uu_head"]
+'coreutils.hostname' = ["dep:uu_hostname"]
+'coreutils.join' = ["dep:uu_join"]
+'coreutils.link' = ["dep:uu_link"]
+'coreutils.ln' = ["dep:uu_ln"]
+'coreutils.ls' = ["dep:uu_ls"]
+'coreutils.mkdir' = ["dep:uu_mkdir"]
+'coreutils.mktemp' = ["dep:uu_mktemp"]
+'coreutils.more' = ["dep:uu_more"]
+'coreutils.mv' = ["dep:uu_mv"]
+'coreutils.nl' = ["dep:uu_nl"]
+'coreutils.nproc' = ["dep:uu_nproc"]
+'coreutils.numfmt' = ["dep:uu_numfmt"]
+'coreutils.od' = ["dep:uu_od"]
+'coreutils.paste' = ["dep:uu_paste"]
+'coreutils.pr' = ["dep:uu_pr"]
+'coreutils.printenv' = ["dep:uu_printenv"]
+'coreutils.printf' = ["dep:uu_printf"]
+'coreutils.ptx' = ["dep:uu_ptx"]
+'coreutils.pwd' = ["dep:uu_pwd"]
+'coreutils.readlink' = ["dep:uu_readlink"]
+'coreutils.realpath' = ["dep:uu_realpath"]
+'coreutils.rm' = ["dep:uu_rm"]
+'coreutils.rmdir' = ["dep:uu_rmdir"]
+'coreutils.seq' = ["dep:uu_seq"]
+'coreutils.shred' = ["dep:uu_shred"]
+'coreutils.shuf' = ["dep:uu_shuf"]
+'coreutils.sleep' = ["dep:uu_sleep"]
+'coreutils.sort' = ["dep:uu_sort"]
+'coreutils.split' = ["dep:uu_split"]
+'coreutils.sum' = ["dep:uu_sum"]
+'coreutils.sync' = ["dep:uu_sync"]
+'coreutils.tac' = ["dep:uu_tac"]
+'coreutils.tail' = ["dep:uu_tail"]
+'coreutils.tee' = ["dep:uu_tee"]
+'coreutils.test' = ["dep:uu_test"]
+'coreutils.touch' = ["dep:uu_touch"]
+'coreutils.tr' = ["dep:uu_tr"]
+'coreutils.true' = ["dep:uu_true"]
+'coreutils.truncate' = ["dep:uu_truncate"]
+'coreutils.tsort' = ["dep:uu_tsort"]
+'coreutils.uname' = ["dep:uu_uname"]
+'coreutils.unexpand' = ["dep:uu_unexpand"]
+'coreutils.uniq' = ["dep:uu_uniq"]
+'coreutils.unlink' = ["dep:uu_unlink"]
+'coreutils.vdir' = ["dep:uu_vdir"]
+'coreutils.wc' = ["dep:uu_wc"]
+'coreutils.whoami' = ["dep:uu_whoami"]
+'coreutils.yes' = ["dep:uu_yes"]
+
+[lints]
+workspace = true
+
+[dependencies]
+brush-core = { version = "^0.4.0", path = "../brush-core" }
+
+uu_arch= { path = "../../coreutils/src/uu/arch", optional = true }
+uu_base32 = { path = "../../coreutils/src/uu/base32", optional = true }
+uu_base64 = { path = "../../coreutils/src/uu/base64", optional = true }
+uu_basename = { path = "../../coreutils/src/uu/basename", optional = true }
+uu_basenc = { path = "../../coreutils/src/uu/basenc", optional = true }
+uu_cat = { path = "../../coreutils/src/uu/cat", optional = true }
+uu_cksum = { path = "../../coreutils/src/uu/cksum", optional = true }
+uu_b2sum = { path = "../../coreutils/src/uu/b2sum", optional = true }
+uu_md5sum = { path = "../../coreutils/src/uu/md5sum", optional = true }
+uu_sha1sum = { path = "../../coreutils/src/uu/sha1sum", optional = true }
+uu_sha224sum = { path = "../../coreutils/src/uu/sha224sum", optional = true }
+uu_sha256sum = { path = "../../coreutils/src/uu/sha256sum", optional = true }
+uu_sha384sum = { path = "../../coreutils/src/uu/sha384sum", optional = true }
+uu_sha512sum = { path = "../../coreutils/src/uu/sha512sum", optional = true }
+uu_comm = { path = "../../coreutils/src/uu/comm", optional = true }
+uu_cp = { path = "../../coreutils/src/uu/cp", optional = true }
+uu_csplit = { path = "../../coreutils/src/uu/csplit", optional = true }
+uu_cut = { path = "../../coreutils/src/uu/cut", optional = true }
+uu_date = { path = "../../coreutils/src/uu/date", optional = true }
+uu_dd = { path = "../../coreutils/src/uu/dd", optional = true }
+uu_df = { path = "../../coreutils/src/uu/df", optional = true }
+uu_dir = { path = "../../coreutils/src/uu/dir", optional = true }
+uu_dircolors = { path = "../../coreutils/src/uu/dircolors", optional = true }
+uu_dirname = { path = "../../coreutils/src/uu/dirname", optional = true }
+uu_du = { path = "../../coreutils/src/uu/du", optional = true }
+uu_echo = { path = "../../coreutils/src/uu/echo", optional = true }
+uu_env = { path = "../../coreutils/src/uu/env", optional = true }
+uu_expand = { path = "../../coreutils/src/uu/expand", optional = true }
+uu_expr = { path = "../../coreutils/src/uu/expr", optional = true }
+uu_factor = { path = "../../coreutils/src/uu/factor", optional = true }
+uu_false = { path = "../../coreutils/src/uu/false", optional = true }
+uu_fmt = { path = "../../coreutils/src/uu/fmt", optional = true }
+uu_fold = { path = "../../coreutils/src/uu/fold", optional = true }
+uu_head = { path = "../../coreutils/src/uu/head", optional = true }
+uu_hostname = { path = "../../coreutils/src/uu/hostname", optional = true }
+uu_join = { path = "../../coreutils/src/uu/join", optional = true }
+uu_link = { path = "../../coreutils/src/uu/link", optional = true }
+uu_ln = { path = "../../coreutils/src/uu/ln", optional = true }
+uu_ls = { path = "../../coreutils/src/uu/ls", optional = true }
+uu_mkdir = { path = "../../coreutils/src/uu/mkdir", optional = true }
+uu_mktemp = { path = "../../coreutils/src/uu/mktemp", optional = true }
+uu_more = { path = "../../coreutils/src/uu/more", optional = true }
+uu_mv = { path = "../../coreutils/src/uu/mv", optional = true }
+uu_nl = { path = "../../coreutils/src/uu/nl", optional = true }
+uu_nproc = { path = "../../coreutils/src/uu/nproc", optional = true }
+uu_numfmt = { path = "../../coreutils/src/uu/numfmt", optional = true }
+uu_od = { path = "../../coreutils/src/uu/od", optional = true }
+uu_paste = { path = "../../coreutils/src/uu/paste", optional = true }
+uu_pr = { path = "../../coreutils/src/uu/pr", optional = true }
+uu_printenv = { path = "../../coreutils/src/uu/printenv", optional = true }
+uu_printf = { path = "../../coreutils/src/uu/printf", optional = true }
+uu_ptx = { path = "../../coreutils/src/uu/ptx", optional = true }
+uu_pwd = { path = "../../coreutils/src/uu/pwd", optional = true }
+uu_readlink = { path = "../../coreutils/src/uu/readlink", optional = true }
+uu_realpath = { path = "../../coreutils/src/uu/realpath", optional = true }
+uu_rm = { path = "../../coreutils/src/uu/rm", optional = true }
+uu_rmdir = { path = "../../coreutils/src/uu/rmdir", optional = true }
+uu_seq = { path = "../../coreutils/src/uu/seq", optional = true }
+uu_shred = { path = "../../coreutils/src/uu/shred", optional = true }
+uu_shuf = { path = "../../coreutils/src/uu/shuf", optional = true }
+uu_sleep = { path = "../../coreutils/src/uu/sleep", optional = true }
+uu_sort = { path = "../../coreutils/src/uu/sort", optional = true }
+uu_split = { path = "../../coreutils/src/uu/split", optional = true }
+uu_sum = { path = "../../coreutils/src/uu/sum", optional = true }
+uu_sync = { path = "../../coreutils/src/uu/sync", optional = true }
+uu_tac = { path = "../../coreutils/src/uu/tac", optional = true }
+uu_tail = { path = "../../coreutils/src/uu/tail", optional = true }
+uu_tee = { path = "../../coreutils/src/uu/tee", optional = true }
+uu_test = { path = "../../coreutils/src/uu/test", optional = true }
+uu_touch = { path = "../../coreutils/src/uu/touch", optional = true }
+uu_tr = { path = "../../coreutils/src/uu/tr", optional = true }
+uu_true = { path = "../../coreutils/src/uu/true", optional = true }
+uu_truncate = { path = "../../coreutils/src/uu/truncate", optional = true }
+uu_tsort = { path = "../../coreutils/src/uu/tsort", optional = true }
+uu_uname = { path = "../../coreutils/src/uu/uname", optional = true }
+uu_unexpand = { path = "../../coreutils/src/uu/unexpand", optional = true }
+uu_uniq = { path = "../../coreutils/src/uu/uniq", optional = true }
+uu_unlink = { path = "../../coreutils/src/uu/unlink", optional = true }
+uu_vdir = { path = "../../coreutils/src/uu/vdir", optional = true }
+uu_wc = { path = "../../coreutils/src/uu/wc", optional = true }
+uu_whoami = { path = "../../coreutils/src/uu/whoami", optional = true }
+uu_yes = { path = "../../coreutils/src/uu/yes", optional = true }

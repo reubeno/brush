@@ -60,6 +60,7 @@ experimental = [
     "experimental-parser",
 ]
 experimental-builtins = ["dep:brush-experimental-builtins"]
+coreutils-builtins = ["dep:brush-coreutils-builtins"]
 experimental-load = ["dep:serde_json", "brush-core/serde"]
 experimental-parser = [
     "brush-core/experimental-parser",
@@ -74,6 +75,7 @@ workspace = true
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 brush-builtins = { version = "^0.1.0", path = "../brush-builtins" }
 brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
+brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
 clap = { version = "4.5.57", features = ["derive", "env"] }
 color-print = "0.3.7"
 etcetera = "0.11.0"
