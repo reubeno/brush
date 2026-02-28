@@ -317,7 +317,19 @@ pub(super) fn word_part<'a>(
         match ch {
             '\'' => single_quoted_string().map(Cow::Owned).parse_next(input),
             '"' => double_quoted_string().map(Cow::Owned).parse_next(input),
-            '$' => dollar_expansion().map(Cow::Borrowed).parse_next(input),
+            '$' => {
+                // Try dollar expansion; if it fails, treat $ as a literal
+                if let Some(expansion) =
+                    winnow::combinator::opt(dollar_expansion()).parse_next(input)?
+                {
+                    Ok(Cow::Borrowed(expansion))
+                } else {
+                    // Lone $ or invalid expansion - treat as literal
+                    winnow::token::take(1usize)
+                        .map(Cow::Borrowed)
+                        .parse_next(input)
+                }
+            }
             '`' => backtick_substitution().map(Cow::Borrowed).parse_next(input),
             '\\' => escape_sequence(ctx.options.enable_extended_globbing)
                 .map(Cow::Borrowed)
