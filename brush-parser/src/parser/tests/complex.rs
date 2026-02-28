@@ -694,3 +694,14 @@ fn parse_multiline_array_with_brace_expansion() -> Result<()> {
     });
     Ok(())
 }
+
+#[test]
+fn parse_array_element_with_trailing_dollar() -> Result<()> {
+    let input = "f() { A=( foo$ ); }";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
