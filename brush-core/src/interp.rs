@@ -693,7 +693,19 @@ impl Execute for ast::CompoundCommand {
             Self::UntilClause(u) => (WhileOrUntil::Until, u).execute(shell, params).await,
             Self::Arithmetic(a) => a.execute(shell, params).await,
             Self::ArithmeticForClause(a) => a.execute(shell, params).await,
+            Self::CoprocClause(c) => c.execute(shell, params).await,
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::CoprocClauseCommand {
+    async fn execute(
+        &self,
+        _shell: &mut Shell<impl extensions::ShellExtensions>,
+        _params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        error::unimp("coproc")
     }
 }
 

@@ -558,6 +558,17 @@ pub(super) fn command<'a>(
                                 ast::Command::Compound(ast::CompoundCommand::CaseClause(c), r)
                             })
                             .parse_next(input),
+                        "coproc" => (
+                            super::compound::coproc_clause(ctx, tracker),
+                            optional_redirects(ctx, tracker),
+                        )
+                            .map(|(c, r)| {
+                                ast::Command::Compound(
+                                    ast::CompoundCommand::CoprocClause(Box::new(c)),
+                                    r,
+                                )
+                            })
+                            .parse_next(input),
                         "function" => super::compound::function_definition(ctx, tracker)
                             .map(ast::Command::Function)
                             .parse_next(input),
