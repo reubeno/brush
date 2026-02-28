@@ -239,6 +239,17 @@ pub fn test_with_snapshot(input: &str) -> Result<Program> {
     Ok(peg_result)
 }
 
+/// Parse with Winnow parser only (for features not yet implemented in PEG).
+#[cfg(feature = "winnow-parser")]
+pub fn test_with_winnow(input: &str) -> Result<Program> {
+    let config = ParserConfig {
+        name: "winnow",
+        parser_impl: ParserImpl::Winnow,
+    };
+    parse_with_config(input, &config)
+        .map_err(|e| anyhow::anyhow!("Winnow parser failed: {e}\nInput: {input}"))
+}
+
 #[cfg(test)]
 mod harness_tests {
     use super::*;
