@@ -52,10 +52,9 @@ pub use state::ShellState;
 ///
 /// # Type Parameters
 ///
-/// * `SE` - The shell extensions implementation to use. These extensions are statically
-///   injected into the shell at compile time to provide custom behavior. When
-///   unspecified, defaults to `DefaultShellExtensions`, which provide standard
-///   behavior.
+/// * `SE` - The shell extensions implementation to use. These extensions are statically injected
+///   into the shell at compile time to provide custom behavior. When unspecified, defaults to
+///   `DefaultShellExtensions`, which provide standard behavior.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExtensions> {
     /// Injected error behavior.

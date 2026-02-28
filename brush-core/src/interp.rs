@@ -11,7 +11,7 @@ use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
-use crate::shell::Shell;
+use crate::shell::{Shell, ShellState};
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
@@ -1222,6 +1222,10 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 .await?;
             }
 
+            // Assignment-only statements clear $_ (set to empty string).
+            // This matches bash behavior where assignments don't have a "last argument".
+            context.shell.update_last_arg_variable(None);
+
             // We need to set the last exit status to indicate assignment success,
             // but only if there was no status set during expansion. We use the
             // status count captured before expansion to detect if command
@@ -1678,9 +1682,10 @@ pub(crate) async fn setup_redirect(
 
                         params.open_files.set_fd(fd_num, target_file);
                     } else if fd_num == 1 && !dash {
-                        // Special case for compatibility: redirect stdout and stderr to the file given by `expanded`.
+                        // Special case for compatibility: redirect stdout and stderr to the file
+                        // given by `expanded`.
                         setup_redirect_output_and_error_to(
-                            shell, params, &expanded, false, /*append?*/
+                            shell, params, &expanded, false, /* append? */
                         )?;
                     } else {
                         return Err(error::ErrorKind::InvalidRedirection.into());
