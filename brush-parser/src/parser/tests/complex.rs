@@ -726,3 +726,14 @@ fn parse_array_element_with_trailing_dollar() -> Result<()> {
     });
     Ok(())
 }
+
+#[test]
+fn parse_assignment_with_in_keyword_name() -> Result<()> {
+    let input = "f() { in='/etc/foo'; }";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}

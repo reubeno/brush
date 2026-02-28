@@ -573,8 +573,31 @@ pub(super) fn command<'a>(
                             .map(ast::Command::Function)
                             .parse_next(input),
                         // Reserved words that terminate compound commands - fail cleanly
-                        "then" | "else" | "elif" | "fi" | "do" | "done" | "esac" | "in" => {
+                        // However, some reserved words like "in" can be used as variable names
+                        // in assignments (e.g., "in=foo"), so we check for that case.
+                        "then" | "else" | "elif" | "fi" | "do" | "done" | "esac" => {
                             Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                        }
+                        "in" => {
+                            // Check if this is an assignment (in=value)
+                            let checkpoint = input.checkpoint();
+                            let is_assignment = winnow::combinator::peek::<_, _, PError, _>((
+                                take_while(1.., |c: char| c.is_alphanumeric() || c == '_'),
+                                '=',
+                            ))
+                            .parse_next(input)
+                            .is_ok();
+                            input.reset(&checkpoint);
+
+                            if is_assignment {
+                                // "in" used as variable name - parse as simple command
+                                simple_command(ctx, tracker)
+                                    .map(ast::Command::Simple)
+                                    .parse_next(input)
+                            } else {
+                                // "in" as keyword - backtrack
+                                Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                            }
                         }
                         // Not a keyword - check if it looks like a function definition (name followed by ())
                         _ => {
