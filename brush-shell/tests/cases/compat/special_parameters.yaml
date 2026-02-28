@@ -1,5 +1,14 @@
 name: "Special parameters"
 cases:
+  - name: "$_ - last command argument"
+    stdin: |
+      : 0
+      echo "$_"
+      : 0 1 2
+      echo "$_"
+      echo "first command"
+      echo "$_"
+
   - name: "$@ and $*"
     stdin: |
       function myfunc() {
