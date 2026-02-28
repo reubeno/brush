@@ -8,6 +8,8 @@ use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
+#[cfg(feature = "experimental-coreutils-builtins")]
+use brush_coreutils_builtins::ShellBuilderExt as _;
 #[cfg(feature = "experimental-builtins")]
 use brush_experimental_builtins::ShellBuilderExt as _;
 use clap::CommandFactory;
@@ -443,6 +445,12 @@ fn instantiate_shell_from_file(
         shell.register_builtin(&builtin_name, builtin);
     }
 
+    // Add coreutils builtins (if enabled).
+    #[cfg(feature = "experimental-coreutils-builtins")]
+    for (builtin_name, builtin) in brush_coreutils_builtins::coreutils_builtins() {
+        shell.register_builtin(&builtin_name, builtin);
+    }
+
     Ok(shell)
 }
 
@@ -551,6 +559,10 @@ async fn instantiate_shell_from_args(
     // Add experimental builtins (if enabled).
     #[cfg(feature = "experimental-builtins")]
     let shell = shell.experimental_builtins();
+
+    // Add coreutils builtins (if enabled).
+    #[cfg(feature = "experimental-coreutils-builtins")]
+    let shell = shell.coreutils_builtins();
 
     // Build the shell.
     let mut shell = shell.build().await?;
