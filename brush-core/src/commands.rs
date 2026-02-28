@@ -14,7 +14,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
-    Shell, ShellFd, builtins, commands, env, error, escape,
+    Shell, ShellFd, ShellVariable, builtins, commands, env, error, escape,
     extensions::{self, ShellExtensions},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
@@ -202,6 +202,8 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
                 cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
             }
         }
+        // Set _ to the resolved command path for external commands.
+        cmd.env("_", command_name);
     }
 
     // Add in exported functions.
@@ -433,6 +435,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         command_name: String,
         args: Vec<CommandArg>,
     ) -> ExecutionSpawnResult {
+        let last_arg = args.last().map(|a| a.to_string());
         let join_handle = tokio::task::spawn_blocking(move || {
             let cmd_context = ExecutionContext {
                 shell: &mut shell,
@@ -441,7 +444,14 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             };
 
             let rt = tokio::runtime::Handle::current();
-            rt.block_on(execute_builtin_command(&builtin, cmd_context, args))
+            let result = rt.block_on(execute_builtin_command(&builtin, cmd_context, args));
+
+            // Update $_ after command execution.
+            if let Some(arg) = last_arg {
+                let _ = shell.env_mut().set_global("_", ShellVariable::new(arg));
+            }
+
+            result
         });
 
         ExecutionSpawnResult::StartedTask(join_handle)
@@ -452,6 +462,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         builtin: builtins::Registration<SE>,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
+        let last_arg = self.args.last().map(|a| a.to_string());
 
         let cmd_context = ExecutionContext {
             shell: &mut shell,
@@ -460,6 +471,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         };
 
         let result = execute_builtin_command(&builtin, cmd_context, self.args).await;
+
+        // Update $_ after command execution.
+        if let Some(arg) = last_arg {
+            let _ = shell.env_mut().set_global("_", ShellVariable::new(arg));
+        }
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
@@ -475,6 +491,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         func_registration: functions::Registration,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
+        let last_arg = self.args.last().map(|a| a.to_string());
 
         let cmd_context = ExecutionContext {
             shell: &mut shell,
@@ -485,6 +502,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Strip the function name off args.
         let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await;
 
+        // Update $_ after command execution.
+        if let Some(arg) = last_arg {
+            let _ = shell.env_mut().set_global("_", ShellVariable::new(arg));
+        }
+
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
         }
@@ -494,6 +516,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
     fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
+        let last_arg = self.args.last().map(|a| a.to_string());
 
         let cmd_context = ExecutionContext {
             shell: &mut shell,
@@ -508,6 +531,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             self.process_group_id,
             &self.args[1..],
         );
+
+        // Update $_ after command execution.
+        if let Some(arg) = last_arg {
+            let _ = shell.env_mut().set_global("_", ShellVariable::new(arg));
+        }
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
