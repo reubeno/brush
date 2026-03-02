@@ -44,6 +44,19 @@ pub(super) fn bare_word<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
     })
 }
 
+/// Parse a bare word including extglob prefix characters.
+/// Used when extglob is disabled to treat ?, *, +, @, ! as regular word chars.
+pub(super) fn bare_word_including_extglob<'a>() -> impl Parser<StrStream<'a>, &'a str, PError> {
+    take_while(1.., |c: char| {
+        !matches!(
+            c,
+            ' ' | '\t' | '\n' | '\r' |  // Whitespace
+            '|' | '&' | ';' | '<' | '>' | '(' | ')' |  // Operators
+            '$' | '`' | '\'' | '"' | '\\' // Quote/expansion starts
+        )
+    })
+}
+
 /// Parse a bare word for function names.
 /// Unlike `bare_word()`, this allows extglob prefix characters (`@`, `?`, `*`, `+`, `!`)
 /// since function names can contain these characters.
@@ -357,6 +370,10 @@ pub(super) fn word_part<'a>(
                         .parse_next(input)
                 }
             }
+            // When extglob is disabled, treat ?, *, +, @, ! as regular word characters
+            '?' | '*' | '+' | '@' | '!' => bare_word_including_extglob()
+                .map(Cow::Borrowed)
+                .parse_next(input),
             // Default: parse as bare word (most common case)
             _ => bare_word().map(Cow::Borrowed).parse_next(input),
         }
