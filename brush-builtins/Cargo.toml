@@ -136,8 +136,8 @@ clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
 fancy-regex = "0.17.0"
 futures = "0.3.32"
 itertools = "0.14.0"
-strum = "0.27.2"
-strum_macros = "0.27.2"
+strum = "0.28.0"
+strum_macros = "0.28.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 
@@ -171,5 +171,5 @@ rlimit = "0.11.0"
 procfs = "0.18.0"
 
 [dev-dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }

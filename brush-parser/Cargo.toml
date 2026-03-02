@@ -45,7 +45,7 @@ getrandom = { version = "0.4.1", features = ["wasm_js"] }
 uuid = { version = "1.21.0", features = ["js"] }
 
 [dev-dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 criterion = { version = "0.8.2", features = ["html_reports"] }
 insta = { version = "1.46.3", features = ["glob", "ron", "yaml", "redactions"] }
 miette = { version = "7.6.0", features = ["fancy"] }

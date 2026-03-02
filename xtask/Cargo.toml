@@ -20,7 +20,7 @@ bench = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 brush-shell = { version = "^0.3.0", path = "../brush-shell", features = [
     "schema",
 ] }
