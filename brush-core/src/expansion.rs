@@ -2130,6 +2130,30 @@ mod tests {
         Ok(())
     }
 
+    /// Regression test: a quoted empty string `""` must survive word expansion
+    /// even when `nullglob` is enabled.  Previously, `Pattern::expand()` would
+    /// return `NoGlob` for an all-empty pattern, which with nullglob set caused
+    /// `expand_pathnames_in_field` to silently discard the empty-string field.
+    #[tokio::test]
+    async fn test_quoted_empty_string_with_nullglob() -> Result<()> {
+        let mut shell = crate::shell::Shell::builder().build().await?;
+        shell.options_mut().expand_non_matching_patterns_to_null = true; // shopt -s nullglob
+        let params = shell.default_exec_params();
+
+        // Quoted empty string must always produce exactly one empty-string field.
+        assert_eq!(
+            full_expand_and_split_word(&mut shell, &params, "\"\"").await?,
+            vec![""]
+        );
+        // Unquoted empty string (no characters at all) should still produce no fields.
+        assert_eq!(
+            full_expand_and_split_word(&mut shell, &params, "").await?,
+            Vec::<String>::new()
+        );
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_brace_expansion() -> Result<()> {
         let mut shell = crate::shell::Shell::builder().build().await?;
