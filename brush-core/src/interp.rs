@@ -1389,6 +1389,9 @@ async fn apply_assignment(
         }
     };
 
+    // Resolve nameref: if the variable is a nameref, redirect writes to the target.
+    let variable_name = expansion::resolve_nameref_target(shell, variable_name.as_str());
+
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
@@ -1436,7 +1439,7 @@ async fn apply_assignment(
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
         let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env().get(variable_name)
+            expansion::resolve_nameref_var(shell, &variable_name)
         {
             matches!(
                 existing_value.value(),
@@ -1459,9 +1462,7 @@ async fn apply_assignment(
     let export_variables_on_modification = shell.options().export_variables_on_modification;
 
     // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().get_mut(variable_name.as_str())
-    {
+    if let Some((existing_value_scope, existing_value)) = shell.env_mut().get_mut(&variable_name) {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {
                 match new_value {
