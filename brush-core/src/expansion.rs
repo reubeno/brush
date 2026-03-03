@@ -5,6 +5,7 @@ use std::cmp::min;
 use std::io::Write as _;
 
 use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
+use itertools::Either;
 use itertools::Itertools;
 
 use crate::ExecutionParameters;
@@ -491,6 +492,41 @@ pub async fn assign_to_named_parameter(
     let mut expander = WordExpander::new(shell, params);
     let parameter = brush_parser::word::parse_parameter(name, &parser_options)?;
     expander.assign_to_parameter(&parameter, value).await
+}
+
+fn resolve_nameref_inner<'a, SE: extensions::ShellExtensions>(
+    shell: &'a Shell<SE>,
+    name: &str,
+) -> Option<Either<(env::EnvironmentScope, &'a ShellVariable), Cow<'a, str>>> {
+    let (scope, var) = shell.env().get(name)?;
+    if !var.is_treated_as_nameref() {
+        Some(Either::Left((scope, var)))
+    } else {
+        var.value().try_get_cow_str(shell).map(Either::Right)
+    }
+}
+
+/// If `name` refers to a nameref variable, returns the target variable name.
+/// Returns `None` if it's not a nameref or if the target is empty/unset.
+pub(crate) fn resolve_nameref_target<'a, SE: extensions::ShellExtensions>(
+    shell: &Shell<SE>,
+    name: &'a str,
+) -> Cow<'a, str> {
+    match resolve_nameref_inner(shell, name) {
+        Some(Either::Left(_)) | None => Cow::Borrowed(name),
+        Some(Either::Right(n)) => Cow::Owned(n.to_string()),
+    }
+}
+
+/// Resolves a nameref and returns the target variable from the environment.
+/// If `name` is not a nameref, returns the variable for `name` itself.
+/// Returns `None` if the variable (or nameref target) doesn't exist.
+/// This version avoids allocation by directly looking up the target variable.
+pub(crate) fn resolve_nameref_var<'a, SE: extensions::ShellExtensions>(
+    shell: &'a Shell<SE>,
+    name: &str,
+) -> Option<(env::EnvironmentScope, &'a ShellVariable)> {
+    resolve_nameref_inner(shell, name)?.either(Some, |n| shell.env().get(&n))
 }
 
 struct WordExpander<'a, SE: extensions::ShellExtensions> {
@@ -1559,7 +1595,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 variable_name,
                 concatenate,
             } => {
-                let keys = if let Some((_, var)) = self.shell.env().get(variable_name) {
+                let keys = if let Some((_, var)) = resolve_nameref_var(self.shell, &variable_name) {
                     var.value().element_keys(self.shell)
                 } else {
                     vec![]
@@ -1611,6 +1647,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
         };
 
+        // Resolve nameref: if the variable is a nameref, redirect the write to the target.
+        let variable_name = resolve_nameref_target(self.shell, variable_name.as_str());
         if let Some(index) = index {
             self.shell.env_mut().update_or_add_array_element(
                 variable_name,
@@ -1664,9 +1702,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             } => (Some(name.to_owned()), None),
         };
 
-        let var = name
-            .as_ref()
-            .and_then(|name| self.shell.env().get(name).map(|(_, var)| var.clone()));
+        let var = name.as_ref().and_then(|name| {
+            resolve_nameref_var(self.shell, name.as_str()).map(|(_, var)| var.clone())
+        });
 
         (name, index, var)
     }
@@ -1746,7 +1784,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             brush_parser::word::Parameter::Named(n) => {
                 if !env::valid_variable_name(n.as_str()) {
                     Err(error::ErrorKind::BadSubstitution(n.clone()).into())
-                } else if let Some((_, var)) = self.shell.env().get(n) {
+                } else if let Some((_, var)) = resolve_nameref_var(self.shell, n.as_str()) {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         self.undefined_expansion(parameter, allow_unset_vars)
                     } else {
@@ -1763,15 +1801,16 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                 // First check to see if it's an associative array.
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
-                    matches!(
-                        var.value(),
-                        ShellValue::AssociativeArray(_)
-                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                    )
-                } else {
-                    false
-                };
+                let is_set_assoc_array =
+                    if let Some((_, var)) = resolve_nameref_var(self.shell, name.as_str()) {
+                        matches!(
+                            var.value(),
+                            ShellValue::AssociativeArray(_)
+                                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                        )
+                    } else {
+                        false
+                    };
 
                 // Figure out which index to use.
                 let index_to_use = self
@@ -1779,7 +1818,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .await?;
 
                 // Index into the array.
-                if let Some((_, var)) = self.shell.env().get(name)
+                if let Some((_, var)) = resolve_nameref_var(self.shell, name.as_str())
                     && let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell)
                 {
                     Ok(Expansion::from(value.to_string()))
@@ -1788,7 +1827,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
-                if let Some((_, var)) = self.shell.env().get(name) {
+                if let Some((_, var)) = resolve_nameref_var(self.shell, name.as_str()) {
                     let values = var.value().element_values(self.shell);
 
                     Ok(Expansion {
