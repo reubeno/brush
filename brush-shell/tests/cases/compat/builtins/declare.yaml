@@ -3,13 +3,11 @@ common_test_files:
   - path: "helpers.sh"
     contents: |
       stable_print_assoc_array() {
-          # TODO(nameref): enable use of nameref when implemented; for now
-          # we assume the name of the array is assoc_array
-          # local -n assoc_array=$1
+          local -n _arr=$1
           local key
 
-          for key in $(printf "%s\n" "${!assoc_array[@]}" | sort -n); do
-              echo "\"${key}\" => ${assoc_array[${key}]}"
+          for key in $(printf "%s\n" "${!_arr[@]}" | sort -n); do
+              echo "\"${key}\" => ${_arr[${key}]}"
           done
       }
 
@@ -359,3 +357,83 @@ cases:
     stdin: |
       declare 1=x && echo "Set 1"
       declare @=10 && echo "Set @"
+
+  - name: "Nameref basic read"
+    stdin: |
+      target="hello world"
+      declare -n ref=target
+      echo "ref: $ref"
+      echo "target: $target"
+
+  - name: "Nameref write through reference"
+    stdin: |
+      target="original"
+      declare -n ref=target
+      echo "before: $target"
+      ref="modified"
+      echo "after: $target"
+      echo "ref: $ref"
+
+  - name: "Nameref to array element"
+    stdin: |
+      arr=(one two three)
+      declare -n ref=arr
+      echo "ref[0]: ${ref[0]}"
+      echo "ref[1]: ${ref[1]}"
+      echo "ref[@]: ${ref[@]}"
+      echo "ref[*]: ${ref[*]}"
+
+  - name: "Nameref array modification"
+    stdin: |
+      arr=(a b c)
+      declare -n ref=arr
+      ref[1]="modified"
+      echo "arr[1]: ${arr[1]}"
+      echo "ref[1]: ${ref[1]}"
+
+  - name: "Nameref to associative array"
+    stdin: |
+      declare -A assoc=(["key1"]="val1" ["key2"]="val2")
+      declare -n ref=assoc
+      echo "ref[key1]: ${ref[key1]}"
+      echo "ref[key2]: ${ref[key2]}"
+
+  - name: "Nameref in function - pass by reference"
+    stdin: |
+      modify_var() {
+          local -n ref=$1
+          ref="modified by function"
+      }
+
+      myvar="original"
+      echo "before: $myvar"
+      modify_var myvar
+      echo "after: $myvar"
+
+  - name: "Nameref array iteration in function"
+    stdin: |
+      print_array() {
+          local -n arr=$1
+          echo "count: ${#arr[@]}"
+          for elem in "${arr[@]}"; do
+              echo "elem: $elem"
+          done
+      }
+
+      myarr=(first second third)
+      print_array myarr
+
+  - name: "Nameref get keys"
+    stdin: |
+      declare -A assoc=(["a"]=1 ["b"]=2 ["c"]=3)
+      declare -n ref=assoc
+      echo "keys (sorted): $(printf '%s\n' ${!ref[@]} | sort | tr '\n' ' ')"
+      echo "count: ${#ref[@]}"
+
+  - name: "Nameref unset target"
+    stdin: |
+      target="exists"
+      declare -n ref=target
+      echo "ref: $ref"
+      unset target
+      echo "ref after unset: '${ref}'"
