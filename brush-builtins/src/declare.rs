@@ -151,7 +151,15 @@ impl builtins::Command for DeclareCommand {
                         result = ExecutionResult::general_error();
                     }
                 } else {
-                    if !self.process_declaration(&mut context, declaration, verb)? {
+                    let ok = if self.make_associative_array.is_some()
+                        && Self::is_scalar_compound_assign(declaration)
+                    {
+                        self.lift_scalar_assoc_array(&mut context, declaration, verb)
+                            .await?
+                    } else {
+                        self.process_declaration(&mut context, declaration, verb)?
+                    };
+                    if !ok {
                         result = ExecutionResult::general_error();
                     }
                 }
@@ -337,6 +345,62 @@ impl DeclareCommand {
         }
 
         Ok(true)
+    }
+
+    /// Returns true if this declaration is an assignment with a scalar value
+    /// that looks like a compound array literal, i.e. starts with `(`.
+    /// This is the pattern produced by `declare -p` roundtrips:
+    ///   `declare -A arr="${(declare -p OTHER)#*=}"`
+    fn is_scalar_compound_assign(declaration: &brush_core::CommandArg) -> bool {
+        if let brush_core::CommandArg::Assignment(a) = declaration {
+            if let ast::AssignmentValue::Scalar(s) = &a.value {
+                return s.value.starts_with('(');
+            }
+        }
+        false
+    }
+
+    /// Handle `declare -A varname="([key]=val ...)"` by feeding the compound-assignment
+    /// string back through the shell parser.  `declare -p` output is designed to be
+    /// eval-able, so the value is already valid shell syntax; we just need to let the
+    /// parser see it unquoted.
+    ///
+    /// After the roundtrip creates the array, any extra attributes requested on the
+    /// original declaration (readonly, export, …) are applied via a second call to
+    /// `process_declaration` on the name alone.
+    async fn lift_scalar_assoc_array<SE: brush_core::ShellExtensions>(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, SE>,
+        declaration: &brush_core::CommandArg,
+        verb: DeclareVerb,
+    ) -> Result<bool, brush_core::Error> {
+        let (name, _, initial_value, _) = Self::declaration_to_name_and_value(declaration)?;
+        let Some(ShellValueLiteral::Scalar(s)) = initial_value else {
+            return self.process_declaration(context, declaration, verb);
+        };
+
+        // Reconstruct the declaration so the parser sees an unquoted compound assignment.
+        // Use `local` when the original verb was `local`, `declare -g` when global was
+        // requested, and plain `declare` otherwise (which is local inside a function).
+        let script = if matches!(verb, DeclareVerb::Local) {
+            format!("local -A {name}={s}")
+        } else if self.create_global {
+            format!("declare -gA {name}={s}")
+        } else {
+            format!("declare -A {name}={s}")
+        };
+
+        let source_info = brush_core::SourceInfo::from("declare-array-literal");
+        let params = context.params.clone();
+        context
+            .shell
+            .run_string(script, &source_info, &params)
+            .await?;
+
+        // Apply any further attributes (readonly, export, etc.) that were on the original
+        // declaration by re-processing just the variable name (no initial value).
+        let name_only = brush_core::CommandArg::String(name);
+        self.process_declaration(context, &name_only, verb)
     }
 
     fn declaration_to_name_and_value(
