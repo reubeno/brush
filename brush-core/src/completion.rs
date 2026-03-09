@@ -339,22 +339,30 @@ impl Spec {
             }
         }
         if let Some(function_name) = &self.function_name {
-            let call_result = self
-                .call_completion_function(shell, function_name.as_str(), context)
-                .await?;
+            // Completion functions are only meaningful for interactive shells, unless
+            // explicitly requested via compgen (Programmatic trigger).
+            if shell.options().interactive || matches!(context.trigger, CompletionTrigger::Programmatic) {
+                let call_result = self
+                    .call_completion_function(shell, function_name.as_str(), context)
+                    .await?;
 
-            match call_result {
-                Answer::RestartCompletionProcess => return Ok(call_result),
-                Answer::Candidates(mut new_candidates, _options) => {
-                    candidates.append(&mut new_candidates);
+                match call_result {
+                    Answer::RestartCompletionProcess => return Ok(call_result),
+                    Answer::Candidates(mut new_candidates, _options) => {
+                        candidates.append(&mut new_candidates);
+                    }
                 }
             }
         }
         if let Some(command) = &self.command {
-            let mut new_candidates = self
-                .call_completion_command(shell, command.as_str(), context)
-                .await?;
-            candidates.append(&mut new_candidates);
+            // Completion commands are only meaningful for interactive shells, unless
+            // explicitly requested via compgen (Programmatic trigger).
+            if shell.options().interactive || matches!(context.trigger, CompletionTrigger::Programmatic) {
+                let mut new_candidates = self
+                    .call_completion_command(shell, command.as_str(), context)
+                    .await?;
+                candidates.append(&mut new_candidates);
+            }
         }
 
         // Apply filter pattern, if present. Anything the filter selects gets removed.
