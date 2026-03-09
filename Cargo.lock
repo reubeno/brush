@@ -327,7 +327,7 @@ dependencies = [
  "fancy-regex",
  "futures",
  "itertools 0.14.0",
- "nix 0.31.1",
+ "nix 0.31.2",
  "pretty_assertions",
  "procfs",
  "rlimit",
@@ -361,7 +361,7 @@ dependencies = [
  "inherent",
  "itertools 0.14.0",
  "libc",
- "nix 0.31.1",
+ "nix 0.31.2",
  "normalize-path",
  "pretty_assertions",
  "rand 0.10.0",
@@ -472,7 +472,7 @@ dependencies = [
  "indent",
  "indexmap",
  "junit-report",
- "nix 0.31.1",
+ "nix 0.31.2",
  "os-release",
  "predicates",
  "pretty_assertions",
@@ -511,7 +511,7 @@ dependencies = [
  "indent",
  "insta",
  "junit-report",
- "nix 0.31.1",
+ "nix 0.31.2",
  "os-release",
  "regex",
  "serde",
@@ -621,9 +621,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.43"
+version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fac4744fb15ae8337dc853fee7fb3f4e48c0fbaa23d0afe49c447b4fab126118"
+checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
 dependencies = [
  "iana-time-zone",
  "js-sys",
@@ -1837,9 +1837,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
-version = "0.2.180"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -2009,9 +2009,9 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.31.1"
+version = "0.31.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "225e7cfe711e0ba79a68baeddb2982723e4235247aefce1482f2f16c27865b66"
+checksum = "5d6d0705320c1e6ba1d912b5e37cf18071b6c2e9b7fa8215a1e8a7651966f5d3"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -2109,6 +2109,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
 dependencies = [
  "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-system-configuration"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7216bd11cbda54ccabcab84d523dc93b858ec75ecfb3a7d89513fa22464da396"
+dependencies = [
  "objc2-core-foundation",
 ]
 
@@ -2572,9 +2581,9 @@ dependencies = [
 
 [[package]]
 name = "reedline"
-version = "0.45.0"
+version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67478e45862a0c29fd99658e382c07b1b80b9c1b7d946ce6bd2e4a679141554b"
+checksum = "fe9e7c532bfc2759bc8a28902c04e8b993fc13ebd085ee4292eb1b230fa9beef"
 dependencies = [
  "chrono",
  "crossterm",
@@ -3109,9 +3118,9 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-with"
-version = "0.15.7"
+version = "0.15.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d12b38781f6705ffaea00c4463a4ae8fdd4174eb8cefb81a047f7f61cba5179"
+checksum = "27838d769fa9bf364bf4a352ec88862b6e6cb96a8e6705cc78fbb16ff26ee8b9"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",
@@ -3729,11 +3738,13 @@ dependencies = [
 
 [[package]]
 name = "whoami"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fae98cf96deed1b7572272dfc777713c249ae40aa1cf8862e091e8b745f5361"
+checksum = "d6a5b12f9df4f978d2cfdb1bd3bac52433f44393342d7ee9c25f5a1c14c0f45d"
 dependencies = [
+ "libc",
  "libredox",
+ "objc2-system-configuration",
  "wasite",
  "web-sys",
 ]

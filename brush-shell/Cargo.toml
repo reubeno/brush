@@ -129,7 +129,7 @@ regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
-test-with = { version = "0.15.7", default-features = false, features = [
+test-with = { version = "0.15.8", default-features = false, features = [
     "executable",
 ] }
 version-compare = "0.2.1"
@@ -137,4 +137,4 @@ walkdir = "2.5.0"
 which = "8.0.0"
 
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "0.31.1" }
+nix = { version = "0.31.2" }

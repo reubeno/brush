@@ -131,7 +131,7 @@ workspace = true
 brush-core = { version = "^0.4.0", path = "../brush-core" }
 brush-parser = { version = "^0.3.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
-chrono = "0.4.43"
+chrono = "0.4.44"
 clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
 fancy-regex = "0.17.0"
 futures = "0.3.32"
@@ -157,7 +157,7 @@ tokio = { version = "1.49.0", features = [
 uucore = { version = "0.6.0", default-features = false, features = ["format"] }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.1", features = [
+nix = { version = "0.31.2", features = [
     "fs",
     "process",
     "resource",
