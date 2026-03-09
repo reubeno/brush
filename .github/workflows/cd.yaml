@@ -84,13 +84,13 @@ jobs:
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: "brush-docs.tar.gz*"
 
       - name: "Upload documentation artifact (dry-run)"
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: brush-docs
           path: |
@@ -140,7 +140,7 @@ jobs:
           persist-credentials: false
 
       - name: "Install Rust toolchain"
-        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+        uses: actions-rust-lang/setup-rust-toolchain@a0b538fa0b742a6aa35d6e2c169b4bd06d225a98 # v1.15.3
 
       - name: "Setup cross-compiling toolchain"
         if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
@@ -185,13 +185,13 @@ jobs:
 
       - name: "Generate artifact attestation"
         if: github.event_name == 'release'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: "${{ steps.upload-release.outputs.archive }}.*"
 
       - name: "Upload artifacts (dry-run)"
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: brush-${{ matrix.target }}
           path: "${{ steps.upload-release.outputs.archive }}.*"
