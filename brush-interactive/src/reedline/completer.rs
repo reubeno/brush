@@ -84,6 +84,7 @@ impl<SE: brush_core::ShellExtensions> ReedlineCompleter<SE> {
                 end: insertion_index + delete_count,
             },
             match_indices: None,
+            display_override: None,
             append_whitespace,
         }
     }
