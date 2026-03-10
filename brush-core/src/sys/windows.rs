@@ -1,3 +1,4 @@
+pub use crate::sys::stubs::async_pipe;
 pub use crate::sys::stubs::commands;
 pub use crate::sys::stubs::fd;
 pub use crate::sys::stubs::fs;
