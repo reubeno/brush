@@ -27,6 +27,7 @@ pub mod tokio_process;
 
 pub mod fs;
 
+pub use platform::async_pipe;
 pub use platform::commands;
 pub use platform::fd;
 pub use platform::input;
