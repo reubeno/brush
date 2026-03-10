@@ -107,6 +107,32 @@ cases:
       echo "Done."
       echo "${var}"
 
+  - name: "Input redirection from /dev/null"
+    stdin: |
+      cat < /dev/null
+      echo "exit: $?"
+
+  - name: "Redirect stderr to /dev/null"
+    stdin: |
+      ls /non-existent-path 2>/dev/null
+      echo "exit: $?"
+
+  - name: "Append redirection to /dev/null"
+    stdin: |
+      echo hi >>/dev/null
+      echo "exit: $?"
+
+  - name: "Redirect to /dev/null via variable"
+    stdin: |
+      target=/dev/null
+      echo hi >"$target"
+      echo "exit: $?"
+
+  - name: "Read and write /dev/null"
+    stdin: |
+      cat <>/dev/null
+      echo "exit: $?"
+
   - name: "Redirect stdout and stderr"
     stdin: |
       ls -d . non-existent-dir &>/dev/null
