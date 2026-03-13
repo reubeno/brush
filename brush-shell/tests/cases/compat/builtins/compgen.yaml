@@ -231,6 +231,12 @@ cases:
       touch cfile
       mkdir cdir
       compgen -W 'completion' -o plusdirs -o default -S suffix -- c | sort
+
+  - name: "compgen -A command with builtins"
+    stdin: |
+      PATH=$(pwd)
+      compgen -A command -- compge
+
   - name: "compgen -A command with executable symlink"
     stdin: |
       #             pwd

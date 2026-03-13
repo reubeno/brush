@@ -498,6 +498,11 @@ impl Spec {
                     let mut command_completions =
                         get_external_command_completions(shell, context.token_to_complete);
                     candidates.append(&mut command_completions);
+                    for name in shell.builtins().keys() {
+                        if name.starts_with(token) {
+                            candidates.push(name.to_owned());
+                        }
+                    }
                 }
                 CompleteAction::Directory => {
                     let mut file_completions =
