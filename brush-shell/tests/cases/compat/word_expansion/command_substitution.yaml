@@ -175,6 +175,44 @@ cases:
       $(exec false)
       echo "exit code: $?"
 
+  - name: "Command substitution strips null bytes"
+    ignore_stderr: true
+    stdin: |
+      echo "$(echo -e 'a\x00b')" | hexdump -C
+
+  - name: "Backtick substitution strips null bytes"
+    ignore_stderr: true
+    stdin: |
+      echo "`echo -e 'a\x00b'`" | hexdump -C
+
+  - name: "Command substitution strips multiple null bytes"
+    ignore_stderr: true
+    stdin: |
+      echo "$(echo -e 'hello\x00world\x00end')" | hexdump -C
+
+  - name: "Command substitution with only null bytes produces empty string"
+    ignore_stderr: true
+    stdin: |
+      echo "$(echo -e '\x00\x00\x00')" | hexdump -C
+
+  - name: "Variable assignment from command substitution strips null bytes"
+    ignore_stderr: true
+    stdin: |
+      x=$(echo -e 'a\x00b')
+      echo "$x" | hexdump -C
+
+  - name: "Input redirection substitution strips null bytes"
+    ignore_stderr: true
+    stdin: |
+      printf 'a\x00b' > file.txt
+      x=$(<file.txt)
+      echo "$x" | hexdump -C
+
+  - name: "Nested command substitution strips null bytes"
+    ignore_stderr: true
+    stdin: |
+      echo "$(echo "$(echo -e 'a\x00b')")" | hexdump -C
+
   - name: "Nested command substitution exit code"
     stdin: |
       $($(false))

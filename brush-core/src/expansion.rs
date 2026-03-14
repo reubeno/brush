@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::cmp::min;
+use std::io::Write as _;
 
 use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
 use itertools::Itertools;
@@ -912,6 +913,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 } else {
                     String::new()
                 };
+
+                // Strips null bytes from command substitution output for compatibility.
+                if cmd_output.contains('\0') {
+                    writeln!(
+                        self.params.stderr(self.shell),
+                        "warning: command substitution: ignored null byte in input",
+                    )?;
+                    cmd_output.retain(|c| c != '\0');
+                }
 
                 // We trim trailing newlines, per spec.
                 let trimmed_len = cmd_output.trim_end_matches('\n').len();
