@@ -150,3 +150,28 @@ cases:
 
       .
       echo "Call result: $?"
+
+  - name: "Empty string arguments preserved with nullglob"
+    stdin: |
+      shopt -s nullglob
+      
+      myfunc() {
+          echo "arg count: $#"
+          for arg in "$@"; do
+              echo "arg: '$arg'"
+          done
+      }
+      
+      myfunc 3 - 2 "" 1.2.3b_alpha4
+
+  - name: "Multiple empty string arguments"
+    stdin: |
+      myfunc() {
+          echo "count: $#"
+          echo "1: '$1'"
+          echo "2: '$2'"
+          echo "3: '$3'"
+          echo "4: '$4'"
+      }
+      
+      myfunc "" "non-empty" "" "last"
