@@ -1074,8 +1074,44 @@ peg::parser! {
             $(command_piece()*)
 
         pub(crate) rule command_piece() -> () =
+            case_statement() /
             word_piece(<[')']>, true /*in_command*/) {} /
             ([' ' | '\t'])+ {}
+
+        rule case_statement() -> () =
+            "case" [' ' | '\t']+ [^' ' | '\t' | '\n']+ [' ' | '\t']* "in"
+            case_body() "esac" {}
+
+        rule case_body() -> () =
+            // Match everything until 'esac', handling nested parens and quotes
+            (!"esac" case_body_piece())* {}
+
+        rule case_body_piece() -> () =
+            // Match quoted strings
+            "'" [^'\'']* "'" /
+            "\"" [^'\"']* "\"" /
+            // Match nested command substitutions
+            "$(" case_body() ")" /
+            // Match nested subshells
+            "(" (!")" case_body_piece())* ")" /
+            // Match any other character
+            [_] {}
+
+        rule case_item() -> () =
+            [' ' | '\t']* case_pattern() ")" [' ' | '\t' | '\n']*
+            case_item_body()*
+            case_terminator()? {}
+
+        rule case_pattern() -> () =
+            word_piece(<['|']>, false) ("|" word_piece(<['|']>, false))* {}
+
+        rule case_item_body() -> () =
+            word_piece(<[')']>, true) {} /
+            ([' ' | '\t' | '\n'])+ {} /
+            "#" [^'\n']* {}
+
+        rule case_terminator() -> () =
+            ";;&" / ";;" / ";&" {}
 
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }
