@@ -525,6 +525,14 @@ pub fn uncached_tokenize_str(
     Ok(tokens)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CaseState {
+    NotInCase,
+    AfterCase,
+    AfterIn,
+    InBody,
+}
+
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Self {
         Tokenizer {
@@ -607,6 +615,10 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         let mut pending_here_doc_tokens = vec![];
         let mut drain_here_doc_tokens = false;
 
+        // Track case statement state for handling ) in case patterns
+        let mut case_state = CaseState::NotInCase;
+        let mut case_depth: u32 = 0;
+
         loop {
             let cur_token = if drain_here_doc_tokens && !pending_here_doc_tokens.is_empty() {
                 if pending_here_doc_tokens.len() == 1 {
@@ -636,11 +648,41 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 continue;
             }
 
-            if let Some(cur_token_value) = cur_token.token {
+            if let Some(cur_token_value) = &cur_token.token {
                 state.append_str(cur_token_value.to_str());
 
                 if matches!(cur_token_value, Token::Operator(o, _) if o == nesting_open) {
                     nesting_count += 1;
+                }
+
+                // Track case statement state
+                if let Token::Word(word, _) = cur_token_value {
+                    match word.trim() {
+                        "case" if case_state == CaseState::NotInCase => {
+                            case_state = CaseState::AfterCase;
+                            case_depth += 1;
+                        }
+                        "in" if case_state == CaseState::AfterCase => {
+                            case_state = CaseState::AfterIn;
+                        }
+                        "esac" if case_depth > 0 => {
+                            case_depth = case_depth.saturating_sub(1);
+                            if case_depth == 0 {
+                                case_state = CaseState::NotInCase;
+                            } else {
+                                case_state = CaseState::AfterIn;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Handle case terminators (;;, ;&, ;;&)
+                if let Token::Operator(op, _) = cur_token_value {
+                    if matches!(op.as_str(), ";;" | ";&" | ";;&") && case_state == CaseState::InBody
+                    {
+                        case_state = CaseState::AfterIn;
+                    }
                 }
             }
 
@@ -650,9 +692,14 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 }
                 TokenEndReason::NonNewLineBlank => state.append_char(' '),
                 TokenEndReason::SpecifiedTerminatingChar => {
-                    nesting_count -= 1;
-                    if nesting_count == 0 {
-                        break;
+                    // If we're inside a case pattern (AfterIn), the ')' is part of case syntax
+                    if matches!(case_state, CaseState::AfterIn) {
+                        case_state = CaseState::InBody;
+                    } else {
+                        nesting_count -= 1;
+                        if nesting_count == 0 {
+                            break;
+                        }
                     }
                     state.append_char(self.next_char()?.unwrap());
                 }
