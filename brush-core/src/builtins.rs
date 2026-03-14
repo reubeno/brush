@@ -305,7 +305,7 @@ fn brush_help_styles() -> clap::builder::Styles {
 ///    }
 ///
 ///    let (mut parsed_args, raw_args) =
-///        brush_core::parse_known::<CommandLineArgs, _>(std::env::args());
+///        brush_core::builtins::parse_known::<CommandLineArgs, _>(std::env::args());
 ///    if raw_args.is_some() {
 ///        parsed_args.script_args = raw_args.unwrap().collect();
 ///    }

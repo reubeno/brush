@@ -1,8 +1,15 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 
 use crate::error;
+use cached::Cached;
+
+thread_local! {
+    static REGEX_CACHE: RefCell<cached::SizedCache<(String, bool, bool), fancy_regex::Regex>> =
+        RefCell::new(cached::SizedCache::with_size(64));
+}
 
 /// Represents a piece of a regular expression.
 #[derive(Clone, Debug)]
@@ -88,15 +95,22 @@ impl Regex {
     }
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
 pub(crate) fn compile_regex(
     regex_str: String,
     case_insensitive: bool,
     multiline: bool,
 ) -> Result<fancy_regex::Regex, error::Error> {
+    // Move regex_str into the key to avoid cloning on cache-hit path.
+    let key = (regex_str, case_insensitive, multiline);
+
+    let cached_regex = REGEX_CACHE.with(|cache| cache.borrow_mut().cache_get(&key).cloned());
+    if let Some(re) = cached_regex {
+        return Ok(re);
+    }
+
     // Handle identified cases where a shell-supported regex isn't supported directly by
     // `fancy_regex` -- specifically, adding missing escape characters.
-    let mut regex_str = add_missing_escape_chars_to_regex(regex_str.as_str());
+    let mut regex_str = add_missing_escape_chars_to_regex(key.0.as_str());
 
     // Handle multiline enablement.
     if multiline {
@@ -110,10 +124,19 @@ pub(crate) fn compile_regex(
     let mut builder = fancy_regex::RegexBuilder::new(regex_str.as_ref());
     builder.case_insensitive(case_insensitive);
 
-    match builder.build() {
-        Ok(re) => Ok(re),
-        Err(e) => Err(error::ErrorKind::InvalidRegexError(e, regex_str.to_string()).into()),
-    }
+    let re = match builder.build() {
+        Ok(re) => re,
+        Err(e) => return Err(error::ErrorKind::InvalidRegexError(e, regex_str.to_string()).into()),
+    };
+
+    // Release borrow on key.0 before moving key into cache_set.
+    drop(regex_str);
+
+    REGEX_CACHE.with(|cache| {
+        cache.borrow_mut().cache_set(key, re.clone());
+    });
+
+    Ok(re)
 }
 
 fn add_missing_escape_chars_to_regex(s: &str) -> Cow<'_, str> {
