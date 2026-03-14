@@ -124,7 +124,14 @@ pub(super) fn skip_double_quoted_content<'a>() -> impl Parser<StrStream<'a>, &'a
 // Helper: Balanced Delimiter Parsing
 // ============================================================================
 
-/// Parse content with balanced delimiters (parentheses, braces, backticks)
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CaseState {
+    NotInCase,
+    AfterCase,
+    AfterIn,
+    InPattern,
+    InBody,
+}
 /// Returns the full slice including opening and closing delimiters
 ///
 /// # Parameters
@@ -165,6 +172,12 @@ pub(super) fn parse_balanced_delimiters<'a>(
         let mut pending_heredocs: Vec<(String, bool)> = Vec::new();
         // Track if we're currently consuming heredoc body content
         let mut in_heredoc_body = false;
+
+        // Track case statement state for handling ) in case patterns
+        let mut case_state = CaseState::NotInCase;
+        let mut case_depth = 0usize;
+
+        tracing::debug!("parse_balanced_delimiters: starting, prefix={:?}", prefix);
 
         while depth > 0 {
             // If we're in heredoc body mode, consume lines until we find all delimiters
@@ -217,7 +230,110 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     at_comment_start = false;
                 }
                 Ok(ch) if ch == close_char => {
-                    depth -= 1;
+                    if matches!(case_state, CaseState::AfterIn | CaseState::InPattern) {
+                        case_state = CaseState::InBody;
+                    } else {
+                        depth -= 1;
+                    }
+                    at_comment_start = false;
+                }
+                Ok('c') if at_comment_start || case_state == CaseState::NotInCase => {
+                    let checkpoint = input.checkpoint();
+                    if let Ok(rest) = winnow::token::take_while::<_, _, PError>(0.., |c: char| {
+                        c.is_alphanumeric() || c == '_'
+                    })
+                    .parse_next(input)
+                    {
+                        let is_delim =
+                            winnow::combinator::peek(winnow::token::one_of::<_, _, PError>([
+                                ' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')', '{', '}',
+                            ]))
+                            .parse_next(input)
+                            .is_ok()
+                                || input.is_empty();
+                        if is_delim && rest == "ase" {
+                            case_state = CaseState::AfterCase;
+                            case_depth += 1;
+                            at_comment_start = false;
+                            continue;
+                        }
+                    }
+                    input.reset(&checkpoint);
+                    at_comment_start = false;
+                }
+                Ok('i') if case_state == CaseState::AfterCase => {
+                    let checkpoint = input.checkpoint();
+                    if let Ok(rest) = winnow::token::take_while::<_, _, PError>(0.., |c: char| {
+                        c.is_alphanumeric() || c == '_'
+                    })
+                    .parse_next(input)
+                    {
+                        let is_delim =
+                            winnow::combinator::peek(winnow::token::one_of::<_, _, PError>([
+                                ' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')', '{', '}',
+                            ]))
+                            .parse_next(input)
+                            .is_ok()
+                                || input.is_empty();
+                        if is_delim && rest == "n" {
+                            case_state = CaseState::AfterIn;
+                            at_comment_start = false;
+                            continue;
+                        }
+                    }
+                    input.reset(&checkpoint);
+                    at_comment_start = false;
+                }
+                Ok('e') if case_depth > 0 => {
+                    let checkpoint = input.checkpoint();
+                    if let Ok(rest) = winnow::token::take_while::<_, _, PError>(0.., |c: char| {
+                        c.is_alphanumeric() || c == '_'
+                    })
+                    .parse_next(input)
+                    {
+                        let is_delim =
+                            winnow::combinator::peek(winnow::token::one_of::<_, _, PError>([
+                                ' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')', '{', '}',
+                            ]))
+                            .parse_next(input)
+                            .is_ok()
+                                || input.is_empty();
+                        if is_delim && rest == "sac" {
+                            case_depth = case_depth.saturating_sub(1);
+                            if case_depth == 0 {
+                                case_state = CaseState::NotInCase;
+                            } else {
+                                case_state = CaseState::AfterIn;
+                            }
+                            at_comment_start = false;
+                            continue;
+                        }
+                    }
+                    input.reset(&checkpoint);
+                    at_comment_start = false;
+                }
+                Ok(';') if matches!(case_state, CaseState::InBody) => {
+                    let checkpoint = input.checkpoint();
+                    if winnow::token::any::<_, PError>.parse_next(input) == Ok(';') {
+                        if winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('&'))
+                            .parse_next(input)
+                            .is_ok()
+                        {
+                            let _ = winnow::token::any::<_, PError>.parse_next(input);
+                        }
+                        case_state = CaseState::AfterIn;
+                        at_comment_start = false;
+                        continue;
+                    } else if winnow::combinator::peek(winnow::token::one_of::<_, _, PError>('&'))
+                        .parse_next(input)
+                        .is_ok()
+                    {
+                        let _ = winnow::token::any::<_, PError>.parse_next(input);
+                        case_state = CaseState::AfterIn;
+                        at_comment_start = false;
+                        continue;
+                    }
+                    input.reset(&checkpoint);
                     at_comment_start = false;
                 }
                 Ok('\\') => {
