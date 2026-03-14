@@ -341,7 +341,9 @@ impl Spec {
         if let Some(function_name) = &self.function_name {
             // Completion functions are only meaningful for interactive shells, unless
             // explicitly requested via compgen (Programmatic trigger).
-            if shell.options().interactive || matches!(context.trigger, CompletionTrigger::Programmatic) {
+            if shell.options().interactive
+                || matches!(context.trigger, CompletionTrigger::Programmatic)
+            {
                 let call_result = self
                     .call_completion_function(shell, function_name.as_str(), context)
                     .await?;
@@ -357,7 +359,9 @@ impl Spec {
         if let Some(command) = &self.command {
             // Completion commands are only meaningful for interactive shells, unless
             // explicitly requested via compgen (Programmatic trigger).
-            if shell.options().interactive || matches!(context.trigger, CompletionTrigger::Programmatic) {
+            if shell.options().interactive
+                || matches!(context.trigger, CompletionTrigger::Programmatic)
+            {
                 let mut new_candidates = self
                     .call_completion_command(shell, command.as_str(), context)
                     .await?;
