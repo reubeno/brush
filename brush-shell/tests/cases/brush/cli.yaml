@@ -30,8 +30,8 @@ cases:
   - name: "Invalid option fails"
     args:
       - "--unknown-argument-here"
-    expected_exit_code: 1
-    # Exit code 1 for argument parsing errors
+    expected_exit_code: 2
+    # Exit code 2 for argument parsing errors
 
   - name: "Explicit config file not found fails"
     removed_default_args:
