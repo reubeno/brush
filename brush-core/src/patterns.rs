@@ -174,9 +174,12 @@ impl Pattern {
     where
         PF: Fn(&Path) -> bool,
     {
-        // If the pattern is completely empty, then short-circuit the function; there's
-        // no reason to proceed onward when we know there's no expansions.
-        if self.is_empty() {
+        // If the pattern has no pieces at all, short-circuit; there's nothing to expand.
+        // Note: we intentionally do NOT short-circuit when pieces are present but empty
+        // (e.g. from a quoted empty string ""); those fall through to the literal branch
+        // below which correctly returns Expanded([""]) instead of NoGlob, preserving
+        // the argument even when nullglob is enabled.
+        if self.pieces.is_empty() {
             return Ok(PatternExpansionResult::NoGlob);
 
         // Similarly, if we're *confident* the pattern doesn't require expansion, then we
