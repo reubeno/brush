@@ -6,6 +6,7 @@ use std::process::Stdio;
 
 use crate::ShellFd;
 use crate::error;
+use crate::ioutils;
 use crate::sys;
 
 /// A trait representing a stream that can be read from and written to.
@@ -94,9 +95,11 @@ pub fn null() -> Result<OpenFile, error::Error> {
 
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
-        // TODO(unwrap): Need to revisit what we can do here.
-        #[allow(clippy::unwrap_used)]
-        self.try_clone().unwrap()
+        // If we fail to clone the open file for any reason, we return a special file
+        // that discards all I/O. This allows us to avoid fatally erroring out.
+        self.try_clone().unwrap_or_else(|_err| {
+            ioutils::FailingReaderWriter::new("failed to duplicate open file").into()
+        })
     }
 }
 
