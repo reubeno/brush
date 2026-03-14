@@ -45,12 +45,12 @@ impl_parse_int_radix!(usize);
 /// # Examples
 ///
 /// ```
-/// use brush_core::utils::parse_int;
+/// use brush_core::int_utils::parse;
 ///
-/// let result: u32 = parse_int("42", 10)?;
+/// let result: u32 = parse("42", 10)?;
 /// assert_eq!(result, 42);
 ///
-/// let result: u8 = parse_int("FF", 16)?;
+/// let result: u8 = parse("FF", 16)?;
 /// assert_eq!(result, 255);
 /// # Ok::<(), brush_core::error::Error>(())
 /// ```

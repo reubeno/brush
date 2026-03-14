@@ -442,6 +442,7 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
     pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
+        let re = pattern.to_regex(true, true)?;
         let indices = s.char_indices().rev();
         let mut last_idx = s.len();
 
@@ -451,7 +452,7 @@ pub(crate) fn remove_largest_matching_prefix<'a>(
         )]
         for (idx, _) in indices {
             let prefix = &s[0..last_idx];
-            if pattern.exactly_matches(prefix)? {
+            if re.is_match(prefix)? {
                 return Ok(&s[last_idx..]);
             }
 
@@ -472,6 +473,7 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
     pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
+        let re = pattern.to_regex(true, true)?;
         let mut indices = s.char_indices();
 
         #[allow(
@@ -481,7 +483,7 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
         while indices.next().is_some() {
             let next_index = indices.offset();
             let prefix = &s[0..next_index];
-            if pattern.exactly_matches(prefix)? {
+            if re.is_match(prefix)? {
                 return Ok(&s[next_index..]);
             }
         }
@@ -500,13 +502,14 @@ pub(crate) fn remove_largest_matching_suffix<'a>(
     pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
+        let re = pattern.to_regex(true, true)?;
         #[allow(
             clippy::string_slice,
             reason = "because we get the indices from char_indices()"
         )]
         for (idx, _) in s.char_indices() {
             let suffix = &s[idx..];
-            if pattern.exactly_matches(suffix)? {
+            if re.is_match(suffix)? {
                 return Ok(&s[..idx]);
             }
         }
@@ -525,13 +528,14 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
     pattern: Option<&Pattern>,
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
+        let re = pattern.to_regex(true, true)?;
         #[allow(
             clippy::string_slice,
             reason = "because we get the indices from char_indices()"
         )]
         for (idx, _) in s.char_indices().rev() {
             let suffix = &s[idx..];
-            if pattern.exactly_matches(suffix)? {
+            if re.is_match(suffix)? {
                 return Ok(&s[..idx]);
             }
         }
