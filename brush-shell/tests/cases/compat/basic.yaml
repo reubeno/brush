@@ -119,3 +119,7 @@ cases:
       PS1: ""
     stdin: |
       echo "Executing in main script body"
+
+  - name: "Unknown option"
+    ignore_stderr: true
+    args: ["--unknown-option", "-c", "echo hi"]

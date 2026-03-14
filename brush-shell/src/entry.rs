@@ -71,7 +71,7 @@ pub fn run() {
             let exit_code = match e.kind() {
                 clap::error::ErrorKind::DisplayVersion => 0,
                 clap::error::ErrorKind::DisplayHelp => 0,
-                _ => 1,
+                _ => 2,
             };
 
             std::process::exit(exit_code);
