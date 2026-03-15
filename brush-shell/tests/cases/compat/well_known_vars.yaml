@@ -32,7 +32,6 @@ cases:
       echo 'MACHTYPE == ${BASH_VERSINFO[5]: ' $?
 
   - name: "dollar-_"
-    known_failure: true # Issue #479
     stdin: |
       # Check on start
       [[ "$0" == "$_" ]] && echo '$_ matches $0 on start'

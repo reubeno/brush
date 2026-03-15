@@ -647,6 +647,64 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
     }
 }
 
+#[async_trait::async_trait]
+impl Execute for ast::Command {
+    async fn execute(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        match self {
+            Self::Simple(simple) => {
+                let context = PipelineExecutionContext {
+                    shell: commands::ShellForCommand::ParentShell(shell),
+                    process_group_id: None,
+                };
+                match simple.execute_in_pipeline(context, params.clone()).await? {
+                    ExecutionSpawnResult::Completed(result) => Ok(result),
+                    ExecutionSpawnResult::StartedProcess(mut child) => {
+                        let wait_result = child.wait().await?;
+                        match wait_result {
+                            crate::processes::ProcessWaitResult::Completed(output) => {
+                                Ok(ExecutionResult::from(output))
+                            }
+                            crate::processes::ProcessWaitResult::Stopped => {
+                                Ok(ExecutionResult::stopped())
+                            }
+                        }
+                    }
+                    ExecutionSpawnResult::StartedTask(handle) => handle.await?,
+                }
+            }
+            Self::Compound(compound, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                compound.execute(shell, &params).await
+            }
+            Self::Function(func) => func.execute(shell, params).await,
+            Self::ExtendedTest(e, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                let result =
+                    if extendedtests::eval_extended_test_expr(&e.expr, shell, &params).await? {
+                        0
+                    } else {
+                        1
+                    };
+                Ok(ExecutionResult::new(result))
+            }
+        }
+    }
+}
+
 enum WhileOrUntil {
     While,
     Until,
@@ -693,7 +751,75 @@ impl Execute for ast::CompoundCommand {
             Self::UntilClause(u) => (WhileOrUntil::Until, u).execute(shell, params).await,
             Self::Arithmetic(a) => a.execute(shell, params).await,
             Self::ArithmeticForClause(a) => a.execute(shell, params).await,
+            Self::CoprocClause(c) => c.execute(shell, params).await,
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::CoprocClauseCommand {
+    async fn execute(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        // Resolve the coproc name (default: "COPROC")
+        let name = self
+            .name
+            .as_ref()
+            .map_or_else(|| "COPROC".to_string(), |w| w.to_string());
+
+        // Create two pipes for stdin and stdout
+        let (stdin_reader, stdin_writer) = std::io::pipe()?;
+        let (stdout_reader, stdout_writer) = std::io::pipe()?;
+
+        // Allocate FDs in the parent shell for the pipe ends we'll keep
+        // [0] = read from coproc's stdout
+        // [1] = write to coproc's stdin
+        let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
+        let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
+
+        // Clone shell for background execution
+        let mut child_shell = shell.clone();
+        child_shell.options_mut().interactive = false;
+
+        // Set up child's stdin/stdout with pipe ends
+        let mut child_params = params.clone();
+        child_params
+            .open_files
+            .set_fd(OpenFiles::STDIN_FD, stdin_reader.into());
+        child_params
+            .open_files
+            .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
+
+        // Spawn the command asynchronously
+        let body = self.body.clone();
+        let join_handle =
+            tokio::spawn(async move { body.execute(&mut child_shell, &child_params).await });
+
+        // Register as a background job
+        let job = shell.jobs_mut().add_as_current(jobs::Job::new(
+            [jobs::JobTask::Internal(join_handle)],
+            format!("coproc {name}"),
+            jobs::JobState::Running,
+        ));
+        let job_id = job.id;
+
+        // Set up the array variable with FD numbers
+        // NAME[0] = FD to read from coproc's stdout
+        // NAME[1] = FD to write to coproc's stdin
+        let arr_value = ShellValue::from(vec![stdout_fd.to_string(), stdin_fd.to_string()]);
+        shell
+            .env_mut()
+            .set_global(name.clone(), ShellVariable::new(arr_value))?;
+
+        // Set up NAME_PID variable with job ID
+        let pid_name = format!("{name}_PID");
+        shell
+            .env_mut()
+            .set_global(pid_name, ShellVariable::new(job_id.to_string()))?;
+
+        Ok(ExecutionResult::success())
     }
 }
 
@@ -1389,6 +1515,9 @@ async fn apply_assignment(
         }
     };
 
+    // Resolve nameref: if the variable is a nameref, redirect writes to the target.
+    let variable_name = expansion::resolve_nameref_target(shell, variable_name.as_str());
+
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
@@ -1436,7 +1565,7 @@ async fn apply_assignment(
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
         let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env().get(variable_name)
+            expansion::resolve_nameref_var(shell, &variable_name)
         {
             matches!(
                 existing_value.value(),
@@ -1459,9 +1588,7 @@ async fn apply_assignment(
     let export_variables_on_modification = shell.options().export_variables_on_modification;
 
     // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().get_mut(variable_name.as_str())
-    {
+    if let Some((existing_value_scope, existing_value)) = shell.env_mut().get_mut(&variable_name) {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {
                 match new_value {

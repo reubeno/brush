@@ -183,3 +183,7 @@ cases:
       }
       f
       echo "Exit code: $?"
+
+  - name: "Case inside command substitution"
+    stdin: |
+      echo $(case a in a) echo ok ;; esac)

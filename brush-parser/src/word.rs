@@ -784,8 +784,13 @@ peg::parser! {
             legacy_arithmetic_expansion() /
             command_substitution() /
             parameter_expansion() /
+            double_quoted_line_continuation() /
             double_quoted_escape_sequence() /
             double_quoted_text()
+
+        // Line continuation inside double quotes: \<newline> - both characters are removed
+        rule double_quoted_line_continuation() -> WordPiece =
+            "\\" "\n" { WordPiece::Text(String::new()) }
 
         rule double_quoted_sequence() -> Vec<WordPieceWithSource> =
             "\"" i:double_quoted_sequence_inner()* "\"" { i }
@@ -815,7 +820,8 @@ peg::parser! {
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
-            !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
+            is_true(in_command) !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`' | '#'] {} /
+            is_false(in_command) !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
 
         rule enabled_tilde_expr_after_colon() -> WordPiece =
             tilde_exprs_after_colon_enabled() last_char_is_colon() piece:tilde_expression_piece() { piece }
@@ -835,6 +841,7 @@ peg::parser! {
         }}
 
         rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
+        rule is_false(value: bool) = &[_] {? if !value { Ok(()) } else { Err("not false") } }
 
         rule extglob_pattern() =
             ("@" / "!" / "?" / "+" / "*") "(" extglob_body_piece()* ")" {}
@@ -849,7 +856,7 @@ peg::parser! {
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
+            $((!double_quoted_line_continuation() !double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
 
         // Heredoc body parsing: like double-quoted content, but " and ' are literal characters.
         pub(crate) rule unexpanded_heredoc_word() -> Vec<WordPieceWithSource> =
@@ -1074,8 +1081,45 @@ peg::parser! {
             $(command_piece()*)
 
         pub(crate) rule command_piece() -> () =
+            case_statement() /
             word_piece(<[')']>, true /*in_command*/) {} /
-            ([' ' | '\t'])+ {}
+            ([' ' | '\t' | '\n'])+ {} /
+            "#" [^'\n']* {}
+
+        rule case_statement() -> () =
+            "case" [' ' | '\t']+ [^' ' | '\t' | '\n']+ [' ' | '\t']* "in"
+            case_body() "esac" {}
+
+        rule case_body() -> () =
+            // Match everything until 'esac', handling nested parens and quotes
+            (!"esac" case_body_piece())* {}
+
+        rule case_body_piece() -> () =
+            // Match quoted strings
+            "'" [^'\'']* "'" /
+            "\"" [^'\"']* "\"" /
+            // Match nested command substitutions
+            "$(" case_body() ")" /
+            // Match nested subshells
+            "(" (!")" case_body_piece())* ")" /
+            // Match any other character
+            [_] {}
+
+        rule case_item() -> () =
+            [' ' | '\t']* case_pattern() ")" [' ' | '\t' | '\n']*
+            case_item_body()*
+            case_terminator()? {}
+
+        rule case_pattern() -> () =
+            word_piece(<['|']>, false) ("|" word_piece(<['|']>, false))* {}
+
+        rule case_item_body() -> () =
+            word_piece(<[')']>, true) {} /
+            ([' ' | '\t' | '\n'])+ {} /
+            "#" [^'\n']* {}
+
+        rule case_terminator() -> () =
+            ";;&" / ";;" / ";&" {}
 
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }

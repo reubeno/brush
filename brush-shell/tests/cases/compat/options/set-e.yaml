@@ -1183,7 +1183,7 @@ cases:
 
   # Coproc with errexit
   - name: "coproc with failing command"
-    known_failure: true # TODO(coproc): coproc not implemented
+    known_failure: true # TODO(wait): wait with job specs not implemented
     stdin: |
       set -e
       coproc { exit 5; }
@@ -1191,7 +1191,7 @@ cases:
       echo "after coproc wait, status: $?"
 
   - name: "coproc with successful command"
-    known_failure: true # TODO(coproc): coproc not implemented
+    known_failure: true # TODO(wait): wait with job specs not implemented
     stdin: |
       set -e
       coproc { echo "from coproc"; }
@@ -1200,7 +1200,7 @@ cases:
       echo "after coproc"
 
   - name: "coproc in conditional"
-    known_failure: true # TODO(coproc): coproc not implemented
+    known_failure: true # TODO(wait): wait with job specs not implemented
     stdin: |
       set -e
       coproc { exit 1; }
@@ -1210,6 +1210,11 @@ cases:
         echo "else"
       fi
       echo "after"
+
+  - name: "coproc with name and brace group"
+    stdin: |
+      f() { coproc MYCOPROC { echo hello; }; }
+      f
 
   # Additional edge cases
   - name: "Subshell in assignment with errexit"

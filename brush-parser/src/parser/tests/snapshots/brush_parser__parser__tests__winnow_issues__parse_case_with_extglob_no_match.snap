@@ -1,0 +1,112 @@
+---
+source: brush-parser/src/parser/tests/winnow_issues.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "shopt -s extglob\ncase \"test.pdf\" in\n  *.@(txt|md)) echo \"match\";;\n  *) echo \"no match\";;\nesac",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "shopt",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "-s",
+                    loc: "[location]",
+                  )),
+                  Word(Word(
+                    value: "extglob",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Compound(CaseClause(CaseClauseCommand(
+                value: Word(
+                  value: "\"test.pdf\"",
+                  loc: "[location]",
+                ),
+                cases: [
+                  CaseItem(
+                    patterns: [
+                      Word(
+                        value: "*.@(txt|md)",
+                        loc: "[location]",
+                      ),
+                    ],
+                    cmd: Some(CompoundList([
+                      CompoundListItem(AndOrList(
+                        first: Pipeline(
+                          seq: [
+                            Simple(SimpleCommand(
+                              word_or_name: Some(Word(
+                                value: "echo",
+                                loc: "[location]",
+                              )),
+                              suffix: Some(CommandSuffix([
+                                Word(Word(
+                                  value: "\"match\"",
+                                  loc: "[location]",
+                                )),
+                              ])),
+                            )),
+                          ],
+                        ),
+                      ), Sequence),
+                    ])),
+                    post_action: ExitCase,
+                    loc: "[location]",
+                  ),
+                  CaseItem(
+                    patterns: [
+                      Word(
+                        value: "*",
+                        loc: "[location]",
+                      ),
+                    ],
+                    cmd: Some(CompoundList([
+                      CompoundListItem(AndOrList(
+                        first: Pipeline(
+                          seq: [
+                            Simple(SimpleCommand(
+                              word_or_name: Some(Word(
+                                value: "echo",
+                                loc: "[location]",
+                              )),
+                              suffix: Some(CommandSuffix([
+                                Word(Word(
+                                  value: "\"no match\"",
+                                  loc: "[location]",
+                                )),
+                              ])),
+                            )),
+                          ],
+                        ),
+                      ), Sequence),
+                    ])),
+                    post_action: ExitCase,
+                    loc: "[location]",
+                  ),
+                ],
+                loc: "[location]",
+              )), None),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
