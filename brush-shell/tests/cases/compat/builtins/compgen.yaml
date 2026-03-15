@@ -232,28 +232,35 @@ cases:
       mkdir cdir
       compgen -W 'completion' -o plusdirs -o default -S suffix -- c | sort
 
+  - name: "compgen -A command"
+    # Temporarily marked unconstrained Path case as `skip: true` to keep CI stable.
+    # Environment-dependent due to host PATH contents(Ubuntu includes X11, while Arch and others do not).
+    skip: true
+    stdin: |
+      compgen -A command | sort | grep -v "^brush"
+
   - name: "compgen -A command in a constrained PATH"
     stdin: |
-      SORT=$(which sort)
-      GREP=$(which grep)
+      SORT=$(command -v sort)
+      GREP=$(command -v grep)
       PATH=$(pwd)
-      compgen -A command | $SORT | $GREP -v brushctl | $GREP -v brushinfo
+      compgen -A command | $SORT | $GREP -v "^brush"
 
   - name: "compgen -A command builtins in a constrained PATH"
     stdin: |
-      SORT=$(which sort)
+      SORT=$(command -v sort)
       PATH=$(pwd)
       compgen -A command cd | $SORT
 
   - name: "compgen -A command keywords in a constrained PATH"
     stdin: |
-      SORT=$(which sort)
+      SORT=$(command -v sort)
       PATH=$(pwd)
       compgen -A command [ | $SORT
 
   - name: "compgen -A command function in a constrained PATH"
     stdin: |
-      SORT=$(which sort)
+      SORT=$(command -v sort)
       PATH=$(pwd)
       myfunc() {
         echo hi
