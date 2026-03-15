@@ -232,6 +232,11 @@ cases:
       mkdir cdir
       compgen -W 'completion' -o plusdirs -o default -S suffix -- c | sort
 
+  - name: "compgen -A command"
+    known_failure: true
+    stdin: |
+      compgen -A command | sort | grep -v brushctl | grep -v brushinfo
+
   - name: "compgen -A command in a constrained PATH"
     stdin: |
       SORT=$(which sort)
