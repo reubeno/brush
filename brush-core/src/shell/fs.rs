@@ -165,7 +165,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `path` - The path to get the absolute form of.
     pub fn absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
         let path = path.as_ref();
-        if path.as_os_str().is_empty() || path.is_absolute() {
+        // /dev/null is a virtual path handled by the shell (see open_file).
+        // Preserve it as-is to avoid mangling on platforms where it isn't
+        // recognised as an absolute path (e.g. Windows).
+        if path == Path::new("/dev/null")
+            || path.as_os_str().is_empty()
+            || path.is_absolute()
+        {
             path.to_owned()
         } else {
             self.working_dir().join(path)
@@ -185,6 +191,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, std::io::Error> {
+        if path.as_ref() == Path::new("/dev/null") {
+            return openfiles::null()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+        }
+
         let path_to_open = self.absolute_path(path.as_ref());
 
         // See if this is a reference to a file descriptor, in which case the actual
