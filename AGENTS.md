@@ -212,6 +212,80 @@ cargo test --test brush-compat-tests -- 'Ignore single quote in comment'
 - For performance-specific work, benchmarks are available (see docs/how-to/run-benchmarks.md)
 - Performance sensitivity will be identified in the initial brief if relevant
 
+### Debugging Parser Issues
+
+When debugging parser issues (e.g., syntax not being recognized correctly):
+
+#### 1. Add a Test Case First
+
+Add a test case to the appropriate YAML file in `brush-shell/tests/cases/compat/`:
+
+```yaml
+- name: "Your test case name"
+  stdin: |
+    echo $(problematic syntax here)
+```
+
+Run it to confirm the failure:
+
+```bash
+cargo test --test brush-compat-tests -- 'Your test case name'
+```
+
+#### 2. Test with Bash for Expected Output
+
+```bash
+bash -c 'echo $(problematic syntax here)'
+```
+
+Compare with brush output:
+
+```bash
+cargo run --package brush-shell -- -c 'echo $(problematic syntax here)'
+```
+
+#### 3. Add Debug Output
+
+For winnow parser (`brush-parser/src/parser/winnow_str/helpers.rs`):
+
+```rust
+eprintln!("[DEBUG] saw token, state={:?}", some_state);
+```
+
+For tokenizer (`brush-parser/src/tokenizer.rs`):
+
+```rust
+eprintln!("[DEBUG TOK] token: {:?}, state: {:?}", token, state);
+```
+
+For PEG word parser (`brush-parser/src/word.rs`):
+
+```rust
+eprintln!("[DEBUG PEG] parsed word '{}' => {:?}", word, pieces);
+```
+
+#### 4. Understanding Parser Architecture
+
+The parsing pipeline has multiple layers:
+
+1. **Tokenizer** (`tokenizer.rs`): Converts characters to tokens, handles command substitution boundaries
+2. **Main parser** (`parser/winnow_str/` or `parser/peg/`): Parses tokens into AST
+3. **Word parser** (`word.rs` - PEG): Parses word expansion (command substitutions in words)
+
+A syntax issue may need fixes in multiple layers. For example, `case` inside `$(...)`:
+- Tokenizer needs to track `case`/`esac` to not end the substitution at pattern `)`
+- Word parser needs to track `case`/`esac` for word expansion parsing
+
+#### 5. Clear Caches When Testing
+
+The word parser has a cache. After code changes, clear it:
+
+```bash
+cargo clean -p brush-parser
+```
+
+Or test with different input to bypass the cache.
+
 ## 3. Breaking Changes & Compatibility
 
 ### API Stability Guidelines
