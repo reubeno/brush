@@ -1213,7 +1213,7 @@ async fn get_file_completions(
         .set_extended_globbing(shell.options().extended_globbing)
         .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
-    pattern
+    let mut completions: Vec<String> = pattern
         .expand(
             shell.working_dir(),
             Some(&path_filter),
@@ -1222,7 +1222,22 @@ async fn get_file_completions(
         .unwrap_or_default()
         .into_paths()
         .into_iter()
-        .collect()
+        .collect();
+
+    match expanded_token.as_str() {
+        "." => {
+            completions.push(".".into());
+            completions.push("..".into());
+        }
+        ".." => {
+            completions.push("..".into());
+        }
+        _ => {}
+    }
+
+    completions.sort();
+    completions.dedup();
+    completions
 }
 
 fn get_external_command_completions(
