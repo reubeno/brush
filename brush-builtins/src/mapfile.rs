@@ -1,23 +1,23 @@
-use std::io::Read;
+use std::io::{Read, Write};
 
 use clap::Parser;
 
-use brush_core::{ErrorKind, ExecutionResult, builtins, env, error, variables};
+use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
 
-/// Inspect and modify key bindings and other input configuration.
+/// Read lines from standard input into an indexed array variable.
 #[derive(Parser)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
-    #[arg(short = 'd', default_value = "\n")]
-    delimiter: String,
+    #[arg(short = 'd')]
+    delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
     #[arg(short = 'n', default_value_t = 0)]
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O', default_value_t = 0)]
-    origin: i64,
+    #[arg(short = 'O', allow_hyphen_values = true)]
+    origin: Option<i64>,
 
     /// Number of initial entries to skip.
     #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
@@ -55,6 +55,35 @@ impl builtins::Command for MapFileCommand {
             return error::unimp("mapfile -C/-c is not yet implemented");
         }
 
+        if let Some(origin) = self.origin {
+            if origin < 0 {
+                writeln!(
+                    context.stderr(),
+                    "{}: {origin}: invalid array origin",
+                    context.command_name
+                )?;
+                return Ok(ExecutionExitCode::GeneralError.into());
+            }
+        }
+
+        if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
+            if matches!(
+                var.value(),
+                variables::ShellValue::AssociativeArray(_)
+                    | variables::ShellValue::Unset(
+                        variables::ShellValueUnsetType::AssociativeArray
+                    )
+            ) {
+                writeln!(
+                    context.stderr(),
+                    "{}: {}: not an indexed array",
+                    context.command_name,
+                    self.array_var_name
+                )?;
+                return Ok(ExecutionExitCode::GeneralError.into());
+            }
+        }
+
         let input_file = context
             .try_fd(self.fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
@@ -62,15 +91,26 @@ impl builtins::Command for MapFileCommand {
         // Read!
         let results = self.read_entries(input_file)?;
 
-        for (elem_idx, result) in results.0.into_iter().enumerate() {
-            // If the user is getting to wraparounds in *bash*, they got bigger problems.
-            #[allow(clippy::cast_possible_wrap)]
-            let elem_idx = elem_idx as i64;
-            // Assign!
-            context.shell.env_mut().update_or_add_array_element(
+        if let Some(origin) = self.origin {
+            // -O: preserve existing array, assign at offset.
+            for (elem_idx, (_key, value)) in results.0.into_iter().enumerate() {
+                // If the user is getting to wraparounds in *bash*, they got bigger problems.
+                #[allow(clippy::cast_possible_wrap)]
+                let elem_idx = elem_idx as i64;
+                context.shell.env_mut().update_or_add_array_element(
+                    &self.array_var_name,
+                    (elem_idx + origin).to_string(),
+                    value,
+                    |_| Ok(()),
+                    env::EnvironmentLookup::Anywhere,
+                    env::EnvironmentScope::Global,
+                )?;
+            }
+        } else {
+            // No -O: replace the entire variable (clears existing).
+            context.shell.env_mut().update_or_add(
                 &self.array_var_name,
-                (elem_idx + self.origin).to_string(),
-                result.1,
+                variables::ShellValueLiteral::Array(results),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -91,7 +131,11 @@ impl MapFileCommand {
         let mut entries = vec![];
         let mut read_count = 0;
         let max_count = self.max_count.try_into()?;
-        let delimiter = self.delimiter.chars().next().unwrap_or('\n') as u8;
+        let delimiter = match &self.delimiter {
+            Some(d) if d.is_empty() => b'\0',
+            Some(d) => d.as_bytes().first().copied().unwrap_or(b'\n'),
+            None => b'\n',
+        };
 
         let mut buf = [0u8; 1];
 
