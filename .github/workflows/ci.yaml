@@ -510,6 +510,7 @@ jobs:
       - name: "Run test suite (brush)"
         working-directory: brush
         run: |
+          sed -n '665,680p' /usr/lib/git-core/git-sh-prompt &&
           cargo xtask test \
               --brush-path $GITHUB_WORKSPACE/binaries/brush \
               external bash-completion \
