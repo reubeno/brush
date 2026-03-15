@@ -250,8 +250,8 @@ jobs:
         env:
           VARIANT: ${{ matrix.variant }}
         run: |
+          sed -n '665,680p' /usr/lib/git-core/git-sh-prompt
           set -euxo pipefail
-
           # Run tests with coverage collection
           result=0
           cargo xtask test integration --coverage --coverage-output ./codecov-${VARIANT}.xml || result=$?
