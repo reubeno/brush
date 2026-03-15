@@ -103,7 +103,13 @@ async fn complete_relative_file_path() -> Result<()> {
     assert_eq!(results, ["item1", "item2"]);
 
     results = test_shell.complete_end_of_line("ls .").await?;
-    assert_eq!(results, [".", "..", "..dot_item2", ".dot_item1"]);
+    // Some versions of bash-completion filter out "." and ".." via
+    // `-X '?(*/)@(.|..)'`; others don't. Accept either outcome.
+    assert!(
+        results == ["..dot_item2", ".dot_item1"]
+            || results == [".", "..", "..dot_item2", ".dot_item1"],
+        "unexpected completions for 'ls .': {results:?}"
+    );
 
     results = test_shell.complete_end_of_line("ls ..").await?;
     assert_eq!(results, ["..", "..dot_item2"]);

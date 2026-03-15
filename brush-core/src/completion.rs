@@ -1205,7 +1205,7 @@ async fn get_file_completions(
         .set_extended_globbing(shell.options().extended_globbing)
         .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
 
-    let mut completions: IndexSet<_> = pattern
+    let mut completions: Vec<String> = pattern
         .expand(
             shell.working_dir(),
             Some(&path_filter),
@@ -1216,14 +1216,19 @@ async fn get_file_completions(
         .into_iter()
         .collect();
 
-    match token_to_complete {
-        "." => completions.extend([".", ".."].map(String::from)),
+    match expanded_token.as_str() {
+        "." => {
+            completions.push(".".into());
+            completions.push("..".into());
+        }
         ".." => {
-            completions.insert("..".into());
+            completions.push("..".into());
         }
         _ => {}
     }
 
+    completions.sort();
+    completions.dedup();
     completions
 }
 
