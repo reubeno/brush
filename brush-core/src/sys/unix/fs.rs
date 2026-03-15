@@ -69,6 +69,13 @@ fn try_get_file_mode(path: &Path) -> Option<u32> {
     path.metadata().map(|metadata| metadata.mode()).ok()
 }
 
+/// Splits a platform-specific PATH-like value into individual paths.
+///
+/// On Unix, this delegates to [`std::env::split_paths`].
+pub fn split_paths<T: AsRef<std::ffi::OsStr> + ?Sized>(s: &T) -> std::env::SplitPaths<'_> {
+    std::env::split_paths(s)
+}
+
 pub(crate) fn get_default_executable_search_paths() -> Vec<PathBuf> {
     // standard hard-coded defaults for executable search path
     vec![
@@ -92,7 +99,7 @@ pub fn get_default_standard_utils_paths() -> Vec<PathBuf> {
     if let Ok(Some(cs_path)) = confstr_cs_path()
         && !cs_path.as_os_str().is_empty()
     {
-        return std::env::split_paths(&cs_path).collect();
+        return split_paths(&cs_path).collect();
     }
     // standard hard-coded defaults
     vec![

@@ -91,7 +91,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         filename: &'a str,
     ) -> impl Iterator<Item = PathBuf> + 'a {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = std::env::split_paths(path_var.as_ref());
+        let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
         pathsearch::search_for_executable(paths, filename)
     }
@@ -108,7 +108,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         case_insensitive: bool,
     ) -> impl Iterator<Item = PathBuf> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = std::env::split_paths(path_var.as_ref());
+        let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
         pathsearch::search_for_executable_with_prefix(paths, filename_prefix, case_insensitive)
     }
@@ -124,7 +124,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         candidate_name: S,
     ) -> Option<PathBuf> {
         let path = self.env_str("PATH").unwrap_or_default();
-        for one_dir in std::env::split_paths(path.as_ref()) {
+        for one_dir in crate::sys::fs::split_paths(path.as_ref()) {
             let candidate_path = one_dir.join(candidate_name.as_ref());
             if candidate_path.executable() {
                 return Some(candidate_path);
