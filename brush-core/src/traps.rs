@@ -8,7 +8,7 @@ use itertools::Itertools as _;
 use crate::{error, sys};
 
 /// Type of signal that can be trapped in the shell.
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TrapSignal {
     /// A system signal.
     Signal(sys::signal::Signal),
@@ -195,6 +195,11 @@ impl TrapHandlerConfig {
     /// * `signal_type` - The type of signal to get the handler for.
     pub fn get_handler(&self, signal_type: TrapSignal) -> Option<&TrapHandler> {
         self.handlers.get(&signal_type)
+    }
+
+    /// Returns whether a handler is registered for the given signal.
+    pub fn handles(&self, signal_type: TrapSignal) -> bool {
+        self.handlers.contains_key(&signal_type)
     }
 
     /// Registers a handler for a trap signal.
