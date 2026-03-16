@@ -1,5 +1,65 @@
 name: "Special parameters"
 cases:
+  - name: "$_ - initial value is shell path"
+    stdin: |
+      # $_ should be initialized to the resolved shell path
+      [[ $_ = $(command -v $0) ]] && echo yes
+
+  - name: "$_ - last command argument"
+    stdin: |
+      : 0
+      echo "$_"
+      : 0 1 2
+      echo "$_"
+      echo "first command"
+      echo "$_"
+
+  - name: "$_ - edge cases and special scenarios"
+    stdin: |
+      # Test command with no arguments (initial value will be shell path)
+      :
+      echo "After no args: $_"
+
+      # Test command with single argument
+      echo single
+      echo "After single arg: $_"
+
+      # Test command with multiple arguments
+      echo arg1 arg2 arg3
+      echo "After multiple args: $_"
+
+      # Test command with empty string argument
+      echo "" arg2
+      echo "After empty string: $_"
+
+      # Test command with special characters
+      echo "arg with spaces" 'arg-with-dashes' "arg:with:colons"
+      echo "After special chars: $_"
+
+      # Test in function context
+      func() {
+          echo "In function"
+      }
+      func arg1 arg2
+      echo "After function call: $_"
+
+      # Test in pipeline
+      echo pipeline1 | cat
+      echo "After pipeline: $_"
+
+  - name: "$_ - cleared by assignment statements"
+    stdin: |
+      echo "setup"
+      x="assignment"
+      echo "After assignment: '$_'"
+      : "colon command"
+      echo "After colon: '$_'"
+      y="another assignment"
+      echo "After another assignment: '$_'"
+      # Assignment with command substitution should also clear $_
+      z=$(echo "substitution")
+      echo "After assignment with command substitution: '$_'"
+
   - name: "$@ and $*"
     stdin: |
       function myfunc() {

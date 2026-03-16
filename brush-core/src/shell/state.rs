@@ -121,4 +121,17 @@ pub trait ShellState {
 
     /// Returns the product display name for this shell.
     fn product_display_str(&self) -> Option<&str>;
+
+    /// Updates the $_ special variable with the last argument from a command.
+    /// Pass `Some(arg)` to set $_ to the last argument, or `None` to clear it
+    /// (e.g., after assignment-only statements).
+    fn update_last_arg_variable(&mut self, last_arg: Option<&str>) {
+        let value = match last_arg {
+            Some(arg) => arg.to_string(),
+            None => String::new(),
+        };
+        let _ = self
+            .env_mut()
+            .set_global("_", crate::ShellVariable::new(value));
+    }
 }

@@ -351,7 +351,8 @@ fn run_tests_with_coverage(
         eprintln!("Running: cargo {}", test_args.join(" "));
     }
 
-    // Run tests - let output pass through naturally, but continue on failure to generate coverage report
+    // Run tests - let output pass through naturally, but continue on failure to generate coverage
+    // report
     let test_result = cmd!(sh, "cargo {test_args...}").run();
     let test_failed = test_result.is_err();
 
