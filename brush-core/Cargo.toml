@@ -25,11 +25,11 @@ experimental-parser = ["brush-parser/winnow-parser"]
 async-recursion = "1.1.1"
 async-trait = "0.1.89"
 brush-parser = { version = "^0.3.0", path = "../brush-parser" }
-bon = "3.9.0"
-cached = "0.56.0"
+bon = "3.9.1"
+cached = "0.58.0"
 cfg-if = "1.0.4"
 chrono = "0.4.44"
-clap = { version = "4.5.57", features = ["derive", "wrap_help"] }
+clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
 color-print = "0.3.7"
 fancy-regex = "0.17.0"
 futures = "0.3.32"
@@ -49,7 +49,7 @@ tokio = { version = "1.50.0", features = ["io-util", "macros", "rt", "sync"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 hostname = "0.4.2"
-tokio = { version = "1.49.0", features = [
+tokio = { version = "1.50.0", features = [
     "io-util",
     "macros",
     "net",
@@ -65,7 +65,7 @@ whoami = "2.1.1"
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.2"
-libc = "0.2.180"
+libc = "0.2.183"
 nix = { version = "0.31.2", features = [
     "fs",
     "poll",
