@@ -693,7 +693,20 @@ impl Execute for ast::CompoundCommand {
             Self::UntilClause(u) => (WhileOrUntil::Until, u).execute(shell, params).await,
             Self::Arithmetic(a) => a.execute(shell, params).await,
             Self::ArithmeticForClause(a) => a.execute(shell, params).await,
+            Self::Coprocess(c) => c.execute(shell, params).await,
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Execute for ast::CoprocessCommand {
+    async fn execute(
+        &self,
+        _shell: &mut Shell<impl extensions::ShellExtensions>,
+        _params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        // Coprocesses are not yet implemented in this shell.
+        error::unimp("coproc is not yet supported in this shell")
     }
 }
 
