@@ -325,6 +325,7 @@ impl TokenParseState {
         self.token_so_far = s;
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn delimit_current_token(
         &mut self,
         reason: TokenEndReason,
@@ -432,7 +433,12 @@ impl TokenParseState {
                 });
 
                 // Then queue up the (end) here-tag.
-                self.append_str(completed_here_tag.tag.trim_end_matches('\n'));
+                let end_tag = if completed_here_tag.tag_was_escaped_or_quoted {
+                    unquote_str(&completed_here_tag.tag)
+                } else {
+                    completed_here_tag.tag
+                };
+                self.append_str(end_tag.trim_end_matches('\n'));
                 cross_token_state.queued_tokens.push(TokenizeResult {
                     reason: TokenEndReason::HereDocumentEndTag,
                     token: Some(self.pop(&cross_token_state.cursor)),

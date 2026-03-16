@@ -224,3 +224,29 @@ cases:
       )
 
       echo "${test1}"
+
+  - name: "Here doc with quoted delimiter"
+    stdin: |
+      cat <<'EOF'
+      something
+      EOF
+
+  - name: "Here doc with double quoted delimiter"
+    stdin: |
+      cat <<"EOF"
+      something
+      EOF
+
+  - name: "Here doc with quoted delimiter inside command substitution"
+    stdin: |
+      $(cat <<'EOF'
+      true
+      EOF
+      )
+
+  - name: "Here doc with double quoted delimiter inside command substitution"
+    stdin: |
+      $(cat <<"EOF"
+      true
+      EOF
+      )
