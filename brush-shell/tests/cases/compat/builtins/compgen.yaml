@@ -232,10 +232,41 @@ cases:
       mkdir cdir
       compgen -W 'completion' -o plusdirs -o default -S suffix -- c | sort
 
-  - name: "compgen -A command with builtins"
+  - name: "compgen -A command"
+    known_failure: true
     stdin: |
+      compgen -A command | sort | grep -v brushctl | grep -v brushinfo
+
+  - name: "compgen -A command in a constrained PATH"
+    stdin: |
+      SORT=$(which sort)
+      GREP=$(which grep)
       PATH=$(pwd)
-      compgen -A command -- compge
+      compgen -A command | $SORT | $GREP -v brushctl | $GREP -v brushinfo
+
+  - name: "compgen -A command builtins in a constrained PATH"
+    stdin: |
+      SORT=$(which sort)
+      PATH=$(pwd)
+      compgen -A command cd | $SORT
+
+  - name: "compgen -A command keywords in a constrained PATH"
+    stdin: |
+      SORT=$(which sort)
+      PATH=$(pwd)
+      compgen -A command [ | $SORT
+
+  - name: "compgen -A command function in a constrained PATH"
+    stdin: |
+      SORT=$(which sort)
+      PATH=$(pwd)
+      myfunc() {
+        echo hi
+      }
+      myfunc2() {
+        echo hello
+      }
+      compgen -A command myfunc | $SORT
 
   - name: "compgen -A command with executable symlink"
     stdin: |

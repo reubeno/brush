@@ -503,6 +503,14 @@ impl Spec {
                             candidates.push(name.to_owned());
                         }
                     }
+                    for keyword in shell.get_keywords() {
+                        if keyword.starts_with(token) {
+                            candidates.push(keyword.to_string());
+                        }
+                    }
+                    for (name, _) in shell.funcs().iter() {
+                        candidates.push(name.to_owned());
+                    }
                 }
                 CompleteAction::Directory => {
                     let mut file_completions =
