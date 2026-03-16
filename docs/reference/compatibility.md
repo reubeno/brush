@@ -4,7 +4,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 
 ## Overview
 
-`brush` aims for high compatibility with `bash`. We validate this through **1400+ compatibility test cases** that compare behavior against `bash` as an oracle.
+`brush` aims for high compatibility with `bash`. We validate this through **1500+ compatibility test cases** that compare behavior against `bash` as an oracle.
 
 **Compatibility snapshot:** Production-ready for most use cases. Your `.bashrc`, aliases, functions, and completions should "just work."
 
@@ -184,7 +184,7 @@ Some complex alias expansion scenarios differ from `bash` (see GitHub issues #57
 
 ## Test Suite Statistics
 
-- **Total test cases:** 1400+
+- **Total test cases:** 1500+
 - **Known failures:** ~81 (~5.8%)
 - **Most failures are edge cases** in IFS handling, ERR traps, and printf
 
@@ -209,7 +209,7 @@ Found a script that works in `bash` but not in `brush`?
 ## Tracking Progress
 
 - **GitHub Issues:** Track specific compatibility work
-- **Test Suite:** 1400+ tests run on every PR
+- **Test Suite:** 1500+ tests run on every PR
 - **This Document:** Updated as features are implemented
 
 ## Related Resources

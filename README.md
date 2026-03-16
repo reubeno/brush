@@ -40,7 +40,7 @@
 
 ✅ Your existing `.bashrc` just works—aliases, functions, completions, all of it.<br/>
 ✨ Syntax highlighting and auto-suggestions built in and enabled by default.<br/>
-🧪 Validated against bash with [~1400 compatibility tests](brush-shell/tests/cases).<br/>
+🧪 Validated against bash with [~1500 compatibility tests](brush-shell/tests/cases).<br/>
 🧩 Easily embeddable in your Rust apps using `brush_core::Shell`.<br/>
 
 <p align="center">
@@ -70,7 +70,7 @@ More detailed installation instructions are available below.
 |--|---------|-------------|
 | ✅ | **50+ builtins** | `echo`, `declare`, `read`, `complete`, `trap`, `ulimit`, ... |
 | ✅ | **Full expansions** | brace, parameter, arithmetic, command/process substitution, globs, `extglob`, `globstar` |
-| ✅ | **Control flow** | `if`/`for`/`while`/`until`/`case`, `&&`/`||`, subshells, pipelines, etc. |
+| ✅ | **Control flow** | `if`/`for`/`while`/`until`/`case`, `&&`/`\|\|`, subshells, pipelines, etc. |
 | ✅ | **Redirection** | here docs, here strings, fd duplication, process substitution redirects |
 | ✅ | **Arrays & variables** | indexed/associative arrays, dynamic variables, standard well-known variables, etc. |
 | ✅ | **Programmable completion** | Works with [bash-completion](https://github.com/scop/bash-completion) out of the box |
