@@ -125,7 +125,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
                     "BASH_ENV"
                 };
 
-                if self.env.is_set(env_var_name) {
+                if self.env_is_set(env_var_name) {
                     //
                     // TODO(well-known-vars): look at $ENV/BASH_ENV; source its expansion if that
                     // file exists

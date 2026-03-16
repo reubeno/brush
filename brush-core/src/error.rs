@@ -50,7 +50,7 @@ pub enum ErrorKind {
     CannotAssignToSpecialParameter,
 
     /// Checked expansion error.
-    #[error("expansion error: {0}")]
+    #[error("{0}")]
     CheckedExpansionError(String),
 
     /// A reference was made to an unknown shell function.
@@ -318,6 +318,10 @@ pub enum ErrorKind {
     /// A glob pattern failed to match any files (failglob).
     #[error("no match: {0}")]
     NoMatch(String),
+
+    /// A circular name reference was detected.
+    #[error("{0}: circular name reference")]
+    CircularNameReference(String),
 }
 
 /// Trait implementable by built-in commands to represent errors.

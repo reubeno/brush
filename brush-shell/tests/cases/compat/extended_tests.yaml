@@ -397,7 +397,6 @@ cases:
       [[ -R ref ]] && echo "still nameref" || echo "no longer a nameref"
 
   - name: "Nameref -v follows nameref"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -406,7 +405,6 @@ cases:
       [[ -v ref ]] && echo "ref still set" || echo "ref not set (target gone)"
 
   - name: "Nameref -v to array element treats resolved name literally"
-    known_failure: true
     stdin: |
       arr=(a b c d)
       declare -n ref='arr[2]'
@@ -427,7 +425,6 @@ cases:
       [[ -v "ref2[2]" ]] && echo "set" || echo "unset"
 
   - name: "Nameref -v to nonexistent array index"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[5]'

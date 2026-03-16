@@ -293,8 +293,10 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // diagnostics are harmless.
         if self
             .env
-            .get_using_policy("_", crate::env::EnvironmentLookup::Anywhere)
-            .is_some_and(|v| v.is_readonly())
+            .lookup("_")
+            .bypassing_nameref()
+            .get()
+            .is_some_and(|(_, v)| v.is_readonly())
         {
             return;
         }

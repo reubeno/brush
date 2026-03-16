@@ -211,7 +211,14 @@ impl DeclareCommand {
                 // For some reason, bash does not print an error message in this case.
                 Ok(false)
             }
-        } else if let Some(variable) = context.shell.env().get_using_policy(name, lookup) {
+        } else if let Some((_, variable)) = context
+            .shell
+            .env()
+            .lookup(name.as_str())
+            .bypassing_nameref()
+            .in_scope(lookup)
+            .get()
+        {
             let mut cs = variable.attribute_flags(context.shell);
             if cs.is_empty() {
                 cs.push('-');
@@ -237,6 +244,7 @@ impl DeclareCommand {
         }
     }
 
+    #[expect(clippy::too_many_lines)]
     fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -274,6 +282,16 @@ impl DeclareCommand {
             return Ok(false);
         }
 
+        // In bash, `declare -ni var=value` fails — the combination of nameref
+        // and integer attributes with an initial value is rejected. Without a
+        // value (e.g., `declare -ni var`), bash applies both attributes.
+        let nameref_integer_conflict = matches!(self.make_nameref.to_bool(), Some(true))
+            && matches!(self.make_integer.to_bool(), Some(true))
+            && initial_value.is_some();
+        if nameref_integer_conflict {
+            return Ok(false);
+        }
+
         // Figure out where we should look.
         let lookup = if create_var_local {
             EnvironmentLookup::OnlyInCurrentLocal
@@ -281,11 +299,52 @@ impl DeclareCommand {
             EnvironmentLookup::Anywhere
         };
 
-        // Look up the variable.
-        if let Some(var) = context
+        // The standalone `readonly` command rejects subscripted nameref targets
+        // (e.g., `readonly ref` where ref→arr[1]). `declare -r` does NOT —
+        // it applies the attribute to the base variable. This asymmetry
+        // matches bash behavior.
+        if matches!(verb, DeclareVerb::Readonly) {
+            if let Ok(resolved) = context.shell.env().resolve_nameref(name.as_str()) {
+                if resolved.subscript().is_some() {
+                    let target = context
+                        .shell
+                        .env()
+                        .resolve_nameref_to_name(name.as_str())
+                        .unwrap_or_else(|_| name.clone());
+                    writeln!(
+                        context.stderr(),
+                        "{}: `{target}': not a valid identifier",
+                        context.command_name,
+                    )?;
+                    return Ok(false);
+                }
+            }
+        }
+
+        // Resolve namerefs for attribute-changing declarations and validate
+        // any nameref target before modifying variable state.
+        let (name, lookup) =
+            self.resolve_nameref_for_declaration(context, name, lookup, create_var_local)?;
+
+        let will_be_nameref = self.will_be_nameref();
+        if will_be_nameref {
+            if let Some(msg) =
+                Self::validate_initial_nameref_target(name.as_str(), initial_value.as_ref())
+            {
+                writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                return Ok(false);
+            }
+        }
+
+        // Look up the variable. Name is already resolved through
+        // resolve_nameref_for_declaration above.
+        let resolved_name = env::ResolvedName::already_resolved(name.as_str());
+        if let Some((_, var)) = context
             .shell
             .env_mut()
-            .get_mut_using_policy(name.as_str(), lookup)
+            .lookup_mut(&resolved_name)
+            .in_scope(lookup)
+            .get()
         {
             if self.make_associative_array.is_some() {
                 var.convert_to_associative_array()?;
@@ -299,6 +358,13 @@ impl DeclareCommand {
             if let Some(initial_value) = initial_value {
                 // We append if the declaration included an explicit index.
                 var.assign(initial_value, assigned_index.is_some())?;
+            }
+
+            // Validate existing value when -n is being added to a variable
+            // that wasn't given a new value (e.g., `x=x; declare -n x`).
+            if let Some(msg) = Self::validate_existing_nameref_value(var) {
+                writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                return Ok(false);
             }
 
             self.apply_attributes_after_update(var, verb)?;
@@ -321,6 +387,12 @@ impl DeclareCommand {
                 var.assign(initial_value, false)?;
             }
 
+            // Validate nameref target name after assignment.
+            if let Some(msg) = Self::validate_existing_nameref_value(&var) {
+                writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                return Ok(false);
+            }
+
             if context.shell.options().export_variables_on_modification && !var.value().is_array() {
                 var.export();
             }
@@ -333,6 +405,12 @@ impl DeclareCommand {
                 EnvironmentScope::Global
             };
 
+            // N.B. We intentionally use `add()` (no nameref resolution) here. When
+            // `declare` creates a brand new variable (e.g., `declare -n ref=target`),
+            // we're defining the nameref itself, not writing through an existing one.
+            // In functions, `declare`/`local` always creates a new local variable in
+            // the current scope, even if a nameref with the same name exists in an
+            // outer scope — this matches bash behavior.
             context.shell.env_mut().add(name, var, scope)?;
         }
 
@@ -422,6 +500,146 @@ impl DeclareCommand {
         }
 
         Ok((name, assigned_index, initial_value, name_is_array))
+    }
+
+    /// Validates a nameref target string: must be a legal variable name (optionally
+    /// with a `[subscript]` suffix) and must not be a self-reference.
+    /// Returns `Some(error_message)` on failure, `None` if valid.
+    fn validate_nameref_creation_target(var_name: &str, target: &str) -> Option<String> {
+        if target.is_empty() {
+            return None;
+        }
+        if target == var_name {
+            return Some(format!(
+                "{var_name}: nameref variable self references not allowed"
+            ));
+        }
+        if !env::valid_nameref_target_name(target) {
+            return Some(format!(
+                "`{target}': invalid variable name for name reference"
+            ));
+        }
+        None
+    }
+
+    /// If `var` is a nameref with a non-empty target, validates the target name.
+    ///
+    /// Unlike [`validate_nameref_creation_target`], this does NOT reject self-references.
+    /// Bash allows implicit self-references (e.g., `x=x; declare -n x`) — only
+    /// explicit ones at creation time (`declare -n x=x`) are rejected.
+    fn validate_existing_nameref_value(var: &ShellVariable) -> Option<String> {
+        if !var.is_treated_as_nameref() {
+            return None;
+        }
+        if let ShellValue::String(target) = var.value() {
+            if target.is_empty() {
+                return None;
+            }
+            // Only validate the name format, not self-reference.
+            if !env::valid_nameref_target_name(target) {
+                return Some(format!(
+                    "`{target}': invalid variable name for name reference"
+                ));
+            }
+        }
+        None
+    }
+
+    /// Determines whether this declaration will effectively create a nameref,
+    /// accounting for flag conflicts (`-na`, `-nA`) that suppress `-n`.
+    ///
+    /// The `-ni` combination does NOT suppress `-n` — bash applies both
+    /// attributes when no initial value is provided. (With an initial value,
+    /// the declaration is rejected early in `process_declaration`.)
+    const fn will_be_nameref(&self) -> bool {
+        matches!(self.make_nameref.to_bool(), Some(true))
+            && !(self.make_indexed_array.is_some() || self.make_associative_array.is_some())
+    }
+
+    /// Resolves namerefs for attribute-changing declarations.
+    ///
+    /// In bash, when an attribute-changing `declare`/`readonly` command targets an
+    /// existing nameref without explicitly setting/unsetting the `-n` flag, the
+    /// operation resolves through the nameref and applies to the target variable.
+    ///
+    /// # Examples of when resolution applies
+    ///
+    /// ```bash
+    /// declare -n ref=target
+    /// declare -a ref       # applies -a to "target", not to "ref"
+    /// readonly ref          # makes "target" readonly, not "ref"
+    /// ```
+    ///
+    /// # When resolution does NOT apply
+    ///
+    /// ```bash
+    /// f() { declare -n ref=target; }  # creates new local "ref", doesn't resolve
+    /// declare -n ref=x                # explicitly setting -n: defines "ref" itself
+    /// declare +n ref                  # explicitly unsetting -n: modifies "ref" itself
+    /// ```
+    ///
+    /// The condition: resolve when `-n` is neither being set nor unset (`.is_none()`)
+    /// AND the variable already exists in the lookup scope (not creating a new local).
+    fn resolve_nameref_for_declaration(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: String,
+        lookup: EnvironmentLookup,
+        create_var_local: bool,
+    ) -> Result<(String, EnvironmentLookup), brush_core::Error> {
+        // When `-n` is explicitly being set or unset, we're operating on the
+        // nameref variable itself — don't resolve through it.
+        let explicitly_modifying_nameref_attr = self.make_nameref.to_bool().is_some();
+
+        // When `declare`/`local` would create a brand-new local variable
+        // (rather than modifying an existing one), we don't resolve either —
+        // e.g., `f() { declare -n ref=target; }` defines `ref`, not `target`.
+        //
+        // The existence check below does a scope-stack walk filtered by `lookup`
+        // policy. This is short-circuited when `create_var_local` is false (the
+        // common case at the global scope), so the walk only runs inside function
+        // bodies where each declare/local is a single statement, not a hot loop.
+        // The scope stack is small (typically 1-3 entries per nested function),
+        // so the per-call cost is negligible.
+        let creating_new_local = create_var_local
+            && context
+                .shell
+                .env()
+                .lookup(name.as_str())
+                .bypassing_nameref()
+                .in_scope(lookup)
+                .get()
+                .is_none();
+
+        let should_resolve = !explicitly_modifying_nameref_attr && !creating_new_local;
+        if should_resolve {
+            let resolved = context
+                .shell
+                .env()
+                .resolve_nameref(name.as_str())?;
+            if resolved.name() != name.as_str() {
+                // For subscripted targets (e.g., ref→arr[2]), resolve to the
+                // base variable name. `declare -x ref` applies the export to
+                // the base array `arr`, not to element `arr[2]`. (The
+                // standalone `export`/`readonly` commands handle subscripted
+                // nameref rejection themselves.)
+                return Ok((resolved.into_name(), EnvironmentLookup::Anywhere));
+            }
+        }
+        Ok((name, lookup))
+    }
+
+    /// Validates the initial value (if any) as a nameref target.
+    /// Returns `Some(error_message)` if the target is invalid.
+    fn validate_initial_nameref_target(
+        var_name: &str,
+        initial_value: Option<&ShellValueLiteral>,
+    ) -> Option<String> {
+        if let Some(ShellValueLiteral::Scalar(target)) = initial_value {
+            Self::validate_nameref_creation_target(var_name, target.as_str())
+        } else {
+            None
+        }
     }
 
     fn display_matching_env_declarations(
@@ -562,6 +780,18 @@ impl DeclareCommand {
         &self,
         var: &mut ShellVariable,
     ) -> Result<(), brush_core::Error> {
+        // In bash, -n (nameref) conflicts with certain value-type attributes
+        // when an initial value is provided. That case is rejected early in
+        // process_declaration. When both flags are set without a value (e.g.,
+        // `declare -ni var`), bash applies both attributes. For arrays:
+        //   -na: -n dropped, -a kept (creates indexed array, not a nameref)
+        //   -nA: -n dropped, -A kept (creates assoc array, not a nameref)
+        // The -l, -u, -c flags do NOT conflict with -n.
+        let requesting_nameref = matches!(self.make_nameref.to_bool(), Some(true));
+        let nameref_array_conflict = requesting_nameref
+            && (self.make_indexed_array.is_some() || self.make_associative_array.is_some());
+        let suppress_nameref = nameref_array_conflict;
+
         if let Some(value) = self.make_integer.to_bool() {
             if value {
                 var.treat_as_integer();
@@ -589,11 +819,13 @@ impl DeclareCommand {
                 var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
-        if let Some(value) = self.make_nameref.to_bool() {
-            if value {
-                var.treat_as_nameref();
-            } else {
-                var.unset_treat_as_nameref();
+        if !suppress_nameref {
+            if let Some(value) = self.make_nameref.to_bool() {
+                if value {
+                    var.treat_as_nameref();
+                } else {
+                    var.unset_treat_as_nameref();
+                }
             }
         }
         if let Some(value) = self.make_traced.to_bool() {

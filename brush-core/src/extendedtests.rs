@@ -184,11 +184,50 @@ pub(crate) fn apply_unary_predicate_to_str(
                 Ok(false)
             }
         }
-        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env().is_set(operand)),
-        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => match shell.env().get(operand) {
-            Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
-            None => Ok(false),
-        },
+        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
+            // Resolve the nameref chain, then look up the resolved name as a
+            // plain variable (without further nameref resolution or subscript
+            // parsing). In bash, `[[ -v ref ]]` where ref→arr[2] does NOT
+            // parse the subscript — it looks for a variable literally named
+            // `arr[2]`, which doesn't exist. Only explicit subscript syntax like
+            // `[[ -v "ref[2]" ]]` triggers element-level checks.
+            //
+            // TODO(nameref): Handle `[[ -v "ref[N]" ]]` where ref is a nameref
+            // to a whole array. Fix requires:
+            //   1. Split `operand` on the first `[` into (name_part, subscript_part)
+            //   2. Resolve the nameref on name_part only (e.g., "ref" → "arr")
+            //   3. Look up the resolved variable with get_raw()
+            //   4. Check if the specific element at subscript_part is set
+            // Currently blocked because the operand arrives as a single string
+            // without prior parsing. See the known_failure test
+            // "Nameref -v with explicit subscript on nameref to whole array"
+            // in extended_tests.yaml.
+            // resolve_nameref_to_name returns the resolved name without parsing
+            // subscripts — exactly what bash's `-v` test expects. In bash,
+            // `[[ -v ref ]]` where ref→arr[2] looks for a variable literally
+            // named `"arr[2]"`, not array element arr at index 2.
+            //
+            // Circular namerefs silently fall back to the operand name, which
+            // won't be found — correctly treating them as unset.
+            let resolved_name = shell
+                .env()
+                .resolve_nameref_to_name(operand)
+                .unwrap_or_else(|_| operand.to_owned());
+            let resolved = crate::env::ResolvedName::already_resolved(resolved_name);
+            if let Some((_, var)) = shell.env().lookup(&resolved).get() {
+                Ok(!matches!(var.value(), crate::variables::ShellValue::Unset(_)))
+            } else {
+                Ok(false)
+            }
+        }
+        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
+            match shell.env().lookup(operand).bypassing_nameref().get() {
+                Some((_, reffed)) => {
+                    Ok(reffed.value().is_set() && reffed.is_treated_as_nameref())
+                }
+                None => Ok(false),
+            }
+        }
     }
 }
 
