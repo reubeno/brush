@@ -325,6 +325,7 @@ impl TokenParseState {
         self.token_so_far = s;
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn delimit_current_token(
         &mut self,
         reason: TokenEndReason,
