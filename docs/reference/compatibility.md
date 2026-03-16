@@ -86,12 +86,12 @@ This document details `brush`'s compatibility with `bash`, including supported f
 
 ### Traps
 
-| Status | Feature |
-|--------|---------|
-| ✅ | `EXIT` trap |
-| ✅ | `DEBUG` trap (basic) |
+| Status | Feature  |
+|--------|----------|
+| ✅ | `DEBUG` trap |
+| ✅ | `ERR` trap   |
+| ✅ | `EXIT` trap  |
 | 🔷 | Signal traps (`SIGINT`, `SIGTERM`, etc.) — in progress |
-| 🚧 | `ERR` trap — not yet implemented |
 
 ### Key Bindings (`bind`)
 
@@ -185,8 +185,8 @@ Some complex alias expansion scenarios differ from `bash` (see GitHub issues #57
 ## Test Suite Statistics
 
 - **Total test cases:** 1500+
-- **Known failures:** ~81 (~5.8%)
-- **Most failures are edge cases** in IFS handling, ERR traps, and printf
+- **Known failures:** ~125
+- **Most failures are edge cases** in IFS handling and printf
 
 The test suite runs on every PR and compares behavior against `bash` as an oracle.
 
