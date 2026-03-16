@@ -165,7 +165,14 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             args: self.args.clone(),
             version: self.version.clone(),
             product_display_str: self.product_display_str.clone(),
-            call_stack: self.call_stack.clone(),
+            call_stack: {
+                // Subshells must not inherit the parent's "currently handling signal X"
+                // state; otherwise a trap handler that spawns a subshell would see itself
+                // as already inside that handler and skip re-entrant delivery.
+                let mut cs = self.call_stack.clone();
+                cs.clear_active_trap_signals();
+                cs
+            },
             directory_stack: self.directory_stack.clone(),
             completion_config: self.completion_config.clone(),
             builtins: self.builtins.clone(),

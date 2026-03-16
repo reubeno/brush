@@ -571,7 +571,7 @@ fn get_funcname_value(shell: &dyn ShellState) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::FrameType::TrapHandler
+                crate::callstack::FrameType::TrapHandler(_)
                 | crate::callstack::FrameType::Eval
                 | crate::callstack::FrameType::CommandString
                 | crate::callstack::FrameType::InteractiveSession => None,
@@ -608,7 +608,7 @@ fn get_bash_lineno_value(shell: &dyn ShellState) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::FrameType::TrapHandler
+                crate::callstack::FrameType::TrapHandler(_)
                 | crate::callstack::FrameType::Eval
                 | crate::callstack::FrameType::CommandString
                 | crate::callstack::FrameType::InteractiveSession => None,
@@ -643,7 +643,7 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::FrameType::TrapHandler | crate::callstack::FrameType::Eval => {
+                crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => {
                     None
                 }
                 crate::callstack::FrameType::CommandString
@@ -667,7 +667,7 @@ fn get_bash_argc_value(shell: &dyn ShellState) -> variables::ShellValue {
             | crate::callstack::FrameType::Script(..)
             | crate::callstack::FrameType::CommandString
             | crate::callstack::FrameType::InteractiveSession => Some(frame.args.len().to_string()),
-            crate::callstack::FrameType::TrapHandler | crate::callstack::FrameType::Eval => None,
+            crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => None,
         })
         .collect::<Vec<_>>()
         .into()
@@ -687,7 +687,9 @@ fn get_bash_argv_value(shell: &dyn ShellState) -> variables::ShellValue {
             | crate::callstack::FrameType::Script(..)
             | crate::callstack::FrameType::CommandString
             | crate::callstack::FrameType::InteractiveSession => true,
-            crate::callstack::FrameType::TrapHandler | crate::callstack::FrameType::Eval => false,
+            crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => {
+                false
+            }
         };
 
         if include {

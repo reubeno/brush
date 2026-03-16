@@ -660,7 +660,6 @@ cases:
       echo "should not print"
 
   - name: "trap ERR"
-    known_failure: true # TODO(traps): trap ERR support
     stdin: |
       set -e
       trap 'echo "error trapped"' ERR
@@ -1028,7 +1027,6 @@ cases:
 
   # BASH_COMMAND with errexit
   - name: "BASH_COMMAND set during errexit"
-    known_failure: true # TODO(well-known-vars): BASH_COMMAND not implemented
     stdin: |
       set -e
       trap 'echo "failed: $BASH_COMMAND"' EXIT
@@ -1036,7 +1034,6 @@ cases:
       echo "should not print"
 
   - name: "BASH_COMMAND in function with errexit"
-    known_failure: true # TODO(well-known-vars): BASH_COMMAND not implemented
     stdin: |
       set -e
       trap 'echo "failed: $BASH_COMMAND"' EXIT
@@ -1179,7 +1176,6 @@ cases:
       trap 'echo "ERR: $?"' ERR
       false
       echo "should not print"
-    known_failure: true # TODO(traps): ERR trap support
 
   # Coproc with errexit
   - name: "coproc with failing command"

@@ -395,6 +395,18 @@ impl Execute for ast::Pipeline {
         // Update exit status.
         shell.set_last_exit_status(result.exit_code.into());
 
+        // Fire the ERR trap if the pipeline failed in a non-conditional context.
+        // We reuse `suppress_errexit` here because bash suppresses the ERR trap in
+        // exactly the same contexts it suppresses errexit (conditionals, `!`-prefixed
+        // pipelines, etc.).
+        if !result.is_success() && !params.suppress_errexit && !self.bang {
+            if shell.traps().handles(crate::traps::TrapSignal::Err) {
+                shell
+                    .invoke_trap_handler(crate::traps::TrapSignal::Err, &params)
+                    .await?;
+            }
+        }
+
         // Apply errexit if not suppressed (and not negated)
         if !params.suppress_errexit && !self.bang {
             shell.apply_errexit_if_enabled(&mut result);
