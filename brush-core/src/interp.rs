@@ -693,19 +693,20 @@ impl Execute for ast::CompoundCommand {
             Self::UntilClause(u) => (WhileOrUntil::Until, u).execute(shell, params).await,
             Self::Arithmetic(a) => a.execute(shell, params).await,
             Self::ArithmeticForClause(a) => a.execute(shell, params).await,
-            Self::CoprocClause(c) => c.execute(shell, params).await,
+            Self::Coprocess(c) => c.execute(shell, params).await,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::CoprocClauseCommand {
+impl Execute for ast::CoprocessCommand {
     async fn execute(
         &self,
         _shell: &mut Shell<impl extensions::ShellExtensions>,
         _params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        error::unimp("coproc")
+        // Coprocesses are not yet implemented in this shell.
+        error::unimp("coproc is not yet supported in this shell")
     }
 }
 
@@ -1189,19 +1190,6 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
             let mut stderr = params.stderr(&context.shell);
-
-            // Set $_ to the last argument before executing the command.
-            // Find the last string argument (not assignment) in the args.
-            let last_arg = args.iter().rev().find_map(|arg| {
-                if let CommandArg::String(s) = arg {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            });
-            if let Some(last_arg) = last_arg {
-                context.shell.set_last_command_argument(last_arg);
-            }
 
             let (owned_shell, parent_shell) = match context.shell {
                 commands::ShellForCommand::ParentShell(shell) => (None, shell),

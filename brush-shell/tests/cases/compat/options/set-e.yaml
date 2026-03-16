@@ -1207,6 +1207,9 @@ cases:
       if wait $COPROC_PID; then
         echo "then"
       else
+        echo "else"
+      fi
+      echo "after"
 
   - name: "coproc with name and brace group"
     known_failure: true # TODO(coproc): coproc not implemented
