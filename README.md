@@ -47,7 +47,7 @@
   <img src="https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52" width="80%"/>
 </p>
 
-> ⚠️ **Not everything works yet:** `coproc`, `select`, ERR traps, and some edge cases aren't supported. See the [Compatibility Reference](docs/reference/compatibility.md) for details.
+> ⚠️ **Not everything works yet:** `coproc`, `select`, and some edge cases aren't supported. See the [Compatibility Reference](docs/reference/compatibility.md) for details.
 
 ### Quick start:
 
@@ -75,7 +75,7 @@ More detailed installation instructions are available below.
 | ✅ | **Arrays & variables** | indexed/associative arrays, dynamic variables, standard well-known variables, etc. |
 | ✅ | **Programmable completion** | Works with [bash-completion](https://github.com/scop/bash-completion) out of the box |
 | ✅ | **Job control** | background jobs, suspend/resume, `fg`/`bg`/`jobs` |
-| 🔷 | **Traps & options** | `EXIT`/`DEBUG` traps work; signal traps and options in progress |
+| 🔷 | **Traps & options** | `DEBUG`/`ERR`/`EXIT` traps work; signal traps and options in progress |
 
 ### ⌨️ User Experience
 
