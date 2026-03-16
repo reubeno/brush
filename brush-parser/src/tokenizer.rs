@@ -751,14 +751,6 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 result = state
                     .delimit_current_token(TokenEndReason::EndOfInput, &mut self.cross_state)?;
             //
-            // Look for the specially specified terminating char.
-            //
-            } else if state.unquoted() && terminating_char == Some(c) {
-                result = state.delimit_current_token(
-                    TokenEndReason::SpecifiedTerminatingChar,
-                    &mut self.cross_state,
-                )?;
-            //
             // Handle being in a here document.
             //
             } else if matches!(self.cross_state.here_state, HereState::InHereDocs) {
@@ -782,6 +774,14 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         self.remove_here_end_tag(&mut state, &mut result, true)?;
                     }
                 }
+            //
+            // Look for the specially specified terminating char.
+            //
+            } else if state.unquoted() && terminating_char == Some(c) {
+                result = state.delimit_current_token(
+                    TokenEndReason::SpecifiedTerminatingChar,
+                    &mut self.cross_state,
+                )?;
             } else if state.in_operator() {
                 //
                 // We're in an operator. See if this character continues an operator, or if it

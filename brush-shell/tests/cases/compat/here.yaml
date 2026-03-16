@@ -189,7 +189,6 @@ cases:
       EOF
 
   - name: "Here doc in a command substitution with parentheses"
-    known_failure: true # Issue #419
     stdin: |
       test1=$(cat <<EOF
       (something)
