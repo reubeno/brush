@@ -311,7 +311,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global("HISTCMD", histcmd_var)?;
 
     // HISTFILE (if not already set)
-    if !shell.env().is_set("HISTFILE")
+    if !shell.env_is_set("HISTFILE")
         && let Some(home_dir) = shell.home_dir()
     {
         let histfile = home_dir.join(".brush_history");
@@ -358,7 +358,7 @@ pub(crate) fn init_well_known_vars(
         .set_global("MACHTYPE", ShellVariable::new(BASH_MACHINE))?;
 
     // OLDPWD (initialization)
-    if !shell.env().is_set("OLDPWD") {
+    if !shell.env_is_set("OLDPWD") {
         let mut oldpwd_var =
             ShellVariable::new(ShellValue::Unset(variables::ShellValueUnsetType::Untyped));
         oldpwd_var.export();
@@ -398,7 +398,7 @@ pub(crate) fn init_well_known_vars(
         .set_global("OSTYPE", ShellVariable::new(os_type))?;
 
     // PATH (if not already set)
-    if !shell.env().is_set("PATH") {
+    if !shell.env_is_set("PATH") {
         let default_path_str = std::env::join_paths(sys::fs::get_default_executable_search_paths())
             .unwrap_or_else(|_| PathBuf::from("").into());
         shell
@@ -454,7 +454,7 @@ pub(crate) fn init_well_known_vars(
     )?;
 
     // SHELL (if not already set)
-    if !shell.env().is_set("SHELL") {
+    if !shell.env_is_set("SHELL") {
         // Per docs, this should be the user's default login shell -- not the current shell.
         if let Some(default_shell) = sys::users::get_current_user_default_shell() {
             shell.env_mut().set_global(
@@ -489,13 +489,13 @@ pub(crate) fn init_well_known_vars(
 
     // PS1 / PS2
     if shell.options().interactive {
-        if !shell.env().is_set("PS1") {
+        if !shell.env_is_set("PS1") {
             shell
                 .env_mut()
                 .set_global("PS1", ShellVariable::new(r"\s-\v\$ "))?;
         }
 
-        if !shell.env().is_set("PS2") {
+        if !shell.env_is_set("PS2") {
             shell
                 .env_mut()
                 .set_global("PS2", ShellVariable::new("> "))?;
@@ -503,7 +503,7 @@ pub(crate) fn init_well_known_vars(
     }
 
     // PS4
-    if !shell.env().is_set("PS4") {
+    if !shell.env_is_set("PS4") {
         shell
             .env_mut()
             .set_global("PS4", ShellVariable::new("+ "))?;

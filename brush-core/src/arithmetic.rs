@@ -177,12 +177,12 @@ fn get_var_value<'a>(
     shell: &'a Shell<impl extensions::ShellExtensions>,
     name: &str,
 ) -> Result<Cow<'a, str>, EvalError> {
-    let value = shell.env_var(name).map(|var| var.resolve_value(shell));
-
-    if let Some(value) = value
-        && value.is_set()
+    // value_str() handles nameref resolution and subscripted namerefs
+    // (e.g., ref → arr[2]) in one call — no manual resolution needed.
+    if let Some(resolved) = shell.env_var(name)
+        && let Some(value) = resolved.value_str(shell)
     {
-        return Ok(value.to_cow_str(shell).to_string().into());
+        return Ok(value.to_string().into());
     }
 
     if shell.options().treat_unset_variables_as_error {
@@ -202,15 +202,18 @@ fn deref_lvalue(
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
 
-            shell
-                .env()
-                .get(name)
-                .map_or_else(
-                    || Ok(None),
-                    |(_, v)| v.value().get_at(index_str.as_str(), shell),
-                )
-                .map_err(|_err| EvalError::FailedToAccessArray)?
-                .unwrap_or(Cow::Borrowed(""))
+            // The explicit `index_str` from the ArrayElement parse takes precedence
+            // over any nameref subscript, so we use base_var() here.
+            if let Some(resolved) = shell.env().get(name) {
+                resolved
+                    .base_var()
+                    .value()
+                    .get_at(index_str.as_str(), shell)
+                    .map_err(|_err| EvalError::FailedToAccessArray)?
+                    .unwrap_or(Cow::Borrowed(""))
+            } else {
+                Cow::Borrowed("")
+            }
         }
     };
 

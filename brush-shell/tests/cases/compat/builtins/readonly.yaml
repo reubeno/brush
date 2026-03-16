@@ -26,7 +26,6 @@ cases:
       f
 
   - name: "readonly on nameref makes nameref readonly"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="value"
@@ -42,7 +41,6 @@ cases:
       echo "target: $target"
 
   - name: "readonly target through nameref assignment"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="value"

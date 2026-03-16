@@ -350,7 +350,6 @@ cases:
       echo "exit: $?"
 
   - name: "Arithmetic with nameref variable"
-    known_failure: true
     stdin: |
       counter=10
       declare -n ref=counter

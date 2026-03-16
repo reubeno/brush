@@ -3,13 +3,11 @@ common_test_files:
   - path: "helpers.sh"
     contents: |
       stable_print_assoc_array() {
-          # TODO(nameref): enable use of nameref when implemented; for now
-          # we assume the name of the array is assoc_array
-          # local -n assoc_array=$1
+          local -n _arr=$1
           local key
 
-          for key in $(printf "%s\n" "${!assoc_array[@]}" | sort -n); do
-              echo "\"${key}\" => ${assoc_array[${key}]}"
+          for key in $(printf "%s\n" "${!_arr[@]}" | sort -n); do
+              echo "\"${key}\" => ${_arr[${key}]}"
           done
       }
 
@@ -368,7 +366,6 @@ cases:
       declare -p target
 
   - name: "Nameref declare -n with initial value"
-    known_failure: true
     stdin: |
       target="original"
       declare -n ref=target
@@ -376,7 +373,6 @@ cases:
       echo "target: $target"
 
   - name: "Nameref remove attribute with +n"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -386,7 +382,6 @@ cases:
       declare -p ref
 
   - name: "Nameref to array via declare"
-    known_failure: true
     stdin: |
       arr=(one two three)
       declare -n ref=arr
@@ -396,7 +391,6 @@ cases:
       echo "ref[*]: ${ref[*]}"
 
   - name: "Nameref array modification via declare"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref=arr
@@ -405,7 +399,6 @@ cases:
       echo "ref[1]: ${ref[1]}"
 
   - name: "Nameref to associative array via declare"
-    known_failure: true
     stdin: |
       declare -A assoc=(["key1"]="val1" ["key2"]="val2")
       declare -n ref=assoc
@@ -413,7 +406,6 @@ cases:
       echo "ref[key2]: ${ref[key2]}"
 
   - name: "Nameref array iteration in function via local -n"
-    known_failure: true
     stdin: |
       print_array() {
           local -n arr=$1
@@ -427,7 +419,6 @@ cases:
       print_array myarr
 
   - name: "Nameref get keys via declare"
-    known_failure: true
     stdin: |
       declare -A assoc=(["a"]=1 ["b"]=2 ["c"]=3)
       declare -n ref=assoc
@@ -435,7 +426,6 @@ cases:
       echo "count: ${#ref[@]}"
 
   - name: "Nameref array length via declare"
-    known_failure: true
     stdin: |
       arr=(one two three four five)
       declare -n ref=arr

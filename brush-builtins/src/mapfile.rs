@@ -66,9 +66,9 @@ impl builtins::Command for MapFileCommand {
             }
         }
 
-        if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
+        if let Some(resolved) = context.shell.env().get(&self.array_var_name) {
             if matches!(
-                var.value(),
+                resolved.base_var().value(),
                 variables::ShellValue::AssociativeArray(_)
                     | variables::ShellValue::Unset(
                         variables::ShellValueUnsetType::AssociativeArray
