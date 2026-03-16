@@ -335,12 +335,12 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         // If there's a variable called PROMPT_COMMAND, then run it first.
         if options.run_prompt_command {
             if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
-                match prompt_cmd_var.value() {
+                match prompt_cmd_var.resolved_value(shell).into_owned() {
                     brush_core::ShellValue::String(cmd_str) => {
-                        Self::run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
+                        Self::run_pre_prompt_command(shell, cmd_str).await?;
                     }
                     brush_core::ShellValue::IndexedArray(values) => {
-                        let owned_values: Vec<_> = values.values().cloned().collect();
+                        let owned_values: Vec<_> = values.into_values().collect();
                         for cmd_str in owned_values {
                             Self::run_pre_prompt_command(shell, cmd_str).await?;
                         }
@@ -357,8 +357,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             // If there's a variable called precmd_functions, then call them.
             if let Some(brush_core::ShellValue::IndexedArray(precmd_funcs)) = shell
                 .env_var("precmd_functions")
-                .map(|var| var.value())
-                .cloned()
+                .map(|resolved| resolved.resolved_value(shell).into_owned())
             {
                 for func_name in precmd_funcs.values() {
                     let _ = shell
@@ -396,8 +395,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             // If there's a variable called preexec_functions, then call them.
             if let Some(brush_core::ShellValue::IndexedArray(preexec_funcs)) = shell
                 .env_var("preexec_functions")
-                .map(|var| var.value())
-                .cloned()
+                .map(|resolved| resolved.resolved_value(shell).into_owned())
             {
                 for func_name in preexec_funcs.values() {
                     let _ = shell

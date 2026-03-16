@@ -471,6 +471,9 @@ impl ShellVariable {
         s
     }
 
+    /// Applies type-based transforms to a value string before storage. For
+    /// `-i`, this is `i64` parse only; full arithmetic eval (`x=20+5`) happens
+    /// in `interp::apply_assignment` before reaching here.
     fn apply_value_transforms(
         s: &mut String,
         treat_as_int: bool,
@@ -736,6 +739,21 @@ impl ShellValue {
     /// Returns whether or not the value is set.
     pub const fn is_set(&self) -> bool {
         !matches!(self, Self::Unset(_))
+    }
+
+    /// Checks whether an element exists at the given index.
+    ///
+    /// Delegates to [`get_at`](Self::get_at) to guarantee semantic equivalence:
+    /// if `get_at(index, shell)` returns `Ok(Some(_))`, this returns `true`.
+    pub fn has_element_at(
+        &self,
+        index: &str,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> bool {
+        if matches!(self, Self::Unset(_)) {
+            return false;
+        }
+        self.get_at(index, shell).is_ok_and(|v| v.is_some())
     }
 
     /// Returns a new indexed array value constructed from the given slice of owned strings.
@@ -1086,5 +1104,108 @@ impl From<Vec<String>> for ShellValue {
 impl From<Vec<&str>> for ShellValue {
     fn from(values: Vec<&str>) -> Self {
         Self::indexed_array_from_strs(values.as_slice())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a default test shell. Uses `Shell::default()` which constructs a
+    /// minimal shell sufficient for value-level operations.
+    fn test_shell() -> Shell {
+        Shell::default()
+    }
+
+    //
+    // has_element_at — delegates to get_at, see get_at semantics for details.
+    //
+
+    #[test]
+    fn has_element_at_unset_is_false() {
+        let shell = test_shell();
+        let v = ShellValue::Unset(ShellValueUnsetType::Untyped);
+        assert!(!v.has_element_at("0", &shell));
+        assert!(!v.has_element_at("anything", &shell));
+    }
+
+    #[test]
+    fn has_element_at_string_index_zero() {
+        let shell = test_shell();
+        let v = ShellValue::String("hello".to_owned());
+        // For scalars, index 0 refers to the value itself.
+        assert!(v.has_element_at("0", &shell));
+    }
+
+    #[test]
+    fn has_element_at_string_other_indices() {
+        let shell = test_shell();
+        let v = ShellValue::String("hello".to_owned());
+        // Non-zero indices on a scalar: get_at uses u64 parse, so "1" parses
+        // and returns no element. "abc" defaults the parse to 0 and returns
+        // the scalar.
+        assert!(!v.has_element_at("1", &shell));
+    }
+
+    #[test]
+    fn has_element_at_indexed_array_present() {
+        let shell = test_shell();
+        let v = ShellValue::indexed_array_from_strs(&["a", "b", "c"]);
+        assert!(v.has_element_at("0", &shell));
+        assert!(v.has_element_at("1", &shell));
+        assert!(v.has_element_at("2", &shell));
+    }
+
+    #[test]
+    fn has_element_at_indexed_array_missing() {
+        let shell = test_shell();
+        let v = ShellValue::indexed_array_from_strs(&["a", "b", "c"]);
+        assert!(!v.has_element_at("3", &shell));
+        assert!(!v.has_element_at("99", &shell));
+    }
+
+    #[test]
+    fn has_element_at_indexed_array_negative_index() {
+        let shell = test_shell();
+        let v = ShellValue::indexed_array_from_strs(&["a", "b", "c"]);
+        // Negative indices wrap from the end: -1 = "c".
+        assert!(v.has_element_at("-1", &shell));
+        assert!(v.has_element_at("-3", &shell));
+        // -4 wraps past the start.
+        assert!(!v.has_element_at("-4", &shell));
+    }
+
+    #[test]
+    fn has_element_at_associative_array_present() {
+        let shell = test_shell();
+        let mut map = BTreeMap::new();
+        map.insert("foo".to_owned(), "bar".to_owned());
+        map.insert("baz".to_owned(), "qux".to_owned());
+        let v = ShellValue::AssociativeArray(map);
+        assert!(v.has_element_at("foo", &shell));
+        assert!(v.has_element_at("baz", &shell));
+    }
+
+    #[test]
+    fn has_element_at_associative_array_missing() {
+        let shell = test_shell();
+        let mut map = BTreeMap::new();
+        map.insert("foo".to_owned(), "bar".to_owned());
+        let v = ShellValue::AssociativeArray(map);
+        assert!(!v.has_element_at("missing", &shell));
+        assert!(!v.has_element_at("", &shell));
+    }
+
+    #[test]
+    fn has_element_at_sparse_indexed_array() {
+        let shell = test_shell();
+        let mut elements = BTreeMap::new();
+        elements.insert(5_u64, "five".to_owned());
+        elements.insert(10_u64, "ten".to_owned());
+        let v = ShellValue::IndexedArray(elements);
+        assert!(v.has_element_at("5", &shell));
+        assert!(v.has_element_at("10", &shell));
+        assert!(!v.has_element_at("0", &shell));
+        assert!(!v.has_element_at("7", &shell));
     }
 }

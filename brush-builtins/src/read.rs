@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use brush_core::{ErrorKind, builtins, env, error, variables};
+use brush_core::{ErrorKind, builtins, error, variables};
 
 use std::io::{Read, Write};
 
@@ -167,22 +167,16 @@ fn assign_input_to_variables(
 ) -> Result<(), brush_core::Error> {
     if let Some(array_variable) = array_variable {
         let literal_fields = build_array_fields(input_line, ifs, skip_ifs_splitting);
-        shell.env_mut().update_or_add(
+        shell.env_mut().set_var(
             array_variable,
             variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
-            |_| Ok(()),
-            env::EnvironmentLookup::Anywhere,
-            env::EnvironmentScope::Global,
         )?;
     } else if !variable_names.is_empty() {
         assign_to_named_variables(shell, input_line, ifs, skip_ifs_splitting, variable_names)?;
     } else {
-        shell.env_mut().update_or_add(
+        shell.env_mut().set_var(
             "REPLY",
             variables::ShellValueLiteral::Scalar(input_line.unwrap_or_default().to_owned()),
-            |_| Ok(()),
-            env::EnvironmentLookup::Anywhere,
-            env::EnvironmentScope::Global,
         )?;
     }
     Ok(())
@@ -215,13 +209,9 @@ fn assign_to_named_variables(
             fields.pop_front().unwrap_or_default()
         };
 
-        shell.env_mut().update_or_add(
-            name,
-            variables::ShellValueLiteral::Scalar(value),
-            |_| Ok(()),
-            env::EnvironmentLookup::Anywhere,
-            env::EnvironmentScope::Global,
-        )?;
+        shell
+            .env_mut()
+            .set_var(name, variables::ShellValueLiteral::Scalar(value))?;
 
         if is_last {
             break;

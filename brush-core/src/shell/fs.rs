@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use normalize_path::NormalizePath as _;
 
 use crate::{
-    ExecutionParameters, ShellFd,
-    env::{EnvironmentLookup, EnvironmentScope},
-    error, openfiles, pathsearch,
+    ExecutionParameters, ShellFd, error, openfiles, pathsearch,
     sys::{fs::PathExt as _, users},
     variables,
 };
@@ -37,21 +35,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let pwd = cleaned_path.to_string_lossy().to_string();
 
-        self.env.update_or_add(
-            "PWD",
-            variables::ShellValueLiteral::Scalar(pwd),
-            |_| Ok(()),
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
+        self.env
+            .set_var("PWD", variables::ShellValueLiteral::Scalar(pwd))?;
         let oldpwd = std::mem::replace(self.working_dir_mut(), cleaned_path);
 
-        self.env.update_or_add(
+        self.env.set_var(
             "OLDPWD",
             variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
-            |_| Ok(()),
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
         )?;
 
         Ok(())

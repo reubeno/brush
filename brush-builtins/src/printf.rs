@@ -34,14 +34,18 @@ impl builtins::Command for PrintfCommand {
                 brush_core::ErrorKind::PrintfInvalidUsage("invalid UTF-8 output".into())
             })?;
 
-            // Assign to the selected variable.
-            expansion::assign_to_named_parameter(
+            // Assign to the selected variable. If the assignment was skipped
+            // (e.g. circular nameref), exit non-zero to match bash.
+            let assigned = expansion::assign_to_named_parameter(
                 context.shell,
                 &context.params,
                 variable_name,
                 result_str,
             )
             .await?;
+            if !assigned {
+                return Ok(ExecutionResult::general_error());
+            }
         } else {
             format(self.format_and_args.as_slice(), context.stdout())?;
             context.stdout().flush()?;

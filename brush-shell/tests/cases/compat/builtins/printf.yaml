@@ -339,7 +339,6 @@ cases:
       printf '~%q\n' ''
 
   - name: "printf -v through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=target
       printf -v ref "formatted %d" 42

@@ -14,7 +14,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
-    Shell, ShellFd, builtins, commands, env, error, escape,
+    Shell, ShellFd, builtins, commands, error, escape,
     extensions::{self, ShellExtensions},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
@@ -259,12 +259,9 @@ pub(crate) async fn on_preexecute(
     // Set BASH_COMMAND before invoking the DEBUG trap (and generally before
     // executing commands).
     let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
-    cmd.shell.env_mut().update_or_add(
+    cmd.shell.env_mut().set_var(
         "BASH_COMMAND",
         variables::ShellValueLiteral::Scalar(full_cmd),
-        |_| Ok(()),
-        env::EnvironmentLookup::Anywhere,
-        env::EnvironmentScope::Global,
     )?;
 
     // Fire the DEBUG trap if one is registered.

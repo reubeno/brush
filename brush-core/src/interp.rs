@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
-use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
+use crate::env::{self, EnvironmentLookup, EnvironmentScope, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -840,9 +840,33 @@ impl Execute for ast::ForClauseCommand {
                 }
             }
 
-            // Update the variable.
+            // for-in writes the nameref itself (retargets it), matching bash.
+            // Arithmetic-for goes through apply_assignment and DOES resolve.
+            // See the "for-in vs arithmetic-for" compat test.
+            //
+            // If the loop variable is currently a nameref, the value being
+            // written must be a valid nameref target name; bash aborts the
+            // loop on invalid targets like "1bad" or "a b".
+            //
+            // The is-nameref check runs every iteration on purpose: the loop
+            // body may drop the attribute (`declare +n ref`), after which
+            // remaining iterations should write the value as a plain string
+            // without validation. See the "for-in re-checks nameref attribute"
+            // compat test.
+            let is_nameref = shell
+                .env()
+                .lookup(self.variable_name.as_str())
+                .bypassing_nameref()
+                .get()
+                .is_some_and(|(_, v)| v.is_treated_as_nameref());
+            if is_nameref && !crate::env::valid_nameref_target_name(&value) {
+                writeln!(shell.stderr(), "`{value}': not a valid identifier")?;
+                result = ExecutionExitCode::GeneralError.into();
+                break;
+            }
+
             shell.env_mut().update_or_add(
-                &self.variable_name,
+                crate::env::NameRef::bypass(&self.variable_name),
                 ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 EnvironmentLookup::Anywhere,
@@ -1494,6 +1518,49 @@ async fn apply_assignment(
         }
     };
 
+    // Fast path: most assignments don't touch a nameref. One bypass-lookup
+    // tells us so cheaply, and we skip the full resolve_nameref (which would
+    // allocate a String via Cow::into_owned for the non-nameref Borrowed case).
+    let is_nameref = shell
+        .env()
+        .lookup(variable_name.as_str())
+        .bypassing_nameref()
+        .get()
+        .is_some_and(|(_, v)| v.is_treated_as_nameref());
+
+    let resolved_name = if is_nameref {
+        let resolved = match shell.env().resolve_nameref(variable_name) {
+            Ok(r) => r,
+            Err(err) if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) => {
+                shell.warn_circular_nameref(&err)?;
+                shell.set_last_exit_status(1);
+                return Ok(());
+            }
+            Err(err) => return Err(err),
+        };
+        // If the nameref resolved to `arr[i]`, use that subscript as the array
+        // index (unless an explicit subscript is already present). Compound or
+        // explicit-subscript assignments through a subscripted target are
+        // rejected as "not a valid identifier" — print and skip with exit 1,
+        // matching bash and the parallel path in expansion::assign_to_parameter.
+        if let Some(idx) = resolved.subscript() {
+            if matches!(assignment.value, ast::AssignmentValue::Array(_)) || array_index.is_some() {
+                writeln!(
+                    shell.stderr(),
+                    "`{}[{}]': not a valid identifier",
+                    resolved.name(),
+                    idx,
+                )?;
+                shell.set_last_exit_status(1);
+                return Ok(());
+            }
+            array_index = Some(idx.to_owned());
+        }
+        resolved.without_subscript()
+    } else {
+        env::ResolvedName::plain(variable_name.clone())
+    };
+
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
@@ -1538,34 +1605,57 @@ async fn apply_assignment(
             .await;
     }
 
-    // See if we need to eval an array index.
-    if let Some(idx) = &array_index {
-        let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env().get(variable_name)
-        {
+    // Inspect the existing variable for both attribute flags we need —
+    // indexed-array-ness (for array-index arithmetic eval) and integer-ness
+    // (for RHS arithmetic eval) — in a single read. The mutable lookup later
+    // is unavoidable: arithmetic expansions between here and the write may
+    // mutate `shell`, so the borrow checker won't let us hold this read across
+    // them. Non-existent variables default to indexed and non-integer.
+    let (will_be_indexed_array, target_is_integer) = if let Some((_, existing)) =
+        shell.env().lookup_resolved(&resolved_name).get()
+    {
+        (
             matches!(
-                existing_value.value(),
+                existing.value(),
                 ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
-            )
-        } else {
-            true
-        };
+            ),
+            existing.is_treated_as_integer(),
+        )
+    } else {
+        (true, false)
+    };
 
-        if will_be_indexed_array {
-            array_index = Some(
-                arithmetic::expand_and_eval(shell, params, idx.as_str(), false)
-                    .await?
-                    .to_string(),
-            );
-        }
+    // See if we need to eval an array index as arithmetic.
+    if let Some(idx) = &array_index
+        && will_be_indexed_array
+    {
+        array_index = Some(
+            arithmetic::expand_and_eval(shell, params, idx.as_str(), false)
+                .await?
+                .to_string(),
+        );
     }
+
+    // If the target variable has the integer attribute, evaluate scalar values
+    // as arithmetic expressions. In bash, `declare -i x; x=20+5` sets x to 25.
+    let new_value = if target_is_integer {
+        match new_value {
+            ShellValueLiteral::Scalar(s) => {
+                let result = arithmetic::expand_and_eval(shell, params, &s, false).await?;
+                ShellValueLiteral::Scalar(result.to_string())
+            }
+            arr @ ShellValueLiteral::Array(_) => arr,
+        }
+    } else {
+        new_value
+    };
 
     // Read option before taking mutable borrow on env.
     let export_variables_on_modification = shell.options().export_variables_on_modification;
 
     // See if we can find an existing value associated with the variable.
     if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().get_mut(variable_name.as_str())
+        shell.env_mut().lookup_mut_resolved(&resolved_name).get()
     {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {
@@ -1623,7 +1713,9 @@ async fn apply_assignment(
         new_var.export();
     }
 
-    shell.env_mut().add(variable_name, new_var, creation_scope)
+    shell
+        .env_mut()
+        .add(resolved_name.into_name(), new_var, creation_scope)
 }
 
 #[expect(clippy::too_many_lines)]

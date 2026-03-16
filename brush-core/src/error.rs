@@ -49,9 +49,16 @@ pub enum ErrorKind {
     #[error("cannot assign in this way")]
     CannotAssignToSpecialParameter,
 
-    /// Checked expansion error.
-    #[error("expansion error: {0}")]
-    CheckedExpansionError(String),
+    /// Checked expansion error (`${var:?message}` and similar).
+    /// `name` is the parameter name; `message` is the explicit error message if
+    /// provided, otherwise "parameter null or not set".
+    #[error("{name}: {message}")]
+    CheckedExpansionError {
+        /// The parameter name being checked (e.g., `var` from `${var:?...}`).
+        name: String,
+        /// The checked-expansion error message.
+        message: String,
+    },
 
     /// A reference was made to an unknown shell function.
     #[error("function not found: {0}")]
@@ -318,6 +325,21 @@ pub enum ErrorKind {
     /// A glob pattern failed to match any files (failglob).
     #[error("no match: {0}")]
     NoMatch(String),
+
+    /// A circular name reference was detected.
+    #[error("{0}: circular name reference")]
+    CircularNameReference(String),
+
+    /// A nameref resolved to a subscripted target (e.g., `arr[2]`) but the
+    /// caller's operation requires a plain variable name — e.g. compound
+    /// array assignment, or an explicit subscript override.
+    #[error("`{name}[{subscript}]': not a valid identifier")]
+    SubscriptedNameRefTarget {
+        /// Resolved base variable name.
+        name: String,
+        /// Subscript embedded in the resolved nameref target.
+        subscript: String,
+    },
 }
 
 /// Trait implementable by built-in commands to represent errors.

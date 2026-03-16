@@ -745,13 +745,7 @@ impl Spec {
 
         let mut vars_to_remove = Vec::with_capacity(vars_and_values.len());
         for (var, value) in vars_and_values {
-            shell.env_mut().update_or_add(
-                var,
-                value,
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
+            shell.env_mut().set_var(var, value)?;
 
             vars_to_remove.push(var);
         }
