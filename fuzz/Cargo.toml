@@ -20,7 +20,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.102"
-assert_cmd = "2.1.2"
+assert_cmd = "2.2.0"
 libfuzzer-sys = "0.4"
 tokio = { version = "1.50.0", features = ["rt"] }
 
