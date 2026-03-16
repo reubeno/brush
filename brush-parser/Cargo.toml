@@ -38,11 +38,11 @@ serde = { version = "1.0.228", optional = true, features = ["derive", "rc"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
 utf8-chars = "3.0.6"
-winnow = { version = "0.7.14", optional = true }
+winnow = { version = "0.7.15", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.4.1", features = ["wasm_js"] }
-uuid = { version = "1.21.0", features = ["js"] }
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
+uuid = { version = "1.22.0", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
