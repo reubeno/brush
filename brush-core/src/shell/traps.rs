@@ -5,8 +5,10 @@ use crate::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error, tra
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Runs any exit steps for the shell.
     pub async fn on_exit(&mut self) -> Result<(), error::Error> {
-        self.invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
-            .await?;
+        if self.traps.handles(TrapSignal::Exit) {
+            self.invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
+                .await?;
+        }
 
         Ok(())
     }

@@ -197,6 +197,11 @@ impl TrapHandlerConfig {
         self.handlers.get(&signal_type)
     }
 
+    /// Returns whether a handler is registered for the given signal.
+    pub fn handles(&self, signal_type: TrapSignal) -> bool {
+        self.handlers.contains_key(&signal_type)
+    }
+
     /// Registers a handler for a trap signal.
     ///
     /// # Arguments

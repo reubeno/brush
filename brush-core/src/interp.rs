@@ -400,9 +400,11 @@ impl Execute for ast::Pipeline {
         // exactly the same contexts it suppresses errexit (conditionals, `!`-prefixed
         // pipelines, etc.).
         if !result.is_success() && !params.suppress_errexit && !self.bang {
-            shell
-                .invoke_trap_handler(crate::traps::TrapSignal::Err, &params)
-                .await?;
+            if shell.traps().handles(crate::traps::TrapSignal::Err) {
+                shell
+                    .invoke_trap_handler(crate::traps::TrapSignal::Err, &params)
+                    .await?;
+            }
         }
 
         // Apply errexit if not suppressed (and not negated)
