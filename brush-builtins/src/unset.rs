@@ -43,17 +43,32 @@ impl builtins::Command for UnsetCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        //
-        // TODO(nameref): implement nameref
-        //
-        if self.name_interpretation.name_references {
-            return brush_core::error::unimp("unset: name references are not yet implemented");
-        }
-
         let unspecified = self.name_interpretation.unspecified();
 
         #[expect(clippy::needless_continue)]
         for name in &self.names {
+            if self.name_interpretation.name_references {
+                // `unset -n`: removes the nameref variable itself, not its target.
+                // Per bash semantics, `unset -n` on a non-nameref variable is a
+                // silent no-op — the variable is left untouched.
+                let is_nameref = context
+                    .shell
+                    .env()
+                    .lookup(name.as_str())
+                    .bypassing_nameref()
+                    .get()
+                    .is_some_and(|(_, v)| v.is_treated_as_nameref());
+                if is_nameref {
+                    context
+                        .shell
+                        .env_mut()
+                        .unset(brush_core::env::NameRef::bypass(name.as_str()))?;
+                }
+                // `unset -n` never touches functions or array elements — it
+                // operates only on nameref variables. Skip the rest of the loop.
+                continue;
+            }
+
             if unspecified || self.name_interpretation.shell_variables {
                 // Try to parse the name as a parameter. If we can't, don't bail; it may not be a
                 // valid variable name/parameter but could still be a function name.
@@ -98,8 +113,20 @@ fn unset_array_index(
     name: &str,
     index: &str,
 ) -> Result<bool, brush_core::Error> {
-    // First check to see if it's an associative array.
-    let is_assoc_array = if let Some((_, var)) = shell.env().get(name) {
+    // Resolve the nameref once upfront to avoid double resolution.
+    // Circular namerefs silently fall back to the identity name (bash doesn't
+    // warn in the unset-array-element path).
+    let resolved = shell.env().resolve_nameref_or_self_on_cycle(name)?;
+
+    // Subscripted-target nameref + explicit index is rejected by bash —
+    // `arr[N][explicit_idx]` isn't a valid identifier. Treat as no-op.
+    if resolved.subscript().is_some() {
+        return Ok(false);
+    }
+
+    // Check if the resolved target is an associative array (use lookup with the
+    // already-resolved name to avoid redundant nameref resolution).
+    let is_assoc_array = if let Some((_, var)) = shell.env().lookup_resolved(&resolved).get() {
         matches!(
             var.value(),
             ShellValue::AssociativeArray(_)
@@ -120,6 +147,10 @@ fn unset_array_index(
         evaluated_index.to_string().into()
     };
 
-    // Now we can try to unset, and return the result.
-    shell.env_mut().unset_index(name, index_to_use.as_ref())
+    // Use lookup_mut with the already-resolved name to avoid redundant nameref resolution.
+    if let Some((_, var)) = shell.env_mut().lookup_mut_resolved(&resolved).get() {
+        var.unset_index(index_to_use.as_ref())
+    } else {
+        Ok(false)
+    }
 }

@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -270,6 +271,38 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         self.call_stack.increment_current_line_offset(delta);
     }
 
+    /// Returns the basename of `$0` for use in diagnostic message prefixes
+    /// (matches bash's `bash: warning: ...` style).
+    pub(crate) fn diagnostic_prefix(&self) -> Cow<'_, str> {
+        let shell_name = self.current_shell_name().unwrap_or_else(|| "brush".into());
+        match shell_name {
+            Cow::Borrowed(s) => std::path::Path::new(s)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .map_or(Cow::Borrowed(s), Cow::Borrowed),
+            Cow::Owned(s) => {
+                let basename = std::path::Path::new(&s)
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .map(str::to_owned)
+                    .unwrap_or(s);
+                Cow::Owned(basename)
+            }
+        }
+    }
+
+    /// Emits a circular-nameref warning to `self.stderr()`, matching bash's
+    /// format `"<prefix>: warning: <err>"`. Asserts in debug builds that the
+    /// error kind is `CircularNameReference`.
+    pub fn warn_circular_nameref(&mut self, err: &error::Error) -> std::io::Result<()> {
+        debug_assert!(
+            matches!(err.kind(), error::ErrorKind::CircularNameReference(_)),
+            "warn_circular_nameref called with non-cycle error: {err:?}",
+        );
+        let prefix = self.diagnostic_prefix().into_owned();
+        writeln!(self.stderr(), "{prefix}: warning: {err}")
+    }
+
     /// Updates the currently executing command in the shell.
     pub fn set_current_cmd(&mut self, cmd: &impl brush_parser::ast::Node) {
         self.call_stack
@@ -293,8 +326,10 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // diagnostics are harmless.
         if self
             .env
-            .get_using_policy("_", crate::env::EnvironmentLookup::Anywhere)
-            .is_some_and(|v| v.is_readonly())
+            .lookup("_")
+            .bypassing_nameref()
+            .get()
+            .is_some_and(|(_, v)| v.is_readonly())
         {
             return;
         }

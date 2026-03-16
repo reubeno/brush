@@ -5,6 +5,7 @@ use std::io::Write;
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
+    error,
     parser::ast,
     variables,
 };
@@ -86,12 +87,36 @@ impl ExportCommand {
                     }
                 }
                 // Try to find the variable already present; if we find it, then mark it
-                // exported.
-                else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
-                    if self.unexport {
-                        variable.unexport();
-                    } else {
-                        variable.export();
+                // exported. Subscripted-nameref targets (e.g., ref→arr[1]) are rejected
+                // as "not a valid identifier". Circular namerefs emit a warning and skip.
+                else {
+                    // Single resolve — reuse the result for both the cycle/subscript
+                    // check and the mutable lookup (no redundant chain walk).
+                    let resolved = match context.shell.env().resolve_nameref(s) {
+                        Ok(r) => r,
+                        Err(err)
+                            if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) =>
+                        {
+                            context.shell.warn_circular_nameref(&err)?;
+                            return Ok(ExecutionResult::success());
+                        }
+                        Err(err) => return Err(err),
+                    };
+                    if let Some(sub) = resolved.subscript() {
+                        writeln!(
+                            context.stderr(),
+                            "{}: `{}[{sub}]': not a valid identifier",
+                            context.command_name,
+                            resolved.name(),
+                        )?;
+                    } else if let Some((_, var)) =
+                        context.shell.env_mut().lookup_mut_resolved(&resolved).get()
+                    {
+                        if self.unexport {
+                            var.unexport();
+                        } else {
+                            var.export();
+                        }
                     }
                 }
             }

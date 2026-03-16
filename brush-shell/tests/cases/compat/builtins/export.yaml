@@ -28,7 +28,6 @@ cases:
       env | grep MY_TEST_VAR
 
   - name: "Export with assignment through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=MY_EXPORT_VAR
       export ref="exported_value"

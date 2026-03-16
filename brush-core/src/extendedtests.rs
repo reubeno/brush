@@ -2,7 +2,7 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    ExecutionParameters, Shell, ShellFd, arithmetic, env, error, escape, expansion, extensions,
+    ExecutionParameters, Shell, ShellFd, arithmetic, error, escape, expansion, extensions,
     namedoptions, patterns,
     sys::{
         fs::{MetadataExt, PathExt},
@@ -184,11 +184,71 @@ pub(crate) fn apply_unary_predicate_to_str(
                 Ok(false)
             }
         }
-        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env().is_set(operand)),
-        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => match shell.env().get(operand) {
-            Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
-            None => Ok(false),
-        },
+        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
+            // Two cases for `[[ -v <operand> ]]`:
+            //
+            // 1. `<operand>` is a bare name like "ref": bash resolves the
+            //    nameref chain unparsed (so `ref→arr[2]` looks up the literal
+            //    variable named "arr[2]", which doesn't exist).
+            //
+            // 2. `<operand>` is `name[index]`: bash resolves the nameref on
+            //    `name` only, then checks whether the element at `index`
+            //    exists on the resolved target.
+            //
+            // Circular namerefs silently treat as unset.
+            if let Some((name_part, index_part)) = split_subscript(operand) {
+                // Case 2: parse the name + index, resolve nameref on the name
+                // part only, check element at the explicit index.
+                let Ok(resolved) = shell.env().resolve_nameref(name_part) else {
+                    return Ok(false);
+                };
+                if resolved.subscript().is_some() {
+                    // ref→arr[N] with explicit `[index]` is treated as unset.
+                    return Ok(false);
+                }
+                let Some((_, var)) = shell.env().lookup_resolved(&resolved).get() else {
+                    return Ok(false);
+                };
+                Ok(var.value().has_element_at(index_part, shell))
+            } else {
+                // Case 1: unparsed-resolve + literal HashMap lookup.
+                let resolved_name = shell
+                    .env()
+                    .resolve_nameref_unparsed(operand)
+                    .unwrap_or_else(|_| operand.to_owned());
+                if let Some((_, var)) = shell
+                    .env()
+                    .lookup(resolved_name.as_str())
+                    .bypassing_nameref()
+                    .get()
+                {
+                    Ok(!matches!(
+                        var.value(),
+                        crate::variables::ShellValue::Unset(_)
+                    ))
+                } else {
+                    Ok(false)
+                }
+            }
+        }
+        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
+            match shell.env().lookup(operand).bypassing_nameref().get() {
+                Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
+                None => Ok(false),
+            }
+        }
+    }
+}
+
+/// Splits `name[index]` into (`name`, `index`); returns `None` if the operand
+/// isn't a subscripted form.
+fn split_subscript(operand: &str) -> Option<(&str, &str)> {
+    let without_close = operand.strip_suffix(']')?;
+    let (name, index) = without_close.split_once('[')?;
+    if name.is_empty() {
+        None
+    } else {
+        Some((name, index))
     }
 }
 
@@ -232,13 +292,7 @@ async fn apply_binary_predicate(
                     .collect(),
             ));
 
-            shell.env_mut().update_or_add(
-                "BASH_REMATCH",
-                captures_value,
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
+            shell.env_mut().set_var("BASH_REMATCH", captures_value)?;
 
             Ok(matches)
         }

@@ -346,35 +346,26 @@ fn update_variables<SE: brush_core::ShellExtensions>(
     result: GetOptsResult,
 ) -> Result<ExecutionResult, brush_core::Error> {
     // Update variable value.
-    context.shell.env_mut().update_or_add(
+    context.shell.env_mut().set_var(
         variable_name,
         variables::ShellValueLiteral::Scalar(result.variable_value),
-        |_| Ok(()),
-        brush_core::env::EnvironmentLookup::Anywhere,
-        brush_core::env::EnvironmentScope::Global,
     )?;
 
     // Update OPTARG
     if let Some(optarg) = result.optarg {
-        context.shell.env_mut().update_or_add(
-            "OPTARG",
-            variables::ShellValueLiteral::Scalar(optarg),
-            |_| Ok(()),
-            brush_core::env::EnvironmentLookup::Anywhere,
-            brush_core::env::EnvironmentScope::Global,
-        )?;
+        context
+            .shell
+            .env_mut()
+            .set_var("OPTARG", variables::ShellValueLiteral::Scalar(optarg))?;
     } else {
         context.shell.env_mut().unset("OPTARG")?;
     }
 
     // Update OPTIND and record it so we can detect external modifications.
     let optind_str = result.optind.to_string();
-    context.shell.env_mut().update_or_add(
+    context.shell.env_mut().set_var(
         "OPTIND",
         variables::ShellValueLiteral::Scalar(optind_str.clone()),
-        |_| Ok(()),
-        brush_core::env::EnvironmentLookup::Anywhere,
-        brush_core::env::EnvironmentScope::Global,
     )?;
     context.shell.env_mut().update_or_add(
         VAR_GETOPTS_LAST_OPTIND,

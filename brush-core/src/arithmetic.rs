@@ -1,8 +1,9 @@
 //! Arithmetic evaluation
 
 use std::borrow::Cow;
+use std::io::Write;
 
-use crate::{ExecutionParameters, Shell, env, expansion, extensions, variables};
+use crate::{ExecutionParameters, Shell, error, expansion, extensions, variables};
 use brush_parser::ast;
 
 /// Maximum recursion depth for arithmetic variable dereference chains
@@ -177,12 +178,12 @@ fn get_var_value<'a>(
     shell: &'a Shell<impl extensions::ShellExtensions>,
     name: &str,
 ) -> Result<Cow<'a, str>, EvalError> {
-    let value = shell.env_var(name).map(|var| var.resolve_value(shell));
-
-    if let Some(value) = value
-        && value.is_set()
+    // value_str() handles nameref resolution and subscripted namerefs
+    // (e.g., ref → arr[2]) in one call — no manual resolution needed.
+    if let Some(resolved) = shell.env_var(name)
+        && let Some(value) = resolved.value_str(shell)
     {
-        return Ok(value.to_cow_str(shell).to_string().into());
+        return Ok(value.to_string().into());
     }
 
     if shell.options().treat_unset_variables_as_error {
@@ -202,15 +203,18 @@ fn deref_lvalue(
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
 
-            shell
-                .env()
-                .get(name)
-                .map_or_else(
-                    || Ok(None),
-                    |(_, v)| v.value().get_at(index_str.as_str(), shell),
-                )
-                .map_err(|_err| EvalError::FailedToAccessArray)?
-                .unwrap_or(Cow::Borrowed(""))
+            // The explicit `index_str` from the ArrayElement parse takes precedence
+            // over any nameref subscript, so we use base_var() here.
+            if let Some(resolved) = shell.env().lookup(name).get() {
+                resolved
+                    .base_var()
+                    .value()
+                    .get_at(index_str.as_str(), shell)
+                    .map_err(|_err| EvalError::FailedToAccessArray)?
+                    .unwrap_or(Cow::Borrowed(""))
+            } else {
+                Cow::Borrowed("")
+            }
         }
     };
 
@@ -367,37 +371,34 @@ fn assign(
     value: i64,
     depth: u32,
 ) -> Result<i64, EvalError> {
-    match lvalue {
-        ast::ArithmeticTarget::Variable(name) => {
-            shell
-                .env_mut()
-                .update_or_add(
-                    name.as_str(),
-                    variables::ShellValueLiteral::Scalar(value.to_string()),
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )
-                .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
-        }
+    let result = match lvalue {
+        ast::ArithmeticTarget::Variable(name) => shell.env_mut().set_var(
+            name.as_str(),
+            variables::ShellValueLiteral::Scalar(value.to_string()),
+        ),
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
-
             shell
                 .env_mut()
-                .update_or_add_array_element(
-                    name.as_str(),
-                    index_str,
-                    value.to_string(),
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )
-                .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
+                .set_var_element(name.as_str(), index_str, value.to_string())
         }
-    }
+    };
 
-    Ok(value)
+    match result {
+        Ok(()) => Ok(value),
+        Err(err)
+            if matches!(
+                err.kind(),
+                error::ErrorKind::SubscriptedNameRefTarget { .. }
+            ) =>
+        {
+            // Bash emits a warning but treats the arithmetic expression as
+            // having evaluated successfully (exit 0 from `((...))`).
+            let _ = writeln!(shell.stderr(), "{err}");
+            Ok(value)
+        }
+        Err(_) => Err(EvalError::FailedToUpdateEnvironment),
+    }
 }
 
 const fn bool_to_i64(value: bool) -> i64 {

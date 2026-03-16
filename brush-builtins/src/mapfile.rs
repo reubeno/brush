@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use clap::Parser;
 
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
+use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, error, variables};
 
 /// Read lines from standard input into an indexed array variable.
 #[derive(Parser)]
@@ -66,9 +66,9 @@ impl builtins::Command for MapFileCommand {
             }
         }
 
-        if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
+        if let Some(resolved) = context.shell.env().lookup(&self.array_var_name).get() {
             if matches!(
-                var.value(),
+                resolved.base_var().value(),
                 variables::ShellValue::AssociativeArray(_)
                     | variables::ShellValue::Unset(
                         variables::ShellValueUnsetType::AssociativeArray
@@ -91,33 +91,44 @@ impl builtins::Command for MapFileCommand {
         // Read!
         let results = self.read_entries(input_file)?;
 
-        if let Some(origin) = self.origin {
+        let write_result: Result<(), brush_core::Error> = if let Some(origin) = self.origin {
             // -O: preserve existing array, assign at offset.
-            for (elem_idx, (_key, value)) in results.0.into_iter().enumerate() {
-                // If the user is getting to wraparounds in *bash*, they got bigger problems.
-                #[allow(clippy::cast_possible_wrap)]
-                let elem_idx = elem_idx as i64;
-                context.shell.env_mut().update_or_add_array_element(
-                    &self.array_var_name,
-                    (elem_idx + origin).to_string(),
-                    value,
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )?;
-            }
+            (|| {
+                for (elem_idx, (_key, value)) in results.0.into_iter().enumerate() {
+                    // If the user is getting to wraparounds in *bash*, they got bigger problems.
+                    #[allow(clippy::cast_possible_wrap)]
+                    let elem_idx = elem_idx as i64;
+                    context.shell.env_mut().set_var_element(
+                        &self.array_var_name,
+                        (elem_idx + origin).to_string(),
+                        value,
+                    )?;
+                }
+                Ok(())
+            })()
         } else {
             // No -O: replace the entire variable (clears existing).
-            context.shell.env_mut().update_or_add(
+            context.shell.env_mut().set_var(
                 &self.array_var_name,
                 variables::ShellValueLiteral::Array(results),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-        }
+            )
+        };
 
-        Ok(ExecutionResult::success())
+        match write_result {
+            Ok(()) => Ok(ExecutionResult::success()),
+            Err(err) if matches!(err.kind(), ErrorKind::CircularNameReference(_)) => {
+                // Bash emits a warning but exits 0 from mapfile on cycle.
+                context.shell.warn_circular_nameref(&err)?;
+                Ok(ExecutionResult::success())
+            }
+            Err(err) if matches!(err.kind(), ErrorKind::SubscriptedNameRefTarget { .. }) => {
+                // Bash exits 1 with a "<cmd>: target: not a valid identifier"
+                // diagnostic.
+                writeln!(context.stderr(), "{}: {err}", context.command_name)?;
+                Ok(ExecutionResult::general_error())
+            }
+            Err(err) => Err(err),
+        }
     }
 }
 
