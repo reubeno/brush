@@ -1211,6 +1211,15 @@ cases:
       fi
       echo "after"
 
+  - name: "coproc with name and brace group"
+    known_failure: true # TODO(coproc): coproc not implemented
+    stdin: |
+      f() { coproc MYCOPROC { echo hello; }; }
+      f
+        echo "else"
+      fi
+      echo "after"
+
   # Additional edge cases
   - name: "Subshell in assignment with errexit"
     known_failure: true # TODO(arithmetic): $(( exit 5 )) is parsed differently from bash

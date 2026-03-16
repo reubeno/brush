@@ -446,6 +446,8 @@ pub enum CompoundCommand {
     WhileClause(WhileOrUntilClauseCommand),
     /// An until clause, which loops until a condition is met.
     UntilClause(WhileOrUntilClauseCommand),
+    /// A coprocess, which runs a command asynchronously in a subshell.
+    Coprocess(CoprocessCommand),
 }
 
 impl Node for CompoundCommand {}
@@ -462,6 +464,7 @@ impl SourceLocation for CompoundCommand {
             Self::IfClause(i) => i.location(),
             Self::WhileClause(w) => w.location(),
             Self::UntilClause(u) => u.location(),
+            Self::Coprocess(c) => c.location(),
         }
     }
 }
@@ -487,6 +490,9 @@ impl Display for CompoundCommand {
             }
             Self::UntilClause(while_or_until_clause_command) => {
                 write!(f, "until {while_or_until_clause_command}")
+            }
+            Self::Coprocess(coproc_clause_command) => {
+                write!(f, "{coproc_clause_command}")
             }
         }
     }
@@ -842,6 +848,46 @@ impl Display for ElseClause {
             "{}",
             self.body
         )
+    }
+}
+
+/// A coprocess command, which runs a command asynchronously in a subshell.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
+pub struct CoprocessCommand {
+    /// The optional name for the coprocess.
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(skip_serializing_if = "Option::is_none", default)
+    )]
+    pub name: Option<Word>,
+    /// The command to run as a coprocess (can be simple or compound).
+    pub body: Box<Command>,
+    /// The location of this command in the source.
+    #[cfg_attr(any(test, feature = "serde"), serde(skip_serializing, default))]
+    pub loc: SourceSpan,
+}
+
+impl Node for CoprocessCommand {}
+
+impl SourceLocation for CoprocessCommand {
+    fn location(&self) -> Option<SourceSpan> {
+        Some(self.loc.clone())
+    }
+}
+
+impl Display for CoprocessCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "coproc")?;
+        if let Some(name) = &self.name {
+            write!(f, " {name}")?;
+        }
+        write!(f, " {}", self.body)?;
+        Ok(())
     }
 }
 
