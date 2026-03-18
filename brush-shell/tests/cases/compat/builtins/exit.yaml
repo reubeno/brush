@@ -8,6 +8,14 @@ cases:
     stdin: |
       exit 10
 
+  - name: "Exit with i64 max"
+    stdin: |
+      exit 9223372036854775807
+
+  - name: "Exit with i64 min"
+    stdin: |
+      exit -9223372036854775808
+
   - name: "Exit in for loop"
     stdin: |
       for i in 1 2 3; do
