@@ -6,7 +6,8 @@ use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 #[derive(Parser)]
 pub(crate) struct ExitCommand {
     /// The exit code to return.
-    code: Option<i32>,
+    #[arg(allow_hyphen_values = true)]
+    code: Option<i64>,
 }
 
 impl builtins::Command for ExitCommand {
