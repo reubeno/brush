@@ -364,7 +364,9 @@ cases:
   # differences. Older bash resets traps in coproc, newer bash (5.3.9) inherits them.
   # This causes inconsistent test results across CI runners.
   - name: "coproc - EXIT trap behavior"
-    min_oracle_version: "5.3"
+    min_oracle_version: "5.3.0"
+    incompatible_os:
+      - fedora
     stdin: |
       trap 'echo "[exit]"' EXIT
       coproc { trap -p EXIT; echo "coproc"; }
@@ -373,7 +375,9 @@ cases:
       echo "main continues"
 
   - name: "coproc - DEBUG trap inheritance"
-    min_oracle_version: "5.3"
+    min_oracle_version: "5.3.0"
+    incompatible_os:
+      - fedora
     stdin: |
       trap 'echo "[debug]"' DEBUG
       coproc { trap -p DEBUG; echo "coproc"; }
@@ -381,7 +385,9 @@ cases:
       wait
 
   - name: "coproc - ERR trap with errtrace"
-    min_oracle_version: "5.3"
+    min_oracle_version: "5.3.0"
+    incompatible_os:
+      - fedora
     stdin: |
       set -E
       trap 'echo "[err]"' ERR
