@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
-use crate::env::{EnvironmentLookup, EnvironmentScope};
+use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -777,27 +777,32 @@ impl Execute for ast::CoprocessCommand {
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        // Resolve the coproc name (default: "COPROC")
+        if shell.options().do_not_execute_commands {
+            return Ok(ExecutionResult::success());
+        }
+
         let name = self
             .name
             .as_ref()
             .map_or_else(|| "COPROC".to_string(), |w| w.to_string());
 
-        // Create two pipes for stdin and stdout
+        if !valid_variable_name(&name) {
+            writeln!(
+                params.stderr(shell),
+                "coproc {name}: not a valid identifier"
+            )?;
+            return Ok(ExecutionResult::new(1));
+        }
+
         let (stdin_reader, stdin_writer) = std::io::pipe()?;
         let (stdout_reader, stdout_writer) = std::io::pipe()?;
 
-        // Allocate FDs in the parent shell for the pipe ends we'll keep
-        // [0] = read from coproc's stdout
-        // [1] = write to coproc's stdin
-        let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
-        let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
-
-        // Clone shell for background execution
         let mut child_shell = shell.clone();
         child_shell.options_mut().interactive = false;
 
-        // Set up child's stdin/stdout with pipe ends
+        let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
+        let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
+
         let mut child_params = params.clone();
         child_params
             .open_files
@@ -806,12 +811,10 @@ impl Execute for ast::CoprocessCommand {
             .open_files
             .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
 
-        // Spawn the command asynchronously
         let body = self.body.clone();
         let join_handle =
             tokio::spawn(async move { body.execute(&mut child_shell, &child_params).await });
 
-        // Register as a background job
         let job = shell.jobs_mut().add_as_current(jobs::Job::new(
             [jobs::JobTask::Internal(join_handle)],
             format!("coproc {name}"),
@@ -819,15 +822,11 @@ impl Execute for ast::CoprocessCommand {
         ));
         let job_id = job.id;
 
-        // Set up the array variable with FD numbers
-        // NAME[0] = FD to read from coproc's stdout
-        // NAME[1] = FD to write to coproc's stdin
         let arr_value = ShellValue::from(vec![stdout_fd.to_string(), stdin_fd.to_string()]);
         shell
             .env_mut()
             .set_global(name.clone(), ShellVariable::new(arr_value))?;
 
-        // Set up NAME_PID variable with job ID
         let pid_name = format!("{name}_PID");
         shell
             .env_mut()
