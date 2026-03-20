@@ -7,8 +7,8 @@ use crate::ast;
 use super::and_or::and_or;
 use super::arithmetic::for_or_arithmetic_for;
 use super::helpers::{
-    fname, is_reserved_word, keyword, linebreak, name, newline, peek_char, separator,
-    sequential_sep, spaces, spaces1,
+    fname, is_reserved_word, keyword, linebreak, name, newline, peek_char, peek_first_word,
+    separator, sequential_sep, spaces, spaces1,
 };
 use super::position::PositionTracker;
 use super::redirections::redirect_list;
@@ -484,6 +484,53 @@ pub(super) fn case_clause<'a>(
     }
 }
 
+/// Parse a coproc clause: coproc [NAME] command
+/// Corresponds to: bash coproc syntax
+pub(super) fn coproc_clause<'a>(
+    ctx: &'a ParseContext<'a>,
+    tracker: &'a PositionTracker,
+) -> impl Parser<StrStream<'a>, ast::CoprocessCommand, PError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        let start_offset = tracker.offset_from_locating(input);
+
+        keyword("coproc").parse_next(input)?;
+        spaces().parse_next(input)?;
+
+        // Try to parse an optional name
+        // The name must be followed by a compound command ({ or ()
+        // Otherwise, the "name" is actually the start of a simple command body
+        let checkpoint = input.checkpoint();
+        let name = if let Ok(word) = fname().parse_next(input) {
+            // Check if this looks like a name followed by a compound command
+            spaces().parse_next(input)?;
+            if let Ok(ch) = peek_char().parse_next(input) {
+                if ch == '{' || ch == '(' {
+                    Some(ast::Word::new(&word))
+                } else {
+                    // Not a compound command after name - backtrack
+                    // The word is actually the command name, restore position
+                    input.reset(&checkpoint);
+                    None
+                }
+            } else {
+                // End of input after word - backtrack
+                input.reset(&checkpoint);
+                None
+            }
+        } else {
+            None
+        };
+
+        // Parse the body as a command (simple or compound)
+        let body = Box::new(super::commands::command(ctx, tracker).parse_next(input)?);
+
+        let end_offset = tracker.offset_from_locating(input);
+        let loc = tracker.range_to_span(start_offset..end_offset);
+
+        Ok(ast::CoprocessCommand { name, body, loc })
+    }
+}
+
 // ============================================================================
 // Tier 14: Function Definitions
 // ============================================================================
@@ -500,8 +547,8 @@ pub(super) fn compound_command<'a>(
             dispatch! {peek_char();
                 '{' => brace_group(ctx, tracker).map(ast::CompoundCommand::BraceGroup),
                 '(' => super::arithmetic::paren_compound(ctx, tracker),  // Handles both (( )) arithmetic and ( ) subshell
+                'c' => case_or_coproc(ctx, tracker),  // Handles both case and coproc
                 'f' => for_or_arithmetic_for(ctx, tracker),  // Handles both for (( )) and for name in
-                'c' => case_clause(ctx, tracker).map(ast::CompoundCommand::CaseClause),
                 'i' => if_clause(ctx, tracker).map(ast::CompoundCommand::IfClause),
                 'w' => while_clause(ctx, tracker).map(ast::CompoundCommand::WhileClause),
                 'u' => until_clause(ctx, tracker).map(ast::CompoundCommand::UntilClause),
@@ -509,6 +556,29 @@ pub(super) fn compound_command<'a>(
             },
         )
         .parse_next(input)
+    }
+}
+
+/// Parse either case or coproc clause (both start with 'c')
+fn case_or_coproc<'a>(
+    ctx: &'a ParseContext<'a>,
+    tracker: &'a PositionTracker,
+) -> impl Parser<StrStream<'a>, ast::CompoundCommand, PError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        // Peek at the word to determine which one
+        if let Ok(word) = peek_first_word().parse_next(input) {
+            match word {
+                "case" => case_clause(ctx, tracker)
+                    .map(ast::CompoundCommand::CaseClause)
+                    .parse_next(input),
+                "coproc" => coproc_clause(ctx, tracker)
+                    .map(ast::CompoundCommand::Coprocess)
+                    .parse_next(input),
+                _ => Err(winnow::error::ErrMode::Backtrack(ContextError::default())),
+            }
+        } else {
+            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+        }
     }
 }
 
@@ -583,5 +653,52 @@ pub(super) fn function_definition<'a>(
             fname: fname_word,
             body,
         })
+    }
+}
+
+#[cfg(test)]
+mod coproc_tests {
+    use super::*;
+    use crate::parser::{ParserOptions, SourceInfo};
+
+    fn parse_with_winnow(input: &str) -> Result<ast::Program, crate::error::ParseError> {
+        super::super::program::parse_program(
+            input,
+            &ParserOptions::default(),
+            &SourceInfo::default(),
+        )
+    }
+
+    #[test]
+    fn test_coproc_simple() {
+        let result = parse_with_winnow("coproc echo hello");
+        assert!(result.is_ok(), "Simple coproc should parse: {result:?}");
+    }
+
+    #[test]
+    fn test_coproc_brace_group() {
+        let result = parse_with_winnow("coproc { echo hello; }");
+        assert!(
+            result.is_ok(),
+            "Coproc with brace group should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_coproc_named_brace_group() {
+        let result = parse_with_winnow("coproc NAME { echo hello; }");
+        assert!(
+            result.is_ok(),
+            "Coproc with named brace group should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_coproc_subshell() {
+        let result = parse_with_winnow("coproc (echo hello)");
+        assert!(
+            result.is_ok(),
+            "Coproc with subshell should parse: {result:?}"
+        );
     }
 }

@@ -1,8 +1,11 @@
 //! Complex and integration tests that combine multiple parser features.
 
+#[cfg(feature = "winnow-parser")]
+use super::test_with_winnow;
 use super::{ParseResult, test_with_snapshot};
 use crate::assert_snapshot_redacted;
-use anyhow::Result;
+use crate::ast;
+use anyhow::{Result, ensure};
 
 #[test]
 fn parse_shebang_and_program() -> Result<()> {
@@ -163,13 +166,31 @@ fn parse_subshell_with_assignments() -> Result<()> {
 
 #[test]
 fn parse_coprocess() -> Result<()> {
+    // Note: coproc is only implemented in the Winnow parser.
+    // The PEG parser still treats it as a simple command.
+    // This test verifies Winnow parses it correctly.
     let input = "coproc cat";
-    let result = test_with_snapshot(input)?;
-    assert_snapshot_redacted!(ParseResult {
-        input,
-        result: &result
-    });
-    Ok(())
+    let result = test_with_winnow(input)?;
+    // Verify the result is a coproc clause with no name
+    let ast::CompoundList(items) = result
+        .complete_commands
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("expected compound list"))?;
+    let first_item = items
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("expected item"))?;
+    let first_pipeline = &first_item.0.first;
+    let cmd = first_pipeline.seq.first();
+    let cmd = cmd
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("expected command"))?;
+    match cmd {
+        ast::Command::Compound(ast::CompoundCommand::CoprocClause(c), _) => {
+            ensure!(c.name.is_none(), "coproc should have no name");
+            Ok(())
+        }
+        _ => anyhow::bail!("Expected CoprocClause"),
+    }
 }
 
 #[test]
