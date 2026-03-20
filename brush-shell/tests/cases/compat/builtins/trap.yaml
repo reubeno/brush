@@ -372,7 +372,6 @@ cases:
       echo "main continues"
 
   - name: "coproc - DEBUG trap inheritance"
-    known_failure: true
     stdin: |
       trap 'echo "[debug]"' DEBUG
       coproc { trap -p DEBUG; echo "coproc"; }
