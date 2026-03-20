@@ -372,6 +372,7 @@ cases:
       echo "main continues"
 
   - name: "coproc - DEBUG trap inheritance"
+    min_oracle_version: "5.3"
     stdin: |
       trap 'echo "[debug]"' DEBUG
       coproc { trap -p DEBUG; echo "coproc"; }
