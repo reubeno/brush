@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
-use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
+use crate::env::{EnvironmentLookup, EnvironmentScope};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -661,6 +661,64 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
     }
 }
 
+#[async_trait::async_trait]
+impl Execute for ast::Command {
+    async fn execute(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        match self {
+            Self::Simple(simple) => {
+                let context = PipelineExecutionContext {
+                    shell: commands::ShellForCommand::ParentShell(shell),
+                    process_group_id: None,
+                };
+                match simple.execute_in_pipeline(context, params.clone()).await? {
+                    ExecutionSpawnResult::Completed(result) => Ok(result),
+                    ExecutionSpawnResult::StartedProcess(mut child) => {
+                        let wait_result = child.wait().await?;
+                        match wait_result {
+                            crate::processes::ProcessWaitResult::Completed(output) => {
+                                Ok(ExecutionResult::from(output))
+                            }
+                            crate::processes::ProcessWaitResult::Stopped => {
+                                Ok(ExecutionResult::stopped())
+                            }
+                        }
+                    }
+                    ExecutionSpawnResult::StartedTask(handle) => handle.await?,
+                }
+            }
+            Self::Compound(compound, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                compound.execute(shell, &params).await
+            }
+            Self::Function(func) => func.execute(shell, params).await,
+            Self::ExtendedTest(e, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                let result =
+                    if extendedtests::eval_extended_test_expr(&e.expr, shell, &params).await? {
+                        0
+                    } else {
+                        1
+                    };
+                Ok(ExecutionResult::new(result))
+            }
+        }
+    }
+}
+
 enum WhileOrUntil {
     While,
     Until,
@@ -719,38 +777,27 @@ impl Execute for ast::CoprocessCommand {
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        if shell.options().do_not_execute_commands {
-            return Ok(ExecutionResult::success());
-        }
-
-        // Resolve the name of the variable that will receive the coprocess's file descriptors.
+        // Resolve the coproc name (default: "COPROC")
         let name = self
             .name
             .as_ref()
             .map_or_else(|| "COPROC".to_string(), |w| w.to_string());
 
-        if !valid_variable_name(&name) {
-            writeln!(
-                params.stderr(shell),
-                "coproc {name}: not a valid identifier"
-            )?;
-            return Ok(ExecutionExitCode::GeneralError.into());
-        }
-
-        // Set up the pipes that we'll use to communicate with the coprocess.
+        // Create two pipes for stdin and stdout
         let (stdin_reader, stdin_writer) = std::io::pipe()?;
         let (stdout_reader, stdout_writer) = std::io::pipe()?;
 
-        // Allocate new fds in the (parent) shell for the read end of the coprocess's stdout
-        // and the write end of the coprocess's stdin.
+        // Allocate FDs in the parent shell for the pipe ends we'll keep
+        // [0] = read from coproc's stdout
+        // [1] = write to coproc's stdin
         let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
         let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
 
-        // Crete a subshell that the coprocess will own and run in.
+        // Clone shell for background execution
         let mut child_shell = shell.clone();
         child_shell.options_mut().interactive = false;
 
-        // Setup redirection for the coprocess's shell's stdin/stdout.
+        // Set up child's stdin/stdout with pipe ends
         let mut child_params = params.clone();
         child_params
             .open_files
@@ -759,21 +806,12 @@ impl Execute for ast::CoprocessCommand {
             .open_files
             .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
 
+        // Spawn the command asynchronously
         let body = self.body.clone();
-        let join_handle = tokio::spawn(async move {
-            let pipeline_context = PipelineExecutionContext {
-                shell: commands::ShellForCommand::ParentShell(&mut child_shell),
-                process_group_id: None,
-            };
-            let spawn_result = body
-                .execute_in_pipeline(pipeline_context, child_params)
-                .await?;
-            match spawn_result.wait().await? {
-                ExecutionWaitResult::Completed(result) => Ok(result),
-                ExecutionWaitResult::Stopped(_) => Ok(ExecutionResult::stopped()),
-            }
-        });
+        let join_handle =
+            tokio::spawn(async move { body.execute(&mut child_shell, &child_params).await });
 
+        // Register as a background job
         let job = shell.jobs_mut().add_as_current(jobs::Job::new(
             [jobs::JobTask::Internal(join_handle)],
             format!("coproc {name}"),
@@ -781,13 +819,15 @@ impl Execute for ast::CoprocessCommand {
         ));
         let job_id = job.id;
 
-        // Fill out the fd variable.
+        // Set up the array variable with FD numbers
+        // NAME[0] = FD to read from coproc's stdout
+        // NAME[1] = FD to write to coproc's stdin
         let arr_value = ShellValue::from(vec![stdout_fd.to_string(), stdin_fd.to_string()]);
         shell
             .env_mut()
             .set_global(name.clone(), ShellVariable::new(arr_value))?;
 
-        // Set the job ID for the coprocess in a separate variable with the _PID suffix.
+        // Set up NAME_PID variable with job ID
         let pid_name = format!("{name}_PID");
         shell
             .env_mut()
