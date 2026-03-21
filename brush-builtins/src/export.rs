@@ -47,7 +47,16 @@ impl builtins::Command for ExportCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.declarations.is_empty() {
-            display_all_exported_vars(&context)?;
+            let output = display_all_exported_vars(&context)?;
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
+                }
+            }
             return Ok(ExecutionResult::success());
         }
 
@@ -71,10 +80,7 @@ impl ExportCommand {
     ) -> Result<ExecutionResult, brush_core::Error> {
         match decl {
             brush_core::CommandArg::String(s) => {
-                // See if this is supposed to be a function name.
                 if self.names_are_functions {
-                    // Try to find the function already present; if we find it, then mark it
-                    // exported.
                     if let Some(func) = context.shell.func_mut(s) {
                         if self.unexport {
                             func.unexport();
@@ -85,10 +91,7 @@ impl ExportCommand {
                         writeln!(context.stderr(), "{s}: not a function")?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
-                }
-                // Try to find the variable already present; if we find it, then mark it
-                // exported.
-                else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
+                } else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
                     if self.unexport {
                         variable.unexport();
                     } else {
@@ -118,7 +121,6 @@ impl ExportCommand {
                     }
                 };
 
-                // Update the variable with the provided value and then mark it exported.
                 context.shell.env_mut().update_or_add(
                     name,
                     value,
@@ -142,18 +144,19 @@ impl ExportCommand {
 
 fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-) -> Result<(), brush_core::Error> {
-    // Enumerate variables, sorted by key.
+) -> Result<Vec<u8>, brush_core::Error> {
+    let mut output = Vec::new();
+
     for (name, variable) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if variable.is_exported() {
             let value = variable.value().try_get_cow_str(context.shell);
             if let Some(value) = value {
-                writeln!(context.stdout(), "declare -x {name}=\"{value}\"")?;
+                writeln!(output, "declare -x {name}=\"{value}\"")?;
             } else {
-                writeln!(context.stdout(), "declare -x {name}")?;
+                writeln!(output, "declare -x {name}")?;
             }
         }
     }
 
-    Ok(())
+    Ok(output)
 }

@@ -151,6 +151,7 @@ tokio = { version = "1.52.3", features = [
     "rt-multi-thread",
     "signal",
     "sync",
+    "time",
 ] }
 uucore = { version = "0.8.0", default-features = false, features = ["format"] }
 
