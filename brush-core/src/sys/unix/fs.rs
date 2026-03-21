@@ -191,3 +191,8 @@ pub fn open_null_file() -> Result<std::fs::File, error::Error> {
 
     Ok(f)
 }
+
+/// Gives the platform an opportunity to handle a special file path (e.g. `/dev/null`).
+pub const fn try_open_special_file(_path: &Path) -> Option<Result<std::fs::File, std::io::Error>> {
+    None
+}
