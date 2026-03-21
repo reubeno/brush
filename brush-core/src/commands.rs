@@ -72,6 +72,39 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
+
+    /// Returns the file descriptor as an async file. Returns `None`
+    /// if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(&self, fd: ShellFd) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_fd_async(self.shell, fd)
+    }
+
+    /// Returns the standard input as an async file.
+    pub fn stdin_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_stdin_async(self.shell)
+    }
+
+    /// Returns the standard output as an async file.
+    pub fn stdout_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_stdout_async(self.shell)
+    }
+
+    /// Returns the standard error as an async file.
+    pub fn stderr_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_stderr_async(self.shell)
+    }
+
+    pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
+        self.shell.options().interactive
+            && matches!(
+                self.params.process_group_policy,
+                ProcessGroupPolicy::NewProcessGroup
+            )
+    }
 }
 
 /// An argument to a command.
