@@ -458,7 +458,7 @@ where
 
 /// Async file abstractions for non-blocking I/O operations.
 pub mod async_file {
-    use std::io;
+    use std::io::{self, IsTerminal};
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
@@ -670,6 +670,121 @@ pub mod async_file {
                 io::ErrorKind::Unsupported,
                 "async pipes not supported on non-unix",
             ))
+        }
+    }
+
+    impl AsyncOpenFile {
+        /// Reads bytes asynchronously into the provided buffer.
+        ///
+        /// Returns the number of bytes read, or 0 on EOF.
+        /// Reads bytes into the provided buffer.
+        pub async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            use tokio::io::AsyncReadExt;
+            match self {
+                Self::Stdin(f) => f.read(buf).await,
+                Self::Stdout(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                    "stdout",
+                ))),
+                Self::Stderr(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                    "stderr",
+                ))),
+                Self::File(f) => f.read(buf).await,
+                Self::PipeReader(r) => r.read(buf).await,
+                Self::PipeWriter(_) => Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("pipe writer"),
+                )),
+                Self::Stream(s) => Pin::new(s.as_mut()).read(buf).await,
+            }
+        }
+
+        /// Reads all bytes until EOF into a new String.
+        pub async fn read_to_string(&mut self) -> io::Result<String> {
+            use tokio::io::AsyncReadExt;
+            let mut s = String::new();
+            match self {
+                Self::Stdin(f) => f.read_to_string(&mut s).await?,
+                Self::Stdout(_) => {
+                    return Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                        "stdout",
+                    )));
+                }
+                Self::Stderr(_) => {
+                    return Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                        "stderr",
+                    )));
+                }
+                Self::File(f) => f.read_to_string(&mut s).await?,
+                Self::PipeReader(r) => r.read_to_string(&mut s).await?,
+                Self::PipeWriter(_) => {
+                    return Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                        "pipe writer",
+                    )));
+                }
+                Self::Stream(s_) => Pin::new(s_.as_mut()).read_to_string(&mut s).await?,
+            };
+            Ok(s)
+        }
+
+        /// Writes bytes from the provided buffer.
+        pub async fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            use tokio::io::AsyncWriteExt;
+            match self {
+                Self::Stdin(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotWritable(
+                    "stdin",
+                ))),
+                Self::Stdout(f) => f.write(buf).await,
+                Self::Stderr(f) => f.write(buf).await,
+                Self::File(f) => f.write(buf).await,
+                Self::PipeReader(_) => Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("pipe reader"),
+                )),
+                Self::PipeWriter(w) => w.write(buf).await,
+                Self::Stream(s) => Pin::new(s.as_mut()).write(buf).await,
+            }
+        }
+
+        /// Writes all bytes from the provided buffer.
+        pub async fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+            use tokio::io::AsyncWriteExt;
+            match self {
+                Self::Stdin(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotWritable(
+                    "stdin",
+                ))),
+                Self::Stdout(f) => f.write_all(buf).await,
+                Self::Stderr(f) => f.write_all(buf).await,
+                Self::File(f) => f.write_all(buf).await,
+                Self::PipeReader(_) => Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("pipe reader"),
+                )),
+                Self::PipeWriter(w) => w.write_all(buf).await,
+                Self::Stream(s) => Pin::new(s.as_mut()).write_all(buf).await,
+            }
+        }
+
+        /// Flushes the output stream.
+        pub async fn flush(&mut self) -> io::Result<()> {
+            use tokio::io::AsyncWriteExt;
+            match self {
+                Self::Stdin(_) => Ok(()),
+                Self::Stdout(f) => f.flush().await,
+                Self::Stderr(f) => f.flush().await,
+                Self::File(f) => f.flush().await,
+                Self::PipeReader(_) => Ok(()),
+                Self::PipeWriter(w) => w.flush().await,
+                Self::Stream(s) => Pin::new(s.as_mut()).flush().await,
+            }
+        }
+
+        /// Checks if this file represents a terminal.
+        pub fn is_terminal(&self) -> bool {
+            match self {
+                Self::Stdin(_) => std::io::stdin().is_terminal(),
+                Self::Stdout(_) => std::io::stdout().is_terminal(),
+                Self::Stderr(_) => std::io::stderr().is_terminal(),
+                Self::File(_) | Self::PipeReader(_) | Self::PipeWriter(_) | Self::Stream(_) => {
+                    false
+                }
+            }
         }
     }
 
