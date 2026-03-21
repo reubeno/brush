@@ -455,3 +455,239 @@ where
         Self { files }
     }
 }
+
+/// Async file abstractions for non-blocking I/O operations.
+pub mod async_file {
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+    use crate::error;
+
+    /// A trait representing an async stream that can be read from and written to.
+    pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Sync + Unpin {
+        /// Clones the stream into a boxed trait object.
+        fn clone_box(&self) -> Box<dyn AsyncStream>;
+
+        /// Converts the stream into an `OwnedFd`.
+        #[cfg(unix)]
+        fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, error::Error>;
+
+        /// Borrows the stream as a `BorrowedFd`.
+        #[cfg(unix)]
+        fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error>;
+    }
+
+    /// Represents an async file open in a shell context.
+    #[cfg(unix)]
+    pub enum AsyncOpenFile {
+        /// The original standard input.
+        Stdin(tokio::io::Stdin),
+        /// The original standard output.
+        Stdout(tokio::io::Stdout),
+        /// The original standard error.
+        Stderr(tokio::io::Stderr),
+        /// A file open for reading or writing.
+        File(tokio::fs::File),
+        /// The read end of a pipe.
+        PipeReader(tokio::net::unix::pipe::Receiver),
+        /// The write end of a pipe.
+        PipeWriter(tokio::net::unix::pipe::Sender),
+        /// A custom async stream.
+        Stream(Box<dyn AsyncStream>),
+    }
+
+    /// Represents an async file open in a shell context.
+    #[cfg(not(unix))]
+    pub enum AsyncOpenFile {
+        /// The original standard input.
+        Stdin(tokio::io::Stdin),
+        /// The original standard output.
+        Stdout(tokio::io::Stdout),
+        /// The original standard error.
+        Stderr(tokio::io::Stderr),
+        /// A file open for reading or writing.
+        File(tokio::fs::File),
+        /// The read end of a pipe.
+        PipeReader(tokio::io::DuplexStream),
+        /// The write end of a pipe.
+        PipeWriter(tokio::io::DuplexStream),
+        /// A custom async stream.
+        Stream(Box<dyn AsyncStream>),
+    }
+
+    impl AsyncRead for AsyncOpenFile {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                #[cfg(unix)]
+                Self::Stdin(f) => Pin::new(f).poll_read(cx, buf),
+                #[cfg(unix)]
+                Self::PipeReader(r) => Pin::new(r).poll_read(cx, buf),
+                #[cfg(unix)]
+                Self::PipeWriter(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("pipe writer"),
+                ))),
+                #[cfg(not(unix))]
+                Self::Stdin(f) => Pin::new(f).poll_read(cx, buf),
+                #[cfg(not(unix))]
+                Self::PipeReader(r) => Pin::new(r).poll_read(cx, buf),
+                #[cfg(not(unix))]
+                Self::PipeWriter(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("pipe writer"),
+                ))),
+                Self::Stdout(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("stdout"),
+                ))),
+                Self::Stderr(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("stderr"),
+                ))),
+                Self::File(f) => Pin::new(f).poll_read(cx, buf),
+                Self::Stream(s) => Pin::new(s.as_mut()).poll_read(cx, buf),
+            }
+        }
+    }
+
+    impl AsyncWrite for AsyncOpenFile {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            match self.get_mut() {
+                #[cfg(unix)]
+                Self::Stdin(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("stdin"),
+                ))),
+                #[cfg(unix)]
+                Self::Stdout(f) => Pin::new(f).poll_write(cx, buf),
+                #[cfg(unix)]
+                Self::Stderr(f) => Pin::new(f).poll_write(cx, buf),
+                #[cfg(unix)]
+                Self::PipeReader(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("pipe reader"),
+                ))),
+                #[cfg(unix)]
+                Self::PipeWriter(w) => Pin::new(w).poll_write(cx, buf),
+                #[cfg(not(unix))]
+                Self::Stdin(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("stdin"),
+                ))),
+                #[cfg(not(unix))]
+                Self::Stdout(f) => Pin::new(f).poll_write(cx, buf),
+                #[cfg(not(unix))]
+                Self::Stderr(f) => Pin::new(f).poll_write(cx, buf),
+                #[cfg(not(unix))]
+                Self::PipeReader(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("pipe reader"),
+                ))),
+                #[cfg(not(unix))]
+                Self::PipeWriter(w) => Pin::new(w).poll_write(cx, buf),
+                Self::File(f) => Pin::new(f).poll_write(cx, buf),
+                Self::Stream(s) => Pin::new(s.as_mut()).poll_write(cx, buf),
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                Self::Stdin(_) => Poll::Ready(Ok(())),
+                Self::Stdout(f) => Pin::new(f).poll_flush(cx),
+                Self::Stderr(f) => Pin::new(f).poll_flush(cx),
+                Self::File(f) => Pin::new(f).poll_flush(cx),
+                Self::PipeReader(_) => Poll::Ready(Ok(())),
+                #[cfg(unix)]
+                Self::PipeWriter(w) => Pin::new(w).poll_flush(cx),
+                #[cfg(not(unix))]
+                Self::PipeWriter(w) => Pin::new(w).poll_flush(cx),
+                Self::Stream(s) => Pin::new(s.as_mut()).poll_flush(cx),
+            }
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                Self::Stdin(_) => Poll::Ready(Ok(())),
+                Self::Stdout(f) => Pin::new(f).poll_shutdown(cx),
+                Self::Stderr(f) => Pin::new(f).poll_shutdown(cx),
+                Self::File(f) => Pin::new(f).poll_shutdown(cx),
+                Self::PipeReader(_) => Poll::Ready(Ok(())),
+                #[cfg(unix)]
+                Self::PipeWriter(w) => Pin::new(w).poll_shutdown(cx),
+                #[cfg(not(unix))]
+                Self::PipeWriter(w) => Pin::new(w).poll_shutdown(cx),
+                Self::Stream(s) => Pin::new(s.as_mut()).poll_shutdown(cx),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl AsyncOpenFile {
+        /// Creates an async file from a standard file.
+        pub fn from_std_file(file: std::fs::File) -> Self {
+            Self::File(tokio::fs::File::from_std(file))
+        }
+
+        /// Creates an async pipe reader from a blocking pipe reader.
+        pub fn from_pipe_reader(reader: std::io::PipeReader) -> io::Result<Self> {
+            use std::os::fd::OwnedFd;
+            let owned_fd = OwnedFd::from(reader);
+            let receiver =
+                tokio::net::unix::pipe::Receiver::from_file(std::fs::File::from(owned_fd))?;
+            Ok(Self::PipeReader(receiver))
+        }
+
+        /// Creates an async pipe writer from a blocking pipe writer.
+        pub fn from_pipe_writer(writer: std::io::PipeWriter) -> io::Result<Self> {
+            use std::os::fd::OwnedFd;
+            let owned_fd = OwnedFd::from(writer);
+            let sender = tokio::net::unix::pipe::Sender::from_file(std::fs::File::from(owned_fd))?;
+            Ok(Self::PipeWriter(sender))
+        }
+    }
+
+    #[cfg(not(unix))]
+    impl AsyncOpenFile {
+        /// Creates an async file from a standard file.
+        pub fn from_std_file(file: std::fs::File) -> Self {
+            Self::File(tokio::fs::File::from_std(file))
+        }
+
+        /// Creates an async pipe reader from a blocking pipe reader.
+        pub fn from_pipe_reader(_reader: std::io::PipeReader) -> io::Result<Self> {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "async pipes not supported on non-unix",
+            ))
+        }
+
+        /// Creates an async pipe writer from a blocking pipe writer.
+        pub fn from_pipe_writer(_writer: std::io::PipeWriter) -> io::Result<Self> {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "async pipes not supported on non-unix",
+            ))
+        }
+    }
+
+    impl From<super::OpenFile> for AsyncOpenFile {
+        fn from(file: super::OpenFile) -> Self {
+            match file {
+                super::OpenFile::Stdin(_) => Self::Stdin(tokio::io::stdin()),
+                super::OpenFile::Stdout(_) => Self::Stdout(tokio::io::stdout()),
+                super::OpenFile::Stderr(_) => Self::Stderr(tokio::io::stderr()),
+                super::OpenFile::File(f) => Self::File(tokio::fs::File::from_std(f)),
+                super::OpenFile::PipeReader(r) => {
+                    Self::from_pipe_reader(r).unwrap_or_else(|_| Self::Stdin(tokio::io::stdin()))
+                }
+                super::OpenFile::PipeWriter(w) => {
+                    Self::from_pipe_writer(w).unwrap_or_else(|_| Self::Stdout(tokio::io::stdout()))
+                }
+                super::OpenFile::Stream(_) => Self::Stdin(tokio::io::stdin()),
+            }
+        }
+    }
+}
