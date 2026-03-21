@@ -46,7 +46,7 @@ impl builtins::Command for FcCommand {
         }
 
         if self.list {
-            return self.do_list(&context);
+            return self.do_list(&context).await;
         }
 
         error::unimp("fc editor mode is not yet implemented")
@@ -54,7 +54,7 @@ impl builtins::Command for FcCommand {
 }
 
 impl FcCommand {
-    fn do_list(
+    async fn do_list(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, brush_core::Error> {
@@ -65,7 +65,9 @@ impl FcCommand {
 
         let (first_idx, last_idx, reverse) = self.resolve_range(history)?;
 
-        // Determine the order of iteration
+        // Buffer output
+        let mut output = Vec::new();
+
         let indices: Vec<usize> = if reverse {
             (first_idx..=last_idx).rev().collect()
         } else {
@@ -75,12 +77,21 @@ impl FcCommand {
         for idx in indices {
             if let Some(item) = history.get(idx) {
                 if self.no_line_numbers {
-                    // With -n, bash still outputs a tab before the command
-                    writeln!(context.stdout(), "\t {}", item.command_line)?;
+                    writeln!(output, "\t {}", item.command_line)?;
                 } else {
-                    // Match bash's fc format: number, tab, command
-                    writeln!(context.stdout(), "{}\t {}", idx + 1, item.command_line)?;
+                    writeln!(output, "{}\t {}", idx + 1, item.command_line)?;
                 }
+            }
+        }
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
             }
         }
 
