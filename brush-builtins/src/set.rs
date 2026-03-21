@@ -322,6 +322,8 @@ impl builtins::Command for SetCommand {
         }
 
         let mut named_options: HashMap<String, bool> = HashMap::new();
+        let mut output = Vec::new();
+
         if let Some(option_names) = &self.set_option.disable {
             saw_option = true;
             if option_names.is_empty() {
@@ -333,7 +335,7 @@ impl builtins::Command for SetCommand {
                 {
                     let option_value = option.definition.get(context.shell.options());
                     let option_value_str = if option_value { "-o" } else { "+o" };
-                    writeln!(context.stdout(), "set {option_value_str} {}", option.name)?;
+                    writeln!(output, "set {option_value_str} {}", option.name)?;
                 }
             } else {
                 for option_name in option_names {
@@ -352,7 +354,7 @@ impl builtins::Command for SetCommand {
                 {
                     let option_value = option.definition.get(context.shell.options());
                     let option_value_str = if option_value { "on" } else { "off" };
-                    writeln!(context.stdout(), "{:15}\t{option_value_str}", option.name)?;
+                    writeln!(output, "{:15}\t{option_value_str}", option.name)?;
                 }
             } else {
                 for option_name in option_names {
@@ -398,10 +400,21 @@ impl builtins::Command for SetCommand {
 
         saw_option = saw_option || !self.positional_args.is_empty();
 
-        // If we *still* haven't seen any options, then we need to display all variables and
-        // functions.
         if !saw_option {
-            display_all(&context)?;
+            let all_output = display_all(&context)?;
+            if !all_output.is_empty() {
+                output.extend(all_output);
+            }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
         }
 
         Ok(result)
@@ -410,40 +423,35 @@ impl builtins::Command for SetCommand {
 
 fn display_all(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-) -> Result<(), brush_core::Error> {
-    // Display variables.
+) -> Result<Vec<u8>, brush_core::Error> {
+    let mut output = Vec::new();
+
     for (name, var) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if !var.is_enumerable() {
             continue;
         }
 
-        // TODO(set): For now, skip all dynamic variables. The current behavior
-        // of bash is not quite clear. We've empirically found that some
-        // special variables don't get displayed until they're observed
-        // at least once.
         if matches!(var.value(), variables::ShellValue::Dynamic { .. }) {
             continue;
         }
 
-        // Skip variables that have been declared but are unset.
         if !var.value().is_set() {
             continue;
         }
 
         writeln!(
-            context.stdout(),
+            output,
             "{name}={}",
             var.value()
                 .format(variables::FormatStyle::Basic, context.shell)?,
         )?;
     }
 
-    // Display functions... unless we're in posix compliance mode.
     if !context.shell.options().posix_mode {
         for (_name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
-            writeln!(context.stdout(), "{}", registration.definition())?;
+            writeln!(output, "{}", registration.definition())?;
         }
     }
 
-    Ok(())
+    Ok(output)
 }
