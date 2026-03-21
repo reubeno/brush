@@ -43,8 +43,19 @@ impl builtins::Command for PrintfCommand {
             )
             .await?;
         } else {
-            format(self.format_and_args.as_slice(), context.stdout())?;
-            context.stdout().flush()?;
+            // Format to a buffer first, then write async
+            let mut result: Vec<u8> = vec![];
+            format(self.format_and_args.as_slice(), &mut result)?;
+
+            // Use async I/O for writing
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&result).await?;
+                stdout.flush().await?;
+            } else {
+                // Fallback to blocking I/O
+                context.stdout().write_all(&result)?;
+                context.stdout().flush()?;
+            }
         }
 
         Ok(ExecutionResult::success())
