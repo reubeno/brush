@@ -171,6 +171,58 @@ impl ExecutionParameters {
 
         all_fds.into_iter()
     }
+
+    /// Tries to retrieve an async version of the file descriptor.
+    /// Returns `None` if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+        fd: ShellFd,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd(shell, fd)
+            .map(openfiles::async_file::AsyncOpenFile::from)
+    }
+
+    /// Tries to retrieve the standard input as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdin_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDIN_FD)
+    }
+
+    /// Tries to retrieve the standard output as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdout_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDOUT_FD)
+    }
+
+    /// Tries to retrieve the standard error as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stderr_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDERR_FD)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -798,22 +850,38 @@ impl Execute for ast::CoprocessCommand {
             return Ok(ExecutionResult::new(1));
         }
 
-        let (stdin_reader, stdin_writer) = std::io::pipe()?;
-        let (stdout_reader, stdout_writer) = std::io::pipe()?;
+        // Create async pipes for coproc I/O using the async pipe infrastructure
+        let (stdin_reader, stdin_writer) = sys::async_pipe::async_pipe()?;
+        let (stdout_reader, stdout_writer) = sys::async_pipe::async_pipe()?;
 
         let mut child_shell = shell.clone();
         child_shell.options_mut().interactive = false;
 
-        let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
-        let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
+        // Convert async pipe ends to blocking files for parent shell storage
+        // (parent shell currently uses blocking I/O via OpenFiles)
+        let stdout_file = sys::async_pipe::receiver_into_blocking(stdout_reader)?;
+        let stdin_file = sys::async_pipe::sender_into_blocking(stdin_writer)?;
+        let stdout_fd = shell
+            .open_files_mut()
+            .add(openfiles::OpenFile::File(stdout_file))?;
+        let stdin_fd = shell
+            .open_files_mut()
+            .add(openfiles::OpenFile::File(stdin_file))?;
 
+        // Set up child's stdin/stdout with async pipe ends
+        // Convert to blocking files (child uses OpenFiles)
+        // Future: child could use AsyncOpenFiles for true async I/O
         let mut child_params = params.clone();
-        child_params
-            .open_files
-            .set_fd(OpenFiles::STDIN_FD, stdin_reader.into());
-        child_params
-            .open_files
-            .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
+        let child_stdin_file = sys::async_pipe::receiver_into_blocking(stdin_reader)?;
+        let child_stdout_file = sys::async_pipe::sender_into_blocking(stdout_writer)?;
+        child_params.open_files.set_fd(
+            OpenFiles::STDIN_FD,
+            openfiles::OpenFile::File(child_stdin_file),
+        );
+        child_params.open_files.set_fd(
+            OpenFiles::STDOUT_FD,
+            openfiles::OpenFile::File(child_stdout_file),
+        );
 
         let body = self.body.clone();
         let join_handle =

@@ -185,11 +185,11 @@ fn parse_coprocess() -> Result<()> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("expected command"))?;
     match cmd {
-        ast::Command::Compound(ast::CompoundCommand::CoprocClause(c), _) => {
+        ast::Command::Compound(ast::CompoundCommand::Coprocess(c), _) => {
             ensure!(c.name.is_none(), "coproc should have no name");
             Ok(())
         }
-        _ => anyhow::bail!("Expected CoprocClause"),
+        _ => anyhow::bail!("Expected Coprocess"),
     }
 }
 
