@@ -29,11 +29,25 @@ impl builtins::Command for HelpCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        // Buffer output for async write
+        let mut output = Vec::new();
+
         if self.topic_patterns.is_empty() {
-            Self::display_general_help(&context)?;
+            Self::display_general_help(&context, &mut output)?;
         } else {
             for topic_pattern in &self.topic_patterns {
-                self.display_help_for_topic_pattern(&context, topic_pattern)?;
+                self.display_help_for_topic_pattern(&context, topic_pattern, &mut output)?;
+            }
+        }
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
             }
         }
 
@@ -44,15 +58,16 @@ impl builtins::Command for HelpCommand {
 impl HelpCommand {
     fn display_general_help(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         const COLUMN_COUNT: usize = 3;
 
         if let Some(display_str) = context.shell.product_display_str() {
-            writeln!(context.stdout(), "{display_str}\n")?;
+            writeln!(output, "{display_str}\n")?;
         }
 
         writeln!(
-            context.stdout(),
+            output,
             "The following commands are implemented as shell built-ins:"
         )?;
 
@@ -63,11 +78,10 @@ impl HelpCommand {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
                     let prefix = if builtin.disabled { "*" } else { " " };
-                    write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
-                    // column width
+                    write!(output, "  {prefix}{name:<20}")?;
                 }
             }
-            writeln!(context.stdout())?;
+            writeln!(output)?;
         }
 
         Ok(())
@@ -77,6 +91,7 @@ impl HelpCommand {
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         topic_pattern: &str,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         let pattern = brush_core::patterns::Pattern::from(topic_pattern)
             .set_extended_globbing(context.shell.options().extended_globbing)
@@ -89,13 +104,14 @@ impl HelpCommand {
                     context,
                     builtin_name.as_str(),
                     builtin_registration,
+                    output,
                 )?;
                 found_count += 1;
             }
         }
 
         if found_count == 0 {
-            writeln!(context.stderr(), "No help topics match '{topic_pattern}'")?;
+            writeln!(output, "No help topics match '{topic_pattern}'")?;
         }
 
         Ok(())
@@ -106,6 +122,7 @@ impl HelpCommand {
         context: &brush_core::ExecutionContext<'_, SE>,
         name: &str,
         registration: &builtins::Registration<SE>,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         let content_type = if self.short_description {
             builtins::ContentType::ShortDescription
@@ -117,20 +134,17 @@ impl HelpCommand {
             builtins::ContentType::DetailedHelp
         };
 
-        let Some(mut stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
-            // If there's no stdout, nothing to do.
+        let Some(stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
             return Ok(());
         };
 
-        // For now, we assume colorized output if stdout is a terminal.
         let options = builtins::ContentOptions {
             colorized: stdout.is_terminal(),
         };
 
         let content = (registration.content_func)(name, content_type, &options)?;
 
-        write!(stdout, "{content}")?;
-        stdout.flush()?;
+        write!(output, "{content}")?;
 
         Ok(())
     }
