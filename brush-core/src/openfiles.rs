@@ -690,4 +690,139 @@ pub mod async_file {
             }
         }
     }
+
+    use std::collections::HashMap;
+
+    use crate::ShellFd;
+
+    /// Tristate representing an `AsyncOpenFile` entry in an `AsyncOpenFiles` structure.
+    pub enum AsyncOpenFileEntry<'a> {
+        /// File descriptor is present and has a valid associated `AsyncOpenFile`.
+        Open(&'a AsyncOpenFile),
+        /// File descriptor is explicitly marked as not being mapped to any `AsyncOpenFile`.
+        NotPresent,
+        /// File descriptor is not specified in any way; it may be provided by a
+        /// parent context of some kind.
+        NotSpecified,
+    }
+
+    /// Represents the open files in an async shell context.
+    #[derive(Default)]
+    pub struct AsyncOpenFiles {
+        /// Maps shell file descriptors to async open files.
+        files: HashMap<ShellFd, Option<AsyncOpenFile>>,
+    }
+
+    impl AsyncOpenFiles {
+        /// File descriptor used for standard input.
+        pub const STDIN_FD: ShellFd = 0;
+        /// File descriptor used for standard output.
+        pub const STDOUT_FD: ShellFd = 1;
+        /// File descriptor used for standard error.
+        pub const STDERR_FD: ShellFd = 2;
+
+        /// First file descriptor available for non-stdio files.
+        const FIRST_NON_STDIO_FD: ShellFd = 3;
+        /// Maximum file descriptor number allowed.
+        const MAX_FD: ShellFd = 1024;
+
+        /// Creates a new `AsyncOpenFiles` instance populated with stdin, stdout, and stderr
+        /// from the host environment.
+        pub fn new() -> Self {
+            Self {
+                files: HashMap::from([
+                    (
+                        Self::STDIN_FD,
+                        Some(AsyncOpenFile::Stdin(tokio::io::stdin())),
+                    ),
+                    (
+                        Self::STDOUT_FD,
+                        Some(AsyncOpenFile::Stdout(tokio::io::stdout())),
+                    ),
+                    (
+                        Self::STDERR_FD,
+                        Some(AsyncOpenFile::Stderr(tokio::io::stderr())),
+                    ),
+                ]),
+            }
+        }
+
+        /// Retrieves the file backing standard input in this context.
+        pub fn try_stdin(&self) -> Option<&AsyncOpenFile> {
+            self.files.get(&Self::STDIN_FD).and_then(|f| f.as_ref())
+        }
+
+        /// Retrieves the file backing standard output in this context.
+        pub fn try_stdout(&self) -> Option<&AsyncOpenFile> {
+            self.files.get(&Self::STDOUT_FD).and_then(|f| f.as_ref())
+        }
+
+        /// Retrieves the file backing standard error in this context.
+        pub fn try_stderr(&self) -> Option<&AsyncOpenFile> {
+            self.files.get(&Self::STDERR_FD).and_then(|f| f.as_ref())
+        }
+
+        /// Tries to remove an async open file by its file descriptor.
+        pub fn remove_fd(&mut self, fd: ShellFd) -> Option<AsyncOpenFile> {
+            self.files.insert(fd, None).and_then(|f| f)
+        }
+
+        /// Tries to lookup the `AsyncOpenFile` associated with a file descriptor.
+        pub fn try_fd(&self, fd: ShellFd) -> Option<&AsyncOpenFile> {
+            self.files.get(&fd).and_then(|f| f.as_ref())
+        }
+
+        /// Tries to lookup the `AsyncOpenFile` associated with a file descriptor.
+        pub fn fd_entry(&self, fd: ShellFd) -> AsyncOpenFileEntry<'_> {
+            self.files.get(&fd).map_or(
+                AsyncOpenFileEntry::NotSpecified,
+                |opt_file| match opt_file {
+                    Some(f) => AsyncOpenFileEntry::Open(f),
+                    None => AsyncOpenFileEntry::NotPresent,
+                },
+            )
+        }
+
+        /// Checks if the given file descriptor is in use.
+        pub fn contains_fd(&self, fd: ShellFd) -> bool {
+            self.files.contains_key(&fd)
+        }
+
+        /// Associates the given file descriptor with the provided file.
+        pub fn set_fd(&mut self, fd: ShellFd, file: AsyncOpenFile) -> Option<AsyncOpenFile> {
+            self.files.insert(fd, Some(file)).and_then(|f| f)
+        }
+
+        /// Adds a new async open file, returning the assigned file descriptor.
+        pub fn add(&mut self, file: AsyncOpenFile) -> Result<ShellFd, error::Error> {
+            let mut fd = Self::FIRST_NON_STDIO_FD;
+            while self.files.contains_key(&fd) {
+                if fd >= Self::MAX_FD {
+                    return Err(error::ErrorKind::TooManyOpenFiles.into());
+                }
+                fd += 1;
+            }
+            self.files.insert(fd, Some(file));
+            Ok(fd)
+        }
+
+        /// Iterates over all file descriptors.
+        pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, &AsyncOpenFile)> {
+            self.files
+                .iter()
+                .filter_map(|(fd, file)| file.as_ref().map(|f| (*fd, f)))
+        }
+    }
+
+    impl From<super::OpenFiles> for AsyncOpenFiles {
+        fn from(open_files: super::OpenFiles) -> Self {
+            Self {
+                files: open_files
+                    .files
+                    .into_iter()
+                    .map(|(fd, opt_file)| (fd, opt_file.map(AsyncOpenFile::from)))
+                    .collect(),
+            }
+        }
+    }
 }
