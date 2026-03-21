@@ -170,6 +170,58 @@ impl ExecutionParameters {
 
         all_fds.into_iter()
     }
+
+    /// Tries to retrieve an async version of the file descriptor.
+    /// Returns `None` if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+        fd: ShellFd,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd(shell, fd)
+            .map(openfiles::async_file::AsyncOpenFile::from)
+    }
+
+    /// Tries to retrieve the standard input as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdin_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDIN_FD)
+    }
+
+    /// Tries to retrieve the standard output as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdout_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDOUT_FD)
+    }
+
+    /// Tries to retrieve the standard error as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stderr_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDERR_FD)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
