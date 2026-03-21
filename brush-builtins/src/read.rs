@@ -104,8 +104,7 @@ impl builtins::Command for ReadCommand {
         // Check if input is a terminal - terminals need blocking I/O
         let is_terminal = context
             .try_fd_async(fd_num)
-            .map(|f| f.is_terminal())
-            .unwrap_or(false);
+            .is_some_and(|f| f.is_terminal());
 
         // Retrieve effective value of IFS for splitting.
         // We convert to owned String to release the borrow before the mutable borrow
@@ -641,6 +640,7 @@ impl ReadCommand {
         .await
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn read_line_async_impl(
         &self,
         input: &mut brush_core::openfiles::async_file::AsyncOpenFile,
