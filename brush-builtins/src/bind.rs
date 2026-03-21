@@ -213,6 +213,16 @@ impl BindCommand {
                 )?;
             } else {
                 writeln!(output, "{func_str} is not bound to any keys.")?;
+                drop(bindings);
+                if !output.is_empty() {
+                    if let Some(mut stdout) = context.stdout_async() {
+                        stdout.write_all(&output).await?;
+                        stdout.flush().await?;
+                    } else {
+                        context.stdout().write_all(&output)?;
+                        context.stdout().flush()?;
+                    }
+                }
                 return Ok(ExecutionResult::general_error());
             }
         }
