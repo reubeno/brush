@@ -26,30 +26,40 @@ impl builtins::Command for TrapCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.list_signals {
-            brush_core::traps::format_signals(context.stdout(), TrapSignal::iterator())
-                .map(|()| ExecutionResult::success())
+            let mut output = Vec::new();
+            brush_core::traps::format_signals(&mut output, TrapSignal::iterator())?;
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
         } else if self.print_trap_commands || self.args.is_empty() {
+            let mut output = Vec::new();
             if !self.args.is_empty() {
                 for signal_type in &self.args {
-                    Self::display_handlers_for(&context, signal_type.parse()?)?;
+                    Self::display_handlers_for(&context, signal_type.parse()?, &mut output)?;
                 }
             } else {
-                Self::display_all_handlers(&context)?;
+                Self::display_all_handlers(&context, &mut output)?;
             }
-            Ok(ExecutionResult::success())
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
+                }
+            }
         } else if self.args.len() == 1 {
-            // When only a single argument is given, it is assumed to be a signal name
-            // and an indication to remove the handlers for that signal.
             let signal = self.args[0].as_str();
             Self::remove_all_handlers(&mut context, signal.parse()?);
-            Ok(ExecutionResult::success())
         } else if self.args[0] == "-" {
-            // "-" as the first argument indicates that the remaining
-            // arguments are signal names and we need to remove the handlers for them.
             for signal in &self.args[1..] {
                 Self::remove_all_handlers(&mut context, signal.parse()?);
             }
-            Ok(ExecutionResult::success())
         } else {
             let handler = &self.args[0];
 
@@ -59,17 +69,19 @@ impl builtins::Command for TrapCommand {
             }
 
             Self::register_handler(&mut context, signal_types, handler.as_str());
-            Ok(ExecutionResult::success())
         }
+
+        Ok(ExecutionResult::success())
     }
 }
 
 impl TrapCommand {
     fn display_all_handlers(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         for (signal, _) in context.shell.traps().iter_handlers() {
-            Self::display_handlers_for(context, signal)?;
+            Self::display_handlers_for(context, signal, output)?;
         }
         Ok(())
     }
@@ -77,13 +89,10 @@ impl TrapCommand {
     fn display_handlers_for(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         signal_type: TrapSignal,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         if let Some(handler) = context.shell.traps().get_handler(signal_type) {
-            writeln!(
-                context.stdout(),
-                "trap -- '{}' {signal_type}",
-                &handler.command
-            )?;
+            writeln!(output, "trap -- '{}' {signal_type}", &handler.command)?;
         }
         Ok(())
     }
@@ -100,9 +109,6 @@ impl TrapCommand {
         signals: Vec<TrapSignal>,
         handler: &str,
     ) {
-        // Our new source context is relative to the current position.
-        // TODO(source-info): Provide the location of the specific token that makes up
-        // `self.args[0]`.
         let source_info = context.shell.call_stack().current_pos_as_source_info();
 
         for signal in signals {
