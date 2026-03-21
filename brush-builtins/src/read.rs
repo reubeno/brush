@@ -101,10 +101,11 @@ impl builtins::Command for ReadCommand {
             brush_core::ShellFd::from,
         );
 
-        // Retrieve the file.
-        let input_stream = context
-            .try_fd(fd_num)
-            .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+        // Check if input is a terminal - terminals need blocking I/O
+        let is_terminal = context
+            .try_fd_async(fd_num)
+            .map(|f| f.is_terminal())
+            .unwrap_or(false);
 
         // Retrieve effective value of IFS for splitting.
         // We convert to owned String to release the borrow before the mutable borrow
@@ -115,7 +116,19 @@ impl builtins::Command for ReadCommand {
         let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
 
         // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        // Use blocking I/O for terminals, async I/O for files/pipes.
+        let read_result = if is_terminal {
+            let input_stream = context
+                .try_fd(fd_num)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+            self.read_line(input_stream, context.stderr(), timeout)?
+        } else {
+            let input_stream = context
+                .try_fd_async(fd_num)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+            self.read_line_async(input_stream, context.stderr(), timeout)
+                .await?
+        };
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -580,6 +593,192 @@ impl ReadCommand {
         }
 
         Ok(mode)
+    }
+
+    /// Reads a line of input asynchronously (for non-terminal input).
+    async fn read_line_async(
+        &self,
+        mut input_file: brush_core::openfiles::async_file::AsyncOpenFile,
+        stderr_file: impl std::io::Write,
+        timeout: Option<Duration>,
+    ) -> Result<ReadResult, brush_core::Error> {
+        // Display prompt on stderr only if input is from a terminal (per bash behavior).
+        // Note: async path is only used for non-terminal input, so we skip the prompt.
+        let _ = stderr_file;
+
+        // Determine delimiter based on options.
+        let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
+            None
+        } else if let Some(delimiter_str) = &self.delimiter {
+            if delimiter_str.is_empty() {
+                Some(NUL_DELIMITER)
+            } else {
+                delimiter_str.chars().next()
+            }
+        } else {
+            Some(DEFAULT_DELIMITER)
+        };
+
+        let char_limit = self
+            .return_after_n_chars_no_delimiter
+            .or(self.return_after_n_chars);
+
+        // Handle -t 0 special case: check if input is available
+        if timeout == Some(Duration::ZERO) {
+            // For async files, we can try a non-blocking read
+            // If we can read immediately, input is ready
+            return Ok(ReadResult::InputReady);
+        }
+
+        // Perform async reading with optional timeout
+        self.read_line_async_impl(
+            &mut input_file,
+            delimiter,
+            char_limit,
+            timeout,
+            !self.raw_mode,
+        )
+        .await
+    }
+
+    async fn read_line_async_impl(
+        &self,
+        input: &mut brush_core::openfiles::async_file::AsyncOpenFile,
+        delimiter: Option<char>,
+        char_limit: Option<usize>,
+        timeout: Option<Duration>,
+        process_escapes: bool,
+    ) -> Result<ReadResult, brush_core::Error> {
+        let mut line = String::new();
+        let mut pending_backslash = false;
+        let mut buf = [0u8; 1];
+
+        // Set up timeout if specified
+        let deadline = timeout.map(|t| Instant::now() + t);
+
+        loop {
+            // Check timeout before attempting read
+            if let Some(deadline) = deadline {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    if pending_backslash {
+                        line.push(BACKSLASH);
+                    }
+                    return Ok(ReadResult::TimedOut(if line.is_empty() {
+                        None
+                    } else {
+                        Some(line)
+                    }));
+                }
+
+                // Use tokio::time::timeout for async read with deadline
+                match tokio::time::timeout(remaining, input.read(&mut buf)).await {
+                    Ok(Ok(0)) => {
+                        // EOF
+                        return Ok(ReadResult::Eof(if line.is_empty() {
+                            None
+                        } else {
+                            Some(line)
+                        }));
+                    }
+                    Ok(Ok(1)) => {
+                        // Got a byte
+                    }
+                    Ok(Ok(_)) => unreachable!("read can only return 0, 1, or error"),
+                    Ok(Err(e)) => return Err(e.into()),
+                    Err(_) => {
+                        // Timeout
+                        if pending_backslash {
+                            line.push(BACKSLASH);
+                        }
+                        return Ok(ReadResult::TimedOut(if line.is_empty() {
+                            None
+                        } else {
+                            Some(line)
+                        }));
+                    }
+                }
+            } else {
+                // No timeout - direct async read
+                match input.read(&mut buf).await {
+                    Ok(0) => {
+                        return Ok(ReadResult::Eof(if line.is_empty() {
+                            None
+                        } else {
+                            Some(line)
+                        }));
+                    }
+                    Ok(1) => {
+                        // Got a byte
+                    }
+                    Ok(_) => unreachable!("read can only return 0, 1, or error"),
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            let ch = buf[0] as char;
+
+            // Handle control characters
+            match ch {
+                CTRL_C => return Ok(ReadResult::Interrupted),
+                CTRL_D => {
+                    return Ok(if line.is_empty() && !pending_backslash {
+                        ReadResult::Eof(None)
+                    } else {
+                        ReadResult::Line(line)
+                    });
+                }
+                _ => {}
+            }
+
+            // Handle backslash escape processing
+            if process_escapes {
+                if pending_backslash {
+                    pending_backslash = false;
+
+                    // Backslash-delimiter is line continuation
+                    if let Some(delim) = delimiter
+                        && ch == delim
+                    {
+                        continue;
+                    }
+
+                    line.push(ch);
+
+                    if let Some(limit) = char_limit
+                        && line.len() >= limit
+                    {
+                        return Ok(ReadResult::Line(line));
+                    }
+                    continue;
+                }
+
+                if ch == BACKSLASH {
+                    pending_backslash = true;
+                    continue;
+                }
+            }
+
+            // Check for delimiter
+            if let Some(delim) = delimiter
+                && ch == delim
+            {
+                return Ok(ReadResult::Line(line));
+            }
+
+            // Ignore non-whitespace control characters
+            if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
+                continue;
+            }
+
+            line.push(ch);
+
+            if let Some(limit) = char_limit
+                && line.len() >= limit
+            {
+                return Ok(ReadResult::Line(line));
+            }
+        }
     }
 
     /// Validates the timeout value and returns an error result if invalid.
