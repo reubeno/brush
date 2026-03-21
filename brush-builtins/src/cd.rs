@@ -37,14 +37,12 @@ impl builtins::Command for CdCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // TODO(cd): implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");
         }
 
         let mut should_print = false;
         let mut target_dir = if let Some(target_dir) = &self.target_dir {
-            // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
                 should_print = true;
                 if let Some(oldpwd) = context.shell.env_str("OLDPWD") {
@@ -54,10 +52,8 @@ impl builtins::Command for CdCommand {
                     return Ok(ExecutionResult::general_error());
                 }
             } else {
-                // TODO(cd): remove clone, and use temporary lifetime extension after rust 1.75
                 target_dir.clone()
             }
-        // `cd' without arguments is equivalent to `cd $HOME'
         } else {
             if let Some(home_var) = context.shell.env_str("HOME") {
                 PathBuf::from(home_var.to_string())
@@ -73,7 +69,6 @@ impl builtins::Command for CdCommand {
                 .options()
                 .do_not_resolve_symlinks_when_changing_dir
         {
-            // -e is only relevant in physical mode.
             if self.exit_on_failed_cwd_resolution {
                 return error::unimp("cd -e");
             }
@@ -83,13 +78,16 @@ impl builtins::Command for CdCommand {
 
         context.shell.set_working_dir(&target_dir)?;
 
-        // Bash compatibility
-        // https://www.gnu.org/software/bash/manual/bash.html#index-cd
-        // If a non-empty directory name from CDPATH is used, or if '-' is the first argument, and
-        // the directory change is successful, the absolute pathname of the new working
-        // directory is written to the standard output.
         if should_print {
-            writeln!(context.stdout(), "{}", target_dir.display())?;
+            let mut output = Vec::new();
+            writeln!(output, "{}", target_dir.display())?;
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
         }
 
         Ok(ExecutionResult::success())
