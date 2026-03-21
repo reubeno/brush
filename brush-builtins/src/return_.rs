@@ -30,10 +30,13 @@ impl builtins::Command for ReturnCommand {
 
             Ok(result)
         } else {
+            let mut stderr_output = Vec::new();
             let _ = writeln!(
-                context.stderr(),
+                stderr_output,
                 "return: can only be used in a function or sourced script"
             );
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
             Ok(ExecutionExitCode::InvalidUsage.into())
         }
     }

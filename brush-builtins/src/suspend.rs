@@ -19,7 +19,10 @@ impl builtins::Command for SuspendCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if context.shell.options().login_shell && !self.force {
-            writeln!(context.stderr(), "login shell cannot be suspended")?;
+            let mut stderr_output = Vec::new();
+            writeln!(stderr_output, "login shell cannot be suspended")?;
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
