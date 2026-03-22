@@ -99,8 +99,9 @@ fn poll_fd_for_input(fd: BorrowedFd<'_>, deadline: Option<Instant>) -> std::io::
 fn is_regular_file(fd: BorrowedFd<'_>) -> bool {
     match nix::sys::stat::fstat(fd) {
         Ok(stat) => {
-            use nix::sys::stat::SFlag;
-            SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFREG)
+            use nix::sys::stat::{SFlag, mode_t};
+            mode_t::try_from(stat.st_mode)
+                .is_ok_and(|mode| SFlag::from_bits_truncate(mode).contains(SFlag::S_IFREG))
         }
         Err(_) => false,
     }

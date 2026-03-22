@@ -506,7 +506,8 @@ impl ReadCommand {
     /// Reads a line of input, optionally with a timeout.
     ///
     /// Handles backslash escape processing:
-    /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next char
+    /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next
+    ///   char
     /// - With `-r`: backslash is treated as a literal character
     fn read_line(
         &self,

@@ -8,6 +8,10 @@ use crate::error;
 
 pub use std::os::unix::fs::MetadataExt;
 
+#[cfg(target_os = "android")]
+// _PATH_DEFPATH in https://android.googlesource.com/platform/bionic/+/refs/heads/main/libc/include/paths.h
+const ANDROID_DEFPATH: &str = "/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/apex/com.android.virt/bin:/system_ext/bin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin";
+
 impl crate::sys::fs::PathExt for Path {
     fn readable(&self) -> bool {
         nix::unistd::access(self, nix::unistd::AccessFlags::R_OK).is_ok()
@@ -70,15 +74,22 @@ fn try_get_file_mode(path: &Path) -> Option<u32> {
 }
 
 pub(crate) fn get_default_executable_search_paths() -> Vec<PathBuf> {
-    // standard hard-coded defaults for executable search path
-    vec![
-        "/usr/local/sbin".into(),
-        "/usr/local/bin".into(),
-        "/usr/sbin".into(),
-        "/usr/bin".into(),
-        "/sbin".into(),
-        "/bin".into(),
-    ]
+    #[cfg(target_os = "android")]
+    {
+        std::env::split_paths(ANDROID_DEFPATH).collect()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        // standard hard-coded defaults for executable search path
+        vec![
+            "/usr/local/sbin".into(),
+            "/usr/local/bin".into(),
+            "/usr/sbin".into(),
+            "/usr/bin".into(),
+            "/sbin".into(),
+            "/bin".into(),
+        ]
+    }
 }
 
 /// Retrieves the platform-specific set of paths that should contain standard system
@@ -94,25 +105,41 @@ pub fn get_default_standard_utils_paths() -> Vec<PathBuf> {
     {
         return std::env::split_paths(&cs_path).collect();
     }
-    // standard hard-coded defaults
-    vec![
-        "/bin".into(),
-        "/usr/bin".into(),
-        "/sbin".into(),
-        "/usr/sbin".into(),
-        "/etc".into(),
-        "/usr/etc".into(),
-    ]
+
+    #[cfg(target_os = "android")]
+    {
+        std::env::split_paths(ANDROID_DEFPATH).collect()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        // standard hard-coded defaults
+        vec![
+            "/bin".into(),
+            "/usr/bin".into(),
+            "/sbin".into(),
+            "/usr/sbin".into(),
+            "/etc".into(),
+            "/usr/etc".into(),
+        ]
+    }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn confstr_cs_path() -> Result<Option<PathBuf>, std::io::Error> {
-    let value = confstr(nix::libc::_CS_PATH)?;
+    #[cfg(target_os = "android")]
+    {
+        Ok(Some(PathBuf::from(ANDROID_DEFPATH)))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let value = confstr(nix::libc::_CS_PATH)?;
 
-    if let Some(value) = value {
-        let value_str = PathBuf::from(value);
-        Ok(Some(value_str))
-    } else {
-        Ok(None)
+        if let Some(value) = value {
+            let value_str = PathBuf::from(value);
+            Ok(Some(value_str))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -121,6 +148,7 @@ fn confstr_cs_path() -> Result<Option<PathBuf>, std::io::Error> {
 ///
 /// N.B. We would strongly prefer to use a safe API exposed (in an idiomatic way) by nix
 /// or similar. Until that exists, we accept the need to make the unsafe call directly.
+#[cfg(not(target_os = "android"))]
 fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io::Error> {
     // SAFETY:
     // Calling `confstr` with a null pointer and size 0 is a documented way to query

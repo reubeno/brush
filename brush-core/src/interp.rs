@@ -760,7 +760,7 @@ impl Execute for ast::ForClauseCommand {
                         .await;
                 } else {
                     shell
-                        .trace_command(params, std::format!("for {}", self.variable_name,))
+                        .trace_command(params, std::format!("for {}", self.variable_name))
                         .await;
                 }
             }
@@ -1703,9 +1703,10 @@ pub(crate) async fn setup_redirect(
 
                         params.open_files.set_fd(fd_num, target_file);
                     } else if fd_num == 1 && !dash {
-                        // Special case for compatibility: redirect stdout and stderr to the file given by `expanded`.
+                        // Special case for compatibility: redirect stdout and stderr to the file
+                        // given by `expanded`.
                         setup_redirect_output_and_error_to(
-                            shell, params, &expanded, false, /*append?*/
+                            shell, params, &expanded, false, /* append? */
                         )?;
                     } else {
                         return Err(error::ErrorKind::InvalidRedirection.into());
@@ -1887,7 +1888,7 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
 
     let bytes = contents.as_bytes();
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::fd::AsFd as _;
 
