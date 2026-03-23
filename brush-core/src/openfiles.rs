@@ -466,6 +466,197 @@ pub mod async_file {
 
     use crate::error;
 
+    /// Polyfill for tokio's stdio and file types on wasm targets.
+    ///
+    /// Since wasm targets don't support tokio's `io-std` and `fs` features,
+    /// we provide blocking wrappers that implement the async traits.
+    #[cfg(target_family = "wasm")]
+    pub mod stdio_polyfill {
+        use std::io::{self, IsTerminal, Read as _, Write as _};
+        use std::pin::Pin;
+        use std::task::{Context, Poll};
+
+        use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+        /// Async wrapper for standard input on wasm.
+        pub struct Stdin(io::Stdin);
+
+        /// Async wrapper for standard output on wasm.
+        pub struct Stdout(io::Stdout);
+
+        /// Async wrapper for standard error on wasm.
+        pub struct Stderr(io::Stderr);
+
+        /// Async wrapper for a file on wasm.
+        pub struct File(std::fs::File);
+
+        impl File {
+            /// Creates a new async file from a standard file.
+            pub fn from_std(file: std::fs::File) -> Self {
+                Self(file)
+            }
+        }
+
+        impl AsyncRead for File {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                buf: &mut ReadBuf<'_>,
+            ) -> Poll<io::Result<()>> {
+                let n = self.0.read(buf.initialize_unfilled())?;
+                buf.advance(n);
+                Poll::Ready(Ok(()))
+            }
+        }
+
+        impl AsyncWrite for File {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                buf: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                Poll::Ready(self.0.write(buf))
+            }
+
+            fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(self.0.flush())
+            }
+
+            fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                self.poll_flush(cx)
+            }
+        }
+
+        impl Stdin {
+            /// Creates a new async stdin wrapper.
+            pub fn new() -> Self {
+                Self(io::stdin())
+            }
+        }
+
+        impl Stdout {
+            /// Creates a new async stdout wrapper.
+            pub fn new() -> Self {
+                Self(io::stdout())
+            }
+        }
+
+        impl Stderr {
+            /// Creates a new async stderr wrapper.
+            pub fn new() -> Self {
+                Self(io::stderr())
+            }
+        }
+
+        impl AsyncRead for Stdin {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                buf: &mut ReadBuf<'_>,
+            ) -> Poll<io::Result<()>> {
+                let n = self.0.read(buf.initialize_unfilled())?;
+                buf.advance(n);
+                Poll::Ready(Ok(()))
+            }
+        }
+
+        impl AsyncWrite for Stdout {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                buf: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                Poll::Ready(self.0.write(buf))
+            }
+
+            fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(self.0.flush())
+            }
+
+            fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                self.poll_flush(cx)
+            }
+        }
+
+        impl AsyncWrite for Stderr {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                buf: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                Poll::Ready(self.0.write(buf))
+            }
+
+            fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                Poll::Ready(self.0.flush())
+            }
+
+            fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                self.poll_flush(cx)
+            }
+        }
+
+        impl Stdin {
+            /// Returns true if this is a terminal.
+            pub fn is_terminal(&self) -> bool {
+                self.0.is_terminal()
+            }
+        }
+
+        impl Stdout {
+            /// Returns true if this is a terminal.
+            pub fn is_terminal(&self) -> bool {
+                self.0.is_terminal()
+            }
+        }
+
+        impl Stderr {
+            /// Returns true if this is a terminal.
+            pub fn is_terminal(&self) -> bool {
+                self.0.is_terminal()
+            }
+        }
+    }
+
+    #[cfg(target_family = "wasm")]
+    use stdio_polyfill::{File, Stderr, Stdin, Stdout};
+
+    #[cfg(not(target_family = "wasm"))]
+    use tokio::fs::File;
+
+    #[cfg(not(target_family = "wasm"))]
+    use tokio::io::{Stderr, Stdin, Stdout};
+
+    #[cfg(target_family = "wasm")]
+    fn stdin() -> Stdin {
+        Stdin::new()
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn stdout() -> Stdout {
+        Stdout::new()
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn stderr() -> Stderr {
+        Stderr::new()
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn stdin() -> Stdin {
+        tokio::io::stdin()
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn stdout() -> Stdout {
+        tokio::io::stdout()
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn stderr() -> Stderr {
+        tokio::io::stderr()
+    }
+
     /// A trait representing an async stream that can be read from and written to.
     pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Sync + Unpin {
         /// Clones the stream into a boxed trait object.
@@ -484,13 +675,13 @@ pub mod async_file {
     #[cfg(unix)]
     pub enum AsyncOpenFile {
         /// The original standard input.
-        Stdin(tokio::io::Stdin),
+        Stdin(Stdin),
         /// The original standard output.
-        Stdout(tokio::io::Stdout),
+        Stdout(Stdout),
         /// The original standard error.
-        Stderr(tokio::io::Stderr),
+        Stderr(Stderr),
         /// A file open for reading or writing.
-        File(tokio::fs::File),
+        File(File),
         /// The read end of a pipe.
         PipeReader(tokio::net::unix::pipe::Receiver),
         /// The write end of a pipe.
@@ -503,13 +694,13 @@ pub mod async_file {
     #[cfg(not(unix))]
     pub enum AsyncOpenFile {
         /// The original standard input.
-        Stdin(tokio::io::Stdin),
+        Stdin(Stdin),
         /// The original standard output.
-        Stdout(tokio::io::Stdout),
+        Stdout(Stdout),
         /// The original standard error.
-        Stderr(tokio::io::Stderr),
+        Stderr(Stderr),
         /// A file open for reading or writing.
-        File(tokio::fs::File),
+        File(File),
         /// The read end of a pipe.
         PipeReader(tokio::io::DuplexStream),
         /// The write end of a pipe.
@@ -653,7 +844,7 @@ pub mod async_file {
     impl AsyncOpenFile {
         /// Creates an async file from a standard file.
         pub fn from_std_file(file: std::fs::File) -> Self {
-            Self::File(tokio::fs::File::from_std(file))
+            Self::File(File::from_std(file))
         }
 
         /// Creates an async pipe reader from a blocking pipe reader.
@@ -791,17 +982,17 @@ pub mod async_file {
     impl From<super::OpenFile> for AsyncOpenFile {
         fn from(file: super::OpenFile) -> Self {
             match file {
-                super::OpenFile::Stdin(_) => Self::Stdin(tokio::io::stdin()),
-                super::OpenFile::Stdout(_) => Self::Stdout(tokio::io::stdout()),
-                super::OpenFile::Stderr(_) => Self::Stderr(tokio::io::stderr()),
-                super::OpenFile::File(f) => Self::File(tokio::fs::File::from_std(f)),
+                super::OpenFile::Stdin(_) => Self::Stdin(stdin()),
+                super::OpenFile::Stdout(_) => Self::Stdout(stdout()),
+                super::OpenFile::Stderr(_) => Self::Stderr(stderr()),
+                super::OpenFile::File(f) => Self::File(File::from_std(f)),
                 super::OpenFile::PipeReader(r) => {
-                    Self::from_pipe_reader(r).unwrap_or_else(|_| Self::Stdin(tokio::io::stdin()))
+                    Self::from_pipe_reader(r).unwrap_or_else(|_| Self::Stdin(stdin()))
                 }
                 super::OpenFile::PipeWriter(w) => {
-                    Self::from_pipe_writer(w).unwrap_or_else(|_| Self::Stdout(tokio::io::stdout()))
+                    Self::from_pipe_writer(w).unwrap_or_else(|_| Self::Stdout(stdout()))
                 }
-                super::OpenFile::Stream(_) => Self::Stdin(tokio::io::stdin()),
+                super::OpenFile::Stream(_) => Self::Stdin(stdin()),
             }
         }
     }
@@ -846,18 +1037,9 @@ pub mod async_file {
         pub fn new() -> Self {
             Self {
                 files: HashMap::from([
-                    (
-                        Self::STDIN_FD,
-                        Some(AsyncOpenFile::Stdin(tokio::io::stdin())),
-                    ),
-                    (
-                        Self::STDOUT_FD,
-                        Some(AsyncOpenFile::Stdout(tokio::io::stdout())),
-                    ),
-                    (
-                        Self::STDERR_FD,
-                        Some(AsyncOpenFile::Stderr(tokio::io::stderr())),
-                    ),
+                    (Self::STDIN_FD, Some(AsyncOpenFile::Stdin(stdin()))),
+                    (Self::STDOUT_FD, Some(AsyncOpenFile::Stdout(stdout()))),
+                    (Self::STDERR_FD, Some(AsyncOpenFile::Stderr(stderr()))),
                 ]),
             }
         }
