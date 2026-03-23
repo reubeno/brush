@@ -846,38 +846,23 @@ impl Execute for ast::CoprocessCommand {
             return Ok(ExecutionResult::new(1));
         }
 
-        // Create async pipes for coproc I/O using the async pipe infrastructure
-        let (stdin_reader, stdin_writer) = sys::async_pipe::async_pipe()?;
-        let (stdout_reader, stdout_writer) = sys::async_pipe::async_pipe()?;
+        // Create pipes for coproc I/O
+        let (stdin_reader, stdin_writer) = std::io::pipe()?;
+        let (stdout_reader, stdout_writer) = std::io::pipe()?;
 
         let mut child_shell = shell.clone();
         child_shell.options_mut().interactive = false;
 
-        // Convert async pipe ends to blocking files for parent shell storage
-        // (parent shell currently uses blocking I/O via OpenFiles)
-        let stdout_file = sys::async_pipe::receiver_into_blocking(stdout_reader)?;
-        let stdin_file = sys::async_pipe::sender_into_blocking(stdin_writer)?;
-        let stdout_fd = shell
-            .open_files_mut()
-            .add(openfiles::OpenFile::File(stdout_file))?;
-        let stdin_fd = shell
-            .open_files_mut()
-            .add(openfiles::OpenFile::File(stdin_file))?;
+        let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
+        let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
 
-        // Set up child's stdin/stdout with async pipe ends
-        // Convert to blocking files (child uses OpenFiles)
-        // Future: child could use AsyncOpenFiles for true async I/O
         let mut child_params = params.clone();
-        let child_stdin_file = sys::async_pipe::receiver_into_blocking(stdin_reader)?;
-        let child_stdout_file = sys::async_pipe::sender_into_blocking(stdout_writer)?;
-        child_params.open_files.set_fd(
-            OpenFiles::STDIN_FD,
-            openfiles::OpenFile::File(child_stdin_file),
-        );
-        child_params.open_files.set_fd(
-            OpenFiles::STDOUT_FD,
-            openfiles::OpenFile::File(child_stdout_file),
-        );
+        child_params
+            .open_files
+            .set_fd(OpenFiles::STDIN_FD, stdin_reader.into());
+        child_params
+            .open_files
+            .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
 
         let body = self.body.clone();
         let join_handle =
