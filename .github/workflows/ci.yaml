@@ -110,7 +110,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: "${{ matrix.target }}"
 
@@ -193,7 +193,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
@@ -315,7 +315,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
@@ -377,7 +377,7 @@ jobs:
           toolchain: stable
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Check generated schemas
         run: cargo xtask check schemas
@@ -442,7 +442,7 @@ jobs:
           toolchain: stable
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: |
             ./pr
@@ -490,7 +490,7 @@ jobs:
           path: "bash-completion"
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: "binaries-x86_64-linux"
           path: "binaries"
@@ -608,13 +608,13 @@ jobs:
           path: sources
 
       - name: Download prebuilt brush binaries
-        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: binaries-x86_64-linux
           path: binaries
 
       - name: Download integration test binaries
-        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: integration-tests-x86_64-linux
           path: binaries
