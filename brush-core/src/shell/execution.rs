@@ -3,8 +3,12 @@
 use std::{io::Read, path::Path};
 
 use crate::{
-    ExecutionControlFlow, ExecutionParameters, ExecutionResult, arithmetic::Evaluatable as _,
-    callstack, error, interp::Execute as _, openfiles, trace_categories,
+    ExecutionControlFlow, ExecutionParameters, ExecutionResult,
+    arithmetic::Evaluatable as _,
+    callstack, error,
+    filter::{SourceFilter as _, SourceScriptParams},
+    interp::Execute as _,
+    openfiles, trace_categories,
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
@@ -42,13 +46,29 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(
-            path.as_ref(),
-            args,
-            params,
-            callstack::ScriptCallType::Source,
+        // Collect args and create filter params.
+        let args_vec: Vec<String> = args.map(Into::into).collect();
+        let filter_params = SourceScriptParams::new(self, path.as_ref(), args_vec.as_slice());
+
+        crate::with_filter!(
+            self,
+            source_filter,
+            pre_source_script,
+            post_source_script,
+            filter_params,
+            p => {
+                // Extract owned values to release the borrow on self
+                let path = p.path.into_owned();
+                let args = p.args.into_owned();
+                self.parse_and_execute_script_file(
+                    &path,
+                    args.iter().cloned(),
+                    params,
+                    callstack::ScriptCallType::Source,
+                )
+                .await
+            }
         )
-        .await
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.
