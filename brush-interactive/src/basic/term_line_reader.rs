@@ -113,11 +113,11 @@ impl<'a> ReadLineState<'a> {
                 eprintln!("^C");
                 return Ok(Some(ReadResult::Interrupted));
             }
-            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('d')) => {
-                if self.line.is_empty() {
-                    Self::display_newline()?;
-                    return Ok(Some(ReadResult::Eof));
-                }
+            (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('d'))
+                if self.line.is_empty() =>
+            {
+                Self::display_newline()?;
+                return Ok(Some(ReadResult::Eof));
             }
             (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('l')) => {
                 self.clear_screen()?;

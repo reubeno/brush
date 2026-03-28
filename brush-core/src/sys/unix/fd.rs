@@ -5,7 +5,7 @@ use std::os::fd::RawFd;
 use crate::{ShellFd, error, openfiles};
 
 cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(any(target_os = "linux", target_os = "android"))] {
         const FD_DIR_PATH: &str = "/proc/self/fd";
     } else if #[cfg(any(
             target_os = "freebsd",
@@ -15,6 +15,7 @@ cfg_if::cfg_if! {
         ))] {
         const FD_DIR_PATH: &str = "/dev/fd";
     } else {
+        /// Returns an iterator over all open file descriptors for the shell.
         pub fn iter_fds()
         -> Result<impl Iterator<Item = (ShellFd, openfiles::OpenFile)>, error::Error> {
             Ok(std::iter::empty())
@@ -28,8 +29,9 @@ cfg_if::cfg_if! {
 /// If the platform does not support enumerating file descriptors, an empty iterator
 /// is returned. This function will skip any file descriptors that cannot be opened.
 #[cfg(any(
-    target_os = "freebsd",
     target_os = "linux",
+    target_os = "android",
+    target_os = "freebsd",
     target_os = "macos",
     target_os = "netbsd",
     target_os = "openbsd"

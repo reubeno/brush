@@ -1368,7 +1368,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             .into())
                         }
                         ShellValue::String(_) => {
-                            Ok(std::format!("{name}={assignable_value_str}",).into())
+                            Ok(std::format!("{name}={assignable_value_str}").into())
                         }
                         ShellValue::Unset(_) => {
                             Ok(std::format!("declare -{attr_str} {name}").into())

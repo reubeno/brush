@@ -1,7 +1,7 @@
 use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
 use clap::Parser;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 use nix::sys::stat::Mode;
 use std::io::Write;
 
@@ -58,7 +58,7 @@ impl builtins::Command for UmaskCommand {
 }
 
 cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(any(target_os = "linux", target_os = "android"))] {
         fn get_umask() -> Result<u32, brush_core::Error> {
             let umask = procfs::process::Process::myself().ok().and_then(|me| me.status().ok()).and_then(|status| status.umask);
             umask.ok_or_else(|| brush_core::ErrorKind::InvalidUmask.into())
