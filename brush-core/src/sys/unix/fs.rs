@@ -277,6 +277,25 @@ pub fn split_path_for_pattern(s: &str) -> impl Iterator<Item = &str> {
     s.split('/')
 }
 
+/// Returns the root path for an absolute pattern, if the first component indicates one.
+///
+/// On Unix, an empty first component (from splitting a path like `/foo`) indicates
+/// an absolute path rooted at `/`.
+pub fn pattern_path_root(first_component: &str) -> Option<PathBuf> {
+    if first_component.is_empty() {
+        Some(PathBuf::from("/"))
+    } else {
+        None
+    }
+}
+
+/// Pushes a component onto a path for pattern expansion.
+///
+/// On Unix, this delegates directly to `PathBuf::push`.
+pub fn push_path_for_pattern(path: &mut std::path::PathBuf, component: &str) {
+    path.push(component);
+}
+
 /// Normalizes path separators for shell output.
 ///
 /// On Unix, this is a no-op since paths already use `/`.

@@ -206,6 +206,43 @@ pub fn split_path_for_pattern(s: &str) -> impl Iterator<Item = &str> {
     s.split(PATH_SEPARATORS)
 }
 
+/// Returns the root path for an absolute pattern, if the first component indicates one.
+///
+/// On Windows, recognizes both a leading separator (empty first component from splitting
+/// a path like `/foo`) and a drive-letter prefix like `C:` as absolute.
+pub fn pattern_path_root(first_component: &str) -> Option<PathBuf> {
+    if first_component.is_empty() {
+        // Leading separator, e.g. `/foo` split into ["", "foo"].
+        Some(PathBuf::from("/"))
+    } else if first_component.len() == 2
+        && first_component.as_bytes()[0].is_ascii_alphabetic()
+        && first_component.as_bytes()[1] == b':'
+    {
+        // Drive letter prefix, e.g. `c:/foo` split into ["c:", "foo"].
+        let mut root = String::with_capacity(3);
+        root.push_str(first_component);
+        root.push('/');
+        Some(PathBuf::from(root))
+    } else {
+        None
+    }
+}
+
+/// Pushes a component onto a path for pattern expansion.
+///
+/// On Windows, `PathBuf::push` has special drive-letter and root-replacement
+/// semantics that conflict with shell path construction. This function always
+/// appends the component as a child, using string concatenation to avoid
+/// unwanted path replacement.
+pub fn push_path_for_pattern(path: &mut PathBuf, component: &str) {
+    let mut s = path.to_string_lossy().into_owned();
+    if !s.is_empty() && !s.ends_with('/') && !s.ends_with('\\') {
+        s.push('/');
+    }
+    s.push_str(component);
+    *path = PathBuf::from(s);
+}
+
 /// Normalizes path separators for shell output.
 ///
 /// On Windows, replaces `\` with `/` since backslash is the shell escape character.

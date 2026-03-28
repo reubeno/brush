@@ -1,10 +1,7 @@
 //! Shell patterns
 
 use crate::{error, regex, sys, trace_categories};
-use std::{
-    collections::VecDeque,
-    path::{Path, PathBuf},
-};
+use std::{collections::VecDeque, path::Path};
 
 /// Represents a piece of a shell pattern.
 #[derive(Clone, Debug)]
@@ -226,20 +223,21 @@ impl Pattern {
             }
         }
 
-        // Check if the path appears to be absolute.
-        let is_absolute = if let Some(first_component) = components.first() {
-            first_component
-                .iter()
-                .all(|piece| piece.as_str().is_empty())
-        } else {
-            false
-        };
+        // Check if the path appears to be absolute by inspecting the first component.
+        // On Unix, a leading `/` produces an empty first component. On Windows, a
+        // drive-letter prefix like `c:` is also recognized. The platform-specific
+        // logic lives in `sys::fs::pattern_path_root`.
+        let absolute_root = components.first().and_then(|first_component| {
+            let flattened: String = first_component.iter().map(|p| p.as_str()).collect();
+            sys::fs::pattern_path_root(&flattened)
+        });
 
         let prefix_to_remove;
-        let mut paths_so_far = if is_absolute {
+        let mut paths_so_far = if let Some(root) = absolute_root {
             prefix_to_remove = None;
-            // TODO(patterns): Figure out appropriate thing to do on non-Unix platforms.
-            vec![PathBuf::from(std::path::MAIN_SEPARATOR_STR)]
+            // Skip the first component; it was consumed to determine the root.
+            components.remove(0);
+            vec![root]
         } else {
             let mut working_dir_str = working_dir.to_string_lossy().to_string();
 
@@ -261,7 +259,7 @@ impl Pattern {
                         .iter()
                         .map(|piece| piece.as_str())
                         .collect::<String>();
-                    p.push(flattened);
+                    sys::fs::push_path_for_pattern(p, &flattened);
                 }
                 continue;
             }
@@ -325,7 +323,7 @@ impl Pattern {
                     path_ref = stripped;
                 }
 
-                Some(path_ref.to_string())
+                Some(sys::fs::normalize_path_separators(path_ref).into_owned())
             })
             .collect();
 
