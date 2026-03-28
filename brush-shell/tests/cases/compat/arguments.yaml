@@ -81,3 +81,42 @@ cases:
     args:
       - script.sh
       - --
+
+  - name: "-c with -- separator and command"
+    args:
+      - "-c"
+      - "--"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - "1"
+      - "-2"
+      - "3"
+
+  - name: "-c with -- separator only"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - "--"
+
+  - name: "-c with -- separator where command is --"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - "--"
+      - "--"
+      - "echo"
+      - "hi"
+
+  - name: "-ec with -- separator and command"
+    args:
+      - "-ec"
+      - "--"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - "1"
+      - "-2"
+      - "3"
+
+  - name: "-o with -- is not an option terminator"
+    ignore_stderr: true
+    args:
+      - "-o"
+      - "--"
