@@ -117,6 +117,6 @@ pub fn push_path_for_pattern(path: &mut std::path::PathBuf, component: &str) {
 /// Normalizes path separators for shell output.
 ///
 /// In the stub implementation, this is a no-op.
-pub fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
+pub const fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Borrowed(s)
 }
