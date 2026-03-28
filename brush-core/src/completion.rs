@@ -1210,6 +1210,11 @@ async fn get_file_completions(
     .await
     .unwrap_or_else(|_err| token_to_complete.to_owned());
 
+    // Normalize path separators before building the glob pattern, because backslash
+    // is the escape character in glob syntax and must not be confused with a Windows
+    // path separator.
+    let expanded_token = sys::fs::normalize_path_separators(&expanded_token).into_owned();
+
     let glob = std::format!("{expanded_token}*");
 
     let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
