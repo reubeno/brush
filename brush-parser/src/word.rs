@@ -1075,7 +1075,8 @@ peg::parser! {
 
         pub(crate) rule command_piece() -> () =
             word_piece(<[')']>, true /*in_command*/) {} /
-            ([' ' | '\t'])+ {}
+            ([' ' | '\t'])+ {} /
+            ['\'' | '`'] {}
 
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }
@@ -1260,6 +1261,36 @@ mod tests {
     #[test]
     fn parse_command_substitution_with_embedded_extglob() -> Result<()> {
         assert_ron_snapshot!(test_parse("$(echo !(x))")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_sub_with_unbalanced_single_quote() -> Result<()> {
+        assert_ron_snapshot!(test_parse("\"$(cat <<'EOF'\nit's here\nEOF\n)\"")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_sub_with_unbalanced_backtick() -> Result<()> {
+        assert_ron_snapshot!(test_parse("\"$(cat <<'EOF'\na ` b\nEOF\n)\"")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_sub_with_balanced_double_quotes() -> Result<()> {
+        assert_ron_snapshot!(test_parse("\"$(cat <<'EOF'\n\"hello\"\nEOF\n)\"")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_sub_with_balanced_single_quotes() -> Result<()> {
+        assert_ron_snapshot!(test_parse("\"$(cat <<'EOF'\n'hello'\nEOF\n)\"")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_sub_with_balanced_backticks() -> Result<()> {
+        assert_ron_snapshot!(test_parse("\"$(cat <<'EOF'\n`hello`\nEOF\n)\"")?);
         Ok(())
     }
 

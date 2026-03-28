@@ -250,3 +250,34 @@ cases:
       true
       EOF
       )
+
+  - name: "Here doc with unpaired single quote in command substitution"
+    stdin: |
+      echo "$(cat <<'EOF'
+      it's here
+      EOF
+      )"
+
+  - name: "Here doc with unpaired backtick in command substitution"
+    stdin: |
+      echo "$(cat <<'EOF'
+      a ` b
+      EOF
+      )"
+
+  - name: "Here doc with three single quotes in command substitution"
+    stdin: |
+      echo "$(cat <<'EOF'
+      it's Bob's it's
+      EOF
+      )"
+
+  - name: "Here doc with unpaired single quote in command substitution (#420)"
+    stdin: |
+      var=$(
+        sed 's/nice/cool/' - <<-EOF
+        that's
+        "nice"
+      EOF
+      )
+      echo $var
