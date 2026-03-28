@@ -23,7 +23,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(path) = self.paths.pop_front() {
             let path = PathBuf::from(path.as_ref()).join(self.filename.as_ref());
-            if path.is_file() && path.as_path().executable() {
+            if path.as_path().executable() && !path.is_dir() {
                 return Some(path);
             }
         }

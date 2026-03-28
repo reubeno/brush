@@ -1,52 +1,6 @@
-//! Filesystem utilities.
+//! Filesystem utilities (stubs).
 
 use crate::error;
-
-impl crate::sys::fs::PathExt for std::path::Path {
-    fn readable(&self) -> bool {
-        true
-    }
-
-    fn writable(&self) -> bool {
-        true
-    }
-
-    fn executable(&self) -> bool {
-        true
-    }
-
-    fn exists_and_is_block_device(&self) -> bool {
-        false
-    }
-
-    fn exists_and_is_char_device(&self) -> bool {
-        false
-    }
-
-    fn exists_and_is_fifo(&self) -> bool {
-        false
-    }
-
-    fn exists_and_is_socket(&self) -> bool {
-        false
-    }
-
-    fn exists_and_is_setgid(&self) -> bool {
-        false
-    }
-
-    fn exists_and_is_setuid(&self) -> bool {
-        false
-    }
-
-    fn exists_and_is_sticky_bit(&self) -> bool {
-        false
-    }
-
-    fn get_device_and_inode(&self) -> Result<(u64, u64), crate::error::Error> {
-        Ok((0, 0))
-    }
-}
 
 pub(crate) trait MetadataExt {
     fn gid(&self) -> u32 {
@@ -83,5 +37,19 @@ pub fn open_null_file() -> Result<std::fs::File, error::Error> {
 pub fn try_open_special_file(
     _path: &std::path::Path,
 ) -> Option<Result<std::fs::File, std::io::Error>> {
+    None
+}
+
+/// Returns the path to the system-wide shell profile script.
+///
+/// Stub implementation that returns `None`.
+pub fn get_system_profile_path() -> Option<&'static std::path::Path> {
+    None
+}
+
+/// Returns the path to the system-wide shell rc script.
+///
+/// Stub implementation that returns `None`.
+pub fn get_system_rc_path() -> Option<&'static std::path::Path> {
     None
 }

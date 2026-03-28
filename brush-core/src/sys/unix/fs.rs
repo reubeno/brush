@@ -224,3 +224,13 @@ pub fn open_null_file() -> Result<std::fs::File, error::Error> {
 pub const fn try_open_special_file(_path: &Path) -> Option<Result<std::fs::File, std::io::Error>> {
     None
 }
+
+/// Returns the path to the system-wide shell profile script.
+pub fn get_system_profile_path() -> Option<&'static Path> {
+    Some(Path::new("/etc/profile"))
+}
+
+/// Returns the path to the system-wide shell rc script.
+pub fn get_system_rc_path() -> Option<&'static Path> {
+    Some(Path::new("/etc/bash.bashrc"))
+}

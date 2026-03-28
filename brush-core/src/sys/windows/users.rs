@@ -1,4 +1,5 @@
 #![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::unnecessary_wraps)]
 
 use crate::error;
 use std::path::PathBuf;
@@ -27,19 +28,23 @@ pub(crate) fn is_root() -> bool {
 }
 
 pub(crate) fn get_current_uid() -> Result<u32, error::Error> {
-    Err(error::ErrorKind::NotSupportedOnThisPlatform("getting current uid").into())
+    // TODO(windows): return the user's SID RID when windows-sys is available.
+    Ok(0)
 }
 
 pub(crate) fn get_current_gid() -> Result<u32, error::Error> {
-    Err(error::ErrorKind::NotSupportedOnThisPlatform("getting current gid").into())
+    // TODO(windows): return a meaningful group ID when windows-sys is available.
+    Ok(0)
 }
 
 pub(crate) fn get_effective_uid() -> Result<u32, error::Error> {
-    Err(error::ErrorKind::NotSupportedOnThisPlatform("getting effective uid").into())
+    // TODO(windows): return the user's SID RID when windows-sys is available.
+    Ok(0)
 }
 
 pub(crate) fn get_effective_gid() -> Result<u32, error::Error> {
-    Err(error::ErrorKind::NotSupportedOnThisPlatform("getting effective gid").into())
+    // TODO(windows): return a meaningful group ID when windows-sys is available.
+    Ok(0)
 }
 
 pub(crate) fn get_current_username() -> Result<String, error::Error> {

@@ -23,7 +23,7 @@ const DEFAULT_LINENO: usize = 1;
 pub(crate) fn inherit_env_vars(
     shell: &mut Shell<impl extensions::ShellExtensions>,
 ) -> Result<(), error::Error> {
-    for (k, v) in std::env::vars() {
+    for (k, v) in sys::env::get_host_env_vars() {
         // See if it's a function exported by an ancestor process.
         if let Some(func_name) = k.strip_prefix("BASH_FUNC_")
             && let Some(func_name) = func_name.strip_suffix("%%")

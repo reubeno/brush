@@ -1,6 +1,6 @@
 //! Init script support for shells.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::{Shell, error, extensions, interp};
 
@@ -62,15 +62,16 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             }
 
             //
-            // Source /etc/profile if it exists.
+            // Source the system profile if it exists.
             //
             // Next source the first of these that exists and is readable (if any):
             //     * ~/.bash_profile
             //     * ~/.bash_login
             //     * ~/.profile
             //
-            self.source_if_exists(Path::new("/etc/profile"), &params)
-                .await?;
+            if let Some(system_profile) = crate::sys::fs::get_system_profile_path() {
+                self.source_if_exists(&system_profile, &params).await?;
+            }
             if let Some(home_path) = self.home_dir() {
                 if self.options.sh_mode {
                     self.source_if_exists(home_path.join(".profile").as_path(), &params)
@@ -103,11 +104,12 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
                         //
                         // Otherwise, for non-login interactive shells, load in this order:
                         //
-                        //     /etc/bash.bashrc
+                        //     system rc file (e.g. /etc/bash.bashrc on Unix)
                         //     ~/.bashrc
                         //
-                        self.source_if_exists(Path::new("/etc/bash.bashrc"), &params)
-                            .await?;
+                        if let Some(system_rc) = crate::sys::fs::get_system_rc_path() {
+                            self.source_if_exists(&system_rc, &params).await?;
+                        }
                         if let Some(home_path) = self.home_dir() {
                             self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
                                 .await?;
