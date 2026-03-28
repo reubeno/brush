@@ -97,7 +97,7 @@ impl CommandCommand {
         use_default_path: bool,
     ) -> Option<FoundCommand> {
         // Look in path.
-        if command_name.contains(std::path::MAIN_SEPARATOR) {
+        if sys::fs::contains_path_separator(command_name) {
             let candidate_path = shell.absolute_path(Path::new(command_name));
             if candidate_path.executable() {
                 Some(FoundCommand::External(

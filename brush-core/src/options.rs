@@ -236,6 +236,8 @@ impl RuntimeOptions {
             save_multiline_cmds_in_history: true,
             extquote: true,
             force_fignore: true,
+            case_insensitive_pathname_expansion:
+                crate::sys::fs::default_case_insensitive_path_expansion(),
             enable_hostname_completion: true,
             interactive_comments: true,
             expand_prompt_strings: true,

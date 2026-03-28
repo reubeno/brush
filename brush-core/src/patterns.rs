@@ -1,6 +1,6 @@
 //! Shell patterns
 
-use crate::{error, regex, trace_categories};
+use crate::{error, regex, sys, trace_categories};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -206,14 +206,12 @@ impl Pattern {
 
         let mut components: Vec<PatternWord> = vec![];
         for piece in &self.pieces {
-            let mut split_result = piece
-                .as_str()
-                .split(std::path::MAIN_SEPARATOR)
+            let mut split_result: VecDeque<_> = sys::fs::split_path_for_pattern(piece.as_str())
                 .map(|s| match piece {
                     PatternPiece::Pattern(_) => PatternPiece::Pattern(s.to_owned()),
                     PatternPiece::Literal(_) => PatternPiece::Literal(s.to_owned()),
                 })
-                .collect::<VecDeque<_>>();
+                .collect();
 
             if let Some(first_piece) = split_result.pop_front() {
                 if let Some(last_component) = components.last_mut() {

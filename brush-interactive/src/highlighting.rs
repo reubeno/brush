@@ -332,7 +332,7 @@ impl<'a, SE: brush_core::ShellExtensions> Highlighter<'a, SE> {
             return CommandType::Unknown;
         }
 
-        if name.contains(std::path::MAIN_SEPARATOR) {
+        if brush_core::sys::fs::contains_path_separator(name) {
             // TODO(highlighting): Should check for executable-ness.
             let candidate_path = self.shell.absolute_path(std::path::Path::new(name));
             if candidate_path.exists() {

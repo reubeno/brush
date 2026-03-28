@@ -160,3 +160,59 @@ pub const fn get_system_profile_path() -> Option<&'static Path> {
 pub const fn get_system_rc_path() -> Option<&'static Path> {
     None
 }
+
+/// Returns the platform default for case-insensitive pathname expansion.
+///
+/// On Windows, filesystems are typically case-insensitive, so this returns `true`.
+pub const fn default_case_insensitive_path_expansion() -> bool {
+    true
+}
+
+/// Path separator characters on Windows.
+const PATH_SEPARATORS: [char; 2] = ['/', '\\'];
+
+/// Returns true if the string contains a path separator character.
+///
+/// On Windows, both `/` and `\` are considered path separators.
+pub fn contains_path_separator(s: &str) -> bool {
+    s.contains(PATH_SEPARATORS)
+}
+
+/// Returns true if the string ends with a path separator character.
+///
+/// On Windows, both `/` and `\` are considered path separators.
+pub fn ends_with_path_separator(s: &str) -> bool {
+    s.ends_with(PATH_SEPARATORS)
+}
+
+/// Returns the string with a trailing path separator removed, if present.
+///
+/// On Windows, both `/` and `\` are considered path separators.
+pub fn strip_path_separator_suffix(s: &str) -> &str {
+    s.strip_suffix(PATH_SEPARATORS).unwrap_or(s)
+}
+
+/// Finds the byte index of the last path separator in the string.
+///
+/// On Windows, both `/` and `\` are considered path separators.
+pub fn rfind_path_separator(s: &str) -> Option<usize> {
+    s.rfind(PATH_SEPARATORS)
+}
+
+/// Splits a string on path separator characters, returning an iterator of components.
+///
+/// On Windows, both `/` and `\` are used as separators.
+pub fn split_path_for_pattern(s: &str) -> impl Iterator<Item = &str> {
+    s.split(PATH_SEPARATORS)
+}
+
+/// Normalizes path separators for shell output.
+///
+/// On Windows, replaces `\` with `/` since backslash is the shell escape character.
+pub fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.contains('\\') {
+        std::borrow::Cow::Owned(s.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}

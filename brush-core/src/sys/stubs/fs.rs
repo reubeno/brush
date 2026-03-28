@@ -53,3 +53,52 @@ pub fn get_system_profile_path() -> Option<&'static std::path::Path> {
 pub fn get_system_rc_path() -> Option<&'static std::path::Path> {
     None
 }
+
+/// Returns the platform default for case-insensitive pathname expansion.
+///
+/// In the stub implementation, this returns `false`.
+pub const fn default_case_insensitive_path_expansion() -> bool {
+    false
+}
+
+/// Returns true if the string contains a path separator character.
+///
+/// In the stub implementation, only `/` is considered a path separator.
+pub fn contains_path_separator(s: &str) -> bool {
+    s.contains('/')
+}
+
+/// Returns true if the string ends with a path separator character.
+///
+/// In the stub implementation, only `/` is considered a path separator.
+pub fn ends_with_path_separator(s: &str) -> bool {
+    s.ends_with('/')
+}
+
+/// Returns the string with a trailing path separator removed, if present.
+///
+/// In the stub implementation, only `/` is considered a path separator.
+pub fn strip_path_separator_suffix(s: &str) -> &str {
+    s.strip_suffix('/').unwrap_or(s)
+}
+
+/// Finds the byte index of the last path separator in the string.
+///
+/// In the stub implementation, only `/` is considered a path separator.
+pub fn rfind_path_separator(s: &str) -> Option<usize> {
+    s.rfind('/')
+}
+
+/// Splits a string on path separator characters, returning an iterator of components.
+///
+/// In the stub implementation, only `/` is used as a separator.
+pub fn split_path_for_pattern(s: &str) -> impl Iterator<Item = &str> {
+    s.split('/')
+}
+
+/// Normalizes path separators for shell output.
+///
+/// In the stub implementation, this is a no-op.
+pub fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    std::borrow::Cow::Borrowed(s)
+}

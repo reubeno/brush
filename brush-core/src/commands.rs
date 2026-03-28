@@ -380,7 +380,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         }
 
         // We still haven't found a command to invoke. We'll need to look for an external command.
-        if !self.command_name.contains(std::path::MAIN_SEPARATOR) {
+        if !sys::fs::contains_path_separator(&self.command_name) {
             // All else failed; if we were given path directories to search, try to look through
             // them for a matching executable. Otherwise, use our default search logic.
             let path = if let Some(path_dirs) = &self.path_dirs {

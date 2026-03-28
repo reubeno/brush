@@ -1227,6 +1227,7 @@ async fn get_file_completions(
         .unwrap_or_default()
         .into_paths()
         .into_iter()
+        .map(|p| sys::fs::normalize_path_separators(&p).into_owned())
         .collect();
 
     match expanded_token.as_str() {
@@ -1290,7 +1291,7 @@ fn try_get_variable_completions(
     };
 
     // If there's a path separator, this is a path like $HOME/foo, not a variable to complete
-    if var_prefix.contains(std::path::MAIN_SEPARATOR) {
+    if sys::fs::contains_path_separator(var_prefix) {
         return None;
     }
 
@@ -1377,19 +1378,11 @@ async fn get_completions_using_basic_lookup(
     // completions too.
     // TODO(completions): Do a better job than just checking if index == 0.
     let is_command_position =
-        context.token_index == 0 && !token.is_empty() && !token.contains(std::path::MAIN_SEPARATOR);
+        context.token_index == 0 && !token.is_empty() && !sys::fs::contains_path_separator(token);
 
     if is_command_position {
         add_command_completions(shell, token, &mut candidates);
         candidates.sort();
-    }
-
-    #[cfg(windows)]
-    {
-        candidates = candidates
-            .into_iter()
-            .map(|c| c.replace('\\', "/"))
-            .collect();
     }
 
     Answer::Candidates(candidates, ProcessingOptions::default())
