@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 
-use brush_core::builtins::{self, ContentType, ContentOptions};
+use brush_core::builtins::{self, ContentOptions, ContentType};
 
 /// Generates a [`builtins::SimpleCommand`] wrapper around a coreutils `uumain` function.
 macro_rules! coreutils_builtin {
@@ -22,9 +22,7 @@ macro_rules! coreutils_builtin {
                 _options: &ContentOptions,
             ) -> Result<String, brush_core::Error> {
                 match content_type {
-                    ContentType::DetailedHelp | ContentType::ShortDescription => {
-                        Ok($desc.into())
-                    }
+                    ContentType::DetailedHelp | ContentType::ShortDescription => Ok($desc.into()),
                     ContentType::ShortUsage => Ok(String::new()),
                     ContentType::ManPage => {
                         brush_core::error::unimp("man page not available for coreutils builtin")
@@ -33,16 +31,11 @@ macro_rules! coreutils_builtin {
             }
 
             #[expect(clippy::cast_sign_loss)]
-            fn execute<
-                SE: brush_core::ShellExtensions,
-                I: Iterator<Item = S>,
-                S: AsRef<str>,
-            >(
+            fn execute<SE: brush_core::ShellExtensions, I: Iterator<Item = S>, S: AsRef<str>>(
                 _context: brush_core::ExecutionContext<'_, SE>,
                 args: I,
             ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
-                let os_args: Vec<OsString> =
-                    args.map(|a| OsString::from(a.as_ref())).collect();
+                let os_args: Vec<OsString> = args.map(|a| OsString::from(a.as_ref())).collect();
 
                 let code = $util_crate::uumain(os_args.into_iter());
                 Ok(brush_core::ExecutionResult::new((code & 0xFF) as u8))
@@ -55,10 +48,7 @@ macro_rules! coreutils_builtin {
 macro_rules! register_coreutils_builtin {
     ($map:expr, $feature:literal, $name:literal, $struct_name:ident) => {
         #[cfg(feature = $feature)]
-        $map.insert(
-            $name.into(),
-            builtins::simple_builtin::<$struct_name, SE>(),
-        );
+        $map.insert($name.into(), builtins::simple_builtin::<$struct_name, SE>());
     };
 }
 
@@ -74,40 +64,84 @@ coreutils_builtin!(Base32Command, uu_base32, "base32 encode/decode data");
 coreutils_builtin!(Base64Command, uu_base64, "base64 encode/decode data");
 
 #[cfg(feature = "coreutils.basename")]
-coreutils_builtin!(BasenameCommand, uu_basename, "strip directory and suffix from filenames");
+coreutils_builtin!(
+    BasenameCommand,
+    uu_basename,
+    "strip directory and suffix from filenames"
+);
 
 #[cfg(feature = "coreutils.basenc")]
-coreutils_builtin!(BasencCommand, uu_basenc, "encode/decode data and print to stdout");
+coreutils_builtin!(
+    BasencCommand,
+    uu_basenc,
+    "encode/decode data and print to stdout"
+);
 
 #[cfg(feature = "coreutils.cat")]
-coreutils_builtin!(CatCommand, uu_cat, "concatenate files and print on the standard output");
+coreutils_builtin!(
+    CatCommand,
+    uu_cat,
+    "concatenate files and print on the standard output"
+);
 
 #[cfg(feature = "coreutils.cksum")]
 coreutils_builtin!(CksumCommand, uu_cksum, "print CRC checksum and byte counts");
 
 #[cfg(feature = "coreutils.b2sum")]
-coreutils_builtin!(B2sumCommand, uu_b2sum, "print or check BLAKE2 message digests");
+coreutils_builtin!(
+    B2sumCommand,
+    uu_b2sum,
+    "print or check BLAKE2 message digests"
+);
 
 #[cfg(feature = "coreutils.md5sum")]
-coreutils_builtin!(Md5sumCommand, uu_md5sum, "print or check MD5 message digests");
+coreutils_builtin!(
+    Md5sumCommand,
+    uu_md5sum,
+    "print or check MD5 message digests"
+);
 
 #[cfg(feature = "coreutils.sha1sum")]
-coreutils_builtin!(Sha1sumCommand, uu_sha1sum, "print or check SHA1 message digests");
+coreutils_builtin!(
+    Sha1sumCommand,
+    uu_sha1sum,
+    "print or check SHA1 message digests"
+);
 
 #[cfg(feature = "coreutils.sha224sum")]
-coreutils_builtin!(Sha224sumCommand, uu_sha224sum, "print or check SHA224 message digests");
+coreutils_builtin!(
+    Sha224sumCommand,
+    uu_sha224sum,
+    "print or check SHA224 message digests"
+);
 
 #[cfg(feature = "coreutils.sha256sum")]
-coreutils_builtin!(Sha256sumCommand, uu_sha256sum, "print or check SHA256 message digests");
+coreutils_builtin!(
+    Sha256sumCommand,
+    uu_sha256sum,
+    "print or check SHA256 message digests"
+);
 
 #[cfg(feature = "coreutils.sha384sum")]
-coreutils_builtin!(Sha384sumCommand, uu_sha384sum, "print or check SHA384 message digests");
+coreutils_builtin!(
+    Sha384sumCommand,
+    uu_sha384sum,
+    "print or check SHA384 message digests"
+);
 
 #[cfg(feature = "coreutils.sha512sum")]
-coreutils_builtin!(Sha512sumCommand, uu_sha512sum, "print or check SHA512 message digests");
+coreutils_builtin!(
+    Sha512sumCommand,
+    uu_sha512sum,
+    "print or check SHA512 message digests"
+);
 
 #[cfg(feature = "coreutils.comm")]
-coreutils_builtin!(CommCommand, uu_comm, "compare two sorted files line by line");
+coreutils_builtin!(
+    CommCommand,
+    uu_comm,
+    "compare two sorted files line by line"
+);
 
 #[cfg(feature = "coreutils.cp")]
 coreutils_builtin!(CpCommand, uu_cp, "copy files and directories");
@@ -116,10 +150,18 @@ coreutils_builtin!(CpCommand, uu_cp, "copy files and directories");
 coreutils_builtin!(CsplitCommand, uu_csplit, "split a file into sections");
 
 #[cfg(feature = "coreutils.cut")]
-coreutils_builtin!(CutCommand, uu_cut, "remove sections from each line of files");
+coreutils_builtin!(
+    CutCommand,
+    uu_cut,
+    "remove sections from each line of files"
+);
 
 #[cfg(feature = "coreutils.date")]
-coreutils_builtin!(DateCommand, uu_date, "print or set the system date and time");
+coreutils_builtin!(
+    DateCommand,
+    uu_date,
+    "print or set the system date and time"
+);
 
 #[cfg(feature = "coreutils.dd")]
 coreutils_builtin!(DdCommand, uu_dd, "convert and copy a file");
@@ -134,7 +176,11 @@ coreutils_builtin!(DirCommand, uu_dir, "list directory contents");
 coreutils_builtin!(DircolorsCommand, uu_dircolors, "color setup for ls");
 
 #[cfg(feature = "coreutils.dirname")]
-coreutils_builtin!(DirnameCommand, uu_dirname, "strip last component from file name");
+coreutils_builtin!(
+    DirnameCommand,
+    uu_dirname,
+    "strip last component from file name"
+);
 
 #[cfg(feature = "coreutils.du")]
 coreutils_builtin!(DuCommand, uu_du, "estimate file space usage");
@@ -143,7 +189,11 @@ coreutils_builtin!(DuCommand, uu_du, "estimate file space usage");
 coreutils_builtin!(EchoCommand, uu_echo, "display a line of text (coreutils)");
 
 #[cfg(feature = "coreutils.env")]
-coreutils_builtin!(EnvCommand, uu_env, "run a program in a modified environment");
+coreutils_builtin!(
+    EnvCommand,
+    uu_env,
+    "run a program in a modified environment"
+);
 
 #[cfg(feature = "coreutils.expand")]
 coreutils_builtin!(ExpandCommand, uu_expand, "convert tabs to spaces");
@@ -161,7 +211,11 @@ coreutils_builtin!(FalseCommand, uu_false, "do nothing, unsuccessfully");
 coreutils_builtin!(FmtCommand, uu_fmt, "simple optimal text formatter");
 
 #[cfg(feature = "coreutils.fold")]
-coreutils_builtin!(FoldCommand, uu_fold, "wrap each input line to fit in specified width");
+coreutils_builtin!(
+    FoldCommand,
+    uu_fold,
+    "wrap each input line to fit in specified width"
+);
 
 #[cfg(feature = "coreutils.head")]
 coreutils_builtin!(HeadCommand, uu_head, "output the first part of files");
@@ -170,7 +224,11 @@ coreutils_builtin!(HeadCommand, uu_head, "output the first part of files");
 coreutils_builtin!(HostnameCommand, uu_hostname, "print the system hostname");
 
 #[cfg(feature = "coreutils.join")]
-coreutils_builtin!(JoinCommand, uu_join, "join lines of two files on a common field");
+coreutils_builtin!(
+    JoinCommand,
+    uu_join,
+    "join lines of two files on a common field"
+);
 
 #[cfg(feature = "coreutils.link")]
 coreutils_builtin!(LinkCommand, uu_link, "create a link to a file");
@@ -185,7 +243,11 @@ coreutils_builtin!(LsCommand, uu_ls, "list directory contents");
 coreutils_builtin!(MkdirCommand, uu_mkdir, "make directories");
 
 #[cfg(feature = "coreutils.mktemp")]
-coreutils_builtin!(MktempCommand, uu_mktemp, "create a temporary file or directory");
+coreutils_builtin!(
+    MktempCommand,
+    uu_mktemp,
+    "create a temporary file or directory"
+);
 
 #[cfg(feature = "coreutils.more")]
 coreutils_builtin!(MoreCommand, uu_more, "file perusal filter for crt viewing");
@@ -197,10 +259,18 @@ coreutils_builtin!(MvCommand, uu_mv, "move (rename) files");
 coreutils_builtin!(NlCommand, uu_nl, "number lines of files");
 
 #[cfg(feature = "coreutils.nproc")]
-coreutils_builtin!(NprocCommand, uu_nproc, "print the number of processing units");
+coreutils_builtin!(
+    NprocCommand,
+    uu_nproc,
+    "print the number of processing units"
+);
 
 #[cfg(feature = "coreutils.numfmt")]
-coreutils_builtin!(NumfmtCommand, uu_numfmt, "convert numbers from/to human-readable strings");
+coreutils_builtin!(
+    NumfmtCommand,
+    uu_numfmt,
+    "convert numbers from/to human-readable strings"
+);
 
 #[cfg(feature = "coreutils.od")]
 coreutils_builtin!(OdCommand, uu_od, "dump files in octal and other formats");
@@ -212,19 +282,39 @@ coreutils_builtin!(PasteCommand, uu_paste, "merge lines of files");
 coreutils_builtin!(PrCommand, uu_pr, "paginate or columnate files for printing");
 
 #[cfg(feature = "coreutils.printenv")]
-coreutils_builtin!(PrintenvCommand, uu_printenv, "print all or part of environment");
+coreutils_builtin!(
+    PrintenvCommand,
+    uu_printenv,
+    "print all or part of environment"
+);
 
 #[cfg(feature = "coreutils.printf")]
-coreutils_builtin!(PrintfCommand, uu_printf, "format and print data (coreutils)");
+coreutils_builtin!(
+    PrintfCommand,
+    uu_printf,
+    "format and print data (coreutils)"
+);
 
 #[cfg(feature = "coreutils.ptx")]
-coreutils_builtin!(PtxCommand, uu_ptx, "produce a permuted index of file contents");
+coreutils_builtin!(
+    PtxCommand,
+    uu_ptx,
+    "produce a permuted index of file contents"
+);
 
 #[cfg(feature = "coreutils.pwd")]
-coreutils_builtin!(PwdCommand, uu_pwd, "print name of current/working directory (coreutils)");
+coreutils_builtin!(
+    PwdCommand,
+    uu_pwd,
+    "print name of current/working directory (coreutils)"
+);
 
 #[cfg(feature = "coreutils.readlink")]
-coreutils_builtin!(ReadlinkCommand, uu_readlink, "print resolved symbolic links or canonical file names");
+coreutils_builtin!(
+    ReadlinkCommand,
+    uu_readlink,
+    "print resolved symbolic links or canonical file names"
+);
 
 #[cfg(feature = "coreutils.realpath")]
 coreutils_builtin!(RealpathCommand, uu_realpath, "print the resolved path");
@@ -239,13 +329,21 @@ coreutils_builtin!(RmdirCommand, uu_rmdir, "remove empty directories");
 coreutils_builtin!(SeqCommand, uu_seq, "print a sequence of numbers");
 
 #[cfg(feature = "coreutils.shred")]
-coreutils_builtin!(ShredCommand, uu_shred, "overwrite a file to hide its contents");
+coreutils_builtin!(
+    ShredCommand,
+    uu_shred,
+    "overwrite a file to hide its contents"
+);
 
 #[cfg(feature = "coreutils.shuf")]
 coreutils_builtin!(ShufCommand, uu_shuf, "generate random permutations");
 
 #[cfg(feature = "coreutils.sleep")]
-coreutils_builtin!(SleepCommand, uu_sleep, "delay for a specified amount of time");
+coreutils_builtin!(
+    SleepCommand,
+    uu_sleep,
+    "delay for a specified amount of time"
+);
 
 #[cfg(feature = "coreutils.sort")]
 coreutils_builtin!(SortCommand, uu_sort, "sort lines of text files");
@@ -254,10 +352,18 @@ coreutils_builtin!(SortCommand, uu_sort, "sort lines of text files");
 coreutils_builtin!(SplitCommand, uu_split, "split a file into pieces");
 
 #[cfg(feature = "coreutils.sum")]
-coreutils_builtin!(SumCommand, uu_sum, "checksum and count the blocks in a file");
+coreutils_builtin!(
+    SumCommand,
+    uu_sum,
+    "checksum and count the blocks in a file"
+);
 
 #[cfg(feature = "coreutils.sync")]
-coreutils_builtin!(SyncCommand, uu_sync, "synchronize cached writes to persistent storage");
+coreutils_builtin!(
+    SyncCommand,
+    uu_sync,
+    "synchronize cached writes to persistent storage"
+);
 
 #[cfg(feature = "coreutils.tac")]
 coreutils_builtin!(TacCommand, uu_tac, "concatenate and print files in reverse");
@@ -266,10 +372,18 @@ coreutils_builtin!(TacCommand, uu_tac, "concatenate and print files in reverse")
 coreutils_builtin!(TailCommand, uu_tail, "output the last part of files");
 
 #[cfg(feature = "coreutils.tee")]
-coreutils_builtin!(TeeCommand, uu_tee, "read from stdin and write to stdout and files");
+coreutils_builtin!(
+    TeeCommand,
+    uu_tee,
+    "read from stdin and write to stdout and files"
+);
 
 #[cfg(feature = "coreutils.test")]
-coreutils_builtin!(TestCommand, uu_test, "check file types and compare values (coreutils)");
+coreutils_builtin!(
+    TestCommand,
+    uu_test,
+    "check file types and compare values (coreutils)"
+);
 
 #[cfg(feature = "coreutils.touch")]
 coreutils_builtin!(TouchCommand, uu_touch, "change file timestamps");
@@ -281,7 +395,11 @@ coreutils_builtin!(TrCommand, uu_tr, "translate or delete characters");
 coreutils_builtin!(TrueCommand, uu_true, "do nothing, successfully");
 
 #[cfg(feature = "coreutils.truncate")]
-coreutils_builtin!(TruncateCommand, uu_truncate, "shrink or extend the size of a file");
+coreutils_builtin!(
+    TruncateCommand,
+    uu_truncate,
+    "shrink or extend the size of a file"
+);
 
 #[cfg(feature = "coreutils.tsort")]
 coreutils_builtin!(TsortCommand, uu_tsort, "perform topological sort");
@@ -308,7 +426,11 @@ coreutils_builtin!(WcCommand, uu_wc, "print newline, word, and byte counts");
 coreutils_builtin!(WhoamiCommand, uu_whoami, "print effective userid");
 
 #[cfg(feature = "coreutils.yes")]
-coreutils_builtin!(YesCommand, uu_yes, "output a string repeatedly until killed");
+coreutils_builtin!(
+    YesCommand,
+    uu_yes,
+    "output a string repeatedly until killed"
+);
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
