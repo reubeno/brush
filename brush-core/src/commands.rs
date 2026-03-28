@@ -130,14 +130,6 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn stderr_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
         self.params.try_stderr_async(self.shell)
     }
-
-    pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
-        self.shell.options().interactive
-            && matches!(
-                self.params.process_group_policy,
-                ProcessGroupPolicy::NewProcessGroup
-            )
-    }
 }
 
 /// An argument to a command.

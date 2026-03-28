@@ -1,10 +1,6 @@
-use winnow::error::ContextError;
 use winnow::stream::LocatingSlice;
 
 use crate::parser::{ParserOptions, SourceInfo};
-
-/// Type alias for parser error
-pub(super) type PError = winnow::error::ErrMode<ContextError>;
 
 /// Type alias for input stream
 pub type StrStream<'a> = LocatingSlice<&'a str>;

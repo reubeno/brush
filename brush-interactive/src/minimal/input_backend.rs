@@ -15,8 +15,24 @@ impl InputBackend for MinimalInputBackend {
         shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
+        self.read_line_impl(shell_ref, &prompt)
+    }
+}
+
+impl MinimalInputBackend {
+    #[expect(clippy::unused_self)]
+    fn should_display_prompt(&self) -> bool {
+        std::io::stdin().is_terminal()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read_line_impl(
+        &self,
+        shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        prompt: &InteractivePrompt,
+    ) -> Result<ReadResult, ShellError> {
         let mut result = String::new();
-        let mut prompt_to_display = Some(&prompt);
+        let mut prompt_to_display = Some(prompt);
 
         loop {
             self.display_prompt_for_continuation(prompt_to_display)?;
@@ -48,14 +64,42 @@ impl InputBackend for MinimalInputBackend {
             Ok(ReadResult::Input(result))
         }
     }
-}
 
-impl MinimalInputBackend {
-    #[expect(clippy::unused_self)]
-    fn should_display_prompt(&self) -> bool {
-        std::io::stdin().is_terminal()
+    // On wasm32 there is no multi-thread runtime, so fall back to single-line reads.
+    #[cfg(target_arch = "wasm32")]
+    fn read_line_impl(
+        &self,
+        shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        prompt: &InteractivePrompt,
+    ) -> Result<ReadResult, ShellError> {
+        let _ = shell_ref;
+        self.display_prompt(prompt)?;
+
+        let result = match Self::read_input_line()? {
+            ReadResult::Input(s) => s,
+            ReadResult::BoundCommand(s) => s,
+            ReadResult::Eof => return Ok(ReadResult::Eof),
+            ReadResult::Interrupted => return Ok(ReadResult::Interrupted),
+        };
+
+        if result.is_empty() {
+            Ok(ReadResult::Eof)
+        } else {
+            Ok(ReadResult::Input(result))
+        }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn display_prompt(&self, prompt: &InteractivePrompt) -> Result<(), ShellError> {
+        if self.should_display_prompt() {
+            eprint!("{}", prompt.prompt);
+            std::io::stderr().flush()?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn display_prompt_for_continuation(
         &self,
         prompt: Option<&InteractivePrompt>,
@@ -72,6 +116,7 @@ impl MinimalInputBackend {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn is_complete_input(
         shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
         input: &str,

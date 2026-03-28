@@ -1,4 +1,4 @@
-use winnow::combinator::trace;
+use winnow::combinator::{fail, trace};
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::token::take_while;
@@ -14,7 +14,7 @@ use super::extended_test::extended_test_command;
 use super::helpers::{array_spaces, parse_balanced_delimiters, peek_char, peek_first_word, spaces};
 use super::position::PositionTracker;
 use super::redirections::{here_documents, io_number, io_redirect, optional_redirects};
-use super::types::{PError, ParseContext, StrStream};
+use super::types::{ParseContext, StrStream};
 use super::words::{non_reserved_word, word_as_ast, word_part};
 
 // ============================================================================
@@ -24,7 +24,7 @@ use super::words::{non_reserved_word, word_as_ast, word_part};
 /// Parse an array element value (handles quotes properly, stops at ')' or whitespace)
 fn array_element_value<'a>(
     ctx: &'a ParseContext<'a>,
-) -> impl Parser<StrStream<'a>, String, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, String, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let mut value = String::new();
 
@@ -44,7 +44,7 @@ fn array_element_value<'a>(
         }
 
         if value.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(value)
@@ -54,16 +54,15 @@ fn array_element_value<'a>(
 /// Parse an array element: either "value" or "[index]=value"
 fn array_element<'a>(
     ctx: &'a ParseContext<'a>,
-) -> impl Parser<StrStream<'a>, (Option<ast::Word>, ast::Word), PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, (Option<ast::Word>, ast::Word), ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Skip whitespace before element (newlines are whitespace inside arrays)
         array_spaces().parse_next(input)?;
 
         // Try to parse indexed element: [index]=value
         let checkpoint = input.checkpoint();
-        let has_bracket = winnow::combinator::peek::<_, _, PError, _>('[')
-            .parse_next(input)
-            .is_ok();
+        let has_bracket: ModalResult<char> = winnow::combinator::peek('[').parse_next(input);
+        let has_bracket = has_bracket.is_ok();
 
         if has_bracket {
             // Parse index using parse_balanced_delimiters to handle nested brackets
@@ -77,9 +76,7 @@ fn array_element<'a>(
                 .unwrap_or(index_str_with_brackets);
 
             let has_close = true; // parse_balanced_delimiters already consumed the ']'
-            let has_equals = winnow::combinator::opt::<_, _, PError, _>('=')
-                .parse_next(input)?
-                .is_some();
+            let has_equals = winnow::combinator::opt('=').parse_next(input)?.is_some();
 
             if has_close && has_equals {
                 // Parse value using proper word parsing that handles quotes
@@ -107,7 +104,7 @@ fn array_element<'a>(
 fn assignment_word<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, (ast::Assignment, ast::Word), PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, (ast::Assignment, ast::Word), ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -120,10 +117,8 @@ fn assignment_word<'a>(
             .parse_next(input)?;
 
         // Check for array element syntax: var[index]
-        let array_index = if winnow::combinator::peek::<_, _, PError, _>('[')
-            .parse_next(input)
-            .is_ok()
-        {
+        let peek_bracket: ModalResult<char> = winnow::combinator::peek('[').parse_next(input);
+        let array_index = if peek_bracket.is_ok() {
             // Parse the index using parse_balanced_delimiters to handle nested brackets
             let index_with_brackets =
                 parse_balanced_delimiters("[", Some('['), ']', 1, false, false)
@@ -146,9 +141,7 @@ fn assignment_word<'a>(
 
         // Check if it's an array assignment
         let checkpoint = input.checkpoint();
-        let has_paren = winnow::combinator::opt::<_, _, PError, _>('(')
-            .parse_next(input)?
-            .is_some();
+        let has_paren = winnow::combinator::opt('(').parse_next(input)?.is_some();
 
         if has_paren {
             // Parse array elements
@@ -167,10 +160,7 @@ fn assignment_word<'a>(
                 array_spaces().parse_next(input)?;
 
                 // Check for closing paren
-                if winnow::combinator::opt::<_, _, PError, _>(')')
-                    .parse_next(input)?
-                    .is_some()
-                {
+                if winnow::combinator::opt(')').parse_next(input)?.is_some() {
                     full_word.push(')');
                     break;
                 }
@@ -256,7 +246,7 @@ fn assignment_word<'a>(
 pub(super) fn cmd_prefix<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CommandPrefix, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CommandPrefix, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         winnow::combinator::repeat::<_, _, Vec<_>, _, _>(
             1..,
@@ -277,33 +267,15 @@ pub(super) fn cmd_prefix<'a>(
 }
 
 /// Check if we're at a here-doc marker (<<) but NOT a here-string (<<<)
-fn at_here_doc_marker<'a>() -> impl Parser<StrStream<'a>, (), PError> + 'a {
-    move |input: &mut StrStream<'a>| {
-        // Skip optional fd number
-        winnow::combinator::opt(io_number()).parse_next(input)?;
-
-        // Check for << but not <<<
-        let checkpoint = input.checkpoint();
-        if winnow::combinator::opt::<_, _, PError, _>("<<")
-            .parse_next(input)?
-            .is_some()
-        {
-            // Make sure it's not <<<
-            if winnow::combinator::peek::<_, _, PError, _>('<')
-                .parse_next(input)
-                .is_ok()
-            {
-                // It's <<<, not <<
-                input.reset(&checkpoint);
-                return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
-            }
-            input.reset(&checkpoint);
-            Ok(())
-        } else {
-            input.reset(&checkpoint);
-            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
-        }
-    }
+fn at_here_doc_marker<'a>() -> impl ModalParser<StrStream<'a>, (), ContextError> + 'a {
+    // Optional fd number, then "<<", then verify the next char is not another "<"
+    // (distinguishing << from <<<). Always called via peek() so consumption doesn't matter.
+    (
+        winnow::combinator::opt(io_number()),
+        "<<",
+        winnow::combinator::not("<"),
+    )
+        .void()
 }
 
 /// Parse multiple here-docs when we know we're at a here-doc marker.
@@ -311,7 +283,7 @@ fn at_here_doc_marker<'a>() -> impl Parser<StrStream<'a>, (), PError> + 'a {
 fn parse_here_docs<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, Vec<ast::CommandPrefixOrSuffixItem>, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, Vec<ast::CommandPrefixOrSuffixItem>, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let (docs, remaining) = here_documents(tracker).parse_next(input)?;
 
@@ -335,7 +307,7 @@ fn parse_here_docs<'a>(
 fn single_suffix_item<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CommandPrefixOrSuffixItem, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CommandPrefixOrSuffixItem, ContextError> + 'a {
     winnow::combinator::alt((
         io_redirect(ctx, tracker).map(|r| ast::CommandPrefixOrSuffixItem::IoRedirect(r.redirect)),
         process_substitution(ctx, tracker)
@@ -355,11 +327,11 @@ fn single_suffix_item<'a>(
 pub(super) fn cmd_suffix<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CommandSuffix, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CommandSuffix, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Check what's next: space, redirect, or something else
         let Ok(ch) = peek_char().parse_next(input) else {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         };
 
         // If there's space, consume it and we can parse any suffix item
@@ -372,7 +344,7 @@ pub(super) fn cmd_suffix<'a>(
             // No space, but can parse redirects without space
             false
         } else {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         };
 
         let mut all_items: Vec<ast::CommandPrefixOrSuffixItem> = Vec::new();
@@ -386,7 +358,7 @@ pub(super) fn cmd_suffix<'a>(
             // Only check for here-docs when we see '<' or a digit (fd number)
             if ch == '<' || ch.is_ascii_digit() {
                 // Check if this is a here-doc (but not here-string)
-                if winnow::combinator::peek::<_, _, PError, _>(at_here_doc_marker())
+                if winnow::combinator::peek(at_here_doc_marker())
                     .parse_next(input)
                     .is_ok()
                 {
@@ -401,40 +373,26 @@ pub(super) fn cmd_suffix<'a>(
                 }
             }
 
-            // If we can't parse words, only try redirects
-            if can_parse_words || all_items.is_empty() {
-                // Try to parse a single suffix item
-                let result = single_suffix_item(ctx, tracker).parse_next(input);
-                match result {
-                    Ok(item) => {
-                        all_items.push(item);
-                        spaces().parse_next(input)?;
-                    }
-                    Err(winnow::error::ErrMode::Cut(e)) => {
-                        // Cut errors are fatal - propagate them
-                        return Err(winnow::error::ErrMode::Cut(e));
-                    }
-                    Err(_) => break,
-                }
+            // If we can't parse words (no leading space), only try redirects
+            let item = if can_parse_words || all_items.is_empty() {
+                single_suffix_item(ctx, tracker).parse_next(input)
             } else {
-                // After first redirect without space, only try redirects
-                let result = io_redirect(ctx, tracker).parse_next(input);
-                match result {
-                    Ok(r) => {
-                        all_items.push(ast::CommandPrefixOrSuffixItem::IoRedirect(r.redirect));
-                        spaces().parse_next(input)?;
-                    }
-                    Err(winnow::error::ErrMode::Cut(e)) => {
-                        // Cut errors are fatal - propagate them
-                        return Err(winnow::error::ErrMode::Cut(e));
-                    }
-                    Err(_) => break,
+                io_redirect(ctx, tracker)
+                    .map(|r| ast::CommandPrefixOrSuffixItem::IoRedirect(r.redirect))
+                    .parse_next(input)
+            };
+            match item {
+                Ok(item) => {
+                    all_items.push(item);
+                    spaces().parse_next(input)?;
                 }
+                Err(winnow::error::ErrMode::Cut(e)) => return Err(winnow::error::ErrMode::Cut(e)),
+                Err(_) => break,
             }
         }
 
         if all_items.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(ast::CommandSuffix(all_items))
@@ -447,7 +405,7 @@ pub(super) fn cmd_suffix<'a>(
 pub(super) fn simple_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::SimpleCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::SimpleCommand, ContextError> + 'a {
     trace("simple_command", move |input: &mut StrStream<'a>| {
         // Try to parse optional prefix (assignments and/or redirects)
         let prefix = winnow::combinator::opt(cmd_prefix(ctx, tracker)).parse_next(input)?;
@@ -463,7 +421,7 @@ pub(super) fn simple_command<'a>(
 
         // Must have at least one of: prefix, word, or suffix
         if prefix.is_none() && word_or_name.is_none() && suffix.is_none() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(ast::SimpleCommand {
@@ -483,13 +441,13 @@ pub(super) fn simple_command<'a>(
 pub(super) fn command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::Command, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::Command, ContextError> + 'a {
     trace("command", move |input: &mut StrStream<'a>| {
         spaces().parse_next(input)?; // Consume optional leading spaces
 
         // Fast path: dispatch based on first character
         let Ok(first_char) = peek_char().parse_next(input) else {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         };
 
         match first_char {
@@ -509,10 +467,9 @@ pub(super) fn command<'a>(
             // Extended test: [[ ... ]] (bash mode only)
             '[' if !ctx.options.posix_mode && !ctx.options.sh_mode => {
                 // Check if it's [[
-                if winnow::combinator::peek::<_, _, PError, _>("[[")
-                    .parse_next(input)
-                    .is_ok()
-                {
+                let peek_dbl_bracket: ModalResult<&str> =
+                    winnow::combinator::peek("[[").parse_next(input);
+                if peek_dbl_bracket.is_ok() {
                     (
                         extended_test_command(ctx, tracker),
                         optional_redirects(ctx, tracker),
@@ -573,17 +530,19 @@ pub(super) fn command<'a>(
                         // However, some reserved words like "in" can be used as variable names
                         // in assignments (e.g., "in=foo"), so we check for that case.
                         "then" | "else" | "elif" | "fi" | "do" | "done" | "esac" => {
-                            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                            fail.parse_next(input)
                         }
                         "in" => {
                             // Check if this is an assignment (in=value)
                             let checkpoint = input.checkpoint();
-                            let is_assignment = winnow::combinator::peek::<_, _, PError, _>((
-                                take_while(1.., |c: char| c.is_alphanumeric() || c == '_'),
-                                '=',
-                            ))
-                            .parse_next(input)
-                            .is_ok();
+                            let is_assignment = {
+                                let r: ModalResult<(&str, char)> = winnow::combinator::peek((
+                                    take_while(1.., |c: char| c.is_alphanumeric() || c == '_'),
+                                    '=',
+                                ))
+                                .parse_next(input);
+                                r.is_ok()
+                            };
                             input.reset(&checkpoint);
 
                             if is_assignment {
@@ -593,7 +552,7 @@ pub(super) fn command<'a>(
                                     .parse_next(input)
                             } else {
                                 // "in" as keyword - backtrack
-                                Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                                fail.parse_next(input)
                             }
                         }
                         // Not a keyword - check if it looks like a function definition (name followed by ())
@@ -601,16 +560,22 @@ pub(super) fn command<'a>(
                             // Peek for function definition pattern: name + optional_spaces + "()"
                             // Function names may contain hyphens, dots, and other
                             // non-metacharacters (see bash manual, §Shell Functions).
-                            let is_func_def = winnow::combinator::peek::<_, _, PError, _>((
-                                take_while(1.., |c: char| {
-                                    c.is_alphanumeric()
-                                        || matches!(c, '_' | '-' | '.' | ':' | '+' | '@' | '/')
-                                }),
-                                take_while(0.., |c| c == ' ' || c == '\t'),
-                                "()",
-                            ))
-                            .parse_next(input)
-                            .is_ok();
+                            let is_func_def = {
+                                let r: ModalResult<(&str, &str, &str)> =
+                                    winnow::combinator::peek((
+                                        take_while(1.., |c: char| {
+                                            c.is_alphanumeric()
+                                                || matches!(
+                                                    c,
+                                                    '_' | '-' | '.' | ':' | '+' | '@' | '/'
+                                                )
+                                        }),
+                                        take_while(0.., |c| c == ' ' || c == '\t'),
+                                        "()",
+                                    ))
+                                    .parse_next(input);
+                                r.is_ok()
+                            };
 
                             if is_func_def {
                                 winnow::combinator::alt((
@@ -642,15 +607,18 @@ pub(super) fn command<'a>(
             _ => {
                 // Peek for function definition pattern: name + optional_spaces + "()"
                 // Function names may contain dots, hyphens, slashes, and other non-metacharacters
-                let is_func_def = winnow::combinator::peek::<_, _, PError, _>((
-                    take_while(1.., |c: char| {
-                        c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':' | '+' | '@' | '/')
-                    }),
-                    take_while(0.., |c| c == ' ' || c == '\t'),
-                    "()",
-                ))
-                .parse_next(input)
-                .is_ok();
+                let is_func_def = {
+                    let r: ModalResult<(&str, &str, &str)> = winnow::combinator::peek((
+                        take_while(1.., |c: char| {
+                            c.is_alphanumeric()
+                                || matches!(c, '_' | '-' | '.' | ':' | '+' | '@' | '/')
+                        }),
+                        take_while(0.., |c| c == ' ' || c == '\t'),
+                        "()",
+                    ))
+                    .parse_next(input);
+                    r.is_ok()
+                };
 
                 if is_func_def {
                     winnow::combinator::alt((

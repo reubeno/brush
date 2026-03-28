@@ -99,7 +99,8 @@ pub(crate) async fn expand_and_eval(
         .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
 
     // Now parse.
-    let expr = brush_parser::arithmetic::parse(&expanded_self)
+    let parser_impl = shell.parser_options().parser_impl;
+    let expr = brush_parser::arithmetic::parse_with(&expanded_self, parser_impl)
         .map_err(|_e| EvalError::ParseError(expanded_self))?;
 
     // Trace if applicable.
@@ -214,7 +215,8 @@ fn deref_lvalue(
         }
     };
 
-    let parsed_value = brush_parser::arithmetic::parse(value_str.as_ref())
+    let parser_impl = shell.parser_options().parser_impl;
+    let parsed_value = brush_parser::arithmetic::parse_with(value_str.as_ref(), parser_impl)
         .map_err(|_err| EvalError::ParseError(value_str.to_string()))?;
 
     // Literals don't need depth tracking — they can't cause recursion.
