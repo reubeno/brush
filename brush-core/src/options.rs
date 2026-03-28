@@ -229,6 +229,7 @@ impl RuntimeOptions {
             treat_unset_variables_as_error: create_options.treat_unset_variables_as_error,
             exit_on_nonzero_command_exit: create_options.exit_on_nonzero_command_exit,
             external_cmd_leads_session: create_options.external_cmd_leads_session,
+            login_shell: create_options.login,
             remember_command_locations: true,
             check_window_size_after_external_commands: true,
             save_multiline_cmds_in_history: true,
