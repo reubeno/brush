@@ -185,6 +185,14 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, std::io::Error> {
+        // Give platform-specific code a chance to handle special files
+        // (e.g. /dev/null on Windows, which needs to open NUL instead).
+        // This is checked before absolute_path so that paths like /dev/null
+        // are intercepted on platforms where they aren't valid native paths.
+        if let Some(result) = crate::sys::fs::try_open_special_file(path.as_ref()) {
+            return result.map(openfiles::OpenFile::from);
+        }
+
         let path_to_open = self.absolute_path(path.as_ref());
 
         // See if this is a reference to a file descriptor, in which case the actual
