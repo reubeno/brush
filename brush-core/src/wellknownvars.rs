@@ -378,6 +378,7 @@ pub(crate) fn init_well_known_vars(
     // OSTYPE
     let os_type = match std::env::consts::OS {
         "linux" => "linux-gnu",
+        "android" => "linux-android",
         "windows" => "windows",
         _ => "unknown",
     };

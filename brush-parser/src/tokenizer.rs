@@ -116,7 +116,8 @@ pub enum TokenizerError {
     #[error("unterminated command substitution")]
     UnterminatedCommandSubstitution,
 
-    /// An unterminated arithmetic or other expansion was encountered at the end of the input stream.
+    /// An unterminated arithmetic or other expansion was encountered at the end of the input
+    /// stream.
     #[error("unterminated expansion")]
     UnterminatedExpansion,
 
@@ -601,7 +602,8 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     ///
     /// * `state` - The current token parse state to append characters to.
     /// * `terminating_char` - The character that terminates the construct (e.g., `)` or `]`).
-    /// * `nesting_open` - The character that increases nesting depth when encountered (e.g., `(` or `[`).
+    /// * `nesting_open` - The character that increases nesting depth when encountered (e.g., `(` or
+    ///   `[`).
     /// * `initial_nesting` - The initial nesting count (e.g., 2 for `$((`, 1 for `$[`).
     fn consume_nested_construct(
         &mut self,

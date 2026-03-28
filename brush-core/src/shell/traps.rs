@@ -17,18 +17,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// Behavior varies by signal type:
     ///
-    /// * **Per-signal recursion guard** — each trap guards against its own
-    ///   self-recursion, but different traps *can* fire from within each
-    ///   other's handlers (matching bash semantics).
+    /// * **Per-signal recursion guard** — each trap guards against its own self-recursion, but
+    ///   different traps *can* fire from within each other's handlers (matching bash semantics).
     ///
-    /// * **Inheritance** — in functions and subshells, some traps are only
-    ///   inherited when the corresponding shell option is enabled (e.g.
-    ///   `errtrace` / `set -E` for `ERR`, `functrace` / `set -T` for
-    ///   `DEBUG`/`RETURN`).
+    /// * **Inheritance** — in functions and subshells, some traps are only inherited when the
+    ///   corresponding shell option is enabled (e.g. `errtrace` / `set -E` for `ERR`, `functrace` /
+    ///   `set -T` for `DEBUG`/`RETURN`).
     ///
-    /// * **`$?` preservation** — `last_exit_status` is saved before and
-    ///   restored after the handler runs so the trap does not clobber the
-    ///   status that triggered it.
+    /// * **`$?` preservation** — `last_exit_status` is saved before and restored after the handler
+    ///   runs so the trap does not clobber the status that triggered it.
     ///
     /// # Arguments
     ///
