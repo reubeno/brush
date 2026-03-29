@@ -194,7 +194,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         self.end_command_string_mode()?;
 
-        // Give the shell a change to run on-exit tasks, but ignore the result.
+        // Give the shell a chance to run on-exit tasks, but ignore the result.
         let _ = self.on_exit().await;
 
         Ok(result)
@@ -225,7 +225,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             )
             .await?;
 
-        // Give the shell a change to run on-exit tasks, but ignore the result.
+        // Give the shell a chance to run on-exit tasks, but ignore the result.
         let _ = self.on_exit().await;
 
         Ok(result)
