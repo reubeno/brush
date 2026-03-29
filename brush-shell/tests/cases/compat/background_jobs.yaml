@@ -1,0 +1,89 @@
+name: "Background jobs"
+cases:
+  # === Implicit wait on exit: shell must wait for bg jobs before terminating ===
+  # These use file side-effects rather than stdout to avoid racy output ordering.
+
+  - name: "Single background job via -c without explicit wait"
+    skip: true # Issue #1079
+    args:
+      - "-c"
+      - "touch bg_done &"
+
+  - name: "Single background job via stdin without explicit wait"
+    skip: true # Issue #1079
+    stdin: |
+      touch bg_done &
+
+  - name: "Background compound command via -c without explicit wait"
+    skip: true # Issue #1079
+    args:
+      - "-c"
+      - "{ touch a_done; touch b_done; } &"
+
+  - name: "Background compound command via stdin without explicit wait"
+    skip: true # Issue #1079
+    stdin: |
+      { touch a_done; touch b_done; } &
+
+  - name: "Multiple background jobs via -c without explicit wait"
+    skip: true # Issue #1079
+    args:
+      - "-c"
+      - "touch one & touch two & touch three &"
+
+  - name: "Multiple background jobs via stdin without explicit wait"
+    skip: true # Issue #1079
+    stdin: |
+      touch one & touch two & touch three &
+
+  - name: "Background and foreground via -c without explicit wait"
+    skip: true # Issue #1079
+    args:
+      - "-c"
+      - "touch bg_done & touch fg_done"
+
+  - name: "Background and foreground via stdin without explicit wait"
+    skip: true # Issue #1079
+    stdin: |
+      touch bg_done & touch fg_done
+
+  # === Explicit wait ===
+
+  - name: "Background job side effect observed after wait via -c"
+    args:
+      - "-c"
+      - "touch bg_done & wait; test -f bg_done && echo exists"
+
+  - name: "Background job side effect observed after wait via stdin"
+    stdin: |
+      touch bg_done &
+      wait
+      test -f bg_done && echo exists
+
+  - name: "Single background job with explicit wait via -c"
+    args:
+      - "-c"
+      - |
+        echo hello &
+        wait
+
+  - name: "Single background job with explicit wait via stdin"
+    stdin: |
+      echo hello &
+      wait
+
+  - name: "Two sequential background jobs with explicit wait via -c"
+    args:
+      - "-c"
+      - |
+        echo 1 &
+        wait
+        echo 2 &
+        wait
+
+  - name: "Two sequential background jobs with explicit wait via stdin"
+    stdin: |
+      echo 1 &
+      wait
+      echo 2 &
+      wait

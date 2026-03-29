@@ -248,10 +248,7 @@ impl Execute for ast::CompoundList {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                // TODO(execute): Reenable launching in child process?
-                // let job = spawn_ao_list_in_child(ao_list, shell, params).await?;
-
-                let job = spawn_ao_list_in_task(ao_list, shell, params);
+                let job = spawn_async_ao_list_in_task(ao_list, shell, params);
                 let job_formatted = job.to_pid_style_string();
 
                 if shell.options().interactive && !shell.is_subshell() {
@@ -275,18 +272,23 @@ impl Execute for ast::CompoundList {
     }
 }
 
-fn spawn_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
+fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
     ao_list: &ast::AndOrList,
     shell: &'a mut Shell<SE>,
     params: &ExecutionParameters,
 ) -> &'a jobs::Job {
     // Clone the inputs.
     let mut cloned_shell = shell.clone();
-    let cloned_params = params.clone();
+    let mut cloned_params = params.clone();
     let cloned_ao_list = ao_list.clone();
 
     // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
     cloned_shell.options_mut().interactive = false;
+
+    // Redirect stdin to null, per spec.
+    if let Ok(null) = openfiles::null() {
+        cloned_params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
+    }
 
     let join_handle = tokio::spawn(async move {
         cloned_ao_list

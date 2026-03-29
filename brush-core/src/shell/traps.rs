@@ -4,6 +4,9 @@ use crate::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error, tra
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Runs any exit steps for the shell.
+    ///
+    /// This currently includes invoking the `EXIT` trap handler, if any, and
+    /// any on-exit handling of managed jobs.
     pub async fn on_exit(&mut self) -> Result<(), error::Error> {
         if self.traps.handles(TrapSignal::Exit) {
             self.invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
