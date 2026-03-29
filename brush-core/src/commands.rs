@@ -72,14 +72,6 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
-
-    pub(crate) fn should_cmd_lead_own_process_group(&self) -> bool {
-        self.shell.options().interactive
-            && matches!(
-                self.params.process_group_policy,
-                ProcessGroupPolicy::NewProcessGroup
-            )
-    }
 }
 
 /// An argument to a command.
@@ -549,7 +541,10 @@ pub(crate) fn execute_external_command(
         .is_some_and(|f| f.is_terminal());
 
     // Figure out if we should be setting up a new process group.
-    let new_pg = context.should_cmd_lead_own_process_group();
+    let new_pg = matches!(
+        context.params.process_group_policy,
+        ProcessGroupPolicy::NewProcessGroup
+    );
 
     // Compose the std::process::Command that encapsulates what we want to launch.
     #[allow(unused_mut, reason = "only mutated on unix platforms")]

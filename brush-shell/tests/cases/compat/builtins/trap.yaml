@@ -664,6 +664,37 @@ cases:
       echo "done"
 
   #
+  # EXIT trap in -c mode
+  #
+  - name: "EXIT trap fires in -c mode"
+    args:
+      - "-c"
+      - "trap 'echo exiting' EXIT; echo hello"
+    expected_stdout: |
+      hello
+      exiting
+
+  - name: "EXIT trap in -c mode has access to exit status"
+    args:
+      - "-c"
+      - "trap 'echo \"status: $?\"' EXIT; exit 42"
+    expected_stdout: "status: 42\n"
+
+  - name: "EXIT trap in -c mode runs after errexit"
+    args:
+      - "-c"
+      - "set -e; trap 'echo trapped' EXIT; false"
+    expected_stdout: "trapped\n"
+
+  - name: "EXIT trap in -c mode with multiple assignments last one wins"
+    args:
+      - "-c"
+      - "trap 'echo first' EXIT; trap 'echo second' EXIT; echo done"
+    expected_stdout: |
+      done
+      second
+
+  #
   # Trap with multiple signals
   #
   - name: "trap - clear multiple signals at once"

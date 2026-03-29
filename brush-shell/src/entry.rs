@@ -329,16 +329,7 @@ async fn run_in_shell(
 
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
-        let mut shell = shell_ref.lock().await;
-
-        shell.start_command_string_mode();
-
-        // Execute the command string.
-        let params = shell.default_exec_params();
-        let source_info = brush_core::SourceInfo::from("-c");
-        let _ = shell.run_string(command, &source_info, &params).await?;
-
-        shell.end_command_string_mode()?;
+        shell_ref.lock().await.run_dash_c_command(command).await?;
 
     // If -s was provided, then read commands from stdin. If there was a script (and optionally
     // args) passed on the command line via positional arguments, then we copy over the

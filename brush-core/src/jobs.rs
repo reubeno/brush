@@ -39,6 +39,11 @@ pub enum JobTaskWaitResult {
 }
 
 impl JobTask {
+    /// Returns whether the task is an external process.
+    pub const fn is_external(&self) -> bool {
+        matches!(self, Self::External(_))
+    }
+
     /// Waits for the task to complete. Returns the result of the wait.
     pub async fn wait(&mut self) -> Result<JobTaskWaitResult, error::Error> {
         match self {
