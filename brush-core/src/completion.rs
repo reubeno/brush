@@ -1232,7 +1232,10 @@ async fn get_file_completions(
         .unwrap_or_default()
         .into_paths()
         .into_iter()
-        .map(|p| sys::fs::normalize_path_separators(&p).into_owned())
+        .map(|p| match sys::fs::normalize_path_separators(&p) {
+            std::borrow::Cow::Borrowed(_) => p,
+            std::borrow::Cow::Owned(normalized) => normalized,
+        })
         .collect();
 
     match expanded_token.as_str() {

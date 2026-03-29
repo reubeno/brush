@@ -70,7 +70,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             //     * ~/.profile
             //
             if let Some(system_profile) = crate::sys::fs::get_system_profile_path() {
-                self.source_if_exists(&system_profile, &params).await?;
+                self.source_if_exists(system_profile, &params).await?;
             }
             if let Some(home_path) = self.home_dir() {
                 if self.options.sh_mode {
@@ -108,7 +108,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
                         //     ~/.bashrc
                         //
                         if let Some(system_rc) = crate::sys::fs::get_system_rc_path() {
-                            self.source_if_exists(&system_rc, &params).await?;
+                            self.source_if_exists(system_rc, &params).await?;
                         }
                         if let Some(home_path) = self.home_dir() {
                             self.source_if_exists(home_path.join(".bashrc").as_path(), &params)

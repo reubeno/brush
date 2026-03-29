@@ -40,24 +40,35 @@ pub(crate) fn get_host_env_vars() -> impl Iterator<Item = (String, String)> {
         }
     }
 
-    vars.into_iter().collect::<Vec<_>>().into_iter()
+    vars.into_iter()
 }
 
 /// Normalizes the case of well-known environment variable names to their
 /// canonical POSIX forms (`Path` → `PATH`, `home` → `HOME`).
 ///
-/// Variables like `TEMP`/`TMP` are not renamed here; they are copied to
-/// `TMPDIR` by the caller so that both the Windows and POSIX names are present.
-///
 /// # Arguments
 ///
 /// * `name` - The environment variable name to normalize.
 fn normalize_env_name(name: &str) -> String {
-    if name.eq_ignore_ascii_case("PATH") {
-        "PATH".to_string()
-    } else if name.eq_ignore_ascii_case("HOME") {
-        "HOME".to_string()
-    } else {
-        name.to_string()
+    // Normalize well-known variable names so that later lookups by
+    // canonical (uppercase) spelling always succeed regardless of the
+    // host's original casing.
+    const WELL_KNOWN: &[&str] = &[
+        "PATH",
+        "HOME",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+    ];
+
+    for &canonical in WELL_KNOWN {
+        if name.eq_ignore_ascii_case(canonical) {
+            return canonical.to_string();
+        }
     }
+
+    name.to_string()
 }

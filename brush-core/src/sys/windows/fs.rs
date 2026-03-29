@@ -83,7 +83,8 @@ impl crate::sys::fs::PathExt for Path {
     }
 
     fn get_device_and_inode(&self) -> Result<(u64, u64), crate::error::Error> {
-        Ok((0, 0))
+        // TODO(windows): implement using file index / volume serial number.
+        Err(error::ErrorKind::NotSupportedOnThisPlatform("get_device_and_inode").into())
     }
 }
 
