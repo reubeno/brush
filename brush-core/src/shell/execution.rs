@@ -3,14 +3,23 @@
 use std::{io::Read, path::Path};
 
 use crate::{
-    ExecutionControlFlow, ExecutionParameters, ExecutionResult, arithmetic::Evaluatable as _,
-    callstack, error, interp::Execute as _, openfiles, trace_categories,
+    ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, SourceInfo,
+    arithmetic::Evaluatable as _, callstack, error, interp::Execute as _, openfiles,
+    trace_categories,
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the default execution parameters for this shell.
     pub fn default_exec_params(&self) -> ExecutionParameters {
-        ExecutionParameters::default()
+        let mut params = ExecutionParameters::default();
+
+        params.process_group_policy = if self.options.enable_job_control {
+            ProcessGroupPolicy::NewProcessGroup
+        } else {
+            ProcessGroupPolicy::SameProcessGroup
+        };
+
+        params
     }
 
     pub(super) async fn source_if_exists(
@@ -162,7 +171,40 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             .await
     }
 
+    /// Executes the given command, provided to a shell executable on the command
+    /// line (i.e., via `-c`).
+    ///
+    /// It is expected that the shell will not be used for any further execution
+    /// after this command; this function will perform any necessary shell exit
+    /// handling.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The command to execute.
+    pub async fn run_dash_c_command<S: Into<String>>(
+        &mut self,
+        command: S,
+    ) -> Result<ExecutionResult, error::Error> {
+        self.start_command_string_mode();
+
+        // Execute the command string.
+        let params = self.default_exec_params();
+        let source_info = SourceInfo::from("-c");
+        let result = self.run_string(command, &source_info, &params).await?;
+
+        self.end_command_string_mode()?;
+
+        // Give the shell a chance to run on-exit tasks, but ignore the result.
+        let _ = self.on_exit().await;
+
+        Ok(result)
+    }
+
     /// Executes the given script file, returning the resulting exit status.
+    ///
+    /// It is expected that the shell will not be used for any further execution
+    /// after this command; this function will perform any necessary shell exit
+    /// handling.
     ///
     /// # Arguments
     ///
@@ -183,6 +225,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             )
             .await?;
 
+        // Give the shell a chance to run on-exit tasks, but ignore the result.
         let _ = self.on_exit().await;
 
         Ok(result)
