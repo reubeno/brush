@@ -114,23 +114,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # NOTE: We don't provide Windows binaries yet.
-          # - target: aarch64-pc-windows-msvc
-          #   os: windows-2022
+          - target: aarch64-pc-windows-msvc
+            os: windows-2025
+            force_dry_run: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
+            force_dry_run: false
           - target: x86_64-apple-darwin
             os: macos-15-intel
-          # - target: x86_64-pc-windows-msvc
-          #   os: windows-2022
+            force_dry_run: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+            force_dry_run: true
           - target: x86_64-unknown-linux-musl
             os: ubuntu-22.04
+            force_dry_run: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-22.04
+            force_dry_run: false
           - target: aarch64-unknown-linux-musl
             os: ubuntu-22.04
+            force_dry_run: false
           - target: aarch64-apple-darwin
             os: macos-14
+            force_dry_run: false
     timeout-minutes: 60
 
     steps:
@@ -163,7 +170,8 @@ jobs:
           tool: cargo-about
 
       - name: "Generate license notices"
-        run: cd brush-shell && cargo about generate -o ../THIRD_PARTY_LICENSES.html about.hbs
+        working-directory: brush-shell
+        run: cargo about generate -o ../THIRD_PARTY_LICENSES.html about.hbs
 
       - name: "Update build flags"
         if: endsWith(matrix.target, 'windows-msvc')
@@ -173,7 +181,7 @@ jobs:
         uses: taiki-e/upload-rust-binary-action@0e34102c043ded9f2ca39f7af5cd99a540c61aff # v1.29.1
         id: upload-release
         with:
-          dry-run: ${{ github.event_name != 'release' }}
+          dry-run: ${{ github.event_name != 'release' || matrix.force_dry_run }}
           bin: brush
           locked: true
           target: ${{ matrix.target }}
@@ -184,13 +192,13 @@ jobs:
           include: "LICENSE,THIRD_PARTY_LICENSES.html"
 
       - name: "Generate artifact attestation"
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && !matrix.force_dry_run
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: "${{ steps.upload-release.outputs.archive }}.*"
 
       - name: "Upload artifacts (dry-run)"
-        if: github.event_name != 'release'
+        if: github.event_name != 'release' || matrix.force_dry_run
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: brush-${{ matrix.target }}

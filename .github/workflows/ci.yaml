@@ -165,21 +165,34 @@ jobs:
             artifact_suffix: "linux-x86_64"
             name_suffix: "(linux/x86_64)"
             homebrew_supported: true
+            coverage_min_percent: 70
 
           - host: "ubuntu-24.04-arm"
             variant: "linux-aarch64"
             artifact_suffix: "linux-aarch64"
             name_suffix: "(linux/aarch64)"
             homebrew_supported: false
+            coverage_min_percent: 70
 
           - host: "macos-latest"
             variant: "macos"
             artifact_suffix: "-macos"
             name_suffix: "(macOS)"
             homebrew_supported: true
+            coverage_min_percent: 70
+
+          - host: "windows-2025"
+            variant: "windows"
+            artifact_suffix: "-windows"
+            name_suffix: "(windows)"
+            homebrew_supported: false
+            coverage_min_percent: 20
 
     name: "Test ${{ matrix.name_suffix }}"
     runs-on: ${{ matrix.host }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -243,24 +256,12 @@ jobs:
           path: "bash-completion"
 
       - name: "Setup bash-completion"
-        run: |
-          echo "BASH_COMPLETION_PATH=${GITHUB_WORKSPACE}/bash-completion/bash_completion">>$GITHUB_ENV
+        run: echo "BASH_COMPLETION_PATH=${GITHUB_WORKSPACE}/bash-completion/bash_completion">>$GITHUB_ENV
 
       - name: Test
         env:
           VARIANT: ${{ matrix.variant }}
-        run: |
-          set -euxo pipefail
-
-          # Run tests with coverage collection
-          result=0
-          cargo xtask test integration --coverage --coverage-output ./codecov-${VARIANT}.xml || result=$?
-
-          # Rename test results for CI reporting
-          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}.xml
-
-          # Report the actual test results
-          exit ${result}
+        run: cargo xtask test integration --coverage --coverage-output ./codecov-${VARIANT}.xml --results-output ./test-results-${VARIANT}.xml
 
       - name: "Upload test results"
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -277,7 +278,7 @@ jobs:
           artifact_download_workflow_names: "CI"
           artifact_name: coverage-%name%${{ matrix.artifact_suffix }}
           filename: codecov-${{ matrix.variant }}.xml
-          overall_coverage_fail_threshold: 70
+          overall_coverage_fail_threshold: ${{ matrix.coverage_min_percent }}
           only_list_changed_files: ${{ github.event_name == 'pull_request' }}
           fail_on_negative_difference: true
           negative_difference_by: "overall"
