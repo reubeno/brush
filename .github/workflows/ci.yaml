@@ -181,7 +181,7 @@ jobs:
             homebrew_supported: true
             setup_bash_completion: true
 
-          - host: "windows-2025
+          - host: "windows-2025"
             variant: "windows"
             artifact_suffix: "-windows"
             name_suffix: "(windows)"
