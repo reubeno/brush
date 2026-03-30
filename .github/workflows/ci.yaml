@@ -165,31 +165,30 @@ jobs:
             artifact_suffix: "linux-x86_64"
             name_suffix: "(linux/x86_64)"
             homebrew_supported: true
-            setup_bash_completion: true
 
           - host: "ubuntu-24.04-arm"
             variant: "linux-aarch64"
             artifact_suffix: "linux-aarch64"
             name_suffix: "(linux/aarch64)"
             homebrew_supported: false
-            setup_bash_completion: true
 
           - host: "macos-latest"
             variant: "macos"
             artifact_suffix: "-macos"
             name_suffix: "(macOS)"
             homebrew_supported: true
-            setup_bash_completion: true
 
           - host: "windows-2025"
             variant: "windows"
             artifact_suffix: "-windows"
             name_suffix: "(windows)"
             homebrew_supported: false
-            setup_bash_completion: false
 
     name: "Test ${{ matrix.name_suffix }}"
     runs-on: ${{ matrix.host }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -245,7 +244,6 @@ jobs:
           echo "BASH_PATH=${BASH_PATH}">>$GITHUB_ENV
 
       - name: "Download recent bash-completion sources for tests"
-        if: ${{ matrix.setup_bash_completion }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
@@ -254,9 +252,7 @@ jobs:
           path: "bash-completion"
 
       - name: "Setup bash-completion"
-        if: ${{ matrix.setup_bash_completion }}
-        run: |
-          echo "BASH_COMPLETION_PATH=${GITHUB_WORKSPACE}/bash-completion/bash_completion">>$GITHUB_ENV
+        run: echo "BASH_COMPLETION_PATH=${GITHUB_WORKSPACE}/bash-completion/bash_completion">>$GITHUB_ENV
 
       - name: Test
         env:
