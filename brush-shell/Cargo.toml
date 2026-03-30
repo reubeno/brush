@@ -79,7 +79,7 @@ color-print = "0.3.7"
 etcetera = "0.11.0"
 schemars = { version = "1.2.1", optional = true }
 serde = { version = "1.0", features = ["derive"] }
-toml = "1.0.6"
+toml = "1.0.7"
 const_format = "0.2.35"
 git-version = "0.3.9"
 serde_json = { version = "1.0.149", optional = true }
@@ -129,7 +129,7 @@ regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
-test-with = { version = "0.15.8", default-features = false, features = [
+test-with = { version = "0.16.0", default-features = false, features = [
     "executable",
 ] }
 version-compare = "0.2.1"
