@@ -113,6 +113,11 @@ pub struct IntegrationTestArgs {
     /// Coverage options.
     #[clap(flatten)]
     pub coverage: CoverageArgs,
+
+    /// Copy the nextest JUnit XML results to this path after the test run.
+    /// The copy is performed even if tests fail, so CI can always upload results.
+    #[clap(long)]
+    pub results_output: Option<PathBuf>,
 }
 
 /// Arguments for coverage collection.
@@ -252,13 +257,20 @@ pub fn run_integration_tests(
     let profile = binary_args.effective_profile();
     eprintln!("Running integration tests ({profile:?} profile)...");
 
-    if args.coverage.coverage {
+    let test_result = if args.coverage.coverage {
         run_tests_with_coverage(sh, profile, None, &args.coverage.coverage_output, verbose)
     } else {
-        run_nextest(sh, profile, None, verbose)?;
-        eprintln!("Integration tests passed.");
-        Ok(())
+        run_nextest(sh, profile, None, verbose).map(|()| {
+            eprintln!("Integration tests passed.");
+        })
+    };
+
+    // Copy nextest results if requested (even on test failure, so CI can upload them).
+    if let Some(ref output) = args.results_output {
+        copy_nextest_results(output)?;
     }
+
+    test_result
 }
 
 /// Run cargo nextest with optional filter expression.
@@ -286,6 +298,21 @@ fn run_nextest(
     }
 
     cmd!(sh, "cargo {args...}").run().context("Tests failed")?;
+    Ok(())
+}
+
+/// Copy the nextest JUnit XML results to the given output path.
+fn copy_nextest_results(output: &Path) -> Result<()> {
+    let workspace_root = find_workspace_root()?;
+    let source = workspace_root.join("target/nextest/default/test-results.xml");
+    std::fs::copy(&source, output).with_context(|| {
+        format!(
+            "Failed to copy nextest results from {} to {}",
+            source.display(),
+            output.display()
+        )
+    })?;
+    eprintln!("Nextest results copied to: {}", output.display());
     Ok(())
 }
 
