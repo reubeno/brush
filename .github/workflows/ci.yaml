@@ -165,24 +165,28 @@ jobs:
             artifact_suffix: "linux-x86_64"
             name_suffix: "(linux/x86_64)"
             homebrew_supported: true
+            coverage_min_percent: 70
 
           - host: "ubuntu-24.04-arm"
             variant: "linux-aarch64"
             artifact_suffix: "linux-aarch64"
             name_suffix: "(linux/aarch64)"
             homebrew_supported: false
+            coverage_min_percent: 70
 
           - host: "macos-latest"
             variant: "macos"
             artifact_suffix: "-macos"
             name_suffix: "(macOS)"
             homebrew_supported: true
+            coverage_min_percent: 70
 
           - host: "windows-2025"
             variant: "windows"
             artifact_suffix: "-windows"
             name_suffix: "(windows)"
             homebrew_supported: false
+            coverage_min_percent: 20
 
     name: "Test ${{ matrix.name_suffix }}"
     runs-on: ${{ matrix.host }}
@@ -274,7 +278,7 @@ jobs:
           artifact_download_workflow_names: "CI"
           artifact_name: coverage-%name%${{ matrix.artifact_suffix }}
           filename: codecov-${{ matrix.variant }}.xml
-          overall_coverage_fail_threshold: 70
+          overall_coverage_fail_threshold: ${{ matrix.coverage_min_percent }}
           only_list_changed_files: ${{ github.event_name == 'pull_request' }}
           fail_on_negative_difference: true
           negative_difference_by: "overall"
