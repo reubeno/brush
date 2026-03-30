@@ -114,7 +114,7 @@ pub struct IntegrationTestArgs {
     #[clap(flatten)]
     pub coverage: CoverageArgs,
 
-    /// Copy the nextest JUnit XML results to this path after the test run.
+    /// Copy the nextest `JUnit` XML results to this path after the test run.
     /// The copy is performed even if tests fail, so CI can always upload results.
     #[clap(long)]
     pub results_output: Option<PathBuf>,
@@ -301,7 +301,7 @@ fn run_nextest(
     Ok(())
 }
 
-/// Copy the nextest JUnit XML results to the given output path.
+/// Copy the nextest `JUnit` XML results to the given output path.
 fn copy_nextest_results(output: &Path) -> Result<()> {
     let workspace_root = find_workspace_root()?;
     let source = workspace_root.join("target/nextest/default/test-results.xml");
