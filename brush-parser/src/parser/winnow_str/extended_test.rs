@@ -684,10 +684,7 @@ fn ext_test_and_expr<'a>(
             let checkpoint = input.checkpoint();
 
             // Check for && operator
-            if winnow::combinator::opt(("&", "&"))
-                .parse_next(input)?
-                .is_some()
-            {
+            if winnow::combinator::opt("&&").parse_next(input)?.is_some() {
                 let right = ext_test_not_expr(tracker).parse_next(input)?;
                 left = ast::ExtendedTestExpr::And(Box::new(left), Box::new(right));
             } else {
@@ -712,10 +709,7 @@ fn ext_test_or_expr<'a>(
             let checkpoint = input.checkpoint();
 
             // Check for || operator
-            if winnow::combinator::opt(("|", "|"))
-                .parse_next(input)?
-                .is_some()
-            {
+            if winnow::combinator::opt("||").parse_next(input)?.is_some() {
                 let right = ext_test_and_expr(tracker).parse_next(input)?;
                 left = ast::ExtendedTestExpr::Or(Box::new(left), Box::new(right));
             } else {
