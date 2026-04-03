@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use winnow::combinator::trace;
+use winnow::combinator::{fail, trace};
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::token::take_while;
@@ -432,7 +432,7 @@ pub(super) fn word_as_ast<'a>(
 
         // Must have at least one character
         if value.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         let end_offset = tracker.offset_from_locating(input);

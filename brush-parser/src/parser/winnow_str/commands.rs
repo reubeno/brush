@@ -1,4 +1,4 @@
-use winnow::combinator::trace;
+use winnow::combinator::{fail, trace};
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::token::take_while;
@@ -44,7 +44,7 @@ fn array_element_value<'a>(
         }
 
         if value.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(value)
@@ -294,13 +294,13 @@ fn at_here_doc_marker<'a>() -> impl ModalParser<StrStream<'a>, (), ContextError>
             } {
                 // It's <<<, not <<
                 input.reset(&checkpoint);
-                return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                return fail.parse_next(input);
             }
             input.reset(&checkpoint);
             Ok(())
         } else {
             input.reset(&checkpoint);
-            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+            fail.parse_next(input)
         }
     }
 }
@@ -358,7 +358,7 @@ pub(super) fn cmd_suffix<'a>(
     move |input: &mut StrStream<'a>| {
         // Check what's next: space, redirect, or something else
         let Ok(ch) = peek_char().parse_next(input) else {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         };
 
         // If there's space, consume it and we can parse any suffix item
@@ -371,7 +371,7 @@ pub(super) fn cmd_suffix<'a>(
             // No space, but can parse redirects without space
             false
         } else {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         };
 
         let mut all_items: Vec<ast::CommandPrefixOrSuffixItem> = Vec::new();
@@ -433,7 +433,7 @@ pub(super) fn cmd_suffix<'a>(
         }
 
         if all_items.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(ast::CommandSuffix(all_items))
@@ -462,7 +462,7 @@ pub(super) fn simple_command<'a>(
 
         // Must have at least one of: prefix, word, or suffix
         if prefix.is_none() && word_or_name.is_none() && suffix.is_none() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(ast::SimpleCommand {
@@ -488,7 +488,7 @@ pub(super) fn command<'a>(
 
         // Fast path: dispatch based on first character
         let Ok(first_char) = peek_char().parse_next(input) else {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         };
 
         match first_char {
@@ -572,7 +572,7 @@ pub(super) fn command<'a>(
                         // However, some reserved words like "in" can be used as variable names
                         // in assignments (e.g., "in=foo"), so we check for that case.
                         "then" | "else" | "elif" | "fi" | "do" | "done" | "esac" => {
-                            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                            fail.parse_next(input)
                         }
                         "in" => {
                             // Check if this is an assignment (in=value)
@@ -594,7 +594,7 @@ pub(super) fn command<'a>(
                                     .parse_next(input)
                             } else {
                                 // "in" as keyword - backtrack
-                                Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                                fail.parse_next(input)
                             }
                         }
                         // Not a keyword - check if it looks like a function definition (name followed by ())

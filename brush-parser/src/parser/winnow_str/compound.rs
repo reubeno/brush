@@ -443,7 +443,7 @@ fn case_list<'a>(
         }
 
         if items.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(items)
@@ -574,10 +574,10 @@ fn case_or_coproc<'a>(
                 "coproc" => coproc_clause(ctx, tracker)
                     .map(ast::CompoundCommand::Coprocess)
                     .parse_next(input),
-                _ => Err(winnow::error::ErrMode::Backtrack(ContextError::default())),
+                _ => fail.parse_next(input),
             }
         } else {
-            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+            fail.parse_next(input)
         }
     }
 }
@@ -617,7 +617,7 @@ pub(super) fn function_definition<'a>(
 
         // Function names cannot be reserved words (unless preceded by `function` keyword)
         if !has_function_keyword && is_reserved_word(&func_name) {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         // Parse optional ()
@@ -635,7 +635,7 @@ pub(super) fn function_definition<'a>(
 
         // Must have either "function" keyword or parens
         if !has_function_keyword && !has_parens {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         linebreak().parse_next(input)?;

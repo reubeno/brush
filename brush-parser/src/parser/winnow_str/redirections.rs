@@ -86,7 +86,7 @@ fn here_document_delimiter<'a>() -> impl ModalParser<StrStream<'a>, (String, Str
         }
 
         if match_delimiter.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         let requires_expansion = !quoted;
@@ -149,7 +149,7 @@ fn here_document_content(
 
         if input.is_empty() {
             // Unterminated here-document
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         let ch: char = winnow::token::any.parse_next(input)?;
@@ -187,7 +187,7 @@ fn here_document_marker<'a>() -> impl ModalParser<StrStream<'a>, PendingHereDoc,
         } else if winnow::combinator::opt("<<").parse_next(input)?.is_some() {
             false
         } else {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         };
 
         // Skip optional spaces between operator and delimiter (e.g., <<- EOF)
@@ -304,7 +304,7 @@ fn here_document<'a>(
         let (mut docs, remaining) = here_documents(tracker).parse_next(input)?;
 
         if docs.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         let (fd, doc) = docs.remove(0);
