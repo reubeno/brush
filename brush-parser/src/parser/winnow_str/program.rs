@@ -1,4 +1,5 @@
 use winnow::combinator::{opt, repeat, trace};
+use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::stream::LocatingSlice;
 
@@ -8,7 +9,7 @@ use crate::parser::{ParserOptions, SourceInfo};
 use super::and_or::and_or;
 use super::helpers::{comment, linebreak, newline_list, separator_op, spaces};
 use super::position::PositionTracker;
-use super::types::{PError, ParseContext, StrStream};
+use super::types::{ParseContext, StrStream};
 
 // ============================================================================
 // Tier 6: Complete Commands and Programs
@@ -19,7 +20,7 @@ use super::types::{PError, ParseContext, StrStream};
 pub(super) fn complete_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CompleteCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CompleteCommand, ContextError> + 'a {
     trace("complete_command", move |input: &mut StrStream<'a>| {
         // Parse first and_or (required)
         let first_ao = and_or(ctx, tracker).parse_next(input)?;
@@ -70,7 +71,7 @@ pub(super) fn complete_command<'a>(
 fn complete_command_continuation<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CompleteCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CompleteCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         winnow::combinator::preceded(newline_list(), complete_command(ctx, tracker))
             .parse_next(input)
@@ -82,7 +83,7 @@ fn complete_command_continuation<'a>(
 pub(super) fn complete_commands<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, Vec<ast::CompleteCommand>, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, Vec<ast::CompleteCommand>, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         (
             complete_command(ctx, tracker),
@@ -105,7 +106,7 @@ pub(super) fn complete_commands<'a>(
 pub(super) fn program<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::Program, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::Program, ContextError> + 'a {
     trace("program", move |input: &mut StrStream<'a>| {
         linebreak().parse_next(input)?;
         let complete_commands = opt(complete_commands(ctx, tracker))

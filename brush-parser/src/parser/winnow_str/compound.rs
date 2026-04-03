@@ -12,7 +12,7 @@ use super::helpers::{
 };
 use super::position::PositionTracker;
 use super::redirections::redirect_list;
-use super::types::{PError, ParseContext, StrStream};
+use super::types::{ParseContext, StrStream};
 use super::words::word_as_ast;
 
 // ============================================================================
@@ -26,7 +26,7 @@ use super::words::word_as_ast;
 pub(super) fn compound_list<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CompoundList, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CompoundList, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Optional leading linebreaks
         linebreak().parse_next(input)?;
@@ -79,7 +79,7 @@ pub(super) fn compound_list<'a>(
 pub(super) fn subshell<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::SubshellCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::SubshellCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let (list, range) = winnow::combinator::delimited(
             ('(', spaces(), linebreak()),
@@ -101,7 +101,7 @@ pub(super) fn subshell<'a>(
 pub(super) fn brace_group<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::BraceGroupCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::BraceGroupCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let (list, range) = winnow::combinator::delimited(
             // IMPORTANT: Require at least one space OR newline after '{'
@@ -136,7 +136,7 @@ pub(super) fn brace_group<'a>(
 pub(super) fn process_substitution<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, (ast::ProcessSubstitutionKind, ast::SubshellCommand), PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, (ast::ProcessSubstitutionKind, ast::SubshellCommand), ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -171,7 +171,7 @@ pub(super) fn process_substitution<'a>(
 pub(super) fn do_group<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::DoGroupCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::DoGroupCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let (list, range) = winnow::combinator::delimited(
             keyword("do"),
@@ -192,7 +192,7 @@ pub(super) fn do_group<'a>(
 fn elif_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ElseClause, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ElseClause, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         keyword("elif").parse_next(input)?;
         let condition = compound_list(ctx, tracker).parse_next(input)?;
@@ -209,7 +209,7 @@ fn elif_clause<'a>(
 fn else_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ElseClause, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ElseClause, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         keyword("else").parse_next(input)?;
         let body = compound_list(ctx, tracker).parse_next(input)?;
@@ -225,7 +225,7 @@ fn else_clause<'a>(
 pub(super) fn if_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::IfClauseCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::IfClauseCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -262,7 +262,7 @@ pub(super) fn if_clause<'a>(
 pub(super) fn while_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::WhileOrUntilClauseCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::WhileOrUntilClauseCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -282,7 +282,7 @@ pub(super) fn while_clause<'a>(
 pub(super) fn until_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::WhileOrUntilClauseCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::WhileOrUntilClauseCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -306,7 +306,7 @@ pub(super) fn until_clause<'a>(
 pub(super) fn for_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ForClauseCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ForClauseCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -356,7 +356,7 @@ pub(super) fn for_clause<'a>(
 // ============================================================================
 
 /// Parse case item terminator (;;, ;&, or ;;&)
-fn case_item_terminator<'a>() -> impl Parser<StrStream<'a>, ast::CaseItemPostAction, PError> {
+fn case_item_terminator<'a>() -> impl ModalParser<StrStream<'a>, ast::CaseItemPostAction, ContextError> {
     winnow::combinator::preceded(
         spaces(),
         dispatch! {super::helpers::peek_op3();
@@ -372,13 +372,13 @@ fn case_item_terminator<'a>() -> impl Parser<StrStream<'a>, ast::CaseItemPostAct
 fn case_item<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CaseItem, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CaseItem, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         spaces().parse_next(input)?;
         let start_offset = tracker.offset_from_locating(input);
 
         // Optional leading (
-        let _ = winnow::combinator::opt::<_, _, PError, _>('(').parse_next(input)?;
+        let _ = winnow::combinator::opt('(').parse_next(input)?;
         spaces().parse_next(input)?;
 
         // Parse patterns: word separated by |
@@ -420,7 +420,7 @@ fn case_item<'a>(
 fn case_list<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, Vec<ast::CaseItem>, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, Vec<ast::CaseItem>, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let mut items = vec![];
 
@@ -455,7 +455,7 @@ fn case_list<'a>(
 pub(super) fn case_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CaseClauseCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CaseClauseCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -489,7 +489,7 @@ pub(super) fn case_clause<'a>(
 pub(super) fn coproc_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CoprocessCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CoprocessCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -540,7 +540,7 @@ pub(super) fn coproc_clause<'a>(
 pub(super) fn compound_command<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CompoundCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CompoundCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         winnow::combinator::preceded(
             spaces(),
@@ -563,7 +563,7 @@ pub(super) fn compound_command<'a>(
 fn case_or_coproc<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CompoundCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CompoundCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Peek at the word to determine which one
         if let Ok(word) = peek_first_word().parse_next(input) {
@@ -587,7 +587,7 @@ fn case_or_coproc<'a>(
 fn function_body<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::FunctionBody, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::FunctionBody, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let cmd = compound_command(ctx, tracker).parse_next(input)?;
         let redirects = winnow::combinator::opt(winnow::combinator::preceded(
@@ -605,7 +605,7 @@ fn function_body<'a>(
 pub(super) fn function_definition<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::FunctionDefinition, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::FunctionDefinition, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Try "function name () body" or "function name body" format
         let has_function_keyword = keyword("function").parse_next(input).is_ok();
@@ -622,7 +622,7 @@ pub(super) fn function_definition<'a>(
 
         // Parse optional ()
         spaces().parse_next(input)?;
-        let has_parens = if winnow::combinator::opt::<_, _, PError, _>('(')
+        let has_parens = if winnow::combinator::opt('(')
             .parse_next(input)?
             .is_some()
         {

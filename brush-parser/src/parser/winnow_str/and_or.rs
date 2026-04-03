@@ -1,4 +1,5 @@
 use winnow::combinator::repeat;
+use winnow::error::ContextError;
 use winnow::prelude::*;
 
 use crate::ast;
@@ -6,7 +7,7 @@ use crate::ast;
 use super::helpers::{linebreak, spaces};
 use super::pipelines::pipeline;
 use super::position::PositionTracker;
-use super::types::{PError, ParseContext, StrStream};
+use super::types::{ParseContext, StrStream};
 
 // ============================================================================
 // Tier 5: And/Or Lists
@@ -16,7 +17,7 @@ use super::types::{PError, ParseContext, StrStream};
 /// Corresponds to: winnow.rs `and_or_op()`
 /// Returns true for And (&&), false for Or (||)
 #[inline]
-pub(super) fn and_or_op<'a>() -> impl Parser<StrStream<'a>, bool, PError> {
+pub(super) fn and_or_op<'a>() -> impl ModalParser<StrStream<'a>,bool, ContextError> {
     // Note: Keep alt() for 2 alternatives - dispatch! is slower due to peek overhead
     winnow::combinator::alt((
         "&&".value(true),  // And operator
@@ -29,7 +30,7 @@ pub(super) fn and_or_op<'a>() -> impl Parser<StrStream<'a>, bool, PError> {
 fn and_or_continuation<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::AndOr, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>,ast::AndOr, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         (
             winnow::combinator::preceded((linebreak(), spaces()), and_or_op()), // optional newlines+spaces, then operator
@@ -51,7 +52,7 @@ fn and_or_continuation<'a>(
 pub(super) fn and_or<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::AndOrList, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>,ast::AndOrList, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         (
             pipeline(ctx, tracker),

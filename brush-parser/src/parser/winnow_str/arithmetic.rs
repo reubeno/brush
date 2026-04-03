@@ -1,3 +1,4 @@
+use winnow::error::ContextError;
 use winnow::prelude::*;
 
 use crate::ast;
@@ -5,7 +6,7 @@ use crate::ast;
 use super::compound::{brace_group, do_group, for_clause, subshell};
 use super::helpers::{keyword, linebreak, sequential_sep, spaces};
 use super::position::PositionTracker;
-use super::types::{PError, ParseContext, StrStream};
+use super::types::{ParseContext, StrStream};
 
 // ============================================================================
 // Tier 15: Arithmetic Expressions
@@ -54,7 +55,7 @@ fn normalize_arithmetic_expr(s: &str) -> String {
 }
 
 pub(super) fn arithmetic_expression<'a>()
--> impl Parser<StrStream<'a>, ast::UnexpandedArithmeticExpr, PError> {
+-> impl ModalParser<StrStream<'a>, ast::UnexpandedArithmeticExpr, ContextError> {
     move |input: &mut StrStream<'a>| {
         let mut expr_str = String::new();
         let mut paren_depth = 0;
@@ -67,7 +68,7 @@ pub(super) fn arithmetic_expression<'a>()
                 spaces().parse_next(input)?;
 
                 // Check for "))" - allow optional space between to match peg tokenizer behavior
-                if winnow::combinator::opt::<_, _, PError, _>((')', spaces(), ')'))
+                if winnow::combinator::opt((')', spaces(), ')'))
                     .parse_next(input)?
                     .is_some()
                 {
@@ -76,7 +77,7 @@ pub(super) fn arithmetic_expression<'a>()
                 }
 
                 // Check for ";" (for arithmetic for loops)
-                if winnow::combinator::opt::<_, _, PError, _>(';')
+                if winnow::combinator::opt(';')
                     .parse_next(input)?
                     .is_some()
                 {
@@ -91,7 +92,7 @@ pub(super) fn arithmetic_expression<'a>()
             let checkpoint = input.checkpoint();
 
             // Try to match '('
-            if winnow::combinator::opt::<_, _, PError, _>('(')
+            if winnow::combinator::opt('(')
                 .parse_next(input)?
                 .is_some()
             {
@@ -102,7 +103,7 @@ pub(super) fn arithmetic_expression<'a>()
             input.reset(&checkpoint);
 
             // Try to match ')'
-            if winnow::combinator::opt::<_, _, PError, _>(')')
+            if winnow::combinator::opt(')')
                 .parse_next(input)?
                 .is_some()
             {
@@ -113,7 +114,7 @@ pub(super) fn arithmetic_expression<'a>()
             input.reset(&checkpoint);
 
             // Match any other character that's not )) or ;
-            let c_opt: Result<char, PError> = winnow::token::any.parse_next(input);
+            let c_opt: ModalResult<char> = winnow::token::any.parse_next(input);
             if let Ok(c) = c_opt {
                 expr_str.push(c);
             } else {
@@ -131,7 +132,7 @@ pub(super) fn arithmetic_expression<'a>()
 /// Corresponds to: winnow.rs `arithmetic_command()`
 pub(super) fn arithmetic_command<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ArithmeticCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ArithmeticCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -162,7 +163,7 @@ pub(super) fn arithmetic_command<'a>(
 pub(super) fn paren_compound<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CompoundCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CompoundCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // In POSIX or SH mode, only allow subshells (no arithmetic commands)
         if ctx.options.posix_mode || ctx.options.sh_mode {
@@ -192,7 +193,7 @@ pub(super) fn paren_compound<'a>(
 fn arithmetic_for_body<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::DoGroupCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::DoGroupCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Consume optional linebreak (spaces, newlines, comments) before trying to match the body
         // This is needed because both do_group (via keyword) and brace_group
@@ -223,7 +224,7 @@ fn arithmetic_for_body<'a>(
 pub(super) fn arithmetic_for_clause<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ArithmeticForClauseCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ArithmeticForClauseCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -270,7 +271,7 @@ pub(super) fn arithmetic_for_clause<'a>(
 pub(super) fn for_or_arithmetic_for<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::CompoundCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::CompoundCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // In POSIX or SH mode, only allow regular for loops
         if ctx.options.posix_mode || ctx.options.sh_mode {
