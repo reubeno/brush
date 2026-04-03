@@ -9,7 +9,7 @@ use crate::parser::{ParserOptions, SourceInfo};
 use super::commands::command;
 use super::helpers::{keyword, linebreak, spaces};
 use super::position::PositionTracker;
-use super::types::{PError, ParseContext, StrStream};
+use super::types::{ParseContext, StrStream};
 
 // ============================================================================
 // Tier 4: Pipelines
@@ -19,7 +19,7 @@ use super::types::{PError, ParseContext, StrStream};
 /// Corresponds to: winnow.rs `pipe_operator()`
 /// Returns true if it's |& (pipe stderr too)
 #[inline]
-pub(super) fn pipe_operator<'a>() -> impl Parser<StrStream<'a>, bool, PError> {
+pub(super) fn pipe_operator<'a>() -> impl ModalParser<StrStream<'a>, bool, ContextError> {
     // Note: Keep alt() for 2 alternatives - dispatch! is slower due to peek overhead
     winnow::combinator::alt((
         "|&".value(true), // |& pipes both stdout and stderr
@@ -88,7 +88,7 @@ fn parse_trailing_command(input: &str, options: &ParserOptions) -> Option<ast::C
 pub(super) fn pipe_sequence<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, Vec<ast::Command>, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, Vec<ast::Command>, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let (first, rest) = (
             command(ctx, tracker),
@@ -135,7 +135,7 @@ pub(super) fn pipe_sequence<'a>(
 /// Returns Option<PipelineTimed>
 fn pipeline_timed<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, Option<ast::PipelineTimed>, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, Option<ast::PipelineTimed>, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -168,7 +168,7 @@ fn pipeline_timed<'a>(
 
 /// Parse optional bang (!) operators before a pipeline
 /// Returns the count of bang operators
-fn pipeline_bang<'a>() -> impl Parser<StrStream<'a>, usize, PError> {
+fn pipeline_bang<'a>() -> impl ModalParser<StrStream<'a>, usize, ContextError> {
     winnow::combinator::repeat(0.., winnow::combinator::terminated(keyword("!"), spaces()))
         .map(|bangs: Vec<_>| bangs.len())
 }
@@ -178,7 +178,7 @@ fn pipeline_bang<'a>() -> impl Parser<StrStream<'a>, usize, PError> {
 pub(super) fn pipeline<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::Pipeline, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::Pipeline, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let (timed, bang_count) = (pipeline_timed(tracker), pipeline_bang()).parse_next(input)?;
 

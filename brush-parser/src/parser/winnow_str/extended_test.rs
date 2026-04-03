@@ -9,7 +9,7 @@ use super::helpers::{
     comment, peek_char, skip_double_quoted_content, skip_single_quoted_content, spaces,
 };
 use super::position::PositionTracker;
-use super::types::{PError, ParseContext, StrStream};
+use super::types::{ParseContext, StrStream};
 use super::words::double_quoted_string;
 
 // ============================================================================
@@ -20,7 +20,7 @@ use super::words::double_quoted_string;
 /// Unlike `spaces()`, this also handles newlines and backslash-newline continuations,
 /// because bash allows multi-line [[ ]] expressions.
 #[inline]
-fn ext_test_spaces<'a>() -> impl Parser<StrStream<'a>, (), PError> {
+fn ext_test_spaces<'a>() -> impl ModalParser<StrStream<'a>, (), ContextError> {
     repeat::<_, _, (), _, _>(
         0..,
         winnow::combinator::alt((
@@ -100,7 +100,7 @@ fn ext_test_consume_balanced(
     out: &mut String,
     open: char,
     close: char,
-) -> Result<(), PError> {
+) -> ModalResult<()> {
     let mut depth: u32 = 1;
     while depth > 0 {
         let ch = winnow::token::any.parse_next(input)?;
@@ -109,7 +109,7 @@ fn ext_test_consume_balanced(
             c if c == open => depth += 1,
             c if c == close => depth -= 1,
             '\\' => {
-                let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
+                let escaped: ModalResult<char> = winnow::token::any.parse_next(input);
                 if let Ok(c) = escaped {
                     out.push(c);
                 }
@@ -132,7 +132,7 @@ fn ext_test_consume_balanced(
 fn ext_test_parse_single_quoted(
     input: &mut StrStream<'_>,
     word: &mut String,
-) -> Result<(), PError> {
+) -> ModalResult<()> {
     let quote: char = '\''.parse_next(input)?;
     let content: &str = take_while(0.., |c: char| c != '\'').parse_next(input)?;
     let end_quote: char = '\''.parse_next(input)?;
@@ -146,7 +146,7 @@ fn ext_test_parse_single_quoted(
 fn ext_test_parse_double_quoted(
     input: &mut StrStream<'_>,
     word: &mut String,
-) -> Result<(), PError> {
+) -> ModalResult<()> {
     let s = double_quoted_string().parse_next(input)?;
     word.push_str(&s);
     Ok(())
@@ -156,9 +156,9 @@ fn ext_test_parse_double_quoted(
 fn ext_test_parse_backslash_escape(
     input: &mut StrStream<'_>,
     word: &mut String,
-) -> Result<(), PError> {
+) -> ModalResult<()> {
     winnow::token::any.parse_next(input)?;
-    let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
+    let escaped: ModalResult<char> = winnow::token::any.parse_next(input);
     if let Ok(c) = escaped {
         if c == '\n' {
             // Backslash-newline is line continuation — skip both
@@ -177,7 +177,7 @@ fn ext_test_parse_backslash_escape(
 fn ext_test_parse_dollar_expansion(
     input: &mut StrStream<'_>,
     word: &mut String,
-) -> Result<(), PError> {
+) -> ModalResult<()> {
     word.push('$');
     winnow::token::any.parse_next(input)?;
     match peek_char().parse_next(input).ok() {
@@ -225,7 +225,7 @@ fn ext_test_parse_special_char(
     input: &mut StrStream<'_>,
     word: &mut String,
     ch: char,
-) -> Result<bool, PError> {
+) -> ModalResult<bool> {
     // Returns Ok(true) if parsing should continue, Ok(false) if should stop
     match ch {
         '&' => {
@@ -279,7 +279,7 @@ fn ext_test_parse_special_char(
 
 fn ext_test_word<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::Word, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::Word, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
         let mut word = String::new();
@@ -329,7 +329,7 @@ fn ext_test_word<'a>(
 #[allow(clippy::too_many_lines)]
 fn ext_test_regex_word<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::Word, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::Word, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
         let mut result = String::new();
@@ -348,7 +348,7 @@ fn ext_test_regex_word<'a>(
             // Only check for ]] when not inside a bracket expression or parentheses
             if bracket_depth == 0
                 && paren_depth == 0
-                && winnow::combinator::opt::<_, _, PError, _>(winnow::combinator::alt((
+                && winnow::combinator::opt(winnow::combinator::alt((
                     ("&", "&").map(|_| ()),
                     ("|", "|").map(|_| ()),
                     ("]", "]").map(|_| ()), // ]] stops the regex
@@ -382,7 +382,7 @@ fn ext_test_regex_word<'a>(
                                 '\'' | '"' => break, // Next quoted string
                                 '\\' => {
                                     winnow::token::any.parse_next(input)?;
-                                    if let Ok(c) = winnow::token::any::<_, PError>.parse_next(input)
+                                    if let Ok(c) = winnow::token::any::<_, ContextError>.parse_next(input)
                                     {
                                         result.push('\\');
                                         result.push(c);
@@ -409,7 +409,7 @@ fn ext_test_regex_word<'a>(
                                 Some('\\') => {
                                     result.push('\\');
                                     winnow::token::any.parse_next(input)?; // consume \
-                                    if let Ok(c) = winnow::token::any::<_, PError>.parse_next(input)
+                                    if let Ok(c) = winnow::token::any::<_, ContextError>.parse_next(input)
                                     {
                                         result.push(c);
                                     }
@@ -433,7 +433,7 @@ fn ext_test_regex_word<'a>(
                                 '\'' | '"' => break, // Next quoted string
                                 '\\' => {
                                     winnow::token::any.parse_next(input)?;
-                                    if let Ok(c) = winnow::token::any::<_, PError>.parse_next(input)
+                                    if let Ok(c) = winnow::token::any::<_, ContextError>.parse_next(input)
                                     {
                                         result.push('\\');
                                         result.push(c);
@@ -493,7 +493,7 @@ fn ext_test_regex_word<'a>(
                         // Handle backslash escape directly to avoid ext_test_word
                         // consuming too much (e.g., the closing ] of a bracket expression)
                         winnow::token::any.parse_next(input)?; // consume \
-                        let escaped: Result<char, PError> = winnow::token::any.parse_next(input);
+                        let escaped: ModalResult<char> = winnow::token::any.parse_next(input);
                         result.push('\\');
                         if let Ok(c) = escaped {
                             result.push(c);
@@ -569,12 +569,12 @@ fn ext_test_regex_word<'a>(
 /// Parse primary extended test expression (parentheses, binary/unary tests, or word)
 fn ext_test_primary<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ExtendedTestExpr, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         ext_test_spaces().parse_next(input)?;
 
         // Try parenthesized expression
-        if winnow::combinator::opt::<_, _, PError, _>('(')
+        if winnow::combinator::opt('(')
             .parse_next(input)?
             .is_some()
         {
@@ -647,13 +647,13 @@ fn ext_test_primary<'a>(
 /// Parse NOT expression (right-associative)
 fn ext_test_not_expr<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ExtendedTestExpr, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         ext_test_spaces().parse_next(input)?;
 
         // Check for NOT operator
         let checkpoint = input.checkpoint();
-        if winnow::combinator::opt::<_, _, PError, _>('!')
+        if winnow::combinator::opt('!')
             .parse_next(input)?
             .is_some()
         {
@@ -675,7 +675,7 @@ fn ext_test_not_expr<'a>(
 /// Parse AND expression (left-associative)
 fn ext_test_and_expr<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ExtendedTestExpr, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let mut left = ext_test_not_expr(tracker).parse_next(input)?;
 
@@ -684,7 +684,7 @@ fn ext_test_and_expr<'a>(
             let checkpoint = input.checkpoint();
 
             // Check for && operator
-            if winnow::combinator::opt::<_, _, PError, _>(("&", "&"))
+            if winnow::combinator::opt(("&", "&"))
                 .parse_next(input)?
                 .is_some()
             {
@@ -703,7 +703,7 @@ fn ext_test_and_expr<'a>(
 /// Parse OR expression (left-associative, lowest precedence)
 fn ext_test_or_expr<'a>(
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ExtendedTestExpr, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ExtendedTestExpr, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let mut left = ext_test_and_expr(tracker).parse_next(input)?;
 
@@ -712,7 +712,7 @@ fn ext_test_or_expr<'a>(
             let checkpoint = input.checkpoint();
 
             // Check for || operator
-            if winnow::combinator::opt::<_, _, PError, _>(("|", "|"))
+            if winnow::combinator::opt(("|", "|"))
                 .parse_next(input)?
                 .is_some()
             {
@@ -733,7 +733,7 @@ fn ext_test_or_expr<'a>(
 pub(super) fn extended_test_command<'a>(
     _ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl Parser<StrStream<'a>, ast::ExtendedTestExprCommand, PError> + 'a {
+) -> impl ModalParser<StrStream<'a>, ast::ExtendedTestExprCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -746,12 +746,12 @@ pub(super) fn extended_test_command<'a>(
         ext_test_spaces().parse_next(input)?;
         let expr = ext_test_or_expr(tracker)
             .parse_next(input)
-            .map_err(|e: PError| e.cut())?;
+            .map_err(|e| e.cut())?;
         ext_test_spaces()
             .parse_next(input)
-            .map_err(|e: PError| e.cut())?;
-        ']'.parse_next(input).map_err(|e: PError| e.cut())?;
-        ']'.parse_next(input).map_err(|e: PError| e.cut())?;
+            .map_err(|e| e.cut())?;
+        ']'.parse_next(input).map_err(|e: winnow::error::ErrMode<ContextError>| e.cut())?;
+        ']'.parse_next(input).map_err(|e: winnow::error::ErrMode<ContextError>| e.cut())?;
 
         let end_offset = tracker.offset_from_locating(input);
         let loc = tracker.range_to_span(start_offset..end_offset);
