@@ -1,4 +1,4 @@
-use winnow::combinator::repeat;
+use winnow::combinator::{fail, repeat};
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::stream::LocatingSlice;
@@ -190,7 +190,7 @@ pub(super) fn pipeline<'a>(
 
         // Validate: at least one of timed, bang, or seq must be present
         if timed.is_none() && bang_count == 0 && seq.is_empty() {
-            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            return fail.parse_next(input);
         }
 
         Ok(ast::Pipeline {

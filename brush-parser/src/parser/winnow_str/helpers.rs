@@ -1,4 +1,4 @@
-use winnow::combinator::{peek, repeat};
+use winnow::combinator::{fail, peek, repeat};
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::stream::{Checkpoint, Offset, Stream};
@@ -107,7 +107,7 @@ pub(super) fn skip_double_quoted_content<'a>() -> impl ModalParser<StrStream<'a>
                     char_count += 2;
                 }
                 Err(_) => {
-                    return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                    return fail.parse_next(input);
                 }
                 Ok(_) => {
                     char_count += 1;
@@ -217,7 +217,7 @@ pub(super) fn parse_balanced_delimiters<'a>(
                         Ok('\n') => break,
                         Ok(_) => {}
                         Err(_) => {
-                            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                            return fail.parse_next(input);
                         }
                     }
                 }
@@ -444,7 +444,7 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     at_comment_start = allow_comments && matches!(ch, ' ' | '\t' | '\n');
                 }
                 Err(_) => {
-                    return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+                    return fail.parse_next(input);
                 }
             }
         }
@@ -711,7 +711,7 @@ pub(super) fn keyword<'a>(word: &'static str) -> impl ModalParser<StrStream<'a>,
                 // Not a delimiter - this is not a keyword match
                 // Reset input position since we're backtracking
                 input.reset(&start);
-                Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+                fail.parse_next(input)
             }
             Err(_) => {
                 // End of input - that's also a valid delimiter

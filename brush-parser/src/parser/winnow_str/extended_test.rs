@@ -1,4 +1,4 @@
-use winnow::combinator::repeat;
+use winnow::combinator::{fail, repeat};
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::token::take_while;
@@ -313,7 +313,7 @@ fn ext_test_word<'a>(
         }
 
         if word.is_empty() {
-            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+            fail.parse_next(input)
         } else {
             let end_offset = tracker.offset_from_locating(input);
             let loc = tracker.range_to_span(start_offset..end_offset);
@@ -554,7 +554,7 @@ fn ext_test_regex_word<'a>(
         }
 
         if result.is_empty() {
-            Err(winnow::error::ErrMode::Backtrack(ContextError::default()))
+            fail.parse_next(input)
         } else {
             let end_offset = tracker.offset_from_locating(input);
             let loc = tracker.range_to_span(start_offset..end_offset);
