@@ -182,13 +182,11 @@ fn here_document_marker<'a>() -> impl ModalParser<StrStream<'a>, PendingHereDoc,
         let fd = winnow::combinator::opt(io_number()).parse_next(input)?;
 
         // Parse operator (<<- or <<)
-        let remove_tabs = if winnow::combinator::opt("<<-").parse_next(input)?.is_some() {
-            true
-        } else if winnow::combinator::opt("<<").parse_next(input)?.is_some() {
-            false
-        } else {
-            return fail.parse_next(input);
-        };
+        let remove_tabs = winnow::combinator::alt((
+            "<<-".value(true),
+            "<<".value(false),
+        ))
+        .parse_next(input)?;
 
         // Skip optional spaces between operator and delimiter (e.g., <<- EOF)
         let _: &str =
