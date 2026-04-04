@@ -29,7 +29,10 @@ impl builtins::Command for LetCommand {
         }
 
         for expr in &self.exprs {
-            let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
+            let parsed = brush_parser::arithmetic::parse_with(
+                expr.as_str(),
+                context.shell.parser_options().parser_impl,
+            )?;
             let evaluated = parsed.eval(context.shell)?;
 
             if evaluated == 0 {

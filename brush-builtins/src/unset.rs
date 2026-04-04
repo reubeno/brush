@@ -115,7 +115,10 @@ fn unset_array_index(
         index.into()
     } else {
         // First evaluate the index expression.
-        let index_as_expr = brush_parser::arithmetic::parse(index)?;
+        let index_as_expr = brush_parser::arithmetic::parse_with(
+            index,
+            shell.parser_options().parser_impl,
+        )?;
         let evaluated_index = shell.eval_arithmetic(&index_as_expr)?;
         evaluated_index.to_string().into()
     };
