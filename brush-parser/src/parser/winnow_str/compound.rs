@@ -315,7 +315,7 @@ pub(super) fn for_clause<'a>(
 
         linebreak().parse_next(input)?;
 
-        if keyword("in").parse_next(input).is_ok() {
+        if winnow::combinator::opt(keyword("in")).parse_next(input)?.is_some() {
             let values = winnow::combinator::opt(winnow::combinator::preceded(
                 spaces(),
                 winnow::combinator::separated(1.., word_as_ast(ctx, tracker), spaces1()),
@@ -608,7 +608,7 @@ pub(super) fn function_definition<'a>(
 ) -> impl ModalParser<StrStream<'a>, ast::FunctionDefinition, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Try "function name () body" or "function name body" format
-        let has_function_keyword = keyword("function").parse_next(input).is_ok();
+        let has_function_keyword = winnow::combinator::opt(keyword("function")).parse_next(input)?.is_some();
 
         // Track location of the function name
         let fname_start = tracker.offset_from_locating(input);

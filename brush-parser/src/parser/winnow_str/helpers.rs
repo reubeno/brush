@@ -1,4 +1,4 @@
-use winnow::combinator::{fail, peek, repeat};
+use winnow::combinator::{alt, eof, fail, peek, preceded, repeat, terminated};
 use winnow::error::ContextError;
 use winnow::prelude::*;
 use winnow::stream::{Checkpoint, Offset, Stream};
@@ -684,41 +684,22 @@ pub(super) fn sequential_sep<'a>() -> impl ModalParser<StrStream<'a>, (), Contex
 /// Keywords must be followed by a delimiter (space, tab, newline, semicolon, etc.)
 /// to avoid matching them as part of a larger word
 pub(super) fn keyword<'a>(word: &'static str) -> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
-    move |input: &mut StrStream<'a>| {
-        // Save checkpoint at the start so we can restore if keyword doesn't match
-        let start = input.checkpoint();
-
-        // Skip leading whitespace
-        spaces().parse_next(input)?;
-
-        // Match the literal keyword
-        let matched = winnow::token::literal(word).parse_next(input)?;
-
-        // Check that the keyword is followed by a delimiter (whitespace, operator, etc.)
-        // This prevents matching "time" in "times" or "if" in "iffy"
-        let checkpoint = input.checkpoint();
-        let next_char = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input);
-        input.reset(&checkpoint);
-
-        match next_char {
-            Ok(c)
-                if c.is_whitespace()
-                    || matches!(c, ';' | '&' | '|' | '<' | '>' | '(' | ')' | '{' | '}') =>
-            {
-                Ok(matched)
-            }
-            Ok(_) => {
-                // Not a delimiter - this is not a keyword match
-                // Reset input position since we're backtracking
-                input.reset(&start);
-                fail.parse_next(input)
-            }
-            Err(_) => {
-                // End of input - that's also a valid delimiter
-                Ok(matched)
-            }
-        }
-    }
+    // Skip spaces, match the literal, then peek that a delimiter or EOF follows —
+    // preventing "time" from matching inside "timestamp", etc.
+    preceded(
+        spaces(),
+        terminated(
+            winnow::token::literal(word),
+            peek(alt((
+                eof.void(),
+                winnow::token::one_of(|c: char| {
+                    c.is_whitespace()
+                        || matches!(c, ';' | '&' | '|' | '<' | '>' | '(' | ')' | '{' | '}')
+                })
+                .void(),
+            ))),
+        ),
+    )
 }
 
 /// Peek the first word without consuming input (for keyword dispatch)
