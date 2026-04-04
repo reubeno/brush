@@ -373,11 +373,11 @@ fn pratt_expr<'i>(
         .infix(alt((
             // Three-char compound assignments: <<= and >>=
             dispatch! {take(3usize);
-                "<<=" => Infix::Right(2, |_: &mut _, a, b| {
+                "<<=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::ShiftLeft, t, Box::new(b)))
                 }),
-                ">>=" => Infix::Right(2, |_: &mut _, a, b| {
+                ">>=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::ShiftRight, t, Box::new(b)))
                 }),
@@ -412,35 +412,35 @@ fn pratt_expr<'i>(
                 ">>" => Infix::Left(11, |_: &mut _, a, b| {
                     Ok(ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::ShiftRight, Box::new(a), Box::new(b)))
                 }),
-                "*=" => Infix::Right(2, |_: &mut _, a, b| {
+                "*=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Multiply, t, Box::new(b)))
                 }),
-                "/=" => Infix::Right(2, |_: &mut _, a, b| {
+                "/=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Divide, t, Box::new(b)))
                 }),
-                "%=" => Infix::Right(2, |_: &mut _, a, b| {
+                "%=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Modulo, t, Box::new(b)))
                 }),
-                "+=" => Infix::Right(2, |_: &mut _, a, b| {
+                "+=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Add, t, Box::new(b)))
                 }),
-                "-=" => Infix::Right(2, |_: &mut _, a, b| {
+                "-=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::Subtract, t, Box::new(b)))
                 }),
-                "&=" => Infix::Right(2, |_: &mut _, a, b| {
+                "&=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::BitwiseAnd, t, Box::new(b)))
                 }),
-                "|=" => Infix::Right(2, |_: &mut _, a, b| {
+                "|=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::BitwiseOr, t, Box::new(b)))
                 }),
-                "^=" => Infix::Right(2, |_: &mut _, a, b| {
+                "^=" => Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::BinaryAssignment(ast::BinaryOperator::BitwiseXor, t, Box::new(b)))
                 }),
@@ -451,7 +451,7 @@ fn pratt_expr<'i>(
                 ',' => Infix::Left(1, |_: &mut _, a, b| {
                     Ok(ast::ArithmeticExpr::BinaryOp(ast::BinaryOperator::Comma, Box::new(a), Box::new(b)))
                 }),
-                '=' => not('=').value(Infix::Right(2, |_: &mut _, a, b| {
+                '=' => not('=').value(Infix::Right(3, |_: &mut _, a, b| {
                     let t = expr_to_target(a)?;
                     Ok(ast::ArithmeticExpr::Assignment(t, Box::new(b)))
                 })),
