@@ -21,7 +21,8 @@ pub(super) fn io_number<'a>() -> impl ModalParser<StrStream<'a>, i32, ContextErr
 
 /// Parse redirect operator and return the redirect kind
 /// Corresponds to: winnow.rs `io_file()` dispatcher
-fn redirect_operator<'a>() -> impl ModalParser<StrStream<'a>, ast::IoFileRedirectKind, ContextError> {
+fn redirect_operator<'a>() -> impl ModalParser<StrStream<'a>, ast::IoFileRedirectKind, ContextError>
+{
     dispatch! {peek_op2();
         ">>" => ">>".value(ast::IoFileRedirectKind::Append),
         "<>" => "<>".value(ast::IoFileRedirectKind::ReadAndWrite),
@@ -39,7 +40,8 @@ fn redirect_operator<'a>() -> impl ModalParser<StrStream<'a>, ast::IoFileRedirec
 /// Returns (`raw_delimiter`, `match_delimiter`, `requires_expansion`)
 /// `raw_delimiter`: as written (includes quotes for `here_end`)
 /// `match_delimiter`: stripped of quotes (for matching content)
-fn here_document_delimiter<'a>() -> impl ModalParser<StrStream<'a>, (String, String, bool), ContextError> {
+fn here_document_delimiter<'a>()
+-> impl ModalParser<StrStream<'a>, (String, String, bool), ContextError> {
     move |input: &mut StrStream<'a>| {
         let mut raw_delimiter = String::new();
         let mut match_delimiter = String::new();
@@ -113,13 +115,13 @@ fn here_document_content(
 
             // Skip leading tabs if remove_tabs is true (for both delimiter and content)
             if remove_tabs {
-                let _: ModalResult<&str> =
-                    winnow::token::take_while(0.., '\t').parse_next(input);
+                let _: ModalResult<&str> = winnow::token::take_while(0.., '\t').parse_next(input);
             }
 
             // Try to match delimiter
             if let Ok(line_content) =
-                winnow::token::take_while::<_, _, ContextError>(0.., |c| c != '\n').parse_next(input)
+                winnow::token::take_while::<_, _, ContextError>(0.., |c| c != '\n')
+                    .parse_next(input)
             {
                 if line_content == delimiter {
                     // Do NOT consume the newline after the delimiter — it serves
@@ -139,8 +141,7 @@ fn here_document_content(
 
             // If remove_tabs, skip leading tabs from content too
             if remove_tabs {
-                let _: ModalResult<&str> =
-                    winnow::token::take_while(0.., '\t').parse_next(input);
+                let _: ModalResult<&str> = winnow::token::take_while(0.., '\t').parse_next(input);
             }
         }
 
@@ -176,17 +177,15 @@ struct PendingHereDoc {
 
 /// Parse just the here-document marker (operator and delimiter), without consuming content.
 /// This is used to collect all markers on a line before resolving content.
-fn here_document_marker<'a>() -> impl ModalParser<StrStream<'a>, PendingHereDoc, ContextError> + 'a {
+fn here_document_marker<'a>() -> impl ModalParser<StrStream<'a>, PendingHereDoc, ContextError> + 'a
+{
     move |input: &mut StrStream<'a>| {
         // Optional fd number
         let fd = winnow::combinator::opt(io_number()).parse_next(input)?;
 
         // Parse operator (<<- or <<)
-        let remove_tabs = winnow::combinator::alt((
-            "<<-".value(true),
-            "<<".value(false),
-        ))
-        .parse_next(input)?;
+        let remove_tabs =
+            winnow::combinator::alt(("<<-".value(true), "<<".value(false))).parse_next(input)?;
 
         // Skip optional spaces between operator and delimiter (e.g., <<- EOF)
         let _: &str =
@@ -235,8 +234,11 @@ fn resolve_here_document(
 #[allow(clippy::type_complexity)]
 pub(super) fn here_documents<'a>(
     tracker: &'a PositionTracker,
-) -> impl ModalParser<StrStream<'a>, (Vec<(Option<i32>, ast::IoHereDocument)>, Option<&'a str>), ContextError> + 'a
-{
+) -> impl ModalParser<
+    StrStream<'a>,
+    (Vec<(Option<i32>, ast::IoHereDocument)>, Option<&'a str>),
+    ContextError,
+> + 'a {
     move |input: &mut StrStream<'a>| {
         // Collect all here-doc markers on this line
         let mut markers: Vec<PendingHereDoc> = Vec::new();
@@ -295,7 +297,8 @@ pub(super) fn here_documents<'a>(
 
 fn here_document<'a>(
     tracker: &'a PositionTracker,
-) -> impl ModalParser<StrStream<'a>, (Option<i32>, ast::IoHereDocument, Option<&'a str>), ContextError> + 'a {
+) -> impl ModalParser<StrStream<'a>, (Option<i32>, ast::IoHereDocument, Option<&'a str>), ContextError>
++ 'a {
     move |input: &mut StrStream<'a>| {
         // Use the multi-heredoc parser but only return the first one
         // This maintains backwards compatibility with existing code that expects a single here-doc

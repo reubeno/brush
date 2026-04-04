@@ -129,10 +129,7 @@ fn ext_test_consume_balanced(
 }
 
 /// Parse a single-quoted string segment and append to word
-fn ext_test_parse_single_quoted(
-    input: &mut StrStream<'_>,
-    word: &mut String,
-) -> ModalResult<()> {
+fn ext_test_parse_single_quoted(input: &mut StrStream<'_>, word: &mut String) -> ModalResult<()> {
     let quote: char = '\''.parse_next(input)?;
     let content: &str = take_while(0.., |c: char| c != '\'').parse_next(input)?;
     let end_quote: char = '\''.parse_next(input)?;
@@ -143,10 +140,7 @@ fn ext_test_parse_single_quoted(
 }
 
 /// Parse a double-quoted string segment and append to word
-fn ext_test_parse_double_quoted(
-    input: &mut StrStream<'_>,
-    word: &mut String,
-) -> ModalResult<()> {
+fn ext_test_parse_double_quoted(input: &mut StrStream<'_>, word: &mut String) -> ModalResult<()> {
     let s = double_quoted_string().parse_next(input)?;
     word.push_str(&s);
     Ok(())
@@ -382,7 +376,8 @@ fn ext_test_regex_word<'a>(
                                 '\'' | '"' => break, // Next quoted string
                                 '\\' => {
                                     winnow::token::any.parse_next(input)?;
-                                    if let Ok(c) = winnow::token::any::<_, ContextError>.parse_next(input)
+                                    if let Ok(c) =
+                                        winnow::token::any::<_, ContextError>.parse_next(input)
                                     {
                                         result.push('\\');
                                         result.push(c);
@@ -409,7 +404,8 @@ fn ext_test_regex_word<'a>(
                                 Some('\\') => {
                                     result.push('\\');
                                     winnow::token::any.parse_next(input)?; // consume \
-                                    if let Ok(c) = winnow::token::any::<_, ContextError>.parse_next(input)
+                                    if let Ok(c) =
+                                        winnow::token::any::<_, ContextError>.parse_next(input)
                                     {
                                         result.push(c);
                                     }
@@ -433,7 +429,8 @@ fn ext_test_regex_word<'a>(
                                 '\'' | '"' => break, // Next quoted string
                                 '\\' => {
                                     winnow::token::any.parse_next(input)?;
-                                    if let Ok(c) = winnow::token::any::<_, ContextError>.parse_next(input)
+                                    if let Ok(c) =
+                                        winnow::token::any::<_, ContextError>.parse_next(input)
                                     {
                                         result.push('\\');
                                         result.push(c);
@@ -574,10 +571,7 @@ fn ext_test_primary<'a>(
         ext_test_spaces().parse_next(input)?;
 
         // Try parenthesized expression
-        if winnow::combinator::opt('(')
-            .parse_next(input)?
-            .is_some()
-        {
+        if winnow::combinator::opt('(').parse_next(input)?.is_some() {
             ext_test_spaces().parse_next(input)?;
             let expr = ext_test_or_expr(tracker).parse_next(input)?;
             ext_test_spaces().parse_next(input)?;
@@ -653,10 +647,7 @@ fn ext_test_not_expr<'a>(
 
         // Check for NOT operator
         let checkpoint = input.checkpoint();
-        if winnow::combinator::opt('!')
-            .parse_next(input)?
-            .is_some()
-        {
+        if winnow::combinator::opt('!').parse_next(input)?.is_some() {
             // Make sure it's not != operator
             if peek_char().parse_next(input).ok() == Some('=') {
                 input.reset(&checkpoint);
@@ -741,11 +732,11 @@ pub(super) fn extended_test_command<'a>(
         let expr = ext_test_or_expr(tracker)
             .parse_next(input)
             .map_err(|e| e.cut())?;
-        ext_test_spaces()
-            .parse_next(input)
-            .map_err(|e| e.cut())?;
-        ']'.parse_next(input).map_err(|e: winnow::error::ErrMode<ContextError>| e.cut())?;
-        ']'.parse_next(input).map_err(|e: winnow::error::ErrMode<ContextError>| e.cut())?;
+        ext_test_spaces().parse_next(input).map_err(|e| e.cut())?;
+        ']'.parse_next(input)
+            .map_err(|e: winnow::error::ErrMode<ContextError>| e.cut())?;
+        ']'.parse_next(input)
+            .map_err(|e: winnow::error::ErrMode<ContextError>| e.cut())?;
 
         let end_offset = tracker.offset_from_locating(input);
         let loc = tracker.range_to_span(start_offset..end_offset);

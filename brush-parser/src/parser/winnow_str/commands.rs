@@ -76,9 +76,7 @@ fn array_element<'a>(
                 .unwrap_or(index_str_with_brackets);
 
             let has_close = true; // parse_balanced_delimiters already consumed the ']'
-            let has_equals = winnow::combinator::opt('=')
-                .parse_next(input)?
-                .is_some();
+            let has_equals = winnow::combinator::opt('=').parse_next(input)?.is_some();
 
             if has_close && has_equals {
                 // Parse value using proper word parsing that handles quotes
@@ -145,9 +143,7 @@ fn assignment_word<'a>(
 
         // Check if it's an array assignment
         let checkpoint = input.checkpoint();
-        let has_paren = winnow::combinator::opt('(')
-            .parse_next(input)?
-            .is_some();
+        let has_paren = winnow::combinator::opt('(').parse_next(input)?.is_some();
 
         if has_paren {
             // Parse array elements
@@ -166,10 +162,7 @@ fn assignment_word<'a>(
                 array_spaces().parse_next(input)?;
 
                 // Check for closing paren
-                if winnow::combinator::opt(')')
-                    .parse_next(input)?
-                    .is_some()
-                {
+                if winnow::combinator::opt(')').parse_next(input)?.is_some() {
                     full_word.push(')');
                     break;
                 }
@@ -571,15 +564,19 @@ pub(super) fn command<'a>(
                             // Function names may contain hyphens, dots, and other
                             // non-metacharacters (see bash manual, §Shell Functions).
                             let is_func_def = {
-                                let r: ModalResult<(&str, &str, &str)> = winnow::combinator::peek((
-                                    take_while(1.., |c: char| {
-                                        c.is_alphanumeric()
-                                            || matches!(c, '_' | '-' | '.' | ':' | '+' | '@' | '/')
-                                    }),
-                                    take_while(0.., |c| c == ' ' || c == '\t'),
-                                    "()",
-                                ))
-                                .parse_next(input);
+                                let r: ModalResult<(&str, &str, &str)> =
+                                    winnow::combinator::peek((
+                                        take_while(1.., |c: char| {
+                                            c.is_alphanumeric()
+                                                || matches!(
+                                                    c,
+                                                    '_' | '-' | '.' | ':' | '+' | '@' | '/'
+                                                )
+                                        }),
+                                        take_while(0.., |c| c == ' ' || c == '\t'),
+                                        "()",
+                                    ))
+                                    .parse_next(input);
                                 r.is_ok()
                             };
 

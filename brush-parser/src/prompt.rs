@@ -229,8 +229,7 @@ mod winnow_impl {
     }
 
     fn octal_number(i: &mut &str) -> ModalResult<u32> {
-        let digits =
-            take_while(1..=3, |c: char| matches!(c, '0'..='7')).parse_next(i)?;
+        let digits = take_while(1..=3, |c: char| matches!(c, '0'..='7')).parse_next(i)?;
         // 1-3 octal digits always parse successfully (max 0o777 = 511 < u32::MAX)
         Ok(u32::from_str_radix(digits, 8).unwrap_or(0))
     }
@@ -261,10 +260,7 @@ pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
 ///
 /// * `s` - The prompt string to parse.
 /// * `impl_` - The parser implementation to use.
-pub fn parse_with(
-    s: &str,
-    impl_: ParserImpl,
-) -> Result<Vec<PromptPiece>, error::WordParseError> {
+pub fn parse_with(s: &str, impl_: ParserImpl) -> Result<Vec<PromptPiece>, error::WordParseError> {
     match impl_ {
         ParserImpl::Peg => peg_parse(s),
         #[cfg(feature = "winnow-parser")]
