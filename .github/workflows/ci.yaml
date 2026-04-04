@@ -191,7 +191,7 @@ jobs:
             brush_args: ""
           - name: "winnow"
             features: "experimental-parser"
-            brush_args: "--experimental-parser"
+            brush_args: ""
         host_config:
           - host: "ubuntu-24.04"
             variant: "linux-x86_64"
