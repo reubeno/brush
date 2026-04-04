@@ -46,7 +46,8 @@ pub(super) fn bare_word<'a>() -> impl ModalParser<StrStream<'a>, &'a str, Contex
 
 /// Parse a bare word including extglob prefix characters.
 /// Used when extglob is disabled to treat ?, *, +, @, ! as regular word chars.
-pub(super) fn bare_word_including_extglob<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
+pub(super) fn bare_word_including_extglob<'a>()
+-> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
     take_while(1.., |c: char| {
         !matches!(
             c,
@@ -109,7 +110,8 @@ pub(super) fn arithmetic_expansion<'a>() -> impl ModalParser<StrStream<'a>, &'a 
 
 /// Parse a legacy arithmetic expansion: $[expr]
 /// Returns the expansion text including $[ ]
-pub(super) fn legacy_arithmetic_expansion<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
+pub(super) fn legacy_arithmetic_expansion<'a>()
+-> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
     parse_balanced_delimiters("$[", Some('['), ']', 1, false, false)
 }
 
@@ -125,7 +127,8 @@ pub(super) fn command_substitution<'a>() -> impl ModalParser<StrStream<'a>, &'a 
 
 /// Parse a backtick command substitution: `cmd`
 /// Returns the expansion text including backticks
-pub(super) fn backtick_substitution<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
+pub(super) fn backtick_substitution<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError>
+{
     parse_balanced_delimiters("`", None, '`', 1, true, true)
 }
 
@@ -152,7 +155,8 @@ pub(super) fn special_parameter<'a>() -> impl ModalParser<StrStream<'a>, &'a str
 /// - `$"` (gettext quote) before `$` followed by anything  
 /// - `$((` (arithmetic) before `$(` (command substitution)
 /// - `${` (braced variable) before `$VAR` (simple variable)
-pub(super) fn dollar_expansion<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> + 'a {
+pub(super) fn dollar_expansion<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> + 'a
+{
     winnow::combinator::alt((
         ansi_c_quoted_string(),         // $'
         gettext_double_quoted_string(), // $"
@@ -192,7 +196,8 @@ pub(super) fn dollar_expansion_in_double_quotes<'a>()
 ///
 /// Once we see the opening quote, we're committed to parsing the string.
 /// An unterminated string is a fatal error (Cut), not backtrackable.
-pub(super) fn single_quoted_string<'a>() -> impl ModalParser<StrStream<'a>, String, ContextError> + 'a {
+pub(super) fn single_quoted_string<'a>()
+-> impl ModalParser<StrStream<'a>, String, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Once we see the opening quote, we're committed to parsing the string
         let _ = winnow::token::literal("'").parse_next(input)?;
@@ -222,7 +227,8 @@ pub(super) fn ansi_c_quoted_string<'a>() -> impl ModalParser<StrStream<'a>, &'a 
 /// Parse a gettext-style double-quoted string: $"text".
 /// Returns the full string including the $"..." syntax (e.g., `$"text"`).
 /// This is used for localization in bash.
-pub(super) fn gettext_double_quoted_string<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
+pub(super) fn gettext_double_quoted_string<'a>()
+-> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
     parse_balanced_delimiters("$\"", None, '"', 1, false, false)
 }
 
@@ -234,7 +240,8 @@ pub(super) fn gettext_double_quoted_string<'a>() -> impl ModalParser<StrStream<'
 ///
 /// Uses `cut` semantics - once we see the opening quote, we're committed
 /// to parsing the string. An unterminated string is a fatal error.
-pub(super) fn double_quoted_string<'a>() -> impl ModalParser<StrStream<'a>, String, ContextError> + 'a {
+pub(super) fn double_quoted_string<'a>()
+-> impl ModalParser<StrStream<'a>, String, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         let start = input.checkpoint();
 
@@ -255,7 +262,8 @@ pub(super) fn double_quoted_string<'a>() -> impl ModalParser<StrStream<'a>, Stri
                 }
                 '\\' => {
                     '\\'.parse_next(input)?; // consume backslash
-                    let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input); // consume escaped char
+                    let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
+                        .parse_next(input); // consume escaped char
                 }
                 '$' => {
                     // Use dollar_expansion_in_double_quotes which excludes $' and $"
@@ -268,10 +276,12 @@ pub(super) fn double_quoted_string<'a>() -> impl ModalParser<StrStream<'a>, Stri
                     // Consume until matching backtick
                     let _: ModalResult<&str> =
                         take_while(0.., |c: char| c != '`').parse_next(input);
-                    let _: ModalResult<Option<char>> = winnow::combinator::opt('`').parse_next(input);
+                    let _: ModalResult<Option<char>> =
+                        winnow::combinator::opt('`').parse_next(input);
                 }
                 _ => {
-                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input)?; // consume regular char
+                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
+                        .parse_next(input)?; // consume regular char
                 }
             }
         }

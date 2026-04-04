@@ -136,7 +136,8 @@ pub(super) fn brace_group<'a>(
 pub(super) fn process_substitution<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl ModalParser<StrStream<'a>, (ast::ProcessSubstitutionKind, ast::SubshellCommand), ContextError> + 'a {
+) -> impl ModalParser<StrStream<'a>, (ast::ProcessSubstitutionKind, ast::SubshellCommand), ContextError>
++ 'a {
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
@@ -315,7 +316,10 @@ pub(super) fn for_clause<'a>(
 
         linebreak().parse_next(input)?;
 
-        if winnow::combinator::opt(keyword("in")).parse_next(input)?.is_some() {
+        if winnow::combinator::opt(keyword("in"))
+            .parse_next(input)?
+            .is_some()
+        {
             let values = winnow::combinator::opt(winnow::combinator::preceded(
                 spaces(),
                 winnow::combinator::separated(1.., word_as_ast(ctx, tracker), spaces1()),
@@ -356,7 +360,8 @@ pub(super) fn for_clause<'a>(
 // ============================================================================
 
 /// Parse case item terminator (;;, ;&, or ;;&)
-fn case_item_terminator<'a>() -> impl ModalParser<StrStream<'a>, ast::CaseItemPostAction, ContextError> {
+fn case_item_terminator<'a>()
+-> impl ModalParser<StrStream<'a>, ast::CaseItemPostAction, ContextError> {
     winnow::combinator::preceded(
         spaces(),
         dispatch! {super::helpers::peek_op3();
@@ -582,7 +587,9 @@ pub(super) fn function_definition<'a>(
 ) -> impl ModalParser<StrStream<'a>, ast::FunctionDefinition, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // Try "function name () body" or "function name body" format
-        let has_function_keyword = winnow::combinator::opt(keyword("function")).parse_next(input)?.is_some();
+        let has_function_keyword = winnow::combinator::opt(keyword("function"))
+            .parse_next(input)?
+            .is_some();
 
         // Track location of the function name
         let fname_start = tracker.offset_from_locating(input);
@@ -596,10 +603,7 @@ pub(super) fn function_definition<'a>(
 
         // Parse optional ()
         spaces().parse_next(input)?;
-        let has_parens = if winnow::combinator::opt('(')
-            .parse_next(input)?
-            .is_some()
-        {
+        let has_parens = if winnow::combinator::opt('(').parse_next(input)?.is_some() {
             spaces().parse_next(input)?;
             ')'.parse_next(input)?;
             true

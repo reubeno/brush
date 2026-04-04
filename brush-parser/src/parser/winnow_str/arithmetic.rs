@@ -77,10 +77,7 @@ pub(super) fn arithmetic_expression<'a>()
                 }
 
                 // Check for ";" (for arithmetic for loops)
-                if winnow::combinator::opt(';')
-                    .parse_next(input)?
-                    .is_some()
-                {
+                if winnow::combinator::opt(';').parse_next(input)?.is_some() {
                     input.reset(&checkpoint);
                     break;
                 }
@@ -92,10 +89,7 @@ pub(super) fn arithmetic_expression<'a>()
             let checkpoint = input.checkpoint();
 
             // Try to match '('
-            if winnow::combinator::opt('(')
-                .parse_next(input)?
-                .is_some()
-            {
+            if winnow::combinator::opt('(').parse_next(input)?.is_some() {
                 paren_depth += 1;
                 expr_str.push('(');
                 continue;
@@ -103,10 +97,7 @@ pub(super) fn arithmetic_expression<'a>()
             input.reset(&checkpoint);
 
             // Try to match ')'
-            if winnow::combinator::opt(')')
-                .parse_next(input)?
-                .is_some()
-            {
+            if winnow::combinator::opt(')').parse_next(input)?.is_some() {
                 paren_depth -= 1;
                 expr_str.push(')');
                 continue;

@@ -233,12 +233,17 @@ mod winnow_impl {
     }
 
     pub(super) fn key_sequence(i: &mut &str) -> ModalResult<KeySequence> {
-        repeat(0.., key_sequence_item).map(KeySequence).parse_next(i)
+        repeat(0.., key_sequence_item)
+            .map(KeySequence)
+            .parse_next(i)
     }
 
     fn key_sequence_item(i: &mut &str) -> ModalResult<KeySequenceItem> {
-        alt((backslash_sequence, none_of('"').map(|c: char| KeySequenceItem::Byte(c as u8))))
-            .parse_next(i)
+        alt((
+            backslash_sequence,
+            none_of('"').map(|c: char| KeySequenceItem::Byte(c as u8)),
+        ))
+        .parse_next(i)
     }
 
     fn backslash_sequence(i: &mut &str) -> ModalResult<KeySequenceItem> {
@@ -273,8 +278,7 @@ mod winnow_impl {
     }
 
     fn hex_number(i: &mut &str) -> ModalResult<u8> {
-        let digits =
-            take_while(1..=2, |c: char| c.is_ascii_hexdigit()).parse_next(i)?;
+        let digits = take_while(1..=2, |c: char| c.is_ascii_hexdigit()).parse_next(i)?;
         Ok(u8::from_str_radix(digits, 16).unwrap_or(0))
     }
 
