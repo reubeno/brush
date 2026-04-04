@@ -261,7 +261,8 @@ impl BindCommand {
             }
 
             for key_seq_and_command in &self.key_seq_bindings {
-                let (key_seq, command) = parse_key_sequence_and_shell_command(key_seq_and_command, parser_impl)?;
+                let (key_seq, command) =
+                    parse_key_sequence_and_shell_command(key_seq_and_command, parser_impl)?;
                 bind_key_sequence_to_shell_cmd(&mut *bindings, key_seq, command)?;
             }
         }
@@ -271,7 +272,8 @@ impl BindCommand {
                 return Ok(ExecutionResult::success());
             }
 
-            let (key_seq, target) = parse_key_sequence_and_readline_target(key_sequence.as_str(), parser_impl)?;
+            let (key_seq, target) =
+                parse_key_sequence_and_readline_target(key_sequence.as_str(), parser_impl)?;
             bind_key_sequence_to_readline_target(&mut *bindings, key_seq, target)?;
         }
 
@@ -560,8 +562,11 @@ mod tests {
 
     #[test]
     fn parse_example_key_sequence_and_readline_func() {
-        let (key_seq, target) =
-            parse_key_sequence_and_readline_target(r#""\C-a":beginning-of-line"#, brush_parser::ParserImpl::default()).unwrap();
+        let (key_seq, target) = parse_key_sequence_and_readline_target(
+            r#""\C-a":beginning-of-line"#,
+            brush_parser::ParserImpl::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             key_seq,
@@ -581,8 +586,11 @@ mod tests {
 
     #[test]
     fn parse_escape_char_key_binding() {
-        let (key_seq, target) =
-            parse_key_sequence_and_readline_target(r#""\er":transpose-chars"#, brush_parser::ParserImpl::default()).unwrap();
+        let (key_seq, target) = parse_key_sequence_and_readline_target(
+            r#""\er":transpose-chars"#,
+            brush_parser::ParserImpl::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             key_seq,

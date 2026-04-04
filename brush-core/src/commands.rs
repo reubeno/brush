@@ -97,7 +97,6 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn stderr_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
         self.params.try_stderr_async(self.shell)
     }
-
 }
 
 /// An argument to a command.
