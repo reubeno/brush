@@ -277,32 +277,14 @@ pub(super) fn cmd_prefix<'a>(
 
 /// Check if we're at a here-doc marker (<<) but NOT a here-string (<<<)
 fn at_here_doc_marker<'a>() -> impl ModalParser<StrStream<'a>, (), ContextError> + 'a {
-    move |input: &mut StrStream<'a>| {
-        // Skip optional fd number
-        winnow::combinator::opt(io_number()).parse_next(input)?;
-
-        // Check for << but not <<<
-        let checkpoint = input.checkpoint();
-        if winnow::combinator::opt("<<")
-            .parse_next(input)?
-            .is_some()
-        {
-            // Make sure it's not <<<
-            if {
-                let r: ModalResult<char> = winnow::combinator::peek('<').parse_next(input);
-                r.is_ok()
-            } {
-                // It's <<<, not <<
-                input.reset(&checkpoint);
-                return fail.parse_next(input);
-            }
-            input.reset(&checkpoint);
-            Ok(())
-        } else {
-            input.reset(&checkpoint);
-            fail.parse_next(input)
-        }
-    }
+    // Optional fd number, then "<<", then verify the next char is not another "<"
+    // (distinguishing << from <<<). Always called via peek() so consumption doesn't matter.
+    (
+        winnow::combinator::opt(io_number()),
+        "<<",
+        winnow::combinator::not("<"),
+    )
+        .void()
 }
 
 /// Parse multiple here-docs when we know we're at a here-doc marker.
@@ -400,35 +382,21 @@ pub(super) fn cmd_suffix<'a>(
                 }
             }
 
-            // If we can't parse words, only try redirects
-            if can_parse_words || all_items.is_empty() {
-                // Try to parse a single suffix item
-                let result = single_suffix_item(ctx, tracker).parse_next(input);
-                match result {
-                    Ok(item) => {
-                        all_items.push(item);
-                        spaces().parse_next(input)?;
-                    }
-                    Err(winnow::error::ErrMode::Cut(e)) => {
-                        // Cut errors are fatal - propagate them
-                        return Err(winnow::error::ErrMode::Cut(e));
-                    }
-                    Err(_) => break,
-                }
+            // If we can't parse words (no leading space), only try redirects
+            let item = if can_parse_words || all_items.is_empty() {
+                single_suffix_item(ctx, tracker).parse_next(input)
             } else {
-                // After first redirect without space, only try redirects
-                let result = io_redirect(ctx, tracker).parse_next(input);
-                match result {
-                    Ok(r) => {
-                        all_items.push(ast::CommandPrefixOrSuffixItem::IoRedirect(r.redirect));
-                        spaces().parse_next(input)?;
-                    }
-                    Err(winnow::error::ErrMode::Cut(e)) => {
-                        // Cut errors are fatal - propagate them
-                        return Err(winnow::error::ErrMode::Cut(e));
-                    }
-                    Err(_) => break,
+                io_redirect(ctx, tracker)
+                    .map(|r| ast::CommandPrefixOrSuffixItem::IoRedirect(r.redirect))
+                    .parse_next(input)
+            };
+            match item {
+                Ok(item) => {
+                    all_items.push(item);
+                    spaces().parse_next(input)?;
                 }
+                Err(winnow::error::ErrMode::Cut(e)) => return Err(winnow::error::ErrMode::Cut(e)),
+                Err(_) => break,
             }
         }
 
