@@ -140,7 +140,7 @@ fn pipeline_timed<'a>(
         let start_offset = tracker.offset_from_locating(input);
 
         // Try to parse "time" keyword
-        if keyword("time").parse_next(input).is_err() {
+        if winnow::combinator::opt(keyword("time")).parse_next(input)?.is_none() {
             return Ok(None);
         }
 
