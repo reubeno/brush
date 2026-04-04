@@ -76,16 +76,16 @@ pub struct ParseErrorLocation {
 #[derive(Debug, thiserror::Error)]
 pub enum WordParseError {
     /// An error occurred while parsing an arithmetic expression.
-    #[error("failed to parse arithmetic expression")]
-    ArithmeticExpression(ParseErrorLocation),
+    #[error("failed to parse arithmetic expression: {0}")]
+    ArithmeticExpression(String),
 
     /// An error occurred while parsing a shell pattern.
     #[error("failed to parse pattern")]
     Pattern(ParseErrorLocation),
 
     /// An error occurred while parsing a prompt string.
-    #[error("failed to parse prompt string")]
-    Prompt(ParseErrorLocation),
+    #[error("failed to parse prompt string: {0}")]
+    Prompt(String),
 
     /// An error occurred while parsing a parameter.
     #[error("failed to parse parameter '{0}'")]
