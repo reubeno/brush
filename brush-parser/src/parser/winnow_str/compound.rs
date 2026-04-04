@@ -421,33 +421,7 @@ fn case_list<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
 ) -> impl ModalParser<StrStream<'a>, Vec<ast::CaseItem>, ContextError> + 'a {
-    move |input: &mut StrStream<'a>| {
-        let mut items = vec![];
-
-        loop {
-            // Peek ahead to see if we have "esac"
-            let checkpoint = input.checkpoint();
-            spaces().parse_next(input)?;
-            if keyword("esac").parse_next(input).is_ok() {
-                // Found esac, restore and break
-                input.reset(&checkpoint);
-                break;
-            }
-            input.reset(&checkpoint);
-
-            // Parse case item
-            match case_item(ctx, tracker).parse_next(input) {
-                Ok(item) => items.push(item),
-                Err(_) => break,
-            }
-        }
-
-        if items.is_empty() {
-            return fail.parse_next(input);
-        }
-
-        Ok(items)
-    }
+    winnow::combinator::repeat(1.., case_item(ctx, tracker))
 }
 
 /// Parse a case clause: case word in patterns) commands ;; esac
