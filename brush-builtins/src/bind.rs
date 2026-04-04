@@ -148,6 +148,7 @@ impl BindCommand {
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, BindError> {
         let mut bindings = bindings.lock().await;
+        let parser_impl = context.shell.parser_options().parser_impl;
         let mut output = Vec::new();
 
         if self.list_funcs {
@@ -236,7 +237,7 @@ impl BindCommand {
         }
 
         if let Some(key_seq_str) = &self.remove_key_seq_binding {
-            let key_seq = parse_key_sequence(key_seq_str)?;
+            let key_seq = parse_key_sequence(key_seq_str, parser_impl)?;
             let _ = bindings.try_unbind(key_seq);
         }
 
@@ -260,7 +261,7 @@ impl BindCommand {
             }
 
             for key_seq_and_command in &self.key_seq_bindings {
-                let (key_seq, command) = parse_key_sequence_and_shell_command(key_seq_and_command)?;
+                let (key_seq, command) = parse_key_sequence_and_shell_command(key_seq_and_command, parser_impl)?;
                 bind_key_sequence_to_shell_cmd(&mut *bindings, key_seq, command)?;
             }
         }
@@ -270,7 +271,7 @@ impl BindCommand {
                 return Ok(ExecutionResult::success());
             }
 
-            let (key_seq, target) = parse_key_sequence_and_readline_target(key_sequence.as_str())?;
+            let (key_seq, target) = parse_key_sequence_and_readline_target(key_sequence.as_str(), parser_impl)?;
             bind_key_sequence_to_readline_target(&mut *bindings, key_seq, target)?;
         }
 
@@ -290,11 +291,14 @@ impl BindCommand {
     }
 }
 
-fn parse_key_sequence(input: &str) -> Result<interfaces::KeySequence, BindError> {
+fn parse_key_sequence(
+    input: &str,
+    parser_impl: brush_parser::ParserImpl,
+) -> Result<interfaces::KeySequence, BindError> {
     // First trim any whitespace.
     let input = input.trim();
 
-    let parsed = brush_parser::readline_binding::parse_key_sequence(input)?;
+    let parsed = brush_parser::readline_binding::parse_key_sequence_with(input, parser_impl)?;
     let abstract_seq = key_sequence_to_abstract_strokes(&parsed)?;
 
     Ok(abstract_seq)
@@ -302,6 +306,7 @@ fn parse_key_sequence(input: &str) -> Result<interfaces::KeySequence, BindError>
 
 fn parse_key_sequence_and_shell_command(
     input: &str,
+    parser_impl: brush_parser::ParserImpl,
 ) -> Result<(interfaces::KeySequence, String), BindError> {
     tracing::debug!(target: trace_categories::INPUT,
         "parsing key binding entry: '{input}'"
@@ -312,7 +317,10 @@ fn parse_key_sequence_and_shell_command(
 
     // This should be something of the form:
     //     "KEY-SEQUENCE": SHELL-COMMAND
-    let binding = brush_parser::readline_binding::parse_key_sequence_shell_cmd_binding(input)?;
+    let binding = brush_parser::readline_binding::parse_key_sequence_shell_cmd_binding_with(
+        input,
+        parser_impl,
+    )?;
     let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
     Ok((abstract_seq, binding.shell_cmd))
@@ -327,6 +335,7 @@ enum BindableReadlineTarget {
 
 fn parse_key_sequence_and_readline_target(
     input: &str,
+    parser_impl: brush_parser::ParserImpl,
 ) -> Result<(interfaces::KeySequence, BindableReadlineTarget), BindError> {
     tracing::debug!(target: trace_categories::INPUT,
         "parsing key binding entry: '{input}'"
@@ -338,7 +347,10 @@ fn parse_key_sequence_and_readline_target(
     // This should be of one of these forms:
     //     "KEY-SEQUENCE":function-name
     //     "KEY-SEQUENCE":readline-command
-    let binding = brush_parser::readline_binding::parse_key_sequence_readline_binding(input)?;
+    let binding = brush_parser::readline_binding::parse_key_sequence_readline_binding_with(
+        input,
+        parser_impl,
+    )?;
     let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
     match binding.target {
@@ -347,8 +359,10 @@ fn parse_key_sequence_and_readline_target(
             Ok((abstract_seq, BindableReadlineTarget::Function(func)))
         }
         brush_parser::readline_binding::ReadlineTarget::Macro(target_seq_str) => {
-            let parsed_target =
-                brush_parser::readline_binding::parse_key_sequence(&target_seq_str)?;
+            let parsed_target = brush_parser::readline_binding::parse_key_sequence_with(
+                &target_seq_str,
+                parser_impl,
+            )?;
             let abstract_target = key_sequence_to_abstract_strokes(&parsed_target)?;
             Ok((abstract_seq, BindableReadlineTarget::Macro(abstract_target)))
         }
@@ -547,7 +561,7 @@ mod tests {
     #[test]
     fn parse_example_key_sequence_and_readline_func() {
         let (key_seq, target) =
-            parse_key_sequence_and_readline_target(r#""\C-a":beginning-of-line"#).unwrap();
+            parse_key_sequence_and_readline_target(r#""\C-a":beginning-of-line"#, brush_parser::ParserImpl::default()).unwrap();
 
         assert_eq!(
             key_seq,
@@ -568,7 +582,7 @@ mod tests {
     #[test]
     fn parse_escape_char_key_binding() {
         let (key_seq, target) =
-            parse_key_sequence_and_readline_target(r#""\er":transpose-chars"#).unwrap();
+            parse_key_sequence_and_readline_target(r#""\er":transpose-chars"#, brush_parser::ParserImpl::default()).unwrap();
 
         assert_eq!(
             key_seq,
