@@ -339,10 +339,13 @@ impl Spec {
             }
         }
         if let Some(function_name) = &self.function_name {
-            // Completion functions are only meaningful for interactive shells, unless
-            // explicitly requested via compgen (Programmatic trigger).
+            // Skip completion functions only in non-interactive shells without an explicit
+            // completion trigger (i.e. during script execution, not during Tab or compgen).
             if shell.options().interactive
-                || matches!(context.trigger, CompletionTrigger::Programmatic)
+                || matches!(
+                    context.trigger,
+                    CompletionTrigger::InteractiveComplete | CompletionTrigger::Programmatic
+                )
             {
                 let call_result = self
                     .call_completion_function(shell, function_name.as_str(), context)
@@ -357,10 +360,13 @@ impl Spec {
             }
         }
         if let Some(command) = &self.command {
-            // Completion commands are only meaningful for interactive shells, unless
-            // explicitly requested via compgen (Programmatic trigger).
+            // Skip completion commands only in non-interactive shells without an explicit
+            // completion trigger (i.e. during script execution, not during Tab or compgen).
             if shell.options().interactive
-                || matches!(context.trigger, CompletionTrigger::Programmatic)
+                || matches!(
+                    context.trigger,
+                    CompletionTrigger::InteractiveComplete | CompletionTrigger::Programmatic
+                )
             {
                 let mut new_candidates = self
                     .call_completion_command(shell, command.as_str(), context)
