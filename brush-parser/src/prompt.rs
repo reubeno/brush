@@ -222,7 +222,7 @@ mod winnow_impl {
         Ok(PromptPiece::Date(PromptDateFormat::Custom(f)))
     }
 
-    fn date_format<'i>(i: &mut &'i str) -> ModalResult<String> {
+    fn date_format(i: &mut &str) -> ModalResult<String> {
         take_while(0.., |c: char| c != '}')
             .map(str::to_owned)
             .parse_next(i)

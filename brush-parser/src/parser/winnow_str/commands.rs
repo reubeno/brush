@@ -117,10 +117,8 @@ fn assignment_word<'a>(
             .parse_next(input)?;
 
         // Check for array element syntax: var[index]
-        let array_index = if {
-            let r: ModalResult<char> = winnow::combinator::peek('[').parse_next(input);
-            r.is_ok()
-        } {
+        let peek_bracket: ModalResult<char> = winnow::combinator::peek('[').parse_next(input);
+        let array_index = if peek_bracket.is_ok() {
             // Parse the index using parse_balanced_delimiters to handle nested brackets
             let index_with_brackets =
                 parse_balanced_delimiters("[", Some('['), ']', 1, false, false)
@@ -469,10 +467,9 @@ pub(super) fn command<'a>(
             // Extended test: [[ ... ]] (bash mode only)
             '[' if !ctx.options.posix_mode && !ctx.options.sh_mode => {
                 // Check if it's [[
-                if {
-                    let r: ModalResult<&str> = winnow::combinator::peek("[[").parse_next(input);
-                    r.is_ok()
-                } {
+                let peek_dbl_bracket: ModalResult<&str> =
+                    winnow::combinator::peek("[[").parse_next(input);
+                if peek_dbl_bracket.is_ok() {
                     (
                         extended_test_command(ctx, tracker),
                         optional_redirects(ctx, tracker),
