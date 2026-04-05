@@ -210,7 +210,7 @@ fn variable_name<'i>(i: &mut &'i str) -> ModalResult<&'i str> {
 }
 
 #[cfg(feature = "winnow-parser")]
-fn lvalue_atom<'i>(i: &mut &'i str) -> ModalResult<ast::ArithmeticExpr> {
+fn lvalue_atom(i: &mut &str) -> ModalResult<ast::ArithmeticExpr> {
     let name = variable_name(i)?;
     let index = opt(delimited('[', pratt_expr(0), cut_err(']'))).parse_next(i)?;
     Ok(match index {
@@ -245,6 +245,7 @@ fn decimal_literal_winnow(i: &mut &str) -> ModalResult<i64> {
     )
         .take()
         .parse_next(i)?;
+    #[expect(clippy::cast_possible_wrap)]
     s.parse::<u64>()
         .map(|v| v as i64)
         .map_err(|_| ErrMode::Backtrack(ContextError::default()))
@@ -256,6 +257,7 @@ fn base_literal(i: &mut &str) -> ModalResult<i64> {
     '#'.parse_next(i)?;
     let digits =
         take_while(1.., |c: char| c.is_alphanumeric() || c == '@' || c == '_').parse_next(i)?;
+    #[expect(clippy::cast_sign_loss)]
     parse_shell_literal_number(digits, radix as u64)
         .map_err(|_| ErrMode::Backtrack(ContextError::default()))
 }
@@ -273,6 +275,7 @@ fn literal_number(i: &mut &str) -> ModalResult<i64> {
 
 /// Pratt expression parser with configurable minimum precedence level.
 #[cfg(feature = "winnow-parser")]
+#[expect(clippy::too_many_lines)]
 fn pratt_expr<'i>(
     precedence: i64,
 ) -> impl Parser<&'i str, ast::ArithmeticExpr, ErrMode<ContextError>> {
