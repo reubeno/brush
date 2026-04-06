@@ -32,7 +32,7 @@ descape = "3.0.0"
 diff = "0.1.13"
 glob = "0.3.3"
 indent = "0.1.1"
-insta = { version = "1.46.3", features = ["yaml"], optional = true }
+insta = { version = "1.47.1", features = ["yaml"], optional = true }
 junit-report = "0.8.3"
 os-release = "0.1.0"
 regex = "1.12.3"
