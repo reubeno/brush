@@ -79,7 +79,7 @@ color-print = "0.3.7"
 etcetera = "0.11.0"
 schemars = { version = "1.2.1", optional = true }
 serde = { version = "1.0", features = ["derive"] }
-toml = "1.0.7"
+toml = "1.1.0"
 const_format = "0.2.35"
 git-version = "0.3.9"
 serde_json = { version = "1.0.149", optional = true }
@@ -104,7 +104,7 @@ tokio = { version = "1.50.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
-uuid = { version = "1.22.0", features = ["js"] }
+uuid = { version = "1.23.0", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
