@@ -30,7 +30,9 @@ impl builtins::Command for AliasCommand {
             }
         } else {
             for alias in &self.aliases {
-                if let Some((name, unexpanded_value)) = alias.split_once('=') {
+                if let Some((name, unexpanded_value)) = alias.split_once('=')
+                    && !name.is_empty()
+                {
                     context
                         .shell
                         .aliases_mut()
