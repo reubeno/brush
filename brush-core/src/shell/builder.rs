@@ -209,6 +209,9 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Whether to enable error-on-exit behavior.
     #[builder(default)]
     pub exit_on_nonzero_command_exit: bool,
+    /// Whether to disable pathname expansion.
+    #[builder(default)]
+    pub disable_pathname_expansion: bool,
     /// Whether to print verbose output.
     #[builder(default)]
     pub verbose: bool,
