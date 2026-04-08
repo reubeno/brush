@@ -123,3 +123,10 @@ cases:
   - name: "Unknown option"
     ignore_stderr: true
     args: ["--unknown-option", "-c", "echo hi"]
+
+  - name: "-f on the command line"
+    args: ["-f"]
+    stdin: |
+      touch abc
+      touch abd
+      echo a*

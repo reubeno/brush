@@ -84,6 +84,10 @@ pub struct CommandLineArgs {
     #[clap(short = 'e', help_heading = HEADING_STANDARD_OPTIONS)]
     pub exit_on_nonzero_command_exit: bool,
 
+    /// Disable pathname expansion (also known as filename globbing).
+    #[clap(short = 'f', help_heading = HEADING_STANDARD_OPTIONS)]
+    pub disable_pathname_expansion: bool,
+
     /// Run in interactive mode.
     #[clap(short = 'i', help_heading = HEADING_STANDARD_OPTIONS)]
     pub interactive: bool,

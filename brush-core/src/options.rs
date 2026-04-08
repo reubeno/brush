@@ -230,6 +230,7 @@ impl RuntimeOptions {
             exit_on_nonzero_command_exit: create_options.exit_on_nonzero_command_exit,
             external_cmd_leads_session: create_options.external_cmd_leads_session,
             login_shell: create_options.login,
+            disable_filename_globbing: create_options.disable_pathname_expansion,
             remember_command_locations: true,
             check_window_size_after_external_commands: true,
             save_multiline_cmds_in_history: true,

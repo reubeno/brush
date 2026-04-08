@@ -539,6 +539,7 @@ async fn instantiate_shell_from_args(
         .sh_mode(args.sh_mode)
         .treat_unset_variables_as_error(args.treat_unset_variables_as_error)
         .exit_on_nonzero_command_exit(args.exit_on_nonzero_command_exit)
+        .disable_pathname_expansion(args.disable_pathname_expansion)
         .verbose(args.verbose)
         .parser(parser_impl)
         .error_formatter(new_error_behavior(args))
