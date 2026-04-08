@@ -41,6 +41,8 @@ jobs:
           # by some latest stable versions of distros.
           - host: "ubuntu-22.04"
             target: ""
+            cross_command: ""
+            cross_tool_to_install: ""
             os: "linux"
             arch: "x86_64"
             binary_name: "brush"
@@ -50,6 +52,8 @@ jobs:
           # the produced binary will statically link the C runtime anyhow.
           - host: "ubuntu-24.04"
             target: "x86_64-unknown-linux-musl"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
             os: "linux-musl"
             arch: "x86_64"
             binary_name: "brush"
@@ -57,6 +61,8 @@ jobs:
           # Build for aarch64/macos target on native host.
           - host: "macos-latest"
             target: ""
+            cross_command: ""
+            cross_tool_to_install: ""
             os: "macos"
             arch: "aarch64"
             required_tools: ""
@@ -65,6 +71,8 @@ jobs:
           # Build for aarch64/linux target on x86_64/Linux host.
           - host: "ubuntu-24.04"
             target: "aarch64-unknown-linux-gnu"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
             os: "linux"
             arch: "aarch64"
             required_tools: "gcc-aarch64-linux-gnu"
@@ -73,6 +81,8 @@ jobs:
           # Build for wasm32 target on x86_64/linux host.
           - host: "ubuntu-24.04"
             target: "wasm32-unknown-unknown"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
             os: "unknown"
             arch: "wasm32"
             required_tools: ""
@@ -81,6 +91,8 @@ jobs:
           # Build for WASI-0.2 target on x86_64/linux host.
           - host: "ubuntu-24.04"
             target: "wasm32-wasip2"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
             os: "wasi-0.2"
             arch: "wasm32"
             required_tools: ""
@@ -89,10 +101,22 @@ jobs:
           # Build for x86_64/windows target on x86_64/linux host.
           - host: "ubuntu-24.04"
             target: "x86_64-pc-windows-gnu"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
             os: "windows"
             arch: "x86_64"
             required_tools: ""
             binary_name: "brush.exe"
+            extra_build_args: ""
+          # Build for x86_64/android target on x86_64/linux host.
+          - host: "ubuntu-24.04"
+            target: "x86_64-linux-android"
+            cross_command: "cargo ndk"
+            cross_tool_to_install: "cargo-ndk"
+            os: "android"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
             extra_build_args: ""
 
     name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
@@ -124,7 +148,7 @@ jobs:
         if: ${{ matrix.target != '' }}
         uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
-          tool: cross
+          tool: ${{ matrix.cross_tool_to_install }}
 
       - name: "Build (native)"
         if: ${{ matrix.target == '' }}
@@ -135,9 +159,11 @@ jobs:
       - name: "Build (cross)"
         if: ${{ matrix.target != '' }}
         env:
+          CROSS_COMMAND: ${{ matrix.cross_command }}
           TARGET: ${{ matrix.target }}
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cross build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
+          CARGO_NDK_PLATFORM: 24
+        run: ${CROSS_COMMAND} build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
