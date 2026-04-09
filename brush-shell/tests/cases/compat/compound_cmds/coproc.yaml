@@ -1,0 +1,780 @@
+name: "Compound commands: coproc"
+
+# NOTE: All coproc tests use script files and save FDs immediately after coproc
+# starts (e.g. fd=${COPROC[0]}) to prevent bash's SIGCHLD handler from clearing
+# the COPROC array before we can dup the FDs into redirections.
+# Additionally, `exec 1>&-` is not yet supported in brush (issue: pipe write-end
+# clones from ExecutionParameters prevent EOF propagation), so we cannot use
+# FIFO-based synchronization.
+
+cases:
+  #
+  # Basic invocation
+  #
+  - name: "Unnamed coproc with brace group"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo "hello from coproc"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Unnamed coproc with subshell"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc ( echo "hello from subshell coproc" )
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Named coproc with brace group"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc MYCOPROC { echo "named coproc"; }
+          fd=${MYCOPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Named coproc with subshell"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc MYSUB ( echo "named subshell coproc" )
+          fd=${MYSUB[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc with simple command"
+    skip: true # TODO(coproc): hangs - wait never completes after bidirectional coproc I/O
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc cat
+          rfd=${COPROC[0]}
+          wfd=${COPROC[1]}
+          echo "input line" >&$wfd
+          exec {wfd}>&-
+          read -r line <&$rfd
+          echo "got: $line"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc with multi-statement brace group"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo "line1"
+            echo "line2"
+            echo "line3"
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # COPROC and COPROC_PID variable validation via functional use
+  #
+  - name: "COPROC array read FD is functional"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo "via read fd"; }
+          fd=${COPROC[0]}
+          read -r line <&$fd
+          echo "got: $line"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Named coproc FDs are functional"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc MYPROC { echo "named fd test"; }
+          fd=${MYPROC[0]}
+          read -r line <&$fd
+          echo "got: $line"
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Reading from coproc stdout
+  #
+  - name: "Read coproc output with cat"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo "output from coproc"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Read coproc output with read builtin"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo "readline test"; }
+          fd=${COPROC[0]}
+          read -r line <&$fd
+          echo "got: $line"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Read multiple lines from coproc"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo "first"
+            echo "second"
+            echo "third"
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Read multiple lines with read builtin"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo "line1"
+            echo "line2"
+          }
+          fd=${COPROC[0]}
+          {
+            read -r first
+            read -r second
+          } <&$fd
+          echo "first=$first"
+          echo "second=$second"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Named coproc read"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc READER { echo "from named"; }
+          fd=${READER[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Writing to coproc stdin
+  #
+  - name: "Write to coproc stdin and read back"
+    skip: true # TODO(coproc): hangs - wait never completes after bidirectional coproc I/O
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc cat
+          rfd=${COPROC[0]}
+          wfd=${COPROC[1]}
+          echo "hello coproc" >&$wfd
+          exec {wfd}>&-
+          read -r line <&$rfd
+          echo "got: $line"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Bidirectional communication"
+    skip: true # TODO(coproc): hangs - wait never completes after bidirectional coproc I/O
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            while read -r line; do
+              echo "processed: $line"
+            done
+          }
+          rfd=${COPROC[0]}
+          wfd=${COPROC[1]}
+          echo "msg1" >&$wfd
+          echo "msg2" >&$wfd
+          exec {wfd}>&-
+          {
+            read -r out1
+            read -r out2
+          } <&$rfd
+          echo "$out1"
+          echo "$out2"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Named coproc bidirectional"
+    skip: true # TODO(coproc): hangs - wait never completes after bidirectional coproc I/O
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc BIDIR {
+            while read -r line; do
+              echo "echo: $line"
+            done
+          }
+          rfd=${BIDIR[0]}
+          wfd=${BIDIR[1]}
+          echo "test1" >&$wfd
+          echo "test2" >&$wfd
+          exec {wfd}>&-
+          {
+            read -r out1
+            read -r out2
+          } <&$rfd
+          echo "$out1"
+          echo "$out2"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Close write FD to signal EOF"
+    skip: true # TODO(coproc): hangs - wait never completes after bidirectional coproc I/O
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            count=0
+            while read -r line; do
+              count=$((count + 1))
+            done
+            echo "read $count lines"
+          }
+          rfd=${COPROC[0]}
+          wfd=${COPROC[1]}
+          echo "a" >&$wfd
+          echo "b" >&$wfd
+          echo "c" >&$wfd
+          exec {wfd}>&-
+          read -r result <&$rfd
+          echo "$result"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Bidirectional with cat for EOF"
+    skip: true # TODO(coproc): hangs - stdout pipe not fully closed after coproc exits
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            while read -r line; do
+              echo "processed: $line"
+            done
+          }
+          rfd=${COPROC[0]}
+          wfd=${COPROC[1]}
+          echo "msg1" >&$wfd
+          echo "msg2" >&$wfd
+          exec {wfd}>&-
+          cat <&$rfd
+          wait
+          echo "DONE"
+    args: ["./test.sh"]
+
+  #
+  # Coproc with compound command bodies
+  #
+  - name: "Coproc running a for loop"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            for i in 1 2 3; do
+              echo "iteration $i"
+            done
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc running a while loop"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            n=1
+            while [ $n -le 3 ]; do
+              echo "count $n"
+              n=$((n + 1))
+            done
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc with conditionals"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            if true; then
+              echo "true branch"
+            else
+              echo "false branch"
+            fi
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc with case statement"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            val="hello"
+            case $val in
+              hello) echo "matched hello";;
+              *) echo "no match";;
+            esac
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc body with pipeline"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo -e "banana\napple\ncherry" | sort
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc body with command substitution"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            result=$(echo "hello" | tr a-z A-Z)
+            echo "$result"
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc with arithmetic operations"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            a=5
+            b=3
+            echo $((a + b))
+            echo $((a * b))
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Exit status and lifecycle
+  #
+  - name: "Coproc statement returns 0"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo done; }
+          status=$?
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+          echo "exit status: $status"
+    args: ["./test.sh"]
+
+  - name: "Coproc with failing body returns 0 immediately"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { exit 42; }
+          echo "coproc start status: $?"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Wait with no args waits for coproc"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo "coproc done"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+          echo "after wait"
+    args: ["./test.sh"]
+
+  #
+  # Error cases
+  #
+  - name: "Invalid coproc name"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc 123bad { echo x; }
+          echo "exit: $?"
+    args: ["./test.sh"]
+
+  #
+  # Coproc in different contexts
+  #
+  - name: "Coproc inside a function"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          start_coproc() {
+            coproc { echo "from function coproc"; }
+          }
+          start_coproc
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc inside a conditional"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          if true; then
+            coproc { echo "conditional coproc"; }
+          fi
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc inside a loop body"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          for i in 1; do
+            coproc { echo "loop coproc $i"; }
+          done
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Named coproc inside a function"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          f() {
+            coproc FUNCPROC { echo "named in func"; }
+          }
+          f
+          fd=${FUNCPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Multiple coprocs and variable lifecycle
+  #
+  - name: "Second unnamed coproc replaces first"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo "first"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+          coproc { echo "second"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Sequential named coprocs with different names"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc PROC1 { echo "proc1"; }
+          fd=${PROC1[0]}
+          cat <&$fd
+          wait
+          coproc PROC2 { echo "proc2"; }
+          fd=${PROC2[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Environment and variable scope
+  #
+  - name: "Coproc inherits parent environment"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          export MY_VAR="inherited"
+          coproc { echo "MY_VAR=$MY_VAR"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc inherits non-exported variables"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          LOCAL_VAR="visible"
+          coproc { echo "LOCAL_VAR=$LOCAL_VAR"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc cannot modify parent variables"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          PARENT_VAR="original"
+          coproc { PARENT_VAR="modified"; echo "in coproc: $PARENT_VAR"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+          echo "in parent: $PARENT_VAR"
+    args: ["./test.sh"]
+
+  - name: "Coproc inherits functions"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          greet() { echo "hello $1"; }
+          export -f greet
+          coproc { greet "world"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc inherits aliases"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          shopt -s expand_aliases
+          alias myecho='echo ALIASED:'
+          coproc { myecho "test"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Coproc with redirections in body
+  #
+  - name: "Coproc body with stderr redirection"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo "stdout msg"
+            echo "stderr msg" >&2
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc body writing to a file"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo "file content" > /tmp/coproc_test_$$
+            echo "wrote file"
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+          cat /tmp/coproc_test_$$
+          rm -f /tmp/coproc_test_$$
+    args: ["./test.sh"]
+
+  #
+  # Coproc with various data patterns
+  #
+  - name: "Coproc producing empty output"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { true; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+          echo "after empty coproc"
+    args: ["./test.sh"]
+
+  - name: "Coproc producing multiple lines of output"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              echo "line $i"
+            done
+          }
+          fd=${COPROC[0]}
+          count=0
+          while read -r line; do
+            count=$((count + 1))
+          done <&$fd
+          echo "read $count lines"
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc with multiline string output"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            cat <<'HEREDOC'
+          first line
+          second line
+          third line
+          HEREDOC
+          }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Coproc output transformation
+  #
+  - name: "Transform coproc output to uppercase"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo "hello"
+            echo "world"
+          }
+          fd=${COPROC[0]}
+          while read -r line; do
+            echo "$line" | tr a-z A-Z
+          done <&$fd
+          wait
+    args: ["./test.sh"]
+
+  - name: "Coproc output filtered with case"
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc {
+            echo "apple"
+            echo "banana"
+            echo "avocado"
+            echo "cherry"
+          }
+          fd=${COPROC[0]}
+          while read -r line; do
+            case $line in
+              a*) echo "starts with a: $line";;
+            esac
+          done <&$fd
+          wait
+    args: ["./test.sh"]
+
+  #
+  # Tests requiring wait with job specs (known failures)
+  #
+  - name: "Wait for specific coproc PID"
+    known_failure: true # TODO(wait): wait with job specs not implemented
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { echo "done"; }
+          fd=${COPROC[0]}
+          cat <&$fd
+          wait $COPROC_PID
+          echo "wait status: $?"
+    args: ["./test.sh"]
+
+  - name: "Coproc with failing body - wait captures exit status"
+    known_failure: true # TODO(wait): wait with job specs not implemented
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc { exit 42; }
+          wait $COPROC_PID
+          echo "exit status: $?"
+    args: ["./test.sh"]
+
+  - name: "Wait for named coproc PID"
+    known_failure: true # TODO(wait): wait with job specs not implemented
+    ignore_stderr: true
+    test_files:
+      - path: "test.sh"
+        contents: |
+          coproc MYPROC { echo "done"; }
+          fd=${MYPROC[0]}
+          cat <&$fd
+          wait $MYPROC_PID
+          echo "status: $?"
+    args: ["./test.sh"]
