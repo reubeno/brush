@@ -1,0 +1,17 @@
+# mkosi build outputs
+mkosi.output/
+mkosi.builddir/
+mkosi.cache/
+mkosi.pkgcache/
+
+# mkosi local overrides and secrets
+mkosi.local.conf
+mkosi.local/
+mkosi.rootpw
+mkosi.passphrase
+mkosi.key
+mkosi.crt
+mkosi.nspawn
+
+# stale top-level image from before OutputDirectory was configured
+*.raw

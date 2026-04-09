@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+
+BRUSH_BINARY="${SRCDIR}/brush-target/${BRUSH_PROFILE}/brush"
+
+if [[ ! -f "${BRUSH_BINARY}" ]]; then
+    echo "error: brush binary not found at: ${BRUSH_BINARY}" >&2
+    echo "hint: run 'cargo build --${BRUSH_PROFILE}' first, or override with:" >&2
+    echo "  mkosi --environment=BRUSH_PROFILE=debug build" >&2
+    exit 1
+fi
+
+# Install the pre-built brush binary
+install -Dm755 "${BRUSH_BINARY}" "${BUILDROOT}/usr/bin/brush"
+
+# Register brush as a valid login shell
+grep -qxF /usr/bin/brush "${BUILDROOT}/etc/shells" 2>/dev/null \
+    || echo /usr/bin/brush >> "${BUILDROOT}/etc/shells"
+
+# Make brush available as /bin/sh and as /bin/bash
+ln -sf brush "${BUILDROOT}/usr/bin/sh"
+ln -sf brush "${BUILDROOT}/usr/bin/bash"
