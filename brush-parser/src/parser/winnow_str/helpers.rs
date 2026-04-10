@@ -99,14 +99,13 @@ pub(super) fn skip_double_quoted_content<'a>()
         let mut char_count: usize = 0;
 
         loop {
-            match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input) {
+            match next_char(input) {
                 Ok('"') => {
                     char_count += 1;
                     break;
                 }
                 Ok('\\') => {
-                    let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input);
+                    let _ = next_char(input);
                     char_count += 2;
                 }
                 Err(_) => {
@@ -679,15 +678,12 @@ pub(super) fn parse_balanced_delimiters<'a>(
 fn parse_heredoc_delimiter_in_balanced(input: &mut StrStream<'_>) -> ModalResult<String> {
     let mut delimiter = String::new();
 
-    // Skip optional whitespace before delimiter
     let _: ModalResult<&str> =
         winnow::token::take_while(0.., |c| c == ' ' || c == '\t').parse_next(input);
 
-    // Read the delimiter word
     while !input.is_empty() {
         let checkpoint = input.checkpoint();
 
-        // Check for end of delimiter (whitespace, newline, or operators)
         if let Ok(_ch) =
             winnow::token::one_of::<_, _, ContextError>([' ', '\t', '\n', ')', '|', '&', ';'])
                 .parse_next(input)
@@ -697,47 +693,30 @@ fn parse_heredoc_delimiter_in_balanced(input: &mut StrStream<'_>) -> ModalResult
         }
         input.reset(&checkpoint);
 
-        let ch: char = winnow::token::any.parse_next(input)?;
+        let ch = next_char(input)?;
 
         match ch {
-            '\'' => {
-                // Single-quoted delimiter - read until closing quote
-                loop {
-                    match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input)
-                    {
-                        Ok('\'') => break,
-                        Ok(c) => delimiter.push(c),
-                        Err(_) => break,
-                    }
+            '\'' => loop {
+                match next_char(input) {
+                    Ok('\'') => break,
+                    Ok(c) => delimiter.push(c),
+                    Err(_) => break,
                 }
-            }
-            '"' => {
-                // Double-quoted delimiter - read until closing quote
-                loop {
-                    match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input)
-                    {
-                        Ok('"') => break,
-                        Ok('\\') => {
-                            // Handle escape in double quotes
-                            if let Ok(next) =
-                                winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                                    .parse_next(input)
-                            {
-                                delimiter.push(next);
-                            }
+            },
+            '"' => loop {
+                match next_char(input) {
+                    Ok('"') => break,
+                    Ok('\\') => {
+                        if let Ok(next) = next_char(input) {
+                            delimiter.push(next);
                         }
-                        Ok(c) => delimiter.push(c),
-                        Err(_) => break,
                     }
+                    Ok(c) => delimiter.push(c),
+                    Err(_) => break,
                 }
-            }
+            },
             '\\' => {
-                // Escaped character
-                if let Ok(next) =
-                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input)
-                {
+                if let Ok(next) = next_char(input) {
                     delimiter.push(next);
                 }
             }
