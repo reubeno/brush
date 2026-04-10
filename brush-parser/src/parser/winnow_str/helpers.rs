@@ -135,6 +135,100 @@ enum CaseState {
     InPattern,
     InBody,
 }
+
+/// Attempt to consume a complete bracket expression `[...]` from the input,
+/// assuming the opening `[` has already been consumed.
+///
+/// Bracket expressions appear in glob patterns and parameter expansion patterns.
+/// Inside them, `{`, `}`, `(`, `)` are literal characters. By consuming the whole
+/// expression, we prevent those characters from affecting the delimiter depth
+/// tracking in `parse_balanced_delimiters`.
+///
+/// Special cases handled:
+/// - `]` as the first character after `[` is literal (e.g., `[]abc]`)
+/// - `[^...]` or `[!...]` — negated bracket expression
+/// - `[:class:]`, `[=equiv=]`, `[.coll.]` — POSIX bracket expression classes
+/// - Backslash escapes inside the expression
+///
+/// Returns `Ok` if a complete `[...]` was consumed, `Err` if no closing `]`
+/// was found (meaning the `[` was just a literal character).
+///
+/// `close_char` is the delimiter we're scanning within (e.g., `}` for `${...}`).
+/// We will NOT consume past `close_char` — if we hit it before finding `]`,
+/// the `[` was just a literal character.
+fn try_consume_bracket_expression(
+    input: &mut StrStream<'_>,
+    close_char: char,
+) -> Result<(), winnow::error::ErrMode<ContextError>> {
+    // ] as the first char is literal, not the closing bracket
+    let first = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input);
+    match first {
+        Ok(']' | '^' | '!') => {}
+        Ok(c) if c == close_char => {
+            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+        }
+        Ok(_) => {}
+        Err(e) => return Err(e),
+    }
+
+    loop {
+        match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input) {
+            Ok(']') => return Ok(()),
+            Ok(c) if c == close_char => {
+                return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+            }
+            Ok('[') => {
+                // Could be a POSIX bracket expression class: [:class:], [.coll.], [=equiv=]
+                let checkpoint = input.checkpoint();
+                let next =
+                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input);
+                match next {
+                    Ok(':' | '.' | '=') => {
+                        let Ok(end_char) = next else { unreachable!() };
+                        loop {
+                            match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
+                                .parse_next(input)
+                            {
+                                Ok(c) if c == end_char => {
+                                    if winnow::combinator::peek(winnow::token::one_of::<
+                                        _,
+                                        _,
+                                        ContextError,
+                                    >(
+                                        ']'
+                                    ))
+                                    .parse_next(input)
+                                    .is_ok()
+                                    {
+                                        let _ = winnow::token::any::<
+                                            _,
+                                            winnow::error::ErrMode<ContextError>,
+                                        >
+                                            .parse_next(input);
+                                        break;
+                                    }
+                                }
+                                Ok(_) => {}
+                                Err(e) => return Err(e),
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        input.reset(&checkpoint);
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok('\\') => {
+                let _ =
+                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input);
+            }
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 /// Returns the full slice including opening and closing delimiters
 ///
 /// # Parameters
@@ -179,9 +273,6 @@ pub(super) fn parse_balanced_delimiters<'a>(
         // Track case statement state for handling ) in case patterns
         let mut case_state = CaseState::NotInCase;
         let mut case_depth = 0usize;
-
-        // Track bracket expressions [...]: inside them, { } ( ) are literal
-        let mut in_bracket_expr = false;
 
         tracing::debug!("parse_balanced_delimiters: starting, prefix={:?}", prefix);
 
@@ -231,15 +322,14 @@ pub(super) fn parse_balanced_delimiters<'a>(
                         }
                     }
                 }
-                continue;
             }
 
             match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input) {
-                Ok(ch) if Some(ch) == open_char && !in_bracket_expr => {
+                Ok(ch) if Some(ch) == open_char => {
                     depth += 1;
                     at_comment_start = false;
                 }
-                Ok(ch) if ch == close_char && !in_bracket_expr => {
+                Ok(ch) if ch == close_char => {
                     if matches!(case_state, CaseState::AfterIn | CaseState::InPattern) {
                         case_state = CaseState::InBody;
                     } else {
@@ -363,20 +453,11 @@ pub(super) fn parse_balanced_delimiters<'a>(
                         .parse_next(input);
                     at_comment_start = false;
                 }
-                Ok('[') if !in_bracket_expr => {
-                    in_bracket_expr = true;
-                    // ] immediately after [ is literal, not the end of the bracket expression
-                    if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(']'))
-                        .parse_next(input)
-                        .is_ok()
-                    {
-                        let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                            .parse_next(input);
+                Ok('[') => {
+                    let checkpoint = input.checkpoint();
+                    if try_consume_bracket_expression(input, close_char).is_err() {
+                        input.reset(&checkpoint);
                     }
-                    at_comment_start = false;
-                }
-                Ok(']') if in_bracket_expr => {
-                    in_bracket_expr = false;
                     at_comment_start = false;
                 }
                 Ok('\'') => {
@@ -950,5 +1031,88 @@ mod tests {
             result.is_ok(),
             "Nested braces without bracket expr should parse: {result:?}"
         );
+    }
+
+    #[test]
+    fn test_literal_bracket_in_param_replacement() {
+        let result = parse_braced("${y//a/[}");
+        assert!(
+            result.is_ok(),
+            "Literal [ in replacement should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_escaped_bracket_in_param_pattern() {
+        let result = parse_braced("${y//\\[/\\[}");
+        assert!(
+            result.is_ok(),
+            "Escaped [ in pattern and replacement should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_escaped_bracket_with_backslash_replacement() {
+        let result = parse_braced("${y//\\[/\\\\[}");
+        assert!(
+            result.is_ok(),
+            "Escaped [ with backslash replacement should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_bracket_expr_not_confused_by_faraway_close_bracket() {
+        let result = parse_braced("${y//a/[}x]");
+        assert!(
+            result.is_ok(),
+            "Literal [ should not scan past close_char: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_try_consume_bracket_expression_basic() {
+        let mut input = StrStream::new("abc]}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(result.is_ok(), "Should consume [abc]: {result:?}");
+        // Should have consumed up to and including ]
+        let remaining: &str = input.finish();
+        assert_eq!(remaining, "}");
+    }
+
+    #[test]
+    fn test_try_consume_bracket_expression_stops_at_close_char() {
+        let mut input = StrStream::new("a}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(
+            result.is_err(),
+            "Should fail when close_char found before ]"
+        );
+    }
+
+    #[test]
+    fn test_try_consume_bracket_expression_negated() {
+        let mut input = StrStream::new("^abc]}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(result.is_ok(), "Should consume [^abc]: {result:?}");
+        let remaining: &str = input.finish();
+        assert_eq!(remaining, "}");
+    }
+
+    #[test]
+    fn test_try_consume_bracket_expression_literal_close_bracket() {
+        let mut input = StrStream::new("]abc]}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(result.is_ok(), "Should consume []abc]: {result:?}");
+        let remaining: &str = input.finish();
+        assert_eq!(remaining, "}");
+    }
+
+    #[test]
+    fn test_try_consume_bracket_expression_with_escape() {
+        let mut input = StrStream::new("\\a]}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(result.is_ok(), "Should consume [\\a]: {result:?}");
+        let remaining: &str = input.finish();
+        assert_eq!(remaining, "}");
     }
 }
