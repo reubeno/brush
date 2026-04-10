@@ -331,20 +331,19 @@ impl HeredocTracker {
 }
 
 // ---------------------------------------------------------------------------
-// Bracket expression consumer
+// $ expansion skipping (shared by bracket expressions and balanced delimiters)
 // ---------------------------------------------------------------------------
 
-/// After a `$` has been consumed inside `try_consume_bracket_expression`, try
-/// to skip a `$`-expansion (`$(...)`, `$((...))`, `${...}`). Returns `Ok(true)`
-/// if an expansion was consumed, `Ok(false)` if not (stream is reset to just
-/// after the `$`).
-fn skip_dollar_expansion_in_bracket(
-    input: &mut StrStream<'_>,
-    close_char: char,
-) -> Result<bool, winnow::error::ErrMode<ContextError>> {
+/// After `$` has been consumed, attempt to skip a `$`-expansion:
+/// `$(...)`, `$((...))`, or `${...}`.
+///
+/// Returns `true` if an expansion was consumed. Returns `false` if
+/// the next character doesn't start an expansion (stream is rewound to just
+/// after the `$` — the caller is responsible for rewinding the `$` itself).
+fn try_skip_dollar_expansion(input: &mut StrStream<'_>) -> bool {
+    let checkpoint = input.checkpoint();
     match next_char(input) {
         Ok('(') => {
-            let checkpoint = input.checkpoint();
             if winnow::token::one_of::<_, _, ContextError>('(')
                 .parse_next(input)
                 .is_ok()
@@ -358,31 +357,68 @@ fn skip_dollar_expansion_in_bracket(
                         .parse_next(input)
                         .is_err()
                     {
-                        return Ok(false);
+                        return false;
                     }
                 }
             } else if parse_balanced_delimiters("", Some('('), ')', 1, true, true)
                 .parse_next(input)
                 .is_err()
             {
-                return Ok(false);
+                return false;
             }
-            Ok(true)
+            true
         }
         Ok('{') => {
             if parse_balanced_delimiters("", Some('{'), '}', 1, false, false)
                 .parse_next(input)
                 .is_err()
             {
-                return Ok(false);
+                return false;
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared shell construct skipping (used by bracket expressions & balanced delimiters)
+// ---------------------------------------------------------------------------
+
+/// Handle a character that might start a shell construct (quotes, escapes,
+/// `$`-expansions). The character has already been consumed from the input.
+///
+/// Returns `Ok(true)` if the character was a known construct that was fully
+/// handled. Returns `Ok(false)` if it's a plain character (nothing more to do).
+/// On `Ok(true)`, the construct's content has been consumed from the stream.
+fn handle_shell_construct(ch: char, input: &mut StrStream<'_>) -> ModalResult<bool> {
+    match ch {
+        '\\' => {
+            let _ = next_char(input);
+            Ok(true)
+        }
+        '\'' => {
+            let _ = skip_single_quoted_content().parse_next(input)?;
+            Ok(true)
+        }
+        '"' => {
+            let _ = skip_double_quoted_content().parse_next(input)?;
+            Ok(true)
+        }
+        '$' => {
+            let checkpoint = input.checkpoint();
+            if !try_skip_dollar_expansion(input) {
+                input.reset(&checkpoint);
             }
             Ok(true)
         }
-        Ok(c) if c == close_char || c == ']' => Ok(false),
-        Ok(_) => Ok(false),
-        Err(e) => Err(e),
+        _ => Ok(false),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Bracket expression consumer
+// ---------------------------------------------------------------------------
 
 /// Inside a bracket expression `[...]`, skip a POSIX bracket expression class
 /// like `[:class:]`, `[.coll.]`, or `[=equiv=]`. The `[` and the class
@@ -438,19 +474,9 @@ fn try_consume_bracket_expression(
         Ok(c) if c == close_char => {
             return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
         }
-        Ok('\'') => {
-            let _ = skip_single_quoted_content().parse_next(input)?;
+        Ok(ch) => {
+            handle_shell_construct(ch, input)?;
         }
-        Ok('"') => {
-            let _ = skip_double_quoted_content().parse_next(input)?;
-        }
-        Ok('$') => {
-            let checkpoint = input.checkpoint();
-            if !skip_dollar_expansion_in_bracket(input, close_char)? {
-                input.reset(&checkpoint);
-            }
-        }
-        Ok(_) => {}
         Err(e) => return Err(e),
     }
 
@@ -473,62 +499,12 @@ fn try_consume_bracket_expression(
                     Err(e) => return Err(e),
                 }
             }
-            Ok('\\') => {
-                let _ = next_char(input);
+            Ok(ch) => {
+                handle_shell_construct(ch, input)?;
             }
-            Ok('\'') => {
-                let _ = skip_single_quoted_content().parse_next(input)?;
-            }
-            Ok('"') => {
-                let _ = skip_double_quoted_content().parse_next(input)?;
-            }
-            Ok('$') => {
-                let checkpoint = input.checkpoint();
-                if !skip_dollar_expansion_in_bracket(input, close_char)? {
-                    input.reset(&checkpoint);
-                }
-            }
-            Ok(_) => {}
             Err(e) => return Err(e),
         }
     }
-}
-
-/// After encountering `$`, handle nested expansions: `$(...)`, `${...}`, `$((...))`.
-///
-/// Peeks at the next character and dispatches accordingly. If no expansion is
-/// recognized (e.g., bare `$` before a letter), resets the stream to the pre-`$`
-/// checkpoint (the caller must supply it).
-fn handle_dollar_expansion<'a>(
-    input: &mut StrStream<'a>,
-    checkpoint: &Checkpoint<<&'a str as Stream>::Checkpoint, StrStream<'a>>,
-) -> ModalResult<()> {
-    if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('('))
-        .parse_next(input)
-        .is_ok()
-    {
-        let _ = next_char(input)?;
-        if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('('))
-            .parse_next(input)
-            .is_ok()
-        {
-            let _ = next_char(input)?;
-            let _ =
-                parse_balanced_delimiters("", Some('('), ')', 2, false, false).parse_next(input)?;
-        } else {
-            let _ =
-                parse_balanced_delimiters("", Some('('), ')', 1, true, true).parse_next(input)?;
-        }
-    } else if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('{'))
-        .parse_next(input)
-        .is_ok()
-    {
-        let _ = next_char(input)?;
-        let _ = parse_balanced_delimiters("", Some('{'), '}', 1, false, false).parse_next(input)?;
-    } else {
-        input.reset(checkpoint);
-    }
-    Ok(())
 }
 
 /// After encountering `<` (when heredocs are allowed), detect `<<` heredoc or
@@ -616,10 +592,6 @@ pub(super) fn parse_balanced_delimiters<'a>(
                 Ok(ch) if case.try_update(ch, input) => {
                     at_comment_start = false;
                 }
-                Ok('\\') => {
-                    let _ = next_char(input);
-                    at_comment_start = false;
-                }
                 Ok('[') => {
                     let checkpoint = input.checkpoint();
                     if try_consume_bracket_expression(input, close_char).is_err() {
@@ -627,17 +599,7 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     }
                     at_comment_start = false;
                 }
-                Ok('\'') => {
-                    let _ = skip_single_quoted_content().parse_next(input)?;
-                    at_comment_start = false;
-                }
-                Ok('"') => {
-                    let _ = skip_double_quoted_content().parse_next(input)?;
-                    at_comment_start = false;
-                }
-                Ok('$') => {
-                    let checkpoint = input.checkpoint();
-                    handle_dollar_expansion(input, &checkpoint)?;
+                Ok(ch) if handle_shell_construct(ch, input)? => {
                     at_comment_start = false;
                 }
                 Ok('#') if at_comment_start => {
