@@ -127,14 +127,213 @@ pub(super) fn skip_double_quoted_content<'a>()
 // Helper: Balanced Delimiter Parsing
 // ============================================================================
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// Read the next character from the stream, returning a winnow `ErrMode` result.
+/// This is a convenience wrapper that avoids repeating the full turbofish type.
+#[inline]
+fn next_char(input: &mut StrStream<'_>) -> Result<char, winnow::error::ErrMode<ContextError>> {
+    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input)
+}
+
+/// Peek at the next character without consuming, checking if it's one of the
+/// shell delimiter characters that terminate a word (for keyword detection).
+fn peek_is_delimiter(input: &mut StrStream<'_>) -> bool {
+    winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>([
+        ' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')', '{', '}',
+    ]))
+    .parse_next(input)
+    .is_ok()
+        || input.is_empty()
+}
+
+/// Try to match a keyword suffix starting from the current position.
+///
+/// After seeing the first character of a potential keyword (e.g., 'c' for "case"),
+/// read the remaining identifier characters and check if they form a delimited keyword.
+///
+/// Returns `true` if the suffix matches and is followed by a delimiter, consuming those
+/// characters. Returns `false` and resets the stream otherwise.
+fn try_keyword_suffix(input: &mut StrStream<'_>, expected_suffix: &str) -> bool {
+    let checkpoint = input.checkpoint();
+    if let Ok(rest) = winnow::token::take_while::<_, _, ContextError>(0.., |c: char| {
+        c.is_alphanumeric() || c == '_'
+    })
+    .parse_next(input)
+    {
+        if peek_is_delimiter(input) && rest == expected_suffix {
+            return true;
+        }
+    }
+    input.reset(&checkpoint);
+    false
+}
+
+// ---------------------------------------------------------------------------
+// Case statement tracker
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 enum CaseState {
+    #[default]
     NotInCase,
     AfterCase,
     AfterIn,
     InPattern,
     InBody,
 }
+
+/// Tracks `case ... esac` nesting inside balanced delimiters so that `)` is
+/// correctly interpreted as a pattern separator rather than a close delimiter.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+struct CaseTracker {
+    state: CaseState,
+    depth: usize,
+}
+
+impl CaseTracker {
+    /// Called when `close_char` is encountered. Returns `true` if this `)` is
+    /// part of a case pattern (and should NOT decrement the delimiter depth).
+    const fn on_close_delimiter(&mut self) -> bool {
+        if matches!(self.state, CaseState::AfterIn | CaseState::InPattern) {
+            self.state = CaseState::InBody;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Process a character that might be part of a case keyword.
+    /// Returns `true` if the character was consumed as part of keyword detection.
+    fn try_update(&mut self, ch: char, input: &mut StrStream<'_>) -> bool {
+        match ch {
+            'c' if self.state == CaseState::NotInCase => {
+                if try_keyword_suffix(input, "ase") {
+                    self.state = CaseState::AfterCase;
+                    self.depth += 1;
+                    return true;
+                }
+            }
+            'i' if self.state == CaseState::AfterCase => {
+                if try_keyword_suffix(input, "n") {
+                    self.state = CaseState::AfterIn;
+                    return true;
+                }
+            }
+            'e' if self.depth > 0 => {
+                if try_keyword_suffix(input, "sac") {
+                    self.depth = self.depth.saturating_sub(1);
+                    self.state = if self.depth == 0 {
+                        CaseState::NotInCase
+                    } else {
+                        CaseState::AfterIn
+                    };
+                    return true;
+                }
+            }
+            ';' if self.state == CaseState::InBody => {
+                let checkpoint = input.checkpoint();
+                // ;; or ;;&
+                if next_char(input) == Ok(';') {
+                    let _ =
+                        winnow::combinator::opt(winnow::token::one_of::<_, _, ContextError>('&'))
+                            .parse_next(input);
+                    self.state = CaseState::AfterIn;
+                    return true;
+                }
+                // ;& (fallthrough)
+                input.reset(&checkpoint);
+                if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('&'))
+                    .parse_next(input)
+                    .is_ok()
+                {
+                    let _ = next_char(input);
+                    self.state = CaseState::AfterIn;
+                    return true;
+                }
+                input.reset(&checkpoint);
+            }
+            _ => {}
+        }
+        false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Heredoc tracker
+// ---------------------------------------------------------------------------
+
+/// Tracks pending heredocs inside balanced delimiters: their delimiters, whether
+/// to strip leading tabs, and whether we're currently consuming heredoc body content.
+struct HeredocTracker {
+    pending: Vec<(String, bool)>,
+    in_body: bool,
+}
+
+impl HeredocTracker {
+    const fn new() -> Self {
+        Self {
+            pending: Vec::new(),
+            in_body: false,
+        }
+    }
+
+    /// After a newline, enter heredoc body mode if there are pending heredocs.
+    const fn on_newline(&mut self) {
+        if !self.pending.is_empty() {
+            self.in_body = true;
+        }
+    }
+
+    /// Try to consume a heredoc body line. Returns `Ok(true)` if a line was
+    /// consumed (either as a delimiter match or as body content), `Ok(false)`
+    /// if we're not in heredoc body mode, or `Err` on parse failure (e.g. EOF
+    /// in heredoc body).
+    fn try_consume_body_line(&mut self, input: &mut StrStream<'_>) -> ModalResult<bool> {
+        if !self.in_body || self.pending.is_empty() {
+            return Ok(false);
+        }
+
+        let (delimiter, remove_tabs) = &self.pending[0];
+
+        if *remove_tabs {
+            let _: ModalResult<&str> = winnow::token::take_while(0.., '\t').parse_next(input);
+        }
+
+        let checkpoint = input.checkpoint();
+        if let Ok(line_content) =
+            winnow::token::take_while::<_, _, ContextError>(0.., |c| c != '\n').parse_next(input)
+        {
+            if line_content == delimiter {
+                self.pending.remove(0);
+                let _ = next_char(input);
+                if self.pending.is_empty() {
+                    self.in_body = false;
+                }
+                return Ok(true);
+            }
+        }
+        input.reset(&checkpoint);
+
+        loop {
+            match next_char(input) {
+                Ok('\n') => break,
+                Ok(_) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(true)
+    }
+
+    /// Add a new pending heredoc.
+    fn push(&mut self, delimiter: String, remove_tabs: bool) {
+        if !delimiter.is_empty() {
+            self.pending.push((delimiter, remove_tabs));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bracket expression consumer
+// ---------------------------------------------------------------------------
 
 /// Attempt to consume a complete bracket expression `[...]` from the input,
 /// assuming the opening `[` has already been consumed.
@@ -229,6 +428,74 @@ fn try_consume_bracket_expression(
     }
 }
 
+/// After encountering `$`, handle nested expansions: `$(...)`, `${...}`, `$((...))`.
+///
+/// Peeks at the next character and dispatches accordingly. If no expansion is
+/// recognized (e.g., bare `$` before a letter), resets the stream to the pre-`$`
+/// checkpoint (the caller must supply it).
+fn handle_dollar_expansion<'a>(
+    input: &mut StrStream<'a>,
+    checkpoint: &Checkpoint<<&'a str as Stream>::Checkpoint, StrStream<'a>>,
+) -> ModalResult<()> {
+    if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('('))
+        .parse_next(input)
+        .is_ok()
+    {
+        let _ = next_char(input)?;
+        if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('('))
+            .parse_next(input)
+            .is_ok()
+        {
+            let _ = next_char(input)?;
+            let _ =
+                parse_balanced_delimiters("", Some('('), ')', 2, false, false).parse_next(input)?;
+        } else {
+            let _ =
+                parse_balanced_delimiters("", Some('('), ')', 1, true, true).parse_next(input)?;
+        }
+    } else if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('{'))
+        .parse_next(input)
+        .is_ok()
+    {
+        let _ = next_char(input)?;
+        let _ = parse_balanced_delimiters("", Some('{'), '}', 1, false, false).parse_next(input)?;
+    } else {
+        input.reset(checkpoint);
+    }
+    Ok(())
+}
+
+/// After encountering `<` (when heredocs are allowed), detect `<<` heredoc or
+/// `<<<` here-string. On success, pushes the heredoc onto `heredocs`.
+/// Returns `true` if the `<` was consumed as part of a heredoc/here-string,
+/// `false` if it was just a literal `<` (stream is reset to `checkpoint`).
+fn handle_heredoc_open<'a>(
+    input: &mut StrStream<'a>,
+    checkpoint: &Checkpoint<<&'a str as Stream>::Checkpoint, StrStream<'a>>,
+    heredocs: &mut HeredocTracker,
+) -> ModalResult<bool> {
+    if next_char(input) != Ok('<') {
+        input.reset(checkpoint);
+        return Ok(false);
+    }
+    if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('<'))
+        .parse_next(input)
+        .is_ok()
+    {
+        let _ = next_char(input);
+        return Ok(true);
+    }
+    let remove_tabs = winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('-'))
+        .parse_next(input)
+        .is_ok();
+    if remove_tabs {
+        let _ = next_char(input);
+    }
+    let delimiter = parse_heredoc_delimiter_in_balanced(input)?;
+    heredocs.push(delimiter, remove_tabs);
+    Ok(true)
+}
+
 /// Returns the full slice including opening and closing delimiters
 ///
 /// # Parameters
@@ -244,7 +511,6 @@ fn try_consume_bracket_expression(
 /// - Arithmetic: `parse_balanced_delimiters("$((", Some('('), ')', 2, false, false)`
 /// - Braced variable: `parse_balanced_delimiters("${", Some('{'), '}', 1, false, false)`
 /// - Backtick: `parse_balanced_delimiters("`", None, '`', 1, true, true)`
-#[allow(clippy::too_many_lines)]
 pub(super) fn parse_balanced_delimiters<'a>(
     prefix: &'a str,
     open_char: Option<char>,
@@ -256,201 +522,36 @@ pub(super) fn parse_balanced_delimiters<'a>(
     move |input: &mut StrStream<'a>| {
         let start = input.checkpoint();
 
-        // Match opening prefix - use winnow's literal parser
         winnow::token::literal(prefix).parse_next(input)?;
 
-        // Parse balanced delimiters
-        // Track whether # would start a comment (after whitespace/newline/start)
-        // Only relevant when allow_comments is true
         let mut depth = initial_depth;
         let mut at_comment_start = allow_comments;
-
-        // Track heredocs: list of (delimiter, remove_tabs) pairs waiting for their content
-        let mut pending_heredocs: Vec<(String, bool)> = Vec::new();
-        // Track if we're currently consuming heredoc body content
-        let mut in_heredoc_body = false;
-
-        // Track case statement state for handling ) in case patterns
-        let mut case_state = CaseState::NotInCase;
-        let mut case_depth = 0usize;
+        let mut heredocs = HeredocTracker::new();
+        let mut case = CaseTracker::default();
 
         tracing::debug!("parse_balanced_delimiters: starting, prefix={:?}", prefix);
 
         while depth > 0 {
-            // If we're in heredoc body mode, consume lines until we find all delimiters
-            if in_heredoc_body && !pending_heredocs.is_empty() {
-                // Only check the FIRST pending heredoc's delimiter
-                let (delimiter, remove_tabs) = &pending_heredocs[0];
-
-                // Skip leading tabs if remove_tabs is true
-                if *remove_tabs {
-                    let _: ModalResult<&str> =
-                        winnow::token::take_while(0.., '\t').parse_next(input);
-                }
-
-                // Try to match the delimiter at line start
-                let checkpoint = input.checkpoint();
-                if let Ok(line_content) =
-                    winnow::token::take_while::<_, _, ContextError>(0.., |c| c != '\n')
-                        .parse_next(input)
-                {
-                    if line_content == delimiter {
-                        // Found the delimiter - remove this heredoc from the list
-                        pending_heredocs.remove(0);
-                        // Consume the newline after the delimiter
-                        let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                            .parse_next(input);
-                        // If no more pending heredocs, exit heredoc body mode
-                        if pending_heredocs.is_empty() {
-                            in_heredoc_body = false;
-                        }
-                        continue;
-                    }
-                }
-                input.reset(&checkpoint);
-
-                // Not the delimiter - this line is content for the current heredoc
-                // Consume the entire line (including newline)
-                loop {
-                    match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input)
-                    {
-                        Ok('\n') => break,
-                        Ok(_) => {}
-                        Err(_) => {
-                            return fail.parse_next(input);
-                        }
-                    }
-                }
+            if heredocs.try_consume_body_line(input)? {
+                continue;
             }
 
-            match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input) {
+            match next_char(input) {
                 Ok(ch) if Some(ch) == open_char => {
                     depth += 1;
                     at_comment_start = false;
                 }
                 Ok(ch) if ch == close_char => {
-                    if matches!(case_state, CaseState::AfterIn | CaseState::InPattern) {
-                        case_state = CaseState::InBody;
-                    } else {
+                    if !case.on_close_delimiter() {
                         depth -= 1;
                     }
                     at_comment_start = false;
                 }
-                Ok('c') if at_comment_start || case_state == CaseState::NotInCase => {
-                    let checkpoint = input.checkpoint();
-                    if let Ok(rest) =
-                        winnow::token::take_while::<_, _, ContextError>(0.., |c: char| {
-                            c.is_alphanumeric() || c == '_'
-                        })
-                        .parse_next(input)
-                    {
-                        let is_delim =
-                            winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                                [' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')', '{', '}'],
-                            ))
-                            .parse_next(input)
-                            .is_ok()
-                                || input.is_empty();
-                        if is_delim && rest == "ase" {
-                            case_state = CaseState::AfterCase;
-                            case_depth += 1;
-                            at_comment_start = false;
-                            continue;
-                        }
-                    }
-                    input.reset(&checkpoint);
-                    at_comment_start = false;
-                }
-                Ok('i') if case_state == CaseState::AfterCase => {
-                    let checkpoint = input.checkpoint();
-                    if let Ok(rest) =
-                        winnow::token::take_while::<_, _, ContextError>(0.., |c: char| {
-                            c.is_alphanumeric() || c == '_'
-                        })
-                        .parse_next(input)
-                    {
-                        let is_delim =
-                            winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                                [' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')', '{', '}'],
-                            ))
-                            .parse_next(input)
-                            .is_ok()
-                                || input.is_empty();
-                        if is_delim && rest == "n" {
-                            case_state = CaseState::AfterIn;
-                            at_comment_start = false;
-                            continue;
-                        }
-                    }
-                    input.reset(&checkpoint);
-                    at_comment_start = false;
-                }
-                Ok('e') if case_depth > 0 => {
-                    let checkpoint = input.checkpoint();
-                    if let Ok(rest) =
-                        winnow::token::take_while::<_, _, ContextError>(0.., |c: char| {
-                            c.is_alphanumeric() || c == '_'
-                        })
-                        .parse_next(input)
-                    {
-                        let is_delim =
-                            winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                                [' ', '\t', '\n', ';', '&', '|', '<', '>', '(', ')', '{', '}'],
-                            ))
-                            .parse_next(input)
-                            .is_ok()
-                                || input.is_empty();
-                        if is_delim && rest == "sac" {
-                            case_depth = case_depth.saturating_sub(1);
-                            if case_depth == 0 {
-                                case_state = CaseState::NotInCase;
-                            } else {
-                                case_state = CaseState::AfterIn;
-                            }
-                            at_comment_start = false;
-                            continue;
-                        }
-                    }
-                    input.reset(&checkpoint);
-                    at_comment_start = false;
-                }
-                Ok(';') if matches!(case_state, CaseState::InBody) => {
-                    let checkpoint = input.checkpoint();
-                    if winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input)
-                        == Ok(';')
-                    {
-                        if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                            '&',
-                        ))
-                        .parse_next(input)
-                        .is_ok()
-                        {
-                            let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                                .parse_next(input);
-                        }
-                        case_state = CaseState::AfterIn;
-                        at_comment_start = false;
-                        continue;
-                    } else if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                        '&',
-                    ))
-                    .parse_next(input)
-                    .is_ok()
-                    {
-                        let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                            .parse_next(input);
-                        case_state = CaseState::AfterIn;
-                        at_comment_start = false;
-                        continue;
-                    }
-                    input.reset(&checkpoint);
+                Ok(ch) if case.try_update(ch, input) => {
                     at_comment_start = false;
                 }
                 Ok('\\') => {
-                    let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input);
+                    let _ = next_char(input);
                     at_comment_start = false;
                 }
                 Ok('[') => {
@@ -469,54 +570,12 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     at_comment_start = false;
                 }
                 Ok('$') => {
-                    // Handle nested expansions: $(...), ${...}, $((...))
                     let checkpoint = input.checkpoint();
-                    if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>('('))
-                        .parse_next(input)
-                        .is_ok()
-                    {
-                        // It's $( or $((
-                        let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                            .parse_next(input)?; // consume '('
-                        // Check for $(( (arithmetic)
-                        if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                            '(',
-                        ))
-                        .parse_next(input)
-                        .is_ok()
-                        {
-                            // It's $(( - consume second '(' and parse arithmetic
-                            let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                                .parse_next(input)?;
-                            let _ = parse_balanced_delimiters("", Some('('), ')', 2, false, false)
-                                .parse_next(input)?;
-                        } else {
-                            // It's $( - parse command substitution
-                            let _ = parse_balanced_delimiters("", Some('('), ')', 1, true, true)
-                                .parse_next(input)?;
-                        }
-                    } else if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                        '{',
-                    ))
-                    .parse_next(input)
-                    .is_ok()
-                    {
-                        // It's ${ - parse braced variable
-                        let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                            .parse_next(input)?; // consume '{'
-                        let _ = parse_balanced_delimiters("", Some('{'), '}', 1, false, false)
-                            .parse_next(input)?;
-                    } else {
-                        // Just a $ followed by something else, or end of input
-                        input.reset(&checkpoint);
-                    }
+                    handle_dollar_expansion(input, &checkpoint)?;
                     at_comment_start = false;
                 }
                 Ok('#') if at_comment_start => {
-                    // Skip comment content (everything until newline, not consuming newline)
-                    while let Ok(c) = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input)
-                    {
+                    while let Ok(c) = next_char(input) {
                         if c == '\n' {
                             at_comment_start = true;
                             break;
@@ -524,58 +583,16 @@ pub(super) fn parse_balanced_delimiters<'a>(
                     }
                 }
                 Ok('<') if allow_heredocs && depth == initial_depth => {
-                    // Check for heredoc operator << or here-string <<<
                     let checkpoint = input.checkpoint();
-                    if winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                        .parse_next(input)
-                        == Ok('<')
-                    {
-                        // Check for <<< (here-string) - NOT a heredoc
-                        if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(
-                            '<',
-                        ))
-                        .parse_next(input)
-                        .is_ok()
-                        {
-                            // It's <<< (here-string), not a heredoc
-                            // Consume the third < and continue - the here-string will be
-                            // parsed later by io_redirect when the command substitution is executed
-                            let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                                .parse_next(input);
-                            at_comment_start = false;
-                        } else {
-                            // It's << (heredoc) - check for <<- (remove leading tabs)
-                            let remove_tabs =
-                                winnow::combinator::peek(
-                                    winnow::token::one_of::<_, _, ContextError>('-'),
-                                )
-                                .parse_next(input)
-                                .is_ok();
-                            if remove_tabs {
-                                // Consume the '-'
-                                let _ =
-                                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                                        .parse_next(input);
-                            }
-
-                            // Parse the heredoc delimiter
-                            let delimiter = parse_heredoc_delimiter_in_balanced(input)?;
-                            if !delimiter.is_empty() {
-                                pending_heredocs.push((delimiter, remove_tabs));
-                            }
-                            at_comment_start = false;
-                        }
+                    if handle_heredoc_open(input, &checkpoint, &mut heredocs)? {
+                        at_comment_start = false;
                     } else {
-                        input.reset(&checkpoint);
                         at_comment_start = allow_comments && matches!('<', ' ' | '\t' | '\n');
                     }
                 }
                 Ok('\n') => {
                     at_comment_start = allow_comments;
-                    // After a newline, if we have pending heredocs, start consuming their content
-                    if !pending_heredocs.is_empty() {
-                        in_heredoc_body = true;
-                    }
+                    heredocs.on_newline();
                 }
                 Ok(ch) => {
                     at_comment_start = allow_comments && matches!(ch, ' ' | '\t' | '\n');
