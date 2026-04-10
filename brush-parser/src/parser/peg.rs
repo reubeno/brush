@@ -100,6 +100,7 @@ peg::parser! {
         // N.B. The arithmetic for clause command is a non-sh extension.
         pub(crate) rule compound_command() -> ast::CompoundCommand =
             non_posix_extensions_enabled() a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
+            non_posix_extensions_enabled() c:coproc_clause() { ast::CompoundCommand::Coprocess(c) } /
             b:brace_group() { ast::CompoundCommand::BraceGroup(b) } /
             s:subshell() { ast::CompoundCommand::Subshell(s) } /
             f:for_clause() { ast::CompoundCommand::ForClause(f) } /
@@ -411,6 +412,21 @@ peg::parser! {
                 ast::WhileOrUntilClauseCommand(c, d, loc)
             }
 
+        // N.B. Coproc is a bash extension.
+        rule coproc_clause() -> ast::CoprocessCommand =
+            s:specific_word("coproc") linebreak() name:coproc_name()? body:command() {
+                let start = s.location();
+                let loc = body.location().unwrap_or_else(|| start.clone());
+
+                ast::CoprocessCommand { name, body: Box::new(body), loc: SourceSpan::within(start, &loc) }
+            }
+
+        // N.B. The name must be followed by a compound command start ({ or ()
+        rule coproc_name() -> ast::Word =
+            w:fname() linebreak() &(specific_word("{") / specific_operator("(")) {
+                w
+            }
+
         // N.B. Non-sh extensions allows use of the 'function' word to indicate a function definition.
         // N.B. Without the 'function' keyword, reserved words cannot be used as function names
         // (bash rejects e.g. `for (){ :; }`). With the 'function' keyword, reserved words are
@@ -628,7 +644,8 @@ peg::parser! {
             specific_word("[[") /
             specific_word("]]") /
             specific_word("function") /
-            specific_word("select")
+            specific_word("select") /
+            specific_word("coproc")
 
         rule newline() -> () = quiet! {
             specific_operator("\n") {}
