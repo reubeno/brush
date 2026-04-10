@@ -344,39 +344,36 @@ fn try_skip_dollar_expansion(input: &mut StrStream<'_>) -> bool {
     let checkpoint = input.checkpoint();
     match next_char(input) {
         Ok('(') => {
-            if winnow::token::one_of::<_, _, ContextError>('(')
+            let is_arithmetic = winnow::token::one_of::<_, _, ContextError>('(')
+                .parse_next(input)
+                .is_ok();
+            let (depth, comments, heredocs) = if is_arithmetic {
+                (2, false, false)
+            } else {
+                (1, true, true)
+            };
+            if parse_balanced_delimiters("", Some('('), ')', depth, comments, heredocs)
                 .parse_next(input)
                 .is_ok()
             {
-                if parse_balanced_delimiters("", Some('('), ')', 2, false, false)
+                return true;
+            }
+            // $(( may have been a false positive; try $( instead
+            if is_arithmetic {
+                input.reset(&checkpoint);
+                let _ = next_char(input);
+                if parse_balanced_delimiters("", Some('('), ')', 1, true, true)
                     .parse_next(input)
-                    .is_err()
+                    .is_ok()
                 {
-                    input.reset(&checkpoint);
-                    if parse_balanced_delimiters("", Some('('), ')', 1, true, true)
-                        .parse_next(input)
-                        .is_err()
-                    {
-                        return false;
-                    }
+                    return true;
                 }
-            } else if parse_balanced_delimiters("", Some('('), ')', 1, true, true)
-                .parse_next(input)
-                .is_err()
-            {
-                return false;
             }
-            true
+            false
         }
-        Ok('{') => {
-            if parse_balanced_delimiters("", Some('{'), '}', 1, false, false)
-                .parse_next(input)
-                .is_err()
-            {
-                return false;
-            }
-            true
-        }
+        Ok('{') => parse_balanced_delimiters("", Some('{'), '}', 1, false, false)
+            .parse_next(input)
+            .is_ok(),
         _ => false,
     }
 }
@@ -644,27 +641,21 @@ fn parse_heredoc_delimiter_in_balanced(input: &mut StrStream<'_>) -> ModalResult
         winnow::token::take_while(0.., |c| c == ' ' || c == '\t').parse_next(input);
 
     while !input.is_empty() {
-        let checkpoint = input.checkpoint();
-
-        if let Ok(_ch) =
-            winnow::token::one_of::<_, _, ContextError>([' ', '\t', '\n', ')', '|', '&', ';'])
-                .parse_next(input)
-        {
-            input.reset(&checkpoint);
+        if peek_is_heredoc_delimiter_end(input) {
             break;
         }
-        input.reset(&checkpoint);
 
         let ch = next_char(input)?;
 
         match ch {
-            '\'' => loop {
-                match next_char(input) {
-                    Ok('\'') => break,
-                    Ok(c) => delimiter.push(c),
-                    Err(_) => break,
+            '\'' => {
+                while let Ok(c) = next_char(input) {
+                    if c == '\'' {
+                        break;
+                    }
+                    delimiter.push(c);
                 }
-            },
+            }
             '"' => loop {
                 match next_char(input) {
                     Ok('"') => break,
@@ -689,6 +680,15 @@ fn parse_heredoc_delimiter_in_balanced(input: &mut StrStream<'_>) -> ModalResult
     }
 
     Ok(delimiter)
+}
+
+fn peek_is_heredoc_delimiter_end(input: &mut StrStream<'_>) -> bool {
+    winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>([
+        ' ', '\t', '\n', ')', '|', '&', ';',
+    ]))
+    .parse_next(input)
+    .is_ok()
+        || input.is_empty()
 }
 
 /// Check if character is valid in a username for tilde expansion
