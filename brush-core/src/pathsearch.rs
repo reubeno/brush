@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::sys;
 use crate::sys::fs::PathExt;
 
 /// Encapsulates the result of a path search.
@@ -25,12 +26,13 @@ where
             let path = PathBuf::from(path.as_ref()).join(self.filename.as_ref());
             // Skip directories outright, then ask the platform to resolve
             // the path to an actual executable file (which, on Windows, may
-            // involve appending a PATHEXT extension). Returning the resolved
-            // path ensures spawn attempts see a real file on disk.
+            // involve appending a PATHEXT extension). The helper takes
+            // ownership so Unix — where no resolution is needed — can return
+            // the path unchanged without allocating.
             if path.is_dir() {
                 continue;
             }
-            if let Some(resolved) = path.as_path().resolve_executable() {
+            if let Some(resolved) = sys::fs::resolve_executable_pathbuf(path) {
                 return Some(resolved);
             }
         }

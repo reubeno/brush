@@ -3,29 +3,19 @@
 pub use super::platform::fs::*;
 
 /// Extension trait for path-related filesystem operations.
-pub trait PathExt: AsRef<std::path::Path> {
+pub trait PathExt {
     /// Returns true if the path exists and is readable by the current user.
     fn readable(&self) -> bool;
     /// Returns true if the path exists and is writable by the current user.
     fn writable(&self) -> bool;
     /// Returns true if the path exists and is executable by the current user.
-    fn executable(&self) -> bool;
-
-    /// Resolves the path to an executable file if one exists.
     ///
-    /// On Unix, this returns the path itself if it is executable. On Windows,
-    /// this may append a `PATHEXT` extension to locate the actual file (so a
-    /// lookup for `foo` can resolve to `foo.exe`). Callers that need to spawn
-    /// the resulting path (e.g. `std::process::Command::new`) should prefer
-    /// this over [`PathExt::executable`], since `CreateProcessW` does not
-    /// auto-append extensions to fully-qualified paths.
-    fn resolve_executable(&self) -> Option<std::path::PathBuf> {
-        if self.executable() {
-            Some(self.as_ref().to_path_buf())
-        } else {
-            None
-        }
-    }
+    /// On Windows, this returns true if *either* the path itself is a file with
+    /// a `PATHEXT` extension *or* appending some `PATHEXT` extension resolves
+    /// to an existing file. To recover the actual on-disk path in the
+    /// latter case, use [`resolve_executable_pathbuf`] which takes ownership
+    /// and avoids copies on platforms where no resolution is needed.
+    fn executable(&self) -> bool;
 
     /// Returns true if the path exists and is a block device.
     fn exists_and_is_block_device(&self) -> bool;

@@ -45,15 +45,22 @@ fn has_executable_extension(path: &Path) -> bool {
     })
 }
 
-/// Returns the resolved executable path, if any, for the given candidate.
+/// Returns true if `path` is, by itself, an existing executable file.
 ///
-/// If `path` itself is a file with a `PATHEXT` extension, returns it as-is.
-/// Otherwise, tries appending each `PATHEXT` extension in order and returns
-/// the first match. Returns `None` if no matching executable file is found.
-fn resolve_executable_with_pathext(path: &Path) -> Option<PathBuf> {
-    // If the path as-is is already an executable file, return it.
-    if has_executable_extension(path) && path.is_file() {
-        return Some(path.to_path_buf());
+/// Used both for the initial check in [`resolve_executable_pathbuf`] and for
+/// [`PathExt::executable`].
+fn is_executable_file(path: &Path) -> bool {
+    has_executable_extension(path) && path.is_file()
+}
+
+/// Resolves an owned path to the actual on-disk executable file, if any.
+///
+/// If the path is already a file with a `PATHEXT` extension, it is returned
+/// unchanged (no allocation). Otherwise, each `PATHEXT` extension is appended
+/// in turn and the first existing file is returned.
+pub fn resolve_executable_pathbuf(path: PathBuf) -> Option<PathBuf> {
+    if is_executable_file(&path) {
+        return Some(path);
     }
     // Try appending each PATHEXT extension.
     for ext in PATHEXT_EXTENSIONS.iter() {
@@ -77,11 +84,16 @@ impl crate::sys::fs::PathExt for Path {
     }
 
     fn executable(&self) -> bool {
-        resolve_executable_with_pathext(self).is_some()
-    }
-
-    fn resolve_executable(&self) -> Option<PathBuf> {
-        resolve_executable_with_pathext(self)
+        if is_executable_file(self) {
+            return true;
+        }
+        // Try each PATHEXT extension without allocating a separate PathBuf
+        // per candidate until one exists.
+        PATHEXT_EXTENSIONS.iter().any(|ext| {
+            let mut name = self.as_os_str().to_owned();
+            name.push(ext);
+            Self::new(&name).is_file()
+        })
     }
 
     fn exists_and_is_block_device(&self) -> bool {
@@ -423,5 +435,21 @@ mod tests {
         assert!(has_executable_extension(Path::new("foo.Cmd")));
         assert!(!has_executable_extension(Path::new("foo.txt")));
         assert!(!has_executable_extension(Path::new("foo")));
+    }
+
+    #[test]
+    fn pathext_entry_stem_strips_dot() {
+        assert_eq!(pathext_entry_stem(".exe"), "exe");
+        assert_eq!(pathext_entry_stem(".cmd"), "cmd");
+        // Tolerant: entries without a leading dot are returned as-is.
+        assert_eq!(pathext_entry_stem("exe"), "exe");
+        assert_eq!(pathext_entry_stem(""), "");
+    }
+
+    #[test]
+    fn resolve_executable_pathbuf_for_nonexistent_returns_none() {
+        // A path that cannot exist on any test host.
+        let path = PathBuf::from(r"C:\__brush_test_definitely_missing__");
+        assert!(resolve_executable_pathbuf(path).is_none());
     }
 }
