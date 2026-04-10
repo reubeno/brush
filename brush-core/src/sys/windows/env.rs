@@ -132,7 +132,10 @@ mod tests {
     #[test]
     fn synthesizes_home_from_userprofile() {
         let vars = run(&[("UserProfile", r"C:\Users\reuben")]);
-        assert_eq!(vars.get("HOME").map(String::as_str), Some(r"C:\Users\reuben"));
+        assert_eq!(
+            vars.get("HOME").map(String::as_str),
+            Some(r"C:\Users\reuben")
+        );
         assert_eq!(
             vars.get("USERPROFILE").map(String::as_str),
             Some(r"C:\Users\reuben")
@@ -142,15 +145,15 @@ mod tests {
     #[test]
     fn synthesizes_home_from_homedrive_homepath_when_no_userprofile() {
         let vars = run(&[("HomeDrive", "C:"), ("HomePath", r"\Users\reuben")]);
-        assert_eq!(vars.get("HOME").map(String::as_str), Some(r"C:\Users\reuben"));
+        assert_eq!(
+            vars.get("HOME").map(String::as_str),
+            Some(r"C:\Users\reuben")
+        );
     }
 
     #[test]
     fn preserves_existing_home() {
-        let vars = run(&[
-            ("HOME", "/already/set"),
-            ("UserProfile", r"C:\Users\other"),
-        ]);
+        let vars = run(&[("HOME", "/already/set"), ("UserProfile", r"C:\Users\other")]);
         assert_eq!(vars.get("HOME").map(String::as_str), Some("/already/set"));
     }
 

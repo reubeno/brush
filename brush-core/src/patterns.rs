@@ -246,8 +246,8 @@ impl Pattern {
             // semantics) — if we left `\` here, the strip_prefix below would
             // miss on Windows and leave results as absolute paths.
             let working_dir_str = working_dir.to_string_lossy();
-            let mut working_dir_str = sys::fs::normalize_path_separators(&working_dir_str)
-                .into_owned();
+            let mut working_dir_str =
+                sys::fs::normalize_path_separators(&working_dir_str).into_owned();
             if !working_dir_str.ends_with('/') {
                 working_dir_str.push('/');
             }
@@ -988,7 +988,10 @@ mod tests {
 
         let mut sorted = paths.clone();
         sorted.sort();
-        assert_eq!(sorted, vec!["sub/a.txt".to_string(), "sub/b.txt".to_string()]);
+        assert_eq!(
+            sorted,
+            vec!["sub/a.txt".to_string(), "sub/b.txt".to_string()]
+        );
 
         // None of the results should contain the absolute scratch path.
         let scratch_str: String = scratch.to_string_lossy().into_owned();
@@ -1031,10 +1034,7 @@ mod tests {
             // Use a plain byte-level suffix check rather than `Path::extension`
             // since the results are strings and clippy flags `ends_with(".log")`
             // as potentially case-sensitive. We explicitly wrote lowercase files.
-            assert!(
-                p.as_bytes().ends_with(b".log"),
-                "unexpected result {p:?}"
-            );
+            assert!(p.as_bytes().ends_with(b".log"), "unexpected result {p:?}");
             // Should still reference the scratch directory (i.e., absolute).
             assert!(
                 p.contains(scratch_normalized.as_str()),
