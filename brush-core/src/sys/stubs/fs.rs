@@ -126,7 +126,7 @@ pub const fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
 /// In the stub implementation, returns the path unchanged if it is
 /// executable (per the stub `PathExt`, which considers every path
 /// executable).
-pub fn resolve_executable_pathbuf(path: std::path::PathBuf) -> Option<std::path::PathBuf> {
+pub fn resolve_executable(path: std::path::PathBuf) -> Option<std::path::PathBuf> {
     use crate::sys::fs::PathExt;
     if path.as_path().executable() {
         Some(path)

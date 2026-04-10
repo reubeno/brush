@@ -32,7 +32,7 @@ where
             if path.is_dir() {
                 continue;
             }
-            if let Some(resolved) = sys::fs::resolve_executable_pathbuf(path) {
+            if let Some(resolved) = sys::fs::resolve_executable(path) {
                 return Some(resolved);
             }
         }

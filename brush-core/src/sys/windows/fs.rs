@@ -47,7 +47,7 @@ fn has_executable_extension(path: &Path) -> bool {
 
 /// Returns true if `path` is, by itself, an existing executable file.
 ///
-/// Used both for the initial check in [`resolve_executable_pathbuf`] and for
+/// Used both for the initial check in [`resolve_executable`] and for
 /// [`PathExt::executable`].
 fn is_executable_file(path: &Path) -> bool {
     has_executable_extension(path) && path.is_file()
@@ -58,7 +58,7 @@ fn is_executable_file(path: &Path) -> bool {
 /// If the path is already a file with a `PATHEXT` extension, it is returned
 /// unchanged (no allocation). Otherwise, each `PATHEXT` extension is appended
 /// in turn and the first existing file is returned.
-pub fn resolve_executable_pathbuf(path: PathBuf) -> Option<PathBuf> {
+pub fn resolve_executable(path: PathBuf) -> Option<PathBuf> {
     if is_executable_file(&path) {
         return Some(path);
     }
@@ -447,9 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn resolve_executable_pathbuf_for_nonexistent_returns_none() {
+    fn resolve_executable_for_nonexistent_returns_none() {
         // A path that cannot exist on any test host.
         let path = PathBuf::from(r"C:\__brush_test_definitely_missing__");
-        assert!(resolve_executable_pathbuf(path).is_none());
+        assert!(resolve_executable(path).is_none());
     }
 }
