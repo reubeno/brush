@@ -180,6 +180,9 @@ pub(super) fn parse_balanced_delimiters<'a>(
         let mut case_state = CaseState::NotInCase;
         let mut case_depth = 0usize;
 
+        // Track bracket expressions [...]: inside them, { } ( ) are literal
+        let mut in_bracket_expr = false;
+
         tracing::debug!("parse_balanced_delimiters: starting, prefix={:?}", prefix);
 
         while depth > 0 {
@@ -232,11 +235,11 @@ pub(super) fn parse_balanced_delimiters<'a>(
             }
 
             match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input) {
-                Ok(ch) if Some(ch) == open_char => {
+                Ok(ch) if Some(ch) == open_char && !in_bracket_expr => {
                     depth += 1;
                     at_comment_start = false;
                 }
-                Ok(ch) if ch == close_char => {
+                Ok(ch) if ch == close_char && !in_bracket_expr => {
                     if matches!(case_state, CaseState::AfterIn | CaseState::InPattern) {
                         case_state = CaseState::InBody;
                     } else {
@@ -358,6 +361,22 @@ pub(super) fn parse_balanced_delimiters<'a>(
                 Ok('\\') => {
                     let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
                         .parse_next(input);
+                    at_comment_start = false;
+                }
+                Ok('[') if !in_bracket_expr => {
+                    in_bracket_expr = true;
+                    // ] immediately after [ is literal, not the end of the bracket expression
+                    if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(']'))
+                        .parse_next(input)
+                        .is_ok()
+                    {
+                        let _ = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
+                            .parse_next(input);
+                    }
+                    at_comment_start = false;
+                }
+                Ok(']') if in_bracket_expr => {
+                    in_bracket_expr = false;
                     at_comment_start = false;
                 }
                 Ok('\'') => {
@@ -835,4 +854,101 @@ pub(super) fn is_reserved_word(s: &str) -> bool {
             | "]]"
             | "select"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::winnow_str::types::StrStream;
+
+    fn parse_braced(input: &str) -> Result<&str, winnow::error::ErrMode<ContextError>> {
+        let mut stream = StrStream::new(input);
+        parse_balanced_delimiters("${", Some('{'), '}', 1, false, false).parse_next(&mut stream)
+    }
+
+    fn parse_cmd_sub(input: &str) -> Result<&str, winnow::error::ErrMode<ContextError>> {
+        let mut stream = StrStream::new(input);
+        parse_balanced_delimiters("$(", Some('('), ')', 1, true, true).parse_next(&mut stream)
+    }
+
+    #[test]
+    fn test_bracket_expr_with_braces_in_param_expansion() {
+        let result = parse_braced("${y%%[<{().]}");
+        assert!(
+            result.is_ok(),
+            "Bracket expr with braces should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_bracket_expr_with_parens_in_param_expansion() {
+        let result = parse_braced("${y%%[<().]}");
+        assert!(
+            result.is_ok(),
+            "Bracket expr with parens should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_bracket_expr_with_braces_and_star() {
+        let result = parse_braced("${y%%[<{().[]*}");
+        assert!(
+            result.is_ok(),
+            "Bracket expr with braces and star should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_bracket_expr_with_literal_close_bracket() {
+        let result = parse_braced("${y%%[]}]}");
+        assert!(
+            result.is_ok(),
+            "Bracket expr with ] as first char should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_bracket_expr_with_caret_in_param_expansion() {
+        let result = parse_braced("${y%%[^<{}()]}");
+        assert!(
+            result.is_ok(),
+            "Bracket expr with negated class should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_bracket_expr_in_command_substitution() {
+        let result = parse_cmd_sub("$(echo ${y%%[<{().]})");
+        assert!(
+            result.is_ok(),
+            "Bracket expr inside cmd sub should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_nested_param_expansion_with_bracket_expr() {
+        let result = parse_braced("${y#${z%%[<{().]}}");
+        assert!(
+            result.is_ok(),
+            "Nested param with bracket expr should parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_simple_param_expansion_still_works() {
+        let result = parse_braced("${y%%pattern}");
+        assert!(
+            result.is_ok(),
+            "Simple param expansion should still parse: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_bracket_expr_does_not_affect_real_nesting() {
+        let result = parse_braced("${y#${z}}");
+        assert!(
+            result.is_ok(),
+            "Nested braces without bracket expr should parse: {result:?}"
+        );
+    }
 }
