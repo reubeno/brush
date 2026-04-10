@@ -96,29 +96,19 @@ pub(super) fn skip_double_quoted_content<'a>()
 -> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
     move |input: &mut StrStream<'a>| {
         let start = input.checkpoint();
-        let mut char_count: usize = 0;
 
         loop {
             match next_char(input) {
-                Ok('"') => {
-                    char_count += 1;
-                    break;
-                }
+                Ok('"') => break,
                 Ok('\\') => {
                     let _ = next_char(input);
-                    char_count += 2;
                 }
-                Err(_) => {
-                    return fail.parse_next(input);
-                }
-                Ok(_) => {
-                    char_count += 1;
-                }
+                Err(_) => return fail.parse_next(input),
+                Ok(_) => {}
             }
         }
 
-        input.reset(&start);
-        winnow::token::take(char_count).parse_next(input)
+        take_slice_from_checkpoints(input, &start)
     }
 }
 
