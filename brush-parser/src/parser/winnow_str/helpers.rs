@@ -335,6 +335,78 @@ impl HeredocTracker {
 // Bracket expression consumer
 // ---------------------------------------------------------------------------
 
+/// After a `$` has been consumed inside `try_consume_bracket_expression`, try
+/// to skip a `$`-expansion (`$(...)`, `$((...))`, `${...}`). Returns `Ok(true)`
+/// if an expansion was consumed, `Ok(false)` if not (stream is reset to just
+/// after the `$`).
+fn skip_dollar_expansion_in_bracket(
+    input: &mut StrStream<'_>,
+    close_char: char,
+) -> Result<bool, winnow::error::ErrMode<ContextError>> {
+    match next_char(input) {
+        Ok('(') => {
+            let checkpoint = input.checkpoint();
+            if winnow::token::one_of::<_, _, ContextError>('(')
+                .parse_next(input)
+                .is_ok()
+            {
+                if parse_balanced_delimiters("", Some('('), ')', 2, false, false)
+                    .parse_next(input)
+                    .is_err()
+                {
+                    input.reset(&checkpoint);
+                    if parse_balanced_delimiters("", Some('('), ')', 1, true, true)
+                        .parse_next(input)
+                        .is_err()
+                    {
+                        return Ok(false);
+                    }
+                }
+            } else if parse_balanced_delimiters("", Some('('), ')', 1, true, true)
+                .parse_next(input)
+                .is_err()
+            {
+                return Ok(false);
+            }
+            Ok(true)
+        }
+        Ok('{') => {
+            if parse_balanced_delimiters("", Some('{'), '}', 1, false, false)
+                .parse_next(input)
+                .is_err()
+            {
+                return Ok(false);
+            }
+            Ok(true)
+        }
+        Ok(c) if c == close_char || c == ']' => Ok(false),
+        Ok(_) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Inside a bracket expression `[...]`, skip a POSIX bracket expression class
+/// like `[:class:]`, `[.coll.]`, or `[=equiv=]`. The `[` and the class
+/// delimiter character have already been consumed; `end_char` is one of
+/// `:`, `.`, or `=`.
+fn skip_bracket_class(input: &mut StrStream<'_>, end_char: char) -> ModalResult<()> {
+    loop {
+        match next_char(input) {
+            Ok(c) if c == end_char => {
+                if winnow::combinator::peek(winnow::token::one_of::<_, _, ContextError>(']'))
+                    .parse_next(input)
+                    .is_ok()
+                {
+                    let _ = next_char(input);
+                    return Ok(());
+                }
+            }
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 /// Attempt to consume a complete bracket expression `[...]` from the input,
 /// assuming the opening `[` has already been consumed.
 ///
@@ -348,6 +420,8 @@ impl HeredocTracker {
 /// - `[^...]` or `[!...]` — negated bracket expression
 /// - `[:class:]`, `[=equiv=]`, `[.coll.]` — POSIX bracket expression classes
 /// - Backslash escapes inside the expression
+/// - Single/double-quoted strings and `$`-expansions (their `]` chars are not
+///   treated as closing the bracket expression)
 ///
 /// Returns `Ok` if a complete `[...]` was consumed, `Err` if no closing `]`
 /// was found (meaning the `[` was just a literal character).
@@ -359,58 +433,40 @@ fn try_consume_bracket_expression(
     input: &mut StrStream<'_>,
     close_char: char,
 ) -> Result<(), winnow::error::ErrMode<ContextError>> {
-    // ] as the first char is literal, not the closing bracket
-    let first = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input);
+    let first = next_char(input);
     match first {
         Ok(']' | '^' | '!') => {}
         Ok(c) if c == close_char => {
             return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+        }
+        Ok('\'') => {
+            let _ = skip_single_quoted_content().parse_next(input)?;
+        }
+        Ok('"') => {
+            let _ = skip_double_quoted_content().parse_next(input)?;
+        }
+        Ok('$') => {
+            let checkpoint = input.checkpoint();
+            if !skip_dollar_expansion_in_bracket(input, close_char)? {
+                input.reset(&checkpoint);
+            }
         }
         Ok(_) => {}
         Err(e) => return Err(e),
     }
 
     loop {
-        match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input) {
+        match next_char(input) {
             Ok(']') => return Ok(()),
             Ok(c) if c == close_char => {
                 return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
             }
             Ok('[') => {
-                // Could be a POSIX bracket expression class: [:class:], [.coll.], [=equiv=]
                 let checkpoint = input.checkpoint();
-                let next =
-                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input);
-                match next {
-                    Ok(':' | '.' | '=') => {
-                        let Ok(end_char) = next else { unreachable!() };
-                        loop {
-                            match winnow::token::any::<_, winnow::error::ErrMode<ContextError>>
-                                .parse_next(input)
-                            {
-                                Ok(c) if c == end_char => {
-                                    if winnow::combinator::peek(winnow::token::one_of::<
-                                        _,
-                                        _,
-                                        ContextError,
-                                    >(
-                                        ']'
-                                    ))
-                                    .parse_next(input)
-                                    .is_ok()
-                                    {
-                                        let _ = winnow::token::any::<
-                                            _,
-                                            winnow::error::ErrMode<ContextError>,
-                                        >
-                                            .parse_next(input);
-                                        break;
-                                    }
-                                }
-                                Ok(_) => {}
-                                Err(e) => return Err(e),
-                            }
-                        }
+                let class_char = next_char(input);
+                match class_char {
+                    Ok(end_char @ (':' | '.' | '=')) => {
+                        skip_bracket_class(input, end_char)?;
                     }
                     Ok(_) => {
                         input.reset(&checkpoint);
@@ -419,8 +475,19 @@ fn try_consume_bracket_expression(
                 }
             }
             Ok('\\') => {
-                let _ =
-                    winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input);
+                let _ = next_char(input);
+            }
+            Ok('\'') => {
+                let _ = skip_single_quoted_content().parse_next(input)?;
+            }
+            Ok('"') => {
+                let _ = skip_double_quoted_content().parse_next(input)?;
+            }
+            Ok('$') => {
+                let checkpoint = input.checkpoint();
+                if !skip_dollar_expansion_in_bracket(input, close_char)? {
+                    input.reset(&checkpoint);
+                }
             }
             Ok(_) => {}
             Err(e) => return Err(e),
@@ -1129,6 +1196,52 @@ mod tests {
         let mut input = StrStream::new("\\a]}");
         let result = try_consume_bracket_expression(&mut input, '}');
         assert!(result.is_ok(), "Should consume [\\a]: {result:?}");
+        let remaining: &str = input.finish();
+        assert_eq!(remaining, "}");
+    }
+
+    /// Regression test: `]` inside `${arr[@]}` within a double-quoted string
+    /// inside `$([ ... ])` must not be consumed by the bracket expression scanner.
+    #[test]
+    fn test_bracket_expr_does_not_match_close_bracket_inside_quotes_in_test_cmd() {
+        // $([ "${arr[@]}" = "" ]) — the [ starts a test command, not a bracket expr
+        let result = parse_cmd_sub("$([ \"${arr[@]}\" = \"\" ])");
+        assert!(
+            result.is_ok(),
+            "Cmd sub with test command containing ${{arr[@]}} should parse: {result:?}"
+        );
+    }
+
+    /// Bracket expression scanner should skip over double-quoted strings.
+    #[test]
+    fn test_bracket_expr_skips_double_quoted_content() {
+        // Input after consuming [: abc"def]"ghi]
+        // The ] inside the quotes should be skipped
+        let mut input = StrStream::new("abc\"def]\"ghi]}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(result.is_ok(), "Should skip double-quoted ]: {result:?}");
+        let remaining: &str = input.finish();
+        assert_eq!(remaining, "}");
+    }
+
+    /// Bracket expression scanner should skip over single-quoted strings.
+    #[test]
+    fn test_bracket_expr_skips_single_quoted_content() {
+        // Input after consuming [: abc'def]'ghi]
+        let mut input = StrStream::new("abc'def]'ghi]}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(result.is_ok(), "Should skip single-quoted ]: {result:?}");
+        let remaining: &str = input.finish();
+        assert_eq!(remaining, "}");
+    }
+
+    /// Bracket expression scanner should skip over ${...} expansions.
+    #[test]
+    fn test_bracket_expr_skips_braced_expansion() {
+        // Input after consuming [: ${arr[@]}]
+        let mut input = StrStream::new("${arr[@]}]}");
+        let result = try_consume_bracket_expression(&mut input, '}');
+        assert!(result.is_ok(), "Should skip ${{...}}: {result:?}");
         let remaining: &str = input.finish();
         assert_eq!(remaining, "}");
     }
