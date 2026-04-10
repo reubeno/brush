@@ -3,6 +3,7 @@
 
 use crate::error;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 /// Placeholder UID for non-elevated Windows processes.
 ///
@@ -13,6 +14,15 @@ const NON_ELEVATED_UID: u32 = 1000;
 
 /// Placeholder GID for non-elevated Windows processes (see [`NON_ELEVATED_UID`]).
 const NON_ELEVATED_GID: u32 = 1000;
+
+/// Cached elevation status. The underlying check queries the process token,
+/// which can't change after process start, so it's safe to memoize.
+static IS_ELEVATED: LazyLock<bool> = LazyLock::new(|| {
+    check_elevation::is_elevated().unwrap_or_else(|err| {
+        tracing::warn!("failed to determine process elevation: {err}");
+        false
+    })
+});
 
 pub(crate) fn get_user_home_dir(_username: &str) -> Option<PathBuf> {
     // std::env::home_dir() doesn't support getting home dir for arbitrary users
@@ -29,7 +39,7 @@ pub(crate) fn get_current_user_default_shell() -> Option<PathBuf> {
 }
 
 fn is_elevated() -> bool {
-    check_elevation::is_elevated().unwrap_or(false)
+    *IS_ELEVATED
 }
 
 pub(crate) fn is_root() -> bool {

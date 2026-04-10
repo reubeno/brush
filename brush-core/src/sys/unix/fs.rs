@@ -302,3 +302,73 @@ pub fn push_path_for_pattern(path: &mut std::path::PathBuf, component: &str) {
 pub const fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Borrowed(s)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_separator_helpers() {
+        assert!(contains_path_separator("foo/bar"));
+        assert!(!contains_path_separator("foobar"));
+        // Backslashes are not separators on Unix.
+        assert!(!contains_path_separator(r"foo\bar"));
+
+        assert!(ends_with_path_separator("foo/"));
+        assert!(!ends_with_path_separator("foo"));
+        assert!(!ends_with_path_separator(r"foo\"));
+
+        assert_eq!(strip_path_separator_suffix("foo/"), "foo");
+        assert_eq!(strip_path_separator_suffix("foo"), "foo");
+        assert_eq!(strip_path_separator_suffix(r"foo\"), r"foo\");
+
+        assert_eq!(rfind_path_separator("a/b/c"), Some(3));
+        assert_eq!(rfind_path_separator("abc"), None);
+    }
+
+    #[test]
+    fn split_path_for_pattern_basic() {
+        let parts: Vec<_> = split_path_for_pattern("a/b/c").collect();
+        assert_eq!(parts, vec!["a", "b", "c"]);
+
+        let parts: Vec<_> = split_path_for_pattern("/a/b").collect();
+        assert_eq!(parts, vec!["", "a", "b"]);
+
+        // Backslashes are not split on Unix.
+        let parts: Vec<_> = split_path_for_pattern(r"a\b").collect();
+        assert_eq!(parts, vec![r"a\b"]);
+    }
+
+    #[test]
+    fn pattern_path_root_absolute() {
+        assert_eq!(pattern_path_root(""), Some(PathBuf::from("/")));
+    }
+
+    #[test]
+    fn pattern_path_root_relative() {
+        assert_eq!(pattern_path_root("foo"), None);
+        // Drive-letter syntax is not recognized on Unix.
+        assert_eq!(pattern_path_root("c:"), None);
+    }
+
+    #[test]
+    fn push_path_for_pattern_appends_child() {
+        let mut p = PathBuf::from("/home/reuben");
+        push_path_for_pattern(&mut p, "foo");
+        assert_eq!(p, PathBuf::from("/home/reuben/foo"));
+    }
+
+    #[test]
+    fn normalize_path_separators_is_noop() {
+        use std::borrow::Cow;
+        assert!(matches!(
+            normalize_path_separators("/foo/bar"),
+            Cow::Borrowed("/foo/bar")
+        ));
+    }
+
+    #[test]
+    fn default_case_insensitive_is_false() {
+        assert!(!default_case_insensitive_path_expansion());
+    }
+}

@@ -9,7 +9,13 @@ use crate::error;
 // Selectively re-export items from stubs that we don't override.
 pub(crate) use crate::sys::stubs::fs::MetadataExt;
 
-/// Cached list of executable extensions from the PATHEXT environment variable.
+/// Cached list of executable extensions from the `PATHEXT` environment
+/// variable. Each entry retains its leading dot (e.g. `".exe"`) and is stored
+/// lowercased so case-insensitive comparisons can be done without allocating.
+///
+/// NOTE: This is cached for the process lifetime. Changes to `PATHEXT` made
+/// inside the running shell are not reflected here. Bash itself has no
+/// `PATHEXT` semantics, so this is generally acceptable for now.
 static PATHEXT_EXTENSIONS: LazyLock<Vec<String>> = LazyLock::new(|| {
     std::env::var("PATHEXT")
         .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
@@ -19,14 +25,46 @@ static PATHEXT_EXTENSIONS: LazyLock<Vec<String>> = LazyLock::new(|| {
         .collect()
 });
 
+/// Returns the stem of a PATHEXT entry (with any leading `.` removed).
+///
+/// `PATHEXT` canonically stores entries like `.EXE`, but tolerant parsing
+/// accepts entries without the leading dot too.
+fn pathext_entry_stem(entry: &str) -> &str {
+    entry.strip_prefix('.').unwrap_or(entry)
+}
+
 /// Returns true if the path's extension is in the PATHEXT list.
+///
+/// Performs case-insensitive comparison against the cached PATHEXT entries
+/// without allocating.
 fn has_executable_extension(path: &Path) -> bool {
-    if let Some(ext) = path.extension() {
-        let dot_ext = format!(".{}", ext.to_string_lossy()).to_ascii_lowercase();
-        PATHEXT_EXTENSIONS.contains(&dot_ext)
-    } else {
-        false
+    path.extension().is_some_and(|ext| {
+        PATHEXT_EXTENSIONS
+            .iter()
+            .any(|e| ext.eq_ignore_ascii_case(pathext_entry_stem(e)))
+    })
+}
+
+/// Returns the resolved executable path, if any, for the given candidate.
+///
+/// If `path` itself is a file with a `PATHEXT` extension, returns it as-is.
+/// Otherwise, tries appending each `PATHEXT` extension in order and returns
+/// the first match. Returns `None` if no matching executable file is found.
+fn resolve_executable_with_pathext(path: &Path) -> Option<PathBuf> {
+    // If the path as-is is already an executable file, return it.
+    if has_executable_extension(path) && path.is_file() {
+        return Some(path.to_path_buf());
     }
+    // Try appending each PATHEXT extension.
+    for ext in PATHEXT_EXTENSIONS.iter() {
+        let mut name = path.as_os_str().to_owned();
+        name.push(ext);
+        let candidate = PathBuf::from(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 impl crate::sys::fs::PathExt for Path {
@@ -39,19 +77,11 @@ impl crate::sys::fs::PathExt for Path {
     }
 
     fn executable(&self) -> bool {
-        // If the path as-is is an executable file, return true.
-        if self.is_file() && has_executable_extension(self) {
-            return true;
-        }
-        // Try appending each PATHEXT extension.
-        for ext in PATHEXT_EXTENSIONS.iter() {
-            let mut name = self.as_os_str().to_owned();
-            name.push(ext);
-            if Self::new(&name).is_file() {
-                return true;
-            }
-        }
-        false
+        resolve_executable_with_pathext(self).is_some()
+    }
+
+    fn resolve_executable(&self) -> Option<PathBuf> {
+        resolve_executable_with_pathext(self)
     }
 
     fn exists_and_is_block_device(&self) -> bool {
@@ -211,6 +241,12 @@ pub fn split_path_for_pattern(s: &str) -> impl Iterator<Item = &str> {
 ///
 /// On Windows, recognizes both a leading separator (empty first component from splitting
 /// a path like `/foo`) and a drive-letter prefix like `C:` as absolute.
+///
+/// TODO(windows): UNC paths like `\\server\share\foo` are not yet handled
+/// specially; they split into `["", "", "server", "share", "foo"]`, and the
+/// leading empty component causes them to be treated as if they were rooted
+/// at `/`, which drops the server/share portion. Supporting UNC requires
+/// peeking further into the component list.
 pub fn pattern_path_root(first_component: &str) -> Option<PathBuf> {
     if first_component.is_empty() {
         // Leading separator, e.g. `/foo` split into ["", "foo"].
@@ -232,16 +268,21 @@ pub fn pattern_path_root(first_component: &str) -> Option<PathBuf> {
 /// Pushes a component onto a path for pattern expansion.
 ///
 /// On Windows, `PathBuf::push` has special drive-letter and root-replacement
-/// semantics that conflict with shell path construction. This function always
-/// appends the component as a child, using string concatenation to avoid
-/// unwanted path replacement.
+/// semantics that conflict with shell path construction (e.g. pushing `C:foo`
+/// onto `D:\bar` replaces the whole path). This function always appends the
+/// component as a child, operating on the underlying `OsString` so non-UTF-8
+/// content in the path is preserved and no reallocation is needed.
 pub fn push_path_for_pattern(path: &mut PathBuf, component: &str) {
-    let mut s = path.to_string_lossy().into_owned();
-    if !s.is_empty() && !s.ends_with('/') && !s.ends_with('\\') {
-        s.push('/');
+    // Separator characters are ASCII, and WTF-8-encoded OsStr bytes are a
+    // superset of UTF-8, so checking the last byte directly is safe.
+    let bytes = path.as_os_str().as_encoded_bytes();
+    let needs_sep = !bytes.is_empty() && !matches!(bytes.last(), Some(b'/' | b'\\'));
+
+    let buf = path.as_mut_os_string();
+    if needs_sep {
+        buf.push("/");
     }
-    s.push_str(component);
-    *path = PathBuf::from(s);
+    buf.push(component);
 }
 
 /// Normalizes path separators for shell output.
@@ -252,5 +293,135 @@ pub fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Owned(s.replace('\\', "/"))
     } else {
         std::borrow::Cow::Borrowed(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_separator_helpers_both_slashes() {
+        assert!(contains_path_separator("foo/bar"));
+        assert!(contains_path_separator(r"foo\bar"));
+        assert!(contains_path_separator(r"mixed/and\back"));
+        assert!(!contains_path_separator("foobar"));
+
+        assert!(ends_with_path_separator("foo/"));
+        assert!(ends_with_path_separator(r"foo\"));
+        assert!(!ends_with_path_separator("foo"));
+
+        assert_eq!(strip_path_separator_suffix("foo/"), "foo");
+        assert_eq!(strip_path_separator_suffix(r"foo\"), "foo");
+        assert_eq!(strip_path_separator_suffix("foo"), "foo");
+
+        assert_eq!(rfind_path_separator("a/b/c"), Some(3));
+        assert_eq!(rfind_path_separator(r"a\b\c"), Some(3));
+        assert_eq!(rfind_path_separator(r"a/b\c"), Some(3));
+        assert_eq!(rfind_path_separator("abc"), None);
+    }
+
+    #[test]
+    fn split_path_for_pattern_both_slashes() {
+        let parts: Vec<_> = split_path_for_pattern("a/b/c").collect();
+        assert_eq!(parts, vec!["a", "b", "c"]);
+
+        let parts: Vec<_> = split_path_for_pattern(r"a\b\c").collect();
+        assert_eq!(parts, vec!["a", "b", "c"]);
+
+        let parts: Vec<_> = split_path_for_pattern(r"a/b\c").collect();
+        assert_eq!(parts, vec!["a", "b", "c"]);
+
+        let parts: Vec<_> = split_path_for_pattern("/a/b").collect();
+        assert_eq!(parts, vec!["", "a", "b"]);
+    }
+
+    #[test]
+    fn pattern_path_root_leading_separator() {
+        assert_eq!(pattern_path_root(""), Some(PathBuf::from("/")));
+    }
+
+    #[test]
+    fn pattern_path_root_drive_letters() {
+        assert_eq!(pattern_path_root("c:"), Some(PathBuf::from("c:/")));
+        assert_eq!(pattern_path_root("C:"), Some(PathBuf::from("C:/")));
+        assert_eq!(pattern_path_root("Z:"), Some(PathBuf::from("Z:/")));
+    }
+
+    #[test]
+    fn pattern_path_root_rejects_non_drive_two_char_prefix() {
+        // "1:" is not a valid drive letter — must be alphabetic.
+        assert_eq!(pattern_path_root("1:"), None);
+        // Longer drive-like strings are not treated as roots.
+        assert_eq!(pattern_path_root("cd"), None);
+        assert_eq!(pattern_path_root("c:\\"), None);
+        assert_eq!(pattern_path_root("foo"), None);
+    }
+
+    #[test]
+    fn push_path_for_pattern_appends_with_forward_slash() {
+        let mut p = PathBuf::from(r"C:\Users\reuben");
+        push_path_for_pattern(&mut p, "foo");
+        // Forward slash is used as the appended separator, yielding mixed
+        // separators — acceptable because `normalize_path_separators` is
+        // applied downstream before display.
+        assert_eq!(p, PathBuf::from(r"C:\Users\reuben/foo"));
+    }
+
+    #[test]
+    fn push_path_for_pattern_no_double_separator() {
+        let mut p = PathBuf::from("C:/Users/reuben/");
+        push_path_for_pattern(&mut p, "foo");
+        assert_eq!(p, PathBuf::from("C:/Users/reuben/foo"));
+
+        let mut p = PathBuf::from(r"C:\Users\reuben\");
+        push_path_for_pattern(&mut p, "foo");
+        assert_eq!(p, PathBuf::from(r"C:\Users\reuben\foo"));
+    }
+
+    #[test]
+    fn push_path_for_pattern_onto_drive_root() {
+        let mut p = PathBuf::from("c:/");
+        push_path_for_pattern(&mut p, "foo");
+        assert_eq!(p, PathBuf::from("c:/foo"));
+    }
+
+    #[test]
+    fn push_path_for_pattern_onto_empty() {
+        let mut p = PathBuf::new();
+        push_path_for_pattern(&mut p, "foo");
+        // Empty path stays un-prefixed — we only add a separator between
+        // existing content and the new component.
+        assert_eq!(p, PathBuf::from("foo"));
+    }
+
+    #[test]
+    fn normalize_path_separators_converts_backslashes() {
+        use std::borrow::Cow;
+        // Already-forward-slashed input is borrowed (no allocation).
+        assert!(matches!(
+            normalize_path_separators("c:/foo/bar"),
+            Cow::Borrowed("c:/foo/bar")
+        ));
+        // Mixed or backslashed input becomes owned and fully forward-slashed.
+        let normalized = normalize_path_separators(r"c:\foo\bar");
+        assert_eq!(normalized.as_ref(), "c:/foo/bar");
+        let normalized = normalize_path_separators(r"c:\foo/bar");
+        assert_eq!(normalized.as_ref(), "c:/foo/bar");
+    }
+
+    #[test]
+    fn default_case_insensitive_is_true() {
+        assert!(default_case_insensitive_path_expansion());
+    }
+
+    #[test]
+    fn has_executable_extension_is_case_insensitive() {
+        // Force the PATHEXT cache for this test's defaults.
+        assert!(has_executable_extension(Path::new("foo.exe")));
+        assert!(has_executable_extension(Path::new("foo.EXE")));
+        assert!(has_executable_extension(Path::new("foo.Cmd")));
+        assert!(!has_executable_extension(Path::new("foo.txt")));
+        assert!(!has_executable_extension(Path::new("foo")));
     }
 }

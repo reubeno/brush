@@ -23,8 +23,15 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(path) = self.paths.pop_front() {
             let path = PathBuf::from(path.as_ref()).join(self.filename.as_ref());
-            if path.as_path().executable() && !path.is_dir() {
-                return Some(path);
+            // Skip directories outright, then ask the platform to resolve
+            // the path to an actual executable file (which, on Windows, may
+            // involve appending a PATHEXT extension). Returning the resolved
+            // path ensures spawn attempts see a real file on disk.
+            if path.is_dir() {
+                continue;
+            }
+            if let Some(resolved) = path.as_path().resolve_executable() {
+                return Some(resolved);
             }
         }
         None
