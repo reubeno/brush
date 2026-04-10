@@ -110,6 +110,12 @@ pub struct TestCase {
     #[serde(default)]
     pub incompatible_os: HashSet<String>,
 
+    /// Runtime platform tags (e.g., "wasi", "wasm") that are incompatible
+    /// with this test. The test is skipped when any of these tags is present
+    /// in the runner's active platform tag set.
+    #[serde(default)]
+    pub incompatible_platforms: HashSet<String>,
+
     /// Minimum oracle version required for this test.
     #[serde(default)]
     pub min_oracle_version: Option<String>,
@@ -179,6 +185,11 @@ pub struct TestCaseSet {
     /// Configurations that are incompatible with this entire test set.
     #[serde(default)]
     pub incompatible_configs: HashSet<String>,
+
+    /// Runtime platform tags (e.g., "wasi", "wasm") that are incompatible
+    /// with this entire test set.
+    #[serde(default)]
+    pub incompatible_platforms: HashSet<String>,
 
     /// Directory containing the YAML file (computed at runtime).
     #[serde(skip)]

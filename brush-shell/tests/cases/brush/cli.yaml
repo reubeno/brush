@@ -8,6 +8,9 @@ cases:
   - name: "Exit code propagates"
     stdin: "exit 42"
     expected_exit_code: 42
+    # WASI 0.2's wasi-cli/exit interface only models success/failure, so any
+    # non-zero exit code is clamped to 1 by the host (e.g., wasmtime).
+    incompatible_platforms: ["wasi"]
 
   - name: "Echo via args"
     args:
@@ -31,7 +34,10 @@ cases:
     args:
       - "--unknown-argument-here"
     expected_exit_code: 2
-    # Exit code 2 for argument parsing errors
+    # Exit code 2 for argument parsing errors.
+    # WASI 0.2's wasi-cli/exit interface only models success/failure, so any
+    # non-zero exit code is clamped to 1 by the host (e.g., wasmtime).
+    incompatible_platforms: ["wasi"]
 
   - name: "Explicit config file not found fails"
     removed_default_args:

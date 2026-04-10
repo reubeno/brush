@@ -191,6 +191,7 @@ jobs:
             artifact_suffix: "linux-x86_64"
             name_suffix: "(linux/x86_64)"
             homebrew_supported: true
+            coverage: true
             coverage_min_percent: 70
 
           - host: "ubuntu-24.04-arm"
@@ -198,6 +199,7 @@ jobs:
             artifact_suffix: "linux-aarch64"
             name_suffix: "(linux/aarch64)"
             homebrew_supported: false
+            coverage: true
             coverage_min_percent: 70
 
           - host: "macos-latest"
@@ -205,6 +207,7 @@ jobs:
             artifact_suffix: "-macos"
             name_suffix: "(macOS)"
             homebrew_supported: true
+            coverage: true
             coverage_min_percent: 70
 
           - host: "windows-2025"
@@ -212,7 +215,18 @@ jobs:
             artifact_suffix: "-windows"
             name_suffix: "(windows)"
             homebrew_supported: false
+            coverage: true
             coverage_min_percent: 20
+
+          - host: "ubuntu-24.04"
+            variant: "wasi"
+            artifact_suffix: "-wasi"
+            name_suffix: "(wasm32/wasi-0.2)"
+            homebrew_supported: false
+            coverage: false
+            extra_rust_targets: "wasm32-wasip2"
+            wasi_runtime: "wasmtime"
+            xtask_test_args: "--wasi"
 
     name: "Test ${{ matrix.name_suffix }}"
     runs-on: ${{ matrix.host }}
@@ -229,6 +243,7 @@ jobs:
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
+          targets: ${{ matrix.extra_rust_targets || '' }}
           components: llvm-tools-preview
 
       - name: Enable cargo cache
@@ -243,9 +258,16 @@ jobs:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
+        if: ${{ matrix.coverage }}
         uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
         with:
           tool: cargo-llvm-cov
+
+      - name: Install WASI runtime
+        if: ${{ matrix.wasi_runtime }}
+        uses: taiki-e/install-action@b9c5db3aef04caffaf95a1d03931de10fb2a140f # v2.65.1
+        with:
+          tool: ${{ matrix.wasi_runtime }}
 
       - name: Set up Homebrew
         if: ${{ matrix.homebrew_supported }}
@@ -287,7 +309,13 @@ jobs:
       - name: Test
         env:
           VARIANT: ${{ matrix.variant }}
-        run: cargo xtask test integration --coverage --coverage-output ./codecov-${VARIANT}.xml --results-output ./test-results-${VARIANT}.xml
+        run: |
+          args="${{ matrix.xtask_test_args || '' }}"
+          args="${args} --results-output ./test-results-${VARIANT}.xml"
+          if [[ "${{ matrix.coverage }}" == "true" ]]; then
+            args="${args} --coverage --coverage-output ./codecov-${VARIANT}.xml"
+          fi
+          cargo xtask test integration ${args}
 
       - name: "Upload test results"
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -298,7 +326,7 @@ jobs:
 
       - name: "Generate code coverage report"
         uses: clearlyip/code-coverage-report-action@9e2cd22e39153feba8b4477e4fefcc0b5e2727ba # v6.0
-        if: always()
+        if: ${{ always() && matrix.coverage }}
         id: "code_coverage_report"
         with:
           artifact_download_workflow_names: "CI"

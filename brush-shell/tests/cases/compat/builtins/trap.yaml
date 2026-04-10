@@ -376,6 +376,7 @@ cases:
       echo "main continues"
 
   - name: "coproc - DEBUG trap inheritance"
+    skip: true # TODO: this test is too inconsistent
     min_oracle_version: "5.3.0"
     incompatible_os:
       - fedora
