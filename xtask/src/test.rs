@@ -117,6 +117,16 @@ pub struct IntegrationTestArgs {
     #[clap(flatten)]
     pub coverage: CoverageArgs,
 
+    /// Additional Cargo features to enable (e.g., "experimental-parser").
+    /// Passed through as `--features <value>` to cargo nextest.
+    #[clap(long)]
+    pub features: Option<String>,
+
+    /// Extra arguments to pass to the brush binary during test runs.
+    /// Set as the `BRUSH_ARGS` environment variable before running nextest.
+    #[clap(long)]
+    pub brush_args: Option<String>,
+
     /// Copy the nextest `JUnit` XML results to this path after the test run.
     /// The copy is performed even if tests fail, so CI can always upload results.
     #[clap(long)]
@@ -238,10 +248,12 @@ pub fn run_unit_tests(
             profile,
             Some(&filter_expr),
             &args.coverage.coverage_output,
+            None,
+            None,
             verbose,
         )
     } else {
-        run_nextest(sh, profile, Some(&filter_expr), verbose)?;
+        run_nextest(sh, profile, Some(&filter_expr), None, None, verbose)?;
         eprintln!("Unit tests passed.");
         Ok(())
     }
@@ -274,14 +286,29 @@ pub fn run_integration_tests(
     let filter = None;
 
     let test_result = if args.coverage.coverage {
-        run_tests_with_coverage(sh, profile, filter, &args.coverage.coverage_output, verbose)
+        run_tests_with_coverage(
+            sh,
+            profile,
+            filter,
+            &args.coverage.coverage_output,
+            args.features.as_deref(),
+            args.brush_args.as_deref(),
+            verbose,
+        )
     } else {
-        run_nextest(sh, profile, filter, verbose).map(|()| {
+        run_nextest(
+            sh,
+            profile,
+            filter,
+            args.features.as_deref(),
+            args.brush_args.as_deref(),
+            verbose,
+        )
+        .map(|()| {
             eprintln!("Integration tests passed.");
         })
     };
 
-    // Copy nextest results if requested (even on test failure, so CI can upload them).
     if let Some(ref output) = args.results_output {
         copy_nextest_results(output)?;
     }
@@ -294,6 +321,8 @@ fn run_nextest(
     sh: &Shell,
     profile: BuildProfile,
     filter_expr: Option<&str>,
+    features: Option<&str>,
+    brush_args: Option<&str>,
     verbose: bool,
 ) -> Result<()> {
     let mut args = vec!["nextest", "run", "--workspace", "--no-fail-fast"];
@@ -309,9 +338,19 @@ fn run_nextest(
         args.push(value);
     }
 
+    // Add features if provided
+    let features_value = features.map(str::to_string);
+    if let Some(ref value) = features_value {
+        args.push("--features");
+        args.push(value);
+    }
+
     if verbose {
         eprintln!("Running: cargo {}", args.join(" "));
     }
+
+    // Set BRUSH_ARGS env var if provided
+    let _env_guard = brush_args.map(|val| sh.push_env("BRUSH_ARGS", val));
 
     cmd!(sh, "cargo {args...}").run().context("Tests failed")?;
     Ok(())
@@ -346,6 +385,8 @@ fn run_tests_with_coverage(
     profile: BuildProfile,
     filter_expr: Option<&str>,
     output: &Path,
+    features: Option<&str>,
+    brush_args: Option<&str>,
     verbose: bool,
 ) -> Result<()> {
     let output_path = output.display().to_string();
@@ -390,9 +431,19 @@ fn run_tests_with_coverage(
         test_args.push(value);
     }
 
+    // Add features if provided
+    let features_value = features.map(str::to_string);
+    if let Some(ref value) = features_value {
+        test_args.push("--features");
+        test_args.push(value);
+    }
+
     if verbose {
         eprintln!("Running: cargo {}", test_args.join(" "));
     }
+
+    // Set BRUSH_ARGS env var if provided
+    let _env_guard = brush_args.map(|val| sh.push_env("BRUSH_ARGS", val));
 
     // Run tests - let output pass through naturally, but continue on failure to generate coverage
     // report

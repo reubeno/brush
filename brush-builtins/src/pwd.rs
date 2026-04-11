@@ -33,7 +33,16 @@ impl builtins::Command for PwdCommand {
             cwd = cwd.canonicalize()?.into();
         }
 
-        writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
+        let mut output = Vec::new();
+        writeln!(output, "{}", cwd.to_string_lossy())?;
+
+        if let Some(mut stdout) = context.stdout_async() {
+            stdout.write_all(&output).await?;
+            stdout.flush().await?;
+        } else {
+            context.stdout().write_all(&output)?;
+            context.stdout().flush()?;
+        }
 
         Ok(ExecutionResult::success())
     }

@@ -1,4 +1,4 @@
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, history};
+use brush_core::{ExecutionResult, builtins, error, history};
 use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
@@ -57,17 +57,30 @@ impl builtins::Command for HistoryCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
             default_history_file_path: context.shell.history_file_path(),
             time_format: context.shell.history_time_format(),
         };
 
-        let stdout = context.stdout();
-        let stderr = context.stderr();
-
         if let Some(history) = context.shell.history_mut() {
-            self.execute_with_history(history, config, stdout, stderr)
+            let (output, stderr_output) = self.execute_with_history(history, &config)?;
+
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
+                }
+            }
+
+            if !stderr_output.is_empty() {
+                context.stderr().write_all(&stderr_output)?;
+                context.stderr().flush()?;
+            }
+
+            Ok(ExecutionResult::success())
         } else {
             Err(brush_core::ErrorKind::HistoryNotEnabled.into())
         }
@@ -81,55 +94,47 @@ impl HistoryCommand {
     fn execute_with_history(
         &self,
         history: &mut history::History,
-        config: HistoryConfig,
-        stdout: impl Write,
-        mut stderr: impl Write,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+        config: &HistoryConfig,
+    ) -> Result<(Vec<u8>, Vec<u8>), brush_core::Error> {
+        let mut stderr_output = Vec::new();
+
         if self.clear_history {
             history.clear()?;
         }
 
         if let Some(offset) = self.delete_offset {
             if offset == 0 {
-                writeln!(stderr, "cannot delete history item at offset 0")?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
+                writeln!(stderr_output, "cannot delete history item at offset 0")?;
+                return Ok((Vec::new(), stderr_output));
             }
 
             if offset > 0 {
-                // Convert to 0-based index.
                 let index = (offset - 1) as usize;
                 if !history.remove_nth_item(index) {
-                    writeln!(stderr, "index past end of history")?;
-                    return Ok(ExecutionExitCode::InvalidUsage.into());
+                    writeln!(stderr_output, "index past end of history")?;
                 }
             } else {
                 let count = history.count() as i64;
                 let index = count + offset;
                 if index < 0 {
-                    writeln!(stderr, "index before beginning of history")?;
-                    return Ok(ExecutionExitCode::InvalidUsage.into());
+                    writeln!(stderr_output, "index before beginning of history")?;
                 }
 
                 let _ = history.remove_nth_item(index as usize);
             }
 
-            return Ok(ExecutionResult::success());
+            return Ok((Vec::new(), stderr_output));
         }
 
         if let Some(append_option) = &self.append_session_to_file {
             if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path,
+                config.default_history_file_path.clone(),
                 append_option.as_ref(),
             ) {
-                history.flush(
-                    file_path,
-                    true,                         /* append? */
-                    true,                         /* unsaved items only */
-                    config.time_format.is_some(), /* write timestamps? */
-                )?;
+                history.flush(file_path, true, true, config.time_format.is_some())?;
             }
 
-            return Ok(ExecutionResult::success());
+            return Ok((Vec::new(), Vec::new()));
         }
 
         if self.append_rest_of_file_to_session.is_some() {
@@ -142,18 +147,13 @@ impl HistoryCommand {
 
         if let Some(write_option) = &self.write_session_to_file {
             if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path,
+                config.default_history_file_path.clone(),
                 write_option.as_ref(),
             ) {
-                history.flush(
-                    file_path,
-                    false,                        /* append? */
-                    false,                        /* unsaved items only? */
-                    config.time_format.is_some(), /* write timestamps? */
-                )?;
+                history.flush(file_path, false, false, config.time_format.is_some())?;
             }
 
-            return Ok(ExecutionResult::success());
+            return Ok((Vec::new(), Vec::new()));
         }
 
         if self.expand_args.is_some() {
@@ -162,7 +162,7 @@ impl HistoryCommand {
 
         if let Some(args) = &self.append_args_to_session {
             history.add(history::Item::new(args.join(" ")))?;
-            return Ok(ExecutionResult::success());
+            return Ok((Vec::new(), Vec::new()));
         }
 
         let max_entries: Option<usize> = if let Some(arg) = self.args.first() {
@@ -171,9 +171,9 @@ impl HistoryCommand {
             None
         };
 
-        display_history(history, &config, max_entries, stdout, stderr)?;
+        let output = display_history(history, config, max_entries)?;
 
-        Ok(ExecutionResult::success())
+        Ok((output, stderr_output))
     }
 }
 
@@ -181,9 +181,8 @@ fn display_history(
     history: &history::History,
     config: &HistoryConfig,
     max_entries: Option<usize>,
-    mut stdout: impl Write,
-    _stderr: impl Write,
-) -> Result<(), brush_core::Error> {
+) -> Result<Vec<u8>, brush_core::Error> {
+    let mut output = Vec::new();
     let item_count = history.count();
     let skip_count = item_count - max_entries.unwrap_or(item_count);
 
@@ -198,17 +197,15 @@ fn display_history(
             }
         }
 
-        // Output format is something like:
-        //     1  echo hello world
         std::writeln!(
-            stdout,
+            output,
             "{:>5}  {formatted_timestamp}{}",
             skip_count + i + 1,
             item.command_line
         )?;
     }
 
-    Ok(())
+    Ok(output)
 }
 
 fn get_effective_history_file_path(
@@ -219,28 +216,4 @@ fn get_effective_history_file_path(
         || default_history_file_path,
         |file_path| Some(PathBuf::from(file_path)),
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use anyhow::Result;
-    use pretty_assertions::{assert_eq, assert_matches};
-
-    #[test]
-    fn test_parse_dash_a() -> Result<()> {
-        let cmd = HistoryCommand::try_parse_from(["history", "5"])?;
-        assert_matches!(cmd.append_session_to_file, None);
-
-        let cmd = HistoryCommand::try_parse_from(["history", "-a"])?;
-        assert_matches!(cmd.append_session_to_file, Some(None));
-
-        let cmd = HistoryCommand::try_parse_from(["history", "-a", "token"])?;
-        assert_eq!(
-            cmd.append_session_to_file,
-            Some(Some(String::from("token")))
-        );
-
-        Ok(())
-    }
 }

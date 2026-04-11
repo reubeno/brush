@@ -198,10 +198,17 @@ cases:
       [[ "abc" == "a*" ]] && echo "1. Matches"
       [[ "abc" != "a*" ]] && echo "2. Matches"
 
-  - name: "Tilde binary string matching"
+  - name: "Pattern matching with spaces in glob"
     stdin: |
-      x='~/'
-      [[ $x == ~* ]] && echo "1. Matches"
+      USE="foo bar"
+      flag="bar"
+      [[ " ${USE} " == *" ${flag} "* ]] && echo "found"
+
+  - name: "Command substitution in pattern matching"
+    stdin: |
+      SLOT="0"
+      get_slot() { echo "0"; }
+      [[ ${SLOT} = $(get_slot) ]] && echo "match"
 
   - name: "Arithmetic extended tests"
     stdin: |
@@ -233,6 +240,13 @@ cases:
       [[ a =~ ^(a)$ ]]   && echo "3. Pass"
       [[ a =~ ^(a|b)$ ]] && echo "4. Pass"
       [[ a =~ c ]]       && echo "5. Pass"
+
+  - name: "Regex with bracket expression containing space"
+    stdin: |
+      [[ "hello" =~ ([^ ]+) ]] && echo "1. Pass"
+      [[ "hello world" =~ ([^ ]+)\ (.+) ]] && echo "2. Pass"
+      link="../foo bar/bin/test"
+      [[ ${link} =~ (../[^ ]+)\ (bin/.+) ]] && echo "3. Pass: ${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"
 
   - name: "Regex with case insensitivity"
     stdin: |
@@ -379,3 +393,37 @@ cases:
 
       # All should have the same result
       [[ $r1 -eq $r2 && $r2 -eq $r3 ]] && echo "All -t results match"
+
+  - name: "Regex match with POSIX character class"
+    stdin: |
+      # POSIX character classes like [:print:] in regex
+      [[ "hello" =~ ^[[:print:]]+$ ]] && echo "printable"
+      [[ $'\x01' =~ [[:print:]] ]] || echo "control char not printable"
+
+  - name: "Extended test -a flag for file existence"
+    stdin: |
+      [[ -a /tmp ]] && echo "/tmp exists"
+      [[ -a /nonexistent ]] || echo "nonexistent does not exist"
+
+  - name: "Extended test extglob pattern matching"
+    stdin: |
+      exclude="0123456789"
+      [[ "8675309" == +([$exclude]) ]] && echo "matches digits"
+
+  - name: "Escaped double quote in pattern"
+    stdin: |
+      flag='"test'
+      [[ ${flag} != \"* ]] && echo "does not start with quote"
+      [[ ${flag} = \"* ]] || echo "starts with quote check"
+
+  - name: "Escaped double quote literal in extended test"
+    stdin: |
+      [[ a = \" ]] || echo "escaped quote comparison"
+      [[ a != \"* ]] && echo "escaped quote in glob pattern"
+
+  - name: "Regex with escaped space in pattern"
+    stdin: |
+      # Escaped space in regex pattern
+      [[ "a b" =~ a\ b ]] && echo "1. Matched escaped space"
+      f() { [[ "a b" =~ a\ b ]]; }
+      echo "result: $?"

@@ -50,13 +50,15 @@ impl builtins::Command for TypeCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
         for name in &self.names {
             let resolved_types = self.resolve_types(context.shell, name);
 
             if resolved_types.is_empty() {
                 if !self.type_only && !self.force_path_search && !self.show_path_only {
-                    writeln!(context.stderr(), "type: {name} not found")?;
+                    writeln!(stderr_output, "type: {name} not found")?;
                 }
 
                 result = ExecutionResult::general_error();
@@ -69,56 +71,55 @@ impl builtins::Command for TypeCommand {
                 } else if self.type_only {
                     match resolved_type {
                         ResolvedType::Alias(_) => {
-                            writeln!(context.stdout(), "alias")?;
+                            writeln!(output, "alias")?;
                         }
                         ResolvedType::Keyword => {
-                            writeln!(context.stdout(), "keyword")?;
+                            writeln!(output, "keyword")?;
                         }
                         ResolvedType::Function(_) => {
-                            writeln!(context.stdout(), "function")?;
+                            writeln!(output, "function")?;
                         }
                         ResolvedType::Builtin => {
-                            writeln!(context.stdout(), "builtin")?;
+                            writeln!(output, "builtin")?;
                         }
                         ResolvedType::File { path, .. } => {
                             if self.show_path_only || self.force_path_search {
-                                writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                                writeln!(output, "{}", path.to_string_lossy())?;
                             } else {
-                                writeln!(context.stdout(), "file")?;
+                                writeln!(output, "file")?;
                             }
                         }
                     }
                 } else {
                     match resolved_type {
                         ResolvedType::Alias(target) => {
-                            writeln!(context.stdout(), "{name} is aliased to `{target}'")?;
+                            writeln!(output, "{name} is aliased to `{target}'")?;
                         }
                         ResolvedType::Keyword => {
-                            writeln!(context.stdout(), "{name} is a shell keyword")?;
+                            writeln!(output, "{name} is a shell keyword")?;
                         }
                         ResolvedType::Function(def) => {
-                            writeln!(context.stdout(), "{name} is a function")?;
-                            writeln!(context.stdout(), "{def}")?;
+                            writeln!(output, "{name} is a function")?;
+                            writeln!(output, "{def}")?;
                         }
                         ResolvedType::Builtin => {
-                            writeln!(context.stdout(), "{name} is a shell builtin")?;
+                            writeln!(output, "{name} is a shell builtin")?;
                         }
                         ResolvedType::File { path, hashed } => {
                             if hashed && self.all_locations && !self.force_path_search {
-                                // Do nothing. When we're displaying all locations, then
-                                // we don't show hashed paths.
+                                // Do nothing.
                             } else if self.show_path_only || self.force_path_search {
-                                writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                                writeln!(output, "{}", path.to_string_lossy())?;
                             } else if hashed {
                                 writeln!(
-                                    context.stdout(),
+                                    output,
                                     "{name} is hashed ({path})",
                                     name = name,
                                     path = path.to_string_lossy()
                                 )?;
                             } else {
                                 writeln!(
-                                    context.stdout(),
+                                    output,
                                     "{name} is {path}",
                                     name = name,
                                     path = path.to_string_lossy()
@@ -128,11 +129,27 @@ impl builtins::Command for TypeCommand {
                     }
                 }
 
-                // If we only want the first, then break after the first.
                 if !self.all_locations {
                     break;
                 }
             }
+        }
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
+        // Write stderr
+        if !stderr_output.is_empty() {
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
         }
 
         Ok(result)

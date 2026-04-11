@@ -18,8 +18,9 @@ workspace = true
 bench = false
 
 [features]
+default = ["winnow-parser"]
 arbitrary = ["dep:arbitrary"]
-debug-tracing = ["peg/trace"]
+debug-tracing = ["peg/trace", "winnow?/debug"]
 diagnostics = ["dep:miette"]
 serde = ["dep:serde"]
 winnow-parser = ["dep:winnow"]
@@ -38,7 +39,7 @@ serde = { version = "1.0.228", optional = true, features = ["derive", "rc"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
 utf8-chars = "3.0.6"
-winnow = { version = "1.0.0", optional = true }
+winnow = { version = "1.0.1", optional = true, features = ["parser", "ascii"] }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }

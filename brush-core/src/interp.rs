@@ -170,6 +170,58 @@ impl ExecutionParameters {
 
         all_fds.into_iter()
     }
+
+    /// Tries to retrieve an async version of the file descriptor.
+    /// Returns `None` if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+        fd: ShellFd,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd(shell, fd)
+            .map(openfiles::async_file::AsyncOpenFile::from)
+    }
+
+    /// Tries to retrieve the standard input as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdin_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDIN_FD)
+    }
+
+    /// Tries to retrieve the standard output as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdout_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDOUT_FD)
+    }
+
+    /// Tries to retrieve the standard error as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stderr_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDERR_FD)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -661,6 +713,64 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
     }
 }
 
+#[async_trait::async_trait]
+impl Execute for ast::Command {
+    async fn execute(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        match self {
+            Self::Simple(simple) => {
+                let context = PipelineExecutionContext {
+                    shell: commands::ShellForCommand::ParentShell(shell),
+                    process_group_id: None,
+                };
+                match simple.execute_in_pipeline(context, params.clone()).await? {
+                    ExecutionSpawnResult::Completed(result) => Ok(result),
+                    ExecutionSpawnResult::StartedProcess(mut child) => {
+                        let wait_result = child.wait().await?;
+                        match wait_result {
+                            crate::processes::ProcessWaitResult::Completed(output) => {
+                                Ok(ExecutionResult::from(output))
+                            }
+                            crate::processes::ProcessWaitResult::Stopped => {
+                                Ok(ExecutionResult::stopped())
+                            }
+                        }
+                    }
+                    ExecutionSpawnResult::StartedTask(handle) => handle.await?,
+                }
+            }
+            Self::Compound(compound, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                compound.execute(shell, &params).await
+            }
+            Self::Function(func) => func.execute(shell, params).await,
+            Self::ExtendedTest(e, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                let result =
+                    if extendedtests::eval_extended_test_expr(&e.expr, shell, &params).await? {
+                        0
+                    } else {
+                        1
+                    };
+                Ok(ExecutionResult::new(result))
+            }
+        }
+    }
+}
+
 enum WhileOrUntil {
     While,
     Until,
@@ -723,7 +833,6 @@ impl Execute for ast::CoprocessCommand {
             return Ok(ExecutionResult::success());
         }
 
-        // Resolve the name of the variable that will receive the coprocess's file descriptors.
         let name = self
             .name
             .as_ref()
@@ -734,23 +843,19 @@ impl Execute for ast::CoprocessCommand {
                 params.stderr(shell),
                 "coproc {name}: not a valid identifier"
             )?;
-            return Ok(ExecutionExitCode::GeneralError.into());
+            return Ok(ExecutionResult::new(1));
         }
 
-        // Set up the pipes that we'll use to communicate with the coprocess.
+        // Create pipes for coproc I/O
         let (stdin_reader, stdin_writer) = std::io::pipe()?;
         let (stdout_reader, stdout_writer) = std::io::pipe()?;
 
-        // Allocate new fds in the (parent) shell for the read end of the coprocess's stdout
-        // and the write end of the coprocess's stdin.
-        let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
-        let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
-
-        // Crete a subshell that the coprocess will own and run in.
         let mut child_shell = shell.clone();
         child_shell.options_mut().interactive = false;
 
-        // Setup redirection for the coprocess's shell's stdin/stdout.
+        let stdout_fd = shell.open_files_mut().add(stdout_reader.into())?;
+        let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
+
         let mut child_params = params.clone();
         child_params
             .open_files
@@ -760,19 +865,8 @@ impl Execute for ast::CoprocessCommand {
             .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
 
         let body = self.body.clone();
-        let join_handle = tokio::spawn(async move {
-            let pipeline_context = PipelineExecutionContext {
-                shell: commands::ShellForCommand::ParentShell(&mut child_shell),
-                process_group_id: None,
-            };
-            let spawn_result = body
-                .execute_in_pipeline(pipeline_context, child_params)
-                .await?;
-            match spawn_result.wait().await? {
-                ExecutionWaitResult::Completed(result) => Ok(result),
-                ExecutionWaitResult::Stopped(_) => Ok(ExecutionResult::stopped()),
-            }
-        });
+        let join_handle =
+            tokio::spawn(async move { body.execute(&mut child_shell, &child_params).await });
 
         let job = shell.jobs_mut().add_as_current(jobs::Job::new(
             [jobs::JobTask::Internal(join_handle)],
@@ -781,13 +875,11 @@ impl Execute for ast::CoprocessCommand {
         ));
         let job_id = job.id;
 
-        // Fill out the fd variable.
         let arr_value = ShellValue::from(vec![stdout_fd.to_string(), stdin_fd.to_string()]);
         shell
             .env_mut()
             .set_global(name.clone(), ShellVariable::new(arr_value))?;
 
-        // Set the job ID for the coprocess in a separate variable with the _PID suffix.
         let pid_name = format!("{name}_PID");
         shell
             .env_mut()
@@ -1489,6 +1581,9 @@ async fn apply_assignment(
         }
     };
 
+    // Resolve nameref: if the variable is a nameref, redirect writes to the target.
+    let variable_name = expansion::resolve_nameref_target(shell, variable_name.as_str());
+
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
@@ -1536,7 +1631,7 @@ async fn apply_assignment(
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
         let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env().get(variable_name)
+            expansion::resolve_nameref_var(shell, &variable_name)
         {
             matches!(
                 existing_value.value(),
@@ -1559,9 +1654,7 @@ async fn apply_assignment(
     let export_variables_on_modification = shell.options().export_variables_on_modification;
 
     // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().get_mut(variable_name.as_str())
-    {
+    if let Some((existing_value_scope, existing_value)) = shell.env_mut().get_mut(&variable_name) {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {
                 match new_value {

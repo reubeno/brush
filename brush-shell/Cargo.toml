@@ -50,7 +50,7 @@ path = "benches/shell.rs"
 harness = false
 
 [features]
-default = ["basic", "reedline", "minimal"]
+default = ["basic", "reedline", "minimal", "experimental-parser"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
@@ -66,6 +66,7 @@ experimental-parser = [
     "brush-parser/winnow-parser",
 ]
 schema = ["dep:schemars"]
+debug-tracing = ["brush-parser/debug-tracing"]
 
 [lints]
 workspace = true

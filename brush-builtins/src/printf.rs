@@ -24,17 +24,14 @@ impl builtins::Command for PrintfCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        if let Some(variable_name) = &self.output_variable {
-            // Format to a u8 vector.
-            let mut result: Vec<u8> = vec![];
-            format(self.format_and_args.as_slice(), &mut result)?;
+        let mut result: Vec<u8> = vec![];
+        format(self.format_and_args.as_slice(), &mut result)?;
 
-            // Convert to a string.
+        if let Some(variable_name) = &self.output_variable {
             let result_str = String::from_utf8(result).map_err(|_| {
                 brush_core::ErrorKind::PrintfInvalidUsage("invalid UTF-8 output".into())
             })?;
 
-            // Assign to the selected variable.
             expansion::assign_to_named_parameter(
                 context.shell,
                 &context.params,
@@ -43,8 +40,13 @@ impl builtins::Command for PrintfCommand {
             )
             .await?;
         } else {
-            format(self.format_and_args.as_slice(), context.stdout())?;
-            context.stdout().flush()?;
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&result).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&result)?;
+                context.stdout().flush()?;
+            }
         }
 
         Ok(ExecutionResult::success())

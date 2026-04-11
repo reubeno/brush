@@ -40,7 +40,10 @@ impl builtins::Command for TestCommand {
             match args.last() {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {
-                    writeln!(context.stderr(), "[: missing ']'")?;
+                    let mut stderr_output = Vec::new();
+                    writeln!(stderr_output, "[: missing ']'")?;
+                    context.stderr().write_all(&stderr_output)?;
+                    context.stderr().flush()?;
                     return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             }
