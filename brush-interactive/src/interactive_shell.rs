@@ -57,6 +57,14 @@ pub struct InteractiveShell<'a, IB: InputBackend, SE: brush_core::ShellExtension
     input: &'a mut IB,
     /// Terminal integration utility, if any.
     terminal_integration: Option<crate::term_integration::TerminalIntegration>,
+    /// Guard that keeps the shell owning the terminal (if stdin is a terminal) for the
+    /// lifetime of the interactive session. Dropped on shutdown, which restores the
+    /// previous foreground process group. Must be kept as a field rather than dropped
+    /// immediately after `acquire()`; otherwise, when `setpgid(0,0)` succeeded in
+    /// `acquire()`, the guard's Drop immediately restores the *old* foreground pgid,
+    /// leaving brush in a background process group — the first read from stdin then
+    /// raises SIGTTIN and stops the shell.
+    _terminal_control: Option<brush_core::terminal::TerminalControl>,
     /// Options.
     options: InteractiveOptions,
 }
@@ -76,10 +84,13 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
     ) -> Result<Self, ShellError> {
         let stdin_is_terminal = std::io::stdin().is_terminal();
 
-        // Acquire terminal control if stdin is a terminal.
-        if stdin_is_terminal {
-            brush_core::terminal::TerminalControl::acquire()?;
-        }
+        // Acquire terminal control if stdin is a terminal. Bind the guard to a
+        // struct field so its Drop runs at shell teardown, not at end of statement.
+        let terminal_control = if stdin_is_terminal {
+            Some(brush_core::terminal::TerminalControl::acquire()?)
+        } else {
+            None
+        };
 
         // Set up terminal integration if enabled *and* if stdin is a terminal.
         let terminal_integration = if options.terminal_shell_integration && stdin_is_terminal {
@@ -98,6 +109,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             shell: shell.clone(),
             input,
             terminal_integration,
+            _terminal_control: terminal_control,
             options: options.clone(),
         })
     }

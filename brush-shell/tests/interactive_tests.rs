@@ -181,3 +181,63 @@ fn start_shell_session() -> anyhow::Result<ShellSession> {
 
     Ok(session)
 }
+
+// --- Regression tests for docs/todo/login-hang.md ---
+
+/// Regression test for H2: if brush is started from a parent shell that does *not*
+/// put brush into its own process group (i.e. bash with `set +m`), brush inherits
+/// the parent's pgid. `TerminalControl::acquire()` then runs `setpgid(0,0)` and
+/// `tcsetpgrp(...)`. Historically two bugs made this hang:
+///
+///   1. The `TerminalControl` guard was dropped immediately because the result of
+///      `acquire()?` was unbound, so the previous fg pgid got tcsetpgrp'd right back
+///      and brush was left in a background pg.
+///   2. `mask_sigttou()` was called *after* `move_self_to_foreground`, so the
+///      tcsetpgrp inside acquire itself ran from a background pg and was interrupted
+///      by the default SIGTTOU (stop) action.
+///
+/// Symptom: brush stops with state=T before ever printing a prompt.
+///
+/// Repro shape: `bash -c 'set +m; brush ...; true'`. `set +m` disables job control in
+/// bash so brush inherits bash's pgid; the trailing `; true` prevents bash's -c
+/// single-command exec optimization so brush is actually forked (not exec-replaced).
+#[test]
+fn login_hang_non_pgleader_pty() -> anyhow::Result<()> {
+    const BRUSH_PROMPT: &str = "brush> ";
+    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
+
+    // Wrap brush inside a bash subshell with job control disabled. PS1 must be
+    // *exported* from the wrapper for brush to pick it up (bash imports PS1 as a
+    // non-exported local by default). The trailing `; true` prevents bash's -c
+    // single-command exec optimization so brush is actually forked (not
+    // exec-replaced) and thus inherits bash's pgid rather than running with its
+    // own.
+    let brush_invocation = format!(
+        "{} --norc --noprofile --no-config --disable-bracketed-paste \
+         --disable-color --input-backend=basic",
+        shell_path.to_string_lossy()
+    );
+    let wrapper_script = format!("export PS1='{BRUSH_PROMPT}'; set +m; {brush_invocation}; true");
+
+    let mut cmd = std::process::Command::new("bash");
+    cmd.args(["--norc", "--noprofile", "-c", &wrapper_script]);
+    cmd.env("TERM", "linux");
+
+    let mut session = expectrl::session::Session::spawn(cmd)?;
+    // If brush hangs (SIGTTIN'd into T state), the prompt will never arrive. Fail
+    // fast rather than hanging the test run.
+    session.set_expect_timeout(Some(std::time::Duration::from_secs(5)));
+
+    session
+        .expect(BRUSH_PROMPT)
+        .context("brush prompt never arrived — likely hung on SIGTTIN/SIGTTOU")?;
+
+    // Make sure brush can actually handle input in this configuration.
+    session.send_line("echo alive-and-well")?;
+    session
+        .expect("alive-and-well")
+        .context("brush failed to execute a command after reaching prompt")?;
+    session.send_line("exit")?;
+
+    Ok(())
+}

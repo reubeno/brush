@@ -376,9 +376,21 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global("OPTIND", optind_var)?;
 
     // OSTYPE
+    // The values here are chosen to match bash's conventional OSTYPE on each
+    // platform so that shell scripts that branch on `[[ $OSTYPE == darwin* ]]`
+    // / `linux-gnu*` / etc. (e.g. Homebrew shellenv, nvm, asdf) take the
+    // expected path. Real bash bakes a kernel-version suffix into the macOS/BSD
+    // values (e.g. `darwin24`); we intentionally omit the suffix for now
+    // because the common patterns all use `darwin*` prefix matching.
     let os_type = match std::env::consts::OS {
         "linux" => "linux-gnu",
         "android" => "linux-android",
+        "macos" | "ios" | "tvos" | "watchos" | "visionos" => "darwin",
+        "freebsd" => "freebsd",
+        "netbsd" => "netbsd",
+        "openbsd" => "openbsd",
+        "dragonfly" => "dragonfly",
+        "solaris" | "illumos" => "solaris",
         "windows" => "windows",
         _ => "unknown",
     };

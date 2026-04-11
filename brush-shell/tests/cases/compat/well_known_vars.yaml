@@ -31,6 +31,27 @@ cases:
       [[ $MACHTYPE == ${BASH_VERSINFO[5]} ]]
       echo 'MACHTYPE == ${BASH_VERSINFO[5]: ' $?
 
+  # Regression test for docs/todo/login-hang.md H3: $OSTYPE must begin with a
+  # platform-appropriate prefix that matches what real shell init scripts
+  # (Homebrew shellenv, nvm, asdf, etc.) pattern-check. Uses prefix matching so
+  # the compat comparison works across Linux and macOS despite bash's
+  # kernel-version suffix.
+  - name: "OSTYPE pattern match for current platform"
+    stdin: |
+      case "$OSTYPE" in
+        linux-gnu*)       echo "prefix=linux-gnu" ;;
+        linux-android*)   echo "prefix=linux-android" ;;
+        darwin*)          echo "prefix=darwin" ;;
+        freebsd*)         echo "prefix=freebsd" ;;
+        netbsd*)          echo "prefix=netbsd" ;;
+        openbsd*)         echo "prefix=openbsd" ;;
+        dragonfly*)       echo "prefix=dragonfly" ;;
+        solaris*)         echo "prefix=solaris" ;;
+        cygwin*|msys*|windows*)
+                          echo "prefix=windows-like" ;;
+        *)                echo "prefix=other:$OSTYPE" ;;
+      esac
+
   - name: "dollar-_"
     known_failure: true # Issue #479
     stdin: |

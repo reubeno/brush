@@ -220,3 +220,45 @@ cases:
 
       $($(:))
       echo "exit code: $?"
+
+  # Regression tests for login-shell hang investigation (docs/todo/login-hang.md).
+  # These exercise patterns that appear in macOS /etc/profile + /etc/bashrc_Apple_Terminal
+  # and confirm brush matches bash in promptly completing command substitution
+  # even when a well-behaved daemonizing helper detaches fd 1.
+  - name: "Command sub with grandchild that redirects fd 1 to /dev/null"
+    timeout_in_seconds: 5
+    test_files:
+      - path: helper.sh
+        executable: true
+        contents: |
+          #!/bin/bash
+          echo hello
+          (sleep 30 >/dev/null 2>&1 &)
+    stdin: |
+      x=$(./helper.sh)
+      echo "got: $x"
+
+  - name: "eval backticks shaped like macOS path_helper -s"
+    timeout_in_seconds: 5
+    test_files:
+      - path: fake_path_helper.sh
+        executable: true
+        contents: |
+          #!/bin/bash
+          echo 'BRUSH_TEST_PATH="/usr/local/bin:/usr/bin:/bin"; export BRUSH_TEST_PATH;'
+    stdin: |
+      eval `./fake_path_helper.sh`
+      echo "BRUSH_TEST_PATH=$BRUSH_TEST_PATH"
+
+  - name: "Command sub that setsids a child"
+    timeout_in_seconds: 5
+    stdin: |
+      x=$(setsid echo hello 2>/dev/null)
+      echo "got: $x"
+
+  - name: "Command sub with inner EXIT trap disabled under outer EXIT trap"
+    timeout_in_seconds: 5
+    stdin: |
+      trap "echo outer-exit-trap" EXIT
+      x=$(trap "" EXIT; echo hi)
+      echo "got: $x"
