@@ -932,21 +932,6 @@ mod tests {
         assert!(requires_expansion("@(a)", true));
     }
 
-    /// Creates a unique scratch directory under the OS temp directory.
-    ///
-    /// Caller is responsible for cleanup; returns the absolute path.
-    fn make_scratch_dir(tag: &str) -> Result<std::path::PathBuf> {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "brush-patterns-test-{tag}-{pid}-{n}",
-            pid = std::process::id(),
-        ));
-        std::fs::create_dir_all(&dir)?;
-        Ok(dir)
-    }
-
     /// Extracts the `Expanded` payload from a `PatternExpansionResult`,
     /// failing the test via `anyhow::bail!` otherwise. Avoids `panic!` which
     /// is forbidden by the workspace clippy config.
@@ -971,15 +956,15 @@ mod tests {
     /// regression guard on both platforms.
     #[test]
     fn test_relative_glob_returns_relative_paths() -> Result<()> {
-        let scratch = make_scratch_dir("relglob")?;
-        let sub = scratch.join("sub");
+        let scratch = tempfile::tempdir()?;
+        let sub = scratch.path().join("sub");
         std::fs::create_dir_all(&sub)?;
         std::fs::write(sub.join("a.txt"), "")?;
         std::fs::write(sub.join("b.txt"), "")?;
 
         let pattern = Pattern::from("sub/*.txt").set_extended_globbing(false);
         let result = pattern.expand::<fn(&Path) -> bool>(
-            &scratch,
+            scratch.path(),
             None,
             &FilenameExpansionOptions::default(),
         )?;
@@ -994,7 +979,7 @@ mod tests {
         );
 
         // None of the results should contain the absolute scratch path.
-        let scratch_str: String = scratch.to_string_lossy().into_owned();
+        let scratch_str: String = scratch.path().to_string_lossy().into_owned();
         for p in &paths {
             assert!(
                 !p.contains(scratch_str.as_str()),
@@ -1002,7 +987,6 @@ mod tests {
             );
         }
 
-        std::fs::remove_dir_all(&scratch).ok();
         Ok(())
     }
 
@@ -1010,11 +994,11 @@ mod tests {
     /// handling changes.
     #[test]
     fn test_absolute_glob_returns_absolute_paths() -> Result<()> {
-        let scratch = make_scratch_dir("absglob")?;
-        std::fs::write(scratch.join("one.log"), "")?;
-        std::fs::write(scratch.join("two.log"), "")?;
+        let scratch = tempfile::tempdir()?;
+        std::fs::write(scratch.path().join("one.log"), "")?;
+        std::fs::write(scratch.path().join("two.log"), "")?;
 
-        let abs_pattern = format!("{}/*.log", scratch.to_string_lossy());
+        let abs_pattern = format!("{}/*.log", scratch.path().to_string_lossy());
         // Normalize to forward slashes so the test works consistently across
         // platforms; the expander's `pattern_path_root` handles both.
         let abs_pattern = abs_pattern.replace('\\', "/");
@@ -1029,7 +1013,7 @@ mod tests {
         let paths = expect_expanded(result)?;
 
         assert_eq!(paths.len(), 2, "unexpected results: {paths:?}");
-        let scratch_normalized: String = scratch.to_string_lossy().replace('\\', "/");
+        let scratch_normalized: String = scratch.path().to_string_lossy().replace('\\', "/");
         for p in &paths {
             // Use a plain byte-level suffix check rather than `Path::extension`
             // since the results are strings and clippy flags `ends_with(".log")`
@@ -1042,7 +1026,6 @@ mod tests {
             );
         }
 
-        std::fs::remove_dir_all(&scratch).ok();
         Ok(())
     }
 }

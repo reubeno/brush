@@ -86,3 +86,4 @@ uuid = { version = "1.23.0", features = ["js"] }
 [dev-dependencies]
 anyhow = "1.0.102"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+tempfile = "3.27.0"
