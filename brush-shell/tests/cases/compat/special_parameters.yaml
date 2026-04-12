@@ -221,6 +221,14 @@ cases:
       echo hi there
       echo "[$_]"
 
+  - name: "$_ - exec does not override _ in child env"
+    known_failure: true # exec builtin goes through compose_std_command which unconditionally sets _
+    stdin: |
+      # bash does not set _ in the child's env for exec; the child inherits
+      # the parent's _ value. brush currently sets _ to the resolved command
+      # path (same as a normal external command), which is wrong for exec.
+      (exec /usr/bin/env) | grep '^_='
+
   - name: "$@ and $*"
     stdin: |
       function myfunc() {
