@@ -67,8 +67,8 @@ pub(crate) fn init_well_known_vars(
         shell
             .env_mut()
             .set_global("BASH", ShellVariable::new(shell_name.clone()))?;
-        // Initialize $_ to the shell name ($0)
-        shell.update_last_arg_variable(Some(&shell_name));
+        // Initialize $_ to the shell name ($0).
+        shell.update_last_arg_variable(Some(shell_name));
     }
 
     // BASHOPTS

@@ -14,7 +14,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
-    Shell, ShellFd, ShellState, builtins, commands, env, error, escape,
+    Shell, ShellFd, builtins, commands, env, error, escape,
     extensions::{self, ShellExtensions},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
@@ -396,6 +396,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             if let Some(path) = path {
                 self.execute_via_external(&path)
             } else {
+                // Bash updates $_ even when the command is not found, so mirror
+                // that here before reporting the error.
+                let last_arg = Self::take_last_arg(&self.args);
+                self.shell.update_last_arg_variable(last_arg);
+
                 if let Some(post_execute) = self.post_execute {
                     let _ = post_execute(&mut self.shell);
                 }
@@ -406,6 +411,12 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             let command_name = PathBuf::from(self.command_name.clone());
             self.execute_via_external(command_name.as_path())
         }
+    }
+
+    /// Extracts the owned string representation of the last argument of a
+    /// command, suitable for recording into `$_`.
+    fn take_last_arg(args: &[CommandArg]) -> Option<String> {
+        args.last().map(ToString::to_string)
     }
 
     async fn execute_via_builtin(
@@ -435,7 +446,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         command_name: String,
         args: Vec<CommandArg>,
     ) -> ExecutionSpawnResult {
-        let last_arg = args.last().map(|a| a.to_string());
+        let last_arg = Self::take_last_arg(&args);
         let join_handle = tokio::task::spawn_blocking(move || {
             let cmd_context = ExecutionContext {
                 shell: &mut shell,
@@ -447,7 +458,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             let result = rt.block_on(execute_builtin_command(&builtin, cmd_context, args));
 
             // Update $_ after command execution.
-            shell.update_last_arg_variable(last_arg.as_deref());
+            shell.update_last_arg_variable(last_arg);
 
             result
         });
@@ -460,7 +471,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         builtin: builtins::Registration<SE>,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
-        let last_arg = self.args.last().map(|a| a.to_string());
+        let last_arg = Self::take_last_arg(&self.args);
 
         let cmd_context = ExecutionContext {
             shell: &mut shell,
@@ -471,7 +482,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let result = execute_builtin_command(&builtin, cmd_context, self.args).await;
 
         // Update $_ after command execution.
-        shell.update_last_arg_variable(last_arg.as_deref());
+        shell.update_last_arg_variable(last_arg);
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
@@ -487,7 +498,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         func_registration: functions::Registration,
     ) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
-        let last_arg = self.args.last().map(|a| a.to_string());
+        let last_arg = Self::take_last_arg(&self.args);
 
         let cmd_context = ExecutionContext {
             shell: &mut shell,
@@ -498,8 +509,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Strip the function name off args.
         let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await;
 
-        // Update $_ after command execution.
-        shell.update_last_arg_variable(last_arg.as_deref());
+        // $_ is reset *after* the function body runs, to the last argument of
+        // the invocation (or the function name itself if zero args). Any
+        // mutations made inside the body are overwritten — this matches bash,
+        // where the caller observes only the invocation's last argument.
+        shell.update_last_arg_variable(last_arg);
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
@@ -510,7 +524,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
     fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
         let mut shell = self.shell;
-        let last_arg = self.args.last().map(|a| a.to_string());
+        let last_arg = Self::take_last_arg(&self.args);
 
         let cmd_context = ExecutionContext {
             shell: &mut shell,
@@ -527,7 +541,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         );
 
         // Update $_ after command execution.
-        shell.update_last_arg_variable(last_arg.as_deref());
+        shell.update_last_arg_variable(last_arg);
 
         if let Some(post_execute) = self.post_execute {
             let _ = post_execute(&mut shell);
@@ -761,11 +775,8 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     // Store the status.
     shell.set_last_exit_status(cmd_result.exit_code.into());
 
-    // Command substitutions should not affect $_ in the parent shell.
-    // The subshell may have modified $_, but we don't want that to affect the parent.
-    // Since we cloned the shell for the subshell, the parent's $_ should be unchanged,
-    // but let's be explicit and ensure it's not affected by saving/restoring if needed.
-    // For now, we rely on the shell clone isolating the subshell's state.
+    // Note: $_ is naturally isolated from the parent because we cloned the
+    // shell to run the substitution.
 
     Ok(output_str)
 }

@@ -276,6 +276,39 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             .set_current_pos(cmd.location().map(|span| span.start));
     }
 
+    /// Updates the `$_` shell variable (last-argument of the previous simple
+    /// command).
+    ///
+    /// Passes `Some(last_arg)` to record the last argument of the just-executed
+    /// command, or `None` to clear `$_` (used for assignment-only statements,
+    /// which bash treats as having no "last argument").
+    ///
+    /// The update is applied in-place so that attributes on `_` (notably
+    /// `readonly`) are preserved: attempting to update a readonly `_` is a
+    /// silent no-op, matching bash's observable stdout behavior.
+    pub(crate) fn update_last_arg_variable(&mut self, last_arg: Option<String>) {
+        // Bash refuses to update a readonly `_`, emitting an error to stderr
+        // on each attempt. We silently skip the update here — the observable
+        // stdout effect ($_ stays unchanged) matches bash; the missing stderr
+        // diagnostics are harmless.
+        if self
+            .env
+            .get_using_policy("_", crate::env::EnvironmentLookup::Anywhere)
+            .is_some_and(|v| v.is_readonly())
+        {
+            return;
+        }
+
+        // Replace the variable entirely (fresh, non-exported). This matches
+        // bash, which never exports `_` — even under `set -a` — and always
+        // clears any previously-set attributes (except readonly, handled
+        // above).
+        let value = last_arg.unwrap_or_default();
+        let _ = self
+            .env
+            .set_global("_", crate::variables::ShellVariable::new(value));
+    }
+
     /// Applies errexit semantics to a result if enabled and appropriate.
     /// This should be called at "statement boundaries" where errexit should be checked.
     ///

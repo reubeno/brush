@@ -11,7 +11,7 @@ use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
-use crate::shell::{Shell, ShellState};
+use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
@@ -1323,7 +1323,8 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
             }
 
             // Assignment-only statements clear $_ (set to empty string).
-            // This matches bash behavior where assignments don't have a "last argument".
+            // This matches bash behavior where assignments don't have a "last
+            // argument".
             context.shell.update_last_arg_variable(None);
 
             // We need to set the last exit status to indicate assignment success,

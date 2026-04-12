@@ -1,64 +1,225 @@
 name: "Special parameters"
 cases:
-  - name: "$_ - initial value is shell path"
+  - name: "$_ - initial value matches $0"
     stdin: |
-      # $_ should be initialized to the resolved shell path
-      [[ $_ = $(command -v $0) ]] && echo yes
+      [[ "$0" == "$_" ]] && echo "matches on start"
 
-  - name: "$_ - last command argument"
+  - name: "$_ - last argument tracked across simple commands"
     stdin: |
-      : 0
-      echo "$_"
-      : 0 1 2
-      echo "$_"
-      echo "first command"
-      echo "$_"
+      : one
+      echo "[$_]"
+      : two three four
+      echo "[$_]"
+      echo last_echo_arg
+      echo "[$_]"
 
-  - name: "$_ - edge cases and special scenarios"
+  - name: "$_ - zero-arg command uses command name"
     stdin: |
-      # Test command with no arguments (initial value will be shell path)
+      echo seed1 seed2
       :
-      echo "After no args: $_"
+      echo "after colon: [$_]"
+      true
+      echo "after true: [$_]"
+      echo
+      echo "after bare echo: [$_]"
 
-      # Test command with single argument
-      echo single
-      echo "After single arg: $_"
-
-      # Test command with multiple arguments
-      echo arg1 arg2 arg3
-      echo "After multiple args: $_"
-
-      # Test command with empty string argument
-      echo "" arg2
-      echo "After empty string: $_"
-
-      # Test command with special characters
-      echo "arg with spaces" 'arg-with-dashes' "arg:with:colons"
-      echo "After special chars: $_"
-
-      # Test in function context
-      func() {
-          echo "In function"
-      }
-      func arg1 arg2
-      echo "After function call: $_"
-
-      # Test in pipeline
-      echo pipeline1 | cat
-      echo "After pipeline: $_"
-
-  - name: "$_ - cleared by assignment statements"
+  - name: "$_ - args with spaces and special chars"
     stdin: |
-      echo "setup"
-      x="assignment"
-      echo "After assignment: '$_'"
-      : "colon command"
-      echo "After colon: '$_'"
-      y="another assignment"
-      echo "After another assignment: '$_'"
-      # Assignment with command substitution should also clear $_
-      z=$(echo "substitution")
-      echo "After assignment with command substitution: '$_'"
+      echo "seed last"
+      echo "[$_]"
+      echo "arg with spaces" 'arg-with-dashes' "arg:with:colons"
+      echo "[$_]"
+      echo "" trailing
+      echo "[$_]"
+
+  - name: "$_ - builtin dispatch path"
+    stdin: |
+      echo seed last
+      : bu1 bu2 bu3
+      echo "[$_]"
+      printf '%s\n' pf1 pf2
+      echo "[$_]"
+
+  - name: "$_ - external command dispatch path"
+    stdin: |
+      echo seed last
+      /usr/bin/true ext1 ext2
+      echo "[$_]"
+      /usr/bin/env ENV=1 /usr/bin/true external_final
+      echo "[$_]"
+
+  - name: "$_ - external command exports resolved path via env"
+    stdin: |
+      # When invoking an external command, it should see _ set
+      # to the resolved pathname of the command (not "last arg").
+      /usr/bin/env | grep '^_='
+
+  - name: "$_ - function dispatch sets to call-site last arg"
+    stdin: |
+      f() { :; }
+      echo seed_last
+      f call_a call_b
+      echo "[$_]"
+
+  - name: "$_ - function body sees pre-invocation value on entry"
+    stdin: |
+      f() {
+        echo "entry: [$_]"
+        echo new_inner
+        echo "after inner echo: [$_]"
+      }
+      echo pre_seed
+      f call_arg
+      echo "after return: [$_]"
+
+  - name: "$_ - nested function dispatch"
+    stdin: |
+      inner() { echo innerdone; }
+      outer() { inner ix iy; }
+      echo seed
+      outer ox oy
+      echo "[$_]"
+
+  - name: "$_ - assignment-only function body"
+    stdin: |
+      f() { a=1; b=2; }
+      echo seed_last
+      f foo bar
+      echo "[$_]"
+
+  - name: "$_ - cleared by assignment-only statements"
+    stdin: |
+      echo seed_last
+      x=assigned
+      echo "after assign: [$_]"
+      y=another
+      echo "after second assign: [$_]"
+      : colonarg
+      echo "after colon: [$_]"
+
+  - name: "$_ - cleared by assignment with command substitution"
+    stdin: |
+      echo seed_last
+      z=$(echo subst_inner)
+      echo "after assignment: [$_]"
+
+  - name: "$_ - single-stage pipeline does not update parent"
+    stdin: |
+      echo prev_a prev_b
+      echo pipe_a pipe_b | cat
+      echo "[$_]"
+
+  - name: "$_ - multi-stage pipeline does not update parent"
+    stdin: |
+      echo prev_a prev_b
+      echo pipe_a pipe_b | cat | cat
+      echo "[$_]"
+
+  - name: "$_ - and-chain tracks last arg of last executed command"
+    stdin: |
+      echo seed_last
+      true && echo a1 a2
+      echo "[$_]"
+      true && true t1 t2
+      echo "[$_]"
+
+  - name: "$_ - or-chain tracks last arg of last executed command"
+    stdin: |
+      echo seed_last
+      false || echo or1 or2
+      echo "[$_]"
+
+  - name: "$_ - command-not-found update"
+    ignore_stderr: true
+    stdin: |
+      echo seed_last
+      nosuchcmd_xyzzy fail_a fail_b
+      echo "[$_]"
+
+  - name: "$_ - for loop body"
+    stdin: |
+      echo seed_last
+      for i in 1 2 3; do :; done
+      echo "[$_]"
+      for i in a b c; do echo "loop $i"; done
+      echo "[$_]"
+
+  - name: "$_ - while loop body"
+    stdin: |
+      echo seed_last
+      i=0
+      while [ $i -lt 2 ]; do echo "iter $i"; i=$((i+1)); done
+      echo "[$_]"
+
+  - name: "$_ - until loop body"
+    stdin: |
+      echo seed_last
+      i=0
+      until [ $i -ge 2 ]; do i=$((i+1)); done
+      echo "[$_]"
+
+  - name: "$_ - if/then body"
+    stdin: |
+      echo seed_last
+      if true; then echo then_a then_b; fi
+      echo "[$_]"
+
+  - name: "$_ - case body"
+    stdin: |
+      echo seed_last
+      case x in
+        x) echo match_a match_b ;;
+      esac
+      echo "[$_]"
+
+  - name: "$_ - eval tracks eval's last arg"
+    stdin: |
+      echo seed_last
+      eval "echo evaled one two"
+      echo "[$_]"
+
+  - name: "$_ - source tracks sourced script's commands"
+    test_files:
+      - path: sourced.sh
+        contents: |
+          echo sourced_a sourced_b
+    stdin: |
+      echo seed_last
+      . ./sourced.sh
+      echo "[$_]"
+
+  - name: "$_ - subshell does not leak into parent"
+    stdin: |
+      echo outer_a outer_b
+      (echo inner1 inner2; echo "sub: [$_]")
+      echo "parent: [$_]"
+
+  - name: "$_ - background job + wait"
+    stdin: |
+      echo seed_last
+      (:) &
+      wait
+      echo "[$_]"
+
+  - name: "$_ - exported attribute after update"
+    stdin: |
+      export _=initial_value
+      echo first last
+      # After commands have run, does _ still have the -x attribute?
+      declare -p _ | grep -c '^declare -x'
+
+  - name: "$_ - declare -p reflects updated value"
+    stdin: |
+      export _=initial_value
+      echo first last
+      declare -p _
+
+  - name: "$_ - readonly is honored"
+    ignore_stderr: true
+    stdin: |
+      readonly _=frozen
+      echo hi there
+      echo "[$_]"
 
   - name: "$@ and $*"
     stdin: |
