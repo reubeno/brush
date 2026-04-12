@@ -68,12 +68,12 @@ pub fn write_diff(
     Ok(())
 }
 
-/// Resolves the first element of the given launcher token list to an absolute
-/// path by walking the current `PATH`. This is needed because the test harness
-/// clears env vars (including `PATH`) before spawning child processes, so a
-/// launcher binary referenced by name (e.g., `wasmtime`) would fail to resolve
-/// at exec time.
-pub fn resolve_launcher_path(tokens: &mut Vec<String>) -> Result<()> {
+/// Resolves the first element of the given launcher token list to an absolute path.
+///
+/// This is needed because the test harness clears env vars (including `PATH`)
+/// before spawning child processes, so a launcher binary referenced by name
+/// (e.g., `wasmtime`) would fail to resolve at exec time.
+pub fn resolve_launcher_path(tokens: &mut [String]) -> Result<()> {
     let Some(first) = tokens.first() else {
         return Ok(());
     };
