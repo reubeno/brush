@@ -1210,6 +1210,11 @@ async fn get_file_completions(
     .await
     .unwrap_or_else(|_err| token_to_complete.to_owned());
 
+    // Normalize path separators before building the glob pattern, because backslash
+    // is the escape character in glob syntax and must not be confused with a Windows
+    // path separator.
+    let expanded_token = sys::fs::normalize_path_separators(&expanded_token).into_owned();
+
     let glob = std::format!("{expanded_token}*");
 
     let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
@@ -1227,6 +1232,10 @@ async fn get_file_completions(
         .unwrap_or_default()
         .into_paths()
         .into_iter()
+        .map(|p| match sys::fs::normalize_path_separators(&p) {
+            std::borrow::Cow::Borrowed(_) => p,
+            std::borrow::Cow::Owned(normalized) => normalized,
+        })
         .collect();
 
     match expanded_token.as_str() {
@@ -1290,7 +1299,7 @@ fn try_get_variable_completions(
     };
 
     // If there's a path separator, this is a path like $HOME/foo, not a variable to complete
-    if var_prefix.contains(std::path::MAIN_SEPARATOR) {
+    if sys::fs::contains_path_separator(var_prefix) {
         return None;
     }
 
@@ -1377,19 +1386,11 @@ async fn get_completions_using_basic_lookup(
     // completions too.
     // TODO(completions): Do a better job than just checking if index == 0.
     let is_command_position =
-        context.token_index == 0 && !token.is_empty() && !token.contains(std::path::MAIN_SEPARATOR);
+        context.token_index == 0 && !token.is_empty() && !sys::fs::contains_path_separator(token);
 
     if is_command_position {
         add_command_completions(shell, token, &mut candidates);
         candidates.sort();
-    }
-
-    #[cfg(windows)]
-    {
-        candidates = candidates
-            .into_iter()
-            .map(|c| c.replace('\\', "/"))
-            .collect();
     }
 
     Answer::Candidates(candidates, ProcessingOptions::default())

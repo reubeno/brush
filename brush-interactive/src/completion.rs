@@ -88,7 +88,7 @@ fn postprocess_completion_candidate(
 ) -> String {
     if options.treat_as_filenames {
         // Check if it's a directory.
-        if !candidate.ends_with(std::path::MAIN_SEPARATOR) {
+        if !brush_core::sys::fs::ends_with_path_separator(&candidate) {
             let candidate_path = Path::new(&candidate);
             let abs_candidate_path = if candidate_path.is_absolute() {
                 PathBuf::from(candidate_path)
@@ -97,7 +97,8 @@ fn postprocess_completion_candidate(
             };
 
             if abs_candidate_path.is_dir() {
-                candidate.push(std::path::MAIN_SEPARATOR);
+                // Use forward slash: backslash is the shell escape character.
+                candidate.push('/');
             }
         }
 
@@ -112,7 +113,8 @@ fn postprocess_completion_candidate(
         }
     }
     if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
-        if !options.treat_as_filenames || !candidate.ends_with(std::path::MAIN_SEPARATOR) {
+        if !options.treat_as_filenames || !brush_core::sys::fs::ends_with_path_separator(&candidate)
+        {
             candidate.push(' ');
         }
     }

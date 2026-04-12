@@ -301,11 +301,9 @@ fn format_completion_candidate(
     options: &brush_core::completion::ProcessingOptions,
 ) -> String {
     if options.treat_as_filenames {
-        let trimmed = candidate
-            .strip_suffix(std::path::MAIN_SEPARATOR)
-            .unwrap_or(candidate);
-        if let Some(index) = trimmed.rfind(std::path::MAIN_SEPARATOR) {
-            candidate = &candidate[index + std::path::MAIN_SEPARATOR.len_utf8()..];
+        let trimmed = brush_core::sys::fs::strip_path_separator_suffix(candidate);
+        if let Some(index) = brush_core::sys::fs::rfind_path_separator(trimmed) {
+            candidate = &candidate[index + 1..];
         }
     }
 

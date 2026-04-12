@@ -52,13 +52,13 @@ impl<SE: brush_core::ShellExtensions> ReedlineCompleter<SE> {
 
         // Special handling for filename completions.
         if options.treat_as_filenames {
-            if candidate.ends_with(std::path::MAIN_SEPARATOR) {
+            if brush_core::sys::fs::ends_with_path_separator(&candidate) {
                 style = style.fg(Color::Green);
             }
 
             if insertion_index + delete_count <= line.len() {
                 let removed = &line[insertion_index..insertion_index + delete_count];
-                if let Some(last_sep_index) = removed.rfind(std::path::MAIN_SEPARATOR) {
+                if let Some(last_sep_index) = brush_core::sys::fs::rfind_path_separator(removed) {
                     if candidate.starts_with(removed) {
                         candidate = candidate.split_off(last_sep_index + 1);
                         insertion_index += last_sep_index + 1;
