@@ -62,13 +62,13 @@ pub(crate) fn init_well_known_vars(
         ShellVariable::new(shell_version.unwrap_or_default()),
     )?;
 
-    // TODO(#479): implement $_
-
     // BASH
     if let Some(shell_name) = shell.current_shell_name().map(|s| s.to_string()) {
         shell
             .env_mut()
-            .set_global("BASH", ShellVariable::new(shell_name))?;
+            .set_global("BASH", ShellVariable::new(shell_name.clone()))?;
+        // Initialize $_ to the shell name ($0).
+        shell.update_last_arg_variable(Some(shell_name));
     }
 
     // BASHOPTS

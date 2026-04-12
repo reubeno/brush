@@ -1322,6 +1322,11 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 .await?;
             }
 
+            // Assignment-only statements clear $_ (set to empty string).
+            // This matches bash behavior where assignments don't have a "last
+            // argument".
+            context.shell.update_last_arg_variable(None);
+
             // We need to set the last exit status to indicate assignment success,
             // but only if there was no status set during expansion. We use the
             // status count captured before expansion to detect if command
