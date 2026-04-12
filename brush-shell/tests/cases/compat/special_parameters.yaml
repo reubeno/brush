@@ -75,9 +75,9 @@ cases:
   - name: "$_ - nested function dispatch"
     stdin: |
       inner() { echo innerdone; }
-      outer() { inner ix iy; }
+      outer() { inner ia ib; }
       echo seed
-      outer ox oy
+      outer oa ob
       echo "[$_]"
 
   - name: "$_ - assignment-only function body"
