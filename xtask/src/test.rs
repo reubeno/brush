@@ -131,7 +131,7 @@ pub struct IntegrationTestArgs {
     /// Launcher command for the WASI runtime (only used with --wasi).
     /// The first token is resolved against `PATH`; subsequent tokens are
     /// passed as leading arguments before the brush binary path.
-    /// Defaults to "wasmtime run --dir=.::/ --".
+    /// Defaults to `wasmtime run --dir=.::/ --allow-precompiled --`.
     #[clap(long)]
     pub wasi_launcher: Option<String>,
 
@@ -369,17 +369,33 @@ fn run_integration_tests_wasi(
     // sandbox. This is intentionally permissive for testing — tests create
     // temp dirs and need access to fixtures across the filesystem. This is
     // NOT a recommended default for production use of brush under WASI.
+    // Pre-compile the wasm module to avoid JIT compilation overhead during
+    // parallel test execution. Without this, multiple concurrent wasmtime
+    // processes each try to JIT-compile brush.wasm simultaneously, which
+    // can exceed test timeouts on CI.
+    eprintln!("Pre-compiling brush.wasm...");
+    let cwasm_path = wasm_path.with_extension("cwasm");
+    {
+        let wasm_arg = wasm_path.display().to_string();
+        let cwasm_arg = cwasm_path.display().to_string();
+        cmd!(sh, "wasmtime compile {wasm_arg} -o {cwasm_arg}")
+            .run()
+            .context("failed to pre-compile brush.wasm with wasmtime")?;
+    }
+
+    // The default launcher includes --allow-precompiled so wasmtime accepts
+    // the AOT-compiled .cwasm module without re-compilation.
     let launcher = args
         .wasi_launcher
         .as_deref()
-        .unwrap_or("wasmtime run --dir=.::/ --");
+        .unwrap_or("wasmtime run --dir=.::/ --allow-precompiled --");
 
     eprintln!("Running brush integration tests under WASI...");
-    eprintln!("  wasm:     {}", wasm_path.display());
+    eprintln!("  wasm:     {}", cwasm_path.display());
     eprintln!("  launcher: {launcher}");
 
-    let wasm_path_str = wasm_path.display().to_string();
-    let _brush_path = sh.push_env("BRUSH_PATH", &wasm_path_str);
+    let brush_path_str = cwasm_path.display().to_string();
+    let _brush_path = sh.push_env("BRUSH_PATH", &brush_path_str);
     let _brush_launcher = sh.push_env("BRUSH_LAUNCHER", launcher);
     let _brush_platform_tags = sh.push_env("BRUSH_PLATFORM_TAGS", "wasi wasm");
 
