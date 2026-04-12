@@ -782,26 +782,34 @@ impl<'a> peg::ParseElem<'a> for Tokens<'a> {
 impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
     type Slice = String;
 
+    /// Reconstructs a source string from a slice of tokens.
+    ///
+    /// Uses each token's source position to detect whether whitespace existed
+    /// between adjacent tokens in the original source, preserving it as a
+    /// single space. This matters for constructs like `[[ x =~ (a| *) ]]`
+    /// where the space inside the regex group is significant.
+    ///
+    /// N.B. This relies on tokens having accurate, contiguous source
+    /// positions. All tokens produced by the normal tokenizer path satisfy
+    /// this. If positions are missing or non-monotonic (as can happen with
+    /// synthetic here-document end-tag tokens), the gap check evaluates
+    /// false and no space is inserted — a safe degradation to the previous
+    /// behavior, which also omitted spaces between non-word tokens.
     fn parse_slice(&'a self, start: usize, end: usize) -> Self::Slice {
         let mut result = String::new();
-        let mut last_token_was_word = false;
+        let mut prev_end_index: Option<usize> = None;
 
         for token in &self.tokens[start..end] {
-            match token {
-                Token::Operator(s, _) => {
-                    result.push_str(s);
-                    last_token_was_word = false;
-                }
-                Token::Word(s, _) => {
-                    // Place spaces between adjacent words.
-                    if last_token_was_word {
-                        result.push(' ');
-                    }
+            let loc = token.location();
 
-                    result.push_str(s);
-                    last_token_was_word = true;
+            if let Some(prev_end) = prev_end_index {
+                if loc.start.index > prev_end {
+                    result.push(' ');
                 }
             }
+
+            result.push_str(token.to_str());
+            prev_end_index = Some(loc.end.index);
         }
 
         result
