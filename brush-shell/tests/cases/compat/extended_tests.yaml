@@ -290,6 +290,13 @@ cases:
       [[ "<" =~ (<) ]] && echo "1. Matched"
       [[ ">" =~ (<) ]] && echo "2. Matched"
 
+  - name: "Regex with spaces inside parens"
+    stdin: |
+      [[ "x" =~ (a| *) ]]   && echo "1. Matched"
+      [[ "a b" =~ ^(a |b) ]] && echo "2. Matched: [${BASH_REMATCH[0]}]"
+      [[ "a b" =~ ^(a |b)$ ]] || echo "3. No match"
+      [[ " " =~ ^( )$ ]]    && echo "4. Matched: [${BASH_REMATCH[1]}]"
+
   - name: "Regex with unescaped open bracket in character class"
     stdin: |
       [[ "[" =~ ^([x[]) ]] && echo "Matched"

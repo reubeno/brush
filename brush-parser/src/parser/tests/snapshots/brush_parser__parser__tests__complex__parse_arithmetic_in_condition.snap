@@ -17,7 +17,7 @@ ParseResult(
                       seq: [
                         Compound(Arithmetic(ArithmeticCommand(
                           expr: UnexpandedArithmeticExpr(
-                            value: "x>5",
+                            value: "x > 5",
                           ),
                           loc: "[location]",
                         )), None),

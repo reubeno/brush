@@ -15,7 +15,7 @@ ParseResult(
                   value: "i = 0",
                 )),
                 condition: Some(UnexpandedArithmeticExpr(
-                  value: "i<10",
+                  value: "i < 10",
                 )),
                 updater: Some(UnexpandedArithmeticExpr(
                   value: "i++",

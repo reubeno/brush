@@ -129,6 +129,17 @@ fn parse_extended_test_regex() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn parse_extended_test_regex_with_spaces() -> Result<()> {
+    let input = r#"[[ "x" =~ (a| *) ]]"#;
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
 // Logical operators
 
 #[test]
