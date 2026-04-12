@@ -31,6 +31,21 @@ cases:
       [[ $MACHTYPE == ${BASH_VERSINFO[5]} ]]
       echo 'MACHTYPE == ${BASH_VERSINFO[5]: ' $?
 
+  - name: "OSTYPE pattern match for current platform"
+    stdin: |
+      case "$OSTYPE" in
+        linux*)           echo "prefix=linux" ;;
+        darwin*)          echo "prefix=darwin" ;;
+        freebsd*)         echo "prefix=freebsd" ;;
+        netbsd*)          echo "prefix=netbsd" ;;
+        openbsd*)         echo "prefix=openbsd" ;;
+        dragonfly*)       echo "prefix=dragonfly" ;;
+        solaris*)         echo "prefix=solaris" ;;
+        cygwin*|msys*|windows*)
+                          echo "prefix=windows-like" ;;
+        *)                echo "prefix=other:$OSTYPE" ;;
+      esac
+
   - name: "dollar-_"
     stdin: |
       # Check on start
