@@ -21,6 +21,8 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.102"
+num_cpus = "1.17.0"
+serde = { version = "1.0.228", features = ["derive"] }
 brush-shell = { version = "^0.3.0", path = "../brush-shell", features = [
     "schema",
 ] }
@@ -32,3 +34,7 @@ schemars = "1.2.1"
 serde_json = "1.0.149"
 xshell = "0.2.7"
 tempfile = "3.27.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.184"
+pty-process = "0.5.3"

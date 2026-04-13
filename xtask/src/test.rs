@@ -160,6 +160,9 @@ pub struct CoverageArgs {
 pub enum ExternalTestCommand {
     /// Run the bash-completion test suite against brush.
     BashCompletion(BashCompletionArgs),
+    /// Run the upstream bash test suite against brush.
+    #[cfg(unix)]
+    BashTests(crate::bash_tests::BashTestsArgs),
 }
 
 /// Arguments for bash-completion test suite.
@@ -228,6 +231,10 @@ fn run_external(
     match cmd {
         ExternalTestCommand::BashCompletion(args) => {
             run_bash_completion_tests(sh, args, binary_args, verbose)
+        }
+        #[cfg(unix)]
+        ExternalTestCommand::BashTests(args) => {
+            crate::bash_tests::run_bash_tests(args, binary_args, verbose)
         }
     }
 }
