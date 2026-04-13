@@ -1,6 +1,7 @@
 //! xtask-style command-line tool for building this project.
 
 mod analyze;
+#[cfg(unix)]
 mod bash_tests;
 mod check;
 mod ci;
