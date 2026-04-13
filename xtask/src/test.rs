@@ -124,7 +124,8 @@ pub struct IntegrationTestArgs {
 
     /// Build and test against a wasm32-wasip2 target under a WASI runtime
     /// (wasmtime by default). Builds brush for wasm32-wasip2 with minimal
-    /// features, then runs the integration tests under the WASI launcher.
+    /// features, then runs a subset of integration tests (excluding compat,
+    /// interactive, and completion suites) under the WASI launcher.
     #[clap(long)]
     pub wasi: bool,
 
@@ -279,6 +280,9 @@ pub fn run_integration_tests(
     let profile = binary_args.effective_profile();
 
     if args.wasi {
+        if args.coverage.coverage {
+            eprintln!("Warning: --coverage is not supported with --wasi and will be ignored.");
+        }
         return run_integration_tests_wasi(sh, profile, args, verbose);
     }
 
