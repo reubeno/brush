@@ -359,3 +359,93 @@ cases:
     stdin: |
       declare 1=x && echo "Set 1"
       declare @=10 && echo "Set @"
+
+  - name: "Nameref declare -p shows nameref attribute"
+    stdin: |
+      target="hello"
+      declare -n ref=target
+      declare -p ref
+      declare -p target
+
+  - name: "Nameref declare -n with initial value"
+    known_failure: true
+    stdin: |
+      target="original"
+      declare -n ref=target
+      echo "ref: $ref"
+      echo "target: $target"
+
+  - name: "Nameref remove attribute with +n"
+    known_failure: true
+    stdin: |
+      target="value"
+      declare -n ref=target
+      echo "as nameref: $ref"
+      declare +n ref
+      echo "after +n: ref=$ref"
+      declare -p ref
+
+  - name: "Nameref to array via declare"
+    known_failure: true
+    stdin: |
+      arr=(one two three)
+      declare -n ref=arr
+      echo "ref[0]: ${ref[0]}"
+      echo "ref[1]: ${ref[1]}"
+      echo "ref[@]: ${ref[@]}"
+      echo "ref[*]: ${ref[*]}"
+
+  - name: "Nameref array modification via declare"
+    known_failure: true
+    stdin: |
+      arr=(a b c)
+      declare -n ref=arr
+      ref[1]="modified"
+      echo "arr[1]: ${arr[1]}"
+      echo "ref[1]: ${ref[1]}"
+
+  - name: "Nameref to associative array via declare"
+    known_failure: true
+    stdin: |
+      declare -A assoc=(["key1"]="val1" ["key2"]="val2")
+      declare -n ref=assoc
+      echo "ref[key1]: ${ref[key1]}"
+      echo "ref[key2]: ${ref[key2]}"
+
+  - name: "Nameref array iteration in function via local -n"
+    known_failure: true
+    stdin: |
+      print_array() {
+          local -n arr=$1
+          echo "count: ${#arr[@]}"
+          for elem in "${arr[@]}"; do
+              echo "elem: $elem"
+          done
+      }
+
+      myarr=(first second third)
+      print_array myarr
+
+  - name: "Nameref get keys via declare"
+    known_failure: true
+    stdin: |
+      declare -A assoc=(["a"]=1 ["b"]=2 ["c"]=3)
+      declare -n ref=assoc
+      echo "keys (sorted): $(printf '%s\n' ${!ref[@]} | sort | tr '\n' ' ')"
+      echo "count: ${#ref[@]}"
+
+  - name: "Nameref array length via declare"
+    known_failure: true
+    stdin: |
+      arr=(one two three four five)
+      declare -n ref=arr
+      echo "length: ${#ref[@]}"
+      echo "first element length: ${#ref[0]}"
+
+  - name: "Nameref declare -n filter"
+    stdin: |
+      regular="plain"
+      declare -n ref1=regular
+      declare -n ref2=regular
+      not_a_ref="also plain"
+      declare -p -n 2>/dev/null | sort

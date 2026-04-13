@@ -515,3 +515,20 @@ cases:
       readonly my_var
       echo "$my_var"
       echo "should not print"
+
+  - name: "Nameref to set variable with set -u"
+    known_failure: true
+    stdin: |
+      set -u
+      target="value"
+      declare -n ref=target
+      echo "$ref"
+
+  - name: "Nameref to unset variable with set -u errors"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      set -u
+      declare -n ref=unset_target
+      echo "$ref"
+      echo "should not print"

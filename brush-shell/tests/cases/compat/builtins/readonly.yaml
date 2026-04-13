@@ -24,3 +24,30 @@ cases:
           echo "${#ARR[@]}"
       }
       f
+
+  - name: "readonly on nameref makes nameref readonly"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      target="value"
+      declare -n ref=target
+      readonly ref
+      declare -p ref
+      declare -p target
+      # Changing what ref points to should fail
+      declare -n ref=other 2>/dev/null
+      echo "exit: $?"
+      # But target should still be writable
+      target="new_value"
+      echo "target: $target"
+
+  - name: "readonly target through nameref assignment"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      target="value"
+      readonly target
+      declare -n ref=target
+      ref="new_value" 2>/dev/null
+      echo "exit: $?"
+      echo "target: $target"
