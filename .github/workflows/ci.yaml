@@ -382,11 +382,17 @@ jobs:
         run: cargo xtask check build
 
       - name: Install cargo-deny
+        if: runner.os == 'Linux'
         uses: taiki-e/install-action@0abfcd587b70a713fdaa7fb502c885e2112acb15 # v2.75.7
         with:
           tool: cargo-deny
 
+      # NOTE: Only run on Linux. cargo-deny checks (advisories, licenses, bans,
+      # sources) are platform-independent, so running on one OS is sufficient.
+      # Also works around a cargo-deny 0.19.x bug where its advisory DB parser
+      # panics on Windows due to CRLF line endings (hardcoded LF-only matching).
       - name: Deny check
+        if: runner.os == 'Linux'
         run: cargo xtask check deps
 
       - name: Clippy check
