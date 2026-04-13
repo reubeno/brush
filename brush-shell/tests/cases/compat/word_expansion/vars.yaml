@@ -22,3 +22,56 @@ cases:
     stdin: |
       echo "Param: $99"
       echo "Param: ${99}"
+
+  - name: "Nameref indirect expansion returns target name"
+    known_failure: true
+    stdin: |
+      target="the_value"
+      declare -n ref=target
+      echo "indirect: ${!ref}"
+      echo "direct: $ref"
+
+  - name: "Nameref with string operations"
+    known_failure: true
+    stdin: |
+      target="Hello World"
+      declare -n ref=target
+      echo "upper: ${ref^^}"
+      echo "lower: ${ref,,}"
+      echo "length: ${#ref}"
+      echo "substring: ${ref:0:5}"
+      echo "replace: ${ref/World/Bash}"
+
+  - name: "Nameref with default value expansion"
+    known_failure: true
+    stdin: |
+      declare -n ref=unset_var
+      echo "default: ${ref:-default_value}"
+      echo "assign default: ${ref:=assigned}"
+      echo "unset_var: $unset_var"
+
+  - name: "Nameref with error expansion"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      declare -n ref=unset_var
+      echo "${ref:?should error}" 2>/dev/null || echo "caught error"
+
+  - name: "Nameref with alternative expansion"
+    known_failure: true
+    stdin: |
+      target="exists"
+      declare -n ref=target
+      echo "${ref:+alternative}"
+      unset target
+      echo "'${ref:+alternative}'"
+
+  - name: "Nameref with pattern removal"
+    known_failure: true
+    stdin: |
+      target="/usr/local/bin/bash"
+      declare -n ref=target
+      echo "## */: ${ref##*/}"
+      echo "%% /*: ${ref%%/*}"
+      echo "# */: ${ref#*/}"
+      echo "% /*: ${ref%/*}"

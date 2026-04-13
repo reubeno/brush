@@ -98,3 +98,13 @@ cases:
   - name: "Arithmetic for with alternate syntax (one line)"
     stdin: |
       for ((i = 0; i < 5; i++)) { echo "Iteration $i"; }
+
+  - name: "Arithmetic for loop with nameref"
+    known_failure: true
+    stdin: |
+      target=0
+      declare -n ref=target
+      for ((ref=1; ref<=3; ref++)); do
+        echo "ref=$ref target=$target"
+      done
+      echo "final target=$target"

@@ -184,3 +184,12 @@ cases:
         fi
       done
       echo "After for"
+
+  - name: "For loop with nameref variable"
+    stdin: |
+      target=""
+      declare -n ref=target
+      for ref in a b c; do
+          echo "loop: target=$target"
+      done
+      echo "final: target=$target"

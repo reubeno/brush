@@ -454,3 +454,23 @@ cases:
       echo "Result: $?"
       echo "myvar: ${myvar}"
       echo "OPTIND: ${OPTIND}"
+
+  - name: "getopts writes through nameref"
+    known_failure: true
+    stdin: |
+      declare -n ref=result
+      getopts "a:b" ref -a value
+      echo "Result: $?"
+      echo "result: ${result}"
+      echo "ref: ${ref}"
+      echo "OPTARG: ${OPTARG}"
+
+  - name: "getopts writes through subscripted nameref"
+    known_failure: true
+    stdin: |
+      arr=(x x x)
+      declare -n ref='arr[1]'
+      getopts "a:b" ref -a value
+      echo "Result: $?"
+      echo "arr[1]: ${arr[1]}"
+      echo "ref: ${ref}"

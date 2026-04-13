@@ -386,3 +386,49 @@ cases:
 
       # All should have the same result
       [[ $r1 -eq $r2 && $r2 -eq $r3 ]] && echo "All -t results match"
+
+  - name: "Nameref -R with attribute removal"
+    stdin: |
+      target="value"
+      declare -n ref=target
+      [[ -R ref ]] && echo "ref is a nameref"
+      [[ -R target ]] && echo "target is a nameref" || echo "target is not a nameref"
+      declare +n ref
+      [[ -R ref ]] && echo "still nameref" || echo "no longer a nameref"
+
+  - name: "Nameref -v follows nameref"
+    known_failure: true
+    stdin: |
+      target="value"
+      declare -n ref=target
+      [[ -v ref ]] && echo "ref is set (via target)"
+      unset target
+      [[ -v ref ]] && echo "ref still set" || echo "ref not set (target gone)"
+
+  - name: "Nameref -v to array element treats resolved name literally"
+    known_failure: true
+    stdin: |
+      arr=(a b c d)
+      declare -n ref='arr[2]'
+      [[ -v ref ]] && echo "set" || echo "unset"
+
+  - name: "Nameref -v with explicit subscript on nameref to whole array"
+    # TODO(nameref): brush doesn't yet handle [[ -v "ref[N]" ]] where ref is
+    # a nameref to a whole array. Bash resolves ref→arr and then checks arr[2],
+    # but brush currently treats the subscript as part of the nameref target
+    # string rather than applying it after resolution. The fix belongs in
+    # extendedtests.rs (ShellVariableIsSetAndAssigned) — the operand "ref[2]"
+    # needs to be split into name="ref" + subscript="2", the nameref resolved
+    # on the name portion, then the subscript applied to the resolved target.
+    known_failure: true
+    stdin: |
+      arr=(a b c d)
+      declare -n ref2=arr
+      [[ -v "ref2[2]" ]] && echo "set" || echo "unset"
+
+  - name: "Nameref -v to nonexistent array index"
+    known_failure: true
+    stdin: |
+      arr=(a b c)
+      declare -n ref='arr[5]'
+      [[ -v ref ]] && echo "set" || echo "unset"

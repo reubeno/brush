@@ -184,3 +184,19 @@ cases:
       arr=(x y z)
       mapfile -t -O 0 arr < /dev/null
       declare -p arr
+
+  - name: "mapfile into nameref variable"
+    known_failure: true
+    stdin: |
+      declare -a target
+      declare -n ref=target
+      mapfile -t ref < <(echo -e "a\nb\nc")
+      declare -p target
+
+  - name: "mapfile -O into nameref variable"
+    known_failure: true
+    stdin: |
+      target=(x y)
+      declare -n ref=target
+      mapfile -t -O 2 ref < <(echo -e "a\nb")
+      declare -p target

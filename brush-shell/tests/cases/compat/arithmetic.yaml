@@ -348,3 +348,15 @@ cases:
       b=a
       echo "$(( a ))"
       echo "exit: $?"
+
+  - name: "Arithmetic with nameref variable"
+    known_failure: true
+    stdin: |
+      counter=10
+      declare -n ref=counter
+      echo "before: $counter"
+      (( ref++ ))
+      echo "after ++: $counter"
+      (( ref += 5 ))
+      echo "after +=5: $counter"
+      echo "expr: $(( ref * 2 ))"

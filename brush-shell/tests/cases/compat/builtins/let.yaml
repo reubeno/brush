@@ -14,3 +14,15 @@ cases:
   - name: "let with assignment"
     stdin: |
       let x=10; echo "x=10 => $?; x==${x}"
+
+  - name: "let assignment through nameref"
+    known_failure: true
+    stdin: |
+      target=0
+      declare -n ref=target
+      let ref=42
+      echo "target: $target"
+      let ref+=8
+      echo "target: $target"
+      let ref++
+      echo "target: $target"
