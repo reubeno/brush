@@ -102,6 +102,24 @@ impl TestCase {
         Ok(())
     }
 
+    /// Constructs a `Command` to invoke the given shell binary, optionally
+    /// prepending a launcher (e.g., `["wasmtime", "run", "--"]`). When a
+    /// launcher is provided, the first element becomes the program to execute
+    /// and the rest are passed as leading arguments before the shell binary path.
+    fn new_shell_command(
+        shell_path: &std::path::Path,
+        launcher: Option<&[String]>,
+    ) -> std::process::Command {
+        if let Some([program, leading_args @ ..]) = launcher {
+            let mut cmd = std::process::Command::new(program);
+            cmd.args(leading_args);
+            cmd.arg(shell_path);
+            cmd
+        } else {
+            std::process::Command::new(shell_path)
+        }
+    }
+
     fn create_command_for_shell(
         &self,
         shell_config: &ShellConfig,
@@ -115,9 +133,13 @@ impl TestCase {
                     let target_dir = std::env::var("CARGO_TARGET_DIR")
                         .ok()
                         .map_or_else(default_target_dir, PathBuf::from);
-                    (std::process::Command::new(name), Some(target_dir))
+                    (
+                        Self::new_shell_command(name, shell_config.launcher.as_deref()),
+                        Some(target_dir),
+                    )
                 }
-                WhichShell::NamedShell(name) => (std::process::Command::new(name), None),
+                // Launcher only applies to the shell under test; the oracle is invoked directly.
+                WhichShell::NamedShell(name) => (Self::new_shell_command(name, None), None),
             },
             ShellInvocation::ExecScript(_) => unimplemented!("exec script test"),
         };

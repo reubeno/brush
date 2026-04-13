@@ -121,6 +121,25 @@ pub struct IntegrationTestArgs {
     /// The copy is performed even if tests fail, so CI can always upload results.
     #[clap(long)]
     pub results_output: Option<PathBuf>,
+
+    /// Build and test against a wasm32-wasip2 target under a WASI runtime
+    /// (wasmtime by default). Builds brush for wasm32-wasip2 with minimal
+    /// features, then runs a subset of integration tests (excluding compat,
+    /// interactive, and completion suites) under the WASI launcher.
+    #[clap(long)]
+    pub wasi: bool,
+
+    /// Launcher command for the WASI runtime (only used with --wasi).
+    /// The first token is resolved against `PATH`; subsequent tokens are
+    /// passed as leading arguments before the brush binary path.
+    /// Defaults to `wasmtime run --dir=.::/ --allow-precompiled --`.
+    #[clap(long)]
+    pub wasi_launcher: Option<String>,
+
+    /// Skip the WASI wasm build step and assume brush.wasm is already
+    /// present at the expected path (only used with --wasi).
+    #[clap(long)]
+    pub skip_wasi_build: bool,
 }
 
 /// Arguments for coverage collection.
@@ -250,7 +269,8 @@ pub fn run_unit_tests(
 /// Run all workspace tests (unit + integration).
 ///
 /// This runs all tests in the workspace, including integration tests
-/// that execute the brush binary.
+/// that execute the brush binary. With `--wasi`, builds brush for
+/// wasm32-wasip2 and runs the integration tests under a WASI runtime.
 pub fn run_integration_tests(
     sh: &Shell,
     binary_args: &BinaryArgs,
@@ -258,6 +278,14 @@ pub fn run_integration_tests(
     verbose: bool,
 ) -> Result<()> {
     let profile = binary_args.effective_profile();
+
+    if args.wasi {
+        if args.coverage.coverage {
+            eprintln!("Warning: --coverage is not supported with --wasi and will be ignored.");
+        }
+        return run_integration_tests_wasi(sh, profile, args, verbose);
+    }
+
     eprintln!("Running integration tests ({profile:?} profile)...");
 
     #[cfg(windows)]
@@ -280,6 +308,104 @@ pub fn run_integration_tests(
             eprintln!("Integration tests passed.");
         })
     };
+
+    // Copy nextest results if requested (even on test failure, so CI can upload them).
+    if let Some(ref output) = args.results_output {
+        copy_nextest_results(output)?;
+    }
+
+    test_result
+}
+
+/// Run the brush integration tests against a wasm32-wasip2 build of brush,
+/// executed under a WASI runtime. Builds the wasm module first unless
+/// `--skip-wasi-build` is given, then runs the integration tests via nextest
+/// with the appropriate environment variables populated for the test harness.
+fn run_integration_tests_wasi(
+    sh: &Shell,
+    profile: BuildProfile,
+    args: &IntegrationTestArgs,
+    verbose: bool,
+) -> Result<()> {
+    let is_release = profile == BuildProfile::Release;
+
+    // Build the wasm module unless the caller opts out.
+    if !args.skip_wasi_build {
+        eprintln!("Building brush for wasm32-wasip2...");
+        let mut build_args = vec![
+            "build",
+            "--target",
+            "wasm32-wasip2",
+            "-p",
+            "brush-shell",
+            "--bin",
+            "brush",
+            "--no-default-features",
+            "--features",
+            "minimal",
+        ];
+        if is_release {
+            build_args.push("--release");
+        }
+        if verbose {
+            eprintln!("Running: cargo {}", build_args.join(" "));
+        }
+        cmd!(sh, "cargo {build_args...}")
+            .run()
+            .context("failed to build brush for wasm32-wasip2")?;
+    }
+
+    // Locate the wasm module that was (or should have been) produced.
+    let workspace_root = find_workspace_root()?;
+    let profile_dir = if is_release { "release" } else { "debug" };
+    let wasm_path = workspace_root
+        .join("target/wasm32-wasip2")
+        .join(profile_dir)
+        .join("brush.wasm");
+    let wasm_path = wasm_path.canonicalize().with_context(|| {
+        format!(
+            "brush.wasm not found at {} — did the build step succeed?",
+            wasm_path.display()
+        )
+    })?;
+
+    // The `--dir=.::/` flag maps the host root filesystem into the WASI
+    // sandbox. This is intentionally permissive for testing — tests create
+    // temp dirs and need access to fixtures across the filesystem. This is
+    // NOT a recommended default for production use of brush under WASI.
+    // Pre-compile the wasm module to avoid JIT compilation overhead during
+    // parallel test execution. Without this, multiple concurrent wasmtime
+    // processes each try to JIT-compile brush.wasm simultaneously, which
+    // can exceed test timeouts on CI.
+    eprintln!("Pre-compiling brush.wasm...");
+    let cwasm_path = wasm_path.with_extension("cwasm");
+    {
+        let wasm_arg = wasm_path.display().to_string();
+        let cwasm_arg = cwasm_path.display().to_string();
+        cmd!(sh, "wasmtime compile {wasm_arg} -o {cwasm_arg}")
+            .run()
+            .context("failed to pre-compile brush.wasm with wasmtime")?;
+    }
+
+    // The default launcher includes --allow-precompiled so wasmtime accepts
+    // the AOT-compiled .cwasm module without re-compilation.
+    let launcher = args
+        .wasi_launcher
+        .as_deref()
+        .unwrap_or("wasmtime run --dir=.::/ --allow-precompiled --");
+
+    eprintln!("Running brush integration tests under WASI...");
+    eprintln!("  wasm:     {}", cwasm_path.display());
+    eprintln!("  launcher: {launcher}");
+
+    let brush_path_str = cwasm_path.display().to_string();
+    let _brush_path = sh.push_env("BRUSH_PATH", &brush_path_str);
+    let _brush_launcher = sh.push_env("BRUSH_LAUNCHER", launcher);
+    let _brush_platform_tags = sh.push_env("BRUSH_PLATFORM_TAGS", "wasi wasm");
+
+    // Only run the brush integration tests; compat tests require a native binary.
+    let filter = "binary(brush-integration-tests)";
+    let test_result = run_nextest(sh, profile, Some(filter), verbose);
 
     // Copy nextest results if requested (even on test failure, so CI can upload them).
     if let Some(ref output) = args.results_output {

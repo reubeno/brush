@@ -1,7 +1,7 @@
 //! Configuration types for the test harness.
 
 use clap::Parser;
-use std::{ffi::OsString, path::PathBuf};
+use std::{collections::HashSet, ffi::OsString, path::PathBuf};
 
 /// Which shell to use for a test.
 #[derive(Clone, Debug)]
@@ -21,6 +21,10 @@ pub struct ShellConfig {
     pub default_args: Vec<String>,
     /// Default PATH variable for this shell.
     pub default_path_var: Option<String>,
+    /// Optional launcher command to prepend (e.g., `["wasmtime", "run", "--"]` for wasm
+    /// targets). The first element is the program to execute; the rest are leading arguments
+    /// inserted before the shell binary path.
+    pub launcher: Option<Vec<String>>,
 }
 
 impl ShellConfig {
@@ -95,10 +99,17 @@ pub struct RunnerConfig {
     pub snapshot_dir_name: String,
     /// Host OS ID (for filtering incompatible tests).
     pub host_os_id: Option<String>,
+    /// Active runtime platform tags (e.g., "wasi", "wasm"). Tests that
+    /// declare any of these in `incompatible_platforms` will be skipped.
+    pub platform_tags: HashSet<String>,
 }
 
 impl RunnerConfig {
-    /// Creates a new runner config with default values.
+    /// Creates a new runner config with minimal safe defaults.
+    ///
+    /// N.B. Callers typically override `test_shell` via
+    /// `TestOptions::create_test_shell_config()`, which adds
+    /// platform-appropriate flags like `--input-backend=basic`.
     pub fn new(test_shell_path: PathBuf, test_cases_dir: PathBuf) -> Self {
         Self {
             mode: TestMode::Expectation,
@@ -109,16 +120,24 @@ impl RunnerConfig {
                     "--norc".into(),
                     "--noprofile".into(),
                     "--no-config".into(),
-                    "--input-backend=basic".into(),
                     "--disable-bracketed-paste".into(),
                     "--disable-color".into(),
                 ],
                 default_path_var: None,
+                launcher: None,
             },
             test_cases_dir,
             snapshot_dir_name: String::from("snaps"),
             host_os_id: crate::util::get_host_os_id(),
+            platform_tags: HashSet::new(),
         }
+    }
+
+    /// Sets the active runtime platform tags.
+    #[must_use]
+    pub fn with_platform_tags(mut self, tags: HashSet<String>) -> Self {
+        self.platform_tags = tags;
+        self
     }
 
     /// Sets the oracle configuration, enabling oracle comparison mode.
@@ -207,6 +226,26 @@ pub struct TestOptions {
     #[clap(long = "brush-args", default_value = "", env = "BRUSH_ARGS")]
     pub brush_args: String,
 
+    /// Optionally specify a launcher command to prepend when invoking brush
+    /// (e.g., "wasmtime run --" to execute a wasm build under wasmtime).
+    /// The string is split on whitespace; the first token becomes the program
+    /// to execute and the remainder are passed as leading arguments before
+    /// the brush binary path.
+    #[clap(long = "brush-launcher", default_value = "", env = "BRUSH_LAUNCHER")]
+    pub brush_launcher: String,
+
+    /// Runtime platform tags (e.g., "wasi", "wasm") describing the
+    /// environment in which brush is being executed. Test cases that
+    /// declare any of these tags in `incompatible_platforms` will be
+    /// skipped. May be specified multiple times on the CLI or as a
+    /// space-separated value in the environment variable.
+    #[clap(
+        long = "brush-platform-tags",
+        value_delimiter = ' ',
+        env = "BRUSH_PLATFORM_TAGS"
+    )]
+    pub brush_platform_tags: Vec<String>,
+
     /// Optionally specify path to test cases.
     #[clap(long = "test-cases-path", env = "BRUSH_TEST_CASES")]
     pub test_cases_path: Option<PathBuf>,
@@ -244,6 +283,59 @@ pub struct TestOptions {
 }
 
 impl TestOptions {
+    /// Returns the configured platform tags as a set.
+    pub fn platform_tags(&self) -> HashSet<String> {
+        self.brush_platform_tags.iter().cloned().collect()
+    }
+
+    /// Builds the default `ShellConfig` for the shell under test based on
+    /// the common options (path, launcher, platform tags, extra args).
+    ///
+    /// Resolves the launcher binary to an absolute path (if one is
+    /// configured) because the test harness clears env vars — including
+    /// `PATH` — before spawning child processes.
+    pub fn create_test_shell_config(&self) -> anyhow::Result<ShellConfig> {
+        let mut default_args: Vec<String> = vec![
+            "--norc".into(),
+            "--noprofile".into(),
+            "--no-config".into(),
+            "--disable-bracketed-paste".into(),
+            "--disable-color".into(),
+        ];
+
+        // Use the basic input backend for native builds. WASI builds are
+        // compiled with `--features minimal` which doesn't include the basic
+        // backend, so passing this flag would cause a startup error. Omitting
+        // it lets brush pick its own default (Minimal on wasm targets).
+        if !self.platform_tags().contains("wasi") {
+            default_args.push("--input-backend=basic".into());
+        }
+
+        // Append any additional brush args specified by the caller.
+        self.brush_args.split_whitespace().for_each(|arg| {
+            default_args.push(arg.into());
+        });
+
+        let launcher = if self.brush_launcher.is_empty() {
+            None
+        } else {
+            let mut tokens: Vec<String> = self
+                .brush_launcher
+                .split_whitespace()
+                .map(Into::into)
+                .collect();
+            crate::util::resolve_launcher_path(&mut tokens)?;
+            Some(tokens)
+        };
+
+        Ok(ShellConfig {
+            which: WhichShell::ShellUnderTest(PathBuf::from(&self.brush_path)),
+            default_args,
+            default_path_var: self.test_path_var.clone(),
+            launcher,
+        })
+    }
+
     /// Returns whether the given config name should be enabled.
     pub fn should_enable_config(&self, config: &str, default_configs: &[&str]) -> bool {
         let enabled_configs = if self.enabled_configs.is_empty() {

@@ -31,6 +31,7 @@ fn create_bash_oracle(options: &TestOptions) -> Result<OracleConfig> {
             which: WhichShell::NamedShell(options.bash_path.clone()),
             default_args: vec![String::from("--norc"), String::from("--noprofile")],
             default_path_var: options.test_path_var.clone(),
+            launcher: None,
         },
         version_str: Some(bash_version_str),
     })
@@ -43,36 +44,21 @@ fn create_sh_oracle(options: &TestOptions) -> OracleConfig {
             which: WhichShell::NamedShell(PathBuf::from("sh")),
             default_args: vec![],
             default_path_var: options.test_path_var.clone(),
+            launcher: None,
         },
         version_str: None,
     }
 }
 
-fn create_test_shell_config(options: &TestOptions, oracle_name: &str) -> ShellConfig {
-    let mut default_args = vec![
-        "--norc".into(),
-        "--noprofile".into(),
-        "--no-config".into(),
-        "--input-backend=basic".into(),
-        "--disable-bracketed-paste".into(),
-        "--disable-color".into(),
-    ];
+fn create_test_shell_config(options: &TestOptions, oracle_name: &str) -> Result<ShellConfig> {
+    let mut config = options.create_test_shell_config()?;
 
-    // Add --sh flag when testing against sh oracle
+    // Add --sh flag when testing against sh oracle.
     if oracle_name == SH_CONFIG_NAME {
-        default_args.insert(0, "--sh".into());
+        config.default_args.insert(0, "--sh".into());
     }
 
-    // Add any additional brush args specified.
-    options.brush_args.split_whitespace().for_each(|arg| {
-        default_args.push(arg.into());
-    });
-
-    ShellConfig {
-        which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
-        default_args,
-        default_path_var: options.test_path_var.clone(),
-    }
+    Ok(config)
 }
 
 async fn run_compat_tests(mut options: TestOptions) -> Result<bool> {
@@ -107,11 +93,12 @@ async fn run_compat_tests(mut options: TestOptions) -> Result<bool> {
     // Run tests for each enabled config
     if options.should_enable_config(BASH_CONFIG_NAME, &[BASH_CONFIG_NAME]) {
         let oracle = create_bash_oracle(&options)?;
-        let test_shell = create_test_shell_config(&options, &oracle.name);
+        let test_shell = create_test_shell_config(&options, &oracle.name)?;
 
         let config = RunnerConfig::new(PathBuf::from(&options.brush_path), test_cases_dir.clone())
             .with_oracle(oracle)
-            .with_mode(TestMode::Oracle);
+            .with_mode(TestMode::Oracle)
+            .with_platform_tags(options.platform_tags());
 
         let config = RunnerConfig {
             test_shell,
@@ -126,11 +113,12 @@ async fn run_compat_tests(mut options: TestOptions) -> Result<bool> {
 
     if options.should_enable_config(SH_CONFIG_NAME, &[BASH_CONFIG_NAME]) {
         let oracle = create_sh_oracle(&options);
-        let test_shell = create_test_shell_config(&options, &oracle.name);
+        let test_shell = create_test_shell_config(&options, &oracle.name)?;
 
         let config = RunnerConfig::new(PathBuf::from(&options.brush_path), test_cases_dir.clone())
             .with_oracle(oracle)
-            .with_mode(TestMode::Oracle);
+            .with_mode(TestMode::Oracle)
+            .with_platform_tags(options.platform_tags());
 
         let config = RunnerConfig {
             test_shell,

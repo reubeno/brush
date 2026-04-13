@@ -136,9 +136,11 @@ impl TestRunner {
     }
 
     fn should_skip_test(&self, test_case_set: &TestCaseSet, test_case: &TestCase) -> Result<bool> {
-        // Check incompatible configs
+        // Check incompatible configs (set-level and per-case).
         if let Some(oracle) = &self.config.oracle {
-            if test_case.incompatible_configs.contains(&oracle.name) {
+            if test_case_set.incompatible_configs.contains(&oracle.name)
+                || test_case.incompatible_configs.contains(&oracle.name)
+            {
                 return Ok(true);
             }
         }
@@ -148,6 +150,16 @@ impl TestRunner {
             if test_case.incompatible_os.contains(host_os_id) {
                 return Ok(true);
             }
+        }
+
+        // Check incompatible runtime platforms (set-level and per-case).
+        if test_case_set
+            .incompatible_platforms
+            .iter()
+            .chain(test_case.incompatible_platforms.iter())
+            .any(|p| self.config.platform_tags.contains(p))
+        {
+            return Ok(true);
         }
 
         // Check oracle version constraints
@@ -217,23 +229,6 @@ async fn run_test_case_set(
     let mut fail_count = 0;
     let mut success_duration = std::time::Duration::default();
     let mut test_case_results = vec![];
-
-    // Check if the entire test case set is incompatible
-    if let Some(oracle) = &config.oracle {
-        if test_case_set.incompatible_configs.contains(&oracle.name) {
-            return Ok(TestCaseSetResults {
-                name: test_case_set.name.clone(),
-                config_name: oracle.name.clone(),
-                test_case_results: vec![],
-                success_count: 0,
-                #[expect(clippy::cast_possible_truncation)]
-                skip_count: test_case_set.cases.len() as u32,
-                known_failure_count: 0,
-                fail_count: 0,
-                success_duration: std::time::Duration::default(),
-            });
-        }
-    }
 
     for test_case in &test_case_set.cases {
         let runner = TestRunner::new(config.clone(), options.clone());

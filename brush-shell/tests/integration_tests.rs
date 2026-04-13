@@ -6,33 +6,9 @@
 #![cfg(any(unix, windows))]
 
 use anyhow::Result;
-use brush_test_harness::{
-    RunnerConfig, ShellConfig, TestMode, TestOptions, TestRunner, WhichShell,
-};
+use brush_test_harness::{RunnerConfig, TestMode, TestOptions, TestRunner};
 use clap::Parser;
 use std::path::{Path, PathBuf};
-
-fn create_test_shell_config(options: &TestOptions) -> ShellConfig {
-    let mut default_args = vec![
-        "--norc".into(),
-        "--noprofile".into(),
-        "--no-config".into(),
-        "--input-backend=basic".into(),
-        "--disable-bracketed-paste".into(),
-        "--disable-color".into(),
-    ];
-
-    // Add any additional brush args specified.
-    options.brush_args.split_whitespace().for_each(|arg| {
-        default_args.push(arg.into());
-    });
-
-    ShellConfig {
-        which: WhichShell::ShellUnderTest(PathBuf::from(&options.brush_path)),
-        default_args,
-        default_path_var: options.test_path_var.clone(),
-    }
-}
 
 async fn run_brush_tests(mut options: TestOptions) -> Result<bool> {
     // Resolve path to the shell-under-test.
@@ -54,10 +30,11 @@ async fn run_brush_tests(mut options: TestOptions) -> Result<bool> {
         |p| p.to_owned(),
     );
 
-    let test_shell = create_test_shell_config(&options);
+    let test_shell = options.create_test_shell_config()?;
 
     let config = RunnerConfig::new(PathBuf::from(&options.brush_path), test_cases_dir)
-        .with_mode(TestMode::Expectation);
+        .with_mode(TestMode::Expectation)
+        .with_platform_tags(options.platform_tags());
 
     let config = RunnerConfig {
         test_shell,
