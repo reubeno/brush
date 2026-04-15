@@ -1,7 +1,7 @@
 //! Facilities for implementing and managing builtins
 
 use clap::builder::styling;
-use futures::future::BoxFuture;
+pub use futures::future::BoxFuture;
 use std::io::Write;
 
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};

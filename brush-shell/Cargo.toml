@@ -56,12 +56,12 @@ minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
 experimental = [
     "experimental-builtins",
-    "experimental-coreutils-builtins",
+    "experimental-bundled-coreutils",
     "experimental-load",
     "experimental-parser",
 ]
 experimental-builtins = ["dep:brush-experimental-builtins"]
-experimental-coreutils-builtins = ["dep:brush-coreutils-builtins"]
+experimental-bundled-coreutils = ["dep:brush-coreutils-builtins"]
 experimental-load = ["dep:serde_json", "brush-core/serde"]
 experimental-parser = [
     "brush-core/experimental-parser",

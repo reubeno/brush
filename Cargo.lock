@@ -473,7 +473,6 @@ dependencies = [
 name = "brush-coreutils-builtins"
 version = "0.1.0"
 dependencies = [
- "brush-core",
  "uu_arch",
  "uu_b2sum",
  "uu_base32",
@@ -556,6 +555,7 @@ dependencies = [
  "uu_wc",
  "uu_whoami",
  "uu_yes",
+ "uucore",
 ]
 
 [[package]]
