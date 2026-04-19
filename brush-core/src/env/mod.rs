@@ -1,13 +1,21 @@
 //! Implements a shell variable environment.
 
+mod names;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map;
+
+use names::parse_nameref_subscript;
 
 use crate::Shell;
 use crate::error;
 use crate::extensions;
 use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
+
+pub use names::{
+    ResolvedName, VarName, VarNameExt, valid_nameref_target_name, valid_variable_name,
+};
 
 /// Maximum depth for nameref chain resolution. Matches bash 5.2's internal
 /// `NAMEREF_MAX` limit (8). Prevents infinite loops on pathological chains
@@ -16,119 +24,21 @@ const MAX_NAMEREF_DEPTH: usize = 8;
 
 // ─── Variable lookup API design ─────────────────────────────────────
 //
-// Two entry points for lookups: `lookup()` and `lookup_mut()`.
-// Both accept `&str` or `&ResolvedName`, dispatching via the
-// `IntoVarLookup` / `IntoVarLookupMut` traits:
+// The central input type is `VarName`, which encodes resolution strategy:
 //
-//   env.lookup("name").get()                     // auto-resolve → ResolvedVarRef
-//   env.lookup("name").bypassing_nameref().get() // bypass → (Scope, &Var)
-//   env.lookup(&resolved).get()                  // pre-resolved → (Scope, &Var)
-//   env.lookup(&resolved).in_scope(policy).get() // pre-resolved + scoped
-//   env.lookup_mut("name").get()                 // auto-resolve → ResolvedVarRefMut
-//   env.lookup_mut("name").bypassing_nameref().get() // bypass → (Scope, &mut Var)
-//   env.lookup_mut(&resolved).get()              // pre-resolved → (Scope, &mut Var)
+//   VarName::Auto("name")      → follow nameref chains
+//   VarName::Resolved { .. }   → already resolved, look up directly
+//   VarName::Direct("name")    → bypass nameref resolution
 //
-// Lookup key types:
-//   - `&str` — auto-resolves namerefs, returns `ResolvedVarRef` / `ResolvedVarRefMut`.
-//     Chain `.bypassing_nameref()` to skip resolution and inspect the variable
-//     itself (e.g., checking `-R`, `unset -n`).
-//   - `&ResolvedName` — name already resolved through the nameref chain
-//     (constructed by `resolve_nameref()`). No further resolution.
+// `&str` and `String` convert to `VarName::Auto` by default.
+// `ResolvedName` converts to `VarName::Resolved`.
+// Use `VarName::direct("name")` for the bypass case.
 //
-// Mutation strategies:
-//   - `update_or_add()` — resolves namerefs transparently before writing.
-//   - `update_or_add_bypassing_nameref()` — skips resolution (for `for-in`
-//     loop variable assignment, which retargets the nameref itself).
-//   - `unset()` / `unset_bypassing_nameref()` — analogous pair for removal.
+// Mutation methods (update_or_add, unset, etc.) take `impl Into<VarName>`,
+// eliminating the old `_bypassing_nameref` method pairs.
 //
-// Auto-resolving lookups return wrapper structs (`ResolvedVarRef` /
-// `ResolvedVarRefMut`) that guide callers toward correct usage:
-//   - `base_var()` / `base_var_mut()` — for attribute/type inspection.
-//     Named "base" to remind callers that for subscripted namerefs
-//     (e.g., `ref → arr[2]`), this is the array, not the element.
-//   - `value_str(shell)` — for subscript-aware value extraction.
+// For scope-restricted lookups, use the `lookup()` / `lookup_mut()` builders.
 // ────────────────────────────────────────────────────────────────────
-
-/// A fully resolved nameref target, split into base name and optional array subscript.
-///
-/// When a nameref resolves to a plain variable name like `"target"`, `subscript` is `None`.
-/// When it resolves to an array element like `"arr[2]"`, `name` is `"arr"` and `subscript`
-/// is `Some("2")`.
-///
-/// Constructed by [`ShellEnvironment::resolve_nameref`]. To look up a variable
-/// without nameref resolution, use `env.lookup("name").bypassing_nameref().get()`.
-#[derive(Clone, Debug)]
-pub struct ResolvedName {
-    name: String,
-    subscript: Option<String>,
-}
-
-impl ResolvedName {
-    /// The base variable name (after nameref resolution and subscript extraction).
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The array subscript, if the resolved target includes one (e.g., `arr[2]` yields `Some("2")`).
-    pub fn subscript(&self) -> Option<&str> {
-        self.subscript.as_deref()
-    }
-
-    /// Consumes this `ResolvedName` and returns the base variable name.
-    pub fn into_name(self) -> String {
-        self.name
-    }
-
-    /// Returns a copy with the subscript stripped, keeping only the base name.
-    ///
-    /// Useful when a nameref resolved to a subscripted target (e.g., `arr[2]`)
-    /// but you need to operate on the base variable (e.g., for attribute changes
-    /// or whole-array expansion).
-    #[must_use]
-    pub fn without_subscript(&self) -> Self {
-        Self {
-            name: self.name.clone(),
-            subscript: None,
-        }
-    }
-
-    /// Parse a resolved nameref target string into base name and optional subscript.
-    fn parse(resolved: String) -> Self {
-        let (base, sub) = parse_nameref_subscript(&resolved);
-        if let Some(idx) = sub {
-            Self {
-                name: base.to_owned(),
-                subscript: Some(idx.to_owned()),
-            }
-        } else {
-            Self {
-                name: resolved,
-                subscript: None,
-            }
-        }
-    }
-
-    /// Creates a `ResolvedName` wrapping a name that the caller asserts has
-    /// **already been resolved** through the nameref chain (e.g., via
-    /// [`ShellEnvironment::resolve_nameref`] or [`ShellEnvironment::resolve_nameref_to_name`]).
-    ///
-    /// # When to use
-    ///
-    /// Use this when you've resolved a name externally and need to pass the
-    /// result to `lookup()` / `lookup_mut()` without re-resolving.
-    ///
-    /// # When NOT to use
-    ///
-    /// Do NOT use this to skip nameref resolution. If you want to inspect the
-    /// variable itself (e.g., checking `[[ -R ref ]]` or `declare -p`), use
-    /// `env.lookup("name").bypassing_nameref()` instead.
-    pub fn already_resolved(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            subscript: None,
-        }
-    }
-}
 
 /// Subscript-aware value extraction shared by [`ResolvedVarRef`] and
 /// [`ResolvedVarRefMut`]. Correctly handles subscripted namerefs: if the
@@ -299,55 +209,24 @@ impl ResolvedVarRefMut<'_> {
 
 // ─── Lookup builder API ──────────────────────────────────────────────
 //
-// Entry points: `lookup()` and `lookup_mut()`, accepting `&str` or
-// `&ResolvedName` via the `IntoVarLookup` / `IntoVarLookupMut` traits.
+// Entry points: `lookup()` and `lookup_mut()`, accepting `impl Into<VarName>`.
 //
 // Usage:
 //   env.lookup("name").get()                          // auto-resolve → ResolvedVarRef
-//   env.lookup("name").bypassing_nameref().get()      // bypass → (Scope, &Var)
-//   env.lookup(&resolved).get()                       // pre-resolved → (Scope, &Var)
-//   env.lookup(&resolved).in_scope(policy).get()      // pre-resolved + scoped
-//   env.lookup_mut("name").get()                      // auto-resolve → ResolvedVarRefMut
-//   env.lookup_mut("name").bypassing_nameref().get()  // bypass → (Scope, &mut Var)
-//   env.lookup_mut(&resolved).get()                   // pre-resolved → (Scope, &mut Var)
+//   env.lookup(VarName::direct("name")).get_direct()   // bypass → (Scope, &Var)
+//   env.lookup(resolved).get()                         // pre-resolved → ResolvedVarRef
+//   env.lookup(resolved).in_scope(policy).get()        // pre-resolved + scoped
+//   env.lookup("name").in_scope(policy).get_direct()   // scoped direct lookup
 // ────────────────────────────────────────────────────────────────────
 
-/// Immutable lookup builder for auto-resolving nameref lookups.
+/// Immutable lookup builder driven by [`VarName`].
 pub struct VarLookup<'a> {
     env: &'a ShellEnvironment,
-    name: &'a str,
+    name: VarName,
+    policy: EnvironmentLookup,
 }
 
 impl<'a> VarLookup<'a> {
-    /// Execute the lookup, resolving namerefs transparently.
-    pub fn get(self) -> Option<ResolvedVarRef<'a>> {
-        self.env.get(self.name)
-    }
-
-    /// Switch to bypass mode: look up the variable by its literal name
-    /// without following nameref chains. Use this when you need to inspect
-    /// or operate on a variable itself — e.g., checking if it IS a nameref
-    /// (`[[ -R ref ]]`), displaying its attributes (`declare -p`), or
-    /// checking existence in a specific scope.
-    #[must_use]
-    pub const fn bypassing_nameref(self) -> DirectVarLookup<'a> {
-        DirectVarLookup {
-            env: self.env,
-            name: self.name,
-            policy: EnvironmentLookup::Anywhere,
-        }
-    }
-}
-
-/// Immutable lookup builder for pre-resolved or bypassed names.
-/// Performs exact-name lookups without further nameref resolution.
-pub struct DirectVarLookup<'a> {
-    env: &'a ShellEnvironment,
-    name: &'a str,
-    policy: EnvironmentLookup,
-}
-
-impl<'a> DirectVarLookup<'a> {
     /// Restrict the lookup to a specific scope.
     #[must_use]
     pub const fn in_scope(mut self, policy: EnvironmentLookup) -> Self {
@@ -355,47 +234,52 @@ impl<'a> DirectVarLookup<'a> {
         self
     }
 
-    /// Execute the lookup without nameref resolution.
-    pub fn get(self) -> Option<(EnvironmentScope, &'a ShellVariable)> {
-        self.env
-            .get_by_exact_name_using_policy(self.name, self.policy)
+    /// Execute the lookup, resolving namerefs as specified by the [`VarName`] variant.
+    ///
+    /// - `VarName::Auto` — follows nameref chains transparently.
+    /// - `VarName::Resolved` — looks up the pre-resolved base name directly.
+    /// - `VarName::Direct` — looks up the variable directly, no resolution.
+    pub fn get(self) -> Option<ResolvedVarRef<'a>> {
+        match &self.name {
+            VarName::Auto(s) => self.env.get_auto(s),
+            VarName::Resolved { base, subscript } => {
+                let (scope, var) = self.env.get_by_exact_name_using_policy(base, self.policy)?;
+                Some(ResolvedVarRef {
+                    scope,
+                    variable: var,
+                    nameref_subscript: subscript.clone(),
+                })
+            }
+            VarName::Direct(s) => {
+                let (scope, var) = self.env.get_by_exact_name_using_policy(s, self.policy)?;
+                Some(ResolvedVarRef {
+                    scope,
+                    variable: var,
+                    nameref_subscript: None,
+                })
+            }
+        }
+    }
+
+    /// Look up the variable directly without subscript handling.
+    ///
+    /// Returns the raw `(Scope, &ShellVariable)` pair. This is the replacement
+    /// for the old `.bypassing_nameref().get()` pattern — use it to inspect the
+    /// variable itself (e.g., checking nameref attribute, `declare -p`).
+    pub fn get_direct(self) -> Option<(EnvironmentScope, &'a ShellVariable)> {
+        let key = self.name.as_lookup_key();
+        self.env.get_by_exact_name_using_policy(key, self.policy)
     }
 }
 
-/// Mutable lookup builder for auto-resolving nameref lookups.
+/// Mutable lookup builder driven by [`VarName`].
 pub struct VarLookupMut<'a> {
     env: &'a mut ShellEnvironment,
-    name: &'a str,
+    name: VarName,
+    policy: EnvironmentLookup,
 }
 
 impl<'a> VarLookupMut<'a> {
-    /// Execute the lookup, resolving namerefs transparently.
-    pub fn get(self) -> Option<ResolvedVarRefMut<'a>> {
-        self.env.get_mut(self.name)
-    }
-
-    /// Switch to bypass mode: look up the variable by its literal name
-    /// without following nameref chains. See [`VarLookup::bypassing_nameref`]
-    /// for when to use this.
-    #[must_use]
-    pub const fn bypassing_nameref(self) -> DirectVarLookupMut<'a> {
-        DirectVarLookupMut {
-            env: self.env,
-            name: self.name,
-            policy: EnvironmentLookup::Anywhere,
-        }
-    }
-}
-
-/// Mutable lookup builder for pre-resolved or bypassed names.
-/// Performs exact-name lookups without further nameref resolution.
-pub struct DirectVarLookupMut<'a> {
-    env: &'a mut ShellEnvironment,
-    name: &'a str,
-    policy: EnvironmentLookup,
-}
-
-impl<'a> DirectVarLookupMut<'a> {
     /// Restrict the lookup to a specific scope.
     #[must_use]
     pub const fn in_scope(mut self, policy: EnvironmentLookup) -> Self {
@@ -403,68 +287,43 @@ impl<'a> DirectVarLookupMut<'a> {
         self
     }
 
-    /// Execute the lookup without nameref resolution.
-    pub fn get(self) -> Option<(EnvironmentScope, &'a mut ShellVariable)> {
+    /// Execute the mutable lookup, resolving namerefs as specified by the [`VarName`] variant.
+    pub fn get(self) -> Option<ResolvedVarRefMut<'a>> {
+        match &self.name {
+            VarName::Auto(s) => {
+                let s = s.clone();
+                self.env.get_mut_auto(&s)
+            }
+            VarName::Resolved { base, subscript } => {
+                let (scope, var) = self
+                    .env
+                    .get_mut_by_exact_name_using_policy(base, self.policy)?;
+                Some(ResolvedVarRefMut {
+                    scope,
+                    variable: var,
+                    nameref_subscript: subscript.clone(),
+                })
+            }
+            VarName::Direct(s) => {
+                let (scope, var) = self
+                    .env
+                    .get_mut_by_exact_name_using_policy(s, self.policy)?;
+                Some(ResolvedVarRefMut {
+                    scope,
+                    variable: var,
+                    nameref_subscript: None,
+                })
+            }
+        }
+    }
+
+    /// Mutable direct lookup without subscript handling.
+    ///
+    /// See [`VarLookup::get_direct`] for the immutable counterpart.
+    pub fn get_direct(self) -> Option<(EnvironmentScope, &'a mut ShellVariable)> {
+        let key = self.name.as_lookup_key().to_owned();
         self.env
-            .get_mut_by_exact_name_using_policy(self.name, self.policy)
-    }
-}
-
-/// Trait for types that can be used as lookup keys with [`ShellEnvironment::lookup`].
-///
-/// Implemented for `&str` (auto-resolving nameref lookups) and `&ResolvedName`
-/// (pre-resolved lookups).
-pub trait IntoVarLookup<'a> {
-    /// The builder type returned by `lookup()`.
-    type Lookup;
-    /// Convert this name into an immutable lookup builder.
-    fn into_lookup(self, env: &'a ShellEnvironment) -> Self::Lookup;
-}
-
-impl<'a> IntoVarLookup<'a> for &'a str {
-    type Lookup = VarLookup<'a>;
-    fn into_lookup(self, env: &'a ShellEnvironment) -> VarLookup<'a> {
-        VarLookup { env, name: self }
-    }
-}
-
-impl<'a> IntoVarLookup<'a> for &'a ResolvedName {
-    type Lookup = DirectVarLookup<'a>;
-    fn into_lookup(self, env: &'a ShellEnvironment) -> DirectVarLookup<'a> {
-        DirectVarLookup {
-            env,
-            name: self.name(),
-            policy: EnvironmentLookup::Anywhere,
-        }
-    }
-}
-
-/// Trait for types that can be used as lookup keys with [`ShellEnvironment::lookup_mut`].
-///
-/// Implemented for `&str` (auto-resolving nameref lookups) and `&ResolvedName`
-/// (pre-resolved lookups).
-pub trait IntoVarLookupMut<'a> {
-    /// The builder type returned by `lookup_mut()`.
-    type Lookup;
-    /// Convert this name into a mutable lookup builder.
-    fn into_lookup_mut(self, env: &'a mut ShellEnvironment) -> Self::Lookup;
-}
-
-impl<'a> IntoVarLookupMut<'a> for &'a str {
-    type Lookup = VarLookupMut<'a>;
-    fn into_lookup_mut(self, env: &'a mut ShellEnvironment) -> VarLookupMut<'a> {
-        VarLookupMut { env, name: self }
-    }
-}
-
-impl<'a> IntoVarLookupMut<'a> for &'a ResolvedName {
-    type Lookup = DirectVarLookupMut<'a>;
-    fn into_lookup_mut(self, env: &'a mut ShellEnvironment) -> DirectVarLookupMut<'a> {
-        DirectVarLookupMut {
-            env,
-            name: self.name(),
-            policy: EnvironmentLookup::Anywhere,
-        }
+            .get_mut_by_exact_name_using_policy(&key, self.policy)
     }
 }
 
@@ -610,10 +469,7 @@ impl ShellEnvironment {
     /// This is the lowest-level resolution API. Prefer [`resolve_nameref`] (which
     /// also parses array subscripts) or [`resolve_nameref_to_name`] (which returns
     /// just the name without subscript parsing) unless you need the raw `Cow<str>`.
-    fn resolve_nameref_chain<'a>(
-        &'a self,
-        name: &'a str,
-    ) -> Result<Cow<'a, str>, error::Error> {
+    fn resolve_nameref_chain<'a>(&'a self, name: &'a str) -> Result<Cow<'a, str>, error::Error> {
         // Quick check: is this even a nameref?
         let first_target = match self.get_by_exact_name(name) {
             Some((_, var)) if var.is_treated_as_nameref() => match var.value() {
@@ -634,9 +490,7 @@ impl ShellEnvironment {
 
         loop {
             if visited.contains(&current) {
-                return Err(
-                    error::ErrorKind::CircularNameReference(current.to_owned()).into()
-                );
+                return Err(error::ErrorKind::CircularNameReference(current.to_owned()).into());
             }
 
             // N.B. When `current` is a subscripted target like "arr[2]",
@@ -653,12 +507,10 @@ impl ShellEnvironment {
                         // Check depth *after* following this link, matching bash's
                         // NAMEREF_MAX which counts resolution steps, not chain length.
                         if visited.len() > MAX_NAMEREF_DEPTH {
-                            return Err(
-                                error::ErrorKind::CircularNameReference(
-                                    current.to_owned(),
-                                )
-                                .into(),
-                            );
+                            return Err(error::ErrorKind::CircularNameReference(
+                                current.to_owned(),
+                            )
+                            .into());
                         }
                         current = s.as_str();
                     }
@@ -831,41 +683,45 @@ impl ShellEnvironment {
         visible_vars.into_iter()
     }
 
-    /// Creates an immutable lookup builder. Accepts `&str` (auto-resolving
-    /// nameref lookups) or `&ResolvedName` (pre-resolved lookups with optional
-    /// scope restriction via `.in_scope()`).
+    /// Creates an immutable lookup builder.
     ///
-    /// For `&str` lookups, chain `.bypassing_nameref()` to skip resolution and
-    /// inspect the variable itself.
+    /// Accepts anything that converts to [`VarName`] — `&str` (auto-resolve),
+    /// [`ResolvedName`] (pre-resolved), or `VarName::direct(name)` (bypass).
     ///
     /// # Examples
     ///
     /// ```ignore
     /// env.lookup("name").get()                          // → Option<ResolvedVarRef>
-    /// env.lookup("name").bypassing_nameref().get()      // → Option<(Scope, &Var)>
-    /// env.lookup(&resolved).get()                       // → Option<(Scope, &Var)>
-    /// env.lookup(&resolved).in_scope(policy).get()      // → Option<(Scope, &Var)>
+    /// env.lookup(VarName::direct("name")).get_direct()   // → Option<(Scope, &Var)>
+    /// env.lookup(resolved).get()                         // → Option<ResolvedVarRef>
+    /// env.lookup(resolved).in_scope(policy).get()        // → Option<ResolvedVarRef>
     /// ```
-    pub fn lookup<'a, N: IntoVarLookup<'a>>(&'a self, name: N) -> N::Lookup {
-        name.into_lookup(self)
+    pub fn lookup<N: Into<VarName>>(&self, name: N) -> VarLookup<'_> {
+        VarLookup {
+            env: self,
+            name: name.into(),
+            policy: EnvironmentLookup::Anywhere,
+        }
     }
 
-    /// Creates a mutable lookup builder. Accepts `&str` (auto-resolving
-    /// nameref lookups) or `&ResolvedName` (pre-resolved lookups with optional
-    /// scope restriction via `.in_scope()`).
+    /// Creates a mutable lookup builder.
     ///
-    /// For `&str` lookups, chain `.bypassing_nameref()` to skip resolution.
+    /// Accepts anything that converts to [`VarName`] — `&str` (auto-resolve),
+    /// [`ResolvedName`] (pre-resolved), or `VarName::direct(name)` (bypass).
     ///
     /// # Examples
     ///
     /// ```ignore
     /// env.lookup_mut("name").get()                          // → Option<ResolvedVarRefMut>
-    /// env.lookup_mut("name").bypassing_nameref().get()      // → Option<(Scope, &mut Var)>
-    /// env.lookup_mut(&resolved).get()                       // → Option<(Scope, &mut Var)>
-    /// env.lookup_mut(&resolved).in_scope(policy).get()      // → Option<(Scope, &mut Var)>
+    /// env.lookup_mut(VarName::direct("name")).get_direct()   // → Option<(Scope, &mut Var)>
+    /// env.lookup_mut(resolved).get()                         // → Option<ResolvedVarRefMut>
     /// ```
-    pub fn lookup_mut<'a, N: IntoVarLookupMut<'a>>(&'a mut self, name: N) -> N::Lookup {
-        name.into_lookup_mut(self)
+    pub fn lookup_mut<N: Into<VarName>>(&mut self, name: N) -> VarLookupMut<'_> {
+        VarLookupMut {
+            env: self,
+            name: name.into(),
+            policy: EnvironmentLookup::Anywhere,
+        }
     }
 
     /// Looks up a variable, resolving namerefs transparently.
@@ -878,7 +734,11 @@ impl ShellEnvironment {
     ///
     /// * `name` - The name of the variable to retrieve.
     pub fn get<S: AsRef<str>>(&self, name: S) -> Option<ResolvedVarRef<'_>> {
-        let name = name.as_ref();
+        self.get_auto(name.as_ref())
+    }
+
+    /// Auto-resolving lookup used by `get()` and `VarLookup::get()`.
+    fn get_auto(&self, name: &str) -> Option<ResolvedVarRef<'_>> {
         // Fast path: if the variable isn't a nameref, return it directly with
         // a single scope-stack traversal (avoids the double walk through
         // try_resolve_nameref_chain + get_raw for the common non-nameref case).
@@ -908,7 +768,10 @@ impl ShellEnvironment {
     /// nameref following. For subscripted targets like `"arr[2]"`, this does a
     /// literal lookup for the key `"arr[2]"` which won't match any variable,
     /// correctly terminating nameref chain resolution.
-    fn get_by_exact_name<S: AsRef<str>>(&self, name: S) -> Option<(EnvironmentScope, &ShellVariable)> {
+    fn get_by_exact_name<S: AsRef<str>>(
+        &self,
+        name: S,
+    ) -> Option<(EnvironmentScope, &ShellVariable)> {
         // Look through scopes, from the top of the stack on down.
         for (scope_type, map) in self.scopes.iter().rev() {
             if let Some(var) = map.get(name.as_ref()) {
@@ -929,7 +792,11 @@ impl ShellEnvironment {
     ///
     /// * `name` - The name of the variable to retrieve.
     pub fn get_mut<S: AsRef<str>>(&mut self, name: S) -> Option<ResolvedVarRefMut<'_>> {
-        let name = name.as_ref();
+        self.get_mut_auto(name.as_ref())
+    }
+
+    /// Auto-resolving mutable lookup used by `get_mut()` and `VarLookupMut::get()`.
+    fn get_mut_auto(&mut self, name: &str) -> Option<ResolvedVarRefMut<'_>> {
         // Single immutable scan: find the variable's scope index and check
         // if nameref resolution is needed — one traversal instead of two.
         let mut found_scope_idx = None;
@@ -1033,54 +900,52 @@ impl ShellEnvironment {
     // Setters
     //
 
-    /// Tries to unset the variable with the given name in the environment, resolving
-    /// namerefs transparently.
+    /// Tries to unset the variable with the given name in the environment.
+    ///
+    /// Behavior depends on the [`VarName`] variant:
+    /// - `VarName::Auto` — resolves namerefs, unsets the target. On circular
+    ///   namerefs, falls back to unsetting the variable itself.
+    /// - `VarName::Resolved` — unsets by the pre-resolved base name.
+    /// - `VarName::Direct` — unsets the variable itself, bypassing namerefs.
     ///
     /// Returns the removed [`ShellVariable`] when a whole variable is unset, or `None`
-    /// if the variable was not found, the nameref was circular, or only an array element
-    /// was removed (nameref-to-subscript targets like `arr[2]`).
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable to unset.
-    pub fn unset(&mut self, name: &str) -> Result<Option<ShellVariable>, error::Error> {
-        // Resolve the nameref chain upfront, releasing the immutable borrow
-        // on `self` before any mutation.
-        let resolved = match self.resolve_nameref(name) {
-            Ok(resolved) => resolved,
-            Err(e) if matches!(e.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                // Circular nameref: bash removes the variable itself (by its
-                // literal name) rather than following the chain.
-                return self.unset_raw(name);
-            }
-            Err(e) => return Err(e),
-        };
-
-        if let Some(idx) = resolved.subscript() {
-            // Name is already resolved — use get_mut_by_exact_name to avoid double resolution.
-            if let Some((_, var)) = self.get_mut_by_exact_name(resolved.name()) {
-                var.unset_index(idx)?;
-            }
-            return Ok(None);
-        }
-
-        self.unset_raw(resolved.name())
-    }
-
-    /// Unsets a variable by name, intentionally bypassing nameref resolution.
-    ///
-    /// Use this when the intent is to remove the variable itself rather than
-    /// following nameref chains — e.g., `unset -n` removes the nameref variable,
-    /// not its target.
-    pub fn unset_bypassing_nameref(
+    /// if the variable was not found or only an array element was removed.
+    pub fn unset(
         &mut self,
-        name: &str,
+        name: impl Into<VarName>,
     ) -> Result<Option<ShellVariable>, error::Error> {
-        self.unset_raw(name)
+        match name.into() {
+            VarName::Auto(s) => {
+                let resolved = match self.resolve_nameref(&s) {
+                    Ok(r) => r,
+                    Err(e) if matches!(e.kind(), error::ErrorKind::CircularNameReference(_)) => {
+                        return self.unset_direct(&s);
+                    }
+                    Err(e) => return Err(e),
+                };
+                if let Some(idx) = resolved.subscript() {
+                    if let Some((_, var)) = self.get_mut_by_exact_name(resolved.name()) {
+                        var.unset_index(idx)?;
+                    }
+                    return Ok(None);
+                }
+                self.unset_direct(resolved.name())
+            }
+            VarName::Resolved { base, subscript } => {
+                if let Some(idx) = subscript {
+                    if let Some((_, var)) = self.get_mut_by_exact_name(&base) {
+                        var.unset_index(&idx)?;
+                    }
+                    return Ok(None);
+                }
+                self.unset_direct(&base)
+            }
+            VarName::Direct(s) => self.unset_direct(&s),
+        }
     }
 
-    /// Internal: unset by raw string name, no nameref resolution.
-    fn unset_raw(&mut self, name: &str) -> Result<Option<ShellVariable>, error::Error> {
+    /// Unsets a variable by exact name, no nameref resolution.
+    fn unset_direct(&mut self, name: &str) -> Result<Option<ShellVariable>, error::Error> {
         let mut local_count = 0;
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if matches!(scope_type, EnvironmentScope::Local) {
@@ -1235,36 +1100,34 @@ impl ShellEnvironment {
     }
 
     /// Update a variable in the environment, or add it if it doesn't already exist.
-    /// Resolves namerefs transparently before performing the update.
     ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable to update or add.
-    /// * `value` - The value to assign to the variable.
-    /// * `updater` - A function to call to update the variable after assigning the value.
-    /// * `lookup_policy` - The policy to use when looking up the variable.
-    /// * `scope_if_creating` - The scope to create the variable in if it doesn't already exist.
-    pub fn update_or_add<N: Into<String>>(
+    /// Behavior depends on the [`VarName`] variant:
+    /// - `VarName::Auto` — resolves namerefs, writes to the target.
+    /// - `VarName::Resolved` — writes to the pre-resolved base name.
+    /// - `VarName::Direct` — writes to the variable itself, bypassing namerefs.
+    pub fn update_or_add(
         &mut self,
-        name: N,
+        name: impl Into<VarName>,
         value: variables::ShellValueLiteral,
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let resolved = self.resolve_nameref(&name.into())?;
+        let var_name = name.into();
+        let (base, subscript) = match &var_name {
+            VarName::Auto(s) => {
+                let resolved = self.resolve_nameref(s)?;
+                (resolved.name.clone(), resolved.subscript)
+            }
+            VarName::Resolved { base, subscript } => (base.clone(), subscript.clone()),
+            VarName::Direct(s) => (s.clone(), None),
+        };
 
-        // If the nameref target includes an array subscript (e.g., arr[2]),
-        // redirect to the array-element update path for scalar values. Array
-        // (compound) assignments through a subscripted nameref target the whole
-        // base variable, matching bash behavior.
-        if let Some(idx) = resolved.subscript() {
-            let idx = idx.to_owned();
-            let name = resolved.into_name();
+        if let Some(idx) = subscript {
             match value {
                 variables::ShellValueLiteral::Scalar(scalar) => {
-                    return self.update_or_add_array_element_raw(
-                        name,
+                    return self.update_or_add_array_element_impl(
+                        base,
                         idx,
                         scalar,
                         updater,
@@ -1274,7 +1137,7 @@ impl ShellEnvironment {
                 }
                 variables::ShellValueLiteral::Array(_) => {
                     return self.update_or_add_impl(
-                        name,
+                        base,
                         value,
                         updater,
                         lookup_policy,
@@ -1284,24 +1147,7 @@ impl ShellEnvironment {
             }
         }
 
-        self.update_or_add_impl(resolved.into_name(), value, updater, lookup_policy, scope_if_creating)
-    }
-
-    /// Update a variable in the environment, intentionally bypassing nameref
-    /// resolution.
-    ///
-    /// Use this when the intent is to write to the variable itself rather than
-    /// following the nameref chain — e.g., `for-in` loop control variables in
-    /// bash update the nameref's own value, effectively retargeting it.
-    pub fn update_or_add_bypassing_nameref<N: Into<String>>(
-        &mut self,
-        name: N,
-        value: variables::ShellValueLiteral,
-        updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
-        lookup_policy: EnvironmentLookup,
-        scope_if_creating: EnvironmentScope,
-    ) -> Result<(), error::Error> {
-        self.update_or_add_impl(name.into(), value, updater, lookup_policy, scope_if_creating)
+        self.update_or_add_impl(base, value, updater, lookup_policy, scope_if_creating)
     }
 
     fn update_or_add_impl(
@@ -1332,34 +1178,32 @@ impl ShellEnvironment {
     }
 
     /// Update an array element in the environment, or add it if it doesn't already exist.
-    /// Resolves namerefs transparently before performing the update.
     ///
-    /// # Arguments
+    /// Behavior depends on the [`VarName`] variant:
+    /// - `VarName::Auto` — resolves namerefs, writes to the target.
+    /// - `VarName::Resolved` — writes to the pre-resolved base name.
+    /// - `VarName::Direct` — writes to the variable itself.
     ///
-    /// * `name` - The name of the variable to update or add.
-    /// * `index` - The index of the element to update or add.
-    /// * `value` - The value to assign to the variable.
-    /// * `updater` - A function to call to update the variable after assigning the value.
-    /// * `lookup_policy` - The policy to use when looking up the variable.
-    /// * `scope_if_creating` - The scope to create the variable in if it doesn't already exist.
-    pub fn update_or_add_array_element<N: Into<String>>(
+    /// The explicit `index` parameter always takes precedence over any subscript
+    /// embedded in a nameref target.
+    pub fn update_or_add_array_element(
         &mut self,
-        name: N,
+        name: impl Into<VarName>,
         index: String,
         value: String,
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let resolved = self.resolve_nameref(&name.into())?;
+        let var_name = name.into();
+        let base = match &var_name {
+            VarName::Auto(s) => self.resolve_nameref(s)?.into_name(),
+            VarName::Resolved { base, .. } => base.clone(),
+            VarName::Direct(s) => s.clone(),
+        };
 
-        // If the nameref target itself includes a subscript (e.g., ref→arr[2])
-        // AND the caller provides an explicit index, the explicit index takes
-        // precedence — matching `update_or_add`'s behavior. We use only the
-        // base name and ignore the nameref's embedded subscript because the
-        // caller's `index` argument is the authoritative subscript.
-        self.update_or_add_array_element_raw(
-            resolved.into_name(),
+        self.update_or_add_array_element_impl(
+            base,
             index,
             value,
             updater,
@@ -1368,8 +1212,8 @@ impl ShellEnvironment {
         )
     }
 
-    /// Internal: update an array element where the name has already been resolved.
-    fn update_or_add_array_element_raw(
+    /// Shared implementation for array element updates.
+    fn update_or_add_array_element_impl(
         &mut self,
         name: String,
         index: String,
@@ -1513,56 +1357,11 @@ impl ShellVariableMap {
     }
 }
 
-/// Parse a potential `name[index]` subscript from a resolved nameref target string.
-/// Returns `(base_name, Some(index))` if a subscript is present, or `(original, None)`.
-///
-/// Splits on the first `[` and requires a trailing `]`. Everything between the first
-/// `[` and the final `]` is the index, which may contain arbitrary characters (including
-/// nested brackets) for associative array keys.
-///
-/// This is a pure parser — callers are responsible for validating that the returned
-/// base name is a valid variable name (see [`valid_variable_name`]).
-/// Returns `true` if `target` is a valid nameref target name: the base name
-/// (before any `[subscript]`) must be a legal variable name.
-///
-/// Does NOT check for self-references — callers must handle that separately.
-pub fn valid_nameref_target_name(target: &str) -> bool {
-    let (base, _) = parse_nameref_subscript(target);
-    valid_variable_name(base)
-}
-
-pub(crate) fn parse_nameref_subscript(target: &str) -> (&str, Option<&str>) {
-    // The target must end with `]` for a subscript to be present.
-    let Some(without_bracket) = target.strip_suffix(']') else {
-        return (target, None);
-    };
-    // Split on the first `[`. Everything before it is the variable name;
-    // everything after (up to the stripped `]`) is the index.
-    if let Some((name, index)) = without_bracket.split_once('[') {
-        if !name.is_empty() {
-            return (name, Some(index));
-        }
-    }
-    (target, None)
-}
-
-/// Checks if the given name is a valid variable name.
-pub fn valid_variable_name(s: &str) -> bool {
-    let mut cs = s.chars();
-    match cs.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {
-            cs.all(|c| c.is_ascii_alphanumeric() || c == '_')
-        }
-        Some(_) | None => false,
-    }
-}
-
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
-    /// Extract the string value of a variable for test assertions.
-    /// Panics if the value is not a `ShellValue::String`.
     fn var_str(var: &ShellVariable) -> &str {
         match var.value() {
             ShellValue::String(s) => s.as_str(),
@@ -1570,135 +1369,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_valid_variable_name() {
-        assert!(!valid_variable_name(""));
-        assert!(!valid_variable_name("1"));
-        assert!(!valid_variable_name(" a"));
-        assert!(!valid_variable_name(" "));
-
-        assert!(valid_variable_name("_"));
-        assert!(valid_variable_name("_a"));
-        assert!(valid_variable_name("_1"));
-        assert!(valid_variable_name("_a1"));
-        assert!(valid_variable_name("a"));
-        assert!(valid_variable_name("A"));
-        assert!(valid_variable_name("a1"));
-        assert!(valid_variable_name("A1"));
-    }
-
-    //
-    // parse_nameref_subscript
-    //
-
-    #[test]
-    fn parse_nameref_subscript_no_subscript() {
-        assert_eq!(parse_nameref_subscript("foo"), ("foo", None));
-        assert_eq!(parse_nameref_subscript(""), ("", None));
-    }
-
-    #[test]
-    fn parse_nameref_subscript_simple() {
-        assert_eq!(parse_nameref_subscript("arr[2]"), ("arr", Some("2")));
-        assert_eq!(parse_nameref_subscript("map[key]"), ("map", Some("key")));
-    }
-
-    #[test]
-    fn parse_nameref_subscript_special_indices() {
-        assert_eq!(parse_nameref_subscript("arr[@]"), ("arr", Some("@")));
-        assert_eq!(parse_nameref_subscript("arr[*]"), ("arr", Some("*")));
-        assert_eq!(parse_nameref_subscript("arr[-1]"), ("arr", Some("-1")));
-    }
-
-    #[test]
-    fn parse_nameref_subscript_empty_brackets() {
-        // Empty index — split_once returns ("arr", "") so we get Some("").
-        // Higher-level code is responsible for rejecting empty subscripts.
-        assert_eq!(parse_nameref_subscript("arr[]"), ("arr", Some("")));
-    }
-
-    #[test]
-    fn parse_nameref_subscript_missing_open_bracket() {
-        // No `[` to split on, but ends with `]` → not a subscript.
-        assert_eq!(parse_nameref_subscript("foo]"), ("foo]", None));
-    }
-
-    #[test]
-    fn parse_nameref_subscript_missing_close_bracket() {
-        // Doesn't end with `]` → no subscript.
-        assert_eq!(parse_nameref_subscript("arr[2"), ("arr[2", None));
-    }
-
-    #[test]
-    fn parse_nameref_subscript_empty_name() {
-        // `[idx]` with no name before bracket → not a subscript.
-        assert_eq!(parse_nameref_subscript("[idx]"), ("[idx]", None));
-    }
-
-    #[test]
-    fn parse_nameref_subscript_nested_brackets() {
-        // Splits on the FIRST `[`; everything to the final `]` is the index.
-        // This allows associative array keys to contain brackets.
-        assert_eq!(parse_nameref_subscript("arr[a[b]]"), ("arr", Some("a[b]")));
-        assert_eq!(parse_nameref_subscript("arr[[x]]"), ("arr", Some("[x]")));
-    }
-
-    //
-    // ResolvedName construction & accessors
-    //
-
-    #[test]
-    fn resolved_name_from_name_no_subscript() {
-        let r = ResolvedName::already_resolved("target");
-        assert_eq!(r.name(), "target");
-        assert_eq!(r.subscript(), None);
-    }
-
-    #[test]
-    fn resolved_name_parse_with_subscript() {
-        let r = ResolvedName::parse("arr[5]".to_owned());
-        assert_eq!(r.name(), "arr");
-        assert_eq!(r.subscript(), Some("5"));
-    }
-
-    #[test]
-    fn resolved_name_parse_without_subscript() {
-        let r = ResolvedName::parse("plain".to_owned());
-        assert_eq!(r.name(), "plain");
-        assert_eq!(r.subscript(), None);
-    }
-
-    #[test]
-    fn resolved_name_without_subscript_strips_index() {
-        let r = ResolvedName::parse("arr[2]".to_owned());
-        let stripped = r.without_subscript();
-        assert_eq!(stripped.name(), "arr");
-        assert_eq!(stripped.subscript(), None);
-        // Original is unchanged.
-        assert_eq!(r.subscript(), Some("2"));
-    }
-
-    #[test]
-    fn resolved_name_into_name_consumes() {
-        let r = ResolvedName::parse("arr[k]".to_owned());
-        assert_eq!(r.into_name(), "arr");
-    }
-
-    //
-    // resolve_nameref_chain — using a real ShellEnvironment
-    //
-
-    /// Create a non-nameref string variable.
     fn make_var(value: &str) -> ShellVariable {
         ShellVariable::new(ShellValue::String(value.to_owned()))
     }
 
-    /// Create a nameref variable pointing to `target`.
     fn make_nameref(target: &str) -> ShellVariable {
         let mut v = ShellVariable::new(ShellValue::String(target.to_owned()));
         v.treat_as_nameref();
         v
     }
+
+    //
+    // resolve_nameref_chain
+    //
 
     #[test]
     fn resolve_nameref_identity_on_non_nameref() {
@@ -1748,8 +1431,6 @@ mod tests {
         let mut env = ShellEnvironment::new();
         env.add("ref", make_nameref("arr[2]"), EnvironmentScope::Global)
             .unwrap();
-        // Note: we don't need `arr` to exist for resolution; the chain
-        // terminates because `arr[2]` isn't a registered name.
         let r = env.resolve_nameref("ref").unwrap();
         assert_eq!(r.name(), "arr");
         assert_eq!(r.subscript(), Some("2"));
@@ -1799,14 +1480,9 @@ mod tests {
 
     #[test]
     fn resolve_nameref_at_max_depth_succeeds() {
-        // Build a chain of exactly MAX_NAMEREF_DEPTH hops terminating in a
-        // non-nameref. Should succeed.
         let mut env = ShellEnvironment::new();
         env.add("target", make_var("v"), EnvironmentScope::Global)
             .unwrap();
-        // Names: link0 -> link1 -> ... -> link{N-2} -> target.
-        // That's MAX_NAMEREF_DEPTH - 1 nameref links plus the terminal lookup.
-        // We need a chain that exercises the depth limit without exceeding it.
         let mut prev = "target".to_owned();
         for i in 0..MAX_NAMEREF_DEPTH - 1 {
             let name = format!("link{i}");
@@ -1814,15 +1490,12 @@ mod tests {
                 .unwrap();
             prev = name;
         }
-        // Resolve from the deepest link.
         let r = env.resolve_nameref(&prev).unwrap();
         assert_eq!(r.name(), "target");
     }
 
     #[test]
     fn resolve_nameref_beyond_max_depth_errors() {
-        // Build a chain of MAX_NAMEREF_DEPTH + 2 namerefs, all pointing onward.
-        // The chain is acyclic but too long — should hit the depth limit.
         let mut env = ShellEnvironment::new();
         env.add("target", make_var("v"), EnvironmentScope::Global)
             .unwrap();
@@ -1847,15 +1520,11 @@ mod tests {
             .unwrap();
         env.add("ref", make_nameref("target"), EnvironmentScope::Global)
             .unwrap();
-        // Plain target — name should be "target", no subscript handling.
         assert_eq!(env.resolve_nameref_to_name("ref").unwrap(), "target");
     }
 
     #[test]
     fn resolve_nameref_to_name_preserves_subscript() {
-        // resolve_nameref_to_name returns the resolved string AS-IS, without
-        // parsing any subscript out of it. This is important for `[[ -v ref ]]`
-        // semantics where bash treats "arr[2]" literally as a variable name.
         let mut env = ShellEnvironment::new();
         env.add("ref", make_nameref("arr[2]"), EnvironmentScope::Global)
             .unwrap();
@@ -1864,8 +1533,6 @@ mod tests {
 
     #[test]
     fn resolve_nameref_with_empty_target_terminates() {
-        // A nameref pointing at an empty string isn't followed — bash treats
-        // it as the identity (the nameref's own name).
         let mut env = ShellEnvironment::new();
         env.add("ref", make_nameref(""), EnvironmentScope::Global)
             .unwrap();
@@ -1873,10 +1540,6 @@ mod tests {
         assert_eq!(r.name(), "ref");
         assert_eq!(r.subscript(), None);
     }
-
-    //
-    // resolve_nameref_or_default
-    //
 
     #[test]
     fn resolve_nameref_or_default_returns_resolved_on_success() {
@@ -1902,25 +1565,6 @@ mod tests {
     }
 
     //
-    // valid_nameref_target_name
-    //
-
-    #[test]
-    fn valid_nameref_target_simple() {
-        assert!(valid_nameref_target_name("foo"));
-        assert!(valid_nameref_target_name("_bar"));
-        assert!(valid_nameref_target_name("arr[2]"));
-        assert!(valid_nameref_target_name("arr[@]"));
-    }
-
-    #[test]
-    fn invalid_nameref_target() {
-        assert!(!valid_nameref_target_name(""));
-        assert!(!valid_nameref_target_name("1bad"));
-        assert!(!valid_nameref_target_name("[idx]"));
-    }
-
-    //
     // Lookup builder API
     //
 
@@ -1932,27 +1576,23 @@ mod tests {
         env.add("ref", make_nameref("target"), EnvironmentScope::Global)
             .unwrap();
 
-        // lookup("ref").get() should resolve through the nameref to "target".
         let resolved = env.lookup("ref").get().expect("should find target");
         assert_eq!(resolved.scope(), EnvironmentScope::Global);
-        // base_var() should be the target variable, not the nameref.
         assert_eq!(var_str(resolved.base_var()), "hello");
         assert!(!resolved.has_subscript());
     }
 
     #[test]
-    fn lookup_str_bypassing_nameref_returns_nameref_itself() {
+    fn lookup_direct_returns_nameref_itself() {
         let mut env = ShellEnvironment::new();
         env.add("target", make_var("hello"), EnvironmentScope::Global)
             .unwrap();
         env.add("ref", make_nameref("target"), EnvironmentScope::Global)
             .unwrap();
 
-        // lookup("ref").bypassing_nameref().get() should return the nameref variable.
         let (scope, var) = env
-            .lookup("ref")
-            .bypassing_nameref()
-            .get()
+            .lookup(VarName::direct("ref"))
+            .get_direct()
             .expect("should find ref");
         assert_eq!(scope, EnvironmentScope::Global);
         assert!(var.is_treated_as_nameref());
@@ -1966,12 +1606,9 @@ mod tests {
             .unwrap();
 
         let resolved = ResolvedName::already_resolved("target");
-        let (scope, var) = env
-            .lookup(&resolved)
-            .get()
-            .expect("should find target");
-        assert_eq!(scope, EnvironmentScope::Global);
-        assert_eq!(var_str(var), "hello");
+        let result = env.lookup(&resolved).get().expect("should find target");
+        assert_eq!(result.scope(), EnvironmentScope::Global);
+        assert_eq!(var_str(result.base_var()), "hello");
     }
 
     #[test]
@@ -1980,20 +1617,18 @@ mod tests {
         env.add("x", make_var("global"), EnvironmentScope::Global)
             .unwrap();
         env.push_scope(EnvironmentScope::Local);
-        // "x" exists in global but NOT in current local.
-        assert!(env
-            .lookup("x")
-            .bypassing_nameref()
-            .in_scope(EnvironmentLookup::OnlyInCurrentLocal)
-            .get()
-            .is_none());
-        // But it IS visible with Anywhere.
-        assert!(env
-            .lookup("x")
-            .bypassing_nameref()
-            .in_scope(EnvironmentLookup::Anywhere)
-            .get()
-            .is_some());
+        assert!(
+            env.lookup(VarName::direct("x"))
+                .in_scope(EnvironmentLookup::OnlyInCurrentLocal)
+                .get_direct()
+                .is_none()
+        );
+        assert!(
+            env.lookup(VarName::direct("x"))
+                .in_scope(EnvironmentLookup::Anywhere)
+                .get_direct()
+                .is_some()
+        );
         env.pop_scope(EnvironmentScope::Local).unwrap();
     }
 
@@ -2007,10 +1642,9 @@ mod tests {
             .unwrap();
 
         let (scope, var) = env
-            .lookup("x")
-            .bypassing_nameref()
+            .lookup(VarName::direct("x"))
             .in_scope(EnvironmentLookup::OnlyInCurrentLocal)
-            .get()
+            .get_direct()
             .expect("should find local x");
         assert_eq!(scope, EnvironmentScope::Local);
         assert_eq!(var_str(var), "local");
@@ -2025,17 +1659,13 @@ mod tests {
         env.add("ref", make_nameref("target"), EnvironmentScope::Global)
             .unwrap();
 
-        // Mutating through nameref should affect the target.
-        let resolved = env
-            .lookup_mut("ref")
-            .get()
-            .expect("should find target");
+        let resolved = env.lookup_mut("ref").get().expect("should find target");
         assert_eq!(resolved.scope(), EnvironmentScope::Global);
         assert!(!resolved.has_subscript());
     }
 
     #[test]
-    fn lookup_mut_bypassing_nameref_returns_nameref_itself() {
+    fn lookup_mut_direct_returns_nameref_itself() {
         let mut env = ShellEnvironment::new();
         env.add("target", make_var("hello"), EnvironmentScope::Global)
             .unwrap();
@@ -2043,9 +1673,8 @@ mod tests {
             .unwrap();
 
         let (scope, var) = env
-            .lookup_mut("ref")
-            .bypassing_nameref()
-            .get()
+            .lookup_mut(VarName::direct("ref"))
+            .get_direct()
             .expect("should find ref");
         assert_eq!(scope, EnvironmentScope::Global);
         assert!(var.is_treated_as_nameref());
@@ -2055,11 +1684,11 @@ mod tests {
     fn lookup_nonexistent_returns_none() {
         let env = ShellEnvironment::new();
         assert!(env.lookup("nonexistent").get().is_none());
-        assert!(env
-            .lookup("nonexistent")
-            .bypassing_nameref()
-            .get()
-            .is_none());
+        assert!(
+            env.lookup(VarName::direct("nonexistent"))
+                .get_direct()
+                .is_none()
+        );
         let resolved = ResolvedName::already_resolved("nonexistent");
         assert!(env.lookup(&resolved).get().is_none());
     }
@@ -2067,16 +1696,13 @@ mod tests {
     #[test]
     fn lookup_str_auto_resolve_with_subscripted_nameref() {
         let mut env = ShellEnvironment::new();
-        let arr = ShellVariable::new(ShellValue::indexed_array_from_strs(&[
-            "zero", "one", "two",
-        ]));
+        let arr = ShellVariable::new(ShellValue::indexed_array_from_strs(&["zero", "one", "two"]));
         env.add("arr", arr, EnvironmentScope::Global).unwrap();
         env.add("ref", make_nameref("arr[1]"), EnvironmentScope::Global)
             .unwrap();
 
         let resolved = env.lookup("ref").get().expect("should find arr");
         assert!(resolved.has_subscript());
-        // base_var() should be the array itself.
         assert!(matches!(
             resolved.base_var().value(),
             ShellValue::IndexedArray(_)
@@ -2090,7 +1716,6 @@ mod tests {
             .unwrap();
         env.add("b", make_nameref("a"), EnvironmentScope::Global)
             .unwrap();
-        // Auto-resolving lookup silently returns None for circular namerefs.
         assert!(env.lookup("a").get().is_none());
     }
 
@@ -2105,24 +1730,112 @@ mod tests {
 
         let resolved = ResolvedName::already_resolved("x");
 
-        // OnlyInGlobal should find the global one.
         let (scope, var) = env
             .lookup(&resolved)
             .in_scope(EnvironmentLookup::OnlyInGlobal)
-            .get()
+            .get_direct()
             .expect("should find global x");
         assert_eq!(scope, EnvironmentScope::Global);
         assert_eq!(var_str(var), "global");
 
-        // OnlyInCurrentLocal should find the local one.
         let (scope, var) = env
             .lookup(&resolved)
             .in_scope(EnvironmentLookup::OnlyInCurrentLocal)
-            .get()
+            .get_direct()
             .expect("should find local x");
         assert_eq!(scope, EnvironmentScope::Local);
         assert_eq!(var_str(var), "local");
 
         env.pop_scope(EnvironmentScope::Local).unwrap();
+    }
+
+    //
+    // VarName-based unset
+    //
+
+    #[test]
+    fn unset_auto_resolves_nameref() {
+        let mut env = ShellEnvironment::new();
+        env.add("target", make_var("hello"), EnvironmentScope::Global)
+            .unwrap();
+        env.add("ref", make_nameref("target"), EnvironmentScope::Global)
+            .unwrap();
+
+        env.unset("ref").unwrap();
+        assert!(env.get("target").is_none());
+        // ref still exists as a nameref, but its target is gone.
+        let (scope, var) = env
+            .lookup(VarName::direct("ref"))
+            .get_direct()
+            .expect("ref still exists");
+        assert_eq!(scope, EnvironmentScope::Global);
+        assert!(var.is_treated_as_nameref());
+    }
+
+    #[test]
+    fn unset_direct_bypasses_nameref() {
+        let mut env = ShellEnvironment::new();
+        env.add("target", make_var("hello"), EnvironmentScope::Global)
+            .unwrap();
+        env.add("ref", make_nameref("target"), EnvironmentScope::Global)
+            .unwrap();
+
+        env.unset(VarName::direct("ref")).unwrap();
+        assert!(env.get("target").is_some());
+        assert!(env.lookup(VarName::direct("ref")).get_direct().is_none());
+    }
+
+    //
+    // VarName-based update_or_add
+    //
+
+    #[test]
+    fn update_or_add_auto_resolves_nameref() {
+        let mut env = ShellEnvironment::new();
+        env.add("ref", make_nameref("target"), EnvironmentScope::Global)
+            .unwrap();
+
+        env.update_or_add(
+            "ref",
+            variables::ShellValueLiteral::Scalar("hello".to_owned()),
+            |_| Ok(()),
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )
+        .unwrap();
+
+        assert_eq!(
+            var_str(env.get("target").expect("target should exist").base_var()),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn update_or_add_direct_bypasses_nameref() {
+        let mut env = ShellEnvironment::new();
+        env.add("target", make_var("original"), EnvironmentScope::Global)
+            .unwrap();
+        env.add("ref", make_nameref("target"), EnvironmentScope::Global)
+            .unwrap();
+
+        env.update_or_add(
+            VarName::direct("ref"),
+            variables::ShellValueLiteral::Scalar("retargeted".to_owned()),
+            |_| Ok(()),
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )
+        .unwrap();
+
+        assert_eq!(
+            var_str(env.get("target").expect("target unchanged").base_var()),
+            "original"
+        );
+        // ref's own value was updated (bypassing nameref resolution).
+        let (_, var) = env
+            .lookup(VarName::direct("ref"))
+            .get_direct()
+            .expect("ref exists");
+        assert_eq!(var_str(var), "retargeted");
     }
 }
