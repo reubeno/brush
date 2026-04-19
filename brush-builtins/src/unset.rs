@@ -2,7 +2,9 @@ use std::borrow::Cow;
 
 use clap::Parser;
 
-use brush_core::{ExecutionResult, Shell, ShellValue, builtins, variables::ShellValueUnsetType};
+use brush_core::{
+    ExecutionResult, Shell, ShellValue, builtins, env::VarNameExt, variables::ShellValueUnsetType,
+};
 
 /// Unset a variable.
 #[derive(Parser)]
@@ -54,15 +56,11 @@ impl builtins::Command for UnsetCommand {
                 let is_nameref = context
                     .shell
                     .env()
-                    .lookup(name.as_str())
-                    .bypassing_nameref()
-                    .get()
+                    .lookup(name.direct())
+                    .get_direct()
                     .is_some_and(|(_, v)| v.is_treated_as_nameref());
                 if is_nameref {
-                    context
-                        .shell
-                        .env_mut()
-                        .unset_bypassing_nameref(name.as_str())?;
+                    context.shell.env_mut().unset(name.direct())?;
                 }
                 // `unset -n` never touches functions or array elements — it
                 // operates only on nameref variables. Skip the rest of the loop.
@@ -120,7 +118,7 @@ fn unset_array_index(
 
     // Check if the resolved target is an associative array (use lookup with the
     // already-resolved name to avoid redundant nameref resolution).
-    let is_assoc_array = if let Some((_, var)) = shell.env().lookup(&resolved).get() {
+    let is_assoc_array = if let Some((_, var)) = shell.env().lookup(&resolved).get_direct() {
         matches!(
             var.value(),
             ShellValue::AssociativeArray(_)
@@ -142,7 +140,7 @@ fn unset_array_index(
     };
 
     // Use lookup_mut with the already-resolved name to avoid redundant nameref resolution.
-    if let Some((_, var)) = shell.env_mut().lookup_mut(&resolved).get() {
+    if let Some((_, var)) = shell.env_mut().lookup_mut(&resolved).get_direct() {
         var.unset_index(index_to_use.as_ref())
     } else {
         Ok(false)

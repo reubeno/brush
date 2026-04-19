@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
-use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
+use crate::env::{EnvironmentLookup, EnvironmentScope, VarNameExt, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -852,8 +852,8 @@ impl Execute for ast::ForClauseCommand {
             // through `apply_assignment` which DOES resolve namerefs. So the loop
             // variable update retargets the nameref, while body assignments write
             // through it — both are correct and intentional.
-            shell.env_mut().update_or_add_bypassing_nameref(
-                &self.variable_name,
+            shell.env_mut().update_or_add(
+                self.variable_name.as_str().direct(),
                 ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 EnvironmentLookup::Anywhere,
@@ -1526,12 +1526,9 @@ async fn apply_assignment(
                 resolved.name(),
                 idx,
             )?;
-            return Err(error::ErrorKind::BadSubstitution(format!(
-                "{}[{}]",
-                resolved.name(),
-                idx,
-            ))
-            .into());
+            return Err(
+                error::ErrorKind::BadSubstitution(format!("{}[{}]", resolved.name(), idx)).into(),
+            );
         }
         array_index = Some(idx.to_owned());
     }
@@ -1587,7 +1584,7 @@ async fn apply_assignment(
     // so use lookup with the already-resolved name to avoid redundant resolution.
     if let Some(idx) = &array_index {
         let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env().lookup(&resolved_name).get()
+            shell.env().lookup(&resolved_name).get_direct()
         {
             matches!(
                 existing_value.value(),
@@ -1608,7 +1605,7 @@ async fn apply_assignment(
 
     // If the target variable has the integer attribute, evaluate scalar values
     // as arithmetic expressions. In bash, `declare -i x; x=20+5` sets x to 25.
-    let new_value = if let Some((_, target_var)) = shell.env().lookup(&resolved_name).get() {
+    let new_value = if let Some((_, target_var)) = shell.env().lookup(&resolved_name).get_direct() {
         if target_var.is_treated_as_integer() {
             match new_value {
                 ShellValueLiteral::Scalar(s) => {
@@ -1631,7 +1628,7 @@ async fn apply_assignment(
     // N.B. The name is already resolved through the nameref chain above,
     // so use lookup_mut with the already-resolved name to avoid redundant resolution.
     if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().lookup_mut(&resolved_name).get()
+        shell.env_mut().lookup_mut(&resolved_name).get_direct()
     {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {

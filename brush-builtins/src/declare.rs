@@ -4,7 +4,7 @@ use std::{io::Write, sync::LazyLock};
 
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
-    env::{self, EnvironmentLookup, EnvironmentScope},
+    env::{self, EnvironmentLookup, EnvironmentScope, VarNameExt},
     error,
     parser::ast,
     variables::{
@@ -214,10 +214,9 @@ impl DeclareCommand {
         } else if let Some((_, variable)) = context
             .shell
             .env()
-            .lookup(name.as_str())
-            .bypassing_nameref()
+            .lookup(name.as_str().direct())
             .in_scope(lookup)
-            .get()
+            .get_direct()
         {
             let mut cs = variable.attribute_flags(context.shell);
             if cs.is_empty() {
@@ -344,7 +343,7 @@ impl DeclareCommand {
             .env_mut()
             .lookup_mut(&resolved_name)
             .in_scope(lookup)
-            .get()
+            .get_direct()
         {
             if self.make_associative_array.is_some() {
                 var.convert_to_associative_array()?;
@@ -605,18 +604,14 @@ impl DeclareCommand {
             && context
                 .shell
                 .env()
-                .lookup(name.as_str())
-                .bypassing_nameref()
+                .lookup(name.as_str().direct())
                 .in_scope(lookup)
-                .get()
+                .get_direct()
                 .is_none();
 
         let should_resolve = !explicitly_modifying_nameref_attr && !creating_new_local;
         if should_resolve {
-            let resolved = context
-                .shell
-                .env()
-                .resolve_nameref(name.as_str())?;
+            let resolved = context.shell.env().resolve_nameref(name.as_str())?;
             if resolved.name() != name.as_str() {
                 // For subscripted targets (e.g., ref→arr[2]), resolve to the
                 // base variable name. `declare -x ref` applies the export to

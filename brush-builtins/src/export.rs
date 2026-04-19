@@ -94,16 +94,9 @@ impl ExportCommand {
                     // Check for circular namerefs upfront so we can emit a warning
                     // (env_mut().get_mut() silently swallows the resolution error).
                     if let Err(err) = context.shell.env().resolve_nameref(s)
-                        && matches!(
-                            err.kind(),
-                            error::ErrorKind::CircularNameReference(_)
-                        )
+                        && matches!(err.kind(), error::ErrorKind::CircularNameReference(_))
                     {
-                        writeln!(
-                            context.stderr(),
-                            "{}: warning: {err}",
-                            context.command_name
-                        )?;
+                        writeln!(context.stderr(), "{}: warning: {err}", context.command_name)?;
                     } else if let Some(mut resolved) = context.shell.env_mut().get_mut(s) {
                         if resolved.has_subscript() {
                             // Resolve the nameref to get the full target string for the error.

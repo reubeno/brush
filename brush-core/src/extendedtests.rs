@@ -2,8 +2,9 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    ExecutionParameters, Shell, ShellFd, arithmetic, env, error, escape, expansion, extensions,
-    namedoptions, patterns,
+    ExecutionParameters, Shell, ShellFd, arithmetic, env,
+    env::VarNameExt,
+    error, escape, expansion, extensions, namedoptions, patterns,
     sys::{
         fs::{MetadataExt, PathExt},
         users,
@@ -214,17 +215,18 @@ pub(crate) fn apply_unary_predicate_to_str(
                 .resolve_nameref_to_name(operand)
                 .unwrap_or_else(|_| operand.to_owned());
             let resolved = crate::env::ResolvedName::already_resolved(resolved_name);
-            if let Some((_, var)) = shell.env().lookup(&resolved).get() {
-                Ok(!matches!(var.value(), crate::variables::ShellValue::Unset(_)))
+            if let Some((_, var)) = shell.env().lookup(&resolved).get_direct() {
+                Ok(!matches!(
+                    var.value(),
+                    crate::variables::ShellValue::Unset(_)
+                ))
             } else {
                 Ok(false)
             }
         }
         ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
-            match shell.env().lookup(operand).bypassing_nameref().get() {
-                Some((_, reffed)) => {
-                    Ok(reffed.value().is_set() && reffed.is_treated_as_nameref())
-                }
+            match shell.env().lookup(operand.direct()).get_direct() {
+                Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
                 None => Ok(false),
             }
         }
