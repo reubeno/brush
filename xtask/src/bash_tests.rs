@@ -1883,8 +1883,7 @@ fn run_single_test(
             let is_timeout = err_msg.contains("timed out");
             // Read the .right file to report expected line count even on error.
             let total_lines = std::fs::read(tests_dir.join(&entry.right_file))
-                .map(|b| String::from_utf8_lossy(&b).lines().count())
-                .unwrap_or(0);
+                .map_or(0, |b| String::from_utf8_lossy(&b).lines().count());
             let duration_secs = if is_timeout {
                 timeout.as_secs_f64()
             } else {
