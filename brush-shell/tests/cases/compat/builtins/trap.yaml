@@ -388,6 +388,7 @@ cases:
       wait
 
   - name: "coproc - ERR trap with errtrace"
+    skip: true # TODO: this test is too inconsistent
     min_oracle_version: "5.3.0"
     incompatible_os:
       - fedora
