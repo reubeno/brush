@@ -3,6 +3,7 @@
 use crate::args::CommandLineArgs;
 use crate::args::InputBackendType;
 use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
+use crate::bundled;
 use crate::config;
 use crate::error_formatter;
 use crate::events;
@@ -118,6 +119,23 @@ impl CommandLineArgs {
 
 /// Main entry point for the `brush` shell.
 pub fn run() {
+    //
+    // Install the bundled-command registry so it's available both for
+    // bundled dispatch (handled next) and for builtin shim registration
+    // during shell construction. With no bundled-providing features enabled
+    // the registry is empty and both code paths become no-ops.
+    //
+    bundled::install_default_providers();
+
+    //
+    // If we were invoked as `brush <DISPATCH_FLAG> <name> [args...]`, run the
+    // bundled command and exit before doing any shell setup. This is the
+    // hot path for in-binary coreutils invocations.
+    //
+    if let Some(code) = bundled::maybe_dispatch() {
+        std::process::exit(code);
+    }
+
     //
     // Install panic handlers to clean up on panic.
     //
@@ -409,11 +427,21 @@ async fn instantiate_shell(
     cli_args: Vec<String>,
 ) -> Result<BrushShell, brush_interactive::ShellError> {
     #[cfg(feature = "experimental-load")]
-    if let Some(load_file) = &args.load_file {
-        return instantiate_shell_from_file(load_file.as_path());
-    }
+    let mut shell = if let Some(load_file) = &args.load_file {
+        instantiate_shell_from_file(load_file.as_path())?
+    } else {
+        instantiate_shell_from_args(args, cli_args).await?
+    };
 
-    instantiate_shell_from_args(args, cli_args).await
+    #[cfg(not(feature = "experimental-load"))]
+    let mut shell = instantiate_shell_from_args(args, cli_args).await?;
+
+    // Register shims for any bundled commands in the installed registry.
+    // Done here (not inside the inner instantiators) so both paths are
+    // covered from a single site.
+    bundled::register_shims(&mut shell);
+
+    Ok(shell)
 }
 
 #[cfg(feature = "experimental-load")]

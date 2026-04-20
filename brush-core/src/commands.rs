@@ -304,6 +304,10 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
     /// `None`, in which case the default behavior will be used.
     pub process_group_id: Option<i32>,
 
+    /// Optional override for the `argv[0]` value presented to an externally
+    /// spawned process. When `None`, `command_name` is used.
+    pub argv0: Option<String>,
+
     /// Optionally provides a function that can run after execution occurs. Note
     /// that it is *not* invoked if the shell is discarded during the execution
     /// process.
@@ -334,6 +338,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             use_functions: true,
             path_dirs: None,
             process_group_id: None,
+            argv0: None,
             post_execute: None,
         }
     }
@@ -537,6 +542,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             cmd_context,
             resolved_path.as_ref(),
             self.process_group_id,
+            self.argv0.as_deref(),
             &self.args[1..],
         );
 
@@ -555,6 +561,7 @@ pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     executable_path: &str,
     process_group_id: Option<i32>,
+    argv0_override: Option<&str>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Filter out the args; we only want strings.
@@ -581,11 +588,14 @@ pub(crate) fn execute_external_command(
     );
 
     // Compose the std::process::Command that encapsulates what we want to launch.
+    // argv[0] defaults to context.command_name (the user-facing name of the
+    // command) unless the caller specified an explicit override.
+    let argv0 = argv0_override.unwrap_or(context.command_name.as_str());
     #[allow(unused_mut, reason = "only mutated on unix platforms")]
     let mut cmd = compose_std_command(
         &context,
         executable_path,
-        context.command_name.as_str(),
+        argv0,
         cmd_args.as_slice(),
         false, /* empty environment? */
     )?;
