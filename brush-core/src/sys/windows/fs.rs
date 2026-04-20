@@ -148,7 +148,7 @@ pub fn open_null_file() -> Result<std::fs::File, error::Error> {
 
 /// Gives the platform an opportunity to handle a special file path (e.g. `/dev/null`).
 pub fn try_open_special_file(path: &Path) -> Option<Result<std::fs::File, std::io::Error>> {
-    if path == Path::new("/dev/null") {
+    if path.ends_with("dev/null") && path.is_absolute() {
         Some(open_null_file().map_err(std::io::Error::other))
     } else {
         None
