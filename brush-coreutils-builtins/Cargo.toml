@@ -14,7 +14,10 @@ rust-version.workspace = true
 bench = false
 
 [features]
-default = ['coreutils.all']
+# No utilities are enabled by default, so plain `cargo build --workspace`
+# pays only for the scaffolding. Consumers opt into the full set by enabling
+# `coreutils.all` (or individual `coreutils.<name>` features).
+default = []
 
 'coreutils.all' = [
     'coreutils.arch',

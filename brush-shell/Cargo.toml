@@ -61,7 +61,10 @@ experimental = [
     "experimental-parser",
 ]
 experimental-builtins = ["dep:brush-experimental-builtins"]
-experimental-bundled-coreutils = ["dep:brush-coreutils-builtins"]
+experimental-bundled-coreutils = [
+    "dep:brush-coreutils-builtins",
+    "brush-coreutils-builtins/coreutils.all",
+]
 experimental-load = ["dep:serde_json", "brush-core/serde"]
 experimental-parser = [
     "brush-core/experimental-parser",
