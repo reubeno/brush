@@ -21,7 +21,8 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         })
     }
 
-    /// Outputs `set -x` style trace output for a command.
+    /// Outputs `set -x` style trace output for a command. Intentionally does not return
+    /// a result or error to avoid risk that a caller treats an error as fatal.
     pub(crate) async fn trace_command<S: AsRef<str>>(
         &mut self,
         params: &crate::interp::ExecutionParameters,
@@ -40,7 +41,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             }
         }
 
-        let mut trace_file = if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD")
+        let trace_file = if let Some((_, xtracefd_var)) = self.env.get("BASH_XTRACEFD")
             && let Ok(fd) = xtracefd_var
                 .value()
                 .to_cow_str(self)
@@ -52,10 +53,15 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             params.try_stderr(self)
         };
 
-        if let Some(ref mut trace_file) = trace_file {
-            let _ = trace_file
-                .write_all(format!("{prefix}{}\n", command.as_ref()).as_bytes())
-                .await;
+        if let Some(trace_file) = trace_file
+            && let Ok(owned_fd) = trace_file.try_clone_to_owned()
+        {
+            let output = format!("{prefix}{}\n", command.as_ref());
+            tokio::task::block_in_place(|| {
+                use std::io::Write;
+                let mut file = std::fs::File::from(owned_fd);
+                let _ = file.write_all(output.as_bytes());
+            });
         }
     }
 
