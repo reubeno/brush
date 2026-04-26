@@ -15,9 +15,7 @@ use crate::shell::Shell;
 use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
-use crate::{
-    ShellFd, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys, timing,
-};
+use crate::{ShellFd, error, expansion, extendedtests, extensions, jobs, openfiles, sys, timing};
 
 /// Encapsulates the context of execution in a command pipeline.
 struct PipelineExecutionContext<'a, SE: extensions::ShellExtensions> {
@@ -40,87 +38,23 @@ pub struct ExecutionParameters {
 }
 
 impl ExecutionParameters {
-    /// Returns the standard input file; usable with `write!` et al.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
-    pub fn stdin(
-        &self,
-        shell: &Shell<impl extensions::ShellExtensions>,
-    ) -> impl std::io::Read + 'static {
-        self.try_stdin(shell).unwrap_or_else(|| {
-            ioutils::FailingReaderWriter::new("standard input not available").into()
-        })
-    }
-
     /// Tries to retrieve the standard input file. Returns `None` if not set.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
     pub fn try_stdin(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Option<OpenFile> {
         self.try_fd(shell, openfiles::OpenFiles::STDIN_FD)
     }
 
-    /// Returns the standard output file; usable with `write!` et al. In the event that
-    /// no such file is available, returns a valid implementation of `std::io::Write`
-    /// that fails all I/O requests.
-    ///
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
-    pub fn stdout(
-        &self,
-        shell: &Shell<impl extensions::ShellExtensions>,
-    ) -> impl std::io::Write + 'static {
-        self.try_stdout(shell).unwrap_or_else(|| {
-            ioutils::FailingReaderWriter::new("standard output not available").into()
-        })
-    }
-
     /// Tries to retrieve the standard output file. Returns `None` if not set.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
     pub fn try_stdout(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Option<OpenFile> {
         self.try_fd(shell, openfiles::OpenFiles::STDOUT_FD)
     }
 
-    /// Returns the standard error file; usable with `write!` et al. In the event that
-    /// no such file is available, returns a valid implementation of `std::io::Write`
-    /// that fails all I/O requests.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
-    pub fn stderr(
-        &self,
-        shell: &Shell<impl extensions::ShellExtensions>,
-    ) -> impl std::io::Write + 'static {
-        self.try_stderr(shell).unwrap_or_else(|| {
-            ioutils::FailingReaderWriter::new("standard error not available").into()
-        })
-    }
-
     /// Tries to retrieve the standard error file. Returns `None` if not set.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
     pub fn try_stderr(&self, shell: &Shell<impl extensions::ShellExtensions>) -> Option<OpenFile> {
         self.try_fd(shell, openfiles::OpenFiles::STDERR_FD)
     }
 
     /// Returns the file descriptor with the given number. Returns `None`
     /// if the file descriptor is not open.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
-    /// * `fd` - The file descriptor number to retrieve.
     pub fn try_fd(
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
@@ -130,45 +64,31 @@ impl ExecutionParameters {
             openfiles::OpenFileEntry::Open(f) => Some(f.clone()),
             openfiles::OpenFileEntry::NotPresent => None,
             openfiles::OpenFileEntry::NotSpecified => {
-                // We didn't have this fd specified one way or the other; we fallback
-                // to what's represented in the shell's open files.
                 shell.persistent_open_files().try_fd(fd).cloned()
             }
         }
     }
 
     /// Sets the given file descriptor to the provided open file.
-    ///
-    /// # Arguments
-    ///
-    /// * `fd` - The file descriptor number to set.
-    /// * `file` - The open file to set.
     pub fn set_fd(&mut self, fd: ShellFd, file: openfiles::OpenFile) {
         self.open_files.set_fd(fd, file);
     }
 
     /// Iterates over all open file descriptors in this context.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell context.
     pub fn iter_fds(
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
-        let our_fds = self.open_files.iter_fds();
-        let shell_fds = shell
-            .persistent_open_files()
+        self.open_files
             .iter_fds()
-            .filter(|(fd, _)| !self.open_files.contains_fd(*fd));
-
-        #[allow(clippy::needless_collect)]
-        let all_fds: Vec<_> = our_fds
-            .chain(shell_fds)
-            .map(|(fd, file)| (fd, file.clone()))
-            .collect();
-
-        all_fds.into_iter()
+            .map(|(fd, f)| (fd, f.clone()))
+            .chain(
+                shell
+                    .persistent_open_files()
+                    .iter_fds()
+                    .filter(|(fd, _)| !self.open_files.contains_fd(*fd))
+                    .map(|(fd, f)| (fd, f.clone())),
+            )
     }
 }
 
@@ -216,8 +136,9 @@ impl Execute for ast::Program {
             match command.execute(shell, params).await {
                 Ok(exec_result) => result = exec_result,
                 Err(err) => {
-                    // Display the error and convert to an execution result.
-                    let _ = shell.display_error(&mut params.stderr(shell), &err);
+                    if let Some(mut stderr) = params.try_stderr(shell) {
+                        let _ = shell.display_error(&err, &mut stderr).await;
+                    }
                     result = err.into_result(shell);
                 }
             }
@@ -252,7 +173,11 @@ impl Execute for ast::CompoundList {
                 let job_formatted = job.to_pid_style_string();
 
                 if shell.options().interactive && !shell.is_subshell() {
-                    writeln!(params.stderr(shell), "{job_formatted}")?;
+                    if let Some(mut stderr) = params.try_stderr(shell) {
+                        let _ = stderr
+                            .write_all(format!("{job_formatted}\n").as_bytes())
+                            .await;
+                    }
                 }
 
                 result = ExecutionResult::success();
@@ -287,7 +212,7 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
 
     // Redirect stdin to null, per spec.
     if let Ok(null) = openfiles::null() {
-        cloned_params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
+        cloned_params.set_fd(openfiles::OpenFiles::STDIN_FD, null.into());
     }
 
     let join_handle = tokio::spawn(async move {
@@ -419,23 +344,22 @@ impl Execute for ast::Pipeline {
             && let Some(mut stderr) = params.try_fd(shell, openfiles::OpenFiles::STDERR_FD)
         {
             let timing = stopwatch.stop()?;
-            if timed.is_posix_output() {
-                std::write!(
-                    stderr,
+            let output = if timed.is_posix_output() {
+                format!(
                     "real {}\nuser {}\nsys {}\n",
                     timing::format_duration_posixly(&timing.wall),
                     timing::format_duration_posixly(&timing.user),
                     timing::format_duration_posixly(&timing.system),
-                )?;
+                )
             } else {
-                std::write!(
-                    stderr,
+                format!(
                     "\nreal\t{}\nuser\t{}\nsys\t{}\n",
                     timing::format_duration_non_posixly(&timing.wall),
                     timing::format_duration_non_posixly(&timing.user),
                     timing::format_duration_non_posixly(&timing.system),
-                )?;
-            }
+                )
+            };
+            let _ = stderr.write_all(output.as_bytes()).await;
         }
 
         Ok(result)
@@ -596,7 +520,11 @@ async fn wait_for_pipeline_processes_and_update_status(
         let formatted = job.to_string();
 
         // N.B. We use the '\r' to overwrite any ^Z output.
-        writeln!(params.stderr(shell), "\r{formatted}")?;
+        if let Some(mut stderr) = params.try_stderr(shell) {
+            let _ = stderr
+                .write_all(format!("\r{formatted}\n").as_bytes())
+                .await;
+        }
     }
 
     Ok(result)
@@ -667,6 +595,64 @@ enum WhileOrUntil {
 }
 
 #[async_trait::async_trait]
+impl Execute for ast::Command {
+    async fn execute(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        match self {
+            Self::Simple(simple) => {
+                let context = PipelineExecutionContext {
+                    shell: commands::ShellForCommand::ParentShell(shell),
+                    process_group_id: None,
+                };
+                match simple.execute_in_pipeline(context, params.clone()).await? {
+                    ExecutionSpawnResult::Completed(result) => Ok(result),
+                    ExecutionSpawnResult::StartedProcess(mut child) => {
+                        let wait_result = child.wait().await?;
+                        match wait_result {
+                            crate::processes::ProcessWaitResult::Completed(output) => {
+                                Ok(ExecutionResult::from(output))
+                            }
+                            crate::processes::ProcessWaitResult::Stopped => {
+                                Ok(ExecutionResult::stopped())
+                            }
+                        }
+                    }
+                    ExecutionSpawnResult::StartedTask(handle) => handle.await?,
+                }
+            }
+            Self::Compound(compound, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                compound.execute(shell, &params).await
+            }
+            Self::Function(func) => func.execute(shell, params).await,
+            Self::ExtendedTest(e, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                let result =
+                    if extendedtests::eval_extended_test_expr(&e.expr, shell, &params).await? {
+                        0
+                    } else {
+                        1
+                    };
+                Ok(ExecutionResult::new(result))
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
 impl Execute for ast::CompoundCommand {
     async fn execute(
         &self,
@@ -687,11 +673,9 @@ impl Execute for ast::CompoundCommand {
                 let subshell_result = match list.execute(&mut subshell, params).await {
                     Ok(result) => result,
                     Err(error) => {
-                        // Display the error to stderr, but prevent fatal error propagation
-                        let mut stderr = params.stderr(shell);
-                        let _ = shell.display_error(&mut stderr, &error);
-
-                        // Convert error to result in subshell context
+                        if let Some(mut stderr) = params.try_stderr(shell) {
+                            let _ = shell.display_error(&error, &mut stderr).await;
+                        }
                         error.into_result(&subshell)
                     }
                 };
@@ -730,10 +714,11 @@ impl Execute for ast::CoprocessCommand {
             .map_or_else(|| "COPROC".to_string(), |w| w.to_string());
 
         if !valid_variable_name(&name) {
-            writeln!(
-                params.stderr(shell),
-                "coproc {name}: not a valid identifier"
-            )?;
+            if let Some(mut stderr) = params.try_stderr(shell) {
+                let _ = stderr
+                    .write_all(format!("coproc {name}: not a valid identifier\n").as_bytes())
+                    .await;
+            }
             return Ok(ExecutionExitCode::GeneralError.into());
         }
 
@@ -1178,7 +1163,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
                     if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
                     {
-                        writeln!(params.stderr(&context.shell), "error: {e}")?;
+                        if let Some(mut stderr) = params.try_stderr(&context.shell) {
+                            let _ = stderr.write_all(format!("error: {e}\n").as_bytes()).await;
+                        }
                         return Ok(ExecutionResult::general_error().into());
                     }
                 }
@@ -1276,8 +1263,6 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
-            let mut stderr = params.stderr(&context.shell);
-
             let (owned_shell, parent_shell) = match context.shell {
                 commands::ShellForCommand::ParentShell(shell) => (None, shell),
                 commands::ShellForCommand::OwnedShell { target, parent } => (Some(target), parent),
@@ -1297,10 +1282,13 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 process_group_id: context.process_group_id,
             };
 
+            let params_clone = params.clone();
             match execute_command(context, params, cmd_name, assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
-                    let _ = parent_shell.display_error(&mut stderr, &err);
+                    if let Some(mut stderr) = params_clone.try_stderr(parent_shell) {
+                        let _ = parent_shell.display_error(&err, &mut stderr).await;
+                    }
 
                     let result = err.into_result(parent_shell);
                     Ok(result.into())

@@ -45,12 +45,23 @@ impl builtins::Command for JobsCommand {
             return error::unimp("jobs -n");
         }
 
+        // Buffer output
+        let mut output = Vec::new();
+
         if self.job_specs.is_empty() {
             for job in &context.shell.jobs().jobs {
-                self.display_job(&context, job)?;
+                self.format_job(&mut output, job)?;
             }
         } else {
             return error::unimp("jobs with job specs");
+        }
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            }
         }
 
         Ok(ExecutionResult::success())
@@ -58,11 +69,7 @@ impl builtins::Command for JobsCommand {
 }
 
 impl JobsCommand {
-    fn display_job(
-        &self,
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        job: &jobs::Job,
-    ) -> Result<(), brush_core::Error> {
+    fn format_job(&self, output: &mut Vec<u8>, job: &jobs::Job) -> Result<(), brush_core::Error> {
         if self.running_jobs_only && !matches!(job.state, jobs::JobState::Running) {
             return Ok(());
         }
@@ -72,10 +79,10 @@ impl JobsCommand {
 
         if self.show_pids_only {
             if let Some(pid) = job.representative_pid() {
-                writeln!(context.stdout(), "{pid}")?;
+                writeln!(output, "{pid}")?;
             }
         } else {
-            writeln!(context.stdout(), "{job}")?;
+            writeln!(output, "{job}")?;
         }
 
         Ok(())

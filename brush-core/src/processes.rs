@@ -52,6 +52,10 @@ impl ChildProcess {
 
         #[allow(clippy::ignored_unit_patterns)]
         loop {
+            if sys::signal::poll_for_stopped_children()? {
+                break Ok(ProcessWaitResult::Stopped);
+            }
+
             tokio::select! {
                 output = &mut self.exec_future => {
                     break Ok(ProcessWaitResult::Completed(output?))

@@ -1,6 +1,5 @@
 use brush_core::{ExecutionResult, builtins};
 use clap::Parser;
-use std::io::Write;
 
 /// (*EXPERIMENTAL*) Serializes the current shell state to JSON and writes it to stdout.
 /// Beware that the serialized state may include sensitive information, such as any
@@ -19,7 +18,12 @@ impl builtins::Command for SaveCommand {
             brush_core::Error::from(brush_core::ErrorKind::InternalError(e.to_string()))
         })?;
 
-        writeln!(context.stdout(), "{serialized_str}")?;
+        let mut stdout = context.stdout().ok_or_else(|| {
+            brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable("stdout"))
+        })?;
+        stdout
+            .write_all(format!("{serialized_str}\n").as_bytes())
+            .await?;
 
         Ok(ExecutionResult::success())
     }

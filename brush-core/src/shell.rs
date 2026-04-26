@@ -65,6 +65,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     traps: crate::traps::TrapHandlerConfig,
 
     /// Manages files opened and accessible via redirection operators.
+    #[cfg_attr(feature = "serde", serde(skip, default = "openfiles::OpenFiles::new"))]
     open_files: openfiles::OpenFiles,
 
     /// The current working directory.

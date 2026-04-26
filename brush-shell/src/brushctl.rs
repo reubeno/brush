@@ -1,6 +1,5 @@
 use brush_core::{ExecutionResult, sys};
 use clap::{Parser, Subcommand};
-use std::io::Write;
 
 use crate::events;
 
@@ -119,16 +118,16 @@ impl brush_core::builtins::Command for BrushCtlCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         match &self.command_group {
-            CommandGroup::Call(call) => call.execute(&context),
+            CommandGroup::Call(call) => call.execute(&context).await,
             CommandGroup::Complete(complete) => complete.execute(&mut context).await,
-            CommandGroup::Events(events) => events.execute(&context),
-            CommandGroup::Process(process) => process.execute(&context),
+            CommandGroup::Events(events) => events.execute(&context).await,
+            CommandGroup::Process(process) => process.execute(&context).await,
         }
     }
 }
 
 impl CallCommand {
-    fn execute(
+    async fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
@@ -140,7 +139,12 @@ impl CallCommand {
                     show_entry_points: *detailed,
                 };
 
-                write!(context.stdout(), "{}", stack.format(&format_options))?;
+                let mut stdout = context.stdout().ok_or_else(|| {
+                    brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable("stdout"))
+                })?;
+                stdout
+                    .write_all(stack.format(&format_options).to_string().as_bytes())
+                    .await?;
 
                 Ok(ExecutionResult::success())
             }
@@ -159,8 +163,13 @@ impl CompleteCommand {
                     .shell
                     .complete(line, cursor_index.unwrap_or(line.len()))
                     .await?;
+                let mut stdout = context.stdout().ok_or_else(|| {
+                    brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable("stdout"))
+                })?;
                 for candidate in completions.candidates {
-                    writeln!(context.stdout(), "{candidate}")?;
+                    stdout
+                        .write_all(format!("{candidate}\n").as_bytes())
+                        .await?;
                 }
                 Ok(ExecutionResult::success())
             }
@@ -169,7 +178,7 @@ impl CompleteCommand {
 }
 
 impl EventsCommand {
-    fn execute(
+    async fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
@@ -185,8 +194,13 @@ impl EventsCommand {
             match self {
                 Self::Status => {
                     let enabled_events = event_config.get_enabled_events();
+                    let mut stdout = context.stdout().ok_or_else(|| {
+                        brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable(
+                            "stdout",
+                        ))
+                    })?;
                     for event in enabled_events {
-                        writeln!(context.stdout(), "{event}")?;
+                        stdout.write_all(format!("{event}\n").as_bytes()).await?;
                     }
                 }
                 Self::Enable { event } => event_config.enable(*event)?,
@@ -201,39 +215,80 @@ impl EventsCommand {
 }
 
 impl ProcessCommand {
-    fn execute(
+    async fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::ShowProcessId => {
-                writeln!(context.stdout(), "{}", std::process::id())?;
+                let mut stdout = context.stdout().ok_or_else(|| {
+                    brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable("stdout"))
+                })?;
+                stdout
+                    .write_all(format!("{}\n", std::process::id()).as_bytes())
+                    .await?;
                 Ok(ExecutionResult::success())
             }
             Self::ShowProcessGroupId => {
                 if let Some(pgid) = sys::terminal::get_process_group_id() {
-                    writeln!(context.stdout(), "{pgid}")?;
+                    let mut stdout = context.stdout().ok_or_else(|| {
+                        brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable(
+                            "stdout",
+                        ))
+                    })?;
+                    stdout.write_all(format!("{pgid}\n").as_bytes()).await?;
                     Ok(ExecutionResult::success())
                 } else {
-                    writeln!(context.stderr(), "failed to get process group ID")?;
+                    let mut stderr = context.stderr().ok_or_else(|| {
+                        brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable(
+                            "stderr",
+                        ))
+                    })?;
+                    stderr
+                        .write_all(b"failed to get process group ID\n")
+                        .await?;
                     Ok(ExecutionResult::general_error())
                 }
             }
             Self::ShowForegroundProcessId => {
                 if let Some(pid) = sys::terminal::get_foreground_pid() {
-                    writeln!(context.stdout(), "{pid}")?;
+                    let mut stdout = context.stdout().ok_or_else(|| {
+                        brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable(
+                            "stdout",
+                        ))
+                    })?;
+                    stdout.write_all(format!("{pid}\n").as_bytes()).await?;
                     Ok(ExecutionResult::success())
                 } else {
-                    writeln!(context.stderr(), "failed to get foreground process ID")?;
+                    let mut stderr = context.stderr().ok_or_else(|| {
+                        brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable(
+                            "stderr",
+                        ))
+                    })?;
+                    stderr
+                        .write_all(b"failed to get foreground process ID\n")
+                        .await?;
                     Ok(ExecutionResult::general_error())
                 }
             }
             Self::ShowParentProcessId => {
                 if let Some(pid) = sys::terminal::get_parent_process_id() {
-                    writeln!(context.stdout(), "{pid}")?;
+                    let mut stdout = context.stdout().ok_or_else(|| {
+                        brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable(
+                            "stdout",
+                        ))
+                    })?;
+                    stdout.write_all(format!("{pid}\n").as_bytes()).await?;
                     Ok(ExecutionResult::success())
                 } else {
-                    writeln!(context.stderr(), "failed to get parent process ID")?;
+                    let mut stderr = context.stderr().ok_or_else(|| {
+                        brush_core::Error::from(brush_core::ErrorKind::OpenFileNotWritable(
+                            "stderr",
+                        ))
+                    })?;
+                    stderr
+                        .write_all(b"failed to get parent process ID\n")
+                        .await?;
                     Ok(ExecutionResult::general_error())
                 }
             }

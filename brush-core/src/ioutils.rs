@@ -35,10 +35,15 @@ impl FailingReaderWriter {
     pub const fn new(message: &'static str) -> Self {
         Self { message }
     }
+
+    /// Returns the error message.
+    pub const fn message(&self) -> &'static str {
+        self.message
+    }
 }
 
-impl openfiles::Stream for FailingReaderWriter {
-    fn clone_box(&self) -> Box<dyn openfiles::Stream> {
+impl openfiles::BlockingStream for FailingReaderWriter {
+    fn clone_box(&self) -> Box<dyn openfiles::BlockingStream> {
         Box::new(self.clone())
     }
 
@@ -73,7 +78,7 @@ impl std::io::Write for FailingReaderWriter {
     }
 }
 
-impl From<FailingReaderWriter> for openfiles::OpenFile {
+impl From<FailingReaderWriter> for openfiles::blocking::File {
     fn from(frw: FailingReaderWriter) -> Self {
         Self::Stream(Box::new(frw))
     }

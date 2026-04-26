@@ -11,7 +11,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
 
         if self.options.enable_job_control {
             for (job, _result) in results {
-                writeln!(self.stderr(), "{job}")?;
+                let _ = writeln!(std::io::stderr(), "{job}");
             }
         }
 

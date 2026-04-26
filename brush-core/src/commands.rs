@@ -43,27 +43,23 @@ pub struct ExecutionContext<'a, SE: ShellExtensions = extensions::DefaultShellEx
 }
 
 impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
-    /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> impl std::io::Read + 'static {
-        self.params.stdin(self.shell)
+    /// Returns the standard input file.
+    pub fn stdin(&self) -> Option<openfiles::OpenFile> {
+        self.params.try_stdin(self.shell)
     }
 
-    /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> impl std::io::Write + 'static {
-        self.params.stdout(self.shell)
+    /// Returns the standard output file.
+    pub fn stdout(&self) -> Option<openfiles::OpenFile> {
+        self.params.try_stdout(self.shell)
     }
 
-    /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write + 'static {
-        self.params.stderr(self.shell)
+    /// Returns the standard error file.
+    pub fn stderr(&self) -> Option<openfiles::OpenFile> {
+        self.params.try_stderr(self.shell)
     }
 
     /// Returns the file descriptor with the given number. Returns `None`
     /// if the file descriptor is not open.
-    ///
-    /// # Arguments
-    ///
-    /// * `fd` - The file descriptor number to retrieve.
     pub fn try_fd(&self, fd: ShellFd) -> Option<openfiles::OpenFile> {
         self.params.try_fd(self.shell, fd)
     }
@@ -71,6 +67,31 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     /// Iterates over all open file descriptors.
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
+    }
+
+    /// Writes an error message to stderr.
+    pub async fn write_error(&self, msg: impl std::fmt::Display) {
+        if let Some(mut stderr) = self.stderr() {
+            let _ = stderr.write_all(format!("{msg}\n").as_bytes()).await;
+        }
+    }
+
+    /// Writes a formatted line to stderr if available.
+    pub async fn write_stderr(&self, msg: impl std::fmt::Display) -> std::io::Result<()> {
+        if let Some(mut stderr) = self.stderr() {
+            stderr.write_all(format!("{msg}\n").as_bytes()).await?;
+            stderr.flush().await?;
+        }
+        Ok(())
+    }
+
+    /// Writes a formatted line to stdout if available.
+    pub async fn write_stdout(&self, msg: impl std::fmt::Display) -> std::io::Result<()> {
+        if let Some(mut stdout) = self.stdout() {
+            stdout.write_all(format!("{msg}\n").as_bytes()).await?;
+            stdout.flush().await?;
+        }
+        Ok(())
     }
 }
 
@@ -805,7 +826,11 @@ async fn run_substitution_command(
     if let Ok(program) = &parse_result {
         if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
             interp::setup_redirect(&mut shell, &mut params, redir).await?;
-            std::io::copy(&mut params.stdin(&shell), &mut params.stdout(&shell))?;
+            if let (Some(mut stdin), Some(mut stdout)) =
+                (params.try_stdin(&shell), params.try_stdout(&shell))
+            {
+                tokio::io::copy(&mut stdin, &mut stdout).await?;
+            }
             return Ok(ExecutionResult::new(0));
         }
     }

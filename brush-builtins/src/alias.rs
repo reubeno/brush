@@ -23,10 +23,12 @@ impl builtins::Command for AliasCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
         if self.print || self.aliases.is_empty() {
             for (name, value) in context.shell.aliases() {
-                writeln!(context.stdout(), "alias {name}='{value}'")?;
+                writeln!(output, "alias {name}='{value}'")?;
             }
         } else {
             for alias in &self.aliases {
@@ -38,15 +40,29 @@ impl builtins::Command for AliasCommand {
                         .aliases_mut()
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else if let Some(value) = context.shell.aliases().get(alias) {
-                    writeln!(context.stdout(), "alias {alias}='{value}'")?;
+                    writeln!(output, "alias {alias}='{value}'")?;
                 } else {
                     writeln!(
-                        context.stderr(),
+                        stderr_output,
                         "{}: {alias}: not found",
                         context.command_name
                     )?;
                     exit_code = ExecutionResult::general_error();
                 }
+            }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            if let Some(mut stderr) = context.stderr() {
+                stderr.write_all(&stderr_output).await?;
+                stderr.flush().await?;
             }
         }
 

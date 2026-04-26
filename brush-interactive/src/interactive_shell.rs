@@ -135,7 +135,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
                     // Report the error, but continue to execute.
                     let shell = self.shell.lock().await;
                     let mut stderr = shell.stderr();
-                    let _ = shell.display_error(&mut stderr, &err);
+                    let _ = shell.display_error(&err, &mut stderr).await;
 
                     drop(shell);
                 }
@@ -155,7 +155,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         shell.end_interactive_session()?;
 
         if announce_exit {
-            writeln!(shell.stderr(), "exit")?;
+            shell.stderr().write_all(b"exit\n").await?;
         }
 
         if let Err(e) = shell.save_history() {

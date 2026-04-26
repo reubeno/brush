@@ -142,7 +142,7 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.50.0", features = ["io-util", "macros", "rt"] }
+tokio = { version = "1.50.0", features = ["io-util", "macros", "rt", "sync", "time"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 tokio = { version = "1.50.0", features = [
@@ -153,6 +153,7 @@ tokio = { version = "1.50.0", features = [
     "rt-multi-thread",
     "signal",
     "sync",
+    "time",
 ] }
 uucore = { version = "0.8.0", default-features = false, features = ["format"] }
 

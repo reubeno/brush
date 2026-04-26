@@ -18,6 +18,7 @@ impl builtins::Command for BgCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
+        let mut stderr_output = Vec::new();
 
         if !self.job_specs.is_empty() {
             for job_spec in &self.job_specs {
@@ -25,10 +26,9 @@ impl builtins::Command for BgCommand {
                     job.move_to_background()?;
                 } else {
                     writeln!(
-                        context.stderr(),
+                        stderr_output,
                         "{}: {}: no such job",
-                        context.command_name,
-                        job_spec
+                        context.command_name, job_spec
                     )?;
                     exit_code = ExecutionResult::general_error();
                 }
@@ -37,8 +37,15 @@ impl builtins::Command for BgCommand {
             if let Some(job) = context.shell.jobs_mut().current_job_mut() {
                 job.move_to_background()?;
             } else {
-                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
+                writeln!(stderr_output, "{}: no current job", context.command_name)?;
                 exit_code = ExecutionResult::general_error();
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            if let Some(mut stderr) = context.stderr() {
+                stderr.write_all(&stderr_output).await?;
+                stderr.flush().await?;
             }
         }
 

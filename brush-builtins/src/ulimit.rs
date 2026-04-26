@@ -280,11 +280,7 @@ impl ResourceDescription {
     }
 
     /// Print either soft or hard limit
-    fn print(
-        &self,
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        hard: bool,
-    ) -> io::Result<()> {
+    fn print_to(&self, output: &mut Vec<u8>, hard: bool) -> io::Result<()> {
         if !self.resource.is_supported() {
             return Ok(());
         }
@@ -298,13 +294,7 @@ impl ResourceDescription {
             Unit::Seconds => format!("(seconds, -{})", self.short),
         };
         let resource = self.get(hard).unwrap_or_else(|e| format!("{e}"));
-        writeln!(
-            context.stdout(),
-            "{:<26}{:>16} {}",
-            self.description,
-            unit,
-            resource
-        )
+        writeln!(output, "{:<26}{:>16} {}", self.description, unit, resource)
     }
 
     /// Provide the matching help String
@@ -491,11 +481,20 @@ impl builtins::Command for ULimitCommand {
             resource.set(self.hard, value)?;
         }
 
+        let mut output = Vec::new();
+
         if resources_to_get.len() == 1 {
-            writeln!(context.stdout(), "{}", resources_to_get[0].get(self.hard)?)?;
+            writeln!(output, "{}", resources_to_get[0].get(self.hard)?)?;
         } else {
             for resource in resources_to_get {
-                resource.print(&context, self.hard)?;
+                resource.print_to(&mut output, self.hard)?;
+            }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
             }
         }
 

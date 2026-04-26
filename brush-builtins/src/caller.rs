@@ -18,17 +18,13 @@ impl builtins::Command for CallerCommand {
     ) -> Result<ExecutionResult, Self::Error> {
         let stack = context.shell.call_stack();
 
-        // See how far back we need to look. Frame N represents the Nth caller
-        // (e.g., 0 = immediate caller, 1 = caller's caller, etc.).
         let expr = self.expr.unwrap_or(0);
 
-        // Get all frames into a vector we can easily index into.
         let frames: Vec<_> = stack
             .iter()
             .filter(|frame| frame.frame_type.is_function() || frame.frame_type.is_script())
             .collect();
 
-        // Look for the last-known location in the parent of frame N.
         let Some(calling_frame) = frames.get(expr + 1) else {
             return Ok(ExecutionResult::general_error());
         };
@@ -36,8 +32,8 @@ impl builtins::Command for CallerCommand {
         let line = calling_frame.current_line().unwrap_or(1);
         let filename = &calling_frame.source_info.source;
 
-        // When the expr is provided, we display "LINE FUNCTION_NAME FILENAME"
-        // When the expr is omitted, we only display "LINE FILENAME"
+        let mut output = Vec::new();
+
         if self.expr.is_some() {
             let function_name = match &calling_frame.frame_type {
                 callstack::FrameType::Function(func_call) => func_call.name(),
@@ -45,9 +41,14 @@ impl builtins::Command for CallerCommand {
                 _ => "".into(),
             };
 
-            writeln!(context.stdout(), "{line} {function_name} {filename}")?;
+            writeln!(output, "{line} {function_name} {filename}")?;
         } else {
-            writeln!(context.stdout(), "{line} {filename}")?;
+            writeln!(output, "{line} {filename}")?;
+        }
+
+        if let Some(mut stdout) = context.stdout() {
+            stdout.write_all(&output).await?;
+            stdout.flush().await?;
         }
 
         Ok(ExecutionResult::success())

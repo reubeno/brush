@@ -148,40 +148,40 @@ impl BindCommand {
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, BindError> {
         let mut bindings = bindings.lock().await;
+        let mut output = Vec::new();
 
         if self.list_funcs {
             for func in interfaces::InputFunction::iter() {
-                writeln!(context.stdout(), "{func}")?;
+                writeln!(output, "{func}")?;
             }
         }
 
         if self.list_funcs_and_bindings {
-            display_funcs_and_bindings(&*bindings, context, false /* reusable? */)?;
+            display_funcs_and_bindings(&*bindings, &mut output, false)?;
         }
 
         if self.list_funcs_and_bindings_reusable {
-            display_funcs_and_bindings(&*bindings, context, true /* reusable? */)?;
+            display_funcs_and_bindings(&*bindings, &mut output, true)?;
         }
 
         if self.list_key_seqs_that_invoke_macros {
-            display_macros(&*bindings, context, false /* reusable? */)?;
+            display_macros(&*bindings, &mut output, false)?;
         }
 
         if self.list_key_seqs_that_invoke_macros_reusable {
-            display_macros(&*bindings, context, true /* reusable? */)?;
+            display_macros(&*bindings, &mut output, true)?;
         }
 
         if self.list_vars {
             let options = &context.shell.completion_config().fallback_options;
 
-            // For now we'll just display a few items and show defaults.
             writeln!(
-                context.stdout(),
+                output,
                 "mark-directories is set to `{}'",
                 to_onoff(options.mark_directories)
             )?;
             writeln!(
-                context.stdout(),
+                output,
                 "mark-symlinked-directories is set to `{}'",
                 to_onoff(options.mark_symlinked_directories)
             )?;
@@ -190,14 +190,13 @@ impl BindCommand {
         if self.list_vars_reusable {
             let options = &context.shell.completion_config().fallback_options;
 
-            // For now we'll just display a few items and show defaults.
             writeln!(
-                context.stdout(),
+                output,
                 "set mark-directories {}",
                 to_onoff(options.mark_directories)
             )?;
             writeln!(
-                context.stdout(),
+                output,
                 "set mark-symlinked-directories {}",
                 to_onoff(options.mark_symlinked_directories)
             )?;
@@ -208,12 +207,19 @@ impl BindCommand {
 
             if !seqs.is_empty() {
                 writeln!(
-                    context.stdout(),
+                    output,
                     "{func_str} can be invoked via {}.",
                     seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
                 )?;
             } else {
-                writeln!(context.stdout(), "{func_str} is not bound to any keys.")?;
+                writeln!(output, "{func_str} is not bound to any keys.")?;
+                drop(bindings);
+                if !output.is_empty() {
+                    if let Some(mut stdout) = context.stdout() {
+                        stdout.write_all(&output).await?;
+                        stdout.flush().await?;
+                    }
+                }
                 return Ok(ExecutionResult::general_error());
             }
         }
@@ -241,13 +247,12 @@ impl BindCommand {
                     continue;
                 };
 
-                writeln!(context.stdout(), "\"{seq}\" \"{cmd}\"")?;
+                writeln!(output, "\"{seq}\" \"{cmd}\"")?;
             }
         }
 
         if !self.key_seq_bindings.is_empty() {
             if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
-                // NOTE(vi): Quietly ignore since we don't support vi mode.
                 return Ok(ExecutionResult::success());
             }
 
@@ -259,7 +264,6 @@ impl BindCommand {
 
         if let Some(key_sequence) = &self.key_sequence {
             if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
-                // NOTE(vi): Quietly ignore since we don't support vi mode.
                 return Ok(ExecutionResult::success());
             }
 
@@ -268,6 +272,13 @@ impl BindCommand {
         }
 
         drop(bindings);
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            }
+        }
 
         Ok(ExecutionResult::success())
     }
@@ -443,7 +454,7 @@ const fn to_onoff(value: bool) -> &'static str {
 
 fn display_funcs_and_bindings(
     bindings: &dyn interfaces::KeyBindings,
-    context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    output: &mut Vec<u8>,
     reusable: bool,
 ) -> Result<(), BindError> {
     let mut sequences_by_func: HashMap<InputFunction, Vec<KeySequence>> = HashMap::new();
@@ -464,20 +475,20 @@ fn display_funcs_and_bindings(
         if let Some(seqs) = sequences_by_func.get(&func) {
             if reusable {
                 for seq in seqs {
-                    writeln!(context.stdout(), "\"{seq}\": {func}")?;
+                    writeln!(output, "\"{seq}\": {func}")?;
                 }
             } else {
                 writeln!(
-                    context.stdout(),
+                    output,
                     "{func} can be found on {}.",
                     seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
                 )?;
             }
         } else {
             if reusable {
-                writeln!(context.stdout(), "# {func} (not bound)")?;
+                writeln!(output, "# {func} (not bound)")?;
             } else {
-                writeln!(context.stdout(), "{func} is not bound to any keys")?;
+                writeln!(output, "{func} is not bound to any keys")?;
             }
         }
     }
@@ -487,14 +498,14 @@ fn display_funcs_and_bindings(
 
 fn display_macros(
     bindings: &dyn interfaces::KeyBindings,
-    context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    output: &mut Vec<u8>,
     reusable: bool,
 ) -> Result<(), BindError> {
     for (left, right) in bindings.get_macros() {
         if reusable {
-            writeln!(context.stdout(), "\"{left}\": \"{right}\"")?;
+            writeln!(output, "\"{left}\": \"{right}\"")?;
         } else {
-            writeln!(context.stdout(), "{left} outputs {right}")?;
+            writeln!(output, "{left} outputs {right}")?;
         }
     }
 

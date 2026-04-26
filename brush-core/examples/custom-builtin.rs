@@ -13,10 +13,8 @@
 //! ```
 
 use anyhow::Result;
-use clap::Parser;
-use std::io::Write;
-
 use brush_core::{ExecutionResult, builtins};
+use clap::Parser;
 
 //
 // Step 1 (optional): Define a custom error type for your builtin
@@ -104,7 +102,16 @@ impl builtins::Command for GreetCommand {
 
         // Execute the greeting.
         for _ in 0..self.repeat_count {
-            writeln!(context.stdout(), "{greeting}")?;
+            let mut stdout = context
+                .stdout()
+                .ok_or(GreetError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "stdout not available",
+                )))?;
+            stdout
+                .write_all(format!("{greeting}\n").as_bytes())
+                .await
+                .map_err(GreetError::IoError)?;
         }
 
         // Return success

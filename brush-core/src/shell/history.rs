@@ -2,41 +2,30 @@
 
 use std::path::PathBuf;
 
-use crate::{error, openfiles};
+use crate::{error, history};
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
-    pub(super) fn load_history(&self) -> Result<Option<crate::history::History>, error::Error> {
+    pub(super) fn load_history(&self) -> Result<Option<history::History>, error::Error> {
         const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
 
         let Some(history_path) = self.history_file_path() else {
             return Ok(None);
         };
 
-        let mut options = std::fs::File::options();
-        options.read(true);
+        let history_file = std::fs::File::open(&history_path)?;
 
-        let mut history_file =
-            self.open_file(&options, history_path, &self.default_exec_params())?;
+        let file_metadata = history_file.metadata()?;
+        let file_size = file_metadata.len();
 
-        // Check on the file's size.
-        if let openfiles::OpenFile::File(file) = &mut history_file {
-            let file_metadata = file.metadata()?;
-            let file_size = file_metadata.len();
-
-            // If the file is empty, no reason to try reading it. Note that this will also
-            // end up excluding non-regular files that report a 0 file size but appear
-            // to have contents when read.
-            if file_size == 0 {
-                return Ok(None);
-            }
-
-            // Bail if the file is unrealistically large. For now we just refuse to import it.
-            if file_size > MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
-                return Err(error::ErrorKind::HistoryFileTooLargeToImport.into());
-            }
+        if file_size == 0 {
+            return Ok(None);
         }
 
-        Ok(Some(crate::history::History::import(history_file)?))
+        if file_size > MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
+            return Err(error::ErrorKind::HistoryFileTooLargeToImport.into());
+        }
+
+        Ok(Some(history::History::import(history_file)?))
     }
 
     /// Returns the path to the history file used by the shell, if one is set.

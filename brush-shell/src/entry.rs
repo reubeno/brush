@@ -303,7 +303,7 @@ async fn run_async(
         Err(brush_interactive::ShellError::ShellError(e)) => {
             let shell = shell.lock().await;
             let mut stderr = shell.stderr();
-            let _ = shell.display_error(&mut stderr, &e);
+            let _ = shell.display_error(&e, &mut stderr).await;
             drop(shell);
             1
         }
