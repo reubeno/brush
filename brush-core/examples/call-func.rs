@@ -30,7 +30,7 @@ async fn run_func(shell: &mut brush_core::Shell, suppress_stdout: bool) -> Resul
     if suppress_stdout {
         params.set_fd(
             brush_core::openfiles::OpenFiles::STDOUT_FD,
-            brush_core::openfiles::null()?,
+            brush_core::openfiles::null()?.into(),
         );
     }
 

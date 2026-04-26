@@ -226,19 +226,39 @@ impl builtins::Command for CompleteCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
-        // If -D, -E, or -I are specified, then any names provided are ignored.
         if self.use_as_default
             || self.use_for_empty_line
             || self.use_for_initial_word
             || self.names.is_empty()
         {
-            self.process_global(&mut context)?;
+            self.process_global(&mut context, &mut output, &mut stderr_output)?;
         } else {
             for name in &self.names {
-                if !self.try_process_for_command(&mut context, name.as_str())? {
+                if !self.try_process_for_command(
+                    &mut context,
+                    name.as_str(),
+                    &mut output,
+                    &mut stderr_output,
+                )? {
                     result = ExecutionResult::general_error();
                 }
+            }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            if let Some(mut stderr) = context.stderr() {
+                stderr.write_all(&stderr_output).await?;
+                stderr.flush().await?;
             }
         }
 
@@ -250,11 +270,11 @@ impl CompleteCommand {
     fn process_global(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        output: &mut Vec<u8>,
+        _stderr_output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
-        // Read options before taking mutable borrow on completion_config
         let extended_globbing = context.shell.options().extended_globbing;
 
-        // These are processed in an intentional order.
         let special_option_name;
         let target_spec = if self.use_as_default {
             special_option_name = "-D";
@@ -270,18 +290,17 @@ impl CompleteCommand {
             None
         };
 
-        // Treat 'complete' with no options the same as 'complete -p'.
         if self.print || (!self.remove && target_spec.is_none()) {
             if let Some(target_spec) = target_spec {
                 if let Some(existing_spec) = target_spec {
                     let existing_spec = existing_spec.clone();
-                    Self::display_spec(context, Some(special_option_name), None, &existing_spec)?;
+                    Self::display_spec(output, Some(special_option_name), None, &existing_spec)?;
                 } else {
                     return error::unimp("special spec not found");
                 }
             } else {
                 for (command_name, spec) in context.shell.completion_config().iter() {
-                    Self::display_spec(context, None, Some(command_name.as_str()), spec)?;
+                    Self::display_spec(output, None, Some(command_name.as_str()), spec)?;
                 }
             }
         } else if self.remove {
@@ -304,21 +323,18 @@ impl CompleteCommand {
     }
 
     fn try_display_spec_for_command(
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: &str,
+        spec: &Spec,
+        output: &mut Vec<u8>,
+        _stderr_output: &mut Vec<u8>,
     ) -> Result<bool, brush_core::Error> {
-        if let Some(spec) = context.shell.completion_config().get(name) {
-            Self::display_spec(context, None, Some(name), spec)?;
-            Ok(true)
-        } else {
-            writeln!(context.stderr(), "no completion found for command")?;
-            Ok(false)
-        }
+        Self::display_spec(output, None, Some(name), spec)?;
+        Ok(true)
     }
 
     #[expect(clippy::too_many_lines)]
     fn display_spec(
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        output: &mut Vec<u8>,
         special_name: Option<&str>,
         command_name: Option<&str>,
         spec: &Spec,
@@ -439,7 +455,7 @@ impl CompleteCommand {
             s.push_str(command_name);
         }
 
-        writeln!(context.stdout(), "{s}")?;
+        writeln!(output, "{s}")?;
 
         Ok(())
     }
@@ -448,32 +464,38 @@ impl CompleteCommand {
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: &str,
+        output: &mut Vec<u8>,
+        stderr_output: &mut Vec<u8>,
     ) -> Result<bool, brush_core::Error> {
         if self.print {
-            return Self::try_display_spec_for_command(context, name);
+            if let Some(spec) = context.shell.completion_config().get(name) {
+                Self::try_display_spec_for_command(name, spec, output, stderr_output)?;
+                Ok(true)
+            } else {
+                writeln!(stderr_output, "no completion found for command")?;
+                Ok(false)
+            }
         } else if self.remove {
             let mut result = context.shell.completion_config_mut().remove(name);
 
             if !result {
                 if context.shell.options().interactive {
-                    writeln!(context.stderr(), "complete: {name}: not found")?;
+                    writeln!(stderr_output, "complete: {name}: not found")?;
                 } else {
-                    // For some reason, this is not supposed to be treated as a failure
-                    // in non-interactive execution.
                     result = true;
                 }
             }
 
-            return Ok(result);
+            Ok(result)
+        } else {
+            let config = self
+                .common_args
+                .create_spec(context.shell.options().extended_globbing);
+
+            context.shell.completion_config_mut().set(name, config);
+
+            Ok(true)
         }
-
-        let config = self
-            .common_args
-            .create_spec(context.shell.options().extended_globbing);
-
-        context.shell.completion_config_mut().set(name, config);
-
-        Ok(true)
     }
 }
 
@@ -530,8 +552,13 @@ impl builtins::Command for CompGenCommand {
                     return Ok(ExecutionResult::general_error());
                 }
 
+                let mut output = Vec::new();
                 for candidate in candidates {
-                    writeln!(context.stdout(), "{candidate}")?;
+                    writeln!(output, "{candidate}")?;
+                }
+                if let Some(mut stdout) = context.stdout() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
                 }
             }
             completion::Answer::RestartCompletionProcess => {
@@ -585,10 +612,15 @@ impl builtins::Command for CompOptCommand {
 
         if !self.names.is_empty() {
             if self.update_default || self.update_empty || self.update_initial_word {
+                let mut stderr_output = Vec::new();
                 writeln!(
-                    context.stderr(),
+                    stderr_output,
                     "compopt: cannot specify names with -D, -E, or -I"
                 )?;
+                if let Some(mut stderr) = context.stderr() {
+                    stderr.write_all(&stderr_output).await?;
+                    stderr.flush().await?;
+                }
                 return Ok(ExecutionExitCode::InvalidUsage.into());
             }
 

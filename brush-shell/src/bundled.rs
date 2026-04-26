@@ -28,7 +28,6 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -220,10 +219,11 @@ fn shim_execute<SE: ShellExtensions>(
         let exe_path = if let Some(p) = self_exe() {
             p.to_string_lossy().into_owned()
         } else {
-            let _ = writeln!(
-                context.stderr(),
-                "brush: cannot determine path to running executable"
-            );
+            if let Some(mut stderr) = context.stderr() {
+                let _ = stderr
+                    .write_all(b"brush: cannot determine path to running executable\n")
+                    .await;
+            }
             return Ok(ExecutionExitCode::CannotExecute.into());
         };
 

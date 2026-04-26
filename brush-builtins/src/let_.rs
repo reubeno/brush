@@ -21,7 +21,12 @@ impl builtins::Command for LetCommand {
         let mut result = ExecutionExitCode::InvalidUsage.into();
 
         if self.exprs.is_empty() {
-            writeln!(context.stderr(), "missing expression")?;
+            let mut stderr_output = Vec::new();
+            writeln!(stderr_output, "missing expression")?;
+            if let Some(mut stderr) = context.stderr() {
+                stderr.write_all(&stderr_output).await?;
+                stderr.flush().await?;
+            }
             return Ok(result);
         }
 

@@ -22,6 +22,7 @@ impl builtins::Command for UnaliasCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
+        let mut stderr_output = Vec::new();
 
         if self.remove_all {
             context.shell.aliases_mut().clear();
@@ -29,13 +30,19 @@ impl builtins::Command for UnaliasCommand {
             for alias in &self.aliases {
                 if context.shell.aliases_mut().remove(alias).is_none() {
                     writeln!(
-                        context.stderr(),
+                        stderr_output,
                         "{}: {}: not found",
-                        context.command_name,
-                        alias
+                        context.command_name, alias
                     )?;
                     exit_code = ExecutionResult::general_error();
                 }
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            if let Some(mut stderr) = context.stderr() {
+                stderr.write_all(&stderr_output).await?;
+                stderr.flush().await?;
             }
         }
 

@@ -1,11 +1,10 @@
 use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 use brush_core::{ErrorKind, builtins, env, error, variables};
-
-use std::io::{Read, Write};
 
 /// Exit code returned when `read` times out.
 /// This is 128 + SIGALRM (14) = 142, matching bash behavior.
@@ -91,7 +90,7 @@ impl builtins::Command for ReadCommand {
         }
 
         // Validate timeout value if provided.
-        if let Some(result) = self.validate_timeout(&context)? {
+        if let Some(result) = self.validate_timeout(&context).await? {
             return Ok(result);
         }
 
@@ -101,10 +100,10 @@ impl builtins::Command for ReadCommand {
             brush_core::ShellFd::from,
         );
 
-        // Retrieve the file.
-        let input_stream = context
+        // Check if input is a terminal
+        let is_terminal = context
             .try_fd(fd_num)
-            .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+            .is_some_and(|f: brush_core::openfiles::OpenFile| f.is_terminal());
 
         // Retrieve effective value of IFS for splitting.
         // We convert to owned String to release the borrow before the mutable borrow
@@ -115,7 +114,9 @@ impl builtins::Command for ReadCommand {
         let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
 
         // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        let read_result = self
+            .read_line(&context, fd_num, is_terminal, timeout)
+            .await?;
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -348,24 +349,22 @@ impl InputReader {
         brush_core::sys::poll::poll_for_input(&self.input, Duration::ZERO).unwrap_or(false)
     }
 
-    /// Reads the next input event, handling timeout and control characters.
-    fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
-        // Check timeout before attempting read.
-        if let Some(deadline) = self.deadline {
+    /// Reads the next input event asynchronously, handling timeout and control characters.
+    async fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
+        let n = if let Some(deadline) = self.deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Ok(InputEvent::Timeout);
             }
 
-            // Poll for input with remaining timeout.
-            match brush_core::sys::poll::poll_for_input(&self.input, remaining) {
-                Ok(true) => { /* Data available, proceed. */ }
-                Ok(false) => return Ok(InputEvent::Timeout),
-                Err(e) => return Err(e.into()),
+            match tokio::time::timeout(remaining, self.input.read(&mut self.buffer)).await {
+                Ok(result) => result?,
+                Err(_elapsed) => return Ok(InputEvent::Timeout),
             }
-        }
+        } else {
+            self.input.read(&mut self.buffer).await?
+        };
 
-        let n = self.input.read(&mut self.buffer)?;
         if n == 0 {
             return Ok(InputEvent::Eof);
         }
@@ -400,7 +399,7 @@ struct LineReaderConfig {
 /// For example, with `-n 3` and input `a\bc` (4 bytes):
 /// - Bash processes: 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) → "abc"
 /// - The backslash is consumed but doesn't count toward the limit
-fn read_line_with_reader(
+async fn read_line_with_reader(
     reader: &mut InputReader,
     config: &LineReaderConfig,
 ) -> Result<ReadResult, brush_core::Error> {
@@ -408,7 +407,7 @@ fn read_line_with_reader(
     let mut pending_backslash = false;
 
     loop {
-        let event = reader.read_event()?;
+        let event = reader.read_event().await?;
 
         match event {
             InputEvent::Eof => {
@@ -504,24 +503,34 @@ fn read_line_with_reader(
 
 impl ReadCommand {
     /// Reads a line of input, optionally with a timeout.
+    /// Reads a line of input, optionally with a timeout.
     ///
     /// Handles backslash escape processing:
     /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next
     ///   char
     /// - With `-r`: backslash is treated as a literal character
-    fn read_line(
+    async fn read_line<SE: brush_core::ShellExtensions>(
         &self,
-        input_file: brush_core::openfiles::OpenFile,
-        mut stderr_file: impl std::io::Write,
+        context: &brush_core::ExecutionContext<'_, SE>,
+        fd_num: brush_core::ShellFd,
+        is_terminal: bool,
         timeout: Option<Duration>,
     ) -> Result<ReadResult, brush_core::Error> {
+        let input_file = context
+            .try_fd(fd_num)
+            .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+
         let term_mode = self.setup_terminal_settings(&input_file)?;
 
         // Display prompt on stderr, but only if input is from a terminal (per bash behavior).
         if let Some(prompt) = &self.prompt {
-            if input_file.is_terminal() {
-                write!(stderr_file, "{prompt}")?;
-                stderr_file.flush()?;
+            if is_terminal {
+                let mut stderr_output = Vec::new();
+                write!(stderr_output, "{prompt}")?;
+                if let Some(mut stderr) = context.stderr() {
+                    stderr.write_all(&stderr_output).await?;
+                    stderr.flush().await?;
+                }
             }
         }
 
@@ -561,7 +570,7 @@ impl ReadCommand {
             process_escapes: !self.raw_mode,
         };
 
-        read_line_with_reader(&mut reader, &config)
+        read_line_with_reader(&mut reader, &config).await
     }
 
     fn setup_terminal_settings(
@@ -583,22 +592,21 @@ impl ReadCommand {
     }
 
     /// Validates the timeout value and returns an error result if invalid.
-    ///
-    /// Returns `Ok(Some(result))` if the timeout is invalid (caller should return early),
-    /// `Ok(None)` if the timeout is valid or not specified.
-    ///
-    /// TODO(read): Bash uses $TMOUT as a default timeout for `read` when -t is not specified.
-    fn validate_timeout(
+    async fn validate_timeout<SE: brush_core::ShellExtensions>(
         &self,
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        context: &brush_core::ExecutionContext<'_, SE>,
     ) -> Result<Option<brush_core::ExecutionResult>, brush_core::Error> {
         if let Some(timeout) = self.timeout_in_seconds {
             if timeout < 0.0 {
+                let mut stderr_output = Vec::new();
                 writeln!(
-                    context.stderr(),
+                    stderr_output,
                     "{}: -t: invalid timeout specification",
                     context.command_name
                 )?;
+                if let Some(mut stderr) = context.stderr() {
+                    stderr.write_all(&stderr_output).await?;
+                }
                 return Ok(Some(brush_core::ExecutionResult::general_error()));
             }
         }

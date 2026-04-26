@@ -37,13 +37,15 @@ impl builtins::Command for HashCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
         if self.remove_all {
             context.shell.program_location_cache_mut().reset();
         } else if self.remove {
             for name in &self.names {
                 if !context.shell.program_location_cache_mut().unset(name) {
-                    writeln!(context.stderr(), "{name}: not found")?;
+                    writeln!(stderr_output, "{name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -51,11 +53,7 @@ impl builtins::Command for HashCommand {
             for name in &self.names {
                 if let Some(path) = context.shell.program_location_cache().get(name) {
                     if self.display_as_usable_input {
-                        writeln!(
-                            context.stdout(),
-                            "builtin hash -p {} {name}",
-                            path.to_string_lossy()
-                        )?;
+                        writeln!(output, "builtin hash -p {} {name}", path.to_string_lossy())?;
                     } else {
                         let mut prefix = String::new();
 
@@ -64,14 +62,10 @@ impl builtins::Command for HashCommand {
                             prefix.push('\t');
                         }
 
-                        writeln!(
-                            context.stdout(),
-                            "{prefix}{}",
-                            path.to_string_lossy().as_ref()
-                        )?;
+                        writeln!(output, "{prefix}{}", path.to_string_lossy().as_ref())?;
                     }
                 } else {
-                    writeln!(context.stderr(), "{name}: not found")?;
+                    writeln!(stderr_output, "{name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -84,23 +78,34 @@ impl builtins::Command for HashCommand {
             }
         } else {
             for name in &self.names {
-                // Remove from the cache if already hashed.
                 let _ = context.shell.program_location_cache_mut().unset(name);
 
-                // Names with slashes are accepted silently
                 if name.contains('/') {
                     continue;
                 }
 
-                // Hash the path
                 if context
                     .shell
                     .find_first_executable_in_path_using_cache(name)
                     .is_none()
                 {
-                    writeln!(context.stderr(), "{name}: not found")?;
+                    writeln!(stderr_output, "{name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
+            }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            if let Some(mut stderr) = context.stderr() {
+                stderr.write_all(&stderr_output).await?;
+                stderr.flush().await?;
             }
         }
 

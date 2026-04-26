@@ -39,7 +39,6 @@ impl builtins::Command for CommandCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
             if self.print_description || self.print_verbose_description {
                 if let Some(found_cmd) = Self::try_find_command(
@@ -47,22 +46,32 @@ impl builtins::Command for CommandCommand {
                     command_name.as_str(),
                     self.use_default_path,
                 ) {
+                    let mut output = Vec::new();
                     if self.print_description {
-                        writeln!(context.stdout(), "{found_cmd}")?;
+                        writeln!(output, "{found_cmd}")?;
                     } else {
                         match found_cmd {
                             FoundCommand::Builtin(_name) => {
-                                writeln!(context.stdout(), "{command_name} is a shell builtin")?;
+                                writeln!(output, "{command_name} is a shell builtin")?;
                             }
                             FoundCommand::External(path) => {
-                                writeln!(context.stdout(), "{command_name} is {path}")?;
+                                writeln!(output, "{command_name} is {path}")?;
                             }
                         }
+                    }
+                    if let Some(mut stdout) = context.stdout() {
+                        stdout.write_all(&output).await?;
+                        stdout.flush().await?;
                     }
                     Ok(ExecutionResult::success())
                 } else {
                     if self.print_verbose_description {
-                        writeln!(context.stderr(), "command: {command_name}: not found")?;
+                        let mut stderr_output = Vec::new();
+                        writeln!(stderr_output, "command: {command_name}: not found")?;
+                        if let Some(mut stderr) = context.stderr() {
+                            stderr.write_all(&stderr_output).await?;
+                            stderr.flush().await?;
+                        }
                     }
                     Ok(ExecutionResult::general_error())
                 }

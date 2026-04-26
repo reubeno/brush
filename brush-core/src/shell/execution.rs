@@ -1,6 +1,6 @@
 //! Execution support for shell.
 
-use std::{io::Read, path::Path};
+use std::path::Path;
 
 use crate::{
     ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, SourceInfo,
@@ -89,7 +89,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             .open_file(&options, path, params)
             .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
 
-        if opened_file.is_dir() {
+        if opened_file.is_dir().await {
             return Err(error::ErrorKind::FailedSourcingFile(
                 path.to_owned(),
                 std::io::Error::from(std::io::ErrorKind::IsADirectory),
@@ -125,15 +125,16 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn source_file<F: Read, S: Into<String>, I: Iterator<Item = S>>(
+    async fn source_file<S: Into<String>, I: Iterator<Item = S>>(
         &mut self,
-        file: F,
+        mut file: openfiles::OpenFile,
         source_info: &crate::SourceInfo,
         args: I,
         params: &ExecutionParameters,
         call_type: callstack::ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
-        let mut reader = std::io::BufReader::new(file);
+        let content = file.read_to_string().await?;
+        let mut reader = std::io::Cursor::new(content);
         let mut parser = brush_parser::Parser::new(&mut reader, &self.parser_options());
 
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
@@ -251,7 +252,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         match result {
             Ok(result) => Ok(result),
             Err(err) => {
-                let _ = self.display_error(&mut params.stderr(self), &err);
+                if let Some(mut stderr) = params.try_stderr(self) {
+                    let _ = self.display_error(&err, &mut stderr).await;
+                }
 
                 let result = err.into_result(self);
                 self.set_last_exit_status(result.exit_code.into());

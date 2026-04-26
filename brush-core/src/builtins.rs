@@ -2,7 +2,6 @@
 
 use clap::builder::styling;
 pub use futures::future::BoxFuture;
-use std::io::Write;
 
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
 
@@ -480,7 +479,7 @@ async fn exec_builtin_impl<T: Command + Send + Sync, SE: extensions::ShellExtens
     let command = match result {
         Ok(command) => command,
         Err(e) => {
-            let _ = writeln!(context.stderr(), "{e}");
+            context.write_error(e).await;
             return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };
@@ -523,7 +522,7 @@ async fn exec_declaration_builtin_impl<
     let mut command = match result {
         Ok(command) => command,
         Err(e) => {
-            let _ = writeln!(context.stderr(), "{e}");
+            context.write_error(e).await;
             return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };

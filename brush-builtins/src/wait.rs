@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
 
@@ -49,12 +48,14 @@ impl builtins::Command for WaitCommand {
                     if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
                         job.wait().await?;
                     } else {
-                        writeln!(
-                            context.stderr(),
-                            "{}: no such job: {}",
-                            context.command_name,
-                            id
-                        )?;
+                        if let Some(mut stderr) = context.stderr() {
+                            let _ = stderr
+                                .write_all(
+                                    format!("{}: no such job: {}\n", context.command_name, id)
+                                        .as_bytes(),
+                                )
+                                .await;
+                        }
 
                         result = ExecutionExitCode::GeneralError.into();
                     }
@@ -69,7 +70,9 @@ impl builtins::Command for WaitCommand {
 
             if context.shell.options().enable_job_control {
                 for job in jobs {
-                    writeln!(context.stdout(), "{job}")?;
+                    if let Some(mut stdout) = context.stdout() {
+                        let _ = stdout.write_all(format!("{job}\n").as_bytes()).await;
+                    }
                 }
             }
         }

@@ -1,5 +1,4 @@
 use clap::Parser;
-use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, escape};
 
@@ -73,8 +72,11 @@ impl builtins::Command for EchoCommand {
             s.push('\n');
         }
 
-        write!(context.stdout(), "{s}")?;
-        context.stdout().flush()?;
+        // Use async I/O for writing
+        if let Some(mut stdout) = context.stdout() {
+            stdout.write_all(s.as_bytes()).await?;
+            stdout.flush().await?;
+        }
 
         Ok(ExecutionResult::success())
     }

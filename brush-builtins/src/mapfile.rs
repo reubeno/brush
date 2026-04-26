@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Write;
 
 use clap::Parser;
 
@@ -57,11 +57,15 @@ impl builtins::Command for MapFileCommand {
 
         if let Some(origin) = self.origin {
             if origin < 0 {
+                let mut stderr_output = Vec::new();
                 writeln!(
-                    context.stderr(),
+                    stderr_output,
                     "{}: {origin}: invalid array origin",
                     context.command_name
                 )?;
+                if let Some(mut stderr) = context.stderr() {
+                    stderr.write_all(&stderr_output).await?;
+                }
                 return Ok(ExecutionExitCode::GeneralError.into());
             }
         }
@@ -74,12 +78,15 @@ impl builtins::Command for MapFileCommand {
                         variables::ShellValueUnsetType::AssociativeArray
                     )
             ) {
+                let mut stderr_output = Vec::new();
                 writeln!(
-                    context.stderr(),
+                    stderr_output,
                     "{}: {}: not an indexed array",
-                    context.command_name,
-                    self.array_var_name
+                    context.command_name, self.array_var_name
                 )?;
+                if let Some(mut stderr) = context.stderr() {
+                    stderr.write_all(&stderr_output).await?;
+                }
                 return Ok(ExecutionExitCode::GeneralError.into());
             }
         }
@@ -88,8 +95,7 @@ impl builtins::Command for MapFileCommand {
             .try_fd(self.fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
-        // Read!
-        let results = self.read_entries(input_file)?;
+        let results = self.read_entries(input_file).await?;
 
         if let Some(origin) = self.origin {
             // -O: preserve existing array, assign at offset.
@@ -122,12 +128,10 @@ impl builtins::Command for MapFileCommand {
 }
 
 impl MapFileCommand {
-    fn read_entries(
+    async fn read_entries(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
     ) -> Result<variables::ArrayLiteral, brush_core::Error> {
-        let _term_mode = setup_terminal_settings(&input_file)?;
-
         let mut entries = vec![];
         let mut read_count = 0;
         let max_count = self.max_count.try_into()?;
@@ -144,7 +148,7 @@ impl MapFileCommand {
             let mut saw_delimiter = false;
 
             loop {
-                match input_file.read(&mut buf) {
+                match input_file.read(&mut buf).await {
                     Ok(0) => break,                                         // End of input
                     Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
                     Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
@@ -181,20 +185,4 @@ impl MapFileCommand {
 
         Ok(variables::ArrayLiteral(entries))
     }
-}
-
-fn setup_terminal_settings(
-    file: &brush_core::openfiles::OpenFile,
-) -> Result<Option<brush_core::terminal::AutoModeGuard>, brush_core::Error> {
-    let mode = brush_core::terminal::AutoModeGuard::new(file.to_owned()).ok();
-    if let Some(mode) = &mode {
-        let config = brush_core::terminal::Settings::builder()
-            .line_input(false)
-            .interrupt_signals(false)
-            .build();
-
-        mode.apply_settings(&config)?;
-    }
-
-    Ok(mode)
 }

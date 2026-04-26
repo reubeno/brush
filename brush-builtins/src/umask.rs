@@ -46,10 +46,16 @@ impl builtins::Command for UmaskCommand {
                 std::format!("{umask:04o}")
             };
 
+            let mut output = Vec::new();
             if self.print_roundtrippable {
-                writeln!(context.stdout(), "umask {formatted}")?;
+                writeln!(output, "umask {formatted}")?;
             } else {
-                writeln!(context.stdout(), "{formatted}")?;
+                writeln!(output, "{formatted}")?;
+            }
+
+            if let Some(mut stdout) = context.stdout() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
             }
         }
 
