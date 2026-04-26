@@ -165,9 +165,7 @@ jobs:
         run: cargo clean
 
       - name: "Install cargo-about"
-        uses: taiki-e/install-action@85b24a67ef0c632dfefad70b9d5ce8fddb040754 # v2.75.10
-        with:
-          tool: cargo-about
+        run: cargo install cargo-about --locked --features cli
 
       - name: "Generate license notices"
         working-directory: brush-shell
