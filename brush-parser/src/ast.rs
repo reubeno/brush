@@ -346,7 +346,7 @@ impl Display for Pipeline {
         }
 
         if self.bang {
-            write!(f, "!")?;
+            write!(f, "! ")?;
         }
         for (i, command) in self.seq.iter().enumerate() {
             if i > 0 {
