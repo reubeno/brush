@@ -137,6 +137,8 @@ impl InputBackend for ReedlineInputBackend {
                 }
                 Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
                 Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
+                Ok(reedline::Signal::ExternalBreak(_)) => Err(ShellError::UnexpectedInputFailure),
+                Ok(_) => Err(ShellError::UnexpectedInputFailure),
                 Err(err) => Err(ShellError::InputError(err)),
             }
         } else {
