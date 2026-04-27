@@ -39,15 +39,15 @@
 ## At a glance
 
 ✅ Your existing `.bashrc` just works—aliases, functions, completions, all of it.<br/>
-✨ Syntax highlighting and auto-suggestions built in and enabled by default.<br/>
-🧪 Validated against bash with [~1500 compatibility tests](brush-shell/tests/cases).<br/>
+✨ Syntax highlighting and auto-suggestions built in.<br/>
+🧪 Validated against bash with [~1700 compatibility tests](brush-shell/tests/cases).<br/>
 🧩 Easily embeddable in your Rust apps using `brush_core::Shell`.<br/>
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52" width="80%"/>
 </p>
 
-> ⚠️ **Not everything works yet:** `coproc`, `select`, and some edge cases aren't supported. See the [Compatibility Reference](docs/reference/compatibility.md) for details.
+> ⚠️ **Not everything works yet:** `select` and some edge cases aren't supported. See the [Compatibility Reference](docs/reference/compatibility.md) for details.
 
 ### Quick start:
 

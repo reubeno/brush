@@ -4,7 +4,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 
 ## Overview
 
-`brush` aims for high compatibility with `bash`. We validate this through **1500+ compatibility test cases** that compare behavior against `bash` as an oracle.
+`brush` aims for high compatibility with `bash`. We validate this through **1700+ compatibility test cases** that compare behavior against `bash` as an oracle.
 
 **Compatibility snapshot:** Production-ready for most use cases. Your `.bashrc`, aliases, functions, and completions should "just work."
 
@@ -19,6 +19,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 - `&&`, `||` conditional execution
 - Subshells `()` and command grouping `{}`
 - Pipelines and pipeline negation `!`
+- Coprocesses: `coproc { ... }` and `coproc NAME { ... }`
 
 ### Expansions
 
@@ -42,7 +43,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 - **Completion:** `complete`, `compgen`, `compopt`
 - **History:** `history`, `fc`
 - **Testing:** `test`, `[`, `[[`
-- **Sourcing:** `.`, `source`, `eval`
+- **Sourcing & introspection:** `.`, `source`, `eval`, `caller`
 - **Misc:** `alias`, `unalias`, `hash`, `type`, `command`, `builtin`, `enable`, `help`, `times`, `ulimit`, `umask`, `trap`, `shopt`, `set`, `shift`, `getopts`
 
 ### Arrays
@@ -105,7 +106,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 
 | Status | Feature |
 |--------|---------|
-| ✅ | Common options: `errexit`, `pipefail`, `extglob`, `globstar`, `noclobber`, `nounset` |
+| ✅ | Common options: `errexit`, `pipefail`, `extglob`, `globstar`, `noclobber`, `nounset`, `failglob` |
 | 🔷 | Less common options — in progress |
 
 ## Not Yet Supported Features 🚧
@@ -125,17 +126,6 @@ select opt in "Option A" "Option B" "Quit"; do
         "Quit") break;;
     esac
 done
-```
-
-### `coproc` (Coprocesses)
-
-The `coproc` keyword for creating asynchronous co-processes is not yet implemented.
-
-```bash
-# Not yet supported
-coproc { some_command; }
-echo "input" >&${COPROC[1]}
-read output <&${COPROC[0]}
 ```
 
 ### `wait -n`
@@ -184,7 +174,7 @@ Some complex alias expansion scenarios differ from `bash` (see GitHub issues #57
 
 ## Test Suite Statistics
 
-- **Total test cases:** 1500+
+- **Total test cases:** 1700+
 - **Known failures:** ~125
 - **Most failures are edge cases** in IFS handling and printf
 
@@ -209,7 +199,7 @@ Found a script that works in `bash` but not in `brush`?
 ## Tracking Progress
 
 - **GitHub Issues:** Track specific compatibility work
-- **Test Suite:** 1500+ tests run on every PR
+- **Test Suite:** 1700+ tests run on every PR
 - **This Document:** Updated as features are implemented
 
 ## Related Resources
