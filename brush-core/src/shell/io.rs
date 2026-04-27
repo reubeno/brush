@@ -53,15 +53,21 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             params.try_stderr(self)
         };
 
-        if let Some(trace_file) = trace_file
-            && let Ok(owned_fd) = trace_file.try_clone_to_owned()
-        {
+        if let Some(mut trace_file) = trace_file {
             let output = format!("{prefix}{}\n", command.as_ref());
-            tokio::task::block_in_place(|| {
-                use std::io::Write;
-                let mut file = std::fs::File::from(owned_fd);
-                let _ = file.write_all(output.as_bytes());
-            });
+            #[cfg(unix)]
+            {
+                if let Ok(owned_fd) = trace_file.try_clone_to_owned() {
+                    tokio::task::block_in_place(|| {
+                        use std::io::Write;
+                        let mut file = std::fs::File::from(owned_fd);
+                        let _ = file.write_all(output.as_bytes());
+                    });
+                    return;
+                }
+            }
+            let _ = trace_file.write_all(output.as_bytes()).await;
+            let _ = trace_file.flush().await;
         }
     }
 
