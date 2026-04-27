@@ -22,4 +22,8 @@ pub enum ShellError {
     /// The requested input backend type is not supported.
     #[error("requested input backend type not supported")]
     InputBackendNotSupported,
+
+    /// An unexpected error occurred while reading input.
+    #[error("unexpected error occurred reading input")]
+    UnexpectedInputFailure,
 }
