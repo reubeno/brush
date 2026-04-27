@@ -53,18 +53,27 @@ terminal-shell-integration = true
 
 User interface settings.
 
-| Setting               | Type    | Default | Description                                  |
-|-----------------------|---------|---------|----------------------------------------------|
-| `syntax-highlighting` | boolean | `false` | Enable syntax highlighting in the input line |
+| Setting               | Type    | Default | CLI flag                | Description                                  |
+|-----------------------|---------|---------|-------------------------|----------------------------------------------|
+| `syntax-highlighting` | boolean | see below | `--enable-highlighting` | Enable syntax highlighting in the input line |
+
+> The default value of `syntax-highlighting` depends on how `brush-shell`
+> was built: `true` when built with the `experimental` Cargo feature,
+> `false` otherwise. CLI flags take precedence over the configuration
+> file.
 
 ### `[experimental]` Section
 
 Experimental features that may change or be removed in future versions.
+Each setting has an equivalent command-line flag; CLI flags take
+precedence over the configuration file. See the
+[experimental features reference](experimental.md) for details on each
+feature.
 
-| Setting                      | Type    | Default | Description                           |
-|------------------------------|---------|---------|---------------------------------------|
-| `zsh-hooks`                  | boolean | `false` | Enable zsh-style preexec/precmd hooks |
-| `terminal-shell-integration` | boolean | `false` | Enable terminal shell integration     |
+| Setting                      | Type    | Default | CLI flag                         | Description                           |
+|------------------------------|---------|---------|----------------------------------|---------------------------------------|
+| `zsh-hooks`                  | boolean | `false` | `--enable-zsh-hooks`             | Enable zsh-style preexec/precmd hooks |
+| `terminal-shell-integration` | boolean | `false` | `--enable-terminal-integration`  | Enable terminal shell integration     |
 
 ## JSON Schema
 
