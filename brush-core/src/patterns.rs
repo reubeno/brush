@@ -1,6 +1,6 @@
 //! Shell patterns
 
-use crate::{error, regex, sys, trace_categories};
+use crate::{error, regex, shell::fs::path_to_bstring, sys, trace_categories};
 use std::{collections::VecDeque, path::Path};
 
 /// Represents a piece of a shell pattern.
@@ -245,12 +245,17 @@ impl Pattern {
             // also uses `/` on Windows (to avoid `PathBuf::push` drive-letter
             // semantics) — if we left `\` here, the strip_prefix below would
             // miss on Windows and leave results as absolute paths.
-            let working_dir_str = working_dir.to_string_lossy();
-            let mut working_dir_str =
-                sys::fs::normalize_path_separators(&working_dir_str).into_owned();
-            if !working_dir_str.ends_with('/') {
-                working_dir_str.push('/');
+            let mut working_dir_bytes = path_to_bstring(working_dir).to_vec();
+            for b in &mut working_dir_bytes {
+                if *b == b'\\' {
+                    *b = b'/';
+                }
             }
+            if !working_dir_bytes.ends_with(b"/") {
+                working_dir_bytes.push(b'/');
+            }
+            let working_dir_str = String::from_utf8(working_dir_bytes)
+                .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned());
 
             prefix_to_remove = Some(working_dir_str);
             vec![working_dir.to_path_buf()]
@@ -286,7 +291,15 @@ impl Pattern {
                     || subpattern_starts_with_dot;
 
                 let matches_dotfile_policy = |dir_entry: &std::fs::DirEntry| {
-                    !dir_entry.file_name().to_string_lossy().starts_with('.') || allow_dot_files
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::ffi::OsStrExt;
+                        !dir_entry.file_name().as_bytes().starts_with(b".") || allow_dot_files
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        !dir_entry.file_name().to_string_lossy().starts_with('.') || allow_dot_files
+                    }
                 };
 
                 let regex = subpattern.to_regex(true, true)?;
@@ -321,21 +334,24 @@ impl Pattern {
                     return None;
                 }
 
-                // Normalize separators *before* stripping the working-dir
-                // prefix so that `prefix_to_remove` (already normalized to
-                // use `/`) matches paths that may contain a mix of `\` and
-                // `/` on Windows.
-                let path_str = path.to_string_lossy();
-                let normalized = sys::fs::normalize_path_separators(&path_str);
-                let mut path_ref: &str = normalized.as_ref();
-
-                if let Some(prefix_to_remove) = &prefix_to_remove
-                    && let Some(stripped) = path_ref.strip_prefix(prefix_to_remove.as_str())
-                {
-                    path_ref = stripped;
+                let mut path_bytes = path_to_bstring(&path).to_vec();
+                for b in &mut path_bytes {
+                    if *b == b'\\' {
+                        *b = b'/';
+                    }
                 }
 
-                Some(path_ref.to_string())
+                if let Some(prefix_to_remove) = &prefix_to_remove {
+                    let prefix_bytes = prefix_to_remove.as_bytes();
+                    if path_bytes.starts_with(prefix_bytes) {
+                        path_bytes = path_bytes[prefix_bytes.len()..].to_vec();
+                    }
+                }
+
+                Some(
+                    String::from_utf8(path_bytes)
+                        .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()),
+                )
             })
             .collect();
 

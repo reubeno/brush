@@ -13,7 +13,8 @@ use crate::{
     variables,
 };
 
-fn path_to_bstring(path: &Path) -> BString {
+/// Converts a `Path` to a `BString` preserving raw bytes on Unix.
+pub fn path_to_bstring(path: &Path) -> BString {
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;

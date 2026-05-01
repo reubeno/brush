@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bstr::BString;
 use rand::RngExt as _;
 
 use crate::shell::ShellState;
+use crate::shell::path_to_bstring;
 use crate::{Shell, ShellValue, ShellVariable, error, extensions, sys, variables};
 
 const BASH_MAJOR: u32 = 5;
@@ -230,7 +231,7 @@ pub(crate) fn init_well_known_vars(
                 shell
                     .directory_stack()
                     .iter()
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| path_to_bstring(p))
                     .collect::<Vec<_>>()
                     .into()
             },
@@ -319,21 +320,16 @@ pub(crate) fn init_well_known_vars(
         let histfile = home_dir.join(".brush_history");
         shell.env_mut().set_global(
             "HISTFILE",
-            ShellVariable::new(ShellValue::String(BString::from(
-                histfile.to_string_lossy().into_owned(),
-            ))),
+            ShellVariable::new(ShellValue::String(path_to_bstring(&histfile))),
         )?;
     }
 
     // HOSTNAME
     shell.env_mut().set_global(
         "HOSTNAME",
-        ShellVariable::new(
-            sys::network::get_hostname()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        ),
+        ShellVariable::new(path_to_bstring(Path::new(
+            &sys::network::get_hostname().unwrap_or_default(),
+        ))),
     )?;
 
     // HOSTTYPE
@@ -464,10 +460,9 @@ pub(crate) fn init_well_known_vars(
     if !shell.env().is_set("SHELL") {
         // Per docs, this should be the user's default login shell -- not the current shell.
         if let Some(default_shell) = sys::users::get_current_user_default_shell() {
-            shell.env_mut().set_global(
-                "SHELL",
-                ShellVariable::new(default_shell.to_string_lossy().to_string()),
-            )?;
+            shell
+                .env_mut()
+                .set_global("SHELL", ShellVariable::new(path_to_bstring(&default_shell)))?;
         }
     }
 
@@ -523,7 +518,7 @@ pub(crate) fn init_well_known_vars(
     // we inherited an out-of-sync version of the variable. Future updates
     // will be handled by set_working_dir().
     //
-    let pwd = shell.working_dir().to_string_lossy().to_string();
+    let pwd = path_to_bstring(shell.working_dir());
     let mut pwd_var = ShellVariable::new(pwd);
     pwd_var.export();
     shell.env_mut().set_global("PWD", pwd_var)?;

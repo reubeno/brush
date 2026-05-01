@@ -5,7 +5,7 @@ use std::cmp::min;
 use std::io::Write as _;
 
 use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
-use bstr::{BString, ByteSlice};
+use bstr::{BString, ByteSlice, ByteVec};
 use itertools::Itertools;
 
 use crate::ExecutionParameters;
@@ -100,7 +100,7 @@ impl Expansion {
         let non_empty = self
             .fields
             .iter()
-            .any(|field| field.0.iter().any(|piece| !piece.as_str().is_empty()));
+            .any(|field| field.0.iter().any(|piece| !piece.is_empty()));
 
         if self.undefined {
             ParameterState::Undefined
@@ -165,8 +165,7 @@ impl Expansion {
                     // Get the inner string of the piece, and figure out how many
                     // characters are in it; make sure to get the *character count*
                     // and not just call `.len()` to get the byte count.
-                    let piece_str = piece.as_str();
-                    let piece_char_count = piece_str.chars().count();
+                    let piece_char_count = piece.chars().count();
 
                     // If the interesting data isn't even in this piece yet, then
                     // continue until we find it.
@@ -186,13 +185,15 @@ impl Expansion {
                             s.chars()
                                 .skip(desired_offset_into_this_piece)
                                 .take(len_from_this_piece)
-                                .collect(),
+                                .collect::<String>()
+                                .into(),
                         ),
                         ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
                             s.chars()
                                 .skip(desired_offset_into_this_piece)
                                 .take(len_from_this_piece)
-                                .collect(),
+                                .collect::<String>()
+                                .into(),
                         ),
                     };
 
@@ -256,21 +257,26 @@ impl From<ExpansionPiece> for WordField {
 
 impl From<String> for WordField {
     fn from(value: String) -> Self {
-        Self(vec![ExpansionPiece::Splittable(value)])
+        Self(vec![ExpansionPiece::Splittable(value.into())])
     }
+}
+
+fn bstring_to_string(s: BString) -> String {
+    String::from_utf8(Vec::from(s))
+        .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum ExpansionPiece {
-    Unsplittable(String),
-    Splittable(String),
+    Unsplittable(BString),
+    Splittable(BString),
 }
 
 impl From<ExpansionPiece> for String {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => s,
-            ExpansionPiece::Splittable(s) => s,
+            ExpansionPiece::Unsplittable(s) => bstring_to_string(s),
+            ExpansionPiece::Splittable(s) => bstring_to_string(s),
         }
     }
 }
@@ -278,8 +284,8 @@ impl From<ExpansionPiece> for String {
 impl From<ExpansionPiece> for patterns::PatternPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Unsplittable(s) => Self::Literal(bstring_to_string(s)),
+            ExpansionPiece::Splittable(s) => Self::Pattern(bstring_to_string(s)),
         }
     }
 }
@@ -287,24 +293,31 @@ impl From<ExpansionPiece> for patterns::PatternPiece {
 impl From<ExpansionPiece> for crate::regex::RegexPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Unsplittable(s) => Self::Literal(bstring_to_string(s)),
+            ExpansionPiece::Splittable(s) => Self::Pattern(bstring_to_string(s)),
         }
     }
 }
 
 impl ExpansionPiece {
-    const fn as_str(&self) -> &str {
+    fn is_empty(&self) -> bool {
         match self {
-            Self::Unsplittable(s) => s.as_str(),
-            Self::Splittable(s) => s.as_str(),
+            Self::Unsplittable(s) => s.is_empty(),
+            Self::Splittable(s) => s.is_empty(),
         }
     }
 
-    const fn len(&self) -> usize {
+    fn len(&self) -> usize {
         match self {
             Self::Unsplittable(s) => s.len(),
             Self::Splittable(s) => s.len(),
+        }
+    }
+
+    fn chars(&self) -> bstr::Chars<'_> {
+        match self {
+            Self::Unsplittable(s) => s.chars(),
+            Self::Splittable(s) => s.chars(),
         }
     }
 
@@ -646,7 +659,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             &['$', '`', '\\', '\'', '\"', '~', '{']
         };
         if !word.contains(expansion_chars) {
-            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
+            return Ok(Expansion::from(ExpansionPiece::Splittable(
+                word.to_owned().into(),
+            )));
         }
 
         // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
@@ -789,11 +804,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                                 }
                             } else {
                                 match current_field.0.last_mut() {
-                                    Some(ExpansionPiece::Splittable(last)) => last.push(c),
+                                    Some(ExpansionPiece::Splittable(last)) => last.push_char(c),
                                     Some(ExpansionPiece::Unsplittable(_)) | None => {
                                         current_field
                                             .0
-                                            .push(ExpansionPiece::Splittable(c.to_string()));
+                                            .push(ExpansionPiece::Splittable(c.to_string().into()));
                                     }
                                 }
                             }
@@ -855,20 +870,17 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
             brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
+                Expansion::from(ExpansionPiece::Splittable(s.into()))
             }
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
-                Expansion::from(ExpansionPiece::Unsplittable(s))
+                Expansion::from(ExpansionPiece::Unsplittable(s.into()))
             }
             brush_parser::word::WordPiece::AnsiCQuotedText(s) => {
                 let (expanded, _) = escape::expand_backslash_escapes(
                     s.as_str(),
                     escape::EscapeExpansionMode::AnsiCQuotes,
                 )?;
-                Expansion::from(ExpansionPiece::Unsplittable(
-                    String::from_utf8(expanded)
-                        .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()),
-                ))
+                Expansion::from(ExpansionPiece::Unsplittable(BString::from(expanded)))
             }
             brush_parser::word::WordPiece::DoubleQuotedSequence(pieces)
             | brush_parser::word::WordPiece::GettextDoubleQuotedSequence(pieces) => {
@@ -891,7 +903,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 // If there were no pieces, then make sure we yield a single field containing an
                 // empty, unsplittable string.
                 if pieces_is_empty {
-                    fields.push(WordField::from(ExpansionPiece::Unsplittable(String::new())));
+                    fields.push(WordField::from(ExpansionPiece::Unsplittable(
+                        BString::from(Vec::new()),
+                    )));
                 }
 
                 Expansion {
@@ -929,26 +943,26 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let trimmed_len = cmd_output.trim_end_matches('\n').len();
                 cmd_output.truncate(trimmed_len);
 
-                Expansion::from(ExpansionPiece::Splittable(cmd_output))
+                Expansion::from(ExpansionPiece::Splittable(cmd_output.into()))
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
                 if let Some(escaped) = s.strip_prefix('\\') {
                     // If we are *not* in a double-quoted context and we were requested to skip
                     // unquoted backslash removal, then we need to skip removing backslashes here.
                     if !self.in_double_quotes && self.disable_unquoted_backslash_removal {
-                        return Ok(Expansion::from(ExpansionPiece::Splittable(s)));
+                        return Ok(Expansion::from(ExpansionPiece::Splittable(s.into())));
                     }
 
                     // Otherwise, we expect a backslash here; remove it.
-                    Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                    Expansion::from(ExpansionPiece::Unsplittable(escaped.into()))
                 } else {
                     // We don't ever expect this case, as it breaks our invariant--but
                     // we handle it to avoid panicking.
-                    Expansion::from(ExpansionPiece::Unsplittable(s))
+                    Expansion::from(ExpansionPiece::Unsplittable(s.into()))
                 }
             }
             brush_parser::word::WordPiece::ArithmeticExpression(e) => Expansion::from(
-                ExpansionPiece::Splittable(self.expand_arithmetic_expr(e).await?),
+                ExpansionPiece::Splittable(self.expand_arithmetic_expr(e).await?.into()),
             ),
         };
 
@@ -958,56 +972,56 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     fn expand_tilde_expression(
         &self,
         tilde_expr: &brush_parser::word::TildeExpr,
-    ) -> Result<String, error::Error> {
+    ) -> Result<BString, error::Error> {
         match tilde_expr {
             brush_parser::word::TildeExpr::Home => {
                 if let Some(home_dir) = self.shell.home_dir() {
-                    Ok(home_dir.to_string_lossy().to_string())
+                    Ok(crate::shell::fs::path_to_bstring(&home_dir))
                 } else {
                     Err(error::ErrorKind::TildeWithoutValidHome.into())
                 }
             }
             brush_parser::word::TildeExpr::UserHome(username) => {
                 Ok(sys::users::get_user_home_dir(username).map_or_else(
-                    || std::format!("~{username}"),
-                    |p| p.to_string_lossy().to_string(),
+                    || BString::from(std::format!("~{username}")),
+                    |p| crate::shell::fs::path_to_bstring(&p),
                 ))
             }
             brush_parser::word::TildeExpr::WorkingDir => {
-                Ok(self.shell.working_dir().to_string_lossy().to_string())
+                Ok(crate::shell::fs::path_to_bstring(self.shell.working_dir()))
             }
             brush_parser::word::TildeExpr::OldWorkingDir => {
                 if let Some(old_pwd) = self.shell.env_str("OLDPWD") {
-                    Ok(old_pwd.to_string())
+                    Ok(BString::from(old_pwd.to_string()))
                 } else {
-                    Ok(String::from("~-"))
+                    Ok(BString::from("~-"))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromBottomOfDirStack { n } => {
                 let dir_stack_count = self.shell.directory_stack().len();
 
                 if let Some(dir) = self.shell.directory_stack().get(*n) {
-                    Ok(dir.to_string_lossy().to_string())
+                    Ok(crate::shell::fs::path_to_bstring(dir))
                 } else if *n == dir_stack_count {
-                    Ok(self.shell.working_dir().to_string_lossy().to_string())
+                    Ok(crate::shell::fs::path_to_bstring(self.shell.working_dir()))
                 } else {
-                    Ok(std::format!("~-{n}"))
+                    Ok(BString::from(std::format!("~-{n}")))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromTopOfDirStack { n, plus_used } => {
                 if *n == 0 {
-                    return Ok(self.shell.working_dir().to_string_lossy().to_string());
+                    return Ok(crate::shell::fs::path_to_bstring(self.shell.working_dir()));
                 }
 
                 let dir_stack_count = self.shell.directory_stack().len();
                 if dir_stack_count >= *n
                     && let Some(dir) = self.shell.directory_stack().get(dir_stack_count - *n)
                 {
-                    return Ok(dir.to_string_lossy().to_string());
+                    return Ok(crate::shell::fs::path_to_bstring(dir));
                 }
 
                 let plus_or_nothing = if *plus_used { "+" } else { "" };
-                Ok(std::format!("~{plus_or_nothing}{n}"))
+                Ok(BString::from(std::format!("~{plus_or_nothing}{n}")))
             }
         }
     }
@@ -1039,7 +1053,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             .collect()
                     })
                     .intersperse(vec![ExpansionPiece::Unsplittable(
-                        concatenation_joiner.to_string(),
+                        concatenation_joiner.to_string().into(),
                     )])
                     .flatten()
                     .collect();
@@ -1047,7 +1061,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 // If there were no pieces, make sure there's an empty string after
                 // concatenation.
                 if concatenated.is_empty() {
-                    concatenated.push(ExpansionPiece::Splittable(String::new()));
+                    concatenated.push(ExpansionPiece::Splittable(BString::from(Vec::new())));
                 }
 
                 vec![WordField(concatenated)]
@@ -1280,7 +1294,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
                     expanded_parameter.fields.insert(
                         0,
-                        WordField::from(ExpansionPiece::Splittable(shell_name.to_string())),
+                        WordField::from(ExpansionPiece::Splittable(shell_name.to_string().into())),
                     );
                 }
 
@@ -1515,7 +1529,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     Ok(Expansion {
                         fields: matching_names
                             .into_iter()
-                            .map(|name| WordField(vec![ExpansionPiece::Splittable(name)]))
+                            .map(|name| WordField(vec![ExpansionPiece::Splittable(name.into())]))
                             .collect(),
                         concatenate,
                         from_array: true,
@@ -1536,11 +1550,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Ok(Expansion {
                     fields: keys
                         .into_iter()
-                        .map(|key| {
-                            WordField(vec![ExpansionPiece::Splittable(
-                                key.to_str().unwrap_or("").to_owned(),
-                            )])
-                        })
+                        .map(|key| WordField(vec![ExpansionPiece::Splittable(key)]))
                         .collect(),
                     concatenate,
                     from_array: true,
@@ -1766,11 +1776,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     Ok(Expansion {
                         fields: values
                             .into_iter()
-                            .map(|value| {
-                                WordField(vec![ExpansionPiece::Splittable(
-                                    value.to_str().unwrap_or("").to_owned(),
-                                )])
-                            })
+                            .map(|value| WordField(vec![ExpansionPiece::Splittable(value)]))
                             .collect(),
                         concatenate: *concatenate,
                         from_array: true,
@@ -1815,7 +1821,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Expansion {
                     fields: args
                         .into_iter()
-                        .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
+                        .map(|param| {
+                            WordField(vec![ExpansionPiece::Splittable(param.clone().into())])
+                        })
                         .collect(),
                     concatenate: *concatenate,
                     from_array: true,
@@ -2201,8 +2209,10 @@ mod tests {
 
         let expansion = Expansion {
             fields: vec![
-                WordField(vec![ExpansionPiece::Unsplittable("A".into())]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())]),
+                WordField(vec![ExpansionPiece::Unsplittable(BString::from("A"))]),
+                WordField(vec![ExpansionPiece::Unsplittable(
+                    BString::from(Vec::new()),
+                )]),
             ],
             ..Expansion::default()
         };
@@ -2212,8 +2222,10 @@ mod tests {
         assert_eq!(
             fields,
             vec![
-                WordField(vec![ExpansionPiece::Unsplittable(String::from("A"))]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())])
+                WordField(vec![ExpansionPiece::Unsplittable(BString::from("A"))]),
+                WordField(vec![ExpansionPiece::Unsplittable(
+                    BString::from(Vec::new())
+                )])
             ]
         );
 

@@ -1,5 +1,6 @@
 //! Path cache
 
+use crate::shell::path_to_bstring;
 use crate::{error, variables};
 use bstr::BString;
 use std::path::PathBuf;
@@ -42,12 +43,7 @@ impl PathCache {
         let pairs = self
             .cache
             .iter()
-            .map(|(k, v)| {
-                (
-                    Some(BString::from(k.to_owned())),
-                    BString::from(v.to_string_lossy().to_string()),
-                )
-            })
+            .map(|(k, v)| (Some(BString::from(k.to_owned())), path_to_bstring(v)))
             .collect::<Vec<_>>();
 
         variables::ShellValue::associative_array_from_literals(variables::ArrayLiteral(pairs))
