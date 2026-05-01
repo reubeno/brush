@@ -399,10 +399,7 @@ impl ShellVariable {
                 let key = get_key_for_indexed_array(arr, index_str)?;
 
                 if append {
-                    let existing_bytes = arr.get(&key).map_or_else(
-                        Vec::new,
-                        |v| v.to_vec(),
-                    );
+                    let existing_bytes = arr.get(&key).map_or_else(Vec::new, |v| v.to_vec());
 
                     let mut new_value;
                     if treat_as_int {
@@ -426,10 +423,8 @@ impl ShellVariable {
             }
             ShellValue::AssociativeArray(arr) => {
                 if append {
-                    let existing_bytes = arr.get(&array_index).map_or_else(
-                        Vec::new,
-                        |v| v.to_vec(),
-                    );
+                    let existing_bytes =
+                        arr.get(&array_index).map_or_else(Vec::new, |v| v.to_vec());
 
                     let mut new_value;
                     if treat_as_int {
