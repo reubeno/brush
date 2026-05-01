@@ -304,9 +304,19 @@ impl Pattern {
 
                 let regex = subpattern.to_regex(true, true)?;
                 let matches_regex = |dir_entry: &std::fs::DirEntry| {
-                    regex
-                        .is_match(dir_entry.file_name().to_string_lossy().as_ref())
-                        .unwrap_or(false)
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::ffi::OsStrExt;
+                        regex
+                            .is_match_bytes(dir_entry.file_name().as_bytes())
+                            .unwrap_or(false)
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        regex
+                            .is_match(dir_entry.file_name().to_string_lossy().as_ref())
+                            .unwrap_or(false)
+                    }
                 };
 
                 let mut matching_paths_in_dir: Vec<_> = current_path
