@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 use crate::{ExecutionParameters, Shell, env, expansion, extensions, variables};
 use brush_parser::ast;
+use bstr::{BString, ByteSlice};
 
 /// Maximum recursion depth for arithmetic variable dereference chains
 /// (e.g., a=b, b=c, c=a would cycle through variable dereferences).
@@ -210,7 +211,9 @@ fn deref_lvalue(
                     |(_, v)| v.value().get_at(index_str.as_str(), shell),
                 )
                 .map_err(|_err| EvalError::FailedToAccessArray)?
-                .unwrap_or(Cow::Borrowed(""))
+                .map(|v| v.to_str().unwrap_or("").to_string())
+                .unwrap_or_default()
+                .into()
         }
     };
 
@@ -373,7 +376,7 @@ fn assign(
                 .env_mut()
                 .update_or_add(
                     name.as_str(),
-                    variables::ShellValueLiteral::Scalar(value.to_string()),
+                    variables::ShellValueLiteral::Scalar(BString::from(value.to_string())),
                     |_| Ok(()),
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,
@@ -387,8 +390,8 @@ fn assign(
                 .env_mut()
                 .update_or_add_array_element(
                     name.as_str(),
-                    index_str,
-                    value.to_string(),
+                    index_str.into(),
+                    value.to_string().into(),
                     |_| Ok(()),
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,

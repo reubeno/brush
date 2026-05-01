@@ -5,6 +5,7 @@ use std::cmp::min;
 use std::io::Write as _;
 
 use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
+use bstr::{BString, ByteSlice};
 use itertools::Itertools;
 
 use crate::ExecutionParameters;
@@ -865,7 +866,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     escape::EscapeExpansionMode::AnsiCQuotes,
                 )?;
                 Expansion::from(ExpansionPiece::Unsplittable(
-                    String::from_utf8_lossy(expanded.as_slice()).into_owned(),
+                    String::from_utf8(expanded)
+                        .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()),
                 ))
             }
             brush_parser::word::WordPiece::DoubleQuotedSequence(pieces)
@@ -1534,7 +1536,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Ok(Expansion {
                     fields: keys
                         .into_iter()
-                        .map(|key| WordField(vec![ExpansionPiece::Splittable(key)]))
+                        .map(|key| {
+                            WordField(vec![ExpansionPiece::Splittable(
+                                key.to_str().unwrap_or("").to_owned(),
+                            )])
+                        })
                         .collect(),
                     concatenate,
                     from_array: true,
@@ -1580,8 +1586,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if let Some(index) = index {
             self.shell.env_mut().update_or_add_array_element(
                 variable_name,
-                index,
-                value,
+                index.into(),
+                value.into(),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -1589,7 +1595,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         } else {
             self.shell.env_mut().update_or_add(
                 variable_name,
-                variables::ShellValueLiteral::Scalar(value),
+                variables::ShellValueLiteral::Scalar(BString::from(value)),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -1760,7 +1766,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     Ok(Expansion {
                         fields: values
                             .into_iter()
-                            .map(|value| WordField(vec![ExpansionPiece::Splittable(value)]))
+                            .map(|value| {
+                                WordField(vec![ExpansionPiece::Splittable(
+                                    value.to_str().unwrap_or("").to_owned(),
+                                )])
+                            })
                             .collect(),
                         concatenate: *concatenate,
                         from_array: true,
@@ -1971,7 +1981,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     s.as_str(),
                     escape::EscapeExpansionMode::AnsiCQuotes,
                 )?;
-                Ok(String::from_utf8_lossy(result.as_slice()).into_owned())
+                Ok(String::from_utf8(result)
+                    .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned()))
             }
             brush_parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
                 separate_words: _separate_words,

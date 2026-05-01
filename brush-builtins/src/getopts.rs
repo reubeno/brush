@@ -3,6 +3,7 @@ use std::{collections::HashMap, io::Write};
 use clap::Parser;
 
 use brush_core::{ExecutionResult, builtins, env, variables};
+use bstr::BString;
 
 /// Parse command options.
 #[derive(Parser)]
@@ -255,7 +256,7 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
         // and request that OPTIND not be updated.
         context.shell.env_mut().update_or_add(
             VAR_GETOPTS_NEXT_CHAR_INDEX,
-            variables::ShellValueLiteral::Scalar((next_char_index + 1).to_string()),
+            variables::ShellValueLiteral::Scalar(BString::from((next_char_index + 1).to_string())),
             |v| {
                 v.hide_from_enumeration();
                 Ok(())
@@ -348,7 +349,7 @@ fn update_variables<SE: brush_core::ShellExtensions>(
     // Update variable value.
     context.shell.env_mut().update_or_add(
         variable_name,
-        variables::ShellValueLiteral::Scalar(result.variable_value),
+        variables::ShellValueLiteral::Scalar(BString::from(result.variable_value)),
         |_| Ok(()),
         brush_core::env::EnvironmentLookup::Anywhere,
         brush_core::env::EnvironmentScope::Global,
@@ -358,7 +359,7 @@ fn update_variables<SE: brush_core::ShellExtensions>(
     if let Some(optarg) = result.optarg {
         context.shell.env_mut().update_or_add(
             "OPTARG",
-            variables::ShellValueLiteral::Scalar(optarg),
+            variables::ShellValueLiteral::Scalar(BString::from(optarg)),
             |_| Ok(()),
             brush_core::env::EnvironmentLookup::Anywhere,
             brush_core::env::EnvironmentScope::Global,
@@ -371,14 +372,14 @@ fn update_variables<SE: brush_core::ShellExtensions>(
     let optind_str = result.optind.to_string();
     context.shell.env_mut().update_or_add(
         "OPTIND",
-        variables::ShellValueLiteral::Scalar(optind_str.clone()),
+        variables::ShellValueLiteral::Scalar(BString::from(optind_str.clone())),
         |_| Ok(()),
         brush_core::env::EnvironmentLookup::Anywhere,
         brush_core::env::EnvironmentScope::Global,
     )?;
     context.shell.env_mut().update_or_add(
         VAR_GETOPTS_LAST_OPTIND,
-        variables::ShellValueLiteral::Scalar(optind_str),
+        variables::ShellValueLiteral::Scalar(BString::from(optind_str)),
         |v| {
             v.hide_from_enumeration();
             Ok(())

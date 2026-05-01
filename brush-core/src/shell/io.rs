@@ -1,5 +1,6 @@
 //! I/O support for shell instances.
 
+use bstr::ByteSlice;
 use std::io::Write;
 
 use crate::{error, extensions, ioutils};
@@ -55,6 +56,8 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             && let Ok(fd) = xtracefd_var
                 .value()
                 .to_cow_str(self)
+                .to_str()
+                .unwrap_or("")
                 .parse::<super::ShellFd>()
             && let Some(file) = self.open_files.try_fd(fd)
         {

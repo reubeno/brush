@@ -1,5 +1,6 @@
 //! Implements programmable command completion support.
 
+use bstr::ByteSlice;
 use clap::ValueEnum;
 use std::{
     borrow::Cow,
@@ -802,12 +803,15 @@ impl Spec {
                 match reply.value() {
                     variables::ShellValue::IndexedArray(values) => {
                         return Ok(Answer::Candidates(
-                            values.values().map(|v| v.to_owned()).collect(),
+                            values
+                                .values()
+                                .map(|v| v.to_str().unwrap_or("").to_string())
+                                .collect(),
                             ProcessingOptions::default(),
                         ));
                     }
                     variables::ShellValue::String(s) => {
-                        let candidates = vec![s.to_owned()];
+                        let candidates = vec![s.to_str().unwrap_or("").to_string()];
                         return Ok(Answer::Candidates(candidates, ProcessingOptions::default()));
                     }
                     _ => (),

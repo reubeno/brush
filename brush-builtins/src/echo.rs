@@ -48,17 +48,17 @@ impl builtins::Command for EchoCommand {
         let mut trailing_newline = !self.no_trailing_newline;
         let mut s;
         if self.interpret_backslash_escapes {
-            s = String::new();
+            s = Vec::new();
             for (i, arg) in self.args.iter().enumerate() {
                 if i > 0 {
-                    s.push(' ');
+                    s.push(b' ');
                 }
 
                 let (expanded_arg, keep_going) = escape::expand_backslash_escapes(
                     arg.as_str(),
                     escape::EscapeExpansionMode::EchoBuiltin,
                 )?;
-                s.push_str(&String::from_utf8_lossy(expanded_arg.as_slice()));
+                s.extend_from_slice(&expanded_arg);
 
                 if !keep_going {
                     trailing_newline = false;
@@ -66,14 +66,14 @@ impl builtins::Command for EchoCommand {
                 }
             }
         } else {
-            s = self.args.join(" ");
+            s = self.args.join(" ").into_bytes();
         }
 
         if trailing_newline {
-            s.push('\n');
+            s.push(b'\n');
         }
 
-        write!(context.stdout(), "{s}")?;
+        context.stdout().write_all(&s)?;
         context.stdout().flush()?;
 
         Ok(ExecutionResult::success())

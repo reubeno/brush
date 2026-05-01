@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map;
 
+use bstr::{BString, ByteSlice};
+
 use crate::Shell;
 use crate::error;
 use crate::extensions;
@@ -275,8 +277,10 @@ impl ShellEnvironment {
         name: S,
         shell: &Shell<SE>,
     ) -> Option<Cow<'_, str>> {
-        self.get(name.as_ref())
-            .map(|(_, v)| v.value().to_cow_str(shell))
+        self.get(name.as_ref()).map(|(_, v)| {
+            let cow = v.value().to_cow_str(shell);
+            Cow::Owned(cow.to_str().unwrap_or("").to_string())
+        })
     }
 
     /// Checks if a variable of the given name is set in the environment.
@@ -510,8 +514,8 @@ impl ShellEnvironment {
     pub fn update_or_add_array_element<N: Into<String>>(
         &mut self,
         name: N,
-        index: String,
-        value: String,
+        index: BString,
+        value: BString,
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
