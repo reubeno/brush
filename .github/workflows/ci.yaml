@@ -369,6 +369,9 @@ jobs:
           toolchain: ${{ matrix.rust-version }}
           components: clippy, rustfmt
 
+      - name: Install Tombi
+        uses: tombi-toml/setup-tombi@9880d1d3ba5e745d410c697366c513b337704388 # v1.0.11
+
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -398,6 +401,12 @@ jobs:
       - name: Clippy check
         if: matrix.rust-version == 'stable'
         run: cargo xtask check lint
+
+      - name: Check TOML formatting
+        run: tombi format --check
+
+      - name: Lint TOML
+        run: tombi lint
 
   # Check for unneeded dependencies.
   check-deps:
