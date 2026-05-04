@@ -1,26 +1,26 @@
 [package]
 name = "brush-experimental-builtins"
-description = "*EXPERIMENTAL builtins for a POSIX/bash shell (used by brush-shell)"
 version = "0.1.0"
-categories.workspace = true
 edition.workspace = true
-keywords.workspace = true
-license.workspace = true
+rust-version.workspace = true
+description = "*EXPERIMENTAL builtins for a POSIX/bash shell (used by brush-shell)"
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 bench = false
 
+[dependencies]
+brush-core = { path = "../brush-core", version = "^0.5.0" }
+clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
+serde_json = { version = "1.0.149", optional = true }
+
 [features]
-default = ['builtin.save']
+default = ["builtin.save"]
 'builtin.save' = ["brush-core/serde", "dep:serde_json"]
 
 [lints]
 workspace = true
-
-[dependencies]
-brush-core = { version = "^0.5.0", path = "../brush-core" }
-clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
-serde_json = { version = "1.0.149", optional = true }

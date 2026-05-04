@@ -1,34 +1,23 @@
 [package]
 name = "brush-interactive"
-description = "Interactive layer of brush-shell"
 version = "0.4.0"
 authors.workspace = true
-categories.workspace = true
 edition.workspace = true
-keywords.workspace = true
-license.workspace = true
+rust-version.workspace = true
+description = "Interactive layer of brush-shell"
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 bench = false
 
-[features]
-default = []
-basic = ["dep:crossterm", "completion"]
-completion = []
-minimal = []
-reedline = ["dep:reedline", "dep:nu-ansi-term", "completion", "highlighting"]
-highlighting = []
-
-[lints]
-workspace = true
-
 [dependencies]
 bon = "3.9.1"
-brush-parser = { version = "^0.4.0", path = "../brush-parser" }
-brush-core = { version = "^0.5.0", path = "../brush-core" }
+brush-core = { path = "../brush-core", version = "^0.5.0" }
+brush-parser = { path = "../brush-parser", version = "^0.4.0" }
 crossterm = { version = "0.29.0", features = ["serde"], optional = true }
 indexmap = "2.13.0"
 nu-ansi-term = { version = "0.50.3", optional = true }
@@ -40,3 +29,14 @@ tracing = "0.1.44"
 
 [dev-dependencies]
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+
+[features]
+default = []
+basic = ["completion", "dep:crossterm"]
+completion = []
+highlighting = []
+minimal = []
+reedline = ["completion", "dep:nu-ansi-term", "dep:reedline", "highlighting"]
+
+[lints]
+workspace = true

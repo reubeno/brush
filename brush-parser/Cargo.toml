@@ -1,62 +1,18 @@
 [package]
 name = "brush-parser"
-description = "POSIX/bash shell tokenizer and parsers (used by brush-shell)"
 version = "0.4.0"
 authors.workspace = true
-categories.workspace = true
 edition.workspace = true
-keywords.workspace = true
-license.workspace = true
+rust-version.workspace = true
+description = "POSIX/bash shell tokenizer and parsers (used by brush-shell)"
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
-
-[lints]
-workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 bench = false
-
-[features]
-arbitrary = ["dep:arbitrary"]
-debug-tracing = ["peg/trace"]
-diagnostics = ["dep:miette"]
-serde = ["dep:serde"]
-winnow-parser = ["dep:winnow"]
-
-[dependencies]
-arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }
-bon = "3.9.1"
-cached = "0.59.0"
-indenter = "0.3.4"
-insta = { version = "1.47.1", features = ["redactions"] }
-miette = { version = "7.6.0", optional = true, default-features = false, features = [
-    "derive",
-] }
-peg = "0.8.5"
-serde = { version = "1.0.228", optional = true, features = ["derive", "rc"] }
-thiserror = "2.0.18"
-tracing = "0.1.44"
-utf8-chars = "3.0.6"
-winnow = { version = "1.0.0", optional = true }
-
-[target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.4.2", features = ["wasm_js"] }
-uuid = { version = "1.23.1", features = ["js"] }
-
-[dev-dependencies]
-anyhow = "1.0.102"
-criterion = { version = "0.8.2", features = ["html_reports"] }
-insta = { version = "1.47.1", features = ["glob", "ron", "yaml", "redactions"] }
-miette = { version = "7.6.0", features = ["fancy"] }
-pretty_assertions = { version = "1.4.1", features = ["unstable"] }
-serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = "1.0.149"
-serde_yaml = "0.9.34"
-
-[[bench]]
-name = "parser"
-harness = false
 
 [[example]]
 name = "miette"
@@ -65,3 +21,47 @@ required-features = ["diagnostics"]
 [[example]]
 name = "serde"
 required-features = ["serde"]
+
+[[bench]]
+harness = false
+name = "parser"
+
+[dependencies]
+arbitrary = { version = "1.4.2", features = ["derive"], optional = true }
+bon = "3.9.1"
+cached = "0.59.0"
+indenter = "0.3.4"
+insta = { version = "1.47.1", features = ["redactions"] }
+miette = { version = "7.6.0", default-features = false, features = [
+  "derive",
+], optional = true }
+peg = "0.8.5"
+serde = { version = "1.0.228", features = ["derive", "rc"], optional = true }
+thiserror = "2.0.18"
+tracing = "0.1.44"
+utf8-chars = "3.0.6"
+winnow = { version = "1.0.0", optional = true }
+
+[dev-dependencies]
+anyhow = "1.0.102"
+criterion = { version = "0.8.2", features = ["html_reports"] }
+insta = { version = "1.47.1", features = ["glob", "redactions", "ron", "yaml"] }
+miette = { version = "7.6.0", features = ["fancy"] }
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde_json = "1.0.149"
+serde_yaml = "0.9.34"
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
+uuid = { version = "1.23.1", features = ["js"] }
+
+[features]
+arbitrary = ["dep:arbitrary"]
+debug-tracing = ["peg/trace"]
+diagnostics = ["dep:miette"]
+serde = ["dep:serde"]
+winnow-parser = ["dep:winnow"]
+
+[lints]
+workspace = true

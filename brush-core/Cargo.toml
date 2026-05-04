@@ -1,31 +1,23 @@
 [package]
 name = "brush-core"
-description = "Reusable core of a POSIX/bash shell (used by brush-shell)"
 version = "0.5.0"
-categories.workspace = true
 edition.workspace = true
-keywords.workspace = true
-license.workspace = true
+rust-version.workspace = true
+description = "Reusable core of a POSIX/bash shell (used by brush-shell)"
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 bench = false
 
-[lints]
-workspace = true
-
-[features]
-default = []
-serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
-experimental-parser = ["brush-parser/winnow-parser"]
-
 [dependencies]
 async-recursion = "1.1.1"
 async-trait = "0.1.89"
-brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 bon = "3.9.1"
+brush-parser = { path = "../brush-parser", version = "^0.4.0" }
 cached = "0.59.0"
 cfg-if = "1.0.4"
 chrono = "0.4.44"
@@ -38,52 +30,60 @@ itertools = "0.14.0"
 normalize-path = "0.2.1"
 rand = "0.10.0"
 rpds = "1.2.0"
-serde = { version = "1.0.228", optional = true, features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
 strum = "0.28.0"
 strum_macros = "0.28.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 
-[target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.52.1", features = ["io-util", "macros", "rt", "sync"] }
+[dev-dependencies]
+anyhow = "1.0.102"
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+tempfile = "3.27.0"
 
 [target.'cfg(any(unix, windows))'.dependencies]
 hostname = "0.4.2"
 tokio = { version = "1.50.0", features = [
-    "io-util",
-    "macros",
-    "net",
-    "process",
-    "rt",
-    "rt-multi-thread",
-    "signal",
-    "sync",
+  "io-util",
+  "macros",
+  "net",
+  "process",
+  "rt",
+  "rt-multi-thread",
+  "signal",
+  "sync",
 ] }
 
-[target.'cfg(windows)'.dependencies]
-check_elevation = "0.2.7"
-whoami = "2.1.1"
+[target.'cfg(target_family = "wasm")'.dependencies]
+tokio = { version = "1.52.1", features = ["io-util", "macros", "rt", "sync"] }
 
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.2"
 libc = "0.2.183"
 nix = { version = "0.31.2", features = [
-    "fs",
-    "poll",
-    "process",
-    "resource",
-    "signal",
-    "term",
-    "user",
+  "fs",
+  "poll",
+  "process",
+  "resource",
+  "signal",
+  "term",
+  "user",
 ] }
 terminfo = "0.9.0"
 uzers = "0.12.2"
+
+[target.'cfg(windows)'.dependencies]
+check_elevation = "0.2.7"
+whoami = "2.1.1"
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
 uuid = { version = "1.23.1", features = ["js"] }
 
-[dev-dependencies]
-anyhow = "1.0.102"
-pretty_assertions = { version = "1.4.1", features = ["unstable"] }
-tempfile = "3.27.0"
+[features]
+default = []
+experimental-parser = ["brush-parser/winnow-parser"]
+serde = ["brush-parser/serde", "chrono/serde", "dep:serde", "rpds/serde"]
+
+[lints]
+workspace = true

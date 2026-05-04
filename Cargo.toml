@@ -1,53 +1,35 @@
 [workspace]
 resolver = "3"
 members = [
-    "brush",
-    "brush-shell",
-    "brush-parser",
-    "brush-core",
-    "brush-builtins",
-    "brush-coreutils-builtins",
-    "brush-experimental-builtins",
-    "brush-interactive",
-    "brush-test-harness",
-    "fuzz",
-    "xtask",
+  "brush",
+  "brush-builtins",
+  "brush-core",
+  "brush-coreutils-builtins",
+  "brush-experimental-builtins",
+  "brush-interactive",
+  "brush-parser",
+  "brush-shell",
+  "brush-test-harness",
+  "fuzz",
+  "xtask",
 ]
 default-members = ["brush-shell"]
 
 [workspace.package]
 authors = ["reuben olinsky"]
-categories = ["command-line-utilities", "development-tools"]
 edition = "2024"
-keywords = ["cli", "shell", "sh", "bash", "script"]
-license = "MIT"
+rust-version = "1.88.0"
 readme = "README.md"
 repository = "https://github.com/reubeno/brush"
-rust-version = "1.88.0"
-
-[workspace.lints.rust]
-warnings = { level = "deny" }
-future_incompatible = { level = "deny" }
-missing_docs = { level = "deny" }
-nonstandard_style = { level = "deny" }
-rust_2018_idioms = { level = "deny", priority = -1 }
-unnameable_types = "deny"
-unsafe_op_in_unsafe_fn = "deny"
-unused_attributes = "deny"
-unused_lifetimes = "deny"
-unused_macro_rules = "deny"
-# For now we allow unknown lints so we can opt into warnings that don't exist on the
-# oldest toolchain we need to support.
-unknown_lints = { level = "allow", priority = -100 }
-
-[workspace.lints.rustdoc]
-all = { level = "deny", priority = -1 }
+license = "MIT"
+keywords = ["bash", "cli", "script", "sh", "shell"]
+categories = ["command-line-utilities", "development-tools"]
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
 cargo = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
 
 # Denied rules
@@ -60,9 +42,9 @@ string_lit_chars_any = "deny"
 string_slice = "deny"
 tests_outside_test_module = "deny"
 todo = "deny"
+undocumented_unsafe_blocks = "deny"
 unwrap_in_result = "deny"
 unwrap_used = "deny"
-undocumented_unsafe_blocks = "deny"
 
 # Allowed rules
 bool_to_int_with_if = "allow"
@@ -73,8 +55,8 @@ if_not_else = "allow"
 if_same_then_else = "allow"
 match_same_arms = "allow"
 missing_errors_doc = "allow"
-must_use_candidate = "allow"
 multiple_crate_versions = "allow"
+must_use_candidate = "allow"
 option_if_let_else = "allow"
 redundant_closure_for_method_calls = "allow"
 redundant_else = "allow"
@@ -83,20 +65,38 @@ result_large_err = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
 
+[workspace.lints.rust]
+future_incompatible = { level = "deny" }
+missing_docs = { level = "deny" }
+nonstandard_style = { level = "deny" }
+rust_2018_idioms = { level = "deny", priority = -1 }
+# For now we allow unknown lints so we can opt into warnings that don't exist on the
+# oldest toolchain we need to support.
+unknown_lints = { level = "allow", priority = -100 }
+unnameable_types = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unused_attributes = "deny"
+unused_lifetimes = "deny"
+unused_macro_rules = "deny"
+warnings = { level = "deny" }
+
+[workspace.lints.rustdoc]
+all = { level = "deny", priority = -1 }
+
 [workspace.metadata.typos]
 files.extend-exclude = [
-    # Exclude the changelog because it's dynamically generated.
-    "/CHANGELOG.md",
-    # Remove this once impending mapfile updates are merged.
-    "/brush-core/src/builtins/mapfile.rs",
+  # Exclude the changelog because it's dynamically generated.
+  "/CHANGELOG.md",
+  # Remove this once impending mapfile updates are merged.
+  "/brush-core/src/builtins/mapfile.rs",
 ]
 
 [workspace.metadata.typos.default]
 extend-ignore-re = [
-    # -ot is a valid binary operator
-    "-ot",
-    # Ignore 2-letter string literals, which show up in testing a fair bit.
-    '"[a-zA-Z]{2}"',
+  # -ot is a valid binary operator
+  "-ot",
+  # Ignore 2-letter string literals, which show up in testing a fair bit.
+  '"[a-zA-Z]{2}"',
 ]
 
 [workspace.metadata.typos.default.extend-words]
@@ -108,12 +108,12 @@ extend-ignore-re = [
 # This is a specific technical name.
 "iterm" = "iterm"
 
-[profile.release]
-strip = true
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-
 [profile.bench]
 inherits = "release"
 strip = "debuginfo"
+
+[profile.release]
+strip = true
+lto = "fat"
+panic = "abort"
+codegen-units = 1
