@@ -1,6 +1,6 @@
 //! Init script support for shells.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{Shell, error, extensions, interp};
 
@@ -125,14 +125,21 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
                     "BASH_ENV"
                 };
 
-                if self.env.is_set(env_var_name) {
-                    //
-                    // TODO(well-known-vars): look at $ENV/BASH_ENV; source its expansion if that
-                    // file exists
-                    //
-                    return error::unimp(
-                        "load config from $ENV/BASH_ENV for non-interactive, non-login shell",
-                    );
+                // Per bash(1) INVOCATION: when BASH_ENV is set on a non-interactive
+                // non-login shell (or ENV in POSIX/sh mode), the value is subjected to
+                // parameter expansion, command substitution, and arithmetic expansion,
+                // and the resulting filename is sourced if it exists. If the file does
+                // not exist or is not readable, bash silently continues.
+                //
+                // FIXME: bash also suppresses this load when the shell is running with
+                // privileges (effective UID/GID different from real); that protection
+                // is not yet implemented here.
+                if let Some(raw_value) = self.env_str(env_var_name).map(|v| v.into_owned()) {
+                    let expanded =
+                        crate::expansion::basic_expand_word(self, &params, raw_value).await?;
+                    if !expanded.is_empty() {
+                        self.source_if_exists(Path::new(&expanded), &params).await?;
+                    }
                 }
             }
         }
