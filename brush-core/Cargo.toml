@@ -31,7 +31,7 @@ cfg-if = "1.0.4"
 chrono = "0.4.44"
 clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
 color-print = "0.3.7"
-fancy-regex = "0.17.0"
+fancy-regex = "0.18.0"
 futures = "0.3.32"
 inherent = "1.0.13"
 itertools = "0.14.0"
