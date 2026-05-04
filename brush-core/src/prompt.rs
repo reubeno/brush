@@ -20,15 +20,19 @@ pub(crate) async fn expand_prompt(
     // Now, render each piece.
     let mut formatted_prompt = String::new();
     for piece in prompt_pieces {
-        let needs_escaping = matches!(
-            piece,
-            brush_parser::prompt::PromptPiece::EscapedSequence(_)
-                | brush_parser::prompt::PromptPiece::DollarOrPound
-        );
+        // Pieces that semantically represent a literal char (e.g. user wrote
+        // `\$` meaning a literal `$`, not input for pass-2 expansion). We
+        // prepend a `\` so pass 2 consumes it and leaves the char alone.
+        let semantically_literal = matches!(piece, brush_parser::prompt::PromptPiece::DollarOrPound);
 
         let formatted_piece = format_prompt_piece(shell, piece)?;
 
-        if shell.options().expand_prompt_strings && needs_escaping {
+        // Only useful when pass 2 actually consumes a `\` for that leading
+        // byte; otherwise the `\` would leak through.
+        if shell.options().expand_prompt_strings
+            && semantically_literal
+            && formatted_piece.starts_with(expansion::DOUBLE_QUOTED_ESCAPE_CHARS)
+        {
             formatted_prompt.push('\\');
         }
 
@@ -37,8 +41,12 @@ pub(crate) async fn expand_prompt(
 
     if shell.options().expand_prompt_strings {
         // Now expand any remaining escape sequences, but without tilde-expansion.
+        // Use double-quote escape rules so that backslashes emitted in the
+        // previous step survive intact unless they precede a character that
+        // would also be escapable inside a double-quoted string.
         let options = expansion::ExpanderOptions {
             tilde_expand: false,
+            unquoted_backslash_handling: expansion::UnquotedBackslashHandling::DoubleQuoted,
             ..Default::default()
         };
         formatted_prompt =

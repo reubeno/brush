@@ -25,6 +25,27 @@ use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
 
+/// Controls how the expander handles a backslash-escape sequence (`\X`)
+/// when it appears outside any explicit quoting (single, double, ANSI-C).
+/// Inside actual double-quoted text, the parser's own escape rules apply
+/// and this setting is ignored.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum UnquotedBackslashHandling {
+    /// Default unquoted shell semantics: the backslash is consumed and `X`
+    /// is preserved literally.
+    #[default]
+    Strip,
+    /// The backslash and `X` are both preserved verbatim. Useful in pattern
+    /// contexts where the matcher will interpret the backslash itself.
+    Preserve,
+    /// Treat `\X` as if it were inside a double-quoted string: the backslash
+    /// is consumed only when `X` is one of the characters that double-quote
+    /// syntax treats as escapable; otherwise both characters are preserved.
+    /// A backslash followed by a literal newline is a line continuation
+    /// (both characters are consumed). Used by prompt-string expansion.
+    DoubleQuoted,
+}
+
 /// Options to customize the behavior of the word expander.
 pub(crate) struct ExpanderOptions {
     /// Whether to perform tilde-expansion.
@@ -37,6 +58,9 @@ pub(crate) struct ExpanderOptions {
     /// Whether to perform pathname expansion (globbing). If disabled, glob patterns
     /// are returned as literal strings.
     pub pathname_expand: bool,
+    /// How to handle backslash-escape sequences encountered outside of any
+    /// explicit quoting. See [`UnquotedBackslashHandling`] for details.
+    pub unquoted_backslash_handling: UnquotedBackslashHandling,
 }
 
 impl Default for ExpanderOptions {
@@ -46,9 +70,17 @@ impl Default for ExpanderOptions {
             brace_expand: true,
             execute_command_substitutions: true,
             pathname_expand: true,
+            unquoted_backslash_handling: UnquotedBackslashHandling::default(),
         }
     }
 }
+
+/// The set of characters that, when preceded by a backslash inside a
+/// double-quoted string, form a valid escape sequence (the backslash is
+/// consumed). Any other character's backslash is preserved literally.
+/// Newline is a special case: `\<newline>` is a line continuation and
+/// consumes both characters, leaving nothing.
+pub(crate) const DOUBLE_QUOTED_ESCAPE_CHARS: &[char] = &['\\', '$', '`', '"', '\n'];
 
 #[derive(Debug)]
 struct Expansion {
@@ -333,11 +365,13 @@ pub(crate) async fn basic_expand_pattern(
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
 ) -> Result<patterns::Pattern, error::Error> {
-    let mut expander = WordExpander::new(shell, params);
-
     // When expanding patterns, we do not want backslash removal to occur in unquoted
     // contexts, as that would interfere with pattern syntax.
-    expander.disable_unquoted_backslash_removal = true;
+    let options = ExpanderOptions {
+        unquoted_backslash_handling: UnquotedBackslashHandling::Preserve,
+        ..Default::default()
+    };
+    let mut expander = WordExpander::new_from_options(shell, params, &options);
 
     expander.basic_expand_pattern(word_str.as_ref()).await
 }
@@ -504,10 +538,11 @@ struct WordExpander<'a, SE: extensions::ShellExtensions> {
     disable_brace_expansion: bool,
     /// Whether to disable command substitutions.
     disable_command_substitutions: bool,
-    /// Whether to disable backslash removal in unquoted contexts.
-    disable_unquoted_backslash_removal: bool,
     /// Whether to disable pathname expansion (globbing).
     disable_pathname_expansion: bool,
+    /// How to handle backslash-escape sequences encountered outside of any
+    /// explicit quoting. See [`UnquotedBackslashHandling`] for details.
+    unquoted_backslash_handling: UnquotedBackslashHandling,
     /// Whether we are currently expanding inside a double-quoted context.
     in_double_quotes: bool,
     /// Whether to use heredoc expansion semantics (literal quotes, no brace expansion).
@@ -523,8 +558,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             parser_options,
             disable_brace_expansion: false,
             disable_command_substitutions: false,
-            disable_unquoted_backslash_removal: false,
             disable_pathname_expansion: false,
+            unquoted_backslash_handling: UnquotedBackslashHandling::Strip,
             in_double_quotes: false,
             heredoc_mode: false,
         }
@@ -548,8 +583,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             parser_options,
             disable_brace_expansion: !options.brace_expand,
             disable_command_substitutions: !options.execute_command_substitutions,
-            disable_unquoted_backslash_removal: false,
             disable_pathname_expansion: !options.pathname_expand,
+            unquoted_backslash_handling: options.unquoted_backslash_handling,
             in_double_quotes: false,
             heredoc_mode: false,
         }
@@ -933,19 +968,43 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Expansion::from(ExpansionPiece::Splittable(cmd_output))
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
-                if let Some(escaped) = s.strip_prefix('\\') {
-                    // If we are *not* in a double-quoted context and we were requested to skip
-                    // unquoted backslash removal, then we need to skip removing backslashes here.
-                    if !self.in_double_quotes && self.disable_unquoted_backslash_removal {
-                        return Ok(Expansion::from(ExpansionPiece::Splittable(s)));
-                    }
-
-                    // Otherwise, we expect a backslash here; remove it.
-                    Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
-                } else {
+                let Some(escaped) = s.strip_prefix('\\') else {
                     // We don't ever expect this case, as it breaks our invariant--but
                     // we handle it to avoid panicking.
-                    Expansion::from(ExpansionPiece::Unsplittable(s))
+                    return Ok(Expansion::from(ExpansionPiece::Unsplittable(s)));
+                };
+
+                // Inside actual double-quoted text, the parser only emits an
+                // EscapeSequence for `\X` where X is double-quote-escapable;
+                // we always strip the backslash there.
+                if self.in_double_quotes {
+                    return Ok(Expansion::from(ExpansionPiece::Unsplittable(
+                        escaped.to_owned(),
+                    )));
+                }
+
+                match self.unquoted_backslash_handling {
+                    UnquotedBackslashHandling::Strip => {
+                        // Default unquoted semantics: consume the backslash.
+                        Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                    }
+                    UnquotedBackslashHandling::Preserve => {
+                        // Preserve `\X` verbatim (e.g., for pattern syntax).
+                        Expansion::from(ExpansionPiece::Splittable(s))
+                    }
+                    UnquotedBackslashHandling::DoubleQuoted => {
+                        // `\<newline>` is a line continuation: both characters
+                        // are consumed.
+                        if escaped.starts_with('\n') {
+                            Expansion::from(ExpansionPiece::Unsplittable(String::new()))
+                        } else if escaped.starts_with(DOUBLE_QUOTED_ESCAPE_CHARS) {
+                            // Consume the backslash; preserve the next char.
+                            Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                        } else {
+                            // Preserve both characters.
+                            Expansion::from(ExpansionPiece::Unsplittable(s))
+                        }
+                    }
                 }
             }
             brush_parser::word::WordPiece::ArithmeticExpression(e) => Expansion::from(
