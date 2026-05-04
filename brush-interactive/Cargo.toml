@@ -1,7 +1,6 @@
 [package]
 name = "brush-interactive"
 version = "0.4.0"
-authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Interactive layer of brush-shell"

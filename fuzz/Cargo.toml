@@ -1,7 +1,6 @@
 [package]
 name = "brush-fuzz"
 version = "0.2.2"
-authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Fuzz tests for brush"

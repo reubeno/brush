@@ -16,7 +16,6 @@ members = [
 default-members = ["brush-shell"]
 
 [workspace.package]
-authors = ["reuben olinsky"]
 edition = "2024"
 rust-version = "1.88.0"
 readme = "README.md"
