@@ -11,6 +11,11 @@ use crate::error;
 /// Represents a unique identifier for a history item.
 type ItemId = i64;
 
+/// Maximum file size accepted when importing a history file. Files larger than this are
+/// rejected with `HistoryFileTooLargeToImport`. Applies to all file-import paths
+/// (`load_history`, `read_new_from_file`, `reload_from_file`).
+pub(crate) const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
+
 /// Interface for querying and manipulating the shell's recorded history of commands.
 // TODO(history): support maximum item count
 #[derive(Clone, Default)]
@@ -56,8 +61,6 @@ impl History {
     ///
     /// * `path` - The path to the history file.
     pub fn read_new_from_file(&mut self, path: impl AsRef<Path>) -> Result<(), error::Error> {
-        const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
-
         let file = std::fs::File::options().read(true).open(path.as_ref())?;
 
         let file_size = file.metadata()?.len();
@@ -103,8 +106,6 @@ impl History {
     ///
     /// * `path` - The path to the history file.
     pub fn reload_from_file(&mut self, path: impl AsRef<Path>) -> Result<(), error::Error> {
-        const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
-
         let file = std::fs::File::options().read(true).open(path.as_ref())?;
 
         let file_size = file.metadata()?.len();
