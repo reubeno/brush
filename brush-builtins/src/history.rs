@@ -132,12 +132,26 @@ impl HistoryCommand {
             return Ok(ExecutionResult::success());
         }
 
-        if self.append_rest_of_file_to_session.is_some() {
-            return error::unimp("history -n is not yet implemented");
+        if let Some(append_rest_option) = &self.append_rest_of_file_to_session {
+            if let Some(file_path) = get_effective_history_file_path(
+                config.default_history_file_path,
+                append_rest_option.as_ref(),
+            ) {
+                history.read_new_from_file(file_path)?;
+            }
+
+            return Ok(ExecutionResult::success());
         }
 
-        if self.append_file_to_session.is_some() {
-            return error::unimp("history -r is not yet implemented");
+        if let Some(append_file_option) = &self.append_file_to_session {
+            if let Some(file_path) = get_effective_history_file_path(
+                config.default_history_file_path,
+                append_file_option.as_ref(),
+            ) {
+                history.reload_from_file(file_path)?;
+            }
+
+            return Ok(ExecutionResult::success());
         }
 
         if let Some(write_option) = &self.write_session_to_file {
@@ -157,7 +171,7 @@ impl HistoryCommand {
         }
 
         if self.expand_args.is_some() {
-            return error::unimp("history -p is not yet implemented");
+            return error::unimp_with_issue("history -p is not yet implemented", 100);
         }
 
         if let Some(args) = &self.append_args_to_session {
@@ -238,6 +252,40 @@ mod tests {
         let cmd = HistoryCommand::try_parse_from(["history", "-a", "token"])?;
         assert_eq!(
             cmd.append_session_to_file,
+            Some(Some(String::from("token")))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_dash_n() -> Result<()> {
+        let cmd = HistoryCommand::try_parse_from(["history", "5"])?;
+        assert_matches!(cmd.append_rest_of_file_to_session, None);
+
+        let cmd = HistoryCommand::try_parse_from(["history", "-n"])?;
+        assert_matches!(cmd.append_rest_of_file_to_session, Some(None));
+
+        let cmd = HistoryCommand::try_parse_from(["history", "-n", "token"])?;
+        assert_eq!(
+            cmd.append_rest_of_file_to_session,
+            Some(Some(String::from("token")))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_dash_r() -> Result<()> {
+        let cmd = HistoryCommand::try_parse_from(["history", "5"])?;
+        assert_matches!(cmd.append_file_to_session, None);
+
+        let cmd = HistoryCommand::try_parse_from(["history", "-r"])?;
+        assert_matches!(cmd.append_file_to_session, Some(None));
+
+        let cmd = HistoryCommand::try_parse_from(["history", "-r", "token"])?;
+        assert_eq!(
+            cmd.append_file_to_session,
             Some(Some(String::from("token")))
         );
 
