@@ -6,12 +6,16 @@ use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
     parser::ast,
-    variables,
+    variables::{self, ShellValue, ShellValueUnsetType, ShellVariable},
 };
 
 /// Add or update exported shell variables.
 #[derive(Parser)]
 pub(crate) struct ExportCommand {
+    /// Mark names as indexed arrays (combined with the export attribute).
+    #[arg(short = 'a')]
+    make_indexed_array: bool,
+
     /// Names are treated as function names.
     #[arg(short = 'f')]
     names_are_functions: bool,
@@ -88,11 +92,31 @@ impl ExportCommand {
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
                 else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
+                    if self.make_indexed_array {
+                        variable.convert_to_indexed_array()?;
+                    }
                     if self.unexport {
                         variable.unexport();
                     } else {
                         variable.export();
                     }
+                }
+                // If `-a` was passed and the name doesn't yet exist, create it as an unset
+                // indexed array with the export attribute (mirrors `declare -ax NAME`). This
+                // is what bash does for `export -a NAME` and what `mise activate bash` relies
+                // on when seeding `chpwd_functions`.
+                //
+                // But `-n` (unexport) on a name that doesn't exist yet is a no-op in bash --
+                // there's nothing to unexport, so don't materialize a new unset array var just
+                // because `-a` was also given. Only create the var on the exporting path.
+                else if self.make_indexed_array && !self.unexport {
+                    let mut var =
+                        ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::IndexedArray));
+                    var.export();
+                    context
+                        .shell
+                        .env_mut()
+                        .add(s.clone(), var, EnvironmentScope::Global)?;
                 }
             }
             brush_core::CommandArg::Assignment(assignment) => {
@@ -121,9 +145,16 @@ impl ExportCommand {
                 // bare `name+=value`. update_or_add always replaces, so when the
                 // variable already exists honor the append here. A missing variable
                 // falls through: appending to nothing is a plain assignment.
+                //
+                // When `-a` is also set, convert to an indexed array first (mirrors
+                // bash's `declare -ax foo+=x`) so the append lands on an array rather
+                // than silently ignoring `-a` on this path.
                 if assignment.append
                     && let Some((_, variable)) = context.shell.env_mut().get_mut(name)
                 {
+                    if self.make_indexed_array {
+                        variable.convert_to_indexed_array()?;
+                    }
                     variable.assign(value, true)?;
                     if self.unexport {
                         variable.unexport();
@@ -134,10 +165,19 @@ impl ExportCommand {
                 }
 
                 // Update the variable with the provided value and then mark it exported.
+                // `update_or_add` assigns the scalar value first and only then invokes this
+                // updater closure, so when `-a` is set we convert to an indexed array *after*
+                // the assignment lands -- `convert_to_indexed_array` takes whatever scalar was
+                // just assigned and re-seeds it as index 0. Net effect: `export -a foo=x` ends
+                // up as `foo=([0]="x")`, matching bash's `declare -ax foo=([0]="x")`, but via a
+                // convert-after-assign step, not a before-assign one.
                 context.shell.env_mut().update_or_add(
                     name,
                     value,
                     |var| {
+                        if self.make_indexed_array {
+                            var.convert_to_indexed_array()?;
+                        }
                         if self.unexport {
                             var.unexport();
                         } else {
