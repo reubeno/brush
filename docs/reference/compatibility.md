@@ -170,7 +170,7 @@ Some advanced `printf` format specifiers behave differently (~8 known cases), pa
 
 ### Aliases
 
-Some complex alias expansion scenarios differ from `bash` (see GitHub issues #57, #286).
+Some complex alias expansion scenarios differ from `bash` (see GitHub issues [#57](https://github.com/reubeno/brush/issues/57), [#286](https://github.com/reubeno/brush/issues/286)).
 
 ## Test Suite Statistics
 
