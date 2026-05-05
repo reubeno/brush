@@ -6,6 +6,8 @@
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Context;
+use std::os::unix::process::CommandExt as _;
+
 use expectrl::{
     Expect, Session,
     process::unix::{PtyStream, UnixProcess},
@@ -120,6 +122,21 @@ fn run_pipeline_interactively() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.arg0("-brush");
+    })?;
+
+    session.expect_prompt()?;
+    let login_shell_output = session.exec_output("shopt -q login_shell && echo login")?;
+    assert!(login_shell_output.contains("login"));
+
+    session.exit()?;
+
+    Ok(())
+}
+
 //
 // Helpers
 //
@@ -155,6 +172,12 @@ impl SessionExt for ShellSession {
 }
 
 fn start_shell_session() -> anyhow::Result<ShellSession> {
+    start_shell_session_with(|_| {})
+}
+
+fn start_shell_session_with(
+    configure: impl FnOnce(&mut std::process::Command),
+) -> anyhow::Result<ShellSession> {
     const DEFAULT_PROMPT: &str = "brush> ";
     let shell_path = assert_cmd::cargo::cargo_bin!("brush");
 
@@ -169,6 +192,7 @@ fn start_shell_session() -> anyhow::Result<ShellSession> {
     ]);
     cmd.env("PS1", DEFAULT_PROMPT);
     cmd.env("TERM", "linux");
+    configure(&mut cmd);
 
     let session = expectrl::session::Session::spawn(cmd)?;
 
