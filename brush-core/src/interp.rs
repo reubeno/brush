@@ -248,7 +248,7 @@ impl Execute for ast::CompoundList {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                let job = spawn_async_ao_list_in_task(ao_list, shell, params);
+                let job = start_background_ao_list(ao_list, shell, params).await?;
                 let job_formatted = job.to_pid_style_string();
 
                 if shell.options().interactive && !shell.is_subshell() {
@@ -272,23 +272,60 @@ impl Execute for ast::CompoundList {
     }
 }
 
-fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
+async fn start_background_ao_list<'a, SE: extensions::ShellExtensions>(
     ao_list: &ast::AndOrList,
     shell: &'a mut Shell<SE>,
     params: &ExecutionParameters,
+) -> Result<&'a jobs::Job, error::Error> {
+    let background_params = background_job_params(params);
+
+    if is_simple_external_background_candidate(ao_list, shell) {
+        let mut child_shell = shell.clone();
+        child_shell.options_mut().interactive = false;
+
+        let spawn_results =
+            spawn_pipeline_processes(&ao_list.first, &mut child_shell, &background_params).await?;
+
+        let mut tasks = Vec::new();
+        for spawn_result in spawn_results {
+            match spawn_result {
+                ExecutionSpawnResult::StartedProcess(child) => {
+                    tasks.push(jobs::JobTask::External(child));
+                }
+                ExecutionSpawnResult::StartedTask(handle) => {
+                    tasks.push(jobs::JobTask::Internal(handle));
+                }
+                ExecutionSpawnResult::Completed(_) => {}
+            }
+        }
+
+        if !tasks.is_empty() {
+            return Ok(shell.jobs_mut().add_as_current(jobs::Job::new(
+                tasks,
+                ao_list.to_string(),
+                jobs::JobState::Running,
+            )));
+        }
+    }
+
+    Ok(spawn_async_ao_list_in_task(
+        ao_list,
+        shell,
+        background_params,
+    ))
+}
+
+fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
+    ao_list: &ast::AndOrList,
+    shell: &'a mut Shell<SE>,
+    cloned_params: ExecutionParameters,
 ) -> &'a jobs::Job {
     // Clone the inputs.
     let mut cloned_shell = shell.clone();
-    let mut cloned_params = params.clone();
     let cloned_ao_list = ao_list.clone();
 
     // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
     cloned_shell.options_mut().interactive = false;
-
-    // Redirect stdin to null, per spec.
-    if let Ok(null) = openfiles::null() {
-        cloned_params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
-    }
 
     let join_handle = tokio::spawn(async move {
         cloned_ao_list
@@ -301,6 +338,147 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
         ao_list.to_string(),
         jobs::JobState::Running,
     ))
+}
+
+fn background_job_params(params: &ExecutionParameters) -> ExecutionParameters {
+    let mut params = params.clone();
+
+    // Redirect stdin to null, per spec.
+    if let Ok(null) = openfiles::null() {
+        params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
+    }
+
+    params
+}
+
+fn is_simple_external_background_candidate<SE: extensions::ShellExtensions>(
+    ao_list: &ast::AndOrList,
+    shell: &Shell<SE>,
+) -> bool {
+    if !ao_list.additional.is_empty() {
+        return false;
+    }
+
+    let pipeline = &ao_list.first;
+    if pipeline.timed.is_some() || pipeline.bang || pipeline.seq.len() != 1 {
+        return false;
+    }
+
+    let ast::Command::Simple(simple) = &pipeline.seq[0] else {
+        return false;
+    };
+
+    let Some(command_name) = simple.word_or_name.as_ref().map(|w| w.value.as_str()) else {
+        return false;
+    };
+
+    is_plain_command_name(command_name)
+        && !simple_command_has_deferred_expansion(simple)
+        && !shell.aliases().contains_key(command_name)
+        && shell
+            .builtins()
+            .get(command_name)
+            .is_none_or(|registration| registration.disabled)
+        && shell.funcs().get(command_name).is_none()
+}
+
+fn is_plain_command_name(command_name: &str) -> bool {
+    !command_name.is_empty()
+        && !command_name.chars().any(|c| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    '$' | '`'
+                        | '\\'
+                        | '\''
+                        | '"'
+                        | '*'
+                        | '?'
+                        | '['
+                        | ']'
+                        | '{'
+                        | '}'
+                        | '~'
+                        | '!'
+                        | ';'
+                        | '&'
+                        | '|'
+                        | '<'
+                        | '>'
+                        | '('
+                        | ')'
+                )
+        })
+}
+
+fn simple_command_has_deferred_expansion(simple: &ast::SimpleCommand) -> bool {
+    simple
+        .word_or_name
+        .as_ref()
+        .is_some_and(word_has_deferred_expansion)
+        || simple
+            .prefix
+            .as_ref()
+            .is_some_and(|prefix| command_items_have_deferred_expansion(&prefix.0))
+        || simple
+            .suffix
+            .as_ref()
+            .is_some_and(|suffix| command_items_have_deferred_expansion(&suffix.0))
+}
+
+fn command_items_have_deferred_expansion(items: &[CommandPrefixOrSuffixItem]) -> bool {
+    items.iter().any(command_item_has_deferred_expansion)
+}
+
+fn command_item_has_deferred_expansion(item: &CommandPrefixOrSuffixItem) -> bool {
+    match item {
+        CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
+            io_redirect_has_deferred_expansion(redirect)
+        }
+        CommandPrefixOrSuffixItem::Word(word) => word_has_deferred_expansion(word),
+        CommandPrefixOrSuffixItem::AssignmentWord(assignment, word) => {
+            assignment_has_deferred_expansion(assignment) || word_has_deferred_expansion(word)
+        }
+        CommandPrefixOrSuffixItem::ProcessSubstitution(..) => true,
+    }
+}
+
+fn assignment_has_deferred_expansion(assignment: &ast::Assignment) -> bool {
+    assignment_value_has_deferred_expansion(&assignment.value)
+}
+
+fn assignment_value_has_deferred_expansion(value: &ast::AssignmentValue) -> bool {
+    match value {
+        ast::AssignmentValue::Scalar(word) => word_has_deferred_expansion(word),
+        ast::AssignmentValue::Array(words) => words.iter().any(|(key, value)| {
+            key.as_ref().is_some_and(word_has_deferred_expansion)
+                || word_has_deferred_expansion(value)
+        }),
+    }
+}
+
+fn io_redirect_has_deferred_expansion(redirect: &ast::IoRedirect) -> bool {
+    match redirect {
+        ast::IoRedirect::File(_, _, target) => io_redirect_target_has_deferred_expansion(target),
+        ast::IoRedirect::HereDocument(..) => false,
+        ast::IoRedirect::HereString(_, word) | ast::IoRedirect::OutputAndError(word, _) => {
+            word_has_deferred_expansion(word)
+        }
+    }
+}
+
+fn io_redirect_target_has_deferred_expansion(target: &ast::IoFileRedirectTarget) -> bool {
+    match target {
+        ast::IoFileRedirectTarget::Filename(word) | ast::IoFileRedirectTarget::Duplicate(word) => {
+            word_has_deferred_expansion(word)
+        }
+        ast::IoFileRedirectTarget::Fd(_) => false,
+        ast::IoFileRedirectTarget::ProcessSubstitution(..) => true,
+    }
+}
+
+fn word_has_deferred_expansion(word: &ast::Word) -> bool {
+    word.value.contains("$(") || word.value.contains('`')
 }
 
 #[async_trait::async_trait]

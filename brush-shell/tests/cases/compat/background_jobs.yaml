@@ -1,51 +1,57 @@
 name: "Background jobs"
 cases:
-  # === Implicit wait on exit: shell must wait for bg jobs before terminating ===
+  # === Launch before exit: shell must spawn bg jobs before terminating ===
   # These use file side-effects rather than stdout to avoid racy output ordering.
+  # Shell exit should not wait for background jobs to finish.
 
   - name: "Single background job via -c without explicit wait"
-    skip: true # Issue #1079
     args:
       - "-c"
       - "touch bg_done &"
 
   - name: "Single background job via stdin without explicit wait"
-    skip: true # Issue #1079
     stdin: |
       touch bg_done &
 
   - name: "Background compound command via -c without explicit wait"
-    skip: true # Issue #1079
+    skip: true # Issue #1079: requires durable background subshell execution
     args:
       - "-c"
       - "{ touch a_done; touch b_done; } &"
 
   - name: "Background compound command via stdin without explicit wait"
-    skip: true # Issue #1079
+    skip: true # Issue #1079: requires durable background subshell execution
     stdin: |
       { touch a_done; touch b_done; } &
 
   - name: "Multiple background jobs via -c without explicit wait"
-    skip: true # Issue #1079
     args:
       - "-c"
       - "touch one & touch two & touch three &"
 
   - name: "Multiple background jobs via stdin without explicit wait"
-    skip: true # Issue #1079
     stdin: |
       touch one & touch two & touch three &
 
   - name: "Background and foreground via -c without explicit wait"
-    skip: true # Issue #1079
     args:
       - "-c"
       - "touch bg_done & touch fg_done"
 
   - name: "Background and foreground via stdin without explicit wait"
-    skip: true # Issue #1079
     stdin: |
       touch bg_done & touch fg_done
+
+  - name: "Long background job via -c does not delay shell exit"
+    args:
+      - "-c"
+      - "sleep 5 >/dev/null 2>&1 &"
+    timeout_in_seconds: 1
+
+  - name: "Long background job via stdin does not delay shell exit"
+    stdin: |
+      sleep 5 >/dev/null 2>&1 &
+    timeout_in_seconds: 1
 
   # === Explicit wait ===
 
