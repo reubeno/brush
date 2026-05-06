@@ -48,7 +48,7 @@ impl builtins::Command for EchoCommand {
         let mut trailing_newline = !self.no_trailing_newline;
         let mut s;
         if self.interpret_backslash_escapes {
-            s = Vec::new();
+            s = Vec::with_capacity(self.args.len());
             for (i, arg) in self.args.iter().enumerate() {
                 if i > 0 {
                     s.push(b' ');
