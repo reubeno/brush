@@ -13,42 +13,25 @@ use super::types::{ParseContext, StrStream};
 // ============================================================================
 
 /// Normalize an arithmetic expression string to match peg parser output.
-/// The peg parser uses tokenizer which treats some characters as operators (like <, >, |, &)
-/// and others as word characters (like =, +, -, *, /).
-/// Spaces are only preserved between adjacent word tokens.
+/// The peg parser uses source position gaps to detect whitespace and inserts
+/// exactly one space per gap. We replicate this by collapsing runs of
+/// whitespace to a single space and trimming leading/trailing whitespace.
 fn normalize_arithmetic_expr(s: &str) -> String {
-    // Shell operators in arithmetic context (matches tokenizer's is_operator list)
-    const SHELL_OPERATORS: &[char] = &['<', '>', '|', '&', '(', ')', ';'];
-
-    let s = s.trim();
     let mut result = String::with_capacity(s.len());
-    let mut last_was_word = false;
-    let mut pending_space = false;
+    let mut had_space = false;
 
     for c in s.chars() {
         if c.is_whitespace() {
-            // Mark that we saw a space, but don't emit yet
-            pending_space = true;
-            continue;
-        }
-
-        // Shell operators suppress spaces around them
-        let is_shell_op = SHELL_OPERATORS.contains(&c);
-
-        if is_shell_op {
-            // Operators don't get spaces around them
-            pending_space = false;
-            last_was_word = false;
-        } else {
-            // Non-operator: emit pending space if last was also non-operator
-            if pending_space && last_was_word {
-                result.push(' ');
+            if !result.is_empty() {
+                had_space = true;
             }
-            pending_space = false;
-            last_was_word = true;
+        } else {
+            if had_space {
+                result.push(' ');
+                had_space = false;
+            }
+            result.push(c);
         }
-
-        result.push(c);
     }
 
     result

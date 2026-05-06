@@ -519,8 +519,10 @@ fn ext_test_regex_word<'a>(
                             let chars: Vec<char> = result.chars().collect();
                             let len = chars.len();
                             let is_escaped = len >= 2 && chars[len - 2] == '\\';
-                            if !matches!(last_ch, Some('(' | ')' | '[' | ']' | '|' | '$'))
-                                && !is_escaped
+                            if !matches!(
+                                last_ch,
+                                Some('(' | ')' | '[' | ']' | '|' | '$' | ' ' | '\t' | '\n')
+                            ) && !is_escaped
                             {
                                 result.push(' ');
                             }
