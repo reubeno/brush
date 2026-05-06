@@ -170,31 +170,16 @@ impl<'a, SE: brush_core::ShellExtensions> Highlighter<'a, SE> {
         ) {
             let mut saw_command_token = false;
 
-            // Tokenizer offsets are *character* indices into `line`; slicing needs bytes.
-            // `char_indices()` gives the byte offset of each char, plus a sentinel for the
-            // end, so a lookup is O(1) and the whole line costs one pass (not O(n²)).
-            let char_byte_offsets: Vec<usize> = line
-                .char_indices()
-                .map(|(byte_idx, _)| byte_idx)
-                .chain(std::iter::once(line.len()))
-                .collect();
-            let byte_offset = |char_offset: usize| {
-                char_byte_offsets
-                    .get(char_offset)
-                    .copied()
-                    .unwrap_or(line.len())
-            };
-
             for token in tokens {
                 match token {
                     brush_parser::Token::Operator(_op, token_location) => {
-                        let start = global_offset + byte_offset(token_location.start.index);
-                        let end = global_offset + byte_offset(token_location.end.index);
+                        let start = global_offset + token_location.start.offset;
+                        let end = global_offset + token_location.end.offset;
                         self.append_span(HighlightKind::Operator, start..end);
                     }
                     brush_parser::Token::Word(w, token_location) => {
-                        let start_byte = byte_offset(token_location.start.index);
-                        let end_byte = byte_offset(token_location.end.index);
+                        let start_byte = token_location.start.offset;
+                        let end_byte = token_location.end.offset;
 
                         // Parse the raw slice from `line`, not `w.as_str()`: the tokenizer may
                         // drop chars from `w` (e.g. `\<newline>` continuations), so offsets into
