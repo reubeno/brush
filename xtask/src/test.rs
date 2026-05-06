@@ -439,7 +439,7 @@ fn run_integration_tests_wasi(
 
     // Only run the brush integration tests; compat tests require a native binary.
     let filter = "binary(brush-integration-tests)";
-    let test_result = run_nextest(sh, profile, Some(filter), verbose);
+    let test_result = run_nextest(sh, profile, Some(filter), None, None, verbose);
 
     // Copy nextest results if requested (even on test failure, so CI can upload them).
     if let Some(ref output) = args.results_output {
