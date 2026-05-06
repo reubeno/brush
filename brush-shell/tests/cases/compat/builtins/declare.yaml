@@ -449,3 +449,66 @@ cases:
       declare -n ref2=regular
       not_a_ref="also plain"
       declare -p -n 2>/dev/null | sort
+
+  - name: "Single-quoted scalar assignment"
+    stdin: |
+      declare 'x=hello'
+      echo "$x"
+
+  - name: "Single-quoted scalar with dollar sign preserved"
+    stdin: |
+      Y=world
+      declare 'x=$Y'
+      echo "$x"
+
+  - name: "Double-quoted scalar assignment expands"
+    stdin: |
+      Y=world
+      declare "x=$Y"
+      echo "$x"
+
+  - name: "Single-quoted array assignment with -a"
+    stdin: |
+      declare -a 'arr=(1 2 3)'
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Single-quoted array assignment with deferred expansion"
+    stdin: |
+      X="a b"
+      declare -a 'arr=(${X})'
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Single-quoted array assignment with IFS splitting"
+    stdin: |
+      X="a,b"
+      IFS=, declare -a 'arr=(${X})'
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Single-quoted array assignment without -a is scalar"
+    stdin: |
+      declare 'arr=(1 2 3)'
+      declare -p arr
+
+  - name: "Single-quoted array assignment Gentoo rpm.eclass pattern"
+    stdin: |
+      RPM_COMPRESS_TYPE="lzma zstd"
+      IFS=, declare -a 'types=(${RPM_COMPRESS_TYPE})'
+      echo "${types[@]}"
+      echo "${#types[@]}"
+
+  - name: "local -a single-quoted array assignment"
+    stdin: |
+      f() {
+        X="a b"
+        local -a 'arr=(${X})'
+        echo "${arr[@]}"
+      }
+      f
+
+  - name: "Single-quoted indexed element assignment"
+    stdin: |
+      declare 'arr[0]=hello'
+      declare -p arr
