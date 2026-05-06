@@ -96,7 +96,7 @@ fn is_source_span(value: &Value) -> bool {
 fn normalize_source_span(value: &mut Value) {
     if let Value::Object(map) = value {
         let placeholder_pos = serde_json::json!({
-            "index": 0,
+            "offset": 0,
             "line": 0,
             "column": 0
         });

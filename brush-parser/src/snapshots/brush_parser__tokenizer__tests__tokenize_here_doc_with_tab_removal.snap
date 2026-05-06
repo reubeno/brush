@@ -7,72 +7,72 @@ TokenizerResult(
   result: [
     Word("cat", SourceSpan(
       start: SourcePosition(
-        index: 0,
+        offset: 0,
         line: 1,
         column: 1,
       ),
       end: SourcePosition(
-        index: 3,
+        offset: 3,
         line: 1,
         column: 4,
       ),
     )),
     Operator("<<-", SourceSpan(
       start: SourcePosition(
-        index: 4,
+        offset: 4,
         line: 1,
         column: 5,
       ),
       end: SourcePosition(
-        index: 7,
+        offset: 7,
         line: 1,
         column: 8,
       ),
     )),
     Word("HERE", SourceSpan(
       start: SourcePosition(
-        index: 7,
+        offset: 7,
         line: 1,
         column: 8,
       ),
       end: SourcePosition(
-        index: 11,
+        offset: 11,
         line: 1,
         column: 12,
       ),
     )),
     Word("SOMETHING\n", SourceSpan(
       start: SourcePosition(
-        index: 12,
+        offset: 12,
         line: 2,
         column: 1,
       ),
       end: SourcePosition(
-        index: 29,
+        offset: 29,
         line: 4,
         column: 1,
       ),
     )),
     Word("HERE", SourceSpan(
       start: SourcePosition(
-        index: 29,
+        offset: 29,
         line: 4,
         column: 1,
       ),
       end: SourcePosition(
-        index: 29,
+        offset: 29,
         line: 4,
         column: 1,
       ),
     )),
     Operator("\n", SourceSpan(
       start: SourcePosition(
-        index: 11,
+        offset: 11,
         line: 1,
         column: 12,
       ),
       end: SourcePosition(
-        index: 12,
+        offset: 12,
         line: 2,
         column: 1,
       ),
