@@ -151,7 +151,15 @@ impl builtins::Command for DeclareCommand {
                         result = ExecutionResult::general_error();
                     }
                 } else {
-                    if !self.process_declaration(&mut context, declaration, verb)? {
+                    let ok = if self.make_indexed_array.is_some()
+                        && Self::is_string_array_assignment(declaration)
+                    {
+                        self.lift_string_array_assignment(&mut context, declaration, verb)
+                            .await?
+                    } else {
+                        self.process_declaration(&mut context, declaration, verb)?
+                    };
+                    if !ok {
                         result = ExecutionResult::general_error();
                     }
                 }
@@ -339,6 +347,53 @@ impl DeclareCommand {
         Ok(true)
     }
 
+    /// Returns true if this declaration is a `CommandArg::String` containing
+    /// an `=` with an array-like value starting with `(`.
+    fn is_string_array_assignment(declaration: &brush_core::CommandArg) -> bool {
+        if let brush_core::CommandArg::String(s) = declaration
+            && let Some((_, value)) = s.split_once('=')
+        {
+            return value.starts_with('(');
+        }
+        false
+    }
+
+    /// Handle `declare -a 'arr=(${X})'` by feeding the string back through the
+    /// shell parser so the array literal and parameter expansions are evaluated
+    /// properly.
+    async fn lift_string_array_assignment<SE: brush_core::ShellExtensions>(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, SE>,
+        declaration: &brush_core::CommandArg,
+        verb: DeclareVerb,
+    ) -> Result<bool, brush_core::Error> {
+        let brush_core::CommandArg::String(s) = declaration else {
+            return self.process_declaration(context, declaration, verb);
+        };
+
+        let Some((var_name, value)) = s.split_once('=') else {
+            return self.process_declaration(context, declaration, verb);
+        };
+
+        let script = if matches!(verb, DeclareVerb::Local) {
+            format!("local -a {var_name}={value}")
+        } else if self.create_global {
+            format!("declare -ga {var_name}={value}")
+        } else {
+            format!("declare -a {var_name}={value}")
+        };
+
+        let source_info = brush_core::SourceInfo::from("declare-string-array");
+        let params = context.params.clone();
+        context
+            .shell
+            .run_string(script, &source_info, &params)
+            .await?;
+
+        let name_only = brush_core::CommandArg::String(var_name.to_owned());
+        self.process_declaration(context, &name_only, verb)
+    }
+
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
     ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), brush_core::Error> {
@@ -349,18 +404,15 @@ impl DeclareCommand {
 
         match declaration {
             brush_core::CommandArg::String(s) => {
-                // We need to handle the case of someone invoking `declare array[index]`.
-                // In such case, we ignore the index and treat it as a declaration of
-                // the array.
                 #[allow(
                     clippy::unwrap_in_result,
                     clippy::unwrap_used,
                     reason = "regex is valid and should not fail"
                 )]
-                static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
-                    LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
+                static NAME_INDEX_AND_VALUE_RE: LazyLock<fancy_regex::Regex> =
+                    LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)?\]=(.*)$").unwrap());
 
-                if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
+                if let Some(captures) = NAME_INDEX_AND_VALUE_RE.captures(s)? {
                     name = captures
                         .get(1)
                         .ok_or_else(|| {
@@ -370,13 +422,44 @@ impl DeclareCommand {
                         .to_owned();
 
                     assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
+                    initial_value = captures
+                        .get(3)
+                        .map(|m| ShellValueLiteral::Scalar(m.as_str().to_owned()));
                     name_is_array = true;
-                } else {
-                    name = s.clone();
+                } else if let Some((n, v)) = s.split_once('=') {
+                    name = n.to_owned();
                     assigned_index = None;
+                    initial_value = Some(ShellValueLiteral::Scalar(v.to_owned()));
                     name_is_array = false;
+                } else {
+                    #[allow(
+                        clippy::unwrap_in_result,
+                        clippy::unwrap_used,
+                        reason = "regex is valid and should not fail"
+                    )]
+                    static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
+                        LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
+
+                    if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
+                        name = captures
+                            .get(1)
+                            .ok_or_else(|| {
+                                brush_core::ErrorKind::InternalError(
+                                    "declaration parse error".into(),
+                                )
+                            })?
+                            .as_str()
+                            .to_owned();
+
+                        assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
+                        name_is_array = true;
+                    } else {
+                        name = s.clone();
+                        assigned_index = None;
+                        name_is_array = false;
+                    }
+                    initial_value = None;
                 }
-                initial_value = None;
             }
             brush_core::CommandArg::Assignment(assignment) => {
                 match &assignment.name {
