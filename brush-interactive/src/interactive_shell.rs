@@ -386,10 +386,11 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         options: &InteractiveOptions,
         terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
     ) -> Result<(), ShellError> {
-        // Display the pre-command prompt (if there is one).
+        // Display the pre-command prompt on stderr (if there is one).
         let precmd_prompt = shell.compose_precmd_prompt().await?;
         if !precmd_prompt.is_empty() {
-            print!("{precmd_prompt}");
+            eprint!("{precmd_prompt}");
+            std::io::stderr().flush()?;
         }
 
         // Update history (if applicable).
