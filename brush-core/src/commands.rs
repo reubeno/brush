@@ -72,6 +72,39 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
+
+    /// Returns a shared reference to the state of the currently executing builtin.
+    ///
+    /// Uses `self.command_name` as the lookup key and `B::State` as the expected
+    /// type. Returns `Err` if no state is registered for this builtin name, which
+    /// should be structurally impossible when the builtin was registered via
+    /// [`Shell::register_builtin`].
+    pub fn builtin_state<B: builtins::Command>(&self) -> Result<&B::State, error::Error> {
+        self.shell
+            .builtin_state_of::<B>(&self.command_name)
+            .ok_or_else(|| {
+                error::ErrorKind::BuiltinStateNotRegistered(self.command_name.clone()).into()
+            })
+    }
+
+    /// Returns an exclusive reference to the state of the currently executing builtin.
+    ///
+    /// Uses `self.command_name` as the lookup key and `B::State` as the expected
+    /// type. Returns `Err` if no state is registered for this builtin name, which
+    /// should be structurally impossible when the builtin was registered via
+    /// [`Shell::register_builtin`].
+    ///
+    /// The caller must drop the returned reference before calling any other
+    /// `&mut Shell` method (including `source_script`), so that re-entrant
+    /// builtin invocations can access state independently.
+    pub fn builtin_state_mut<B: builtins::Command>(
+        &mut self,
+    ) -> Result<&mut B::State, error::Error> {
+        let name = self.command_name.clone();
+        self.shell
+            .builtin_state_mut_of::<B>(&name)
+            .ok_or_else(|| error::ErrorKind::BuiltinStateNotRegistered(name).into())
+    }
 }
 
 /// An argument to a command.

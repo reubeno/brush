@@ -112,6 +112,7 @@ enum ProcessCommand {
 }
 
 impl brush_core::builtins::Command for BrushCtlCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

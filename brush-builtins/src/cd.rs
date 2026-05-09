@@ -31,6 +31,7 @@ pub(crate) struct CdCommand {
 }
 
 impl builtins::Command for CdCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

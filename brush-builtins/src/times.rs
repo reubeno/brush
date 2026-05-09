@@ -8,6 +8,7 @@ use brush_core::{ExecutionResult, builtins, timing};
 pub(crate) struct TimesCommand {}
 
 impl builtins::Command for TimesCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

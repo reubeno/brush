@@ -124,6 +124,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip))]
     builtins: HashMap<String, builtins::Registration<SE>>,
 
+    /// Per-builtin state, keyed by registration name.
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    builtin_states: HashMap<String, Box<dyn builtins::AnyState>>,
+
     /// Shell program location cache.
     program_location_cache: pathcache::PathCache,
 
@@ -175,6 +179,11 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             directory_stack: self.directory_stack.clone(),
             completion_config: self.completion_config.clone(),
             builtins: self.builtins.clone(),
+            builtin_states: self
+                .builtin_states
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
@@ -219,11 +228,15 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             version: options.shell_version,
             product_display_str: options.shell_product_display_str,
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
-            builtins: options.builtins,
+            builtins: HashMap::default(),
             parser_impl: options.parser,
             key_bindings: options.key_bindings,
             ..Self::default()
         };
+
+        for (name, reg) in options.builtins {
+            shell.register_builtin(name, reg);
+        }
 
         // Add in any open files provided.
         shell.open_files.update_from(options.fds.into_iter());

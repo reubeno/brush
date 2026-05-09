@@ -318,6 +318,10 @@ pub enum ErrorKind {
     /// A glob pattern failed to match any files (failglob).
     #[error("no match: {0}")]
     NoMatch(String),
+
+    /// The requested builtin state was not registered for the given builtin name.
+    #[error("builtin state not registered for '{0}'")]
+    BuiltinStateNotRegistered(String),
 }
 
 /// Trait implementable by built-in commands to represent errors.
