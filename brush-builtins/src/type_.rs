@@ -43,6 +43,7 @@ enum ResolvedType<'a> {
 }
 
 impl builtins::Command for TypeCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

@@ -11,6 +11,7 @@ pub(crate) struct BreakCommand {
 }
 
 impl builtins::Command for BreakCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

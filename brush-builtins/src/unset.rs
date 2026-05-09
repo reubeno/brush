@@ -37,6 +37,7 @@ impl UnsetNameInterpretation {
 }
 
 impl builtins::Command for UnsetCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

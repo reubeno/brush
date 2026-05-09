@@ -19,6 +19,7 @@ pub(crate) struct TrapCommand {
 }
 
 impl builtins::Command for TrapCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

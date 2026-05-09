@@ -32,6 +32,7 @@ pub(crate) struct JobsCommand {
 }
 
 impl builtins::Command for JobsCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
