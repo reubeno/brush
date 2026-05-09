@@ -133,7 +133,10 @@ impl HistoryCommand {
                     )?;
                 }
                 None => {
-                    writeln!(stderr, "brush: history: HISTFILE: parameter null or not set")?;
+                    writeln!(
+                        stderr,
+                        "brush: history: HISTFILE: parameter null or not set"
+                    )?;
                 }
             }
 
@@ -162,7 +165,10 @@ impl HistoryCommand {
                     )?;
                 }
                 None => {
-                    writeln!(stderr, "brush: history: HISTFILE: parameter null or not set")?;
+                    writeln!(
+                        stderr,
+                        "brush: history: HISTFILE: parameter null or not set"
+                    )?;
                 }
             }
 
