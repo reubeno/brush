@@ -32,6 +32,7 @@ pub(crate) struct ShoptCommand {
 }
 
 impl builtins::Command for ShoptCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     #[allow(clippy::too_many_lines)]

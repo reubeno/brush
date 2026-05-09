@@ -201,6 +201,7 @@ pub(crate) struct CompleteCommand {
 }
 
 impl builtins::Command for CompleteCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -470,6 +471,7 @@ pub(crate) struct CompGenCommand {
 }
 
 impl builtins::Command for CompGenCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -551,6 +553,7 @@ pub(crate) struct CompOptCommand {
 }
 
 impl builtins::Command for CompOptCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

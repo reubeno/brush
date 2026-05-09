@@ -2,9 +2,56 @@
 
 use clap::builder::styling;
 pub use futures::future::BoxFuture;
+use std::any::Any;
 use std::io::Write;
 
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
+
+/// A type-erased, cloneable container for per-builtin state stored on the shell.
+///
+/// Any `T: Clone + Send + Sync + 'static` automatically implements this trait
+/// thanks to a blanket impl.
+///
+/// # Important: calling methods on `Box<dyn AnyState>`
+///
+/// Because `Box<dyn AnyState>` itself satisfies `Clone + Send + Sync + 'static`,
+/// the blanket impl also applies to it. When calling `as_any`, `as_any_mut`, or
+/// `clone_box` on a `Box<dyn AnyState>`, you **must** explicitly dereference
+/// first (e.g. `(&**state).as_any()`) so that dispatch goes through the vtable to
+/// the concrete inner type, rather than the blanket impl on `Box<dyn AnyState>`
+/// itself. The accessors on [`Shell`](crate::Shell) and
+/// [`ExecutionContext`](crate::commands::ExecutionContext) already handle this
+/// correctly.
+pub trait AnyState: Send + Sync + 'static {
+    /// Deep-clone the state into a new heap allocation.
+    fn clone_box(&self) -> Box<dyn AnyState>;
+
+    /// Downcast to `&dyn Any` for typed access.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Downcast to `&mut dyn Any` for typed mutable access.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<T: Clone + Send + Sync + 'static> AnyState for T {
+    fn clone_box(&self) -> Box<dyn AnyState> {
+        Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl Clone for Box<dyn AnyState> {
+    fn clone(&self) -> Self {
+        (**self).clone_box()
+    }
+}
 
 /// Type of a function implementing a built-in command.
 ///
@@ -33,6 +80,44 @@ pub type CommandContentFunc =
 pub trait Command: clap::Parser {
     /// The error type returned by the command.
     type Error: BuiltinError + 'static;
+
+    /// The type of persistent state carried by this builtin across invocations.
+    ///
+    /// Stateful builtins override this with a custom type that implements
+    /// `Clone + Default + Send + Sync + 'static`. The shell allocates a default
+    /// instance at registration time and stores it keyed by the builtin's
+    /// registered name. Builtins access state through
+    /// [`ExecutionContext::builtin_state_mut`] and external code uses
+    /// [`Shell::builtin_state_of`] / [`Shell::builtin_state_mut_of`].
+    type State: Clone + Default + Send + Sync + 'static;
+
+    /// Returns a shared reference to this builtin's persistent state.
+    ///
+    /// This is a convenience wrapper around
+    /// [`ExecutionContext::builtin_state`] that infers the command type
+    /// from `&self`, so no turbofish is needed.
+    fn state<'a, SE: extensions::ShellExtensions>(
+        &self,
+        context: &'a commands::ExecutionContext<'_, SE>,
+    ) -> Result<&'a Self::State, error::Error> {
+        context.builtin_state::<Self>()
+    }
+
+    /// Returns an exclusive reference to this builtin's persistent state.
+    ///
+    /// This is a convenience wrapper around
+    /// [`ExecutionContext::builtin_state_mut`] that infers the command type
+    /// from `&self`, so no turbofish is needed.
+    ///
+    /// The caller must drop the returned reference before calling any other
+    /// `&mut Shell` method (including `source_script`), so that re-entrant
+    /// builtin invocations can access state independently.
+    fn state_mut<'a, SE: extensions::ShellExtensions>(
+        &self,
+        context: &'a mut commands::ExecutionContext<'_, SE>,
+    ) -> Result<&'a mut Self::State, error::Error> {
+        context.builtin_state_mut::<Self>()
+    }
 
     /// Instantiates the built-in command with the given arguments.
     ///
@@ -164,6 +249,10 @@ pub struct Registration<SE: extensions::ShellExtensions> {
 
     /// Is this builtin one that takes specially handled declarations?
     pub declaration_builtin: bool,
+
+    /// Factory function that creates the default state for this builtin.
+    /// Called by [`Shell::register_builtin`] to seed the per-builtin state map.
+    pub state_init: fn() -> Box<dyn AnyState>,
 }
 
 impl<SE: extensions::ShellExtensions> Registration<SE> {
@@ -172,7 +261,11 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
     pub const fn special(self) -> Self {
         Self {
             special_builtin: true,
-            ..self
+            execute_func: self.execute_func,
+            content_func: self.content_func,
+            disabled: self.disabled,
+            declaration_builtin: self.declaration_builtin,
+            state_init: self.state_init,
         }
     }
 }
@@ -382,6 +475,7 @@ pub fn simple_builtin<B: SimpleCommand + Send + Sync, SE: extensions::ShellExten
         disabled: false,
         special_builtin: false,
         declaration_builtin: false,
+        state_init: default_state_fn::<()>,
     }
 }
 
@@ -394,6 +488,7 @@ pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> R
         disabled: false,
         special_builtin: false,
         declaration_builtin: false,
+        state_init: default_state_fn::<B::State>,
     }
 }
 
@@ -408,6 +503,7 @@ pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellEx
         disabled: false,
         special_builtin: false,
         declaration_builtin: true,
+        state_init: default_state_fn::<B::State>,
     }
 }
 
@@ -428,7 +524,12 @@ pub fn raw_arg_builtin<
         disabled: false,
         special_builtin: false,
         declaration_builtin: true,
+        state_init: default_state_fn::<B::State>,
     }
+}
+
+fn default_state_fn<S: Clone + Default + Send + Sync + 'static>() -> Box<dyn AnyState> {
+    Box::new(S::default())
 }
 
 fn get_builtin_content<T: Command + Send + Sync>(
@@ -569,4 +670,64 @@ async fn call_builtin(
         .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e), builtin_name))?;
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    struct Counter {
+        value: usize,
+    }
+
+    #[test]
+    fn any_state_clone_roundtrips() {
+        let original: Box<dyn AnyState> = Box::new(Counter { value: 42 });
+        let cloned = original.clone();
+        let downcasted = (*cloned).as_any().downcast_ref::<Counter>().unwrap();
+        assert_eq!(downcasted.value, 42);
+    }
+
+    #[test]
+    fn any_state_mut_roundtrip() {
+        let mut state: Box<dyn AnyState> = Box::new(Counter { value: 0 });
+        (*state)
+            .as_any_mut()
+            .downcast_mut::<Counter>()
+            .unwrap()
+            .value += 1;
+        assert_eq!(
+            (*state).as_any().downcast_ref::<Counter>().unwrap().value,
+            1
+        );
+    }
+
+    #[test]
+    fn any_state_wrong_type_returns_none() {
+        let state: Box<dyn AnyState> = Box::new(Counter { value: 1 });
+        assert!((*state).as_any().downcast_ref::<String>().is_none());
+    }
+
+    #[test]
+    fn any_state_as_any_mut_downcast() {
+        let mut state: Box<dyn AnyState> = Box::new(Counter { value: 5 });
+        let c = (*state).as_any_mut().downcast_mut::<Counter>();
+        assert!(c.is_some(), "downcast_mut to Counter should succeed");
+        assert_eq!(c.unwrap().value, 5);
+    }
+
+    #[test]
+    fn any_state_complex_type() {
+        let mut state: Box<dyn AnyState> = Box::new(Counter { value: 5 });
+        (*state)
+            .as_any_mut()
+            .downcast_mut::<Counter>()
+            .unwrap()
+            .value += 1;
+        assert_eq!(
+            (*state).as_any().downcast_ref::<Counter>().unwrap().value,
+            6
+        );
+    }
 }

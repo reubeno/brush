@@ -11,6 +11,7 @@ pub(crate) struct FgCommand {
 }
 
 impl builtins::Command for FgCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

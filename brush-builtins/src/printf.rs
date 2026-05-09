@@ -18,6 +18,7 @@ pub(crate) struct PrintfCommand {
 }
 
 impl builtins::Command for PrintfCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

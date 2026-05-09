@@ -16,6 +16,7 @@ pub(crate) struct AliasCommand {
 }
 
 impl builtins::Command for AliasCommand {
+    type State = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
