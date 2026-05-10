@@ -261,13 +261,20 @@ impl Pattern {
                 matches!(piece, PatternPiece::Pattern(_))
                     && requires_expansion(piece.as_str(), self.enable_extended_globbing)
             }) {
-                for p in &mut paths_so_far {
+                paths_so_far.retain_mut(|p| {
                     let flattened = component
                         .iter()
                         .map(|piece| piece.as_str())
                         .collect::<String>();
-                    sys::fs::push_path_for_pattern(p, &flattened);
-                }
+                    let path = p.join(&flattened);
+                    if !path.exists() {
+                        // Not a valid result, don't retain
+                        false
+                    } else {
+                        sys::fs::push_path_for_pattern(p, &flattened);
+                        true
+                    }
+                });
                 continue;
             }
 
