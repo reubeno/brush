@@ -50,6 +50,20 @@ cases:
       shopt -s nullglob
       echo "*.jpg:" *.jpg
 
+  - name: "Expansion with matches and non-matches in directory"
+    test_files:
+      - path: "dir/file.txt"
+      - path: "dir/file.jpg"
+    stdin: "echo dir/*.jpg"
+
+  - name: "Expansion with matches and non-matches in directory + nullglob"
+    test_files:
+      - path: "dir/file.txt"
+      - path: "dir/file.jpg"
+    stdin: |
+      shopt -s nullglob
+      echo "dir/*.jpg:" dir/*.jpg
+
   - name: "Expansion with special characters"
     test_files:
       - path: "file1.txt"
@@ -250,6 +264,17 @@ cases:
       - path: "myfile.txt"
     stdin: |
       echo */
+
+  - name: "Trailing path filters glob results"
+    known_failure: true
+    test_files:
+      - path: "README.md"
+      - path: "photos/photo.png"
+      - path: "a/apple.txt"
+      - path: "b/banana.txt"
+    stdin: |
+      echo */banana.txt
+      echo */*.txt
 
   - name: "Globstar disabled by default"
     known_failure: true
