@@ -12,6 +12,7 @@ pub(crate) struct BgCommand {
 
 impl builtins::Command for BgCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

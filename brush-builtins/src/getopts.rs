@@ -80,6 +80,7 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
 
 impl builtins::Command for GetOptsCommand {
     type State = GetOptsState;
+    type SharedState = ();
     type Error = brush_core::Error;
 
     fn new<I>(args: I) -> Result<Self, clap::Error>

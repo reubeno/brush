@@ -17,6 +17,7 @@ impl builtins::DeclarationCommand for BuiltinCommand {
 
 impl builtins::Command for BuiltinCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

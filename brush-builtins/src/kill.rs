@@ -28,6 +28,7 @@ pub(crate) struct KillCommand {
 
 impl builtins::Command for KillCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

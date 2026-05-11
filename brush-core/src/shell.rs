@@ -122,11 +122,16 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
-    builtins: HashMap<String, builtins::Registration<SE>>,
+    pub(crate) builtins: HashMap<String, builtins::Registration<SE>>,
 
     /// Per-builtin state, keyed by registration name.
     #[cfg_attr(feature = "serde", serde(skip, default))]
-    builtin_states: HashMap<String, Box<dyn builtins::AnyState>>,
+    pub(crate) builtin_states: HashMap<String, Box<dyn builtins::AnyState>>,
+
+    /// Cross-builtin shared state, keyed by `TypeId` of the shared value.
+    /// Seeded via [`Shell::register_shared`] or [`Shell::set_shared`].
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    pub(crate) shared_states: HashMap<std::any::TypeId, Box<dyn builtins::AnyState>>,
 
     /// Shell program location cache.
     program_location_cache: pathcache::PathCache,
@@ -184,6 +189,11 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
+            shared_states: self
+                .shared_states
+                .iter()
+                .map(|(k, v)| (*k, v.clone()))
+                .collect(),
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
@@ -235,7 +245,16 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         };
 
         for (name, reg) in options.builtins {
-            shell.register_builtin(name, reg);
+            let (stored, local_override, state_init) = reg.into_parts();
+            shell.builtins.insert(name.clone(), stored);
+            match local_override {
+                Some(state) => {
+                    shell.builtin_states.insert(name, state);
+                }
+                None => {
+                    shell.builtin_states.entry(name).or_insert_with(state_init);
+                }
+            }
         }
 
         // Add in any open files provided.

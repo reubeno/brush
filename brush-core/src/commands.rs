@@ -130,6 +130,15 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn stderr_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
         self.params.try_stderr_async(self.shell)
     }
+
+    /// Returns a shared reference to the cross-builtin shared state of type `T`.
+    ///
+    /// Returns `Err` if no shared state of that type has been registered.
+    /// Use interior mutability (e.g. `Mutex`, `papaya::HashMap`, atomics)
+    /// if you need to mutate through the returned reference.
+    pub fn shared<T: Clone + Send + Sync + 'static>(&self) -> Result<&T, error::Error> {
+        self.shell.get_shared::<T>()
+    }
 }
 
 /// An argument to a command.

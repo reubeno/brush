@@ -86,12 +86,16 @@ impl<SE: extensions::ShellExtensions, S: shell_builder::State> ShellBuilder<SE, 
     }
 
     /// Add a single builtin registration
-    pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration<SE>) -> Self {
-        self.builtins.insert(name.into(), reg);
+    pub fn builtin<L>(
+        mut self,
+        name: impl Into<String>,
+        reg: builtins::Registration<SE, (), L>,
+    ) -> Self {
+        self.builtins.insert(name.into(), reg.into_storage());
         self
     }
 
-    /// Add many builtin registrations
+    /// Add many builtin registrations (stored form).
     pub fn builtins(
         mut self,
         builtins: impl IntoIterator<Item = (String, builtins::Registration<SE>)>,
@@ -254,6 +258,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             completion_config: completion::Config::default(),
             builtins: HashMap::default(),
             builtin_states: HashMap::default(),
+            shared_states: HashMap::default(),
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,
