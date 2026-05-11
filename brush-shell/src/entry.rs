@@ -7,8 +7,6 @@ use crate::config;
 use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
-#[cfg(feature = "experimental-builtins")]
-use brush_experimental_builtins::register_experimental_builtins;
 use clap::CommandFactory;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};

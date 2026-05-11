@@ -194,29 +194,23 @@ impl CaseTracker {
     /// Returns `true` if the character was consumed as part of keyword detection.
     fn try_update(&mut self, ch: char, input: &mut StrStream<'_>) -> bool {
         match ch {
-            'c' if self.state == CaseState::NotInCase => {
-                if try_keyword_suffix(input, "ase") {
-                    self.state = CaseState::AfterCase;
-                    self.depth += 1;
-                    return true;
-                }
+            'c' if self.state == CaseState::NotInCase && try_keyword_suffix(input, "ase") => {
+                self.state = CaseState::AfterCase;
+                self.depth += 1;
+                return true;
             }
-            'i' if self.state == CaseState::AfterCase => {
-                if try_keyword_suffix(input, "n") {
-                    self.state = CaseState::AfterIn;
-                    return true;
-                }
+            'i' if self.state == CaseState::AfterCase && try_keyword_suffix(input, "n") => {
+                self.state = CaseState::AfterIn;
+                return true;
             }
-            'e' if self.depth > 0 => {
-                if try_keyword_suffix(input, "sac") {
-                    self.depth = self.depth.saturating_sub(1);
-                    self.state = if self.depth == 0 {
-                        CaseState::NotInCase
-                    } else {
-                        CaseState::AfterIn
-                    };
-                    return true;
-                }
+            'e' if self.depth > 0 && try_keyword_suffix(input, "sac") => {
+                self.depth = self.depth.saturating_sub(1);
+                self.state = if self.depth == 0 {
+                    CaseState::NotInCase
+                } else {
+                    CaseState::AfterIn
+                };
+                return true;
             }
             ';' if self.state == CaseState::InBody => {
                 let checkpoint = input.checkpoint();

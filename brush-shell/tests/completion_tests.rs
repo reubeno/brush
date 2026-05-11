@@ -22,9 +22,9 @@ impl TestShellWithBashCompletion {
         let mut shell = brush_core::Shell::builder()
             .profile(brush_core::ProfileLoadBehavior::Skip)
             .rc(brush_core::RcLoadBehavior::Skip)
-            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await?;
+        shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
 
         let temp_dir = assert_fs::TempDir::new()?;
         let bash_completion_script_path = Self::find_bash_completion_script()?;

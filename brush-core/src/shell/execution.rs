@@ -125,6 +125,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
+    ///
     /// Source a pre-parsed program, setting up the appropriate call stack frame.
     ///
     /// This is the cached-program counterpart to [`Self::source_script`]:
