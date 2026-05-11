@@ -26,6 +26,7 @@ pub(crate) struct EchoCommand {
 
 impl builtins::Command for EchoCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related

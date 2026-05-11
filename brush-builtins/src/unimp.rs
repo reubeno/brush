@@ -14,6 +14,7 @@ pub(crate) struct UnimplementedCommand {
 
 impl builtins::Command for UnimplementedCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
