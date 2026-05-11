@@ -266,12 +266,15 @@ impl Pattern {
                         .iter()
                         .map(|piece| piece.as_str())
                         .collect::<String>();
-                    let path = p.join(&flattened);
-                    if !path.exists() {
-                        // Not a valid result, don't retain
+
+                    let mut candidate = p.clone();
+                    sys::fs::push_path_for_pattern(&mut candidate, &flattened);
+
+                    if !candidate.exists() {
+                        // Not a valid result, remove from paths_so_far
                         false
                     } else {
-                        sys::fs::push_path_for_pattern(p, &flattened);
+                        *p = candidate;
                         true
                     }
                 });
