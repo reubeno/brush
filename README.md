@@ -154,14 +154,15 @@ nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 
 </details>
 
+<details>
 <summary>🐧 <b>Installing on Fedora and Derivatives</b></summary>
 
-Fedora Linux users must first install the [Terra repository]([https://archlinux.org/packages/extra/x86_64/brush/](https://terrapkg.com/)).
+Fedora Linux users must first install the [Terra repository](https://terrapkg.com/).
 
 Then install `brush`:
 
 ```bash
-dnf install brush-shell
+dnf install brush
 ```
 
 </details>
