@@ -82,6 +82,7 @@ struct GreetCommand {
 
 impl builtins::Command for GreetCommand {
     type State = ();
+    type SharedState = ();
     // Specify the error type you will use; this will either be your custom type or
     // the default-provided `brush_core::Error` type.
     type Error = GreetError;

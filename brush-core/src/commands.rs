@@ -105,6 +105,15 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
             .builtin_state_mut_of::<B>(&name)
             .ok_or_else(|| error::ErrorKind::BuiltinStateNotRegistered(name).into())
     }
+
+    /// Returns a shared reference to the cross-builtin shared state of type `T`.
+    ///
+    /// Returns `Err` if no shared state of that type has been registered.
+    /// Use interior mutability (e.g. `Mutex`, `papaya::HashMap`, atomics)
+    /// if you need to mutate through the returned reference.
+    pub fn shared<T: Clone + Send + Sync + 'static>(&self) -> Result<&T, error::Error> {
+        self.shell.get_shared::<T>()
+    }
 }
 
 /// An argument to a command.

@@ -10,6 +10,7 @@ pub(crate) struct SaveCommand {}
 
 impl builtins::Command for SaveCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

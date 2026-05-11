@@ -15,6 +15,7 @@ pub(crate) struct TestCommand {
 
 impl builtins::Command for TestCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related

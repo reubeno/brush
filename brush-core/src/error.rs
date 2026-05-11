@@ -322,6 +322,10 @@ pub enum ErrorKind {
     /// The requested builtin state was not registered for the given builtin name.
     #[error("builtin state not registered for '{0}'")]
     BuiltinStateNotRegistered(String),
+
+    /// The requested shared state type was not registered on the shell.
+    #[error("shared state not registered for '{0}'")]
+    SharedStateNotRegistered(String),
 }
 
 /// Trait implementable by built-in commands to represent errors.

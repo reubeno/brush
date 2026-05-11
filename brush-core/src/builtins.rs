@@ -2,8 +2,9 @@
 
 use clap::builder::styling;
 pub use futures::future::BoxFuture;
-use std::any::Any;
+use std::any::{Any, TypeId, type_name};
 use std::io::Write;
+use std::marker::PhantomData;
 
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
 
@@ -53,6 +54,22 @@ impl Clone for Box<dyn AnyState> {
     }
 }
 
+/// Marker type indicating that a [`Registration`] has not yet been given a
+/// custom local-state override via [`Registration::with_state`].
+///
+/// The phantom parameter `St` carries the builtin's `State` type so that
+/// `with_state(state)` can enforce the correct argument type at compile time.
+pub struct NeedsLocalState<St>(PhantomData<St>);
+
+/// Marker type indicating that a [`Registration`] is in its storage/terminal
+/// form.
+///
+/// Either local state was provided via [`Registration::with_state`], or the
+/// registration was produced by [`simple_builtin`] (which has no local state
+/// concept). In this state, [`with_state`](Registration::with_state) is not
+/// available, preventing double-provision.
+pub struct HasLocalState;
+
 /// Type of a function implementing a built-in command.
 ///
 /// # Arguments
@@ -91,6 +108,21 @@ pub trait Command: clap::Parser {
     /// [`Shell::builtin_state_of`] / [`Shell::builtin_state_mut_of`].
     type State: Clone + Default + Send + Sync + 'static;
 
+    /// The type of shared state that this builtin accesses in coordination with
+    /// other builtins registered through the same [`SharedBuilder`].
+    ///
+    /// Unlike [`State`](Command::State), shared state is **not** per-builtin —
+    /// it is keyed by type (`TypeId`) and shared across all builtins registered
+    /// through the same builder. The default `()` means "no shared state".
+    ///
+    /// Use `Arc<T>` when state should survive `Shell::clone()` (subshells
+    /// share the same underlying data). Use a bare `T` when each subshell
+    /// should get an independent copy (via `T::clone`).
+    ///
+    /// To mutate shared state, `T` must provide interior mutability (e.g.
+    /// `Mutex`, `papaya::HashMap`, atomics).
+    type SharedState: Clone + Send + Sync + 'static;
+
     /// Returns a shared reference to this builtin's persistent state.
     ///
     /// This is a convenience wrapper around
@@ -117,6 +149,18 @@ pub trait Command: clap::Parser {
         context: &'a mut commands::ExecutionContext<'_, SE>,
     ) -> Result<&'a mut Self::State, error::Error> {
         context.builtin_state_mut::<Self>()
+    }
+
+    /// Returns a shared reference to this builtin's shared state.
+    ///
+    /// This is a convenience wrapper around
+    /// [`ExecutionContext::shared`] that infers the shared-state type
+    /// from `Self::SharedState`, so no turbofish is needed.
+    fn shared<'a, SE: extensions::ShellExtensions>(
+        &self,
+        context: &'a commands::ExecutionContext<'_, SE>,
+    ) -> Result<&'a Self::SharedState, error::Error> {
+        context.shared::<Self::SharedState>()
     }
 
     /// Instantiates the built-in command with the given arguments.
@@ -233,8 +277,27 @@ pub struct ContentOptions {
 }
 
 /// Encapsulates a registration for a built-in command.
-#[derive(Clone)]
-pub struct Registration<SE: extensions::ShellExtensions> {
+///
+/// # Type parameters
+///
+/// * `SE` — the [`ShellExtensions`](extensions::ShellExtensions) type.
+/// * `S`  — the **shared-state** phantom. `S = ()` (default) means this
+///   registration can be passed directly to
+///   [`Shell::register_builtin`](crate::Shell::register_builtin). Any other
+///   `S` (e.g. `Arc<RepoCache>`) means it must go through
+///   [`SharedBuilder`] or [`SharedHandle`].
+/// * `L`  — the **local-state** phantom, governing
+///   [`with_state`](Registration::with_state) availability:
+///   - [`NeedsLocalState<St>`] — `with_state` is available, takes `St`.
+///   - [`HasLocalState`] — `with_state` is not available (terminal/storage form).
+///
+/// # Stored form
+///
+/// `Registration<SE>` (using both defaults) is the **stored form** used by
+/// `Shell.builtins` and `ShellBuilder`. It is produced by calling
+/// [`into_storage`](Registration::into_storage) on a freshly-created
+/// registration.
+pub struct Registration<SE: extensions::ShellExtensions, S = (), L = HasLocalState> {
     /// Function to execute the builtin.
     pub execute_func: CommandExecuteFunc<SE>,
 
@@ -251,21 +314,123 @@ pub struct Registration<SE: extensions::ShellExtensions> {
     pub declaration_builtin: bool,
 
     /// Factory function that creates the default state for this builtin.
-    /// Called by [`Shell::register_builtin`] to seed the per-builtin state map.
+    /// Called by [`Shell::register_builtin`](crate::Shell::register_builtin)
+    /// to seed the per-builtin state map.
     pub state_init: fn() -> Box<dyn AnyState>,
+
+    /// Explicit local-state override set by [`with_state`](Registration::with_state).
+    /// `None` means "use `state_init`".
+    pub local_override: Option<Box<dyn AnyState>>,
+
+    /// Shared-state phantom (`()` for stored form).
+    pub _shared: PhantomData<S>,
+    /// Local-state phantom (`HasLocalState` for stored form).
+    pub _local: PhantomData<L>,
 }
 
-impl<SE: extensions::ShellExtensions> Registration<SE> {
-    /// Updates the given registration to mark it for a special builtin.
-    #[must_use]
-    pub const fn special(self) -> Self {
+impl<SE: extensions::ShellExtensions, S, L> Clone for Registration<SE, S, L> {
+    fn clone(&self) -> Self {
         Self {
-            special_builtin: true,
             execute_func: self.execute_func,
             content_func: self.content_func,
             disabled: self.disabled,
+            special_builtin: self.special_builtin,
             declaration_builtin: self.declaration_builtin,
             state_init: self.state_init,
+            local_override: self.local_override.clone(),
+            _shared: PhantomData,
+            _local: PhantomData,
+        }
+    }
+}
+
+impl<SE: extensions::ShellExtensions, S, L> Registration<SE, S, L> {
+    /// Updates the given registration to mark it for a special builtin.
+    #[must_use]
+    pub fn special(self) -> Self {
+        Self {
+            special_builtin: true,
+            ..self
+        }
+    }
+
+    /// Convert to the stored form (`Registration<SE, (), HasLocalState>`).
+    ///
+    /// This erases the shared-state phantom and transitions the local-state
+    /// phantom to [`HasLocalState`], while preserving any
+    /// [`with_state`](Registration::with_state) override in
+    /// `local_override`.
+    ///
+    /// Called by [`stored_builtin`], [`stored_decl_builtin`],
+    /// [`stored_raw_arg_builtin`], and
+    /// [`ShellBuilder::builtin`](crate::ShellBuilder::builtin).
+    pub(crate) fn into_storage(self) -> Registration<SE> {
+        Registration {
+            execute_func: self.execute_func,
+            content_func: self.content_func,
+            disabled: self.disabled,
+            special_builtin: self.special_builtin,
+            declaration_builtin: self.declaration_builtin,
+            state_init: self.state_init,
+            local_override: self.local_override,
+            _shared: PhantomData,
+            _local: PhantomData,
+        }
+    }
+
+    /// Destruct into (stored registration, local-state override, `state_init` fn).
+    ///
+    /// For internal use by registration methods in `Shell` and
+    /// [`SharedBuilder`]/[`SharedHandle`].
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Registration<SE>,
+        Option<Box<dyn AnyState>>,
+        fn() -> Box<dyn AnyState>,
+    ) {
+        let state_init = self.state_init;
+        let local_override = self.local_override;
+        let stored = Registration {
+            execute_func: self.execute_func,
+            content_func: self.content_func,
+            disabled: self.disabled,
+            special_builtin: self.special_builtin,
+            declaration_builtin: self.declaration_builtin,
+            state_init,
+            local_override: None,
+            _shared: PhantomData,
+            _local: PhantomData,
+        };
+        (stored, local_override, state_init)
+    }
+}
+
+impl<SE: extensions::ShellExtensions, S, St: Clone + Send + Sync + 'static>
+    Registration<SE, S, NeedsLocalState<St>>
+{
+    /// Provide a custom initial value for this builtin's local state,
+    /// replacing the default produced by `B::State::default()`.
+    ///
+    /// The argument type is exactly `St` (= `B::State`), enforced at compile
+    /// time by the [`NeedsLocalState<St>`] phantom.
+    ///
+    /// This method is only available once. After calling it the registration
+    /// transitions to [`HasLocalState`] and `with_state` is no longer
+    /// available.
+    #[must_use]
+    pub fn with_state(self, state: St) -> Registration<SE, S, HasLocalState> {
+        Registration {
+            execute_func: self.execute_func,
+            content_func: self.content_func,
+            disabled: self.disabled,
+            special_builtin: self.special_builtin,
+            declaration_builtin: self.declaration_builtin,
+            state_init: self.state_init,
+            local_override: Some(Box::new(state)),
+            _shared: self._shared,
+            _local: PhantomData,
         }
     }
 }
@@ -467,6 +632,9 @@ pub trait SimpleCommand {
 
 /// Returns a built-in command registration, given an implementation of the
 /// `SimpleCommand` trait.
+///
+/// The returned [`Registration`] is in its stored form (`HasLocalState`)
+/// because `SimpleCommand` has no per-builtin state concept.
 pub fn simple_builtin<B: SimpleCommand + Send + Sync, SE: extensions::ShellExtensions>()
 -> Registration<SE> {
     Registration {
@@ -476,12 +644,20 @@ pub fn simple_builtin<B: SimpleCommand + Send + Sync, SE: extensions::ShellExten
         special_builtin: false,
         declaration_builtin: false,
         state_init: default_state_fn::<()>,
+        local_override: None,
+        _shared: PhantomData,
+        _local: PhantomData,
     }
 }
 
 /// Returns a built-in command registration, given an implementation of the
 /// `Command` trait.
-pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> Registration<SE> {
+///
+/// The phantom types encode:
+/// * `S = B::SharedState` — gates which registration method can be used.
+/// * `L = NeedsLocalState<B::State>` — enables [`with_state`](Registration::with_state).
+pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>()
+-> Registration<SE, B::SharedState, NeedsLocalState<B::State>> {
     Registration {
         execute_func: exec_builtin::<B, SE>,
         content_func: get_builtin_content::<B>,
@@ -489,14 +665,20 @@ pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> R
         special_builtin: false,
         declaration_builtin: false,
         state_init: default_state_fn::<B::State>,
+        local_override: None,
+        _shared: PhantomData,
+        _local: PhantomData,
     }
 }
 
+/// Like [`builtin`], but returns the stored form directly (`HasLocalState`).
+///
+/// Use this in `default_builtins`-style factory functions where
 /// Returns a built-in command registration, given an implementation of the
 /// `DeclarationCommand` trait. Used for select commands that can take parsed
 /// declarations as arguments.
 pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellExtensions>()
--> Registration<SE> {
+-> Registration<SE, B::SharedState, NeedsLocalState<B::State>> {
     Registration {
         execute_func: exec_declaration_builtin::<B, SE>,
         content_func: get_builtin_content::<B>,
@@ -504,6 +686,9 @@ pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellEx
         special_builtin: false,
         declaration_builtin: true,
         state_init: default_state_fn::<B::State>,
+        local_override: None,
+        _shared: PhantomData,
+        _local: PhantomData,
     }
 }
 
@@ -517,7 +702,7 @@ pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellEx
 pub fn raw_arg_builtin<
     B: DeclarationCommand + Default + Send + Sync,
     SE: extensions::ShellExtensions,
->() -> Registration<SE> {
+>() -> Registration<SE, B::SharedState, NeedsLocalState<B::State>> {
     Registration {
         execute_func: exec_raw_arg_builtin::<B, SE>,
         content_func: get_builtin_content::<B>,
@@ -525,6 +710,9 @@ pub fn raw_arg_builtin<
         special_builtin: false,
         declaration_builtin: true,
         state_init: default_state_fn::<B::State>,
+        local_override: None,
+        _shared: PhantomData,
+        _local: PhantomData,
     }
 }
 
@@ -670,6 +858,102 @@ async fn call_builtin(
         .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e), builtin_name))?;
 
     Ok(result)
+}
+
+/// Consuming builder that registers multiple builtins sharing a single
+/// typed state value.
+///
+/// # Subshell cloning behaviour
+///
+/// When [`Shell::clone()`](crate::Shell::clone) is called, shared state is
+/// cloned via [`AnyState::clone_box`]. With `Arc<T>` the clone is a cheap
+/// refcount bump (all subshells see the same data). With a bare `T` each
+/// subshell gets an independent deep copy.
+///
+/// # Interior mutability
+///
+/// The accessor [`ExecutionContext::shared`] returns `&T`. To mutate through
+/// an `Arc<T>`, `T` itself must provide interior mutability (e.g. `Mutex`,
+/// `papaya::HashMap`, atomics).
+///
+/// # Type uniqueness
+///
+/// Shared state is keyed by [`TypeId`]. Two unrelated uses of the same
+/// generic type (e.g. `HashMap<String, String>`) would collide. Use newtype
+/// wrappers for isolation.
+///
+/// # Example
+///
+/// ```ignore
+/// let cache = SharedBuilder::new(Arc::new(RepoCache::default()))
+///     .builtin("inherit", builtin::<InheritCommand, _>());
+/// shell.register_shared(cache);
+/// ```
+pub struct SharedBuilder<T, SE: extensions::ShellExtensions = extensions::DefaultShellExtensions> {
+    /// The shared state value to be seeded into `Shell::shared_states`.
+    pub(crate) value: T,
+    /// Builtins to register alongside the shared state.
+    pub(crate) builtins: Vec<(String, Registration<SE, T>)>,
+}
+
+impl<T: Clone + Send + Sync + 'static, SE: extensions::ShellExtensions> SharedBuilder<T, SE> {
+    /// Create a new builder that will share `value` across all added builtins.
+    pub const fn new(value: T) -> Self {
+        Self {
+            value,
+            builtins: Vec::new(),
+        }
+    }
+
+    /// Add a builtin that shares state type `T`.
+    ///
+    /// Compile error if the registration's shared-state phantom is not `T`.
+    #[must_use]
+    pub fn builtin(mut self, name: impl Into<String>, reg: Registration<SE, T>) -> Self {
+        self.builtins.push((name.into(), reg));
+        self
+    }
+}
+
+/// Borrowing handle that registers builtins against an **existing** shared
+/// state entry on a [`Shell`](crate::Shell).
+///
+/// Obtained via [`Shell::shared_handle`](crate::Shell::shared_handle).
+/// Each call to [`builtin`](SharedHandle::builtin) registers immediately.
+pub struct SharedHandle<'a, T, SE: extensions::ShellExtensions> {
+    pub(crate) shell: &'a mut crate::Shell<SE>,
+    pub(crate) _phantom: PhantomData<T>,
+}
+
+impl<T: Clone + Send + Sync + 'static, SE: extensions::ShellExtensions> SharedHandle<'_, T, SE> {
+    /// Register a builtin against the existing shared state of type `T`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the shared state has not been seeded (i.e. if
+    /// [`register_shared`](crate::Shell::register_shared) or
+    /// [`set_shared`](crate::Shell::set_shared) has not been called for `T`).
+    pub fn builtin(&mut self, name: impl Into<String>, reg: Registration<SE, T>) {
+        assert!(
+            self.shell.shared_states().contains_key(&TypeId::of::<T>()),
+            "SharedHandle::builtin called but shared state for {} has not been seeded",
+            type_name::<T>(),
+        );
+        let key = name.into();
+        let (stored, local_override, state_init) = reg.into_parts();
+        self.shell.builtins.insert(key.clone(), stored);
+        match local_override {
+            Some(state) => {
+                self.shell.builtin_states.insert(key, state);
+            }
+            None => {
+                self.shell
+                    .builtin_states
+                    .entry(key)
+                    .or_insert_with(state_init);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

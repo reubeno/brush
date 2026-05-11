@@ -16,6 +16,7 @@ pub(crate) struct PwdCommand {
 
 impl builtins::Command for PwdCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

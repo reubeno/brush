@@ -12,6 +12,7 @@ pub(crate) struct ExitCommand {
 
 impl builtins::Command for ExitCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

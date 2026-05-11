@@ -46,6 +46,7 @@ pub(crate) struct MapFileCommand {
 
 impl builtins::Command for MapFileCommand {
     type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
