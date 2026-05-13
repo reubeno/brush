@@ -1,5 +1,6 @@
 //! Implements programmable command completion support.
 
+use bstr::ByteSlice;
 use clap::ValueEnum;
 use std::{
     borrow::Cow,
@@ -566,9 +567,9 @@ impl Spec {
                 CompleteAction::HostName => {
                     // N.B. We only retrieve one hostname.
                     if let Ok(name) = sys::network::get_hostname() {
-                        let name = name.to_string_lossy();
-                        if name.starts_with(token) {
-                            candidates.push(name.to_string());
+                        let name_bytes = crate::shell::path_to_bstring(std::path::Path::new(&name));
+                        if name_bytes.starts_with(token.as_bytes()) {
+                            candidates.push(String::from_utf8_lossy(&name_bytes).into_owned());
                         }
                     }
                 }
@@ -802,12 +803,15 @@ impl Spec {
                 match reply.value() {
                     variables::ShellValue::IndexedArray(values) => {
                         return Ok(Answer::Candidates(
-                            values.values().map(|v| v.to_owned()).collect(),
+                            values
+                                .values()
+                                .map(|v| v.to_str().unwrap_or("").to_string())
+                                .collect(),
                             ProcessingOptions::default(),
                         ));
                     }
                     variables::ShellValue::String(s) => {
-                        let candidates = vec![s.to_owned()];
+                        let candidates = vec![s.to_str().unwrap_or("").to_string()];
                         return Ok(Answer::Candidates(candidates, ProcessingOptions::default()));
                     }
                     _ => (),
@@ -1155,10 +1159,11 @@ impl Config {
                 if let Some(spec) = shell.completion_config().commands.get(command_name) {
                     found_spec = Some(spec);
                 } else if let Some(file_name) = PathBuf::from(command_name).file_name() {
+                    let file_name_str = file_name.to_string_lossy();
                     if let Some(spec) = shell
                         .completion_config()
                         .commands
-                        .get(&file_name.to_string_lossy().to_string())
+                        .get(file_name_str.as_ref())
                     {
                         found_spec = Some(spec);
                     }
@@ -1266,7 +1271,8 @@ fn get_external_command_completions(
         shell.options().case_insensitive_pathname_expansion,
     ) {
         if let Some(file_name) = path.file_name() {
-            candidates.push(file_name.to_string_lossy().to_string());
+            let name_bytes = crate::shell::path_to_bstring(std::path::Path::new(file_name));
+            candidates.push(String::from_utf8_lossy(&name_bytes).into_owned());
         }
     }
 

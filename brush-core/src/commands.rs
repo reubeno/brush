@@ -1,5 +1,6 @@
 //! Command execution
 
+use bstr::ByteSlice;
 use std::{
     borrow::Cow,
     ffi::OsStr,
@@ -170,14 +171,14 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
 /// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
 ///   command will inherit environment variables marked as exported in the provided `Shell`.
 #[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
-pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
+pub fn compose_std_command<S: AsRef<OsStr>, SN: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     context: &ExecutionContext<'_, SE>,
-    command_name: &str,
+    command_name: SN,
     argv0: &str,
     args: &[S],
     empty_env: bool,
 ) -> Result<std::process::Command, error::Error> {
-    let mut cmd = std::process::Command::new(command_name);
+    let mut cmd = std::process::Command::new(command_name.as_ref());
 
     // Override argv[0].
     // NOTE: Not supported on all platforms.
@@ -199,11 +200,12 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
             // that are set (i.e., have a value). This means a variable that
             // shows up in `declare -p` but has no *set* value will be omitted.
             if v.value().is_set() {
-                cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
+                let val = v.value().to_cow_str(context.shell);
+                cmd.env(k.as_str(), val.as_ref().to_str().unwrap_or_default());
             }
         }
         // Set _ to the resolved command path for external commands.
-        cmd.env("_", command_name);
+        cmd.env("_", command_name.as_ref());
     }
 
     // Add in exported functions.
@@ -261,7 +263,7 @@ pub(crate) async fn on_preexecute(
     let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
     cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
-        variables::ShellValueLiteral::Scalar(full_cmd),
+        variables::ShellValueLiteral::Scalar(full_cmd.into()),
         |_| Ok(()),
         env::EnvironmentLookup::Anywhere,
         env::EnvironmentScope::Global,
@@ -537,10 +539,9 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             params: self.params,
         };
 
-        let resolved_path = path.to_string_lossy();
         let result = execute_external_command(
             cmd_context,
-            resolved_path.as_ref(),
+            path,
             self.process_group_id,
             self.argv0.as_deref(),
             &self.args[1..],
@@ -559,7 +560,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
-    executable_path: &str,
+    executable_path: &Path,
     process_group_id: Option<i32>,
     argv0_override: Option<&str>,
     args: &[CommandArg],

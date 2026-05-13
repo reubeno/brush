@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use bstr::BString;
 use normalize_path::NormalizePath as _;
 
 use crate::{
@@ -11,6 +12,19 @@ use crate::{
     sys::{fs::PathExt as _, users},
     variables,
 };
+
+/// Converts a `Path` to a `BString` preserving raw bytes on Unix.
+pub fn path_to_bstring(path: &Path) -> BString {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        BString::new(path.as_os_str().as_bytes().to_vec())
+    }
+    #[cfg(not(unix))]
+    {
+        BString::from(path.to_string_lossy().into_owned())
+    }
+}
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Sets the shell's current working directory to the given path.
@@ -35,11 +49,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // Normalize the path (but don't canonicalize it).
         let cleaned_path = abs_path.normalize();
 
-        let pwd = cleaned_path.to_string_lossy().to_string();
-
         self.env.update_or_add(
             "PWD",
-            variables::ShellValueLiteral::Scalar(pwd),
+            variables::ShellValueLiteral::Scalar(path_to_bstring(&cleaned_path)),
             |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
@@ -48,7 +60,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         self.env.update_or_add(
             "OLDPWD",
-            variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
+            variables::ShellValueLiteral::Scalar(path_to_bstring(&oldpwd)),
             |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,

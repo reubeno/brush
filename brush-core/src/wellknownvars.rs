@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use bstr::BString;
 use rand::RngExt as _;
 
 use crate::shell::ShellState;
+use crate::shell::path_to_bstring;
 use crate::{Shell, ShellValue, ShellVariable, error, extensions, sys, variables};
 
 const BASH_MAJOR: u32 = 5;
@@ -44,7 +46,7 @@ pub(crate) fn inherit_env_vars(
             continue;
         }
 
-        let mut var = ShellVariable::new(ShellValue::String(v));
+        let mut var = ShellVariable::new(ShellValue::String(BString::from(v)));
         var.export();
         shell.env_mut().set_global(k, var)?;
     }
@@ -82,8 +84,9 @@ pub(crate) fn init_well_known_vars(
     // BASHPID
     #[cfg(not(target_family = "wasm"))]
     {
-        let mut bashpid_var =
-            ShellVariable::new(ShellValue::String(std::process::id().to_string()));
+        let mut bashpid_var = ShellVariable::new(ShellValue::String(BString::from(
+            std::process::id().to_string(),
+        )));
         bashpid_var.treat_as_integer();
         shell.env_mut().set_global("BASHPID", bashpid_var)?;
     }
@@ -97,7 +100,7 @@ pub(crate) fn init_well_known_vars(
                     shell
                         .aliases()
                         .iter()
-                        .map(|(k, v)| (Some(k.to_owned()), v.to_owned()))
+                        .map(|(k, v)| (Some(BString::from(k.as_str())), BString::from(v.as_str())))
                         .collect::<Vec<_>>(),
                 );
 
@@ -228,7 +231,7 @@ pub(crate) fn init_well_known_vars(
                 shell
                     .directory_stack()
                     .iter()
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| path_to_bstring(p))
                     .collect::<Vec<_>>()
                     .into()
             },
@@ -268,7 +271,7 @@ pub(crate) fn init_well_known_vars(
 
     // EUID
     if let Ok(euid) = sys::users::get_effective_uid() {
-        let mut euid_var = ShellVariable::new(ShellValue::String(format!("{euid}")));
+        let mut euid_var = ShellVariable::new(ShellValue::String(BString::from(format!("{euid}"))));
         euid_var.treat_as_integer().set_readonly();
         shell.env_mut().set_global("EUID", euid_var)?;
     }
@@ -291,7 +294,7 @@ pub(crate) fn init_well_known_vars(
             getter: |_shell| {
                 let groups = get_current_user_gids();
                 ShellValue::indexed_array_from_strings(
-                    groups.into_iter().map(|gid| gid.to_string()),
+                    groups.into_iter().map(|gid| BString::from(gid.to_string())),
                 )
             },
             setter: |_| (),
@@ -317,19 +320,16 @@ pub(crate) fn init_well_known_vars(
         let histfile = home_dir.join(".brush_history");
         shell.env_mut().set_global(
             "HISTFILE",
-            ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
+            ShellVariable::new(ShellValue::String(path_to_bstring(&histfile))),
         )?;
     }
 
     // HOSTNAME
     shell.env_mut().set_global(
         "HOSTNAME",
-        ShellVariable::new(
-            sys::network::get_hostname()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        ),
+        ShellVariable::new(path_to_bstring(Path::new(
+            &sys::network::get_hostname().unwrap_or_default(),
+        ))),
     )?;
 
     // HOSTTYPE
@@ -414,7 +414,10 @@ pub(crate) fn init_well_known_vars(
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
                 ShellValue::indexed_array_from_strings(
-                    shell.last_pipeline_statuses().iter().map(|s| s.to_string()),
+                    shell
+                        .last_pipeline_statuses()
+                        .iter()
+                        .map(|s| BString::from(s.to_string())),
                 )
             },
             setter: |_| (),
@@ -457,10 +460,9 @@ pub(crate) fn init_well_known_vars(
     if !shell.env().is_set("SHELL") {
         // Per docs, this should be the user's default login shell -- not the current shell.
         if let Some(default_shell) = sys::users::get_current_user_default_shell() {
-            shell.env_mut().set_global(
-                "SHELL",
-                ShellVariable::new(default_shell.to_string_lossy().to_string()),
-            )?;
+            shell
+                .env_mut()
+                .set_global("SHELL", ShellVariable::new(path_to_bstring(&default_shell)))?;
         }
     }
 
@@ -516,14 +518,14 @@ pub(crate) fn init_well_known_vars(
     // we inherited an out-of-sync version of the variable. Future updates
     // will be handled by set_working_dir().
     //
-    let pwd = shell.working_dir().to_string_lossy().to_string();
+    let pwd = path_to_bstring(shell.working_dir());
     let mut pwd_var = ShellVariable::new(pwd);
     pwd_var.export();
     shell.env_mut().set_global("PWD", pwd_var)?;
 
     // UID
     if let Ok(uid) = sys::users::get_current_uid() {
-        let mut uid_var = ShellVariable::new(ShellValue::String(format!("{uid}")));
+        let mut uid_var = ShellVariable::new(ShellValue::String(BString::from(format!("{uid}"))));
         uid_var.treat_as_integer().set_readonly();
         shell.env_mut().set_global("UID", uid_var)?;
     }

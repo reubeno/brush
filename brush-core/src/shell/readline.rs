@@ -1,6 +1,7 @@
 //! Readline edit buffer support for shell instances.
 
 use crate::{error, extensions, variables::ShellVariable};
+use bstr::ByteSlice;
 
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     /// Updates the shell state to reflect the given edit buffer contents.
@@ -30,7 +31,15 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         let point = self
             .env
             .unset("READLINE_POINT")?
-            .and_then(|point| point.value().to_cow_str(self).parse::<usize>().ok())
+            .and_then(|point| {
+                point
+                    .value()
+                    .to_cow_str(self)
+                    .to_str()
+                    .unwrap_or("")
+                    .parse::<usize>()
+                    .ok()
+            })
             .unwrap_or(0);
 
         if let Some(line) = line {

@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use brush_core::{ErrorKind, builtins, env, error, variables};
+use bstr::BString;
 
 use std::io::{Read, Write};
 
@@ -167,6 +168,10 @@ fn assign_input_to_variables(
 ) -> Result<(), brush_core::Error> {
     if let Some(array_variable) = array_variable {
         let literal_fields = build_array_fields(input_line, ifs, skip_ifs_splitting);
+        let literal_fields: Vec<(Option<BString>, BString)> = literal_fields
+            .into_iter()
+            .map(|(k, v)| (k.map(BString::from), BString::from(v)))
+            .collect();
         shell.env_mut().update_or_add(
             array_variable,
             variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
@@ -179,7 +184,9 @@ fn assign_input_to_variables(
     } else {
         shell.env_mut().update_or_add(
             "REPLY",
-            variables::ShellValueLiteral::Scalar(input_line.unwrap_or_default().to_owned()),
+            variables::ShellValueLiteral::Scalar(BString::from(
+                input_line.unwrap_or_default().to_owned(),
+            )),
             |_| Ok(()),
             env::EnvironmentLookup::Anywhere,
             env::EnvironmentScope::Global,
@@ -217,7 +224,7 @@ fn assign_to_named_variables(
 
         shell.env_mut().update_or_add(
             name,
-            variables::ShellValueLiteral::Scalar(value),
+            variables::ShellValueLiteral::Scalar(BString::from(value)),
             |_| Ok(()),
             env::EnvironmentLookup::Anywhere,
             env::EnvironmentScope::Global,

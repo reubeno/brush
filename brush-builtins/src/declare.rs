@@ -12,6 +12,7 @@ use brush_core::{
         ShellVariableUpdateTransform,
     },
 };
+use bstr::BString;
 
 crate::minus_or_plus_flag_arg!(
     MakeIndexedArrayFlag,
@@ -398,12 +399,13 @@ impl DeclareCommand {
                     ast::AssignmentValue::Scalar(s) => {
                         if let Some(index) = &assigned_index {
                             initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
-                                Some(index.to_owned()),
-                                s.value.clone(),
+                                Some(BString::from(index.to_owned())),
+                                BString::from(s.value.clone()),
                             )])));
                             name_is_array = true;
                         } else {
-                            initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
+                            initial_value =
+                                Some(ShellValueLiteral::Scalar(BString::from(s.value.clone())));
                             name_is_array = false;
                         }
                     }
@@ -411,7 +413,10 @@ impl DeclareCommand {
                         initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
                             a.iter()
                                 .map(|(i, v)| {
-                                    (i.as_ref().map(|w| w.value.clone()), v.value.clone())
+                                    (
+                                        i.as_ref().map(|w| BString::from(w.value.clone())),
+                                        BString::from(v.value.clone()),
+                                    )
                                 })
                                 .collect(),
                         )));

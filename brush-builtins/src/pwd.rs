@@ -33,7 +33,9 @@ impl builtins::Command for PwdCommand {
             cwd = cwd.canonicalize()?.into();
         }
 
-        writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
+        let bytes = brush_core::path_to_bstring(&cwd);
+        context.stdout().write_all(bytes.as_slice())?;
+        context.stdout().write_all(b"\n")?;
 
         Ok(ExecutionResult::success())
     }

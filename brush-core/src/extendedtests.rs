@@ -1,4 +1,5 @@
 use brush_parser::ast;
+use bstr::BString;
 use std::path::Path;
 
 use crate::{
@@ -228,7 +229,7 @@ async fn apply_binary_predicate(
             let captures_value = variables::ShellValueLiteral::Array(ArrayLiteral(
                 captures
                     .into_iter()
-                    .map(|c| (None, c.unwrap_or_default()))
+                    .map(|c| (None, BString::from(c.unwrap_or_default())))
                     .collect(),
             ));
 

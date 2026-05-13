@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use clap::Parser;
 
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
+use bstr::BString;
 
 /// Read lines from standard input into an indexed array variable.
 #[derive(Parser)]
@@ -99,7 +100,7 @@ impl builtins::Command for MapFileCommand {
                 let elem_idx = elem_idx as i64;
                 context.shell.env_mut().update_or_add_array_element(
                     &self.array_var_name,
-                    (elem_idx + origin).to_string(),
+                    (elem_idx + origin).to_string().into(),
                     value,
                     |_| Ok(()),
                     env::EnvironmentLookup::Anywhere,
@@ -174,9 +175,7 @@ impl MapFileCommand {
                 line.pop();
             }
 
-            let line_str = String::from_utf8_lossy(&line).to_string();
-
-            entries.push((None, line_str));
+            entries.push((None, BString::new(line)));
         }
 
         Ok(variables::ArrayLiteral(entries))
