@@ -620,14 +620,17 @@ impl builtins::Command for CompOptCommand {
 }
 
 impl CompOptCommand {
-    fn set_options_for_spec(spec: &mut Spec, options: &HashMap<CompleteOption, bool>) {
+    fn set_options_for_spec<'a, I>(spec: &mut Spec, options: I)
+    where
+        I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
+    {
         Self::set_options(&mut spec.options, options);
     }
 
-    fn set_options(
-        target_options: &mut completion::GenerationOptions,
-        options: &HashMap<CompleteOption, bool>,
-    ) {
+    fn set_options<'a, I>(target_options: &mut completion::GenerationOptions, options: I)
+    where
+        I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
+    {
         for (option, value) in options {
             match option {
                 CompleteOption::BashDefault => target_options.bash_default = *value,
