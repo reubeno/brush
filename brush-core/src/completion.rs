@@ -385,7 +385,7 @@ impl Spec {
             let prefix = self.prefix.as_ref().unwrap_or(&empty);
             let suffix = self.suffix.as_ref().unwrap_or(&empty);
 
-            let mut updated = Vec::new();
+            let mut updated = Vec::with_capacity(candidates.len() * (prefix.len() + suffix.len()));
             for candidate in candidates {
                 updated.push(std::format!("{prefix}{candidate}{suffix}"));
             }
@@ -662,7 +662,7 @@ impl Spec {
         // Move to a subshell so we can start filling out variables.
         let mut shell = shell.clone();
 
-        let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
+        let vars_and_values: [(&str, ShellValueLiteral); _] = [
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
             ("COMP_KEY", context.trigger.comp_key().to_string().into()),
@@ -708,10 +708,7 @@ impl Spec {
                 .await?;
 
         // Split results.
-        let mut candidates = Vec::new();
-        for line in output.lines() {
-            candidates.push(line.to_owned());
-        }
+        let candidates = output.lines().map(str::to_owned).collect();
 
         Ok(candidates)
     }
@@ -723,7 +720,7 @@ impl Spec {
         context: &Context<'_>,
     ) -> Result<Answer, error::Error> {
         // TODO(completions): Don't pollute the persistent environment with these?
-        let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
+        let vars_and_values: [(&str, ShellValueLiteral); _] = [
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
             ("COMP_KEY", context.trigger.comp_key().to_string().into()),
@@ -1270,7 +1267,7 @@ fn get_external_command_completions(
         }
     }
 
-    candidates.into_iter().collect()
+    candidates
 }
 
 /// Attempts to complete a variable name from the given token.
