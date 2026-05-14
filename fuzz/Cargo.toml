@@ -1,22 +1,32 @@
 [package]
 name = "brush-fuzz"
-description = "Fuzz tests for brush"
-publish = false
 version = "0.2.2"
-authors.workspace = true
-categories.workspace = true
 edition.workspace = true
-keywords.workspace = true
-license.workspace = true
+rust-version.workspace = true
+description = "Fuzz tests for brush"
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = false
 
 [package.metadata]
 cargo-fuzz = true
 
-[lints]
-workspace = true
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_parse"
+path = "fuzz_targets/fuzz_parse.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_arithmetic"
+path = "fuzz_targets/fuzz_arithmetic.rs"
+test = false
 
 [dependencies]
 anyhow = "1.0.102"
@@ -31,16 +41,5 @@ path = "../brush-core"
 path = "../brush-parser"
 features = ["arbitrary"]
 
-[[bin]]
-name = "fuzz_parse"
-path = "fuzz_targets/fuzz_parse.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "fuzz_arithmetic"
-path = "fuzz_targets/fuzz_arithmetic.rs"
-test = false
-doc = false
-bench = false
+[lints]
+workspace = true

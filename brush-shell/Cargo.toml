@@ -1,15 +1,14 @@
 [package]
 name = "brush-shell"
-description = "Rust-implemented shell focused on POSIX and bash compatibility"
 version = "0.4.0"
-authors.workspace = true
-categories.workspace = true
 edition.workspace = true
-keywords.workspace = true
-license.workspace = true
+rust-version.workspace = true
+description = "Rust-implemented shell focused on POSIX and bash compatibility"
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/{ name }-v{ version }/brush-{ target }{ archive-suffix }"
@@ -18,19 +17,19 @@ pkg-url = "{ repo }/releases/download/{ name }-v{ version }/brush-{ target }{ ar
 bench = false
 
 [[bin]]
+bench = false
 name = "brush"
 path = "src/main.rs"
-bench = false
 
 [[test]]
+harness = false
 name = "brush-compat-tests"
 path = "tests/compat_tests.rs"
-harness = false
 
 [[test]]
+harness = false
 name = "brush-integration-tests"
 path = "tests/integration_tests.rs"
-harness = false
 
 [[test]]
 name = "brush-version-tests"
@@ -45,80 +44,35 @@ name = "brush-completion-tests"
 path = "tests/completion_tests.rs"
 
 [[bench]]
+harness = false
 name = "shell"
 path = "benches/shell.rs"
-harness = false
-
-[features]
-default = ["basic", "reedline", "minimal"]
-basic = ["brush-interactive/basic"]
-minimal = ["brush-interactive/minimal"]
-reedline = ["brush-interactive/reedline"]
-experimental = [
-    "experimental-builtins",
-    "experimental-bundled-coreutils",
-    "experimental-load",
-    "experimental-parser",
-]
-experimental-builtins = ["dep:brush-experimental-builtins"]
-experimental-bundled-coreutils = [
-    "dep:brush-coreutils-builtins",
-    "brush-coreutils-builtins/coreutils.all",
-]
-experimental-load = ["dep:serde_json", "brush-core/serde"]
-experimental-parser = [
-    "brush-core/experimental-parser",
-    "brush-parser/winnow-parser",
-]
-schema = ["dep:schemars"]
-
-[lints]
-workspace = true
 
 [dependencies]
-brush-core = { version = "^0.5.0", path = "../brush-core" }
-brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
-brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
-brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
+brush-builtins = { path = "../brush-builtins", version = "^0.2.0" }
+brush-core = { path = "../brush-core", version = "^0.5.0" }
+brush-coreutils-builtins = { path = "../brush-coreutils-builtins", version = "^0.1.0", optional = true }
+brush-experimental-builtins = { path = "../brush-experimental-builtins", version = "^0.1.0", optional = true }
 clap = { version = "4.6.0", features = ["derive", "env"] }
 color-print = "0.3.7"
+const_format = "0.2.36"
 etcetera = "0.11.0"
+git-version = "0.3.9"
+human-panic = "2.0.6"
 schemars = { version = "1.2.1", optional = true }
 serde = { version = "1.0", features = ["derive"] }
-toml = "1.1.0"
-const_format = "0.2.36"
-git-version = "0.3.9"
 serde_json = { version = "1.0.149", optional = true }
 thiserror = "2.0.18"
+toml = "1.1.0"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
-human-panic = "2.0.6"
-
-[target.'cfg(not(any(unix, windows)))'.dependencies]
-brush-interactive = { version = "^0.4.0", path = "../brush-interactive", features = [
-    "minimal",
-] }
-tokio = { version = "1.52.1", features = ["rt", "sync"] }
-
-[target.'cfg(any(unix, windows))'.dependencies]
-brush-interactive = { version = "^0.4.0", path = "../brush-interactive", features = [
-    "basic",
-    "reedline",
-] }
-crossterm = "0.29.0"
-tokio = { version = "1.50.0", features = ["rt", "rt-multi-thread", "sync"] }
-
-[target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.4.2", features = ["wasm_js"] }
-uuid = { version = "1.23.1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
-tempfile = "3.27.0"
-brush-parser = { version = "^0.4.0", path = "../brush-parser" }
-brush-test-harness = { path = "../brush-test-harness", features = ["insta"] }
 assert_cmd = "2.2.0"
 assert_fs = "1.1.3"
+brush-parser = { path = "../brush-parser", version = "^0.4.0" }
+brush-test-harness = { path = "../brush-test-harness", features = ["insta"] }
 colored = "3.1.1"
 criterion = { version = "0.8.2", features = ["async_tokio", "html_reports"] }
 descape = "3.0.0"
@@ -135,12 +89,57 @@ regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
+tempfile = "3.27.0"
 test-with = { version = "0.16.0", default-features = false, features = [
-    "executable",
+  "executable",
 ] }
 version-compare = "0.2.1"
 walkdir = "2.5.0"
 which = "8.0.2"
 
+[target.'cfg(any(unix, windows))'.dependencies]
+brush-interactive = { path = "../brush-interactive", version = "^0.4.0", features = [
+  "basic",
+  "reedline",
+] }
+crossterm = "0.29.0"
+tokio = { version = "1.50.0", features = ["rt", "rt-multi-thread", "sync"] }
+
+[target.'cfg(not(any(unix, windows)))'.dependencies]
+brush-interactive = { path = "../brush-interactive", version = "^0.4.0", features = [
+  "minimal",
+] }
+tokio = { version = "1.52.1", features = ["rt", "sync"] }
+
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.31.2" }
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
+uuid = { version = "1.23.1", features = ["js"] }
+
+[features]
+default = ["basic", "minimal", "reedline"]
+basic = ["brush-interactive/basic"]
+experimental = [
+  "experimental-builtins",
+  "experimental-bundled-coreutils",
+  "experimental-load",
+  "experimental-parser",
+]
+experimental-builtins = ["dep:brush-experimental-builtins"]
+experimental-bundled-coreutils = [
+  "brush-coreutils-builtins/coreutils.all",
+  "dep:brush-coreutils-builtins",
+]
+experimental-load = ["brush-core/serde", "dep:serde_json"]
+experimental-parser = [
+  "brush-core/experimental-parser",
+  "brush-parser/winnow-parser",
+]
+minimal = ["brush-interactive/minimal"]
+reedline = ["brush-interactive/reedline"]
+schema = ["dep:schemars"]
+
+[lints]
+workspace = true

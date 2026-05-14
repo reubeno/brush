@@ -1,26 +1,17 @@
 [package]
 name = "brush-test-harness"
-description = "Test harness library for brush shell integration tests"
 version = "0.1.0"
-authors.workspace = true
-categories.workspace = true
 edition.workspace = true
-keywords.workspace = true
-license.workspace = true
-repository.workspace = true
 rust-version.workspace = true
+description = "Test harness library for brush shell integration tests"
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 publish = false
 
 [lib]
 bench = false
-
-[lints]
-workspace = true
-
-[features]
-default = []
-# Enable insta snapshot support
-insta = ["dep:insta"]
 
 [dependencies]
 anyhow = "1.0.102"
@@ -46,3 +37,11 @@ walkdir = "2.5.0"
 [target.'cfg(unix)'.dependencies]
 expectrl = "0.8.0"
 nix = { version = "0.31.2", features = ["process"] }
+
+[features]
+default = []
+# Enable insta snapshot support
+insta = ["dep:insta"]
+
+[lints]
+workspace = true
