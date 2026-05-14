@@ -461,22 +461,23 @@ fn display_funcs_and_bindings(
     let sorted_funcs = interfaces::InputFunction::iter().sorted_by_key(|f| f.to_string());
 
     for func in sorted_funcs {
-        if let Some(seqs) = sequences_by_func.get(&func) {
-            if reusable {
+        match sequences_by_func.get(&func) {
+            Some(seqs) if reusable => {
                 for seq in seqs {
                     writeln!(context.stdout(), "\"{seq}\": {func}")?;
                 }
-            } else {
+            }
+            Some(seqs) => {
                 writeln!(
                     context.stdout(),
                     "{func} can be found on {}.",
                     seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
                 )?;
             }
-        } else {
-            if reusable {
+            None if reusable => {
                 writeln!(context.stdout(), "# {func} (not bound)")?;
-            } else {
+            }
+            None => {
                 writeln!(context.stdout(), "{func} is not bound to any keys")?;
             }
         }
