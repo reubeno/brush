@@ -1,5 +1,6 @@
 use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
 use itertools::Itertools;
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -456,6 +457,9 @@ async fn spawn_pipeline_processes(
     // Create pipes to use between commands, but only bother doing so if there's more than one
     // command.
     if pipeline_len > 1 {
+        pipe_readers.reserve_exact(pipeline_len - 1);
+        pipe_writers.reserve_exact(pipeline_len - 1);
+
         for _ in 0..(pipeline_len - 1) {
             let (reader, writer) = std::io::pipe()?;
             pipe_readers.push(Some(reader.into()));
@@ -727,7 +731,7 @@ impl Execute for ast::CoprocessCommand {
         let name = self
             .name
             .as_ref()
-            .map_or_else(|| "COPROC".to_string(), |w| w.to_string());
+            .map_or_else(|| Cow::Borrowed("COPROC"), |w| Cow::Owned(w.to_string()));
 
         if !valid_variable_name(&name) {
             writeln!(
@@ -1297,7 +1301,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 process_group_id: context.process_group_id,
             };
 
-            match execute_command(context, params, cmd_name, assignments, args).await {
+            match execute_command(context, params, cmd_name, &assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
@@ -1343,11 +1347,11 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
     }
 }
 
-async fn execute_command(
+async fn execute_command<T: Into<String>>(
     mut context: PipelineExecutionContext<'_, impl extensions::ShellExtensions>,
     params: ExecutionParameters,
-    cmd_name: String,
-    assignments: Vec<&ast::Assignment>,
+    cmd_name: T,
+    assignments: &[&ast::Assignment],
     args: Vec<CommandArg>,
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Push a new ephemeral environment scope for the duration of the command. We'll
@@ -1355,7 +1359,7 @@ async fn execute_command(
     // returning.
     let mut guard = crate::env::ScopeGuard::new(&mut context.shell, EnvironmentScope::Command);
 
-    for assignment in &assignments {
+    for assignment in assignments {
         // Ensure it's tagged as exported and created in the command scope.
         apply_assignment(
             assignment,
@@ -1382,7 +1386,7 @@ async fn execute_command(
     drop(guard);
 
     // Construct the command struct.
-    let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name, args);
+    let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name.into(), args);
     cmd.process_group_id = context.process_group_id;
 
     // Arrange to pop off that ephemeral environment scope.
