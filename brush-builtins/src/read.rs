@@ -259,9 +259,7 @@ fn build_variable_fields(
     match input_line {
         Some(line) if skip_ifs_splitting => {
             // With -N, don't split - put entire input in first variable.
-            let mut fields = VecDeque::new();
-            fields.push_back(line.to_string());
-            fields
+            VecDeque::from([line.to_string()])
         }
         Some(line) => split_line_by_ifs(ifs, line, Some(num_variables)),
         None => VecDeque::new(),
