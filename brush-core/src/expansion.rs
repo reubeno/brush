@@ -757,7 +757,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let fields: Vec<WordField> = self.split_fields(basic_expansion);
 
         // Now expand pathnames if necessary. This also unquotes as a side effect.
-        let mut result = Vec::new();
+        // We also know a length that the vector may be at minimally.
+        let mut result = Vec::with_capacity(fields.len());
         for field in fields {
             if self.disable_pathname_expansion || self.shell.options().disable_filename_globbing {
                 result.push(String::from(field));

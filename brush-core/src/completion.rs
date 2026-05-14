@@ -774,7 +774,7 @@ impl Spec {
 
         let params = shell.default_exec_params();
         let invoke_result = shell
-            .invoke_function(function_name, args.iter(), &params)
+            .invoke_function(function_name, args.iter(), params)
             .await;
 
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
