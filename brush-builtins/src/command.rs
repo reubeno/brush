@@ -27,8 +27,8 @@ pub(crate) struct CommandCommand {
 }
 
 impl CommandCommand {
-    fn command(&self) -> Option<&String> {
-        self.command_and_args.first()
+    fn command(&self) -> Option<&str> {
+        self.command_and_args.first().map(|s| s.as_str())
     }
 }
 
@@ -42,11 +42,9 @@ impl builtins::Command for CommandCommand {
         // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
             if self.print_description || self.print_verbose_description {
-                if let Some(found_cmd) = Self::try_find_command(
-                    context.shell,
-                    command_name.as_str(),
-                    self.use_default_path,
-                ) {
+                if let Some(found_cmd) =
+                    Self::try_find_command(context.shell, command_name, self.use_default_path)
+                {
                     if self.print_description {
                         writeln!(context.stdout(), "{found_cmd}")?;
                     } else {
