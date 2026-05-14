@@ -557,7 +557,8 @@ impl builtins::Command for CompOptCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut options = HashMap::new();
+        let mut options =
+            HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
         for option in &self.disabled_options {
             options.insert(option.clone(), false);
         }
