@@ -172,7 +172,7 @@ impl JobManager {
 
     /// Polls all managed jobs for completion.
     pub fn poll(&mut self) -> Result<Vec<JobResult>, error::Error> {
-        let mut results = vec![];
+        let mut results = Vec::with_capacity(self.jobs.len());
 
         let mut i = 0;
         while i != self.jobs.len() {
@@ -278,10 +278,7 @@ impl Display for Job {
         write!(
             f,
             "[{}]{:3}{}\t{}",
-            self.id,
-            self.annotation.to_string(),
-            self.state,
-            self.command_line
+            self.id, self.annotation, self.state, self.command_line
         )
     }
 }
