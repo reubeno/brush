@@ -1,6 +1,9 @@
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, history};
 use clap::Parser;
-use std::{io::Write, path::PathBuf};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 /// Query or manipulate the shell's command history.
 // TODO(history): Evaluate which of the options conflict with each other.
@@ -67,7 +70,7 @@ impl builtins::Command for HistoryCommand {
         let stderr = context.stderr();
 
         if let Some(history) = context.shell.history_mut() {
-            self.execute_with_history(history, config, stdout, stderr)
+            self.execute_with_history(history, &config, stdout, stderr)
         } else {
             Err(brush_core::ErrorKind::HistoryNotEnabled.into())
         }
@@ -81,7 +84,7 @@ impl HistoryCommand {
     fn execute_with_history(
         &self,
         history: &mut history::History,
-        config: HistoryConfig,
+        config: &HistoryConfig,
         stdout: impl Write,
         mut stderr: impl Write,
     ) -> Result<ExecutionResult, brush_core::Error> {
@@ -118,8 +121,8 @@ impl HistoryCommand {
 
         if let Some(append_option) = &self.append_session_to_file {
             if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path,
-                append_option.as_ref(),
+                config.default_history_file_path.as_deref(),
+                append_option.as_deref(),
             ) {
                 history.flush(
                     file_path,
@@ -142,8 +145,8 @@ impl HistoryCommand {
 
         if let Some(write_option) = &self.write_session_to_file {
             if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path,
-                write_option.as_ref(),
+                config.default_history_file_path.as_deref(),
+                write_option.as_deref(),
             ) {
                 history.flush(
                     file_path,
@@ -171,7 +174,7 @@ impl HistoryCommand {
             None
         };
 
-        display_history(history, &config, max_entries, stdout, stderr)?;
+        display_history(history, config, max_entries, stdout, stderr)?;
 
         Ok(ExecutionResult::success())
     }
@@ -211,14 +214,11 @@ fn display_history(
     Ok(())
 }
 
-fn get_effective_history_file_path(
-    default_history_file_path: Option<PathBuf>,
-    option: Option<&String>,
-) -> Option<PathBuf> {
-    option.map_or_else(
-        || default_history_file_path,
-        |file_path| Some(PathBuf::from(file_path)),
-    )
+fn get_effective_history_file_path<'a>(
+    default_history_file_path: Option<&'a Path>,
+    option: Option<&'a str>,
+) -> Option<&'a Path> {
+    option.map(Path::new).or(default_history_file_path)
 }
 
 #[cfg(test)]
