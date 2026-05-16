@@ -324,17 +324,17 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
     /// * `params` - The execution parameters for the command.
     /// * `command_name` - The name of the command to execute.
     /// * `args` - The arguments to the command, including the command itself.
-    pub const fn new(
+    pub fn new<I>(
         shell: ShellForCommand<'a, SE>,
         params: ExecutionParameters,
         command_name: String,
-        args: Vec<CommandArg>,
-    ) -> Self {
+        args: I,
+    ) -> Self where I: IntoIterator<Item = CommandArg> {
         Self {
             shell,
             params,
             command_name,
-            args,
+            args: args.into_iter().collect(),
             use_functions: true,
             path_dirs: None,
             process_group_id: None,

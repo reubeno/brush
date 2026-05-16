@@ -1279,7 +1279,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         }
 
         // If we have a command, then execute it.
-        if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
+        if let Some(CommandArg::String(cmd_name)) = args.first() {
             let mut stderr = params.stderr(&context.shell);
 
             let (owned_shell, parent_shell) = match context.shell {
@@ -1301,7 +1301,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 process_group_id: context.process_group_id,
             };
 
-            match execute_command(context, params, cmd_name, &assignments, args).await {
+            match execute_command(context, params, cmd_name, &assignments, &args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
@@ -1352,7 +1352,7 @@ async fn execute_command<T: Into<String>>(
     params: ExecutionParameters,
     cmd_name: T,
     assignments: &[&ast::Assignment],
-    args: Vec<CommandArg>,
+    args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Push a new ephemeral environment scope for the duration of the command. We'll
     // set command-scoped variable assignments after doing so, and revert them before
@@ -1386,7 +1386,8 @@ async fn execute_command<T: Into<String>>(
     drop(guard);
 
     // Construct the command struct.
-    let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name.into(), args);
+    let mut cmd =
+        commands::SimpleCommand::new(context.shell, params, cmd_name.into(), args.iter().cloned());
     cmd.process_group_id = context.process_group_id;
 
     // Arrange to pop off that ephemeral environment scope.
