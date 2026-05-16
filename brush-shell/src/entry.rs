@@ -183,7 +183,7 @@ pub fn run() {
         std::process::exit(1);
     };
 
-    let result = runtime.block_on(run_async(args, parsed_args));
+    let result = runtime.block_on(run_async(&args, parsed_args));
 
     let exit_code = match result {
         Ok(code) => code,
@@ -239,7 +239,7 @@ pub(crate) const DEFAULT_ENABLE_HIGHLIGHTING: bool = false;
 /// * `args` - The already-parsed command-line arguments.
 #[doc(hidden)]
 async fn run_async(
-    cli_args: Vec<String>,
+    cli_args: &[String],
     args: CommandLineArgs,
 ) -> Result<u8, brush_interactive::ShellError> {
     // Initializing tracing.
@@ -424,7 +424,7 @@ async fn initialize_shell(
 /// * `cli_args` - The raw command-line arguments.
 async fn instantiate_shell(
     args: &CommandLineArgs,
-    cli_args: Vec<String>,
+    cli_args: &[String],
 ) -> Result<BrushShell, brush_interactive::ShellError> {
     #[cfg(feature = "experimental-load")]
     let mut shell = if let Some(load_file) = &args.load_file {
@@ -482,7 +482,7 @@ fn instantiate_shell_from_file(
 /// * `cli_args` - The raw command-line arguments.
 async fn instantiate_shell_from_args(
     args: &CommandLineArgs,
-    cli_args: Vec<String>,
+    cli_args: &[String],
 ) -> Result<BrushShell, brush_interactive::ShellError> {
     // Compute login flag.
     let login = args.login || cli_args.first().is_some_and(|argv0| argv0.starts_with('-'));
