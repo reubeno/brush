@@ -132,7 +132,10 @@ impl CommandCommand {
         use_default_path: bool,
     ) -> Result<ExecutionResult, brush_core::Error> {
         command_name.clone_into(&mut context.command_name);
-        let command_and_args = self.command_and_args.iter().map(|arg| arg.into()).collect();
+        let command_and_args = self
+            .command_and_args
+            .iter()
+            .map(brush_core::CommandArg::from);
 
         let path_dirs = if use_default_path {
             Some(sys::fs::get_default_standard_utils_paths())
