@@ -900,9 +900,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     from_array: false,
                 }
             }
-            brush_parser::word::WordPiece::TildeExpansion(tilde_expr) => Expansion::from(
-                ExpansionPiece::Unsplittable(self.expand_tilde_expression(&tilde_expr)?),
-            ),
+            brush_parser::word::WordPiece::TildeExpansion(tilde_expr) => {
+                Expansion::from(ExpansionPiece::Unsplittable(
+                    self.expand_tilde_expression(&tilde_expr)?.to_string(),
+                ))
+            }
             brush_parser::word::WordPiece::ParameterExpansion(p) => {
                 self.expand_parameter_expr(p).await?
             }
@@ -957,56 +959,56 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     fn expand_tilde_expression(
         &self,
         tilde_expr: &brush_parser::word::TildeExpr,
-    ) -> Result<String, error::Error> {
+    ) -> Result<Cow<'_, str>, error::Error> {
         match tilde_expr {
             brush_parser::word::TildeExpr::Home => {
                 if let Some(home_dir) = self.shell.home_dir() {
-                    Ok(home_dir.to_string_lossy().to_string())
+                    Ok(Cow::Owned(home_dir.to_string_lossy().to_string()))
                 } else {
                     Err(error::ErrorKind::TildeWithoutValidHome.into())
                 }
             }
             brush_parser::word::TildeExpr::UserHome(username) => {
                 Ok(sys::users::get_user_home_dir(username).map_or_else(
-                    || std::format!("~{username}"),
-                    |p| p.to_string_lossy().to_string(),
+                    || Cow::Owned(std::format!("~{username}")),
+                    |p| Cow::Owned(p.to_string_lossy().to_string()),
                 ))
             }
             brush_parser::word::TildeExpr::WorkingDir => {
-                Ok(self.shell.working_dir().to_string_lossy().to_string())
+                Ok(self.shell.working_dir().to_string_lossy())
             }
             brush_parser::word::TildeExpr::OldWorkingDir => {
                 if let Some(old_pwd) = self.shell.env_str("OLDPWD") {
-                    Ok(old_pwd.to_string())
+                    Ok(old_pwd)
                 } else {
-                    Ok(String::from("~-"))
+                    Ok(Cow::Borrowed("~-"))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromBottomOfDirStack { n } => {
                 let dir_stack_count = self.shell.directory_stack().len();
 
                 if let Some(dir) = self.shell.directory_stack().get(*n) {
-                    Ok(dir.to_string_lossy().to_string())
+                    Ok(dir.to_string_lossy())
                 } else if *n == dir_stack_count {
-                    Ok(self.shell.working_dir().to_string_lossy().to_string())
+                    Ok(self.shell.working_dir().to_string_lossy())
                 } else {
-                    Ok(std::format!("~-{n}"))
+                    Ok(Cow::Owned(std::format!("~-{n}")))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromTopOfDirStack { n, plus_used } => {
                 if *n == 0 {
-                    return Ok(self.shell.working_dir().to_string_lossy().to_string());
+                    return Ok(self.shell.working_dir().to_string_lossy());
                 }
 
                 let dir_stack_count = self.shell.directory_stack().len();
                 if dir_stack_count >= *n
                     && let Some(dir) = self.shell.directory_stack().get(dir_stack_count - *n)
                 {
-                    return Ok(dir.to_string_lossy().to_string());
+                    return Ok(dir.to_string_lossy());
                 }
 
                 let plus_or_nothing = if *plus_used { "+" } else { "" };
-                Ok(std::format!("~{plus_or_nothing}{n}"))
+                Ok(Cow::Owned(std::format!("~{plus_or_nothing}{n}")))
             }
         }
     }
