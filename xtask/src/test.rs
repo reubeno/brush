@@ -205,7 +205,7 @@ pub struct BashCompletionArgs {
 
     /// Number of parallel test workers (requires pytest-xdist).
     /// Use -j 1 to disable parallel execution.
-    #[clap(long, short = 'j', default_value = "128")]
+    #[clap(long, short = 'j', default_value_t = 128)]
     jobs: u32,
 }
 

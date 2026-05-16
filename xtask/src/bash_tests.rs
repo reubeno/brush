@@ -201,7 +201,7 @@ pub struct BashTestsArgs {
     test_filter: Option<String>,
 
     /// Per-test timeout in seconds.
-    #[clap(long, default_value = "30")]
+    #[clap(long, default_value_t = 30)]
     timeout: u64,
 
     /// Number of parallel workers (default: number of CPUs).
