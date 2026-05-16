@@ -1547,10 +1547,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
     }
 
-    async fn assign_to_parameter(
+    async fn assign_to_parameter<T: Into<String>>(
         &mut self,
         parameter: &brush_parser::word::Parameter,
-        value: String,
+        value: T,
     ) -> Result<(), error::Error> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
@@ -1579,6 +1579,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 return Err(error::ErrorKind::CannotAssignToSpecialParameter.into());
             }
         };
+
+        let value = value.into();
 
         if let Some(index) = index {
             self.shell.env_mut().update_or_add_array_element(
