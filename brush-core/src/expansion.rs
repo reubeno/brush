@@ -562,11 +562,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
     async fn basic_expand_opt_pattern(
         &mut self,
-        word: Option<String>,
+        word: Option<&str>,
     ) -> Result<Option<patterns::Pattern>, error::Error> {
         if let Some(word) = word {
             let pattern = self
-                .basic_expand_pattern(&word)
+                .basic_expand_pattern(word)
                 .await?
                 .set_extended_globbing(self.parser_options.enable_extended_globbing);
 
@@ -1210,7 +1210,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_suffix(s.as_str(), expanded_pattern.as_ref())
                         .map(|s| s.to_owned())
@@ -1223,7 +1223,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_suffix(s.as_str(), expanded_pattern.as_ref())
                         .map(|s| s.to_owned())
@@ -1236,7 +1236,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_prefix(s.as_str(), expanded_pattern.as_ref())
@@ -1250,7 +1250,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_prefix(s.as_str(), expanded_pattern.as_ref())
@@ -1412,7 +1412,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     Self::uppercase_first_char(s, expanded_pattern.as_ref())
@@ -1425,7 +1425,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     Self::uppercase_pattern(s.as_str(), expanded_pattern.as_ref())
@@ -1438,7 +1438,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     Self::lowercase_first_char(s, expanded_pattern.as_ref())
@@ -1451,7 +1451,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     Self::lowercase_pattern(s.as_str(), expanded_pattern.as_ref())
