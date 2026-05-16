@@ -275,7 +275,7 @@ async fn run_async(
         InputBackendType::Reedline => {
             let mut input_backend =
                 brush_interactive::ReedlineInputBackend::new(&ui_options, &shell)?;
-            run_in_shell(&shell, args.clone(), &mut input_backend, &ui_options).await
+            run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
         #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
         InputBackendType::Reedline => Err(brush_interactive::ShellError::InputBackendNotSupported),
@@ -283,7 +283,7 @@ async fn run_async(
         #[cfg(feature = "basic")]
         InputBackendType::Basic => {
             let mut input_backend = brush_interactive::BasicInputBackend;
-            run_in_shell(&shell, args.clone(), &mut input_backend, &ui_options).await
+            run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
         #[cfg(not(feature = "basic"))]
         InputBackendType::Basic => Err(brush_interactive::ShellError::InputBackendNotSupported),
@@ -291,7 +291,7 @@ async fn run_async(
         #[cfg(feature = "minimal")]
         InputBackendType::Minimal => {
             let mut input_backend = brush_interactive::MinimalInputBackend;
-            run_in_shell(&shell, args.clone(), &mut input_backend, &ui_options).await
+            run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
         #[cfg(not(feature = "minimal"))]
         InputBackendType::Minimal => Err(brush_interactive::ShellError::InputBackendNotSupported),
