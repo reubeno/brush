@@ -5,7 +5,7 @@ mod styles {
     use super::{Color, Style};
 
     pub fn default() -> Style {
-        Style::new().fg(Color::White)
+        Style::new().fg(Color::Default)
     }
 
     pub fn comment() -> Style {
@@ -29,7 +29,7 @@ mod styles {
     }
 
     pub fn operator() -> Style {
-        Style::new().fg(Color::White).italic()
+        Style::new().fg(Color::Default).italic()
     }
 
     pub fn assignment() -> Style {
@@ -37,7 +37,7 @@ mod styles {
     }
 
     pub fn hyphen_option() -> Style {
-        Style::new().fg(Color::White).italic()
+        Style::new().fg(Color::Default).italic()
     }
 
     pub fn function() -> Style {
@@ -65,7 +65,7 @@ mod styles {
     }
 
     pub fn unknown_command() -> Style {
-        Style::new().bold().fg(Color::White)
+        Style::new().bold().fg(Color::Default)
     }
 }
 
