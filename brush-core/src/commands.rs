@@ -329,7 +329,10 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         params: ExecutionParameters,
         command_name: String,
         args: I,
-    ) -> Self where I: IntoIterator<Item = CommandArg> {
+    ) -> Self
+    where
+        I: IntoIterator<Item = CommandArg>,
+    {
         Self {
             shell,
             params,

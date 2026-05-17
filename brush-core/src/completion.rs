@@ -662,7 +662,7 @@ impl Spec {
         // Move to a subshell so we can start filling out variables.
         let mut shell = shell.clone();
 
-        let vars_and_values: [(&str, ShellValueLiteral); _] = [
+        let vars_and_values: [(&str, ShellValueLiteral); 4] = [
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
             ("COMP_KEY", context.trigger.comp_key().to_string().into()),
@@ -720,7 +720,7 @@ impl Spec {
         context: &Context<'_>,
     ) -> Result<Answer, error::Error> {
         // TODO(completions): Don't pollute the persistent environment with these?
-        let vars_and_values: [(&str, ShellValueLiteral); _] = [
+        let vars_and_values: [(&str, ShellValueLiteral); 6] = [
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
             ("COMP_KEY", context.trigger.comp_key().to_string().into()),
