@@ -1097,7 +1097,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
+                let default_value = default_value.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
@@ -1117,7 +1117,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
+                let default_value = default_value.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
@@ -1143,7 +1143,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let error_message = error_message.as_ref().map_or_else(|| "", |v| v.as_str());
+                let error_message = error_message.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
@@ -1170,9 +1170,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let alternative_value = alternative_value
-                    .as_ref()
-                    .map_or_else(|| "", |v| v.as_str());
+                let alternative_value = alternative_value.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)

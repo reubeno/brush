@@ -731,7 +731,7 @@ impl Execute for ast::CoprocessCommand {
         let name = self
             .name
             .as_ref()
-            .map_or_else(|| Cow::Borrowed("COPROC"), |w| Cow::Owned(w.to_string()));
+            .map_or(Cow::Borrowed("COPROC"), |w| Cow::Owned(w.to_string()));
 
         if !valid_variable_name(&name) {
             writeln!(
