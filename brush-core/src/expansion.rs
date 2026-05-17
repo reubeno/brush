@@ -1417,7 +1417,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::uppercase_first_char(s, expanded_pattern.as_ref())
+                    Self::pattern_to_first_char(s, expanded_pattern.as_ref(), |c| c.to_uppercase())
                 })
                 .await
             }
@@ -1430,7 +1430,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::uppercase_pattern(s.as_str(), expanded_pattern.as_ref())
+                    Self::pattern_to_string(s.as_str(), expanded_pattern.as_ref(), |str| {
+                        str.to_uppercase()
+                    })
                 })
                 .await
             }
@@ -1443,7 +1445,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::lowercase_first_char(s, expanded_pattern.as_ref())
+                    Self::pattern_to_first_char(s, expanded_pattern.as_ref(), |c| c.to_lowercase())
                 })
                 .await
             }
@@ -1456,7 +1458,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::lowercase_pattern(s.as_str(), expanded_pattern.as_ref())
+                    Self::pattern_to_string(s.as_str(), expanded_pattern.as_ref(), |str| {
+                        str.to_lowercase()
+                    })
                 })
                 .await
             }
@@ -1853,10 +1857,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(value.to_string())
     }
 
-    fn uppercase_first_char(
+    fn pattern_to_first_char<F, I>(
         s: String,
         pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
+        transform: F,
+    ) -> Result<String, error::Error>
+    where
+        F: Fn(char) -> I,
+        I: Iterator<Item = char>,
+    {
         if let Some(first_char) = s.chars().next() {
             let applicable = if let Some(pattern) = pattern {
                 pattern.is_empty() || pattern.exactly_matches(first_char.to_string().as_str())?
@@ -1865,7 +1874,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             };
 
             if applicable {
-                if let Some(upper_char) = first_char.to_uppercase().next() {
+                if let Some(upper_char) = transform(first_char).next() {
                     let mut result = upper_char.to_string();
                     result.extend(s.chars().skip(1));
                     return Ok(result);
@@ -1876,64 +1885,26 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(s)
     }
 
-    fn lowercase_first_char(
-        s: String,
-        pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
-        if let Some(first_char) = s.chars().next() {
-            let applicable = if let Some(pattern) = pattern {
-                pattern.is_empty() || pattern.exactly_matches(first_char.to_string().as_str())?
-            } else {
-                true
-            };
-
-            if applicable {
-                if let Some(lower_char) = first_char.to_lowercase().next() {
-                    let mut result = lower_char.to_string();
-                    result.extend(s.chars().skip(1));
-                    return Ok(result);
-                }
-            }
-        }
-
-        Ok(s)
-    }
-
-    fn uppercase_pattern(
+    fn pattern_to_string<F>(
         s: &str,
         pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
+        transform: F,
+    ) -> Result<String, error::Error>
+    where
+        F: Fn(&str) -> String,
+    {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
                 let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
-                    caps[0].to_uppercase()
+                    transform(&caps[0])
                 });
                 Ok(result.into_owned())
             } else {
-                Ok(s.to_uppercase())
+                Ok(transform(s))
             }
         } else {
-            Ok(s.to_uppercase())
-        }
-    }
-
-    fn lowercase_pattern(
-        s: &str,
-        pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
-        if let Some(pattern) = pattern {
-            if !pattern.is_empty() {
-                let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
-                    caps[0].to_lowercase()
-                });
-                Ok(result.into_owned())
-            } else {
-                Ok(s.to_lowercase())
-            }
-        } else {
-            Ok(s.to_lowercase())
+            Ok(transform(s))
         }
     }
 
