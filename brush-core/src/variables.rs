@@ -398,7 +398,7 @@ impl ShellVariable {
                 let key = get_key_for_indexed_array(arr, array_index.as_str())?;
 
                 if append {
-                    let existing_value = arr.get(&key).map_or_else(|| "", |v| v.as_str());
+                    let existing_value = arr.get(&key).map_or("", |v| v.as_str());
 
                     let mut new_value;
                     if treat_as_int {
@@ -419,9 +419,7 @@ impl ShellVariable {
             }
             ShellValue::AssociativeArray(arr) => {
                 if append {
-                    let existing_value = arr
-                        .get(array_index.as_str())
-                        .map_or_else(|| "", |v| v.as_str());
+                    let existing_value = arr.get(array_index.as_str()).map_or("", |v| v.as_str());
 
                     let mut new_value;
                     if treat_as_int {

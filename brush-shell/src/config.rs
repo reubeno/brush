@@ -156,10 +156,9 @@ impl ConfigLoadResult {
             return Ok(self.config);
         };
 
-        let path_display = self.path.as_ref().map_or_else(
-            || Cow::Borrowed("<unknown>"),
-            |p| Cow::Owned(p.display().to_string()),
-        );
+        let path_display = self.path.as_ref().map_or(Cow::Borrowed("<unknown>"), |p| {
+            Cow::Owned(p.display().to_string())
+        });
 
         if self.explicit_path {
             // User explicitly provided --config; treat errors as fatal.

@@ -308,10 +308,11 @@ impl Job {
 
     /// Returns a pid-style string for the job.
     pub fn to_pid_style_string(&self) -> String {
-        let display_pid = self.representative_pid().map_or_else(
-            || Cow::Borrowed("<pid unknown>"),
-            |pid| Cow::Owned(pid.to_string()),
-        );
+        let display_pid = self
+            .representative_pid()
+            .map_or(Cow::Borrowed("<pid unknown>"), |pid| {
+                Cow::Owned(pid.to_string())
+            });
         std::format!("[{}]{}\t{}", self.id, self.annotation, display_pid)
     }
 
