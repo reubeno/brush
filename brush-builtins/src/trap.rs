@@ -53,7 +53,7 @@ impl builtins::Command for TrapCommand {
         } else {
             let handler = &self.args[0];
 
-            let mut signal_types = vec![];
+            let mut signal_types = Vec::with_capacity(self.args.len() - 1);
             for signal in &self.args[1..] {
                 signal_types.push(signal.parse()?);
             }
