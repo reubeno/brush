@@ -667,7 +667,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             brush_parser::word::parse(brace_expanded.as_ref(), &self.parser_options)?
         };
 
-        let mut expansions = vec![];
+        let mut expansions = Vec::with_capacity(pieces.len());
         for piece in pieces {
             let piece_expansion = self.expand_word_piece(piece.piece).await?;
             expansions.push(piece_expansion);
