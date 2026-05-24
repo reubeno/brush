@@ -116,6 +116,17 @@ pacman -S brush
 </details>
 
 <details>
+<summary>🐧 <b>Installing on MSYS2</b></summary>
+
+MSYS2 users can install `brush` from the [repository](https://packages.msys2.org/base/mingw-w64-brush):
+
+```bash
+pacman -S mingw-w64-ucrt-x86_64-brush # or mingw-w64-clang-x86_64-brush or mingw-w64-clang-aarch64-brush
+```
+
+</details>
+
+<details>
 <summary>🚀 <b>Installing prebuilt binaries via `cargo binstall`</b></summary>
 
 You may use [cargo binstall](https://github.com/cargo-bins/cargo-binstall) to install pre-built `brush` binaries. Once you've installed `cargo-binstall` you can run:
