@@ -23,7 +23,8 @@ pub(crate) async fn expand_prompt(
         // Pieces that semantically represent a literal char (e.g. user wrote
         // `\$` meaning a literal `$`, not input for pass-2 expansion). We
         // prepend a `\` so pass 2 consumes it and leaves the char alone.
-        let semantically_literal = matches!(piece, brush_parser::prompt::PromptPiece::DollarOrPound);
+        let semantically_literal =
+            matches!(piece, brush_parser::prompt::PromptPiece::DollarOrPound);
 
         let formatted_piece = format_prompt_piece(shell, piece)?;
 
