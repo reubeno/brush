@@ -245,6 +245,7 @@ impl Default for TokenizerOptions {
 /// A tokenizer for shell scripts.
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
     char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
+    pending_char: Option<char>,
     cross_state: CrossTokenParseState,
     options: TokenizerOptions,
 }
@@ -537,6 +538,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Tokenizer {
             options: options.clone(),
             char_reader: reader.chars().peekable(),
+            pending_char: None,
             cross_state: CrossTokenParseState {
                 cursor: SourcePosition {
                     index: 0,
@@ -557,11 +559,14 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     }
 
     fn next_char(&mut self) -> Result<Option<char>, TokenizerError> {
-        let c = self
-            .char_reader
-            .next()
-            .transpose()
-            .map_err(TokenizerError::ReadError)?;
+        let c = if let Some(c) = self.pending_char.take() {
+            Some(c)
+        } else {
+            self.char_reader
+                .next()
+                .transpose()
+                .map_err(TokenizerError::ReadError)?
+        };
 
         if let Some(ch) = c {
             if ch == '\n' {
@@ -576,12 +581,32 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Ok(c)
     }
 
+    fn unread_char(&mut self, c: char, cursor_before_char: SourcePosition) {
+        debug_assert!(self.pending_char.is_none());
+        self.pending_char = Some(c);
+        self.cross_state.cursor = cursor_before_char;
+    }
+
     fn consume_char(&mut self) -> Result<(), TokenizerError> {
         let _ = self.next_char()?;
         Ok(())
     }
 
+    fn consume_line_continuation_after_backslash(&mut self) -> Result<bool, TokenizerError> {
+        match self.peek_char()? {
+            Some('\n') => {
+                self.consume_char()?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     fn peek_char(&mut self) -> Result<Option<char>, TokenizerError> {
+        if let Some(c) = self.pending_char {
+            return Ok(Some(c));
+        }
+
         match self.char_reader.peek() {
             Some(result) => match result {
                 Ok(c) => Ok(Some(*c)),
@@ -606,6 +631,35 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     ///   `[`).
     /// * `initial_nesting` - The initial nesting count (e.g., 2 for `$((`, 1 for `$[`).
     fn consume_nested_construct(
+        &mut self,
+        state: &mut TokenParseState,
+        terminating_char: char,
+        nesting_open: &str,
+        nesting_count: u32,
+        arithmetic_expansion: bool,
+    ) -> Result<(), TokenizerError> {
+        let saved_here_state = std::mem::take(&mut self.cross_state.here_state);
+        let saved_here_tags = std::mem::take(&mut self.cross_state.current_here_tags);
+        let saved_queued_tokens = std::mem::take(&mut self.cross_state.queued_tokens);
+        let saved_arithmetic_expansion = self.cross_state.arithmetic_expansion;
+        self.cross_state.arithmetic_expansion = arithmetic_expansion;
+
+        let result = self.consume_nested_construct_impl(
+            state,
+            terminating_char,
+            nesting_open,
+            nesting_count,
+        );
+
+        self.cross_state.here_state = saved_here_state;
+        self.cross_state.current_here_tags = saved_here_tags;
+        self.cross_state.queued_tokens = saved_queued_tokens;
+        self.cross_state.arithmetic_expansion = saved_arithmetic_expansion;
+
+        result
+    }
+
+    fn consume_nested_construct_impl(
         &mut self,
         state: &mut TokenParseState,
         terminating_char: char,
@@ -790,6 +844,19 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     TokenEndReason::SpecifiedTerminatingChar,
                     &mut self.cross_state,
                 )?;
+            } else if state.in_operator() && c == '\\' {
+                let cursor_before_backslash = self.cross_state.cursor.clone();
+                self.consume_char()?;
+                if !self.consume_line_continuation_after_backslash()? {
+                    self.unread_char(c, cursor_before_backslash);
+
+                    let reason = if state.current_token() == "\n" {
+                        TokenEndReason::UnescapedNewLine
+                    } else {
+                        TokenEndReason::OperatorEnd
+                    };
+                    result = state.delimit_current_token(reason, &mut self.cross_state)?;
+                }
             } else if state.in_operator() {
                 //
                 // We're in an operator. See if this character continues an operator, or if it
@@ -846,10 +913,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // Consume the backslash ourselves so we can peek past it.
                     self.consume_char()?;
 
-                    if matches!(self.peek_char()?, Some('\n')) {
-                        // Make sure the newline char gets consumed too.
-                        self.consume_char()?;
-
+                    if self.consume_line_continuation_after_backslash()? {
                         // Make sure to include neither the backslash nor the newline character.
                     } else {
                         state.in_escape = true;
@@ -927,15 +991,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                                     (1, false)
                                 };
 
-                            if is_arithmetic {
-                                self.cross_state.arithmetic_expansion = true;
-                            }
-
-                            self.consume_nested_construct(&mut state, ')', "(", initial_nesting)?;
-
-                            if is_arithmetic {
-                                self.cross_state.arithmetic_expansion = false;
-                            }
+                            self.consume_nested_construct(
+                                &mut state,
+                                ')',
+                                "(",
+                                initial_nesting,
+                                is_arithmetic,
+                            )?;
                         }
 
                         Some('[') => {
@@ -945,13 +1007,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                             // Consume the '[' and add it to the token.
                             state.append_char(self.next_char()?.unwrap());
 
-                            // Keep track that we're in an arithmetic expression, since
-                            // some text will be interpreted differently as a result.
-                            self.cross_state.arithmetic_expansion = true;
-
-                            self.consume_nested_construct(&mut state, ']', "[", 1)?;
-
-                            self.cross_state.arithmetic_expansion = false;
+                            self.consume_nested_construct(&mut state, ']', "[", 1, true)?;
                         }
 
                         Some('{') => {
@@ -1047,13 +1103,16 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         // Read (and consume) the next char.
                         let next_char_in_backquote = self.next_char()?;
                         if let Some(cib) = next_char_in_backquote {
-                            // Include it in the token no matter what.
-                            state.append_char(cib);
-
-                            // Watch out for escaping.
                             if !escaping_enabled && cib == '\\' {
+                                if self.consume_line_continuation_after_backslash()? {
+                                    continue;
+                                }
+
+                                state.append_char(cib);
                                 escaping_enabled = true;
                             } else {
+                                state.append_char(cib);
+
                                 // Look for an unescaped backquote to terminate.
                                 if !escaping_enabled && cib == '`' {
                                     done = true;
@@ -1359,6 +1418,16 @@ mod tests {
         })
     }
 
+    fn token_kinds_and_values(input: &str) -> Result<Vec<(&'static str, String)>> {
+        Ok(tokenize_str(input)?
+            .into_iter()
+            .map(|token| match token {
+                Token::Operator(value, _) => ("operator", value),
+                Token::Word(value, _) => ("word", value),
+            })
+            .collect())
+    }
+
     #[test]
     fn tokenize_empty() -> Result<()> {
         let tokens = tokenize_str("")?;
@@ -1378,6 +1447,127 @@ bc"
     #[test]
     fn tokenize_operators() -> Result<()> {
         assert_ron_snapshot!(test_tokenizer("a>>b")?);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_line_continuation_inside_operators() -> Result<()> {
+        assert_eq!(
+            token_kinds_and_values(
+                r"a&\
+&b"
+            )?,
+            vec![
+                ("word", "a".to_owned()),
+                ("operator", "&&".to_owned()),
+                ("word", "b".to_owned()),
+            ]
+        );
+        assert_eq!(
+            token_kinds_and_values(
+                r"a|\
+|b"
+            )?,
+            vec![
+                ("word", "a".to_owned()),
+                ("operator", "||".to_owned()),
+                ("word", "b".to_owned()),
+            ]
+        );
+        assert_eq!(
+            token_kinds_and_values(
+                r"echo x |\
+& cat"
+            )?,
+            vec![
+                ("word", "echo".to_owned()),
+                ("word", "x".to_owned()),
+                ("operator", "|&".to_owned()),
+                ("word", "cat".to_owned()),
+            ]
+        );
+        assert_eq!(
+            token_kinds_and_values(
+                r"echo x >\
+| file"
+            )?,
+            vec![
+                ("word", "echo".to_owned()),
+                ("word", "x".to_owned()),
+                ("operator", ">|".to_owned()),
+                ("word", "file".to_owned()),
+            ]
+        );
+        assert_eq!(
+            token_kinds_and_values(
+                r"cat <\
+<EOF
+body
+EOF
+"
+            )?,
+            vec![
+                ("word", "cat".to_owned()),
+                ("operator", "<<".to_owned()),
+                ("word", "EOF".to_owned()),
+                ("word", "body\n".to_owned()),
+                ("word", "EOF".to_owned()),
+                ("operator", "\n".to_owned()),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_operator_followed_by_escaped_word() -> Result<()> {
+        assert_eq!(
+            token_kinds_and_values(r"cat <\file")?,
+            vec![
+                ("word", "cat".to_owned()),
+                ("operator", "<".to_owned()),
+                ("word", r"\file".to_owned()),
+            ]
+        );
+        assert_eq!(
+            token_kinds_and_values(r"printf hi |\cat")?,
+            vec![
+                ("word", "printf".to_owned()),
+                ("word", "hi".to_owned()),
+                ("operator", "|".to_owned()),
+                ("word", r"\cat".to_owned()),
+            ]
+        );
+        assert_eq!(
+            token_kinds_and_values(r"false &&\echo ok")?,
+            vec![
+                ("word", "false".to_owned()),
+                ("operator", "&&".to_owned()),
+                ("word", r"\echo".to_owned()),
+                ("word", "ok".to_owned()),
+            ]
+        );
+        assert_eq!(
+            token_kinds_and_values(r"echo one;\echo two")?,
+            vec![
+                ("word", "echo".to_owned()),
+                ("word", "one".to_owned()),
+                ("operator", ";".to_owned()),
+                ("word", r"\echo".to_owned()),
+                ("word", "two".to_owned()),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_line_continuation_inside_backquote() -> Result<()> {
+        assert_eq!(
+            token_kinds_and_values(
+                r"echo `e\
+cho`"
+            )?,
+            vec![("word", "echo".to_owned()), ("word", "`echo`".to_owned()),]
+        );
         Ok(())
     }
 
@@ -1536,6 +1726,23 @@ OTHER
 HERE2
 )"
         )?);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_command_substitution_here_doc_inside_arithmetic() -> Result<()> {
+        assert_eq!(
+            token_kinds_and_values(
+                r": $(( $(cat <<EOF
+)
+EOF
+) + 2 ))"
+            )?,
+            vec![
+                ("word", ":".to_owned()),
+                ("word", "$(( $(cat <<EOF\n) + 2 ))".to_owned()),
+            ]
+        );
         Ok(())
     }
 

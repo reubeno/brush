@@ -95,6 +95,35 @@ pub enum TildeExpr {
     },
 }
 
+fn decode_backquoted_command(raw_command: &str) -> String {
+    let mut result = String::new();
+    let mut chars = raw_command.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek().copied() {
+                Some('$' | '`' | '\\') => {
+                    if let Some(escaped) = chars.next() {
+                        result.push(escaped);
+                    }
+                }
+                Some('\n') => {
+                    let _ = chars.next();
+                }
+                _ => result.push(c),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    if result.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
+        result.push('\\');
+    }
+
+    result
+}
+
 /// Type of a parameter test.
 #[derive(Clone, Debug)]
 #[cfg_attr(
@@ -868,14 +897,18 @@ peg::parser! {
             legacy_arithmetic_expansion() /
             command_substitution() /
             parameter_expansion() /
+            heredoc_line_continuation() /
             heredoc_escape_sequence() /
             heredoc_literal_text()
+
+        rule heredoc_line_continuation() -> WordPiece =
+            "\\\n" { WordPiece::Text(String::new()) }
 
         rule heredoc_escape_sequence() -> WordPiece =
             s:$("\\" ['$' | '`' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
 
         rule heredoc_literal_text() -> WordPiece =
-            s:$((!heredoc_escape_sequence() !dollar_sign_word_piece() [^'`'])+) {
+            s:$((!heredoc_line_continuation() !heredoc_escape_sequence() !dollar_sign_word_piece() [^'`'])+) {
                 WordPiece::Text(s.to_owned())
             }
 
@@ -1079,10 +1112,14 @@ peg::parser! {
             ['\'' | '`'] {}
 
         rule backquoted_command() -> String =
-            chars:(backquoted_char()*) { chars.into_iter().collect() }
+            chars:(backquoted_char()*) {
+                let raw_command: String = chars.into_iter().collect();
+                decode_backquoted_command(&raw_command)
+            }
 
         rule backquoted_char() -> &'input str =
-            "\\`" { "`" } /
+            "\\`" { "\\`" } /
+            "\\\\" &"`" { "\\\\" } /
             "\\\\" { "\\\\" } /
             s:$([^'`']) { s }
 
@@ -1295,6 +1332,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_heredoc_line_continuation() -> Result<()> {
+        let parsed = super::parse_heredoc("alpha\\\nbeta\n", &ParserOptions::default())?;
+
+        assert_matches!(&parsed[0].piece, WordPiece::Text(text) if text == "alpha");
+        assert_matches!(&parsed[1].piece, WordPiece::Text(text) if text.is_empty());
+        assert_matches!(&parsed[2].piece, WordPiece::Text(text) if text == "beta\n");
+        Ok(())
+    }
+
+    #[test]
     fn parse_backquoted_command() -> Result<()> {
         assert_ron_snapshot!(test_parse("`echo hi`")?);
         Ok(())
@@ -1303,6 +1350,58 @@ mod tests {
     #[test]
     fn parse_backquoted_command_in_double_quotes() -> Result<()> {
         assert_ron_snapshot!(test_parse(r#""`echo hi`""#)?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_with_backslash_pair() -> Result<()> {
+        let parsed = super::parse(r"`printf '%s\n' \\2`", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[0].piece,
+            WordPiece::BackquotedCommandSubstitution(command)
+                if command == "printf '%s\\n' \\2"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_with_two_backslash_pairs() -> Result<()> {
+        let parsed = super::parse(r"`printf '%s\n' \\\\2`", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[0].piece,
+            WordPiece::BackquotedCommandSubstitution(command)
+                if command == "printf '%s\\n' \\\\2"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_with_two_backslashes_before_closing_backtick() -> Result<()> {
+        let parsed = super::parse(r"`printf \\`", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[0].piece,
+            WordPiece::BackquotedCommandSubstitution(command) if command == "printf \\\\"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_with_four_backslashes_before_closing_backtick() -> Result<()> {
+        let parsed = super::parse(r"`printf \\\\`", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[0].piece,
+            WordPiece::BackquotedCommandSubstitution(command) if command == "printf \\\\"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_with_six_backslashes_before_closing_backtick() -> Result<()> {
+        let parsed = super::parse(r"`printf \\\\\\`", &ParserOptions::default())?;
+        assert_matches!(
+            &parsed[0].piece,
+            WordPiece::BackquotedCommandSubstitution(command) if command == "printf \\\\\\\\"
+        );
         Ok(())
     }
 
