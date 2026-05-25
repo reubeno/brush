@@ -37,7 +37,7 @@ inherent = "1.0.13"
 itertools = "0.14.0"
 normalize-path = "0.2.1"
 rand = "0.10.0"
-rpds = "1.2.0"
+rpds = "1.2.1"
 serde = { version = "1.0.228", optional = true, features = ["derive"] }
 strum = "0.28.0"
 strum_macros = "0.28.0"
@@ -67,7 +67,7 @@ whoami = "2.1.1"
 [target.'cfg(unix)'.dependencies]
 command-fds = "0.3.2"
 libc = "0.2.183"
-nix = { version = "0.31.2", features = [
+nix = { version = "0.31.3", features = [
     "fs",
     "poll",
     "process",
