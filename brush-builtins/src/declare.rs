@@ -392,24 +392,6 @@ impl DeclareCommand {
         Ok(true)
     }
 
-    fn resolve_nameref(
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        name: String,
-    ) -> String {
-        let nameref_target = if let Some((_, var)) = context.shell.env().get(name.as_str()) {
-            if var.is_treated_as_nameref() {
-                var.value()
-                    .try_get_cow_str(context.shell)
-                    .map(|s| s.into_owned())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        nameref_target.unwrap_or(name)
-    }
-
     /// Returns true if this declaration is a `CommandArg::String` containing
     /// an `=` with an array-like value starting with `(`.
     fn is_string_array_assignment(declaration: &brush_core::CommandArg) -> bool {
