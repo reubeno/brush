@@ -159,10 +159,10 @@ nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 
 Fedora Linux users must first install the [Terra repository](https://terrapkg.com/).
 
-Then install `brush`:
+Then install `brush-shell`:
 
 ```bash
-dnf install brush
+dnf install brush-shell
 ```
 
 </details>
