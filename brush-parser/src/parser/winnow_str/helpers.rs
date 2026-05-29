@@ -946,6 +946,88 @@ pub(super) fn is_reserved_word(s: &str) -> bool {
     )
 }
 
+// ============================================================================
+// Comment-tracking variants of whitespace parsers
+//
+// These parallel parsers record comment byte ranges into `ctx.comments` as
+// they consume whitespace.  They are used only at statement-boundary call
+// sites in `program.rs` where comments are meaningful (between or trailing
+// a complete command).  Inner call sites (inside `keyword`, `name`, etc.)
+// continue using the zero-cost originals.
+// ============================================================================
+
+/// Parse a comment and record its byte range in `ctx.comments`.
+pub(super) fn comment_tracking<'a>(
+    ctx: &'a super::types::ParseContext<'a>,
+) -> impl ModalParser<StrStream<'a>, (), ContextError> + 'a {
+    use winnow::stream::Location;
+    move |input: &mut StrStream<'a>| {
+        let start = input.current_token_start();
+        ('#', take_while(0.., |c: char| c != '\n'))
+            .void()
+            .parse_next(input)?;
+        let end = input.current_token_start();
+        ctx.comments.borrow_mut().push(start..end);
+        Ok(())
+    }
+}
+
+/// Like `spaces()` but records inline comments into `ctx.comments`.
+pub(super) fn spaces_tracking<'a>(
+    ctx: &'a super::types::ParseContext<'a>,
+) -> impl ModalParser<StrStream<'a>, (), ContextError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        repeat::<_, _, (), _, _>(
+            0..,
+            winnow::combinator::alt((
+                take_while(1.., |c: char| c == ' ' || c == '\t').void(),
+                ("\\", '\n').void(),
+                comment_tracking(ctx),
+            )),
+        )
+        .void()
+        .parse_next(input)
+    }
+}
+
+/// Like `linebreak()` but records comment-only lines into `ctx.comments`.
+pub(super) fn linebreak_tracking<'a>(
+    ctx: &'a super::types::ParseContext<'a>,
+) -> impl ModalParser<StrStream<'a>, (), ContextError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        repeat::<_, _, (), _, _>(
+            0..,
+            (
+                take_while(0.., |c: char| c == ' ' || c == '\t'),
+                winnow::combinator::opt(comment_tracking(ctx)),
+                newline(),
+            )
+                .void(),
+        )
+        .void()
+        .parse_next(input)
+    }
+}
+
+/// Like `newline_list()` but records comment-only lines into `ctx.comments`.
+pub(super) fn newline_list_tracking<'a>(
+    ctx: &'a super::types::ParseContext<'a>,
+) -> impl ModalParser<StrStream<'a>, (), ContextError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        repeat::<_, _, (), _, _>(
+            1..,
+            (
+                take_while(0.., |c: char| c == ' ' || c == '\t'),
+                winnow::combinator::opt(comment_tracking(ctx)),
+                newline(),
+            )
+                .void(),
+        )
+        .void()
+        .parse_next(input)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

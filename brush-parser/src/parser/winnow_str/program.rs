@@ -7,7 +7,9 @@ use crate::ast;
 use crate::parser::{ParserOptions, SourceInfo};
 
 use super::and_or::and_or;
-use super::helpers::{comment, linebreak, newline_list, separator_op, spaces};
+use super::helpers::{
+    comment_tracking, linebreak_tracking, newline_list_tracking, separator_op, spaces_tracking,
+};
 use super::position::PositionTracker;
 use super::types::{ParseContext, StrStream};
 
@@ -28,10 +30,10 @@ pub(super) fn complete_command<'a>(
         // Try to parse (separator + spaces + and_or) pairs
         let mut items: Vec<ast::CompoundListItem> = vec![];
 
-        // Try to get separator after first and_or
-        spaces().parse_next(input)?; // Consume spaces
+        // Trailing spaces/inline comment after the first and_or; track comments.
+        spaces_tracking(ctx).parse_next(input)?;
         if let Ok(sep) = separator_op().parse_next(input) {
-            spaces().parse_next(input)?; // Consume spaces after separator
+            spaces_tracking(ctx).parse_next(input)?;
 
             // First item has a separator
             items.push(ast::CompoundListItem(first_ao, sep));
@@ -43,10 +45,10 @@ pub(super) fn complete_command<'a>(
                     break;
                 };
 
-                // Try to get separator
-                spaces().parse_next(input)?;
+                // Try to get separator; track trailing comment
+                spaces_tracking(ctx).parse_next(input)?;
                 if let Ok(sep) = separator_op().parse_next(input) {
-                    spaces().parse_next(input)?;
+                    spaces_tracking(ctx).parse_next(input)?;
                     items.push(ast::CompoundListItem(ao, sep));
                 } else {
                     // No separator - this is the final and_or
@@ -73,8 +75,12 @@ fn complete_command_continuation<'a>(
     tracker: &'a PositionTracker,
 ) -> impl ModalParser<StrStream<'a>, ast::CompleteCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
-        winnow::combinator::preceded(newline_list(), complete_command(ctx, tracker))
-            .parse_next(input)
+        // newlines between statements may contain comment-only lines; track them.
+        winnow::combinator::preceded(
+            newline_list_tracking(ctx),
+            complete_command(ctx, tracker),
+        )
+        .parse_next(input)
     }
 }
 
@@ -108,18 +114,31 @@ pub(super) fn program<'a>(
     tracker: &'a PositionTracker,
 ) -> impl ModalParser<StrStream<'a>, ast::Program, ContextError> + 'a {
     trace("program", move |input: &mut StrStream<'a>| {
-        linebreak().parse_next(input)?;
+        // Leading blank/comment lines before the first statement.
+        linebreak_tracking(ctx).parse_next(input)?;
         let complete_commands = opt(complete_commands(ctx, tracker))
             .parse_next(input)?
             .unwrap_or_default();
-        linebreak().parse_next(input)?;
-        // Consume any trailing whitespace/comment that isn't followed by a newline
-        // (e.g., a comment at the end of a file without a trailing newline).
+        // Trailing blank/comment lines after the last statement.
+        linebreak_tracking(ctx).parse_next(input)?;
+        // A comment at the very end of a file without a trailing newline.
         let _: &str =
             winnow::token::take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
-        opt(comment()).parse_next(input)?;
+        opt(comment_tracking(ctx)).parse_next(input)?;
         winnow::combinator::eof.parse_next(input)?;
-        Ok(ast::Program { complete_commands })
+
+        // Convert accumulated byte ranges to SourceSpans.
+        let comments = ctx
+            .comments
+            .borrow()
+            .iter()
+            .map(|r| tracker.range_to_span(r.clone()))
+            .collect();
+
+        Ok(ast::Program {
+            complete_commands,
+            comments,
+        })
     })
 }
 
@@ -146,10 +165,12 @@ pub fn parse_program(
     source_info: &SourceInfo,
 ) -> Result<ast::Program, crate::error::ParseError> {
     let pending_heredoc_trailing = std::cell::RefCell::new(None);
+    let comments = std::cell::RefCell::new(Vec::new());
     let ctx = ParseContext {
         options,
         source_info,
         pending_heredoc_trailing: &pending_heredoc_trailing,
+        comments: &comments,
     };
     let tracker = PositionTracker::new(input);
     let mut stream = LocatingSlice::new(input);

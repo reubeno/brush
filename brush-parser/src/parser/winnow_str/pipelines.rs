@@ -73,10 +73,12 @@ fn add_pipe_extension_redirect(cmd: &mut ast::Command) {
 fn parse_trailing_command(input: &str, options: &ParserOptions) -> Option<ast::Command> {
     let source_info = SourceInfo::default();
     let pending = std::cell::RefCell::new(None);
+    let comments = std::cell::RefCell::new(Vec::new());
     let ctx = ParseContext {
         options,
         source_info: &source_info,
         pending_heredoc_trailing: &pending,
+        comments: &comments,
     };
     let tracker = PositionTracker::new(input);
     let mut stream = LocatingSlice::new(input);
