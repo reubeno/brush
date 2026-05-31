@@ -714,9 +714,6 @@ pub(crate) async fn invoke_shell_function(
 
     let positional_args = args.iter().map(|a| a.to_string());
 
-    // Pass through open files.
-    let params = context.params.clone();
-
     // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
     // before "exiting" the function.
     context.shell.enter_function(
@@ -726,11 +723,13 @@ pub(crate) async fn invoke_shell_function(
         &context.params,
     )?;
 
-    // Invoke the function.
-    let result = body.execute(context.shell, &params).await;
-
-    // Clean up parameters so any owned files are closed.
-    drop(params);
+    // Invoke the function. We pass the context's open files through directly rather than
+    // cloning them; cloning would duplicate every open file descriptor (e.g. via dup()) for
+    // the duration of the function body. With deeply nested function calls -- as in large
+    // scripts like nvm -- those duplicated descriptors accumulate and can exhaust the
+    // process-wide file descriptor limit. The function body shares the same descriptors as
+    // its caller, matching how a function executes in the current shell process.
+    let result = body.execute(context.shell, &context.params).await;
 
     // We've come back out, reflect it.
     context.shell.leave_function()?;
