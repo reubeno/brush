@@ -64,14 +64,22 @@ impl builtins::Command for WaitCommand {
                 }
             }
         } else {
-            // Wait for all jobs.
-            let jobs = context.shell.jobs_mut().wait_all().await?;
+            // Wait for all jobs. `wait` itself produces no output; completed jobs
+            // are announced by the job-control notification path (the interactive
+            // prompt cycle), matching bash.
+            context.shell.jobs_mut().wait_all().await?;
+        }
 
-            if context.shell.options().enable_job_control {
-                for job in jobs {
-                    writeln!(context.stdout(), "{job}")?;
-                }
-            }
+        // Only the top-level interactive shell reports and clears completed jobs,
+        // via its prompt cycle (`check_for_completed_jobs`, run pre-prompt). Every
+        // other context must reap the jobs we just waited on here so they don't
+        // linger (bash leaves no jobs after `wait`): non-interactive scripts, and
+        // also subshells/async children, which inherit the `interactive` flag but
+        // never run a prompt cycle. This mirrors the launch-notification gate in
+        // `CompoundList::execute`. `wait` stays silent in all cases.
+        let runs_prompt_cycle = context.shell.options().interactive && !context.shell.is_subshell();
+        if !runs_prompt_cycle {
+            context.shell.jobs_mut().reap_completed();
         }
 
         Ok(result)

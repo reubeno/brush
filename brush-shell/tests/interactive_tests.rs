@@ -95,6 +95,28 @@ fn run_in_bg_then_fg() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn wait_clears_completed_jobs_in_subshell() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+    session.expect_prompt()?;
+
+    // A subshell has no interactive prompt cycle of its own, so `wait` must clear
+    // the completed job itself; `jobs` should then report nothing -- matching
+    // bash. This is deterministic: `wait` is a synchronization barrier and the
+    // reap is synchronous, so the assertion is on end state, not on the timing of
+    // any asynchronous event.
+    let output = session.exec_output("( true & wait; jobs )")?;
+    assert_eq!(
+        output.trim(),
+        "",
+        "subshell `jobs` should be empty after `wait`, got: {output:?}"
+    );
+
+    session.exit()?;
+
+    Ok(())
+}
+
 #[test_with::executable(less)]
 #[test]
 fn run_pipeline_interactively() -> anyhow::Result<()> {

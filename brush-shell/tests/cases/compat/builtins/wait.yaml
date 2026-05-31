@@ -33,6 +33,42 @@ cases:
       wait
       echo "after wait all"
 
+  # NOTE: bash announces completed background jobs ("[1]+ Done ...") on *stderr*
+  # via its job-control notification cycle. Whether that notice appears for a
+  # given run is timing-dependent (it races SIGCHLD delivery against reaching
+  # `wait`), so it cannot be compared deterministically. These cases therefore
+  # ignore stderr and assert only the deterministic property that motivated the
+  # fix: `wait` must not write job status to *stdout*. The stderr notification
+  # behavior is covered deterministically by a unit test in brush-core
+  # (`jobs::tests`).
+  - name: "wait does not write job status to stdout (top-level background job)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        set -m
+        echo hello &
+        wait
+        echo after
+
+  - name: "wait does not write job status to stdout (background jobs in a subshell)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        set -m
+        ( for i in 1 2 3; do echo "item-$i" & done; wait ) | sort
+
+  - name: "wait does not write job status to stdout (backgrounded brace group)"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        set -m
+        { echo grouped; } &
+        wait
+        echo done
+
   - name: "wait -n not implemented"
     known_failure: true # TODO(builtins): wait -n not implemented
     stdin: |

@@ -163,12 +163,19 @@ impl JobManager {
     }
 
     /// Waits for all managed jobs to complete.
-    pub async fn wait_all(&mut self) -> Result<Vec<Job>, error::Error> {
+    ///
+    /// Completed jobs are intentionally *left* in the jobs list so that the
+    /// job-control notification path (the interactive prompt cycle, via
+    /// [`Self::poll`]) can report them — matching bash, where `wait` itself is
+    /// silent but a completed job is announced (`[1]+  Done ...`) at the next
+    /// prompt. Non-interactive callers, which have no prompt cycle, should clear
+    /// them with [`Self::reap_completed`].
+    pub async fn wait_all(&mut self) -> Result<(), error::Error> {
         for job in &mut self.jobs {
             job.wait().await?;
         }
 
-        Ok(self.sweep_completed_jobs())
+        Ok(())
     }
 
     /// Polls all managed jobs for completion.
@@ -192,7 +199,14 @@ impl JobManager {
         Ok(results)
     }
 
-    fn sweep_completed_jobs(&mut self) -> Vec<Job> {
+    /// Removes completed jobs from the jobs list *without* reporting them, and
+    /// returns the removed jobs.
+    ///
+    /// Only jobs whose tasks have already been drained (i.e. waited on or polled
+    /// to completion) are removed; a completed-but-not-yet-reaped job is left in
+    /// place so it can still be waited on. Used by non-interactive contexts,
+    /// which have no prompt cycle to report and clear completed jobs.
+    pub fn reap_completed(&mut self) -> Vec<Job> {
         let mut completed_jobs = vec![];
 
         let mut i = 0;
@@ -454,5 +468,75 @@ impl Job {
     pub fn process_group_id(&self) -> Option<sys::process::ProcessId> {
         // TODO(jobs): Don't assume that the first PID is the PGID.
         self.pgid.or_else(|| self.representative_pid())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic_in_result_fn)]
+
+    use super::*;
+
+    /// Builds a job with a single internal task that completes immediately and
+    /// successfully. Awaiting/polling such a job is deterministic — there is no
+    /// reliance on the timing of asynchronous events.
+    fn immediate_job(command_line: &str) -> Job {
+        let task = JobTask::Internal(tokio::spawn(async {
+            Ok::<_, error::Error>(ExecutionResult::success())
+        }));
+        Job::new([task], command_line.to_string(), JobState::Running)
+    }
+
+    /// Regression test: `wait_all` must leave completed jobs in the jobs list so
+    /// that the job-control notifier (the interactive prompt cycle, via `poll`)
+    /// can report them. A prior change had `wait_all` sweep the jobs itself, so a
+    /// completed background job that had been waited on was never reported (no
+    /// `[1]+  Done ...` notice ever appeared).
+    #[tokio::test]
+    async fn wait_all_leaves_completed_jobs_for_the_notifier() -> Result<(), error::Error> {
+        let mut manager = JobManager::new();
+        manager.add_as_current(immediate_job("true"));
+
+        // `wait` is a synchronization barrier; this is fully deterministic.
+        manager.wait_all().await?;
+
+        // The completed job must still be present for the notifier to report it.
+        assert_eq!(
+            manager.jobs.len(),
+            1,
+            "wait_all must not consume completed jobs"
+        );
+
+        // The notifier (poll) reports the job exactly once, then removes it.
+        let reported = manager.poll()?;
+        assert_eq!(reported.len(), 1, "poll must report the completed job");
+        assert!(
+            manager.jobs.is_empty(),
+            "poll must remove the job after reporting it"
+        );
+
+        Ok(())
+    }
+
+    /// `reap_completed` clears completed jobs without reporting them (used by
+    /// non-interactive shells, which have no prompt cycle).
+    #[tokio::test]
+    async fn reap_completed_clears_finished_jobs_silently() -> Result<(), error::Error> {
+        let mut manager = JobManager::new();
+        manager.add_as_current(immediate_job("true"));
+        manager.wait_all().await?;
+
+        let reaped = manager.reap_completed();
+        assert_eq!(
+            reaped.len(),
+            1,
+            "reap_completed must remove the finished job"
+        );
+        assert!(manager.jobs.is_empty());
+
+        // A second poll has nothing left to report.
+        assert!(manager.poll()?.is_empty());
+
+        Ok(())
     }
 }
