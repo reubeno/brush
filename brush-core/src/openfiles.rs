@@ -31,14 +31,14 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 
 /// Represents a file open in a shell context.
 ///
-/// File-backed and pipe-backed variants store their handles behind an [`Arc`] so that cloning
-/// an `OpenFile` (which happens whenever the shell forks off a subshell, command substitution,
-/// background job, or function call context) merely bumps a reference count instead of issuing
-/// a `dup(2)` syscall. Because brush runs subshells as in-process tasks (rather than via
-/// `fork(2)` like a traditional shell), every duplicated descriptor consumes a slot in the
-/// single process-wide descriptor table; sharing avoids exhausting that table during deeply
-/// nested or highly concurrent execution. A real duplicate is only materialized when a
-/// descriptor must be handed to an external child process (see [`OpenFile::try_clone_to_owned`]).
+/// File- and pipe-backed variants hold their handle behind an [`Arc`], so cloning an `OpenFile`
+/// shares the underlying descriptor by reference count. The shell opens a fresh context for each
+/// subshell, command substitution, background job, and function call and runs them as in-process
+/// tasks against one process-wide descriptor table (rather than via `fork(2)` like a traditional
+/// shell); sharing the descriptor keeps deeply nested or highly concurrent execution from
+/// exhausting that table. A descriptor is duplicated for real only when an independently owned
+/// copy is needed to hand to an external child process — see [`OpenFile::try_clone_to_owned`] and
+/// the `Stdio` conversion below.
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin(std::io::Stdin),
@@ -133,17 +133,6 @@ impl std::fmt::Display for OpenFile {
 }
 
 impl OpenFile {
-    /// Tries to duplicate the open file.
-    ///
-    /// For file- and pipe-backed open files this shares the underlying handle by reference
-    /// count rather than issuing a `dup(2)`; the resulting `OpenFile` refers to the very same
-    /// kernel descriptor (matching the shared open-file-description semantics that `dup` would
-    /// have provided). Use [`OpenFile::try_clone_to_owned`] when an independent descriptor is
-    /// genuinely required (e.g. to hand to a child process).
-    pub fn try_clone(&self) -> Result<Self, std::io::Error> {
-        Ok(self.clone())
-    }
-
     /// Converts the open file into an `OwnedFd`. For shared file/pipe handles this materializes
     /// a real duplicate via `dup(2)` so the caller receives an independently owned descriptor.
     #[cfg(unix)]
@@ -240,51 +229,22 @@ impl From<std::io::PipeWriter> for OpenFile {
     }
 }
 
-impl From<OpenFile> for Stdio {
-    fn from(open_file: OpenFile) -> Self {
-        // File/pipe handles are shared (behind an `Arc`), so we cannot move the underlying
-        // descriptor out; instead we duplicate it to obtain an owned descriptor for the child.
-        // This is the one place a real `dup` is expected: when wiring up an external process's
-        // standard streams. If the duplication fails (e.g. descriptor exhaustion), fall back to
-        // a null device rather than panicking.
-        fn dup_to_stdio<T: TryCloneToStdio>(handle: &T) -> Stdio {
-            handle.try_clone_to_stdio().unwrap_or_else(|_| Stdio::null())
-        }
+impl TryFrom<OpenFile> for Stdio {
+    type Error = error::Error;
 
+    fn try_from(open_file: OpenFile) -> Result<Self, Self::Error> {
+        // File and pipe handles are shared behind an `Arc`, so the descriptor cannot be moved
+        // out; duplicate it to give the child an independently owned descriptor. Duplication can
+        // fail (e.g. under descriptor exhaustion), so the conversion is fallible and the error is
+        // surfaced to the caller rather than silently degrading the child's streams.
         match open_file {
-            OpenFile::Stdin(_) => Self::inherit(),
-            OpenFile::Stdout(_) => Self::inherit(),
-            OpenFile::Stderr(_) => Self::inherit(),
-            OpenFile::File(f) => dup_to_stdio(f.as_ref()),
-            OpenFile::PipeReader(r) => dup_to_stdio(r.as_ref()),
-            OpenFile::PipeWriter(w) => dup_to_stdio(w.as_ref()),
-            // NOTE: Custom streams cannot be converted to `Stdio`; we do our best here
-            // and return a null device instead.
-            OpenFile::Stream(_) => Self::null(),
+            OpenFile::Stdin(_) | OpenFile::Stdout(_) | OpenFile::Stderr(_) => Ok(Self::inherit()),
+            OpenFile::File(f) => Ok(f.try_clone()?.into()),
+            OpenFile::PipeReader(r) => Ok(r.try_clone()?.into()),
+            OpenFile::PipeWriter(w) => Ok(w.try_clone()?.into()),
+            // Custom streams have no descriptor to hand to a child process.
+            OpenFile::Stream(_) => Ok(Self::null()),
         }
-    }
-}
-
-/// Helper trait to duplicate a handle into an owned `Stdio` in a cross-platform way.
-trait TryCloneToStdio {
-    fn try_clone_to_stdio(&self) -> std::io::Result<Stdio>;
-}
-
-impl TryCloneToStdio for std::fs::File {
-    fn try_clone_to_stdio(&self) -> std::io::Result<Stdio> {
-        Ok(self.try_clone()?.into())
-    }
-}
-
-impl TryCloneToStdio for std::io::PipeReader {
-    fn try_clone_to_stdio(&self) -> std::io::Result<Stdio> {
-        Ok(self.try_clone()?.into())
-    }
-}
-
-impl TryCloneToStdio for std::io::PipeWriter {
-    fn try_clone_to_stdio(&self) -> std::io::Result<Stdio> {
-        Ok(self.try_clone()?.into())
     }
 }
 
@@ -300,8 +260,8 @@ impl std::io::Read for OpenFile {
             )),
             // The handle is shared behind an `Arc`; read through a shared reference (`&File`
             // and `&PipeReader` both implement `Read`).
-            Self::File(f) => (&**f).read(buf),
-            Self::PipeReader(reader) => (&**reader).read(buf),
+            Self::File(f) => f.as_ref().read(buf),
+            Self::PipeReader(reader) => reader.as_ref().read(buf),
             Self::PipeWriter(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("pipe writer"),
             )),
@@ -320,11 +280,11 @@ impl std::io::Write for OpenFile {
             Self::Stderr(f) => f.write(buf),
             // The handle is shared behind an `Arc`; write through a shared reference (`&File`
             // and `&PipeWriter` both implement `Write`).
-            Self::File(f) => (&**f).write(buf),
+            Self::File(f) => f.as_ref().write(buf),
             Self::PipeReader(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotWritable("pipe reader"),
             )),
-            Self::PipeWriter(writer) => (&**writer).write(buf),
+            Self::PipeWriter(writer) => writer.as_ref().write(buf),
             Self::Stream(s) => s.write(buf),
         }
     }
@@ -334,9 +294,9 @@ impl std::io::Write for OpenFile {
             Self::Stdin(_) => Ok(()),
             Self::Stdout(f) => f.flush(),
             Self::Stderr(f) => f.flush(),
-            Self::File(f) => (&**f).flush(),
+            Self::File(f) => f.as_ref().flush(),
             Self::PipeReader(_) => Ok(()),
-            Self::PipeWriter(writer) => (&**writer).flush(),
+            Self::PipeWriter(writer) => writer.as_ref().flush(),
             Self::Stream(s) => s.flush(),
         }
     }

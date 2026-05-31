@@ -221,7 +221,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     match context.try_fd(OpenFiles::STDIN_FD) {
         Some(OpenFile::Stdin(_)) | None => (),
         Some(stdin_file) => {
-            let as_stdio: Stdio = stdin_file.into();
+            let as_stdio: Stdio = stdin_file.try_into()?;
             cmd.stdin(as_stdio);
         }
     }
@@ -230,7 +230,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     match context.try_fd(OpenFiles::STDOUT_FD) {
         Some(OpenFile::Stdout(_)) | None => (),
         Some(stdout_file) => {
-            let as_stdio: Stdio = stdout_file.into();
+            let as_stdio: Stdio = stdout_file.try_into()?;
             cmd.stdout(as_stdio);
         }
     }
@@ -239,7 +239,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     match context.try_fd(OpenFiles::STDERR_FD) {
         Some(OpenFile::Stderr(_)) | None => {}
         Some(stderr_file) => {
-            let as_stdio: Stdio = stderr_file.into();
+            let as_stdio: Stdio = stderr_file.try_into()?;
             cmd.stderr(as_stdio);
         }
     }
@@ -723,12 +723,9 @@ pub(crate) async fn invoke_shell_function(
         &context.params,
     )?;
 
-    // Invoke the function. We pass the context's open files through directly rather than
-    // cloning them; cloning would duplicate every open file descriptor (e.g. via dup()) for
-    // the duration of the function body. With deeply nested function calls -- as in large
-    // scripts like nvm -- those duplicated descriptors accumulate and can exhaust the
-    // process-wide file descriptor limit. The function body shares the same descriptors as
-    // its caller, matching how a function executes in the current shell process.
+    // A function executes within the current shell process and shares its caller's open files,
+    // so the parameters are passed through by shared reference rather than cloned. The shared
+    // borrow also guarantees the body cannot disturb the caller's open-file table.
     let result = body.execute(context.shell, &context.params).await;
 
     // We've come back out, reflect it.
