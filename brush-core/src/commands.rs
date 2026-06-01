@@ -724,8 +724,9 @@ pub(crate) async fn invoke_shell_function(
     )?;
 
     // A function executes within the current shell process and shares its caller's open files,
-    // so the parameters are passed through by shared reference rather than cloned. The shared
-    // borrow also guarantees the body cannot disturb the caller's open-file table.
+    // so the parameters are passed through by shared reference rather than cloned. This prevents
+    // direct mutation of the caller's `ExecutionParameters` open-file table, though the function
+    // may still change the shell's persistent open files via builtins (e.g. `exec`).
     let result = body.execute(context.shell, &context.params).await;
 
     // We've come back out, reflect it.

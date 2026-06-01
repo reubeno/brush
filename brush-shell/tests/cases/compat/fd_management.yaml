@@ -25,7 +25,7 @@ cases:
     args:
       - "-c"
       - |
-        ulimit -n 256
+        ulimit -n 256 || exit 1
         emit() {
           local v
           v=$(echo "$1")
@@ -41,7 +41,7 @@ cases:
     args:
       - "-c"
       - |
-        ulimit -n 256
+        ulimit -n 256 || exit 1
         work() {
           local v
           v=$(echo "alias-$1" 2>/dev/null)
@@ -57,7 +57,7 @@ cases:
     args:
       - "-c"
       - |
-        ulimit -n 256
+        ulimit -n 256 || exit 1
         rec() {
           local n=$1
           if [ "$n" -le 0 ]; then
