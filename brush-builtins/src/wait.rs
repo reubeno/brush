@@ -47,7 +47,9 @@ impl builtins::Command for WaitCommand {
                 if id.starts_with('%') {
                     // It's a job spec.
                     if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
-                        job.wait().await?;
+                        // `wait` exits with the status of the job it waited on
+                        // (the last one wins, matching bash).
+                        result = job.wait().await?;
                     } else {
                         writeln!(
                             context.stderr(),
@@ -56,7 +58,8 @@ impl builtins::Command for WaitCommand {
                             id
                         )?;
 
-                        result = ExecutionExitCode::GeneralError.into();
+                        // bash returns 127 for an unknown job spec.
+                        result = ExecutionExitCode::from(127).into();
                     }
                 } else {
                     // It's a process ID.
@@ -65,21 +68,22 @@ impl builtins::Command for WaitCommand {
             }
         } else {
             // Wait for all jobs. `wait` itself produces no output; completed jobs
-            // are announced by the job-control notification path (the interactive
-            // prompt cycle), matching bash.
+            // are reported/cleared below.
             context.shell.jobs_mut().wait_all().await?;
         }
 
-        // Only the top-level interactive shell reports and clears completed jobs,
-        // via its prompt cycle (`check_for_completed_jobs`, run pre-prompt). Every
-        // other context must reap the jobs we just waited on here so they don't
-        // linger (bash leaves no jobs after `wait`): non-interactive scripts, and
-        // also subshells/async children, which inherit the `interactive` flag but
-        // never run a prompt cycle. This mirrors the launch-notification gate in
-        // `CompoundList::execute`. `wait` stays silent in all cases.
-        let runs_prompt_cycle = context.shell.options().interactive && !context.shell.is_subshell();
-        if !runs_prompt_cycle {
-            context.shell.jobs_mut().reap_completed();
+        // Clear the jobs we waited on. bash leaves no jobs behind after `wait`.
+        if context.shell.reports_completed_jobs_at_prompt() {
+            // Top-level interactive: report and clear completed jobs now -- bash
+            // clears them when `wait` returns. Doing it here, rather than leaving
+            // it to the next prompt cycle, avoids a stale-job window and a
+            // duplicate `Done` notice within a single command line.
+            context.shell.check_for_completed_jobs()?;
+        } else {
+            // No prompt cycle here (non-interactive scripts, `-c`, script files,
+            // subshells): clear completed jobs silently so they don't linger.
+            // `poll` also drains jobs that finished without being waited on.
+            context.shell.jobs_mut().poll()?;
         }
 
         Ok(result)

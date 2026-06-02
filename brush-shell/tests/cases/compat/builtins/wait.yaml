@@ -69,6 +69,54 @@ cases:
         wait
         echo done
 
+  - name: "wait %job clears the completed job (job control)"
+    # Exercises the job-spec (ids) path through the reap; `jobs` must be empty
+    # afterward, matching bash. stderr ignored for the same reason as above.
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        set -m
+        sleep 0.1 &
+        wait %1
+        jobs
+        echo done
+
+  - name: "wait %job returns the waited job's exit status"
+    # `wait` exits with the status of the job it waited on.
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        set -m
+        ( exit 7 ) &
+        wait %1
+        echo "status: $?"
+
+  - name: "wait for an unknown job spec returns 127"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - |
+        set -m
+        wait %99
+        echo "status: $?"
+
+  - name: "wait clears completed jobs when run from a script file (job control)"
+    # Covers the script-file path (a `Script` frame at the call-stack root) -- the
+    # same path `-i <script>` takes. Completed jobs must be cleared (not left in
+    # the list), matching bash. stderr ignored (job notices are timing-dependent).
+    ignore_stderr: true
+    test_files:
+      - path: "wait_jobs.sh"
+        contents: |
+          set -m
+          sleep 0.1 &
+          wait
+          jobs
+          echo done
+    args: ["./wait_jobs.sh"]
+
   - name: "wait -n not implemented"
     known_failure: true # TODO(builtins): wait -n not implemented
     stdin: |

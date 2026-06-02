@@ -168,8 +168,9 @@ impl JobManager {
     /// job-control notification path (the interactive prompt cycle, via
     /// [`Self::poll`]) can report them — matching bash, where `wait` itself is
     /// silent but a completed job is announced (`[1]+  Done ...`) at the next
-    /// prompt. Non-interactive callers, which have no prompt cycle, should clear
-    /// them with [`Self::reap_completed`].
+    /// prompt. Callers with no prompt cycle (non-interactive scripts, `-c`,
+    /// subshells) instead clear them by calling [`Self::poll`] and discarding the
+    /// reported results.
     pub async fn wait_all(&mut self) -> Result<(), error::Error> {
         for job in &mut self.jobs {
             job.wait().await?;
@@ -197,28 +198,6 @@ impl JobManager {
         }
 
         Ok(results)
-    }
-
-    /// Removes completed jobs from the jobs list *without* reporting them, and
-    /// returns the removed jobs.
-    ///
-    /// Only jobs whose tasks have already been drained (i.e. waited on or polled
-    /// to completion) are removed; a completed-but-not-yet-reaped job is left in
-    /// place so it can still be waited on. Used by non-interactive contexts,
-    /// which have no prompt cycle to report and clear completed jobs.
-    pub fn reap_completed(&mut self) -> Vec<Job> {
-        let mut completed_jobs = vec![];
-
-        let mut i = 0;
-        while i != self.jobs.len() {
-            if self.jobs[i].tasks.is_empty() {
-                completed_jobs.push(self.jobs.remove(i));
-            } else {
-                i += 1;
-            }
-        }
-
-        completed_jobs
     }
 }
 
@@ -514,28 +493,6 @@ mod tests {
             manager.jobs.is_empty(),
             "poll must remove the job after reporting it"
         );
-
-        Ok(())
-    }
-
-    /// `reap_completed` clears completed jobs without reporting them (used by
-    /// non-interactive shells, which have no prompt cycle).
-    #[tokio::test]
-    async fn reap_completed_clears_finished_jobs_silently() -> Result<(), error::Error> {
-        let mut manager = JobManager::new();
-        manager.add_as_current(immediate_job("true"));
-        manager.wait_all().await?;
-
-        let reaped = manager.reap_completed();
-        assert_eq!(
-            reaped.len(),
-            1,
-            "reap_completed must remove the finished job"
-        );
-        assert!(manager.jobs.is_empty());
-
-        // A second poll has nothing left to report.
-        assert!(manager.poll()?.is_empty());
 
         Ok(())
     }

@@ -96,6 +96,28 @@ fn run_in_bg_then_fg() -> anyhow::Result<()> {
 }
 
 #[test]
+fn wait_reports_completed_job_at_top_level_prompt() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+    session.expect_prompt()?;
+
+    // The core regression: after `wait`, the top-level shell's prompt cycle must
+    // announce the completed background job (`[1]+ Done ...`). `sleep` and `wait`
+    // run back-to-back within a single command line, and `sleep 1` far outlasts
+    // the in-process gap to reaching `wait`, so the job is deterministically still
+    // running when `wait` runs; the notice is then emitted at the following prompt.
+    // The assertion is on the captured transcript, not on any async-event race.
+    let output = session.exec_output("sleep 1 & wait")?;
+    assert!(
+        output.contains("Done"),
+        "expected a completed-job notice after `wait`, got: {output:?}"
+    );
+
+    session.exit()?;
+
+    Ok(())
+}
+
+#[test]
 fn wait_clears_completed_jobs_in_subshell() -> anyhow::Result<()> {
     let mut session = start_shell_session()?;
     session.expect_prompt()?;

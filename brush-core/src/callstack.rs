@@ -638,6 +638,15 @@ impl CallStack {
         self.iter_function_calls().next().is_some()
     }
 
+    /// Returns whether or not the shell was started as an interactive session
+    /// (i.e. an interactive prompt loop is driving command entry). The frame is
+    /// pushed once when the session begins and stays at the root of the stack.
+    pub fn in_interactive_session(&self) -> bool {
+        self.frames
+            .iter()
+            .any(|frame| frame.frame_type.is_interactive_session())
+    }
+
     /// Returns the current depth of the call stack.
     pub fn depth(&self) -> usize {
         self.frames.len()
