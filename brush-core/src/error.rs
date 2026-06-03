@@ -318,6 +318,12 @@ pub enum ErrorKind {
     /// A glob pattern failed to match any files (failglob).
     #[error("no match: {0}")]
     NoMatch(String),
+
+    /// Execution of an external command was denied by the configured
+    /// command interceptor (capability confinement). The first field is the
+    /// program; the second is the reason supplied by the interceptor.
+    #[error("{0}: execution denied: {1}")]
+    ExecDenied(String, String),
 }
 
 /// Trait implementable by built-in commands to represent errors.
@@ -363,6 +369,7 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
             ErrorKind::TestCommandParseError(..) => Self::InvalidUsage,
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
+            ErrorKind::ExecDenied(..) => Self::CannotExecute,
             ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
             ErrorKind::IoError(io_err) => io_err.into(),
             ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
