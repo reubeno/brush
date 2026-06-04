@@ -614,6 +614,8 @@ pub(crate) fn execute_external_command(
             cmd.process_group(0);
             if child_stdin_is_terminal {
                 cmd.take_foreground();
+            } else {
+                cmd.reset_job_control_signals();
             }
         }
     } else {

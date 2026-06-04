@@ -35,6 +35,26 @@ pub fn kill_process(
     Ok(())
 }
 
+pub(crate) fn kill_process_group(
+    pgid: sys::process::ProcessId,
+    signal: traps::TrapSignal,
+) -> Result<(), error::Error> {
+    let translated_signal = match signal {
+        traps::TrapSignal::Signal(signal) => signal,
+        traps::TrapSignal::Debug
+        | traps::TrapSignal::Err
+        | traps::TrapSignal::Exit
+        | traps::TrapSignal::Return => {
+            return Err(error::ErrorKind::InvalidSignal(signal.to_string()).into());
+        }
+    };
+
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(-pgid), translated_signal)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+
+    Ok(())
+}
+
 pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
     nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))?;
     Ok(())
@@ -52,7 +72,7 @@ pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, erro
     Ok(signal)
 }
 
-pub(crate) use tokio::signal::ctrl_c as await_ctrl_c;
+pub use tokio::signal::ctrl_c as await_ctrl_c;
 
 pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     let ignore = nix::sys::signal::SigAction::new(

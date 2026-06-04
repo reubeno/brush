@@ -46,6 +46,13 @@ pub fn kill_process(
     Err(error::ErrorKind::NotSupportedOnThisPlatform("killing process").into())
 }
 
+pub(crate) fn kill_process_group(
+    _pgid: sys::process::ProcessId,
+    _signal: traps::TrapSignal,
+) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("killing process group").into())
+}
+
 pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
     Ok(())
 }
@@ -70,7 +77,8 @@ pub(crate) fn chld_signal_listener() -> Result<FakeSignal, error::Error> {
     Ok(FakeSignal::new())
 }
 
-pub(crate) async fn await_ctrl_c() -> std::io::Result<()> {
+/// Waits indefinitely for Ctrl-C on platforms without signal support.
+pub async fn await_ctrl_c() -> std::io::Result<()> {
     FakeSignal::new().recv().await;
     Ok(())
 }

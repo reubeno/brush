@@ -4,6 +4,12 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{
+    Arc,
+    atomic::{AtomicI32, AtomicU8, AtomicU64, Ordering},
+};
+
+use tokio::sync::Notify;
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
@@ -38,9 +44,142 @@ pub struct ExecutionParameters {
     /// Whether `errexit` (exit on error) behavior should be
     /// suppressed in this execution context. Defaults to `false`.
     pub suppress_errexit: bool,
+    /// Pending signal requested by the embedding host.
+    pending_signal: Arc<AtomicI32>,
+    /// Behavior flags for the pending signal.
+    pending_signal_flags: Arc<AtomicU8>,
+    /// Monotonic generation for pending signal requests.
+    pending_signal_generation: Arc<AtomicU64>,
+    /// Wakes execution sites that are blocked waiting for foreground work.
+    pending_signal_notify: Arc<Notify>,
 }
 
+const SIGINT_NUMBER: i32 = 2;
+const PENDING_SIGNAL_FORWARD_TO_CHILD: u8 = 0b0000_0001;
+const PENDING_SIGNAL_BYPASS_TRAPS: u8 = 0b0000_0010;
+
 impl ExecutionParameters {
+    /// Requests cooperative delivery of SIGINT.
+    pub fn request_sigint(&self) {
+        self.request_signal(SIGINT_NUMBER, PENDING_SIGNAL_FORWARD_TO_CHILD);
+    }
+
+    /// Requests interactive cooperative delivery of SIGINT.
+    ///
+    /// This is intended for terminal Ctrl-C handling where the PTY driver has
+    /// already delivered SIGINT to the foreground process group. It still lets
+    /// shell-native loops and traps observe the interrupt without forwarding a
+    /// duplicate signal to external children.
+    pub fn request_interactive_sigint(&self) {
+        self.request_signal(SIGINT_NUMBER, 0);
+    }
+
+    /// Requests cooperative delivery of a host-originated signal.
+    ///
+    /// Foreground child waits forward this signal to their process group, while
+    /// shell-native execution consumes it at checkpoints and honors traps.
+    pub fn request_host_signal(&self, signal_number: i32) {
+        self.request_signal(signal_number, PENDING_SIGNAL_FORWARD_TO_CHILD);
+    }
+
+    /// Requests forced cooperative delivery of a host-originated signal.
+    ///
+    /// Foreground child waits forward this signal to their process group. Shell
+    /// checkpoints bypass traps so embedders can guarantee timeout/kill cleanup
+    /// for shell-native code.
+    pub fn request_forced_signal(&self, signal_number: i32) {
+        self.request_signal(
+            signal_number,
+            PENDING_SIGNAL_FORWARD_TO_CHILD | PENDING_SIGNAL_BYPASS_TRAPS,
+        );
+    }
+
+    fn request_signal(&self, signal_number: i32, flags: u8) {
+        self.pending_signal_flags.store(flags, Ordering::Release);
+        self.pending_signal.store(signal_number, Ordering::Release);
+        self.pending_signal_generation
+            .fetch_add(1, Ordering::AcqRel);
+        self.pending_signal_notify.notify_waiters();
+    }
+
+    /// Clears any pending cooperative signal.
+    pub fn clear_pending_signal(&self) {
+        self.pending_signal.store(0, Ordering::Release);
+        self.pending_signal_flags.store(0, Ordering::Release);
+    }
+
+    pub(crate) fn pending_signal_generation(&self) -> u64 {
+        self.pending_signal_generation.load(Ordering::Acquire)
+    }
+
+    pub(crate) async fn wait_for_pending_signal_after(
+        &self,
+        observed_generation: u64,
+    ) -> (u64, i32, bool) {
+        loop {
+            let notified = self.pending_signal_notify.notified();
+            let generation = self.pending_signal_generation.load(Ordering::Acquire);
+            let signal_number = self.pending_signal.load(Ordering::Acquire);
+            let signal_flags = self.pending_signal_flags.load(Ordering::Acquire);
+            if generation != observed_generation && signal_number != 0 {
+                return (
+                    generation,
+                    signal_number,
+                    signal_flags & PENDING_SIGNAL_FORWARD_TO_CHILD != 0,
+                );
+            }
+            notified.await;
+        }
+    }
+
+    async fn consume_pending_signal<SE: extensions::ShellExtensions>(
+        &self,
+        shell: &mut Shell<SE>,
+    ) -> Result<Option<ExecutionResult>, error::Error> {
+        let signal_number = self.pending_signal.swap(0, Ordering::AcqRel);
+        if signal_number == 0 {
+            return Ok(None);
+        }
+        let signal_flags = self.pending_signal_flags.swap(0, Ordering::AcqRel);
+
+        let Ok(signal) = sys::signal::Signal::try_from(signal_number) else {
+            let result = ExecutionResult::signaled(signal_number);
+            shell.set_last_exit_status(result.exit_code.into());
+            return Ok(Some(result));
+        };
+
+        let trap_signal = crate::traps::TrapSignal::Signal(signal);
+        if signal_flags & PENDING_SIGNAL_BYPASS_TRAPS == 0 && shell.traps().handles(trap_signal) {
+            let result = shell.invoke_trap_handler(trap_signal, self).await?;
+            shell.set_last_exit_status(result.exit_code.into());
+            return Ok(Some(result));
+        }
+
+        let result = ExecutionResult::signaled(signal_number);
+        shell.set_last_exit_status(result.exit_code.into());
+        Ok(Some(result))
+    }
+
+    async fn consume_pending_loop_signal<SE: extensions::ShellExtensions>(
+        &self,
+        shell: &mut Shell<SE>,
+        result: &mut ExecutionResult,
+    ) -> Result<bool, error::Error> {
+        let Some(signal_result) = self.consume_pending_signal(shell).await? else {
+            return Ok(false);
+        };
+
+        *result = signal_result;
+        if result.is_return_or_exit() {
+            return Ok(true);
+        }
+
+        let is_break = result.is_break();
+        result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
+
+        Ok(is_break || result.is_continue() || !result.is_normal_flow())
+    }
+
     /// Returns the standard input file; usable with `write!` et al.
     ///
     /// # Arguments
@@ -192,9 +331,71 @@ pub trait Execute {
     ) -> Result<ExecutionResult, error::Error>;
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SignalCheckpointPolicy {
+    BeforeAndAfter,
+    Manual,
+}
+
+#[async_trait::async_trait]
+trait ExecuteInner {
+    fn signal_checkpoint_policy(&self) -> SignalCheckpointPolicy {
+        SignalCheckpointPolicy::BeforeAndAfter
+    }
+
+    async fn execute_inner(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error>;
+}
+
+#[async_trait::async_trait]
+impl<T> Execute for T
+where
+    T: ExecuteInner + Sync,
+{
+    async fn execute(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        match self.signal_checkpoint_policy() {
+            SignalCheckpointPolicy::BeforeAndAfter => {
+                if let Some(result) = params.consume_pending_signal(shell).await?
+                    && !result.is_normal_flow()
+                {
+                    return Ok(result);
+                }
+
+                let result = self.execute_inner(shell, params).await?;
+                Ok(params
+                    .consume_pending_signal(shell)
+                    .await?
+                    .unwrap_or(result))
+            }
+            SignalCheckpointPolicy::Manual => self.execute_inner(shell, params).await,
+        }
+    }
+}
+
 #[async_trait::async_trait]
 trait ExecuteInPipeline<SE: extensions::ShellExtensions> {
     async fn execute_in_pipeline(
+        &self,
+        mut context: PipelineExecutionContext<'_, SE>,
+        params: ExecutionParameters,
+    ) -> Result<ExecutionSpawnResult, error::Error> {
+        if let Some(signal_result) = params.consume_pending_signal(&mut context.shell).await?
+            && !signal_result.is_normal_flow()
+        {
+            return Ok(signal_result.into());
+        }
+
+        self.execute_in_pipeline_inner(context, params).await
+    }
+
+    async fn execute_in_pipeline_inner(
         &self,
         context: PipelineExecutionContext<'_, SE>,
         params: ExecutionParameters,
@@ -202,8 +403,8 @@ trait ExecuteInPipeline<SE: extensions::ShellExtensions> {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::Program {
-    async fn execute(
+impl ExecuteInner for ast::Program {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -237,8 +438,8 @@ impl Execute for ast::Program {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::CompoundList {
-    async fn execute(
+impl ExecuteInner for ast::CompoundList {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -249,6 +450,13 @@ impl Execute for ast::CompoundList {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
+                if let Some(signal_result) = params.consume_pending_signal(shell).await? {
+                    result = signal_result;
+                    if !result.is_normal_flow() {
+                        break;
+                    }
+                }
+
                 let job = spawn_async_ao_list_in_task(ao_list, shell, params);
                 let job_formatted = job.to_pid_style_string();
 
@@ -257,6 +465,10 @@ impl Execute for ast::CompoundList {
                 }
 
                 result = ExecutionResult::success();
+
+                if let Some(signal_result) = params.consume_pending_signal(shell).await? {
+                    result = signal_result;
+                }
             } else {
                 result = ao_list.execute(shell, params).await?;
 
@@ -305,8 +517,8 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::AndOrList {
-    async fn execute(
+impl ExecuteInner for ast::AndOrList {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -322,6 +534,13 @@ impl Execute for ast::AndOrList {
         let mut result = self.first.execute(shell, &first_params).await?;
 
         for (index, next_ao) in self.additional.iter().enumerate() {
+            if let Some(signal_result) = params.consume_pending_signal(shell).await? {
+                result = signal_result;
+                if !result.is_normal_flow() {
+                    break;
+                }
+            }
+
             // Check for non-normal control flow.
             if !result.is_normal_flow() {
                 break;
@@ -361,8 +580,8 @@ impl Execute for ast::AndOrList {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::Pipeline {
-    async fn execute(
+impl ExecuteInner for ast::Pipeline {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -549,7 +768,7 @@ async fn wait_for_pipeline_processes_and_update_status(
         let wait_result = if !stopped_children.is_empty() {
             child.poll().await?
         } else {
-            child.wait().await?
+            child.wait_with_params(params).await?
         };
 
         match wait_result {
@@ -608,7 +827,7 @@ async fn wait_for_pipeline_processes_and_update_status(
 
 #[async_trait::async_trait]
 impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
-    async fn execute_in_pipeline(
+    async fn execute_in_pipeline_inner(
         &self,
         mut pipeline_context: PipelineExecutionContext<'_, SE>,
         mut params: ExecutionParameters,
@@ -671,8 +890,8 @@ enum WhileOrUntil {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::CompoundCommand {
-    async fn execute(
+impl ExecuteInner for ast::CompoundCommand {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -717,8 +936,8 @@ impl Execute for ast::CompoundCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::CoprocessCommand {
-    async fn execute(
+impl ExecuteInner for ast::CoprocessCommand {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -802,8 +1021,12 @@ impl Execute for ast::CoprocessCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::ForClauseCommand {
-    async fn execute(
+impl ExecuteInner for ast::ForClauseCommand {
+    fn signal_checkpoint_policy(&self) -> SignalCheckpointPolicy {
+        SignalCheckpointPolicy::Manual
+    }
+
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -825,6 +1048,13 @@ impl Execute for ast::ForClauseCommand {
         }
 
         for value in expanded_values {
+            if params
+                .consume_pending_loop_signal(shell, &mut result)
+                .await?
+            {
+                break;
+            }
+
             if shell.options().print_commands_and_arguments {
                 if let Some(unexpanded_values) = &self.values {
                     shell
@@ -862,7 +1092,14 @@ impl Execute for ast::ForClauseCommand {
 
             result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
 
-            if is_break || result.is_continue() {
+            if is_break || result.is_continue() || !result.is_normal_flow() {
+                break;
+            }
+
+            if params
+                .consume_pending_loop_signal(shell, &mut result)
+                .await?
+            {
                 break;
             }
         }
@@ -873,8 +1110,8 @@ impl Execute for ast::ForClauseCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::CaseClauseCommand {
-    async fn execute(
+impl ExecuteInner for ast::CaseClauseCommand {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -940,8 +1177,8 @@ impl Execute for ast::CaseClauseCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::IfClauseCommand {
-    async fn execute(
+impl ExecuteInner for ast::IfClauseCommand {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -993,8 +1230,12 @@ impl Execute for ast::IfClauseCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
-    async fn execute(
+impl ExecuteInner for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
+    fn signal_checkpoint_policy(&self) -> SignalCheckpointPolicy {
+        SignalCheckpointPolicy::Manual
+    }
+
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -1013,6 +1254,13 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
         condition_params.suppress_errexit = true;
 
         loop {
+            if params
+                .consume_pending_loop_signal(shell, &mut result)
+                .await?
+            {
+                break;
+            }
+
             let condition_result = test_condition.execute(shell, &condition_params).await?;
 
             // Update status for condition
@@ -1040,7 +1288,14 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
 
             result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
 
-            if is_break || result.is_continue() {
+            if is_break || result.is_continue() || !result.is_normal_flow() {
+                break;
+            }
+
+            if params
+                .consume_pending_loop_signal(shell, &mut result)
+                .await?
+            {
                 break;
             }
         }
@@ -1051,8 +1306,8 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::ArithmeticCommand {
-    async fn execute(
+impl ExecuteInner for ast::ArithmeticCommand {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -1071,8 +1326,12 @@ impl Execute for ast::ArithmeticCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::ArithmeticForClauseCommand {
-    async fn execute(
+impl ExecuteInner for ast::ArithmeticForClauseCommand {
+    fn signal_checkpoint_policy(&self) -> SignalCheckpointPolicy {
+        SignalCheckpointPolicy::Manual
+    }
+
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
@@ -1083,6 +1342,13 @@ impl Execute for ast::ArithmeticForClauseCommand {
         }
 
         loop {
+            if params
+                .consume_pending_loop_signal(shell, &mut result)
+                .await?
+            {
+                break;
+            }
+
             if let Some(condition) = &self.condition {
                 // An empty condition (e.g., `for (( ; ; ))`) means "always true".
                 if !condition.value.is_empty() && condition.eval(shell, params, true).await? == 0 {
@@ -1099,12 +1365,19 @@ impl Execute for ast::ArithmeticForClauseCommand {
 
             result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
 
-            if is_break || result.is_continue() {
+            if is_break || result.is_continue() || !result.is_normal_flow() {
                 break;
             }
 
             if let Some(updater) = &self.updater {
                 updater.eval(shell, params, true).await?;
+            }
+
+            if params
+                .consume_pending_loop_signal(shell, &mut result)
+                .await?
+            {
+                break;
             }
         }
 
@@ -1114,8 +1387,8 @@ impl Execute for ast::ArithmeticForClauseCommand {
 }
 
 #[async_trait::async_trait]
-impl Execute for ast::FunctionDefinition {
-    async fn execute(
+impl ExecuteInner for ast::FunctionDefinition {
+    async fn execute_inner(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         _params: &ExecutionParameters,
@@ -1157,7 +1430,7 @@ impl Execute for ast::FunctionDefinition {
 #[async_trait::async_trait]
 #[allow(clippy::too_many_lines)]
 impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleCommand {
-    async fn execute_in_pipeline(
+    async fn execute_in_pipeline_inner(
         &self,
         mut context: PipelineExecutionContext<'_, SE>,
         mut params: ExecutionParameters,
@@ -1279,7 +1552,13 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         }
 
         // If we have a command, then execute it.
-        if let Some(CommandArg::String(cmd_name)) = args.first() {
+        if let Some(signal_result) = params.consume_pending_signal(&mut context.shell).await?
+            && !signal_result.is_normal_flow()
+        {
+            return Ok(signal_result.into());
+        }
+
+        if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
             let mut stderr = params.stderr(&context.shell);
 
             let (owned_shell, parent_shell) = match context.shell {
@@ -1982,4 +2261,207 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     drop(writer);
 
     Ok(reader.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::thread;
+    use std::time::Duration;
+
+    use crate::{ProcessGroupPolicy, Shell, SourceInfo};
+
+    struct BreakBuiltin;
+
+    impl crate::builtins::SimpleCommand for BreakBuiltin {
+        fn get_content(
+            _name: &str,
+            _content_type: crate::builtins::ContentType,
+            _options: &crate::builtins::ContentOptions,
+        ) -> Result<String, crate::error::Error> {
+            Ok(String::new())
+        }
+
+        fn execute<SE: crate::extensions::ShellExtensions, I: Iterator<Item = S>, S: AsRef<str>>(
+            _context: crate::commands::ExecutionContext<'_, SE>,
+            _args: I,
+        ) -> Result<crate::ExecutionResult, crate::error::Error> {
+            let mut result = crate::ExecutionResult::success();
+            result.next_control_flow = crate::ExecutionControlFlow::BreakLoop { levels: 0 };
+            Ok(result)
+        }
+    }
+
+    fn test_failure(message: impl Into<String>) -> crate::Error {
+        crate::error::ErrorKind::InternalError(message.into()).into()
+    }
+
+    fn ensure_test_condition(
+        condition: bool,
+        message: impl Into<String>,
+    ) -> Result<(), crate::Error> {
+        if condition {
+            Ok(())
+        } else {
+            Err(test_failure(message))
+        }
+    }
+
+    #[tokio::test]
+    async fn pending_sigint_interrupts_while_loop() -> Result<(), crate::Error> {
+        let mut shell = Shell::builder().build().await?;
+        let params = shell.default_exec_params();
+        params.request_sigint();
+
+        let result = shell
+            .run_string(
+                "while ((1)); do interrupted=0; done",
+                &SourceInfo::from("test"),
+                &params,
+            )
+            .await?;
+
+        ensure_test_condition(u8::from(result.exit_code) == 130, "expected exit code 130")?;
+        ensure_test_condition(
+            matches!(
+                result.next_control_flow,
+                crate::ExecutionControlFlow::Interrupted
+            ),
+            "expected interrupted control flow",
+        )?;
+
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pending_sigint_interrupts_while_loop_child() -> Result<(), crate::Error> {
+        let mut shell = Shell::builder().build().await?;
+        let mut params = shell.default_exec_params();
+        params.process_group_policy = ProcessGroupPolicy::NewProcessGroup;
+        let run_params = params.clone();
+
+        let handle = tokio::spawn(async move {
+            shell
+                .run_string(
+                    "while ((1)); do sleep 10; done",
+                    &SourceInfo::from("test"),
+                    &run_params,
+                )
+                .await
+        });
+
+        let signaler = tokio::task::spawn_blocking(move || {
+            thread::sleep(Duration::from_millis(100));
+            params.request_sigint();
+        });
+        let timeout = tokio::task::spawn_blocking(|| thread::sleep(Duration::from_secs(2)));
+
+        let result = tokio::select! {
+            result = handle => result??,
+            _ = timeout => {
+                return Err(test_failure("timed out waiting for loop child cancellation"));
+            },
+        };
+        signaler.await?;
+
+        ensure_test_condition(u8::from(result.exit_code) == 130, "expected exit code 130")?;
+        ensure_test_condition(
+            matches!(
+                result.next_control_flow,
+                crate::ExecutionControlFlow::Interrupted
+            ),
+            "expected interrupted control flow",
+        )?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pending_sigint_runs_int_trap_in_while_loop() -> Result<(), crate::Error> {
+        let mut shell = Shell::builder()
+            .builtin(
+                "break",
+                crate::builtins::simple_builtin::<BreakBuiltin, _>(),
+            )
+            .build()
+            .await?;
+        shell.traps_mut().register_handler(
+            crate::traps::TrapSignal::try_from("INT")?,
+            "trap_seen=1; break".to_owned(),
+            SourceInfo::from("test trap"),
+        );
+        let params = shell.default_exec_params();
+        let signal_params = params.clone();
+
+        let signaler = tokio::task::spawn_blocking(move || {
+            thread::sleep(Duration::from_millis(100));
+            signal_params.request_sigint();
+        });
+        let timeout = tokio::task::spawn_blocking(|| thread::sleep(Duration::from_secs(2)));
+        let source_info = SourceInfo::from("test");
+
+        let result = tokio::select! {
+            result = shell.run_string(
+                "trap_seen=0; while ((1)); do loop_spin=1; done",
+                &source_info,
+                &params,
+            ) => result?,
+            _ = timeout => {
+                return Err(test_failure("timed out waiting for loop trap cancellation"));
+            },
+        };
+        signaler.await?;
+
+        ensure_test_condition(u8::from(result.exit_code) == 0, "expected exit code 0")?;
+        ensure_test_condition(result.is_normal_flow(), "expected normal control flow")?;
+        ensure_test_condition(
+            shell.env_str("trap_seen").as_deref() == Some("1"),
+            "expected INT trap to set trap_seen=1",
+        )?;
+
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pending_sigint_interrupts_and_or_list_before_rhs() -> Result<(), crate::Error> {
+        let mut shell = Shell::builder().build().await?;
+        let mut params = shell.default_exec_params();
+        params.process_group_policy = ProcessGroupPolicy::NewProcessGroup;
+        let signal_params = params.clone();
+
+        let signaler = tokio::task::spawn_blocking(move || {
+            thread::sleep(Duration::from_millis(100));
+            signal_params.request_sigint();
+        });
+        let timeout = tokio::task::spawn_blocking(|| thread::sleep(Duration::from_secs(2)));
+        let source_info = SourceInfo::from("test");
+
+        let result = tokio::select! {
+            result = shell.run_string(
+                "interrupted=0; while ((1)); do sleep 10 || interrupted=1; done",
+                &source_info,
+                &params,
+            ) => result?,
+            _ = timeout => {
+                return Err(test_failure("timed out waiting for and-or cancellation"));
+            },
+        };
+        signaler.await?;
+
+        ensure_test_condition(u8::from(result.exit_code) == 130, "expected exit code 130")?;
+        ensure_test_condition(
+            matches!(
+                result.next_control_flow,
+                crate::ExecutionControlFlow::Interrupted
+            ),
+            "expected interrupted control flow",
+        )?;
+        ensure_test_condition(
+            shell.env_str("interrupted").as_deref() == Some("0"),
+            "expected rhs assignment to be skipped",
+        )?;
+
+        Ok(())
+    }
 }

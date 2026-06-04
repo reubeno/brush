@@ -119,6 +119,15 @@ impl builtins::Command for KillCommand {
                 }
             } else {
                 let pid = brush_core::int_utils::parse(pid_or_job_spec.as_str(), 10)?;
+                let is_self_signal =
+                    i32::try_from(std::process::id()).is_ok_and(|current_pid| current_pid == pid);
+
+                if is_self_signal && context.shell.traps().handles(trap_signal) {
+                    if let Ok(signal_number) = i32::try_from(trap_signal) {
+                        context.params.request_host_signal(signal_number);
+                        return Ok(ExecutionResult::success());
+                    }
+                }
 
                 // It's a pid.
                 sys::signal::kill_process(pid, trap_signal)?;
