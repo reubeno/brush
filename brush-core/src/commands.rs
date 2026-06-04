@@ -623,6 +623,7 @@ pub(crate) fn execute_external_command(
         if let Some(pgid) = process_group_id {
             cmd.process_group(pgid);
         }
+        cmd.reset_job_control_signals();
     }
 
     // When tracing is enabled, report.

@@ -2291,6 +2291,8 @@ mod tests {
         }
     }
 
+    const TEST_SIGINT: i32 = 2;
+
     fn test_failure(message: impl Into<String>) -> crate::Error {
         crate::error::ErrorKind::InternalError(message.into()).into()
     }
@@ -2307,10 +2309,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pending_sigint_interrupts_while_loop() -> Result<(), crate::Error> {
+    async fn host_signal_interrupts_while_loop() -> Result<(), crate::Error> {
         let mut shell = Shell::builder().build().await?;
         let params = shell.default_exec_params();
-        params.request_sigint();
+        params.request_host_signal(TEST_SIGINT);
 
         let result = shell
             .run_string(
@@ -2334,7 +2336,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn pending_sigint_interrupts_while_loop_child() -> Result<(), crate::Error> {
+    async fn host_signal_interrupts_while_loop_child() -> Result<(), crate::Error> {
         let mut shell = Shell::builder().build().await?;
         let mut params = shell.default_exec_params();
         params.process_group_policy = ProcessGroupPolicy::NewProcessGroup;
@@ -2352,7 +2354,7 @@ mod tests {
 
         let signaler = tokio::task::spawn_blocking(move || {
             thread::sleep(Duration::from_millis(100));
-            params.request_sigint();
+            params.request_host_signal(TEST_SIGINT);
         });
         let timeout = tokio::task::spawn_blocking(|| thread::sleep(Duration::from_secs(2)));
 
@@ -2376,8 +2378,43 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
     #[tokio::test]
-    async fn pending_sigint_runs_int_trap_in_while_loop() -> Result<(), crate::Error> {
+    async fn host_signal_interrupts_external_pipeline() -> Result<(), crate::Error> {
+        let mut shell = Shell::builder().build().await?;
+        let mut params = shell.default_exec_params();
+        params.process_group_policy = ProcessGroupPolicy::NewProcessGroup;
+        let signal_params = params.clone();
+
+        let signaler = tokio::task::spawn_blocking(move || {
+            thread::sleep(Duration::from_millis(100));
+            signal_params.request_host_signal(TEST_SIGINT);
+        });
+        let timeout = tokio::task::spawn_blocking(|| thread::sleep(Duration::from_secs(2)));
+        let source_info = SourceInfo::from("test");
+
+        let result = tokio::select! {
+            result = shell.run_string("sleep 10 | sleep 10", &source_info, &params) => result?,
+            _ = timeout => {
+                return Err(test_failure("timed out waiting for pipeline cancellation"));
+            },
+        };
+        signaler.await?;
+
+        ensure_test_condition(u8::from(result.exit_code) == 130, "expected exit code 130")?;
+        ensure_test_condition(
+            matches!(
+                result.next_control_flow,
+                crate::ExecutionControlFlow::Interrupted
+            ),
+            "expected interrupted control flow",
+        )?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn host_signal_runs_int_trap_in_while_loop() -> Result<(), crate::Error> {
         let mut shell = Shell::builder()
             .builtin(
                 "break",
@@ -2395,7 +2432,7 @@ mod tests {
 
         let signaler = tokio::task::spawn_blocking(move || {
             thread::sleep(Duration::from_millis(100));
-            signal_params.request_sigint();
+            signal_params.request_host_signal(TEST_SIGINT);
         });
         let timeout = tokio::task::spawn_blocking(|| thread::sleep(Duration::from_secs(2)));
         let source_info = SourceInfo::from("test");
@@ -2424,7 +2461,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn pending_sigint_interrupts_and_or_list_before_rhs() -> Result<(), crate::Error> {
+    async fn host_signal_interrupts_and_or_list_before_rhs() -> Result<(), crate::Error> {
         let mut shell = Shell::builder().build().await?;
         let mut params = shell.default_exec_params();
         params.process_group_policy = ProcessGroupPolicy::NewProcessGroup;
@@ -2432,7 +2469,7 @@ mod tests {
 
         let signaler = tokio::task::spawn_blocking(move || {
             thread::sleep(Duration::from_millis(100));
-            signal_params.request_sigint();
+            signal_params.request_host_signal(TEST_SIGINT);
         });
         let timeout = tokio::task::spawn_blocking(|| thread::sleep(Duration::from_secs(2)));
         let source_info = SourceInfo::from("test");
