@@ -7,6 +7,7 @@
 
 use anyhow::Context;
 use std::os::unix::process::CommandExt as _;
+use std::time::Duration;
 
 use expectrl::{
     Expect, Session,
@@ -131,6 +132,47 @@ fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
     session.expect_prompt()?;
     let login_shell_output = session.exec_output("shopt -q login_shell && echo login")?;
     assert!(login_shell_output.contains("login"));
+
+    session.exit()?;
+
+    Ok(())
+}
+
+#[test]
+fn interrupt_pure_shell_loop_interactively() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+
+    session.expect_prompt()?;
+    session.send_line("while ((1)); do :; done")?;
+    std::thread::sleep(Duration::from_millis(300));
+    session.interrupt()?;
+    session
+        .expect_prompt()
+        .context("Prompt did not return after interrupting pure shell loop")?;
+
+    let status_output = session.exec_output("echo status=$?")?;
+    assert!(status_output.contains("status=130"));
+
+    session.exit()?;
+
+    Ok(())
+}
+
+#[test]
+fn interrupt_shell_loop_runs_int_trap_interactively() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+
+    session.expect_prompt()?;
+    session.send_line("trap 'echo trapped; break' INT; while ((1)); do :; done")?;
+    std::thread::sleep(Duration::from_millis(300));
+    session.interrupt()?;
+    session.expect("trapped")?;
+    session
+        .expect_prompt()
+        .context("Prompt did not return after INT trap broke shell loop")?;
+
+    let status_output = session.exec_output("echo status=$?")?;
+    assert!(status_output.contains("status=0"));
 
     session.exit()?;
 
