@@ -1736,9 +1736,7 @@ pub(crate) async fn setup_redirect(
 
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
-                    if let Some(f) = params.try_fd(shell, *fd) {
-                        let target_file = f.try_clone()?;
-
+                    if let Some(target_file) = params.try_fd(shell, *fd) {
                         params.open_files.set_fd(fd_num, target_file);
                     } else {
                         return Err(error::ErrorKind::BadFileDescriptor(*fd).into());
@@ -1779,10 +1777,8 @@ pub(crate) async fn setup_redirect(
                             .parse::<ShellFd>()
                             .map_err(|_| error::ErrorKind::InvalidRedirection)?;
 
-                        // Duplicate the fd.
-                        let target_file = if let Some(f) = params.try_fd(shell, source_fd_num) {
-                            f.try_clone()?
-                        } else {
+                        // Reference the same open file as the source fd (shared handle; no OS-level duplication).
+                        let Some(target_file) = params.try_fd(shell, source_fd_num) else {
                             return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
                         };
 
@@ -1817,7 +1813,7 @@ pub(crate) async fn setup_redirect(
                                 subshell_cmd,
                             )?;
 
-                            let target_file = substitution_file.try_clone()?;
+                            let target_file = substitution_file.clone();
                             params.open_files.set_fd(substitution_fd, substitution_file);
 
                             let fd_num = specified_fd_num
@@ -1895,7 +1891,7 @@ fn setup_redirect_output_and_error_to(
             )
         })?;
 
-    let stderr_file = stdout_file.try_clone()?;
+    let stderr_file = stdout_file.clone();
 
     params.open_files.set_fd(OpenFiles::STDOUT_FD, stdout_file);
     params.open_files.set_fd(OpenFiles::STDERR_FD, stderr_file);

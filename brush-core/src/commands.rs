@@ -221,7 +221,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     match context.try_fd(OpenFiles::STDIN_FD) {
         Some(OpenFile::Stdin(_)) | None => (),
         Some(stdin_file) => {
-            let as_stdio: Stdio = stdin_file.into();
+            let as_stdio: Stdio = stdin_file.try_into()?;
             cmd.stdin(as_stdio);
         }
     }
@@ -230,7 +230,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     match context.try_fd(OpenFiles::STDOUT_FD) {
         Some(OpenFile::Stdout(_)) | None => (),
         Some(stdout_file) => {
-            let as_stdio: Stdio = stdout_file.into();
+            let as_stdio: Stdio = stdout_file.try_into()?;
             cmd.stdout(as_stdio);
         }
     }
@@ -239,7 +239,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     match context.try_fd(OpenFiles::STDERR_FD) {
         Some(OpenFile::Stderr(_)) | None => {}
         Some(stderr_file) => {
-            let as_stdio: Stdio = stderr_file.into();
+            let as_stdio: Stdio = stderr_file.try_into()?;
             cmd.stderr(as_stdio);
         }
     }
@@ -714,9 +714,6 @@ pub(crate) async fn invoke_shell_function(
 
     let positional_args = args.iter().map(|a| a.to_string());
 
-    // Pass through open files.
-    let params = context.params.clone();
-
     // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
     // before "exiting" the function.
     context.shell.enter_function(
@@ -726,11 +723,11 @@ pub(crate) async fn invoke_shell_function(
         &context.params,
     )?;
 
-    // Invoke the function.
-    let result = body.execute(context.shell, &params).await;
-
-    // Clean up parameters so any owned files are closed.
-    drop(params);
+    // A function executes within the current shell process and shares its caller's open files,
+    // so the parameters are passed through by shared reference rather than cloned. This prevents
+    // direct mutation of the caller's `ExecutionParameters` open-file table, though the function
+    // may still change the shell's persistent open files via builtins (e.g. `exec`).
+    let result = body.execute(context.shell, &context.params).await;
 
     // We've come back out, reflect it.
     context.shell.leave_function()?;

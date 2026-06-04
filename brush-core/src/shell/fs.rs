@@ -204,7 +204,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             && let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<ShellFd>()
             && let Some(open_file) = params.try_fd(self, fd_num)
         {
-            return open_file.try_clone();
+            return Ok(open_file);
         }
 
         Ok(options.open(path_to_open)?.into())

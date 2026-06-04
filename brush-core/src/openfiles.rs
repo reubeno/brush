@@ -3,10 +3,10 @@
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::process::Stdio;
+use std::sync::Arc;
 
 use crate::ShellFd;
 use crate::error;
-use crate::ioutils;
 use crate::sys;
 
 /// A trait representing a stream that can be read from and written to.
@@ -30,6 +30,15 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 }
 
 /// Represents a file open in a shell context.
+///
+/// File- and pipe-backed variants hold their handle behind an [`Arc`], so cloning an `OpenFile`
+/// shares the underlying descriptor by reference count. The shell opens a fresh context for each
+/// subshell, command substitution, background job, and function call and runs them as in-process
+/// tasks against one process-wide descriptor table (rather than via `fork(2)` like a traditional
+/// shell); sharing the descriptor keeps deeply nested or highly concurrent execution from
+/// exhausting that table. A descriptor is duplicated for real only when an independently owned
+/// copy is needed to hand to an external child process — see [`OpenFile::try_clone_to_owned`] and
+/// the `Stdio` conversion below.
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin(std::io::Stdin),
@@ -38,11 +47,11 @@ pub enum OpenFile {
     /// The original standard error this process was started with.
     Stderr(std::io::Stderr),
     /// A file open for reading or writing.
-    File(std::fs::File),
+    File(Arc<std::fs::File>),
     /// A read end of a pipe.
-    PipeReader(std::io::PipeReader),
+    PipeReader(Arc<std::io::PipeReader>),
     /// A write end of a pipe.
-    PipeWriter(std::io::PipeWriter),
+    PipeWriter(Arc<std::io::PipeWriter>),
     /// A custom stream.
     Stream(Box<dyn Stream>),
 }
@@ -90,16 +99,22 @@ impl<'de> serde::Deserialize<'de> for OpenFile {
 /// Returns an open file that will discard all I/O.
 pub fn null() -> Result<OpenFile, error::Error> {
     let file = sys::fs::open_null_file()?;
-    Ok(OpenFile::File(file))
+    Ok(file.into())
 }
 
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
-        // If we fail to clone the open file for any reason, we return a special file
-        // that discards all I/O. This allows us to avoid fatally erroring out.
-        self.try_clone().unwrap_or_else(|_err| {
-            ioutils::FailingReaderWriter::new("failed to duplicate open file").into()
-        })
+        match self {
+            Self::Stdin(_) => std::io::stdin().into(),
+            Self::Stdout(_) => std::io::stdout().into(),
+            Self::Stderr(_) => std::io::stderr().into(),
+            // File and pipe handles are shared by reference count; cloning never issues a
+            // syscall and so cannot fail.
+            Self::File(f) => Self::File(Arc::clone(f)),
+            Self::PipeReader(r) => Self::PipeReader(Arc::clone(r)),
+            Self::PipeWriter(w) => Self::PipeWriter(Arc::clone(w)),
+            Self::Stream(s) => Self::Stream(s.clone_box()),
+        }
     }
 }
 
@@ -118,22 +133,8 @@ impl std::fmt::Display for OpenFile {
 }
 
 impl OpenFile {
-    /// Tries to duplicate the open file.
-    pub fn try_clone(&self) -> Result<Self, std::io::Error> {
-        let result = match self {
-            Self::Stdin(_) => std::io::stdin().into(),
-            Self::Stdout(_) => std::io::stdout().into(),
-            Self::Stderr(_) => std::io::stderr().into(),
-            Self::File(f) => f.try_clone()?.into(),
-            Self::PipeReader(f) => f.try_clone()?.into(),
-            Self::PipeWriter(f) => f.try_clone()?.into(),
-            Self::Stream(s) => Self::Stream(s.clone_box()),
-        };
-
-        Ok(result)
-    }
-
-    /// Converts the open file into an `OwnedFd`.
+    /// Converts the open file into an `OwnedFd`. For shared file/pipe handles this materializes
+    /// a real duplicate via `dup(2)` so the caller receives an independently owned descriptor.
     #[cfg(unix)]
     pub(crate) fn try_clone_to_owned(self) -> Result<std::os::fd::OwnedFd, error::Error> {
         use std::os::fd::AsFd as _;
@@ -142,9 +143,9 @@ impl OpenFile {
             Self::Stdin(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stdout(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stderr(f) => Ok(f.as_fd().try_clone_to_owned()?),
-            Self::File(f) => Ok(f.into()),
-            Self::PipeReader(r) => Ok(std::os::fd::OwnedFd::from(r)),
-            Self::PipeWriter(w) => Ok(std::os::fd::OwnedFd::from(w)),
+            Self::File(f) => Ok(f.as_fd().try_clone_to_owned()?),
+            Self::PipeReader(r) => Ok(r.as_fd().try_clone_to_owned()?),
+            Self::PipeWriter(w) => Ok(w.as_fd().try_clone_to_owned()?),
             Self::Stream(s) => s.try_clone_to_owned(),
         }
     }
@@ -212,34 +213,37 @@ impl From<std::io::Stderr> for OpenFile {
 
 impl From<std::fs::File> for OpenFile {
     fn from(file: std::fs::File) -> Self {
-        Self::File(file)
+        Self::File(Arc::new(file))
     }
 }
 
 impl From<std::io::PipeReader> for OpenFile {
     fn from(reader: std::io::PipeReader) -> Self {
-        Self::PipeReader(reader)
+        Self::PipeReader(Arc::new(reader))
     }
 }
 
 impl From<std::io::PipeWriter> for OpenFile {
     fn from(writer: std::io::PipeWriter) -> Self {
-        Self::PipeWriter(writer)
+        Self::PipeWriter(Arc::new(writer))
     }
 }
 
-impl From<OpenFile> for Stdio {
-    fn from(open_file: OpenFile) -> Self {
+impl TryFrom<OpenFile> for Stdio {
+    type Error = error::Error;
+
+    fn try_from(open_file: OpenFile) -> Result<Self, Self::Error> {
+        // File and pipe handles are shared behind an `Arc`, so the descriptor cannot be moved
+        // out; duplicate it to give the child an independently owned descriptor. Duplication can
+        // fail (e.g. under descriptor exhaustion), so the conversion is fallible and the error is
+        // surfaced to the caller rather than silently degrading the child's streams.
         match open_file {
-            OpenFile::Stdin(_) => Self::inherit(),
-            OpenFile::Stdout(_) => Self::inherit(),
-            OpenFile::Stderr(_) => Self::inherit(),
-            OpenFile::File(f) => f.into(),
-            OpenFile::PipeReader(f) => f.into(),
-            OpenFile::PipeWriter(f) => f.into(),
-            // NOTE: Custom streams cannot be converted to `Stdio`; we do our best here
-            // and return a null device instead.
-            OpenFile::Stream(_) => Self::null(),
+            OpenFile::Stdin(_) | OpenFile::Stdout(_) | OpenFile::Stderr(_) => Ok(Self::inherit()),
+            OpenFile::File(f) => Ok(f.try_clone()?.into()),
+            OpenFile::PipeReader(r) => Ok(r.try_clone()?.into()),
+            OpenFile::PipeWriter(w) => Ok(w.try_clone()?.into()),
+            // Custom streams have no descriptor to hand to a child process.
+            OpenFile::Stream(_) => Ok(Self::null()),
         }
     }
 }
@@ -254,8 +258,10 @@ impl std::io::Read for OpenFile {
             Self::Stderr(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("stderr"),
             )),
-            Self::File(f) => f.read(buf),
-            Self::PipeReader(reader) => reader.read(buf),
+            // The handle is shared behind an `Arc`; read through a shared reference (`&File`
+            // and `&PipeReader` both implement `Read`).
+            Self::File(f) => f.as_ref().read(buf),
+            Self::PipeReader(reader) => reader.as_ref().read(buf),
             Self::PipeWriter(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("pipe writer"),
             )),
@@ -272,11 +278,13 @@ impl std::io::Write for OpenFile {
             )),
             Self::Stdout(f) => f.write(buf),
             Self::Stderr(f) => f.write(buf),
-            Self::File(f) => f.write(buf),
+            // The handle is shared behind an `Arc`; write through a shared reference (`&File`
+            // and `&PipeWriter` both implement `Write`).
+            Self::File(f) => f.as_ref().write(buf),
             Self::PipeReader(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotWritable("pipe reader"),
             )),
-            Self::PipeWriter(writer) => writer.write(buf),
+            Self::PipeWriter(writer) => writer.as_ref().write(buf),
             Self::Stream(s) => s.write(buf),
         }
     }
@@ -286,9 +294,9 @@ impl std::io::Write for OpenFile {
             Self::Stdin(_) => Ok(()),
             Self::Stdout(f) => f.flush(),
             Self::Stderr(f) => f.flush(),
-            Self::File(f) => f.flush(),
+            Self::File(f) => f.as_ref().flush(),
             Self::PipeReader(_) => Ok(()),
-            Self::PipeWriter(writer) => writer.flush(),
+            Self::PipeWriter(writer) => writer.as_ref().flush(),
             Self::Stream(s) => s.flush(),
         }
     }
