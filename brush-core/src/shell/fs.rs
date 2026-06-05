@@ -195,13 +195,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let path_to_open = self.absolute_path(path.as_ref());
 
-        // See if this is a reference to a file descriptor, in which case the actual
-        // /dev/fd* file path for this process may not match with what's in the execution
-        // parameters.
-        if let Some(parent) = path_to_open.parent()
-            && parent == Path::new("/dev/fd")
-            && let Some(filename) = path_to_open.file_name()
-            && let Ok(fd_num) = filename.to_string_lossy().to_string().parse::<ShellFd>()
+        // See if this is a reference to a file descriptor. These paths should
+        // reflect the shell's current execution fds, which can differ from the
+        // host process fds after redirections like here-docs.
+        if let Some(fd_num) = shell_fd_path_to_fd(&path_to_open)
             && let Some(open_file) = params.try_fd(self, fd_num)
         {
             return Ok(open_file);
@@ -225,5 +222,23 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
     pub(crate) const fn persistent_open_files(&self) -> &openfiles::OpenFiles {
         &self.open_files
+    }
+}
+
+fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
+    match path.to_str()? {
+        "/dev/stdin" => return Some(openfiles::OpenFiles::STDIN_FD),
+        "/dev/stdout" => return Some(openfiles::OpenFiles::STDOUT_FD),
+        "/dev/stderr" => return Some(openfiles::OpenFiles::STDERR_FD),
+        _ => {}
+    }
+
+    if let Some(parent) = path.parent()
+        && parent == Path::new("/dev/fd")
+        && let Some(filename) = path.file_name()
+    {
+        filename.to_string_lossy().parse::<ShellFd>().ok()
+    } else {
+        None
     }
 }
