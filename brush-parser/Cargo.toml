@@ -27,7 +27,7 @@ winnow-parser = ["dep:winnow"]
 [dependencies]
 arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }
 bon = "3.9.1"
-cached = "0.59.0"
+cached = "1.1.0"
 indenter = "0.3.4"
 miette = { version = "7.6.0", optional = true, default-features = false, features = [
     "derive",
@@ -36,12 +36,12 @@ peg = "0.8.6"
 serde = { version = "1.0.228", optional = true, features = ["derive", "rc"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
-utf8-chars = "3.0.6"
-winnow = { version = "1.0.0", optional = true }
+utf8-chars = "3.0.7"
+winnow = { version = "1.0.3", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
-uuid = { version = "1.23.1", features = ["js"] }
+uuid = { version = "1.23.2", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
@@ -50,7 +50,7 @@ insta = { version = "1.47.1", features = ["glob", "ron", "yaml", "redactions"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 serde_yaml = "0.9.34"
 
 [[bench]]
