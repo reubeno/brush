@@ -1,3 +1,5 @@
+#![allow(clippy::needless_pass_by_value)]
+
 use std::borrow::Cow;
 use std::sync::Arc;
 use utf8_chars::BufReadCharsExt;
@@ -494,7 +496,8 @@ pub fn tokenize_str_with_options(
     uncached_tokenize_string(input.to_owned(), options.to_owned())
 }
 
-#[cached::proc_macro::cached(name = "TOKENIZE_CACHE", size = 64, result = true)]
+#[allow(clippy::needless_pass_by_value)]
+#[cached::cached(name = "TOKENIZE_CACHE", size = 64, result = true)]
 fn uncached_tokenize_string(
     input: String,
     options: TokenizerOptions,

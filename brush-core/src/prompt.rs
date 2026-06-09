@@ -1,3 +1,5 @@
+#![allow(clippy::needless_pass_by_value)]
+
 use crate::{
     ExecutionParameters, error, expansion, extensions,
     shell::Shell,
@@ -58,7 +60,7 @@ pub(crate) async fn expand_prompt(
     Ok(formatted_prompt)
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
+#[cached::cached(size = 64, result = true)]
 fn parse_prompt(
     spec: String,
 ) -> Result<Vec<brush_parser::prompt::PromptPiece>, brush_parser::WordParseError> {

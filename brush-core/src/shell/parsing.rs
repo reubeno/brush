@@ -1,4 +1,5 @@
 //! Parsing for shell instances.
+#![allow(clippy::needless_pass_by_value)]
 
 use std::io::Read;
 
@@ -44,7 +45,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     }
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
+#[cached::cached(size = 64, result = true)]
 fn parse_string_impl(
     s: String,
     parser_options: brush_parser::ParserOptions,

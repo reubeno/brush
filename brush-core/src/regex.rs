@@ -7,8 +7,8 @@ use crate::error;
 use cached::Cached;
 
 thread_local! {
-    static REGEX_CACHE: RefCell<cached::SizedCache<(String, bool, bool), fancy_regex::Regex>> =
-        RefCell::new(cached::SizedCache::with_size(64));
+    static REGEX_CACHE: RefCell<cached::LruCache<(String, bool, bool), fancy_regex::Regex>> =
+        RefCell::new(cached::LruCache::with_size(64));
 }
 
 /// Represents a piece of a regular expression.
