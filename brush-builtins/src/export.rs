@@ -94,6 +94,56 @@ impl ExportCommand {
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
                 }
+                // A word argument that *expanded* into an assignment (e.g.
+                // `export ${var}=value`): the parser cannot classify it as an
+                // assignment at parse time, so declaration utilities split it
+                // at runtime, as bash does. `name+=value` appends.
+                else if let Some(eq) = s.find('=') {
+                    let (raw_name, value) = (&s[..eq], &s[eq + 1..]);
+                    let (name, append) = match raw_name.strip_suffix('+') {
+                        Some(n) => (n, true),
+                        None => (raw_name, false),
+                    };
+                    let valid = !name.is_empty()
+                        && name
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                    if !valid {
+                        writeln!(
+                            context.stderr(),
+                            "{}: `{s}': not a valid identifier",
+                            context.command_name
+                        )?;
+                        return Ok(ExecutionResult::new(1));
+                    }
+                    let new_value = if append {
+                        let existing = context
+                            .shell
+                            .env()
+                            .get_str(name, context.shell)
+                            .map(|v| v.into_owned())
+                            .unwrap_or_default();
+                        format!("{existing}{value}")
+                    } else {
+                        value.to_owned()
+                    };
+                    context.shell.env_mut().update_or_add(
+                        name,
+                        variables::ShellValueLiteral::Scalar(new_value),
+                        |var| {
+                            if self.unexport {
+                                var.unexport();
+                            } else {
+                                var.export();
+                            }
+                            Ok(())
+                        },
+                        EnvironmentLookup::Anywhere,
+                        EnvironmentScope::Global,
+                    )?;
+                }
                 // Try to find the variable already present; if we find it, then mark it
                 // exported. For subscripted namerefs (e.g., ref→arr[1]), bash rejects the
                 // target as "not a valid identifier" — export/unexport only applies to
