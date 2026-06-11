@@ -641,6 +641,11 @@ jobs:
           # Allow use of experimental features to avoid nix from complaining.
           export NIX_CONFIG="extra-experimental-features = nix-command flakes"
 
+          # The nixos/nix image ships no /etc/os-release (unlike a full NixOS install
+          # and every other container we test against). Provide one so the test harness
+          # can identify the OS, which it relies on for tests' `incompatible_os` tags.
+          printf 'NAME=NixOS\nID=nixos\nPRETTY_NAME="NixOS (nix container)"\n' > /etc/os-release
+
           # Hacks to get the mounted nodejs by github actions work as it's dynamically linked
           # https://github.com/actions/checkout/issues/334#issuecomment-716068696
           nix build --no-link --max-jobs 2 --cores 0 'nixpkgs#stdenv.cc.cc.lib' 'nixpkgs#glibc'
