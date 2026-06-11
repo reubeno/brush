@@ -256,3 +256,10 @@ cases:
 
       echo "[Checking after unset]"
       type [
+
+  - name: "Unset with dynamically-expanded name"
+    stdin: |
+      TARGET=1
+      v=TARGET
+      unset ${v}
+      echo "TARGET=[${TARGET-unset}]"

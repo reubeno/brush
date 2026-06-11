@@ -344,3 +344,9 @@ cases:
       printf -v ref "formatted %d" 42
       echo "target: $target"
       echo "ref: $ref"
+
+  - name: "printf -v with dynamically-expanded variable name"
+    stdin: |
+      v=DEST
+      printf -v ${v} '%s-%s' a b
+      echo "DEST=[$DEST]"

@@ -326,3 +326,47 @@ cases:
     stdin: |
       declare 'arr[0]=hello'
       declare -p arr
+
+  - name: "Declare with dynamically-expanded assignment word"
+    stdin: |
+      v=MYVAR
+      declare ${v}="dyn"
+      echo "MYVAR=[$MYVAR]"
+
+  - name: "Declare -i with dynamically-expanded assignment word"
+    stdin: |
+      v=NUM
+      declare -i ${v}=4+3
+      echo "NUM=[$NUM]"
+
+  - name: "Declare append via dynamically-expanded word"
+    stdin: |
+      v=ACC
+      ACC=a
+      declare ${v}+=b
+      echo "ACC=[$ACC]"
+
+  - name: "Declare array via quoted dynamically-expanded word"
+    stdin: |
+      v=ARR
+      declare -a "${v}=(one two)"
+      echo "ARR1=[${ARR[1]}]"
+
+  - name: "Declare -i with literal assignment evaluates arithmetic"
+    stdin: |
+      declare -i NUM=4+3
+      echo "NUM=[$NUM]"
+      NUM+=10
+      echo "NUM2=[$NUM]"
+
+  - name: "Declare append with literal assignment"
+    stdin: |
+      declare ACC=a
+      declare ACC+=b
+      echo "ACC=[$ACC]"
+
+  - name: "Typeset with dynamically-expanded assignment word"
+    stdin: |
+      v=TVAR
+      typeset ${v}="tval"
+      echo "TVAR=[$TVAR]"

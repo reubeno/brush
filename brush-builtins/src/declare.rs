@@ -176,7 +176,7 @@ impl builtins::Command for DeclareCommand {
                         self.lift_string_array_assignment(&mut context, declaration, verb)
                             .await?
                     } else {
-                        self.process_declaration(&mut context, declaration, verb)?
+                        self.process_declaration(&mut context, declaration, verb).await?
                     };
                     if !ok {
                         result = ExecutionResult::general_error();
@@ -285,7 +285,7 @@ impl DeclareCommand {
     }
 
     #[expect(clippy::too_many_lines)]
-    fn process_declaration(
+    async fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
@@ -317,7 +317,7 @@ impl DeclareCommand {
             return Ok(result);
         }
 
-        let (name, assigned_index, initial_value, name_is_array) =
+        let (name, assigned_index, initial_value, name_is_array, append) =
             Self::declaration_to_name_and_value(declaration)?;
 
         if name == "-" && matches!(verb, DeclareVerb::Local) {
@@ -343,6 +343,35 @@ impl DeclareCommand {
         if nameref_integer_conflict {
             return Ok(false);
         }
+
+        // If the variable has (or is being given) the integer attribute,
+        // scalar values are evaluated as arithmetic expressions — in bash,
+        // `declare -i x=20+5` sets x to 25. Evaluate before borrowing the
+        // environment mutably.
+        let initial_value = match initial_value {
+            Some(ShellValueLiteral::Scalar(expr)) => {
+                let integer_now = match self.make_integer.to_bool() {
+                    Some(explicit) => explicit,
+                    None => context
+                        .shell
+                        .env()
+                        .get(name.as_str())
+                        .is_some_and(|resolved| resolved.base_var().is_treated_as_integer()),
+                };
+                if integer_now {
+                    let parsed = brush_parser::arithmetic::parse_with(
+                        expr.as_str(),
+                        context.shell.parser_options().parser_impl,
+                    )?;
+                    let result =
+                        brush_core::arithmetic::Evaluatable::eval(&parsed, context.shell)?;
+                    Some(ShellValueLiteral::Scalar(result.to_string()))
+                } else {
+                    Some(ShellValueLiteral::Scalar(expr))
+                }
+            }
+            other => other,
+        };
 
         // Figure out where we should look.
         let lookup = if create_var_local {
@@ -408,8 +437,9 @@ impl DeclareCommand {
             self.apply_attributes_before_update(var)?;
 
             if let Some(initial_value) = initial_value {
-                // We append if the declaration included an explicit index.
-                var.assign(initial_value, assigned_index.is_some())?;
+                // We append for `name+=value`, or if the declaration included
+                // an explicit index.
+                var.assign(initial_value, append || assigned_index.is_some())?;
             }
 
             // Validate existing value when -n is being added to a variable
@@ -436,7 +466,7 @@ impl DeclareCommand {
             self.apply_attributes_before_update(&mut var)?;
 
             if let Some(initial_value) = initial_value {
-                var.assign(initial_value, false)?;
+                var.assign(initial_value, append)?;
             }
 
             // Validate nameref target name after assignment.
@@ -507,9 +537,9 @@ impl DeclareCommand {
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
-        let (name, _, initial_value, _) = Self::declaration_to_name_and_value(declaration)?;
+        let (name, _, initial_value, _, _) = Self::declaration_to_name_and_value(declaration)?;
         let Some(ShellValueLiteral::Scalar(s)) = initial_value else {
-            return self.process_declaration(context, declaration, verb);
+            return self.process_declaration(context, declaration, verb).await;
         };
 
         // Reconstruct the declaration so the parser sees an unquoted compound assignment.
@@ -533,7 +563,7 @@ impl DeclareCommand {
         // Apply any further attributes (readonly, export, etc.) that were on the original
         // declaration by re-processing just the variable name (no initial value).
         let name_only = brush_core::CommandArg::String(name);
-        self.process_declaration(context, &name_only, verb)
+        self.process_declaration(context, &name_only, verb).await
     }
 
     /// Handle `declare -a 'arr=(${X})'` by feeding the string back through the
@@ -546,11 +576,11 @@ impl DeclareCommand {
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
         let brush_core::CommandArg::String(s) = declaration else {
-            return self.process_declaration(context, declaration, verb);
+            return self.process_declaration(context, declaration, verb).await;
         };
 
         let Some((var_name, value)) = s.split_once('=') else {
-            return self.process_declaration(context, declaration, verb);
+            return self.process_declaration(context, declaration, verb).await;
         };
 
         let script = if matches!(verb, DeclareVerb::Local) {
@@ -569,16 +599,27 @@ impl DeclareCommand {
             .await?;
 
         let name_only = brush_core::CommandArg::String(var_name.to_owned());
-        self.process_declaration(context, &name_only, verb)
+        self.process_declaration(context, &name_only, verb).await
     }
 
+    #[allow(clippy::type_complexity)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
-    ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), brush_core::Error> {
+    ) -> Result<
+        (
+            String,
+            Option<String>,
+            Option<ShellValueLiteral>,
+            bool,
+            bool,
+        ),
+        brush_core::Error,
+    > {
         let name;
         let assigned_index;
         let initial_value;
         let name_is_array;
+        let mut append = false;
 
         match declaration {
             brush_core::CommandArg::String(s) => {
@@ -588,7 +629,9 @@ impl DeclareCommand {
                     reason = "regex is valid and should not fail"
                 )]
                 static NAME_INDEX_AND_VALUE_RE: LazyLock<fancy_regex::Regex> =
-                    LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)?\]=(.*)$").unwrap());
+                    LazyLock::new(|| {
+                        fancy_regex::Regex::new(r"^(.*?)\[(.*?)?\](\+)?=(.*)$").unwrap()
+                    });
 
                 if let Some(captures) = NAME_INDEX_AND_VALUE_RE.captures(s)? {
                     name = captures
@@ -600,11 +643,20 @@ impl DeclareCommand {
                         .to_owned();
 
                     assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
+                    append = captures.get(3).is_some();
                     initial_value = captures
-                        .get(3)
+                        .get(4)
                         .map(|m| ShellValueLiteral::Scalar(m.as_str().to_owned()));
                     name_is_array = true;
                 } else if let Some((n, v)) = s.split_once('=') {
+                    // `name+=value` appends (runtime split of an expanded word).
+                    let n = match n.strip_suffix('+') {
+                        Some(stripped) => {
+                            append = true;
+                            stripped
+                        }
+                        None => n,
+                    };
                     name = n.to_owned();
                     assigned_index = None;
                     initial_value = Some(ShellValueLiteral::Scalar(v.to_owned()));
@@ -640,6 +692,7 @@ impl DeclareCommand {
                 }
             }
             brush_core::CommandArg::Assignment(assignment) => {
+                append = assignment.append;
                 match &assignment.name {
                     ast::AssignmentName::VariableName(var_name) => {
                         name = var_name.to_owned();
@@ -682,7 +735,7 @@ impl DeclareCommand {
             }
         }
 
-        Ok((name, assigned_index, initial_value, name_is_array))
+        Ok((name, assigned_index, initial_value, name_is_array, append))
     }
 
     /// Validates a nameref target string: must be a legal variable name (optionally

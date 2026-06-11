@@ -387,3 +387,9 @@ cases:
       echo "arr[0]: ${arr[0]}"
       echo "arr[1]: ${arr[1]}"
       echo "arr[2]: ${arr[2]}"
+
+  - name: "read into dynamically-expanded variable name"
+    stdin: |
+      v=RVAR
+      read ${v} <<< "line-content"
+      echo "RVAR=[$RVAR]"
