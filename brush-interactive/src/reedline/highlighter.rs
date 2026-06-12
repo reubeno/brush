@@ -90,12 +90,11 @@ impl<SE: brush_core::ShellExtensions> reedline::Highlighter for ReedlineHighligh
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
-        let spans = highlighting::highlight_command(shell.as_ref(), line, cursor);
+        let highlighted = highlighting::highlight_command(shell.as_ref(), line, cursor);
 
         let mut styled = reedline::StyledText::new();
-        for span in spans {
-            let style = kind_to_style(span.kind);
-            styled.push((style, span.text(line).to_owned()));
+        for (kind, text) in highlighted.iter() {
+            styled.push((kind_to_style(kind), text.to_owned()));
         }
 
         styled
