@@ -1,7 +1,12 @@
 //! Interactive integration tests for brush shell
 
-// For now, only compile this for Unix-like platforms (Linux, macOS).
-#![cfg(unix)]
+// Only compile this for platforms supported by expectrl's pty backend.
+#![cfg(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    target_os = "freebsd"
+))]
 #![cfg(test)]
 #![allow(clippy::panic_in_result_fn)]
 

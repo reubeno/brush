@@ -118,6 +118,45 @@ jobs:
             required_tools: ""
             binary_name: "brush"
             extra_build_args: ""
+          # Build for x86_64/FreeBSD target on x86_64/linux host. FreeBSD is a
+          # tier-2 target with host tools, and cross ships a maintained image
+          # for it, so we cross-build a real binary like the targets above.
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-freebsd"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
+            os: "freebsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: ""
+          # Build for x86_64/NetBSD target on x86_64/linux host, via cross.
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-netbsd"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
+            os: "netbsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: ""
+          # OpenBSD is tier-3 with no prebuilt std and no cross image, so we
+          # build std from source (-Zbuild-std, hence nightly + rust-src + no
+          # rustup target) and link against a sysroot assembled from the release
+          # sets using clang/lld (see the "Set up OpenBSD cross sysroot" step).
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-openbsd"
+            cross_command: "cargo"
+            cross_tool_to_install: ""
+            os: "openbsd"
+            arch: "x86_64"
+            required_tools: "clang lld"
+            binary_name: "brush"
+            extra_build_args: "-Zbuild-std"
+            toolchain: "nightly"
+            components: "rust-src"
+            # std is built from source, so there's no prebuilt target to install.
+            skip_rustup_target: true
 
     name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ${{ matrix.host }}
@@ -130,8 +169,11 @@ jobs:
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
+          toolchain: ${{ matrix.toolchain || 'stable' }}
+          # `!skip && target` (not `skip && '' || target`) because the latter's empty
+          # true-branch is falsy and would fall through to `target`.
+          targets: ${{ !matrix.skip_rustup_target && matrix.target || '' }}
+          components: ${{ matrix.components || '' }}
 
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -145,10 +187,38 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y ${REQUIRED_TOOLS}
 
       - name: Install cross-compilation toolchain
-        if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
+        if: ${{ matrix.cross_tool_to_install != '' }}
+        uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2.81.8
         with:
           tool: ${{ matrix.cross_tool_to_install }}
+
+      # OpenBSD has no cross image, so assemble a sysroot from the release sets
+      # and point clang/lld (its native base toolchain) at it. Together with
+      # -Zbuild-std this lets us cross-build and link a real binary on the host.
+      - name: "Set up OpenBSD cross sysroot"
+        if: ${{ matrix.os == 'openbsd' }}
+        env:
+          # Pinned to the latest OpenBSD release; bump on each new release.
+          OPENBSD_RELEASE: "7.9"
+        run: |
+          set -euxo pipefail
+          tag="${OPENBSD_RELEASE/./}"
+          sysroot="${RUNNER_TEMP}/openbsd-sysroot"
+          url="https://cdn.openbsd.org/pub/OpenBSD/${OPENBSD_RELEASE}/amd64"
+          mkdir -p "${sysroot}"
+          # Shared libraries (libc.so, ...) are in the base set; headers, crt
+          # objects and static libs are in the comp set.
+          curl -fsSL "${url}/base${tag}.tgz" | tar -xzf - -C "${sysroot}" ./usr/lib
+          curl -fsSL "${url}/comp${tag}.tgz" | tar -xzf - -C "${sysroot}" ./usr/lib ./usr/include
+          flags="--target=x86_64-unknown-openbsd --sysroot=${sysroot}"
+          {
+            echo "CC_x86_64_unknown_openbsd=clang"
+            echo "CXX_x86_64_unknown_openbsd=clang++"
+            echo "CFLAGS_x86_64_unknown_openbsd=${flags}"
+            echo "CXXFLAGS_x86_64_unknown_openbsd=${flags}"
+            echo "CARGO_TARGET_X86_64_UNKNOWN_OPENBSD_LINKER=clang"
+            echo "CARGO_TARGET_X86_64_UNKNOWN_OPENBSD_RUSTFLAGS=-Clink-arg=--target=x86_64-unknown-openbsd -Clink-arg=--sysroot=${sysroot} -Clink-arg=-fuse-ld=lld"
+          } >> "${GITHUB_ENV}"
 
       - name: "Build (native)"
         if: ${{ matrix.target == '' }}

@@ -123,7 +123,6 @@ colored = "3.1.1"
 criterion = { version = "0.8.2", features = ["async_tokio", "html_reports"] }
 descape = "3.0.0"
 diff = "0.1.13"
-expectrl = "0.8.0"
 glob = "0.3.3"
 indent = "0.1.1"
 indexmap = "2.13.0"
@@ -144,3 +143,8 @@ which = "8.0.2"
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { version = "0.31.2" }
+
+# expectrl's pty support (via ptyprocess) is limited to these platforms;
+# the interactive tests that rely on it are gated accordingly.
+[target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "freebsd"))'.dev-dependencies]
+expectrl = "0.8.0"
