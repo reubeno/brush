@@ -1,4 +1,4 @@
-use nu_ansi_term::Color;
+use nu_ansi_term::Style;
 use reedline::MenuBuilder;
 
 use super::{completer, edit_mode, highlighter, history, validator};
@@ -11,6 +11,26 @@ pub struct ReedlineInputBackend {
 }
 
 const COMPLETION_MENU_NAME: &str = "completion_menu";
+
+fn completion_menu_text_style() -> Style {
+    Style::new()
+}
+
+fn completion_menu_selected_text_style() -> Style {
+    Style::new().bold().reverse()
+}
+
+fn completion_menu_match_text_style() -> Style {
+    Style::new().underline()
+}
+
+fn completion_menu_selected_match_text_style() -> Style {
+    completion_menu_selected_text_style().underline()
+}
+
+fn history_hint_style() -> Style {
+    Style::new().italic().dimmed()
+}
 
 impl ReedlineInputBackend {
     /// Returns a new interactive shell instance, created with the provided options.
@@ -38,7 +58,7 @@ impl ReedlineInputBackend {
         let validator = validator::ReedlineValidator {
             shell: shell_ref.clone(),
         };
-        let highlighter = highlighter::ReedlineHighlighter {
+        let syntax_highlighter = highlighter::ReedlineHighlighter {
             shell: shell_ref.clone(),
         };
         let history = history::ReedlineHistory {
@@ -57,14 +77,16 @@ impl ReedlineInputBackend {
                 .with_name(COMPLETION_MENU_NAME)
                 .with_marker("")
                 .with_columns(10)
-                .with_selected_text_style(Color::Blue.bold().reverse())
-                .with_selected_match_text_style(Color::Blue.bold().reverse()),
+                .with_text_style(completion_menu_text_style())
+                .with_match_text_style(completion_menu_match_text_style())
+                .with_selected_text_style(completion_menu_selected_text_style())
+                .with_selected_match_text_style(completion_menu_selected_match_text_style()),
         );
 
         // Set up default history-based hinter.
         let mut hinter = reedline::DefaultHinter::default();
         if !options.disable_color {
-            hinter = hinter.with_style(nu_ansi_term::Style::new().italic().fg(Color::DarkGray));
+            hinter = hinter.with_style(history_hint_style());
         }
 
         // Instantiate reedline with some defaults and hand it ownership of
@@ -80,9 +102,15 @@ impl ReedlineInputBackend {
             .with_edit_mode(Box::new(mutable_edit_mode))
             .with_history(Box::new(history));
 
-        // If requested, apply some additional niceties.
-        if !options.disable_highlighting && !options.disable_color {
-            reedline = reedline.with_highlighter(Box::new(highlighter));
+        // Override Reedline's default example highlighter, which hard-codes white as the
+        // neutral input color. When syntax highlighting is disabled we still install a plain
+        // highlighter so typed text follows the terminal's default foreground color.
+        if !options.disable_color {
+            reedline = if options.disable_highlighting {
+                reedline.with_highlighter(Box::new(highlighter::PlainTextHighlighter))
+            } else {
+                reedline.with_highlighter(Box::new(syntax_highlighter))
+            };
         }
 
         let mut shell = tokio::task::block_in_place(|| {
@@ -224,4 +252,45 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
     );
 
     key_bindings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_hint_style_is_theme_adaptive() {
+        let style = history_hint_style();
+
+        assert_eq!(style.foreground, None);
+        assert_eq!(style.background, None);
+        assert!(style.is_italic);
+        assert!(style.is_dimmed);
+    }
+
+    #[test]
+    fn completion_menu_styles_are_theme_adaptive() {
+        let text_style = completion_menu_text_style();
+        let match_style = completion_menu_match_text_style();
+        let selected_text_style = completion_menu_selected_text_style();
+        let selected_match_text_style = completion_menu_selected_match_text_style();
+
+        assert_eq!(text_style.foreground, None);
+        assert_eq!(text_style.background, None);
+
+        assert_eq!(match_style.foreground, None);
+        assert_eq!(match_style.background, None);
+        assert!(match_style.is_underline);
+
+        assert_eq!(selected_text_style.foreground, None);
+        assert_eq!(selected_text_style.background, None);
+        assert!(selected_text_style.is_bold);
+        assert!(selected_text_style.is_reverse);
+
+        assert_eq!(selected_match_text_style.foreground, None);
+        assert_eq!(selected_match_text_style.background, None);
+        assert!(selected_match_text_style.is_bold);
+        assert!(selected_match_text_style.is_reverse);
+        assert!(selected_match_text_style.is_underline);
+    }
 }

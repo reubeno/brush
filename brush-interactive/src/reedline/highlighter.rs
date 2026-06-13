@@ -73,6 +73,16 @@ pub(crate) struct ReedlineHighlighter<SE: brush_core::ShellExtensions> {
     pub shell: refs::ShellRef<SE>,
 }
 
+pub(crate) struct PlainTextHighlighter;
+
+impl reedline::Highlighter for PlainTextHighlighter {
+    fn highlight(&self, line: &str, _cursor: usize) -> reedline::StyledText {
+        let mut styled = reedline::StyledText::new();
+        styled.push((Style::new(), line.to_owned()));
+        styled
+    }
+}
+
 impl<SE: brush_core::ShellExtensions> reedline::Highlighter for ReedlineHighlighter<SE> {
     #[expect(clippy::significant_drop_tightening)]
     fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {
@@ -110,5 +120,21 @@ fn kind_to_style(kind: highlighting::HighlightKind) -> Style {
         highlighting::HighlightKind::ExternalCommand => styles::external_command(),
         highlighting::HighlightKind::NotFoundCommand => styles::not_found_command(),
         highlighting::HighlightKind::UnknownCommand => styles::unknown_command(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reedline::Highlighter;
+
+    #[test]
+    fn plain_text_highlighter_uses_terminal_default_colors() {
+        let styled = PlainTextHighlighter.highlight("echo hello", 0);
+
+        assert_eq!(styled.buffer.len(), 1);
+        assert_eq!(styled.buffer[0].0.foreground, None);
+        assert_eq!(styled.buffer[0].0.background, None);
+        assert_eq!(styled.buffer[0].1, "echo hello");
     }
 }
