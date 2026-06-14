@@ -439,3 +439,40 @@ cases:
       IFS=:
       x=$*
       echo "[$x]"
+
+  - name: "Assign-default array star join honors IFS"
+    # `:` + a multi-field `:=` argument triggers a pre-existing, unrelated
+    # brush quirk ("command not found: <first field>" on stderr); the stdout
+    # is what verifies the IFS join.
+    ignore_stderr: true
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      unset x
+      : ${x:=${arr[*]}}
+      echo "[$x]"
+
+  - name: "Assign-default array at join uses space"
+    ignore_stderr: true
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      unset y
+      : ${y:=${arr[@]}}
+      echo "[$y]"
+
+  - name: "Use-default array star join honors IFS"
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      unset z
+      echo "[${z:-${arr[*]}}]"
+
+  - name: "Assign-default positional star join honors IFS"
+    ignore_stderr: true
+    stdin: |
+      set -- a b c
+      IFS=:
+      unset p
+      : ${p:=$*}
+      echo "[$p]"
