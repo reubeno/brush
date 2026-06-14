@@ -101,13 +101,6 @@ impl Default for Expansion {
     }
 }
 
-impl From<Expansion> for String {
-    fn from(value: Expansion) -> Self {
-        // TODO(IFS): Use IFS instead for separator?
-        value.fields.into_iter().map(Self::from).join(" ")
-    }
-}
-
 impl From<String> for Expansion {
     fn from(value: String) -> Self {
         Self {
@@ -593,21 +586,26 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
         let expansion = self.basic_expand(word).await?;
-        // Join the expanded fields for scalar (non-split) contexts following
-        // bash rules: `$*`/`${a[*]}` (concatenate=true) join with the first
-        // character of IFS, while `$@`/`${a[@]}` join with a space. A single
-        // field (the common case) is unaffected. Without this, e.g.
-        // `x=${arr[*]}` under `IFS=:` would yield `a b c` instead of `a:b:c`.
+        Ok(self.fields_to_string(expansion))
+    }
+
+    /// Join an [`Expansion`]'s fields into a single string for scalar
+    /// (non-field-splitting) contexts, following bash rules: `$*`/`${a[*]}`
+    /// (`concatenate=true`) join with the first character of IFS, while
+    /// `$@`/`${a[@]}` join with a space. A single field (the common case) is
+    /// unaffected. Without this, e.g. `x=${arr[*]}` under `IFS=:` would yield
+    /// `a b c` instead of bash's `a:b:c`.
+    fn fields_to_string(&self, expansion: Expansion) -> String {
         let joiner = if expansion.concatenate {
             self.shell.get_ifs_first_char()
         } else {
             ' '
         };
-        Ok(expansion
+        expansion
             .fields
             .into_iter()
             .map(String::from)
-            .join(joiner.to_string().as_str()))
+            .join(joiner.to_string().as_str())
     }
 
     async fn basic_expand_opt_pattern(
@@ -1200,8 +1198,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
                     _ => {
-                        let expanded_default_value =
-                            String::from(self.expand_parameter_word(default_value).await?);
+                        let expanded_default = self.expand_parameter_word(default_value).await?;
+                        let expanded_default_value = self.fields_to_string(expanded_default);
                         self.assign_to_parameter(&parameter, expanded_default_value.clone())
                             .await?;
                         Ok(Expansion::from(expanded_default_value))
@@ -1687,7 +1685,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             Ok(self.try_resolve_parameter_to_variable_without_indirect(parameter))
         } else {
             let expansion = self.expand_parameter(parameter, false).await?;
-            let parameter_str: String = expansion.into();
+            let parameter_str: String = self.fields_to_string(expansion);
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
             Ok(self.try_resolve_parameter_to_variable_without_indirect(&inner_parameter))
@@ -1762,7 +1760,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if !indirect {
             Ok(expansion)
         } else {
-            let parameter_str: String = expansion.into();
+            let parameter_str: String = self.fields_to_string(expansion);
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
 
