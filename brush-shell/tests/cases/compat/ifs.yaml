@@ -403,3 +403,39 @@ cases:
       for arg in "$@"; do
         echo "[$arg]"
       done
+
+  - name: "Array star join in scalar assignment honors IFS"
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      x=${arr[*]}
+      echo "[$x]"
+
+  - name: "Array at join in scalar assignment uses space"
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      y=${arr[@]}
+      echo "[$y]"
+
+  - name: "Export assignment from array star honors IFS"
+    stdin: |
+      np=(/first/bin /usr/lib/llvm/21/bin /usr/bin)
+      IFS=:
+      export TESTPATH=${np[*]}
+      echo "[$TESTPATH]"
+
+  - name: "Split on IFS then rejoin via star"
+    stdin: |
+      p="x:y:z"
+      IFS=:
+      s=( ${p} )
+      out=${s[*]}
+      echo "[$out]"
+
+  - name: "Positional star join in scalar assignment honors IFS"
+    stdin: |
+      set -- a b c
+      IFS=:
+      x=$*
+      echo "[$x]"

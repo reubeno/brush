@@ -592,7 +592,22 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
-        Ok(String::from(self.basic_expand(word).await?))
+        let expansion = self.basic_expand(word).await?;
+        // Join the expanded fields for scalar (non-split) contexts following
+        // bash rules: `$*`/`${a[*]}` (concatenate=true) join with the first
+        // character of IFS, while `$@`/`${a[@]}` join with a space. A single
+        // field (the common case) is unaffected. Without this, e.g.
+        // `x=${arr[*]}` under `IFS=:` would yield `a b c` instead of `a:b:c`.
+        let joiner = if expansion.concatenate {
+            self.shell.get_ifs_first_char()
+        } else {
+            ' '
+        };
+        Ok(expansion
+            .fields
+            .into_iter()
+            .map(String::from)
+            .join(joiner.to_string().as_str()))
     }
 
     async fn basic_expand_opt_pattern(
