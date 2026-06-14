@@ -466,8 +466,9 @@ where
 
 /// Async file abstractions for non-blocking I/O operations.
 pub mod async_file {
-    use std::io::{self, IsTerminal};
+    use std::io::{self, IsTerminal, Read as _, Write as _};
     use std::pin::Pin;
+    use std::sync::Arc;
     use std::task::{Context, Poll};
 
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -629,7 +630,7 @@ pub mod async_file {
     #[cfg(target_family = "wasm")]
     use stdio_polyfill::{File, Stderr, Stdin, Stdout};
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(all(not(target_family = "wasm"), not(unix)))]
     use tokio::fs::File;
 
     #[cfg(not(target_family = "wasm"))]
@@ -679,6 +680,91 @@ pub mod async_file {
         fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error>;
     }
 
+    /// Wraps a shared file handle so async I/O is performed synchronously through
+    /// the `Arc`-backed descriptor.
+    ///
+    /// [`OpenFile`] holds file and pipe handles behind an `Arc` so descriptors are
+    /// shared (by refcount) across the cloned shell contexts that every subshell,
+    /// command substitution, and background job spawns. Duplicating the descriptor
+    /// for every async access would defeat that sharing and re-introduce the fd
+    /// exhaustion the sharing was added to prevent. Instead we read/write the
+    /// shared descriptor in place via the `&File`/`&PipeReader`/`&PipeWriter`
+    /// `Read`/`Write` impls, completing each async op synchronously.
+    #[cfg(unix)]
+    pub struct SharedFile(Arc<std::fs::File>);
+
+    #[cfg(unix)]
+    impl AsyncRead for SharedFile {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let n = self.get_mut().0.as_ref().read(buf.initialize_unfilled())?;
+            buf.advance(n);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[cfg(unix)]
+    impl AsyncWrite for SharedFile {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(self.get_mut().0.as_ref().write(buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(self.get_mut().0.as_ref().flush())
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+
+    /// Wraps a shared pipe reader (read end) for synchronous-through-`Arc` async reads.
+    #[cfg(unix)]
+    pub struct SharedPipeReader(Arc<std::io::PipeReader>);
+
+    #[cfg(unix)]
+    impl AsyncRead for SharedPipeReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let n = self.get_mut().0.as_ref().read(buf.initialize_unfilled())?;
+            buf.advance(n);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    /// Wraps a shared pipe writer (write end) for synchronous-through-`Arc` async writes.
+    #[cfg(unix)]
+    pub struct SharedPipeWriter(Arc<std::io::PipeWriter>);
+
+    #[cfg(unix)]
+    impl AsyncWrite for SharedPipeWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(self.get_mut().0.as_ref().write(buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(self.get_mut().0.as_ref().flush())
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+
     /// Represents an async file open in a shell context.
     #[cfg(unix)]
     pub enum AsyncOpenFile {
@@ -689,11 +775,11 @@ pub mod async_file {
         /// The original standard error.
         Stderr(Stderr),
         /// A file open for reading or writing.
-        File(File),
+        File(SharedFile),
         /// The read end of a pipe.
-        PipeReader(tokio::net::unix::pipe::Receiver),
+        PipeReader(SharedPipeReader),
         /// The write end of a pipe.
-        PipeWriter(tokio::net::unix::pipe::Sender),
+        PipeWriter(SharedPipeWriter),
         /// A custom async stream.
         Stream(Box<dyn AsyncStream>),
     }
@@ -827,24 +913,17 @@ pub mod async_file {
     impl AsyncOpenFile {
         /// Creates an async file from a standard file.
         pub fn from_std_file(file: std::fs::File) -> Self {
-            Self::File(tokio::fs::File::from_std(file))
+            Self::File(SharedFile(Arc::new(file)))
         }
 
         /// Creates an async pipe reader from a blocking pipe reader.
         pub fn from_pipe_reader(reader: std::io::PipeReader) -> io::Result<Self> {
-            use std::os::fd::OwnedFd;
-            let owned_fd = OwnedFd::from(reader);
-            let receiver =
-                tokio::net::unix::pipe::Receiver::from_file(std::fs::File::from(owned_fd))?;
-            Ok(Self::PipeReader(receiver))
+            Ok(Self::PipeReader(SharedPipeReader(Arc::new(reader))))
         }
 
         /// Creates an async pipe writer from a blocking pipe writer.
         pub fn from_pipe_writer(writer: std::io::PipeWriter) -> io::Result<Self> {
-            use std::os::fd::OwnedFd;
-            let owned_fd = OwnedFd::from(writer);
-            let sender = tokio::net::unix::pipe::Sender::from_file(std::fs::File::from(owned_fd))?;
-            Ok(Self::PipeWriter(sender))
+            Ok(Self::PipeWriter(SharedPipeWriter(Arc::new(writer))))
         }
     }
 
@@ -993,12 +1072,32 @@ pub mod async_file {
                 super::OpenFile::Stdin(_) => Self::Stdin(stdin()),
                 super::OpenFile::Stdout(_) => Self::Stdout(stdout()),
                 super::OpenFile::Stderr(_) => Self::Stderr(stderr()),
-                super::OpenFile::File(f) => Self::File(File::from_std(f)),
+                // Share the descriptor by refcount (move the `Arc`) rather than
+                // duplicating it -- see `SharedFile`/`SharedPipeReader`/`SharedPipeWriter`.
+                #[cfg(unix)]
+                super::OpenFile::File(f) => Self::File(SharedFile(f)),
+                #[cfg(unix)]
+                super::OpenFile::PipeReader(r) => Self::PipeReader(SharedPipeReader(r)),
+                #[cfg(unix)]
+                super::OpenFile::PipeWriter(w) => Self::PipeWriter(SharedPipeWriter(w)),
+                #[cfg(not(unix))]
+                super::OpenFile::File(f) => f
+                    .try_clone()
+                    .ok()
+                    .map_or_else(|| Self::Stdin(stdin()), |file| Self::File(File::from_std(file))),
+                #[cfg(not(unix))]
                 super::OpenFile::PipeReader(r) => {
-                    Self::from_pipe_reader(r).unwrap_or_else(|_| Self::Stdin(stdin()))
+                    r.try_clone()
+                        .ok()
+                        .and_then(|p| Self::from_pipe_reader(p).ok())
+                        .unwrap_or_else(|| Self::Stdin(stdin()))
                 }
+                #[cfg(not(unix))]
                 super::OpenFile::PipeWriter(w) => {
-                    Self::from_pipe_writer(w).unwrap_or_else(|_| Self::Stdout(stdout()))
+                    w.try_clone()
+                        .ok()
+                        .and_then(|p| Self::from_pipe_writer(p).ok())
+                        .unwrap_or_else(|| Self::Stdout(stdout()))
                 }
                 super::OpenFile::Stream(_) => Self::Stdin(stdin()),
             }
