@@ -176,7 +176,7 @@ impl builtins::Command for DeclareCommand {
                         self.lift_string_array_assignment(&mut context, declaration, verb)
                             .await?
                     } else {
-                        self.process_declaration(&mut context, declaration, verb).await?
+                        self.process_declaration(&mut context, declaration, verb)?
                     };
                     if !ok {
                         result = ExecutionResult::general_error();
@@ -285,7 +285,7 @@ impl DeclareCommand {
     }
 
     #[expect(clippy::too_many_lines)]
-    async fn process_declaration(
+    fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
@@ -539,7 +539,7 @@ impl DeclareCommand {
     ) -> Result<bool, brush_core::Error> {
         let (name, _, initial_value, _, _) = Self::declaration_to_name_and_value(declaration)?;
         let Some(ShellValueLiteral::Scalar(s)) = initial_value else {
-            return self.process_declaration(context, declaration, verb).await;
+            return self.process_declaration(context, declaration, verb);
         };
 
         // Reconstruct the declaration so the parser sees an unquoted compound assignment.
@@ -563,7 +563,7 @@ impl DeclareCommand {
         // Apply any further attributes (readonly, export, etc.) that were on the original
         // declaration by re-processing just the variable name (no initial value).
         let name_only = brush_core::CommandArg::String(name);
-        self.process_declaration(context, &name_only, verb).await
+        self.process_declaration(context, &name_only, verb)
     }
 
     /// Handle `declare -a 'arr=(${X})'` by feeding the string back through the
@@ -576,11 +576,11 @@ impl DeclareCommand {
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
         let brush_core::CommandArg::String(s) = declaration else {
-            return self.process_declaration(context, declaration, verb).await;
+            return self.process_declaration(context, declaration, verb);
         };
 
         let Some((var_name, value)) = s.split_once('=') else {
-            return self.process_declaration(context, declaration, verb).await;
+            return self.process_declaration(context, declaration, verb);
         };
 
         let script = if matches!(verb, DeclareVerb::Local) {
@@ -599,10 +599,11 @@ impl DeclareCommand {
             .await?;
 
         let name_only = brush_core::CommandArg::String(var_name.to_owned());
-        self.process_declaration(context, &name_only, verb).await
+        self.process_declaration(context, &name_only, verb)
     }
 
     #[allow(clippy::type_complexity)]
+    #[expect(clippy::too_many_lines)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
     ) -> Result<

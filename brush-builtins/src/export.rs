@@ -75,6 +75,7 @@ impl builtins::Command for ExportCommand {
 }
 
 impl ExportCommand {
+    #[expect(clippy::too_many_lines)]
     fn process_decl(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -98,8 +99,7 @@ impl ExportCommand {
                 // `export ${var}=value`): the parser cannot classify it as an
                 // assignment at parse time, so declaration utilities split it
                 // at runtime, as bash does. `name+=value` appends.
-                else if let Some(eq) = s.find('=') {
-                    let (raw_name, value) = (&s[..eq], &s[eq + 1..]);
+                else if let Some((raw_name, value)) = s.split_once('=') {
                     let (name, append) = match raw_name.strip_suffix('+') {
                         Some(n) => (n, true),
                         None => (raw_name, false),
