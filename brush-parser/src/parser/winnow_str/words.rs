@@ -308,6 +308,17 @@ pub(super) fn escape_sequence<'a>(
         '\\'.parse_next(input)?;
         let c = winnow::token::any::<_, winnow::error::ErrMode<ContextError>>.parse_next(input)?;
 
+        if c == '\n' {
+            // Backslash-newline is a source-level line continuation / splice.
+            // It must *never* contribute a newline (or backslash) character to
+            // a word token's value, unlike other \c escapes. We have consumed
+            // both; return empty so the word builder sees no addition and
+            // subsequent parsing continues on the next logical line.
+            // (This fixes mangled arg tokens to builtins like `inherit` when
+            // ebuilds use \ continuation to split long inherit lists.)
+            return Ok("");
+        }
+
         // If the escaped char is an extglob prefix and '(' follows, consume
         // the balanced parens so the whole construct stays in this word.
         if extglob_enabled && matches!(c, '@' | '?' | '*' | '+' | '!') {
