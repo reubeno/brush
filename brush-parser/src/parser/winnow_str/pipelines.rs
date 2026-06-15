@@ -9,6 +9,7 @@ use crate::parser::{ParserOptions, SourceInfo};
 use super::commands::command;
 use super::helpers::{keyword, linebreak, spaces};
 use super::position::PositionTracker;
+use super::redirections::io_redirect;
 use super::types::{ParseContext, StrStream};
 
 // ============================================================================
@@ -29,12 +30,18 @@ pub(super) fn pipe_operator<'a>() -> impl ModalParser<StrStream<'a>, bool, Conte
 
 /// Add stderr redirect (2>&1) to a command for |& support
 fn add_pipe_extension_redirect(cmd: &mut ast::Command) {
-    let redirect = ast::IoRedirect::File(
-        Some(2), // stderr
-        ast::IoFileRedirectKind::DuplicateOutput,
-        ast::IoFileRedirectTarget::Fd(1), // redirect to stdout
+    add_redirect_to_command(
+        cmd,
+        ast::IoRedirect::File(
+            Some(2), // stderr
+            ast::IoFileRedirectKind::DuplicateOutput,
+            ast::IoFileRedirectTarget::Fd(1), // redirect to stdout
+        ),
     );
+}
 
+/// Append a redirect to a command's redirect list / suffix.
+fn add_redirect_to_command(cmd: &mut ast::Command, redirect: ast::IoRedirect) {
     match cmd {
         ast::Command::Simple(simple) => {
             let redirect_item = ast::CommandPrefixOrSuffixItem::IoRedirect(redirect);
@@ -85,6 +92,42 @@ fn parse_trailing_command(input: &str, options: &ParserOptions) -> Option<ast::C
     command(&ctx, &tracker).parse_next(&mut stream).ok()
 }
 
+/// Parse the leading redirects of a string (the marker-line content that
+/// followed a here-doc operator, e.g. `>out 2>&1` in `cat <<EOF >out 2>&1`),
+/// returning them plus any remaining content (a pipeline continuation or
+/// separator) trimmed for further handling. Used to recover redirects that
+/// appear after a here-doc, which the suffix parser captured as trailing text.
+fn parse_leading_redirects(
+    input: &str,
+    options: &ParserOptions,
+) -> (Vec<ast::IoRedirect>, Option<String>) {
+    let source_info = SourceInfo::default();
+    let pending = std::cell::RefCell::new(None);
+    let comments = std::cell::RefCell::new(Vec::new());
+    let ctx = ParseContext {
+        options,
+        source_info: &source_info,
+        pending_heredoc_trailing: &pending,
+        comments: &comments,
+    };
+    let tracker = PositionTracker::new(input);
+    let mut stream = LocatingSlice::new(input);
+
+    let redirects: Vec<ast::IoRedirect> = repeat(
+        0..,
+        winnow::combinator::preceded(spaces(), io_redirect(&ctx, &tracker)).map(|r| r.redirect),
+    )
+    .parse_next(&mut stream)
+    .unwrap_or_default();
+
+    let rest: &str = winnow::token::rest::<_, ContextError>
+        .parse_next(&mut stream)
+        .unwrap_or("");
+    let rest = rest.trim();
+    let leftover = (!rest.is_empty()).then(|| rest.to_string());
+    (redirects, leftover)
+}
+
 /// Parse pipe sequence (command | command | command)
 /// Corresponds to: winnow.rs `pipe_sequence()`
 pub(super) fn pipe_sequence<'a>(
@@ -118,10 +161,22 @@ pub(super) fn pipe_sequence<'a>(
                     commands
                 });
 
-        // Check if there's pending trailing content from a here-doc (e.g., "| grep hello")
+        // Check if there's pending trailing content from a here-doc, i.e. the
+        // marker-line text after the `<<EOF` operator. It may be redirects
+        // (`cat <<EOF >out`), a pipeline continuation (`cat <<EOF | grep x`), or
+        // both (`cat <<EOF >out | grep x`).
         if let Some(trailing) = ctx.pending_heredoc_trailing.borrow_mut().take() {
-            // Parse the trailing content as additional pipeline commands
-            if let Some(stripped) = trailing.strip_prefix('|') {
+            // Leading redirects belong to the command that owned the here-doc.
+            let (redirects, leftover) = parse_leading_redirects(trailing, ctx.options);
+            if !redirects.is_empty()
+                && let Some(cmd) = commands.last_mut()
+            {
+                for redirect in redirects {
+                    add_redirect_to_command(cmd, redirect);
+                }
+            }
+            // Anything left is a pipeline continuation.
+            if let Some(stripped) = leftover.as_deref().and_then(|s| s.strip_prefix('|')) {
                 let trailing_input = format!("{}\n", stripped.trim());
                 if let Some(trailing_cmd) = parse_trailing_command(&trailing_input, ctx.options) {
                     commands.push(trailing_cmd);
