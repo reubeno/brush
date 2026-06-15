@@ -628,7 +628,27 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         &mut self,
         word: &str,
     ) -> Result<patterns::Pattern, error::Error> {
-        let expansion = self.basic_expand(word).await?;
+        // A pattern operand must preserve unquoted backslashes so they can
+        // escape pattern metacharacters; the default `Strip` (correct for
+        // ordinary words) would turn e.g. `${var#[\!\^]}` into `[!^]` (a
+        // negated bracket) and `${var#\*}` into `${var#*}` (a wildcard). This
+        // method is reached both from the dedicated pattern entry point (which
+        // already sets `Preserve`) and from parameter expansion via the outer
+        // word's expander (which uses `Strip`), so force `Preserve` here.
+        //
+        // The operand is also not double-quoted text even when the enclosing
+        // `${...}` appears inside double quotes (`"${v#[\!\^]}"`): the backslash
+        // still quotes the pattern metacharacter. Clear `in_double_quotes` too,
+        // otherwise its escape-stripping short-circuit would defeat `Preserve`.
+        let saved_handling = std::mem::replace(
+            &mut self.unquoted_backslash_handling,
+            UnquotedBackslashHandling::Preserve,
+        );
+        let saved_in_quotes = std::mem::replace(&mut self.in_double_quotes, false);
+        let expansion = self.basic_expand(word).await;
+        self.unquoted_backslash_handling = saved_handling;
+        self.in_double_quotes = saved_in_quotes;
+        let expansion = expansion?;
 
         // TODO(IFS): Use IFS instead for separator?
         #[expect(unstable_name_collisions)]

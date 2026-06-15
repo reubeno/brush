@@ -315,6 +315,25 @@ cases:
       shopt -s nocasematch
       echo "\${var##PRE}(nocasematch): ${var##PRE}"
 
+  - name: "Remove prefix/suffix with escaped pattern metacharacters"
+    stdin: |
+      # An escaped !/^ at the start of a bracket expression must be a literal
+      # member, not the negation operator (regression: the ffmpeg ebuild's
+      # `${v#[\!\^]}` to strip a leading ! or ^).
+      for v in libass '^htmlpages' '!override' xcb; do
+          echo "${v#[\!\^]}"
+      done
+      # An escaped wildcard removes the literal character, not "everything".
+      x='*abc'
+      echo "${x#\*}"
+      y='?abc'
+      echo "${y#\?}"
+      z='[abc'
+      echo "${z#\[}"
+      # An *unescaped* leading ! is still a negation operator.
+      w=abc
+      echo "${w#[!x]}"
+
   - name: "Indirect variable references"
     stdin: |
       var="Hello"
