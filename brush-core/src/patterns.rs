@@ -261,13 +261,22 @@ impl Pattern {
                 matches!(piece, PatternPiece::Pattern(_))
                     && requires_expansion(piece.as_str(), self.enable_extended_globbing)
             }) {
+                let flattened = component
+                    .iter()
+                    .map(|piece| piece.as_str())
+                    .collect::<String>();
                 for p in &mut paths_so_far {
-                    let flattened = component
-                        .iter()
-                        .map(|piece| piece.as_str())
-                        .collect::<String>();
                     sys::fs::push_path_for_pattern(p, &flattened);
                 }
+                // We only reach this loop when the overall pattern contains at
+                // least one glob component, so every path in `paths_so_far`
+                // originates from a real directory entry. A literal component
+                // appended after a glob (e.g. `*/lib/foo.a`, `dist/*/bin`) must
+                // still exist on disk to count as a match — bash only yields
+                // glob results whose full path exists. Without this filter the
+                // literal tail is appended blindly to every directory the
+                // wildcard matched, producing non-existent paths.
+                paths_so_far.retain(|p| p.symlink_metadata().is_ok());
                 continue;
             }
 
@@ -987,6 +996,33 @@ mod tests {
             );
         }
 
+        Ok(())
+    }
+
+    /// Regression test: a wildcard followed by literal path components must
+    /// only yield paths whose *full* path exists on disk. Previously the
+    /// literal tail (`lib/foo.a`) was appended blindly to every directory the
+    /// wildcard matched, so `*/lib/foo.a` produced non-existent paths like
+    /// `b/lib/foo.a` (this broke e.g. nss's `cp -L */lib/*.a` and
+    /// `pushd dist/*/bin`).
+    #[test]
+    fn test_wildcard_with_literal_tail_filters_nonexistent() -> Result<()> {
+        let scratch = tempfile::tempdir()?;
+        // a/lib/foo.a exists; b exists but has no lib/foo.a; c/lib exists but
+        // has no foo.a.
+        std::fs::create_dir_all(scratch.path().join("a/lib"))?;
+        std::fs::create_dir_all(scratch.path().join("b"))?;
+        std::fs::create_dir_all(scratch.path().join("c/lib"))?;
+        std::fs::write(scratch.path().join("a/lib/foo.a"), "")?;
+
+        let pattern = Pattern::from("*/lib/foo.a").set_extended_globbing(false);
+        let result = pattern.expand::<fn(&Path) -> bool>(
+            scratch.path(),
+            None,
+            &FilenameExpansionOptions::default(),
+        )?;
+
+        assert_eq!(expect_expanded(result)?, vec!["a/lib/foo.a".to_string()]);
         Ok(())
     }
 
