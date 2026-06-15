@@ -44,5 +44,5 @@ version-compare = "0.2.1"
 walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dependencies]
-expectrl = "0.8.0"
+expectrl = "0.9.0"
 nix = { version = "0.31.2", features = ["process"] }
