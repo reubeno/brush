@@ -24,6 +24,8 @@ pub(crate) struct ExecCommand {
 }
 
 impl builtins::Command for ExecCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

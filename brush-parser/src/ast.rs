@@ -38,6 +38,11 @@ pub(crate) fn maybe_location(
 pub struct Program {
     /// A sequence of complete shell commands.
     pub complete_commands: Vec<CompleteCommand>,
+    /// Byte spans of comments found during parsing (`#` to end of line, excluding the `\n`).
+    /// Populated by the winnow parser; empty when using the PEG parser.
+    /// Useful for tools that need to preserve or analyse comments (e.g. config file editors).
+    #[cfg_attr(any(test, feature = "serde"), serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub comments: Vec<SourceSpan>,
 }
 
 impl Node for Program {}

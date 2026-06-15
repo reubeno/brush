@@ -45,3 +45,76 @@ cases:
         echo "After eval'd break (outer loop)"
       done
       echo "After outer loop"
+
+  - name: "eval dynamic function definition"
+    stdin: |
+      fname="myfunc"
+      eval "${fname}() { echo \"hello from ${fname}\"; }"
+      myfunc
+
+  - name: "eval dynamic function with args"
+    stdin: |
+      fname="greet"
+      eval "${fname}() { echo \"hello \$1\"; }"
+      greet world
+
+  - name: "eval EXPORT_FUNCTIONS pattern"
+    stdin: |
+      ECLASS="python"
+
+      python_src_compile() { echo "python compile: $@"; }
+      python_src_install() { echo "python install: $@"; }
+
+      EXPORT_FUNCTIONS() {
+        local __phase
+        for __phase in "$@"; do
+          eval "${__phase}() { ${ECLASS}_${__phase} \"\$@\"; }"
+        done
+      }
+
+      EXPORT_FUNCTIONS src_compile src_install
+      src_compile arg1 arg2
+      src_install arg1
+
+  - name: "eval with nested quoting"
+    stdin: |
+      x="hello world"
+      eval "echo \"the value is: '$x'\""
+
+  - name: "eval variable indirection"
+    stdin: |
+      var_name="MY_VAR"
+      eval "${var_name}='some value'"
+      echo "$MY_VAR"
+
+  - name: "eval with command substitution"
+    stdin: |
+      eval "result=\$(echo computed)"
+      echo "$result"
+
+  - name: "eval building array"
+    stdin: |
+      eval "arr=(one two three)"
+      echo "${#arr[@]}"
+      echo "${arr[1]}"
+
+  - name: "eval multiple statements"
+    stdin: |
+      eval 'x=1; y=2; echo $((x + y))'
+
+  - name: "eval preserves exit code"
+    stdin: |
+      eval 'false'
+      echo "exit: $?"
+      eval 'true'
+      echo "exit: $?"
+
+  - name: "eval with heredoc"
+    stdin: |
+      eval "$(cat <<'EOF'
+      myfunc() {
+        echo "defined via heredoc eval"
+      }
+      EOF
+      )"
+      myfunc

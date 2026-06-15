@@ -33,29 +33,40 @@ impl CommandCommand {
 }
 
 impl builtins::Command for CommandCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // Silently exit if no command was provided.
         if let Some(command_name) = self.command() {
             if self.print_description || self.print_verbose_description {
-                if let Some(found_cmd) =
-                    Self::try_find_command(context.shell, command_name, self.use_default_path)
-                {
+                if let Some(found_cmd) = Self::try_find_command(
+                    context.shell,
+                    command_name,
+                    self.use_default_path,
+                ) {
+                    let mut output = Vec::new();
                     if self.print_description {
-                        writeln!(context.stdout(), "{found_cmd}")?;
+                        writeln!(output, "{found_cmd}")?;
                     } else {
                         match found_cmd {
                             FoundCommand::Builtin(_name) => {
-                                writeln!(context.stdout(), "{command_name} is a shell builtin")?;
+                                writeln!(output, "{command_name} is a shell builtin")?;
                             }
                             FoundCommand::External(path) => {
-                                writeln!(context.stdout(), "{command_name} is {path}")?;
+                                writeln!(output, "{command_name} is {path}")?;
                             }
                         }
+                    }
+                    if let Some(mut stdout) = context.stdout_async() {
+                        stdout.write_all(&output).await?;
+                        stdout.flush().await?;
+                    } else {
+                        context.stdout().write_all(&output)?;
+                        context.stdout().flush()?;
                     }
                     Ok(ExecutionResult::success())
                 } else {
@@ -94,8 +105,7 @@ impl CommandCommand {
         command_name: &str,
         use_default_path: bool,
     ) -> Option<FoundCommand> {
-        // Look in path.
-        if sys::fs::contains_path_separator(command_name) {
+        if command_name.contains(std::path::MAIN_SEPARATOR) {
             let candidate_path = shell.absolute_path(Path::new(command_name));
             if candidate_path.executable() {
                 Some(FoundCommand::External(

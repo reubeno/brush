@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use assert_fs::prelude::*;
-use brush_builtins::ShellBuilderExt;
+use brush_builtins::ShellExt;
 use std::path::PathBuf;
 
 struct TestShellWithBashCompletion {
@@ -22,9 +22,9 @@ impl TestShellWithBashCompletion {
         let mut shell = brush_core::Shell::builder()
             .profile(brush_core::ProfileLoadBehavior::Skip)
             .rc(brush_core::RcLoadBehavior::Skip)
-            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await?;
+        shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
 
         let temp_dir = assert_fs::TempDir::new()?;
         let bash_completion_script_path = Self::find_bash_completion_script()?;
@@ -416,9 +416,9 @@ async fn interactive_completion_sets_comp_key_and_comp_type() -> Result<()> {
     let mut shell = brush_core::Shell::builder()
         .profile(brush_core::ProfileLoadBehavior::Skip)
         .rc(brush_core::RcLoadBehavior::Skip)
-        .default_builtins(brush_builtins::BuiltinSet::BashMode)
         .build()
         .await?;
+    shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
 
     // Register a completion function that captures COMP_KEY and COMP_TYPE.
     let exec_params = shell.default_exec_params();
@@ -446,11 +446,11 @@ complete -F _test_comp mycmd
     let comp_key = shell
         .env()
         .get("CAPTURED_COMP_KEY")
-        .map(|(_, v)| v.value().to_cow_str(&shell).to_string());
+        .map(|resolved| resolved.base_var().value().to_cow_str(&shell).to_string());
     let comp_type = shell
         .env()
         .get("CAPTURED_COMP_TYPE")
-        .map(|(_, v)| v.value().to_cow_str(&shell).to_string());
+        .map(|resolved| resolved.base_var().value().to_cow_str(&shell).to_string());
 
     assert_eq!(comp_key.as_deref(), Some("9"), "COMP_KEY should be 9 (TAB)");
     assert_eq!(
@@ -474,9 +474,9 @@ impl TestShellNative {
         let mut shell = brush_core::Shell::builder()
             .profile(brush_core::ProfileLoadBehavior::Skip)
             .rc(brush_core::RcLoadBehavior::Skip)
-            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await?;
+        shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
 
         let temp_dir = assert_fs::TempDir::new()?;
         shell.set_working_dir(temp_dir.path())?;

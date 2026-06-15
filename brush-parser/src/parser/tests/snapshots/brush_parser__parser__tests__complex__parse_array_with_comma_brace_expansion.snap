@@ -1,0 +1,60 @@
+---
+source: brush-parser/src/parser/tests/complex.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "_PYTHON_HISTORICAL_IMPLS=(\n\tjython2_7\n\tpypy pypy1_{8,9} pypy2_0 pypy3\n\tpython2_{5..7}\n\tpython3_{1..10}\n)",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("_PYTHON_HISTORICAL_IMPLS"),
+                    value: Array([
+                      (None, Word(
+                        value: "jython2_7",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "pypy",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "pypy1_{8,9}",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "pypy2_0",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "pypy3",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "python2_{5..7}",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "python3_{1..10}",
+                        loc: "[location]",
+                      )),
+                    ]),
+                    loc: "[location]",
+                  ), Word(
+                    value: "_PYTHON_HISTORICAL_IMPLS=(jython2_7 pypy pypy1_{8,9} pypy2_0 pypy3 python2_{5..7} python3_{1..10})",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

@@ -364,7 +364,6 @@ cases:
       echo "a b c" | { read -s v1 v2 v3; echo "v1='$v1' v2='$v2' v3='$v3'"; }
 
   - name: "read into nameref variable"
-    known_failure: true
     stdin: |
       declare -n ref=result
       read ref <<< "input_value"
@@ -372,7 +371,6 @@ cases:
       echo "ref: $ref"
 
   - name: "read -a into nameref array"
-    known_failure: true
     stdin: |
       declare -n ref=myarr
       read -a ref <<< "one two three"
@@ -382,7 +380,6 @@ cases:
       echo "ref[1]: ${ref[1]}"
 
   - name: "read into subscripted nameref"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[1]'
@@ -390,3 +387,9 @@ cases:
       echo "arr[0]: ${arr[0]}"
       echo "arr[1]: ${arr[1]}"
       echo "arr[2]: ${arr[2]}"
+
+  - name: "read into dynamically-expanded variable name"
+    stdin: |
+      v=RVAR
+      read ${v} <<< "line-content"
+      echo "RVAR=[$RVAR]"

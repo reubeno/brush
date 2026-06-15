@@ -1,0 +1,34 @@
+---
+source: brush-parser/src/parser/tests/complex.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "RESULT=$(\n    cat <<EOF\nhello world\nEOF\n)",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("RESULT"),
+                    value: Scalar(Word(
+                      value: "$(\n    cat <<EOF\nhello world\nEOF\n)",
+                      loc: "[location]",
+                    )),
+                    loc: "[location]",
+                  ), Word(
+                    value: "RESULT=$(\n    cat <<EOF\nhello world\nEOF\n)",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

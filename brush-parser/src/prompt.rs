@@ -1,6 +1,7 @@
 //! Parser for shell prompt syntax (e.g., `PS1`).
 
 use crate::error;
+use crate::parser::ParserImpl;
 
 /// A piece of a prompt string.
 #[derive(Clone, Debug)]
@@ -95,8 +96,12 @@ pub enum PromptTimeFormat {
     TwentyFourHourHHMMSS,
 }
 
+// ============================================================================
+// PEG-based implementation
+// ============================================================================
+
 peg::parser! {
-    grammar prompt_parser() for str {
+    grammar peg_prompt_parser() for str {
         pub(crate) rule prompt() -> Vec<PromptPiece> =
             pieces:prompt_piece()*
 
@@ -148,14 +153,124 @@ peg::parser! {
     }
 }
 
-/// Parses a shell prompt string.
+fn peg_parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
+    peg_prompt_parser::prompt(s).map_err(|e| error::WordParseError::Prompt(e.to_string()))
+}
+
+// ============================================================================
+// Winnow-based implementation
+// ============================================================================
+
+#[cfg(feature = "winnow-parser")]
+mod winnow_impl {
+    use super::{PromptDateFormat, PromptPiece, PromptTimeFormat};
+    use winnow::combinator::{alt, cut_err, delimited, empty, fail, repeat};
+    use winnow::dispatch;
+    use winnow::prelude::*;
+    use winnow::token::{any, take_while};
+
+    pub(super) fn parse(i: &mut &str) -> ModalResult<Vec<PromptPiece>> {
+        repeat(0.., prompt_piece).parse_next(i)
+    }
+
+    fn prompt_piece(i: &mut &str) -> ModalResult<PromptPiece> {
+        alt((special_sequence, literal_sequence)).parse_next(i)
+    }
+
+    fn special_sequence(i: &mut &str) -> ModalResult<PromptPiece> {
+        '\\'.parse_next(i)?;
+        alt((
+            dispatch! { any;
+                'a' => empty.value(PromptPiece::BellCharacter),
+                'A' => empty.value(PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMM)),
+                'd' => empty.value(PromptPiece::Date(PromptDateFormat::WeekdayMonthDate)),
+                'D' => custom_date_format_tail,
+                'e' => empty.value(PromptPiece::EscapeCharacter),
+                'h' => empty.value(PromptPiece::Hostname { only_up_to_first_dot: true }),
+                'H' => empty.value(PromptPiece::Hostname { only_up_to_first_dot: false }),
+                'j' => empty.value(PromptPiece::NumberOfManagedJobs),
+                'l' => empty.value(PromptPiece::TerminalDeviceBaseName),
+                'n' => empty.value(PromptPiece::Newline),
+                'r' => empty.value(PromptPiece::CarriageReturn),
+                's' => empty.value(PromptPiece::ShellBaseName),
+                't' => empty.value(PromptPiece::Time(PromptTimeFormat::TwentyFourHourHHMMSS)),
+                'T' => empty.value(PromptPiece::Time(PromptTimeFormat::TwelveHourHHMMSS)),
+                '@' => empty.value(PromptPiece::Time(PromptTimeFormat::TwelveHourAM)),
+                'u' => empty.value(PromptPiece::CurrentUser),
+                'v' => empty.value(PromptPiece::ShellVersion),
+                'V' => empty.value(PromptPiece::ShellRelease),
+                'w' => empty.value(PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: false }),
+                'W' => empty.value(PromptPiece::CurrentWorkingDirectory { tilde_replaced: true, basename: true }),
+                '!' => empty.value(PromptPiece::CurrentHistoryNumber),
+                '#' => empty.value(PromptPiece::CurrentCommandNumber),
+                '$' => empty.value(PromptPiece::DollarOrPound),
+                '\\' => empty.value(PromptPiece::Backslash),
+                '[' => empty.value(PromptPiece::StartNonPrintingSequence),
+                ']' => empty.value(PromptPiece::EndNonPrintingSequence),
+                _ => fail::<_, PromptPiece, _>,
+            },
+            // Octal: \nnn (1-3 octal digits) — these chars are not in the dispatch table above
+            octal_number.map(PromptPiece::AsciiCharacter),
+            // Any other escaped char: \x → EscapedSequence("\\x")
+            any.map(|c: char| PromptPiece::EscapedSequence(format!("\\{c}"))),
+        ))
+        .parse_next(i)
+    }
+
+    fn custom_date_format_tail(i: &mut &str) -> ModalResult<PromptPiece> {
+        let f = delimited('{', date_format, cut_err('}')).parse_next(i)?;
+        Ok(PromptPiece::Date(PromptDateFormat::Custom(f)))
+    }
+
+    fn date_format(i: &mut &str) -> ModalResult<String> {
+        take_while(0.., |c: char| c != '}')
+            .map(str::to_owned)
+            .parse_next(i)
+    }
+
+    fn octal_number(i: &mut &str) -> ModalResult<u32> {
+        let digits = take_while(1..=3, |c: char| matches!(c, '0'..='7')).parse_next(i)?;
+        // 1-3 octal digits always parse successfully (max 0o777 = 511 < u32::MAX)
+        Ok(u32::from_str_radix(digits, 8).unwrap_or(0))
+    }
+
+    fn literal_sequence(i: &mut &str) -> ModalResult<PromptPiece> {
+        take_while(1.., |c: char| c != '\\')
+            .map(|s: &str| PromptPiece::Literal(s.to_owned()))
+            .parse_next(i)
+    }
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+/// Parses a shell prompt string using the default parser implementation.
 ///
 /// # Arguments
 ///
 /// * `s` - The prompt string to parse.
 pub fn parse(s: &str) -> Result<Vec<PromptPiece>, error::WordParseError> {
-    let result = prompt_parser::prompt(s).map_err(|e| error::WordParseError::Prompt(e.into()))?;
-    Ok(result)
+    parse_with(s, ParserImpl::default())
+}
+
+/// Parses a shell prompt string using the specified parser implementation.
+///
+/// # Arguments
+///
+/// * `s` - The prompt string to parse.
+/// * `impl_` - The parser implementation to use.
+pub fn parse_with(s: &str, impl_: ParserImpl) -> Result<Vec<PromptPiece>, error::WordParseError> {
+    match impl_ {
+        ParserImpl::Peg => peg_parse(s),
+        #[cfg(feature = "winnow-parser")]
+        ParserImpl::Winnow => {
+            use winnow::Parser as _;
+            winnow_impl::parse
+                .parse(s)
+                .map_err(|e| error::WordParseError::Prompt(e.to_string()))
+        }
+    }
 }
 
 #[cfg(test)]

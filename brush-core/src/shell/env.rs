@@ -15,13 +15,27 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         self.env.get_str(name, self)
     }
 
-    /// Tries to retrieve a variable from the shell's environment.
+    /// Tries to retrieve a variable from the shell's environment, resolving namerefs.
+    ///
+    /// Returns a [`ResolvedVarRef`](crate::env::ResolvedVarRef) with safe accessors:
+    /// - [`base_var()`](crate::env::ResolvedVarRef::base_var) for attribute/type checks
+    /// - [`value_str()`](crate::env::ResolvedVarRef::value_str) for value extraction
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the variable to retrieve.
-    pub fn env_var(&self, name: &str) -> Option<&ShellVariable> {
-        self.env.get(name).map(|(_, var)| var)
+    pub fn env_var(&self, name: &str) -> Option<crate::env::ResolvedVarRef<'_>> {
+        self.env.get(name)
+    }
+
+    /// Checks whether a variable of the given name is set in the shell's
+    /// environment, resolving namerefs transparently.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable to check.
+    pub fn env_is_set(&self, name: &str) -> bool {
+        self.env.is_set(name, self)
     }
 
     /// Tries to set a global variable in the shell's environment.

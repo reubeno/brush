@@ -186,7 +186,6 @@ cases:
       declare -p arr
 
   - name: "mapfile into nameref variable"
-    known_failure: true
     stdin: |
       declare -a target
       declare -n ref=target
@@ -194,7 +193,6 @@ cases:
       declare -p target
 
   - name: "mapfile -O into nameref variable"
-    known_failure: true
     stdin: |
       target=(x y)
       declare -n ref=target

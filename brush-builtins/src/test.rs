@@ -14,6 +14,8 @@ pub(crate) struct TestCommand {
 }
 
 impl builtins::Command for TestCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
@@ -40,7 +42,10 @@ impl builtins::Command for TestCommand {
             match args.last() {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {
-                    writeln!(context.stderr(), "[: missing ']'")?;
+                    let mut stderr_output = Vec::new();
+                    writeln!(stderr_output, "[: missing ']'")?;
+                    context.stderr().write_all(&stderr_output)?;
+                    context.stderr().flush()?;
                     return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             }
