@@ -109,8 +109,12 @@ pub(crate) fn compile_regex(
     // Move regex_str into the key to avoid cloning on cache-hit path.
     let key = (regex_str, case_insensitive, multiline);
 
-    let cached_regex = REGEX_CACHE
-        .with(|cache| cache.borrow_mut().as_mut().and_then(|c| c.cache_get(&key).cloned()));
+    let cached_regex = REGEX_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .as_mut()
+            .and_then(|c| c.cache_get(&key).cloned())
+    });
     if let Some(re) = cached_regex {
         return Ok(re);
     }
