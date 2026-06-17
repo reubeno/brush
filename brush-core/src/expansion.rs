@@ -1467,7 +1467,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let mut transformed_fields = vec![];
                 for field in expanded_parameter.fields {
                     let s = String::from(field);
-                    let transformed = self.apply_transform_to(&op, &s, came_from_undefined).await?;
+                    let transformed = self
+                        .apply_transform_to(&op, &s, came_from_undefined)
+                        .await?;
                     transformed_fields.push(WordField::from(transformed));
                 }
 
@@ -2011,10 +2013,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Ok(to_initial_capitals(s))
             }
             brush_parser::word::ParameterTransformOp::ExpandEscapeSequences => {
-                let (result, _) = escape::expand_backslash_escapes(
-                    s,
-                    escape::EscapeExpansionMode::AnsiCQuotes,
-                )?;
+                let (result, _) =
+                    escape::expand_backslash_escapes(s, escape::EscapeExpansionMode::AnsiCQuotes)?;
                 Ok(String::from_utf8_lossy(result.as_slice()).into_owned())
             }
             brush_parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
