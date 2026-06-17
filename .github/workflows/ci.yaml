@@ -168,7 +168,9 @@ jobs:
             skip_rustup_target: true
             check_only: true
 
-    name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
+    # check_only targets compile-check rather than build; 'Check' is truthy so
+    # this avoids the empty-true-branch falsy-fallthrough gotcha.
+    name: "${{ matrix.check_only && 'Check' || 'Build' }} (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
@@ -208,7 +210,7 @@ jobs:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
         run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
 
-      - name: "Build (cross)"
+      - name: "${{ matrix.check_only && 'Check' || 'Build' }} (cross)"
         if: ${{ matrix.target != '' }}
         env:
           CROSS_COMMAND: ${{ matrix.cross_command }}
