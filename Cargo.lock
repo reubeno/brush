@@ -681,6 +681,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
+ "cfg_aliases",
  "clap",
  "colored",
  "descape",
@@ -6667,6 +6668,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "brush-shell",
+ "cfg_aliases",
  "clap",
  "clap-markdown",
  "clap_complete",

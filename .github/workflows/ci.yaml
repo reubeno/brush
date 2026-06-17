@@ -118,8 +118,57 @@ jobs:
             required_tools: ""
             binary_name: "brush"
             extra_build_args: ""
+          # x86_64/FreeBSD target on x86_64/linux host, via cross. Compile-check
+          # only (check_only): cross's curated sysroot omits some base-system
+          # libraries (libgeom/libkvm/...) that `sysinfo` links against, so the
+          # final link of a real binary fails. Checking still validates that the
+          # shell compiles for the target; producing a binary is a TODO (would
+          # need a full sysroot with those libraries present).
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-freebsd"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
+            os: "freebsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: ""
+            check_only: true
+          # x86_64/NetBSD target on x86_64/linux host, via cross. Compile-check
+          # only for the same reason as FreeBSD above.
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-netbsd"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
+            os: "netbsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: ""
+            check_only: true
+          # OpenBSD is tier-3 with no prebuilt std, so even compile-checking it
+          # requires building std from source (-Zbuild-std, hence nightly +
+          # rust-src + no rustup target). panic_abort is built explicitly because
+          # our release profile sets panic = "abort" (plain -Zbuild-std only
+          # builds std + panic_unwind). Compile-check only, like the other BSDs;
+          # check links nothing, so no C cross-compiler/sysroot/linker is needed
+          # (none of the workspace's C-compiling deps are in this default graph).
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-openbsd"
+            cross_command: "cargo"
+            cross_tool_to_install: ""
+            os: "openbsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: "-Zbuild-std=std,panic_abort"
+            toolchain: "nightly"
+            components: "rust-src"
+            # std is built from source, so there's no prebuilt target to install.
+            skip_rustup_target: true
+            check_only: true
 
-    name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
+    name: "${{ matrix.check_only && 'Check' || 'Build' }} (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
@@ -130,8 +179,9 @@ jobs:
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
+          toolchain: ${{ matrix.toolchain || 'stable' }}
+          targets: ${{ !matrix.skip_rustup_target && matrix.target || '' }}
+          components: ${{ matrix.components || '' }}
 
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -145,7 +195,7 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y ${REQUIRED_TOOLS}
 
       - name: Install cross-compilation toolchain
-        if: ${{ matrix.target != '' }}
+        if: ${{ matrix.cross_tool_to_install != '' }}
         uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: ${{ matrix.cross_tool_to_install }}
@@ -156,16 +206,19 @@ jobs:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
         run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
 
-      - name: "Build (cross)"
+      - name: "${{ matrix.check_only && 'Check' || 'Build' }} (cross)"
         if: ${{ matrix.target != '' }}
         env:
           CROSS_COMMAND: ${{ matrix.cross_command }}
+          CARGO_SUBCOMMAND: ${{ matrix.check_only && 'check' || 'build' }}
           TARGET: ${{ matrix.target }}
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
           CARGO_NDK_PLATFORM: 24
-        run: ${CROSS_COMMAND} build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
+        run: ${CROSS_COMMAND} ${CARGO_SUBCOMMAND} --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
+        # check_only targets don't produce a binary to upload.
+        if: ${{ !matrix.check_only }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}

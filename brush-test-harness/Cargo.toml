@@ -44,5 +44,14 @@ version-compare = "0.2.1"
 walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dependencies]
-expectrl = "0.8.0"
 nix = { version = "0.31.2", features = ["process"] }
+
+[build-dependencies]
+# Defines the `pty` cfg (see build.rs) used to gate pty-based test code.
+cfg_aliases = "0.2.1"
+
+# expectrl's pty support (via ptyprocess) is limited to these platforms;
+# pty-based tests are reported as unsupported elsewhere. Keep this list in sync
+# with the `pty` cfg in build.rs (which gates the code using this dependency).
+[target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "freebsd"))'.dependencies]
+expectrl = "0.8.0"
