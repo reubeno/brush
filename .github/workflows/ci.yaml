@@ -200,7 +200,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.cross_tool_to_install != '' }}
-        uses: taiki-e/install-action@6887963ccf37a9ddcd8c5fa4baeb3e1e5fd61fa1 # v2.81.8
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: ${{ matrix.cross_tool_to_install }}
 
