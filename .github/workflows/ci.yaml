@@ -168,8 +168,6 @@ jobs:
             skip_rustup_target: true
             check_only: true
 
-    # check_only targets compile-check rather than build; 'Check' is truthy so
-    # this avoids the empty-true-branch falsy-fallthrough gotcha.
     name: "${{ matrix.check_only && 'Check' || 'Build' }} (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ${{ matrix.host }}
     steps:
@@ -182,8 +180,6 @@ jobs:
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: ${{ matrix.toolchain || 'stable' }}
-          # `!skip && target` (not `skip && '' || target`) because the latter's empty
-          # true-branch is falsy and would fall through to `target`.
           targets: ${{ !matrix.skip_rustup_target && matrix.target || '' }}
           components: ${{ matrix.components || '' }}
 
@@ -214,8 +210,6 @@ jobs:
         if: ${{ matrix.target != '' }}
         env:
           CROSS_COMMAND: ${{ matrix.cross_command }}
-          # Some targets only compile-check (see check_only in the matrix); 'check'
-          # is truthy so this avoids the empty-true-branch falsy-fallthrough gotcha.
           CARGO_SUBCOMMAND: ${{ matrix.check_only && 'check' || 'build' }}
           TARGET: ${{ matrix.target }}
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
