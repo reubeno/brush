@@ -94,7 +94,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         &mut self,
         name: N,
         args: I,
-        params: &ExecutionParameters,
+        params: ExecutionParameters,
     ) -> Result<u8, error::Error> {
         let name = name.as_ref();
         let command_name = String::from(name);
@@ -108,7 +108,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         let context = commands::ExecutionContext {
             shell: self,
             command_name,
-            params: params.clone(),
+            params,
         };
 
         let command_args = args

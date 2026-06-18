@@ -1,0 +1,72 @@
+name: "File descriptor management"
+# Regression tests for issue #1173: nested/concurrent shell constructs must not
+# exhaust the process-wide file-descriptor table.
+#
+# brush runs subshells, command substitutions, background jobs, and function
+# call contexts as in-process tasks rather than via fork(2), so they all share a
+# single process-wide descriptor table. Each context inherits the caller's open
+# files; sharing those descriptors -- rather than giving each context its own
+# copy -- is what keeps deeply nested or highly concurrent scripts within the
+# limit. A real shell gives each forked subshell its own descriptor table and so
+# stays well within the limit too.
+#
+# Each case lowers the descriptor limit with `ulimit -n` and runs a workload that
+# stays within the limit only when inherited descriptors are shared across
+# contexts; if each context copied them, the workload would exceed the limit and
+# fail with "Too many open files" and truncated output. The limits leave the
+# correct (sharing) behavior several-fold headroom. These cases assume Unix
+# `ulimit -n` semantics.
+cases:
+  # Concurrent fan-out: every backgrounded job is alive simultaneously (they are
+  # all launched before `wait`), so copying the inherited descriptors per job
+  # would multiply the live descriptor count by the number of jobs.
+  - name: "Many concurrent background jobs each using command substitution"
+    incompatible_platforms: ["wasi"]
+    args:
+      - "-c"
+      - |
+        ulimit -n 256 || exit 1
+        emit() {
+          local v
+          v=$(echo "$1")
+          echo "$v"
+        }
+        ( for i in $(seq 1 60); do emit "$i" & done; wait ) | wc -l | tr -d ' '
+
+  # nvm-style: backgrounded jobs in a subshell, piped to a filter, each touching
+  # /dev/null via redirects -- the precise shape that exhausted descriptors in
+  # `nvm ls`.
+  - name: "Subshell of backgrounded jobs with redirects piped to a filter"
+    incompatible_platforms: ["wasi"]
+    args:
+      - "-c"
+      - |
+        ulimit -n 256 || exit 1
+        work() {
+          local v
+          v=$(echo "alias-$1" 2>/dev/null)
+          echo "$v" 2>/dev/null
+        }
+        ( for i in $(seq 1 50); do work "$i" 2>/dev/null & done; wait ) | sort | wc -l | tr -d ' '
+
+  # Nested depth: each command-substitution level keeps its ancestors' contexts
+  # alive while it runs, so copying inherited descriptors would grow the live
+  # count with nesting depth.
+  - name: "Deeply nested command substitution with redirects stays within the fd limit"
+    incompatible_platforms: ["wasi"]
+    args:
+      - "-c"
+      - |
+        ulimit -n 256 || exit 1
+        rec() {
+          local n=$1
+          if [ "$n" -le 0 ]; then
+            printf 'x' 2>/dev/null
+            return
+          fi
+          local inner
+          inner=$(rec $((n - 1)) 2>/dev/null)
+          printf '%s' "$inner" 2>/dev/null
+        }
+        out=$(rec 40)
+        echo "${#out}"

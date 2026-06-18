@@ -198,3 +198,138 @@ cases:
     stdin: |
       prompt='\[$var\]\u > '
       echo "Prompt: ${prompt@P}"
+
+  # The following cases exercise double-quote escape semantics in the second
+  # pass of prompt expansion: a backslash only escapes (and is consumed by)
+  # one of the same characters it would escape inside a double-quoted string;
+  # for any other character, the backslash is preserved literally.
+  #
+  # We pipe the expansion result through hexdump -C to get a deterministic
+  # byte-level view, avoiding any divergence in `printf '%q'` formatting.
+  - name: "Backslash-CR survives prompt expansion (issue #1119)"
+    stdin: |
+      # OSC 133;C followed by ST (\e\\) and CR. The ST must end with a literal
+      # backslash byte (0x5c); without it, the OSC is malformed and terminals
+      # may eat the first character of subsequent output.
+      prompt='\e]133;C\e\\\r'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Backslash before non-special char preserves backslash"
+    stdin: |
+      # Under double-quote escape rules, a backslash before a non-special
+      # character is preserved literally. \\X (raw) = '\' + 'X' should expand
+      # to literal '\X'.
+      prompt='\\X'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      prompt='\\Z'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      prompt='\\n'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      prompt=$'\\\\\t'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Backslash before dollar escapes parameter expansion"
+    stdin: |
+      # `\\$VAR` (PS0 raw chars: \\, $, V, A, R) → step 1 produces \$VAR, then
+      # step 2's `\$` consumes the backslash and leaves a literal $, so $VAR
+      # remains literal (not expanded).
+      var=hello
+      prompt='\\$var'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Double backslash before dollar yields backslash + expansion"
+    stdin: |
+      # `\\\\$VAR` → step 1 produces \\$VAR, then step 2's `\\` reduces to a
+      # literal `\` and `$VAR` is expanded normally.
+      var=hello
+      prompt='\\\\$var'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Backslash before escaped dollar"
+    stdin: |
+      # `\\\$` → step 1 produces \$ (Backslash + DollarOrPound). Step 2 keeps
+      # the literal backslash and the literal $, so the result is `\$`.
+      prompt='\\\$'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Many backslashes before non-special"
+    stdin: |
+      # Each `\\` in step 1 produces a literal `\`. Step 2 reduces consecutive
+      # backslashes pairwise.
+      prompt='\\\\\\\\X'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      prompt=$'\\\\\\\\\r'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Backslash before newline is line continuation"
+    stdin: |
+      # `\\\n` produces (Backslash, Newline) → \<LF> in formatted prompt.
+      # In double-quote escape rules, \<newline> is line continuation and
+      # consumes both characters.
+      prompt='\\\n'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      # Same expected behavior when the LF byte is supplied directly.
+      prompt=$'\\\\\n'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Trailing literal backslash survives"
+    stdin: |
+      # `\\` at end of prompt should produce a single literal backslash.
+      prompt='\\'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      # `\\X\\` should produce `\X\`.
+      prompt='\\X\\'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Backslash followed by working-dir prompt piece"
+    stdin: |
+      # Make sure prompt pieces whose formatted output happens to contain `\`
+      # (e.g., AsciiCharacter for octal `\134`) survive intact.
+      prompt='\134'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      # `\\\w` should yield `\<cwd>`. Use a fixed cwd so brush vs. oracle
+      # output is deterministic.
+      cd /
+      prompt='\\\w'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "Bare \\$ leaves no protective backslash (issue #1167)"
+    stdin: |
+      # `\$` alone must format to a bare `$` or `#` — pass 1's protective `\`
+      # must not leak when the resulting char (e.g. `#` for root) isn't
+      # double-quote-escapable.
+      prompt='\$'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      # Same in a context where promptvars would otherwise re-expand a bare $:
+      var=SHOULD_NOT_APPEAR
+      prompt='\$var'
+      shopt -s promptvars
+      printf '%s' "${prompt@P}" | hexdump -C
+      shopt -u promptvars
+
+  - name: "Backslash adjacent to unrecognized escape sequence"
+    stdin: |
+      # `\\\X` (Backslash + EscapedSequence(\X)) must reduce to a single `\X`.
+      # An over-eager protective `\` on the EscapedSequence would leak (X
+      # isn't dq-escapable) and emit `\\X`.
+      prompt='\\\X'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      prompt='\\\?'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      # X here is dq-escapable, so pass 2 consumes the EscapedSequence's own
+      # `\` and emits just the literal char.
+      prompt='\"'
+      printf '%s' "${prompt@P}" | hexdump -C
+
+      prompt='\`'
+      printf '%s' "${prompt@P}" | hexdump -C

@@ -1,5 +1,6 @@
 //! Job management
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt::Display;
 
@@ -172,7 +173,7 @@ impl JobManager {
 
     /// Polls all managed jobs for completion.
     pub fn poll(&mut self) -> Result<Vec<JobResult>, error::Error> {
-        let mut results = vec![];
+        let mut results = Vec::with_capacity(self.jobs.len());
 
         let mut i = 0;
         while i != self.jobs.len() {
@@ -278,10 +279,7 @@ impl Display for Job {
         write!(
             f,
             "[{}]{:3}{}\t{}",
-            self.id,
-            self.annotation.to_string(),
-            self.state,
-            self.command_line
+            self.id, self.annotation, self.state, self.command_line
         )
     }
 }
@@ -312,7 +310,9 @@ impl Job {
     pub fn to_pid_style_string(&self) -> String {
         let display_pid = self
             .representative_pid()
-            .map_or_else(|| String::from("<pid unknown>"), |pid| pid.to_string());
+            .map_or(Cow::Borrowed("<pid unknown>"), |pid| {
+                Cow::Owned(pid.to_string())
+            });
         std::format!("[{}]{}\t{}", self.id, self.annotation, display_pid)
     }
 

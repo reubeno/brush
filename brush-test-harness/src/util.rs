@@ -17,7 +17,7 @@ pub fn get_host_os_id() -> Option<String> {
 }
 
 /// Reads and processes the expectrl log output.
-#[cfg(unix)]
+#[cfg(pty)]
 pub fn read_expectrl_log(log: Vec<u8>) -> Result<String> {
     let output_str = String::from_utf8(log)?;
     let output: String = output_str

@@ -45,6 +45,13 @@ cases:
       command -v /usr/bin/non-existent || echo "2. Not found"
 
   - name: "command -v -p"
+    # On NixOS, `command -p`'s default "standard utilities" path diverges between
+    # brush and the oracle. brush derives it from glibc's confstr(_CS_PATH), which
+    # nixpkgs patches to include the Nix profile (so `cat` is found there), whereas
+    # nixpkgs' bash resolves a default path that excludes the Nix profile (so it
+    # finds nothing). This reflects where NixOS keeps its standard utilities, not a
+    # brush behavior difference, so it can't be reconciled against the oracle.
+    incompatible_os: ["nixos"]
     stdin: |
       unset PATH
 
@@ -82,6 +89,9 @@ cases:
 
   - name: "command with -p"
     ignore_stderr: true # In case it fails on the oracle as well, ignore the specific error message.
+    # See "command -v -p" above: `command -p`'s default utility path resolves
+    # differently on NixOS for brush (glibc confstr) vs. the oracle (nixpkgs bash).
+    incompatible_os: ["nixos"]
     stdin: |
       unset PATH
 

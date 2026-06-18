@@ -13,7 +13,12 @@ pub(crate) struct PrintfCommand {
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
-    #[arg(trailing_var_arg = true, required = true, allow_hyphen_values = true)]
+    ///
+    /// N.B. We intentionally do *not* enable `allow_hyphen_values` here. Doing so would
+    /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
+    /// a positional argument. With it disabled, a format string that genuinely needs to
+    /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
+    #[arg(trailing_var_arg = true, required = true)]
     format_and_args: Vec<String>,
 }
 
@@ -97,6 +102,14 @@ fn format_via_uucore(
     // Wrap the format arguments.
     let mut format_args_wrapper = format::FormatArguments::new(&format_args);
 
+    // Determine whether the format string contains any specifiers that consume arguments. If it
+    // doesn't, then we must only run through it once -- even when extra arguments are provided --
+    // since otherwise we'd loop forever waiting for arguments that will never be consumed. This
+    // matches the behavior of other shells, which print such a format string exactly once.
+    let format_consumes_args = format_items
+        .iter()
+        .any(|item| matches!(item, format::FormatItem::Spec(_)));
+
     // Keep going until we've exhausted all format arguments. Also make sure to run at least once
     // even if there's no format arguments.
     while format_args.is_empty() || !format_args_wrapper.is_exhausted() {
@@ -116,6 +129,12 @@ fn format_via_uucore(
             if control_flow == ControlFlow::Break(()) {
                 break;
             }
+        }
+
+        // If the format string doesn't consume any arguments, stop now; otherwise we'd reprocess
+        // it forever since no arguments will ever be consumed.
+        if !format_consumes_args {
+            break;
         }
 
         // Start next batch if not exhausted

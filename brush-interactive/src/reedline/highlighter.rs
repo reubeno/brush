@@ -5,7 +5,7 @@ mod styles {
     use super::{Color, Style};
 
     pub fn default() -> Style {
-        Style::new().fg(Color::White)
+        Style::new().fg(Color::Default)
     }
 
     pub fn comment() -> Style {
@@ -29,7 +29,7 @@ mod styles {
     }
 
     pub fn operator() -> Style {
-        Style::new().fg(Color::White).italic()
+        Style::new().fg(Color::Default).italic()
     }
 
     pub fn assignment() -> Style {
@@ -37,7 +37,7 @@ mod styles {
     }
 
     pub fn hyphen_option() -> Style {
-        Style::new().fg(Color::White).italic()
+        Style::new().fg(Color::Default).italic()
     }
 
     pub fn function() -> Style {
@@ -65,12 +65,22 @@ mod styles {
     }
 
     pub fn unknown_command() -> Style {
-        Style::new().bold().fg(Color::White)
+        Style::new().bold().fg(Color::Default)
     }
 }
 
 pub(crate) struct ReedlineHighlighter<SE: brush_core::ShellExtensions> {
     pub shell: refs::ShellRef<SE>,
+}
+
+pub(crate) struct PlainTextHighlighter;
+
+impl reedline::Highlighter for PlainTextHighlighter {
+    fn highlight(&self, line: &str, _cursor: usize) -> reedline::StyledText {
+        let mut styled = reedline::StyledText::new();
+        styled.push((Style::new(), line.to_owned()));
+        styled
+    }
 }
 
 impl<SE: brush_core::ShellExtensions> reedline::Highlighter for ReedlineHighlighter<SE> {
@@ -80,12 +90,11 @@ impl<SE: brush_core::ShellExtensions> reedline::Highlighter for ReedlineHighligh
             tokio::runtime::Handle::current().block_on(self.shell.lock())
         });
 
-        let spans = highlighting::highlight_command(shell.as_ref(), line, cursor);
+        let highlighted = highlighting::highlight_command(shell.as_ref(), line, cursor);
 
         let mut styled = reedline::StyledText::new();
-        for span in spans {
-            let style = kind_to_style(span.kind);
-            styled.push((style, span.text(line).to_owned()));
+        for (kind, text) in highlighted.iter() {
+            styled.push((kind_to_style(kind), text.to_owned()));
         }
 
         styled
@@ -110,5 +119,21 @@ fn kind_to_style(kind: highlighting::HighlightKind) -> Style {
         highlighting::HighlightKind::ExternalCommand => styles::external_command(),
         highlighting::HighlightKind::NotFoundCommand => styles::not_found_command(),
         highlighting::HighlightKind::UnknownCommand => styles::unknown_command(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reedline::Highlighter;
+
+    #[test]
+    fn plain_text_highlighter_uses_terminal_default_colors() {
+        let styled = PlainTextHighlighter.highlight("echo hello", 0);
+
+        assert_eq!(styled.buffer.len(), 1);
+        assert_eq!(styled.buffer[0].0.foreground, None);
+        assert_eq!(styled.buffer[0].0.background, None);
+        assert_eq!(styled.buffer[0].1, "echo hello");
     }
 }

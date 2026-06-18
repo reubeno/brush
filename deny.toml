@@ -25,7 +25,7 @@ yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
-    { id = "RUSTSEC-2026-0097", reason = "rand 0.8.5 is only used at build time by phf_codegen (build-dep of terminfo); not present in runtime binary" },
+    { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 is unmaintained but only used by tests (dep of test-with); waiting on upstream changes to replace with a suitable alternative" },
 ]
 #git-fetch-with-cli = true
 

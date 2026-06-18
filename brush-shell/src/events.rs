@@ -132,19 +132,19 @@ impl TraceEventConfig {
         filter
     }
 
-    fn event_to_tracing_targets(event: &TraceEvent) -> Vec<&str> {
+    const fn event_to_tracing_targets(event: &TraceEvent) -> [&str; 1] {
         match event {
-            TraceEvent::Arithmetic => vec!["arithmetic"],
-            TraceEvent::Commands => vec!["commands"],
-            TraceEvent::Complete => vec!["completion"],
-            TraceEvent::Expand => vec!["expansion"],
-            TraceEvent::Functions => vec!["functions"],
-            TraceEvent::Input => vec!["input"],
-            TraceEvent::Jobs => vec!["jobs"],
-            TraceEvent::Parse => vec!["parse"],
-            TraceEvent::Pattern => vec!["pattern"],
-            TraceEvent::Tokenize => vec!["tokenize"],
-            TraceEvent::Unimplemented => vec!["unimplemented"],
+            TraceEvent::Arithmetic => ["arithmetic"],
+            TraceEvent::Commands => ["commands"],
+            TraceEvent::Complete => ["completion"],
+            TraceEvent::Expand => ["expansion"],
+            TraceEvent::Functions => ["functions"],
+            TraceEvent::Input => ["input"],
+            TraceEvent::Jobs => ["jobs"],
+            TraceEvent::Parse => ["parse"],
+            TraceEvent::Pattern => ["pattern"],
+            TraceEvent::Tokenize => ["tokenize"],
+            TraceEvent::Unimplemented => ["unimplemented"],
         }
     }
 

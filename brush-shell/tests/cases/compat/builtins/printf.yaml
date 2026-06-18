@@ -25,6 +25,56 @@ cases:
     stdin: |
       printf "%s\n" "-v"
 
+  - name: "printf -v with attached value"
+    stdin: |
+      printf -va ""
+      echo "a: '${a}'"
+      printf -vmyvar "%s, %s" "Hello" "world"
+      echo "myvar: '${myvar}'"
+
+  - name: "printf -vv with attached value"
+    stdin: |
+      printf -vva "value"
+      echo "va: '${va}'"
+
+  - name: "printf with no-consuming format and extra arguments"
+    stdin: |
+      printf "foo" bar baz qux
+      echo
+      printf "no specifiers\n" 1 2 3
+
+  - name: "printf format string starting with hyphen via --"
+    stdin: |
+      printf -- "-5\n"
+      printf -- "%s\n" "-v"
+
+  - name: "printf with hyphen-prefixed format arguments"
+    stdin: |
+      printf "%s\n" -5
+      printf "%d\n" -5
+      printf "%s %s\n" -a -b
+      printf "%s\n" -v
+      printf "%s\n" --foo
+      printf "%s\n" -
+      printf "x%sy\n" -abc
+      printf "%d %d\n" -1 -2 -3 -4
+
+  - name: "printf with option-like format arguments and attached values"
+    stdin: |
+      printf "%s\n" "-v" "-va" "-vva"
+
+  - name: "printf with -- among format arguments"
+    stdin: |
+      printf "%s\n" -- -x
+      printf "%s|%s\n" a -- b
+      printf -- "%s\n" -- x
+
+  - name: "printf with hyphen-prefixed format string (invalid option)"
+    ignore_stderr: true
+    stdin: |
+      printf -x
+      echo "Result: $?"
+
   # Bash-specific %q format (shell-safe quoting)
   - name: "printf %q"
     stdin: |

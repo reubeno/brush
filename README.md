@@ -105,12 +105,23 @@ brew install brush
 </details>
 
 <details>
-<summary>🐧 <b>Installing on Arch Linux</b></summary>
+<summary><img src="https://archlinux.org/favicon.ico" width="16" height="16" style="vertical-align: middle;"> <b>Installing on Arch Linux</b></summary>
 
 Arch Linux users can install `brush` from the official [extra repository](https://archlinux.org/packages/extra/x86_64/brush/):
 
 ```bash
 pacman -S brush
+```
+
+</details>
+
+<details>
+<summary><img src="https://packages.msys2.org/static/images/logo.svg" alt="icon" width="20" height="20" style="vertical-align: middle;"> <b>Installing on MSYS2</b></summary>
+
+MSYS2 users can install `brush` from the [repository](https://packages.msys2.org/base/mingw-w64-brush):
+
+```bash
+pacman -S mingw-w64-ucrt-x86_64-brush # or mingw-w64-clang-x86_64-brush or mingw-w64-clang-aarch64-brush
 ```
 
 </details>

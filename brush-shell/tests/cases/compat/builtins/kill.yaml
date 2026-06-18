@@ -25,3 +25,17 @@ cases:
   - name: "kill -sigspec"
     stdin: |
       kill -USR1 $$
+
+  - name: "kill -sigspec (numeric)"
+    stdin: |
+      kill -9 $$
+
+  - name: "kill -sigspec (numeric, full name resolution)"
+    stdin: |
+      kill -l $(kill -l KILL)
+
+  - name: "kill -sigspec (numeric, invalid)"
+    ignore_stderr: true
+    stdin: |
+      kill -9999 $$
+      echo "exit code: $?"

@@ -139,6 +139,19 @@ job2 &
 wait -n  # Wait for whichever finishes first
 ```
 
+### `$!` for Background Commands
+
+Bash expands `$!` to the process ID of the most recent asynchronous command.
+Brush currently does not reliably provide this value for background commands,
+so scripts that start a job with `cmd &` and immediately use `$!` may see an
+empty value.
+
+```bash
+# Not yet fully supported
+sleep 10 &
+kill "$!"
+```
+
 ### `BASH_COMMAND` Variable
 
 The special variable `BASH_COMMAND` that contains the currently executing command is currently only available in trap contexts.

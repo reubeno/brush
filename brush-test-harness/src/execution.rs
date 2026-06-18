@@ -4,8 +4,10 @@ use crate::config::{ShellConfig, WhichShell};
 use crate::testcase::{ShellInvocation, TestCase, TestCaseSet, TestFile};
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
+#[cfg(pty)]
+use std::os::unix::process::ExitStatusExt;
 #[cfg(unix)]
-use std::os::unix::{fs::PermissionsExt, process::CommandExt, process::ExitStatusExt};
+use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 use std::{path::PathBuf, process::ExitStatus};
 
 /// Default timeout for test commands in seconds.
@@ -197,13 +199,13 @@ impl TestCase {
     }
 
     #[expect(clippy::unused_async)]
-    #[cfg(not(unix))]
+    #[cfg(not(pty))]
     async fn run_command_with_pty(&self, _cmd: std::process::Command) -> Result<RunResult> {
         Err(anyhow::anyhow!("pty test not supported on this platform"))
     }
 
     #[expect(clippy::unused_async)]
-    #[cfg(unix)]
+    #[cfg(pty)]
     async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
         use crate::util::{make_expectrl_output_readable, read_expectrl_log};
         use expectrl::{Expect, process::Termios as _};

@@ -414,14 +414,12 @@ dependencies = [
  "chrono",
  "clap",
  "fancy-regex",
- "futures",
  "itertools 0.14.0",
  "nix 0.31.2",
  "pretty_assertions",
  "procfs",
  "rlimit",
  "strum 0.28.0",
- "strum_macros 0.28.0",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -574,6 +572,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "brush-core",
+ "brush-interactive",
  "brush-parser",
  "libfuzzer-sys",
  "tokio",
@@ -683,6 +682,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
+ "cfg_aliases",
  "clap",
  "colored",
  "descape",
@@ -907,9 +907,9 @@ dependencies = [
 
 [[package]]
 name = "clap_complete"
-version = "4.6.3"
+version = "4.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "660c0520455b1013b9bcb0393d5f643d7e4454fb69c915b8d6d2aa0e9a45acc3"
+checksum = "e3e962dae2b1e5007fe9e3db363ddc43a8bf25546d279f7a8a4401204690e80c"
 dependencies = [
  "clap",
 ]
@@ -3188,9 +3188,9 @@ dependencies = [
 
 [[package]]
 name = "peg"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9928cfca101b36ec5163e70049ee5368a8a1c3c6efc9ca9c5f9cc2f816152477"
+checksum = "0aad070be5b63aa72103f2fcdd70a83adbd5e90112ce5b574171ff1c65501773"
 dependencies = [
  "peg-macros",
  "peg-runtime",
@@ -3198,9 +3198,9 @@ dependencies = [
 
 [[package]]
 name = "peg-macros"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6298ab04c202fa5b5d52ba03269fb7b74550b150323038878fe6c372d8280f71"
+checksum = "ddd8ef6825cae95355031ae26a99b616a2a21f22ba2de0197c43dfb05acbe7ee"
 dependencies = [
  "peg-runtime",
  "proc-macro2",
@@ -3209,9 +3209,9 @@ dependencies = [
 
 [[package]]
 name = "peg-runtime"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "132dca9b868d927b35b5dd728167b2dee150eb1ad686008fc71ccb298b776fca"
+checksum = "7011d97b484a5ebdc4b1fdb3b12d5e4bbbea56e9d22b688f2e79e04b65a7d8a6"
 
 [[package]]
 name = "pest"
@@ -4406,9 +4406,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.52.1"
+version = "1.52.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
+checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
 dependencies = [
  "bytes",
  "libc",
@@ -6669,6 +6669,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "brush-shell",
+ "cfg_aliases",
  "clap",
  "clap-markdown",
  "clap_complete",

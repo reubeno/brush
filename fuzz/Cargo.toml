@@ -22,7 +22,7 @@ workspace = true
 anyhow = "1.0.102"
 assert_cmd = "2.2.0"
 libfuzzer-sys = "0.4"
-tokio = { version = "1.52.1", features = ["rt"] }
+tokio = { version = "1.52.3", features = ["rt"] }
 
 [dependencies.brush-core]
 path = "../brush-core"
@@ -30,6 +30,10 @@ path = "../brush-core"
 [dependencies.brush-parser]
 path = "../brush-parser"
 features = ["arbitrary"]
+
+[dependencies.brush-interactive]
+path = "../brush-interactive"
+features = ["highlighting"]
 
 [[bin]]
 name = "fuzz_parse"
@@ -41,6 +45,13 @@ bench = false
 [[bin]]
 name = "fuzz_arithmetic"
 path = "fuzz_targets/fuzz_arithmetic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_highlight"
+path = "fuzz_targets/fuzz_highlight.rs"
 test = false
 doc = false
 bench = false
