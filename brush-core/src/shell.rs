@@ -325,11 +325,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     }
 
     /// Returns the keywords that are reserved by the shell.
-    pub(crate) fn get_keywords(&self) -> Vec<&str> {
+    pub(crate) fn get_keywords(&self) -> impl IntoIterator<Item = &str> {
         if self.options.sh_mode {
-            keywords::SH_MODE_KEYWORDS.iter().copied().collect()
+            keywords::SH_MODE_KEYWORDS.iter().copied()
         } else {
-            keywords::KEYWORDS.iter().copied().collect()
+            keywords::KEYWORDS.iter().copied()
         }
     }
 

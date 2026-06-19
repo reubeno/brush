@@ -37,4 +37,13 @@ tempfile = "3.27.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.184"
+
+[build-dependencies]
+# Defines the `pty` cfg (see build.rs) used to gate pty-based bash test code.
+cfg_aliases = "0.2.1"
+
+# pty-process only supports these platforms (it requires rustix's ptsname);
+# pty-based bash tests are reported as unsupported elsewhere. Keep this list in
+# sync with the `pty` cfg in build.rs (which gates the code using this dependency).
+[target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "freebsd"))'.dependencies]
 pty-process = "0.5.3"

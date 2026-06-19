@@ -25,6 +25,27 @@ use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
 
+/// Controls how the expander handles a backslash-escape sequence (`\X`)
+/// when it appears outside any explicit quoting (single, double, ANSI-C).
+/// Inside actual double-quoted text, the parser's own escape rules apply
+/// and this setting is ignored.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum UnquotedBackslashHandling {
+    /// Default unquoted shell semantics: the backslash is consumed and `X`
+    /// is preserved literally.
+    #[default]
+    Strip,
+    /// The backslash and `X` are both preserved verbatim. Useful in pattern
+    /// contexts where the matcher will interpret the backslash itself.
+    Preserve,
+    /// Treat `\X` as if it were inside a double-quoted string: the backslash
+    /// is consumed only when `X` is one of the characters that double-quote
+    /// syntax treats as escapable; otherwise both characters are preserved.
+    /// A backslash followed by a literal newline is a line continuation
+    /// (both characters are consumed). Used by prompt-string expansion.
+    DoubleQuoted,
+}
+
 /// Options to customize the behavior of the word expander.
 pub(crate) struct ExpanderOptions {
     /// Whether to perform tilde-expansion.
@@ -37,6 +58,9 @@ pub(crate) struct ExpanderOptions {
     /// Whether to perform pathname expansion (globbing). If disabled, glob patterns
     /// are returned as literal strings.
     pub pathname_expand: bool,
+    /// How to handle backslash-escape sequences encountered outside of any
+    /// explicit quoting. See [`UnquotedBackslashHandling`] for details.
+    pub unquoted_backslash_handling: UnquotedBackslashHandling,
 }
 
 impl Default for ExpanderOptions {
@@ -46,9 +70,17 @@ impl Default for ExpanderOptions {
             brace_expand: true,
             execute_command_substitutions: true,
             pathname_expand: true,
+            unquoted_backslash_handling: UnquotedBackslashHandling::default(),
         }
     }
 }
+
+/// The set of characters that, when preceded by a backslash inside a
+/// double-quoted string, form a valid escape sequence (the backslash is
+/// consumed). Any other character's backslash is preserved literally.
+/// Newline is a special case: `\<newline>` is a line continuation and
+/// consumes both characters, leaving nothing.
+pub(crate) const DOUBLE_QUOTED_ESCAPE_CHARS: &[char] = &['\\', '$', '`', '"', '\n'];
 
 #[derive(Debug)]
 struct Expansion {
@@ -66,13 +98,6 @@ impl Default for Expansion {
             from_array: false,
             undefined: false,
         }
-    }
-}
-
-impl From<Expansion> for String {
-    fn from(value: Expansion) -> Self {
-        // TODO(IFS): Use IFS instead for separator?
-        value.fields.into_iter().map(Self::from).join(" ")
     }
 }
 
@@ -333,11 +358,13 @@ pub(crate) async fn basic_expand_pattern(
     params: &ExecutionParameters,
     word_str: impl AsRef<str>,
 ) -> Result<patterns::Pattern, error::Error> {
-    let mut expander = WordExpander::new(shell, params);
-
     // When expanding patterns, we do not want backslash removal to occur in unquoted
     // contexts, as that would interfere with pattern syntax.
-    expander.disable_unquoted_backslash_removal = true;
+    let options = ExpanderOptions {
+        unquoted_backslash_handling: UnquotedBackslashHandling::Preserve,
+        ..Default::default()
+    };
+    let mut expander = WordExpander::new_from_options(shell, params, &options);
 
     expander.basic_expand_pattern(word_str.as_ref()).await
 }
@@ -504,10 +531,11 @@ struct WordExpander<'a, SE: extensions::ShellExtensions> {
     disable_brace_expansion: bool,
     /// Whether to disable command substitutions.
     disable_command_substitutions: bool,
-    /// Whether to disable backslash removal in unquoted contexts.
-    disable_unquoted_backslash_removal: bool,
     /// Whether to disable pathname expansion (globbing).
     disable_pathname_expansion: bool,
+    /// How to handle backslash-escape sequences encountered outside of any
+    /// explicit quoting. See [`UnquotedBackslashHandling`] for details.
+    unquoted_backslash_handling: UnquotedBackslashHandling,
     /// Whether we are currently expanding inside a double-quoted context.
     in_double_quotes: bool,
     /// Whether to use heredoc expansion semantics (literal quotes, no brace expansion).
@@ -523,8 +551,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             parser_options,
             disable_brace_expansion: false,
             disable_command_substitutions: false,
-            disable_unquoted_backslash_removal: false,
             disable_pathname_expansion: false,
+            unquoted_backslash_handling: UnquotedBackslashHandling::Strip,
             in_double_quotes: false,
             heredoc_mode: false,
         }
@@ -548,8 +576,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             parser_options,
             disable_brace_expansion: !options.brace_expand,
             disable_command_substitutions: !options.execute_command_substitutions,
-            disable_unquoted_backslash_removal: false,
             disable_pathname_expansion: !options.pathname_expand,
+            unquoted_backslash_handling: options.unquoted_backslash_handling,
             in_double_quotes: false,
             heredoc_mode: false,
         }
@@ -557,16 +585,36 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion.
     pub async fn basic_expand_to_str(&mut self, word: &str) -> Result<String, error::Error> {
-        Ok(String::from(self.basic_expand(word).await?))
+        let expansion = self.basic_expand(word).await?;
+        Ok(self.fields_to_string(expansion))
+    }
+
+    /// Join an [`Expansion`]'s fields into a single string for scalar
+    /// (non-field-splitting) contexts, following bash rules: `$*`/`${a[*]}`
+    /// (`concatenate=true`) join with the first character of IFS, while
+    /// `$@`/`${a[@]}` join with a space. A single field (the common case) is
+    /// unaffected. Without this, e.g. `x=${arr[*]}` under `IFS=:` would yield
+    /// `a b c` instead of bash's `a:b:c`.
+    fn fields_to_string(&self, expansion: Expansion) -> String {
+        let joiner = if expansion.concatenate {
+            self.shell.get_ifs_first_char()
+        } else {
+            ' '
+        };
+        expansion
+            .fields
+            .into_iter()
+            .map(String::from)
+            .join(joiner.to_string().as_str())
     }
 
     async fn basic_expand_opt_pattern(
         &mut self,
-        word: Option<String>,
+        word: Option<&str>,
     ) -> Result<Option<patterns::Pattern>, error::Error> {
         if let Some(word) = word {
             let pattern = self
-                .basic_expand_pattern(&word)
+                .basic_expand_pattern(word)
                 .await?
                 .set_extended_globbing(self.parser_options.enable_extended_globbing);
 
@@ -667,7 +715,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             brush_parser::word::parse(brace_expanded.as_ref(), &self.parser_options)?
         };
 
-        let mut expansions = vec![];
+        let mut expansions = Vec::with_capacity(pieces.len());
         for piece in pieces {
             let piece_expansion = self.expand_word_piece(piece.piece).await?;
             expansions.push(piece_expansion);
@@ -757,7 +805,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let fields: Vec<WordField> = self.split_fields(basic_expansion);
 
         // Now expand pathnames if necessary. This also unquotes as a side effect.
-        let mut result = Vec::new();
+        // We also know a length that the vector may be at minimally.
+        let mut result = Vec::with_capacity(fields.len());
         for field in fields {
             if self.disable_pathname_expansion || self.shell.options().disable_filename_globbing {
                 result.push(String::from(field));
@@ -899,9 +948,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     from_array: false,
                 }
             }
-            brush_parser::word::WordPiece::TildeExpansion(tilde_expr) => Expansion::from(
-                ExpansionPiece::Unsplittable(self.expand_tilde_expression(&tilde_expr)?),
-            ),
+            brush_parser::word::WordPiece::TildeExpansion(tilde_expr) => {
+                Expansion::from(ExpansionPiece::Unsplittable(
+                    self.expand_tilde_expression(&tilde_expr)?.to_string(),
+                ))
+            }
             brush_parser::word::WordPiece::ParameterExpansion(p) => {
                 self.expand_parameter_expr(p).await?
             }
@@ -930,19 +981,43 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Expansion::from(ExpansionPiece::Splittable(cmd_output))
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
-                if let Some(escaped) = s.strip_prefix('\\') {
-                    // If we are *not* in a double-quoted context and we were requested to skip
-                    // unquoted backslash removal, then we need to skip removing backslashes here.
-                    if !self.in_double_quotes && self.disable_unquoted_backslash_removal {
-                        return Ok(Expansion::from(ExpansionPiece::Splittable(s)));
-                    }
-
-                    // Otherwise, we expect a backslash here; remove it.
-                    Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
-                } else {
+                let Some(escaped) = s.strip_prefix('\\') else {
                     // We don't ever expect this case, as it breaks our invariant--but
                     // we handle it to avoid panicking.
-                    Expansion::from(ExpansionPiece::Unsplittable(s))
+                    return Ok(Expansion::from(ExpansionPiece::Unsplittable(s)));
+                };
+
+                // Inside actual double-quoted text, the parser only emits an
+                // EscapeSequence for `\X` where X is double-quote-escapable;
+                // we always strip the backslash there.
+                if self.in_double_quotes {
+                    return Ok(Expansion::from(ExpansionPiece::Unsplittable(
+                        escaped.to_owned(),
+                    )));
+                }
+
+                match self.unquoted_backslash_handling {
+                    UnquotedBackslashHandling::Strip => {
+                        // Default unquoted semantics: consume the backslash.
+                        Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                    }
+                    UnquotedBackslashHandling::Preserve => {
+                        // Preserve `\X` verbatim (e.g., for pattern syntax).
+                        Expansion::from(ExpansionPiece::Splittable(s))
+                    }
+                    UnquotedBackslashHandling::DoubleQuoted => {
+                        // `\<newline>` is a line continuation: both characters
+                        // are consumed.
+                        if escaped.starts_with('\n') {
+                            Expansion::from(ExpansionPiece::Unsplittable(String::new()))
+                        } else if escaped.starts_with(DOUBLE_QUOTED_ESCAPE_CHARS) {
+                            // Consume the backslash; preserve the next char.
+                            Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                        } else {
+                            // Preserve both characters.
+                            Expansion::from(ExpansionPiece::Unsplittable(s))
+                        }
+                    }
                 }
             }
             brush_parser::word::WordPiece::ArithmeticExpression(e) => Expansion::from(
@@ -956,56 +1031,56 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     fn expand_tilde_expression(
         &self,
         tilde_expr: &brush_parser::word::TildeExpr,
-    ) -> Result<String, error::Error> {
+    ) -> Result<Cow<'_, str>, error::Error> {
         match tilde_expr {
             brush_parser::word::TildeExpr::Home => {
                 if let Some(home_dir) = self.shell.home_dir() {
-                    Ok(home_dir.to_string_lossy().to_string())
+                    Ok(Cow::Owned(home_dir.to_string_lossy().to_string()))
                 } else {
                     Err(error::ErrorKind::TildeWithoutValidHome.into())
                 }
             }
             brush_parser::word::TildeExpr::UserHome(username) => {
                 Ok(sys::users::get_user_home_dir(username).map_or_else(
-                    || std::format!("~{username}"),
-                    |p| p.to_string_lossy().to_string(),
+                    || Cow::Owned(std::format!("~{username}")),
+                    |p| Cow::Owned(p.to_string_lossy().to_string()),
                 ))
             }
             brush_parser::word::TildeExpr::WorkingDir => {
-                Ok(self.shell.working_dir().to_string_lossy().to_string())
+                Ok(self.shell.working_dir().to_string_lossy())
             }
             brush_parser::word::TildeExpr::OldWorkingDir => {
                 if let Some(old_pwd) = self.shell.env_str("OLDPWD") {
-                    Ok(old_pwd.to_string())
+                    Ok(old_pwd)
                 } else {
-                    Ok(String::from("~-"))
+                    Ok(Cow::Borrowed("~-"))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromBottomOfDirStack { n } => {
                 let dir_stack_count = self.shell.directory_stack().len();
 
                 if let Some(dir) = self.shell.directory_stack().get(*n) {
-                    Ok(dir.to_string_lossy().to_string())
+                    Ok(dir.to_string_lossy())
                 } else if *n == dir_stack_count {
-                    Ok(self.shell.working_dir().to_string_lossy().to_string())
+                    Ok(self.shell.working_dir().to_string_lossy())
                 } else {
-                    Ok(std::format!("~-{n}"))
+                    Ok(Cow::Owned(std::format!("~-{n}")))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromTopOfDirStack { n, plus_used } => {
                 if *n == 0 {
-                    return Ok(self.shell.working_dir().to_string_lossy().to_string());
+                    return Ok(self.shell.working_dir().to_string_lossy());
                 }
 
                 let dir_stack_count = self.shell.directory_stack().len();
                 if dir_stack_count >= *n
                     && let Some(dir) = self.shell.directory_stack().get(dir_stack_count - *n)
                 {
-                    return Ok(dir.to_string_lossy().to_string());
+                    return Ok(dir.to_string_lossy());
                 }
 
                 let plus_or_nothing = if *plus_used { "+" } else { "" };
-                Ok(std::format!("~{plus_or_nothing}{n}"))
+                Ok(Cow::Owned(std::format!("~{plus_or_nothing}{n}")))
             }
         }
     }
@@ -1094,7 +1169,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
+                let default_value = default_value.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
@@ -1114,7 +1189,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let default_value = default_value.as_ref().map_or_else(|| "", |v| v.as_str());
+                let default_value = default_value.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
@@ -1123,8 +1198,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         ParameterState::DefinedEmptyString,
                     ) => Ok(expanded_parameter),
                     _ => {
-                        let expanded_default_value =
-                            String::from(self.expand_parameter_word(default_value).await?);
+                        let expanded_default = self.expand_parameter_word(default_value).await?;
+                        let expanded_default_value = self.fields_to_string(expanded_default);
                         self.assign_to_parameter(&parameter, expanded_default_value.clone())
                             .await?;
                         Ok(Expansion::from(expanded_default_value))
@@ -1140,7 +1215,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let error_message = error_message.as_ref().map_or_else(|| "", |v| v.as_str());
+                let error_message = error_message.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
@@ -1167,9 +1242,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let expanded_parameter = self
                     .expand_parameter_allowing_unset(&parameter, indirect)
                     .await?;
-                let alternative_value = alternative_value
-                    .as_ref()
-                    .map_or_else(|| "", |v| v.as_str());
+                let alternative_value = alternative_value.as_ref().map_or("", |v| v.as_str());
 
                 match (test_type, expanded_parameter.classify()) {
                     (_, ParameterState::NonZeroLength)
@@ -1209,7 +1282,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_suffix(s.as_str(), expanded_pattern.as_ref())
                         .map(|s| s.to_owned())
@@ -1222,7 +1295,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_suffix(s.as_str(), expanded_pattern.as_ref())
                         .map(|s| s.to_owned())
@@ -1235,7 +1308,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_smallest_matching_prefix(s.as_str(), expanded_pattern.as_ref())
@@ -1249,7 +1322,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
                     patterns::remove_largest_matching_prefix(s.as_str(), expanded_pattern.as_ref())
@@ -1411,10 +1484,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::uppercase_first_char(s, expanded_pattern.as_ref())
+                    Self::pattern_to_first_char(s, expanded_pattern.as_ref(), |c| c.to_uppercase())
                 })
                 .await
             }
@@ -1424,10 +1497,12 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::uppercase_pattern(s.as_str(), expanded_pattern.as_ref())
+                    Self::pattern_to_string(s.as_str(), expanded_pattern.as_ref(), |str| {
+                        str.to_uppercase()
+                    })
                 })
                 .await
             }
@@ -1437,10 +1512,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::lowercase_first_char(s, expanded_pattern.as_ref())
+                    Self::pattern_to_first_char(s, expanded_pattern.as_ref(), |c| c.to_lowercase())
                 })
                 .await
             }
@@ -1450,10 +1525,12 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 pattern,
             } => {
                 let expanded_parameter = self.expand_parameter(&parameter, indirect).await?;
-                let expanded_pattern = self.basic_expand_opt_pattern(pattern).await?;
+                let expanded_pattern = self.basic_expand_opt_pattern(pattern.as_deref()).await?;
 
                 transform_expansion(expanded_parameter, async |s| {
-                    Self::lowercase_pattern(s.as_str(), expanded_pattern.as_ref())
+                    Self::pattern_to_string(s.as_str(), expanded_pattern.as_ref(), |str| {
+                        str.to_lowercase()
+                    })
                 })
                 .await
             }
@@ -1544,10 +1621,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
     }
 
-    async fn assign_to_parameter(
+    async fn assign_to_parameter<T: Into<String>>(
         &mut self,
         parameter: &brush_parser::word::Parameter,
-        value: String,
+        value: T,
     ) -> Result<(), error::Error> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
@@ -1576,6 +1653,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 return Err(error::ErrorKind::CannotAssignToSpecialParameter.into());
             }
         };
+
+        let value = value.into();
 
         if let Some(index) = index {
             self.shell.env_mut().update_or_add_array_element(
@@ -1606,7 +1685,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             Ok(self.try_resolve_parameter_to_variable_without_indirect(parameter))
         } else {
             let expansion = self.expand_parameter(parameter, false).await?;
-            let parameter_str: String = expansion.into();
+            let parameter_str: String = self.fields_to_string(expansion);
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
             Ok(self.try_resolve_parameter_to_variable_without_indirect(&inner_parameter))
@@ -1681,7 +1760,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if !indirect {
             Ok(expansion)
         } else {
-            let parameter_str: String = expansion.into();
+            let parameter_str: String = self.fields_to_string(expansion);
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
 
@@ -1848,10 +1927,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(value.to_string())
     }
 
-    fn uppercase_first_char(
+    fn pattern_to_first_char<F, I>(
         s: String,
         pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
+        transform: F,
+    ) -> Result<String, error::Error>
+    where
+        F: Fn(char) -> I,
+        I: Iterator<Item = char>,
+    {
         if let Some(first_char) = s.chars().next() {
             let applicable = if let Some(pattern) = pattern {
                 pattern.is_empty() || pattern.exactly_matches(first_char.to_string().as_str())?
@@ -1860,10 +1944,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             };
 
             if applicable {
-                if let Some(upper_char) = first_char.to_uppercase().next() {
+                if let Some(upper_char) = transform(first_char).next() {
                     let mut result = upper_char.to_string();
-                    let rest: String = s.chars().skip(1).collect();
-                    result.push_str(&rest);
+                    result.extend(s.chars().skip(1));
                     return Ok(result);
                 }
             }
@@ -1872,65 +1955,26 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(s)
     }
 
-    fn lowercase_first_char(
-        s: String,
-        pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
-        if let Some(first_char) = s.chars().next() {
-            let applicable = if let Some(pattern) = pattern {
-                pattern.is_empty() || pattern.exactly_matches(first_char.to_string().as_str())?
-            } else {
-                true
-            };
-
-            if applicable {
-                if let Some(lower_char) = first_char.to_lowercase().next() {
-                    let mut result = lower_char.to_string();
-                    let rest: String = s.chars().skip(1).collect();
-                    result.push_str(&rest);
-                    return Ok(result);
-                }
-            }
-        }
-
-        Ok(s)
-    }
-
-    fn uppercase_pattern(
+    fn pattern_to_string<F>(
         s: &str,
         pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
+        transform: F,
+    ) -> Result<String, error::Error>
+    where
+        F: Fn(&str) -> String,
+    {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
                 let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
-                    caps[0].to_uppercase()
+                    transform(&caps[0])
                 });
                 Ok(result.into_owned())
             } else {
-                Ok(s.to_uppercase())
+                Ok(transform(s))
             }
         } else {
-            Ok(s.to_uppercase())
-        }
-    }
-
-    fn lowercase_pattern(
-        s: &str,
-        pattern: Option<&patterns::Pattern>,
-    ) -> Result<String, error::Error> {
-        if let Some(pattern) = pattern {
-            if !pattern.is_empty() {
-                let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
-                    caps[0].to_lowercase()
-                });
-                Ok(result.into_owned())
-            } else {
-                Ok(s.to_lowercase())
-            }
-        } else {
-            Ok(s.to_lowercase())
+            Ok(transform(s))
         }
     }
 

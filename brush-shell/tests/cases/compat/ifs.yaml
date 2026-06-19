@@ -403,3 +403,76 @@ cases:
       for arg in "$@"; do
         echo "[$arg]"
       done
+
+  - name: "Array star join in scalar assignment honors IFS"
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      x=${arr[*]}
+      echo "[$x]"
+
+  - name: "Array at join in scalar assignment uses space"
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      y=${arr[@]}
+      echo "[$y]"
+
+  - name: "Export assignment from array star honors IFS"
+    stdin: |
+      np=(/first/bin /usr/lib/llvm/21/bin /usr/bin)
+      IFS=:
+      export TESTPATH=${np[*]}
+      echo "[$TESTPATH]"
+
+  - name: "Split on IFS then rejoin via star"
+    stdin: |
+      p="x:y:z"
+      IFS=:
+      s=( ${p} )
+      out=${s[*]}
+      echo "[$out]"
+
+  - name: "Positional star join in scalar assignment honors IFS"
+    stdin: |
+      set -- a b c
+      IFS=:
+      x=$*
+      echo "[$x]"
+
+  - name: "Assign-default array star join honors IFS"
+    # `:` + a multi-field `:=` argument triggers a pre-existing, unrelated
+    # brush quirk ("command not found: <first field>" on stderr); the stdout
+    # is what verifies the IFS join.
+    ignore_stderr: true
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      unset x
+      : ${x:=${arr[*]}}
+      echo "[$x]"
+
+  - name: "Assign-default array at join uses space"
+    ignore_stderr: true
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      unset y
+      : ${y:=${arr[@]}}
+      echo "[$y]"
+
+  - name: "Use-default array star join honors IFS"
+    stdin: |
+      arr=(a b c)
+      IFS=:
+      unset z
+      echo "[${z:-${arr[*]}}]"
+
+  - name: "Assign-default positional star join honors IFS"
+    ignore_stderr: true
+    stdin: |
+      set -- a b c
+      IFS=:
+      unset p
+      : ${p:=$*}
+      echo "[$p]"

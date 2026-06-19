@@ -81,6 +81,16 @@ cases:
       echo "Sourced script; dumping..."
       cat out.txt
 
+  - name: "Source /dev/stdin with heredoc redirection"
+    stdin: |
+      VAR=outer
+      VAR=scoped . /dev/stdin <<'EOF'
+      echo "VAR in source: $VAR"
+      INNER=from_source
+      EOF
+      echo "VAR after source: $VAR"
+      echo "INNER after source: $INNER"
+
   - name: "Source with return"
     test_files:
       - path: "script.sh"

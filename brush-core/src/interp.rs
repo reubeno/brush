@@ -1,5 +1,6 @@
 use brush_parser::ast::{self, CommandPrefixOrSuffixItem};
 use itertools::Itertools;
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -456,6 +457,9 @@ async fn spawn_pipeline_processes(
     // Create pipes to use between commands, but only bother doing so if there's more than one
     // command.
     if pipeline_len > 1 {
+        pipe_readers.reserve_exact(pipeline_len - 1);
+        pipe_writers.reserve_exact(pipeline_len - 1);
+
         for _ in 0..(pipeline_len - 1) {
             let (reader, writer) = std::io::pipe()?;
             pipe_readers.push(Some(reader.into()));
@@ -727,7 +731,7 @@ impl Execute for ast::CoprocessCommand {
         let name = self
             .name
             .as_ref()
-            .map_or_else(|| "COPROC".to_string(), |w| w.to_string());
+            .map_or(Cow::Borrowed("COPROC"), |w| Cow::Owned(w.to_string()));
 
         if !valid_variable_name(&name) {
             writeln!(
@@ -1275,7 +1279,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         }
 
         // If we have a command, then execute it.
-        if let Some(CommandArg::String(cmd_name)) = args.first().cloned() {
+        if let Some(CommandArg::String(cmd_name)) = args.first() {
             let mut stderr = params.stderr(&context.shell);
 
             let (owned_shell, parent_shell) = match context.shell {
@@ -1297,7 +1301,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 process_group_id: context.process_group_id,
             };
 
-            match execute_command(context, params, cmd_name, assignments, args).await {
+            match execute_command(context, params, cmd_name, &assignments, &args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
@@ -1343,19 +1347,19 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
     }
 }
 
-async fn execute_command(
+async fn execute_command<T: Into<String>>(
     mut context: PipelineExecutionContext<'_, impl extensions::ShellExtensions>,
     params: ExecutionParameters,
-    cmd_name: String,
-    assignments: Vec<&ast::Assignment>,
-    args: Vec<CommandArg>,
+    cmd_name: T,
+    assignments: &[&ast::Assignment],
+    args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Push a new ephemeral environment scope for the duration of the command. We'll
     // set command-scoped variable assignments after doing so, and revert them before
     // returning.
     let mut guard = crate::env::ScopeGuard::new(&mut context.shell, EnvironmentScope::Command);
 
-    for assignment in &assignments {
+    for assignment in assignments {
         // Ensure it's tagged as exported and created in the command scope.
         apply_assignment(
             assignment,
@@ -1382,7 +1386,8 @@ async fn execute_command(
     drop(guard);
 
     // Construct the command struct.
-    let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name, args);
+    let mut cmd =
+        commands::SimpleCommand::new(context.shell, params, cmd_name.into(), args.iter().cloned());
     cmd.process_group_id = context.process_group_id;
 
     // Arrange to pop off that ephemeral environment scope.
@@ -1540,16 +1545,20 @@ async fn apply_assignment(
 
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
-        let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env().get(variable_name)
-        {
-            matches!(
-                existing_value.value(),
-                ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
-            )
-        } else {
-            true
-        };
+        // An array subscript is arithmetically evaluated unless the target is an
+        // associative array (in which case the subscript is used as a literal key).
+        // A scalar or unset/untyped variable becomes an indexed array, so its
+        // subscript still needs to be evaluated.
+        let will_be_indexed_array =
+            if let Some((_, existing_value)) = shell.env().get(variable_name) {
+                !matches!(
+                    existing_value.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                )
+            } else {
+                true
+            };
 
         if will_be_indexed_array {
             array_index = Some(
@@ -1731,9 +1740,7 @@ pub(crate) async fn setup_redirect(
 
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
-                    if let Some(f) = params.try_fd(shell, *fd) {
-                        let target_file = f.try_clone()?;
-
+                    if let Some(target_file) = params.try_fd(shell, *fd) {
                         params.open_files.set_fd(fd_num, target_file);
                     } else {
                         return Err(error::ErrorKind::BadFileDescriptor(*fd).into());
@@ -1774,10 +1781,8 @@ pub(crate) async fn setup_redirect(
                             .parse::<ShellFd>()
                             .map_err(|_| error::ErrorKind::InvalidRedirection)?;
 
-                        // Duplicate the fd.
-                        let target_file = if let Some(f) = params.try_fd(shell, source_fd_num) {
-                            f.try_clone()?
-                        } else {
+                        // Reference the same open file as the source fd (shared handle; no OS-level duplication).
+                        let Some(target_file) = params.try_fd(shell, source_fd_num) else {
                             return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
                         };
 
@@ -1812,7 +1817,7 @@ pub(crate) async fn setup_redirect(
                                 subshell_cmd,
                             )?;
 
-                            let target_file = substitution_file.try_clone()?;
+                            let target_file = substitution_file.clone();
                             params.open_files.set_fd(substitution_fd, substitution_file);
 
                             let fd_num = specified_fd_num
@@ -1890,7 +1895,7 @@ fn setup_redirect_output_and_error_to(
             )
         })?;
 
-    let stderr_file = stdout_file.try_clone()?;
+    let stderr_file = stdout_file.clone();
 
     params.open_files.set_fd(OpenFiles::STDOUT_FD, stdout_file);
     params.open_files.set_fd(OpenFiles::STDERR_FD, stderr_file);

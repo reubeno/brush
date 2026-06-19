@@ -118,20 +118,70 @@ jobs:
             required_tools: ""
             binary_name: "brush"
             extra_build_args: ""
+          # x86_64/FreeBSD target on x86_64/linux host, via cross. Compile-check
+          # only (check_only): cross's curated sysroot omits some base-system
+          # libraries (libgeom/libkvm/...) that `sysinfo` links against, so the
+          # final link of a real binary fails. Checking still validates that the
+          # shell compiles for the target; producing a binary is a TODO (would
+          # need a full sysroot with those libraries present).
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-freebsd"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
+            os: "freebsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: ""
+            check_only: true
+          # x86_64/NetBSD target on x86_64/linux host, via cross. Compile-check
+          # only for the same reason as FreeBSD above.
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-netbsd"
+            cross_command: "cross"
+            cross_tool_to_install: "cross"
+            os: "netbsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: ""
+            check_only: true
+          # OpenBSD is tier-3 with no prebuilt std, so even compile-checking it
+          # requires building std from source (-Zbuild-std, hence nightly +
+          # rust-src + no rustup target). panic_abort is built explicitly because
+          # our release profile sets panic = "abort" (plain -Zbuild-std only
+          # builds std + panic_unwind). Compile-check only, like the other BSDs;
+          # check links nothing, so no C cross-compiler/sysroot/linker is needed
+          # (none of the workspace's C-compiling deps are in this default graph).
+          - host: "ubuntu-24.04"
+            target: "x86_64-unknown-openbsd"
+            cross_command: "cargo"
+            cross_tool_to_install: ""
+            os: "openbsd"
+            arch: "x86_64"
+            required_tools: ""
+            binary_name: "brush"
+            extra_build_args: "-Zbuild-std=std,panic_abort"
+            toolchain: "nightly"
+            components: "rust-src"
+            # std is built from source, so there's no prebuilt target to install.
+            skip_rustup_target: true
+            check_only: true
 
-    name: "Build (${{ matrix.arch }}/${{ matrix.os }})"
+    name: "${{ matrix.check_only && 'Check' || 'Build' }} (${{ matrix.arch }}/${{ matrix.os }})"
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
       - name: Set up rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
+          toolchain: ${{ matrix.toolchain || 'stable' }}
+          targets: ${{ !matrix.skip_rustup_target && matrix.target || '' }}
+          components: ${{ matrix.components || '' }}
 
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -145,8 +195,8 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y ${REQUIRED_TOOLS}
 
       - name: Install cross-compilation toolchain
-        if: ${{ matrix.target != '' }}
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        if: ${{ matrix.cross_tool_to_install != '' }}
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: ${{ matrix.cross_tool_to_install }}
 
@@ -156,16 +206,19 @@ jobs:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
         run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
 
-      - name: "Build (cross)"
+      - name: "${{ matrix.check_only && 'Check' || 'Build' }} (cross)"
         if: ${{ matrix.target != '' }}
         env:
           CROSS_COMMAND: ${{ matrix.cross_command }}
+          CARGO_SUBCOMMAND: ${{ matrix.check_only && 'check' || 'build' }}
           TARGET: ${{ matrix.target }}
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
           CARGO_NDK_PLATFORM: 24
-        run: ${CROSS_COMMAND} build --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
+        run: ${CROSS_COMMAND} ${CARGO_SUBCOMMAND} --release --target=${TARGET} ${EXTRA_BUILD_ARGS}
 
       - name: "Upload binaries"
+        # check_only targets don't produce a binary to upload.
+        if: ${{ !matrix.check_only }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
@@ -235,7 +288,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -253,19 +306,19 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
         if: ${{ matrix.coverage }}
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: cargo-llvm-cov
 
       - name: Install WASI runtime
         if: ${{ matrix.wasi_runtime }}
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: ${{ matrix.wasi_runtime }}
 
@@ -296,7 +349,7 @@ jobs:
           echo "BASH_PATH=${BASH_PATH}">>$GITHUB_ENV
 
       - name: "Download recent bash-completion sources for tests"
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
@@ -325,7 +378,7 @@ jobs:
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
-        uses: clearlyip/code-coverage-report-action@9e2cd22e39153feba8b4477e4fefcc0b5e2727ba # v6.0
+        uses: clearlyip/code-coverage-report-action@110af9d4ec87b6706f182fd90e3102af9e5203bf # v7.0.0
         if: ${{ always() && matrix.coverage }}
         id: "code_coverage_report"
         with:
@@ -359,7 +412,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -383,7 +436,7 @@ jobs:
 
       - name: Install cargo-deny
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: cargo-deny
 
@@ -405,7 +458,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -415,7 +468,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: cargo-udeps
 
@@ -428,7 +481,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -450,7 +503,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -460,7 +513,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-public-api
-        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 # v2.81.8
         with:
           tool: cargo-public-api
 
@@ -485,13 +538,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout PR sources
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           path: pr
 
       - name: Checkout main sources
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           path: main
@@ -537,13 +590,13 @@ jobs:
     needs: build
     steps:
       - name: Checkout brush
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           path: "brush"
 
       - name: Checkout bash-completion
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
@@ -594,36 +647,28 @@ jobs:
           # N.B. We don't include Ubuntu because it's already covered by the initial test job.
           - container: "archlinux:latest"
             description: "Arch Linux/latest"
-            prereqs_command: "pacman -Sy --noconfirm bash-completion iputils grep less sed util-linux"
+            prereqs_command: "pacman -Sy --noconfirm bash-completion iputils grep less sed util-linux which"
 
-          - container: "mcr.microsoft.com/azurelinux/base/core:3.0"
-            description: "Azure Linux/3.0"
-            prereqs_command: "tdnf install -y bash-completion ca-certificates git iputils grep less sed util-linux"
+          - container: "mcr.microsoft.com/azurelinux-beta/base/core:4.0"
+            description: "Azure Linux/4.0"
+            prereqs_command: "dnf install -y bash-completion ca-certificates git iputils grep less sed util-linux which"
 
           - container: "debian:testing"
             description: "Debian/testing"
-            prereqs_command: "apt-get update -y && apt-get install -y bash-completion bsdmainutils iputils-ping grep less sed"
+            prereqs_command: "apt-get update -y && apt-get install -y bash-completion bsdmainutils iputils-ping grep less sed which"
 
           - container: "fedora:latest"
             description: "Fedora/latest"
-            prereqs_command: "dnf install -y bash-completion iputils grep less sed util-linux"
+            prereqs_command: "dnf install -y bash-completion iputils grep less sed util-linux which"
 
-          # NOTE: NixOS tests are temporarily disabled due to containerd v2.2.0+ regression.
-          # The nixos/nix image uses absolute symlinks for /etc/passwd and /etc/group which
-          # causes "path escapes from parent" errors during container initialization.
-          # This cannot be worked around from within the container since the error occurs
-          # before any workflow steps run.
-          # Reference: https://github.com/containerd/containerd/issues/12683
-          # Reference: https://github.com/actions/runner-images/issues/13682
-          # TODO: Re-enable when containerd or NixOS fixes the upstream issue.
-          # - container: "nixos/nix:latest"
-          #   description: "NixOS/latest"
-          #   prereqs_command: "nix --extra-experimental-features nix-command --extra-experimental-features flakes profile install nixpkgs#gnused nixpkgs#hexdump nixpkgs#bash-completion"
+          - container: "nixos/nix:latest"
+            description: "NixOS/latest"
+            prereqs_command: "nix --extra-experimental-features nix-command --extra-experimental-features flakes profile install nixpkgs#gnused nixpkgs#hexdump nixpkgs#bash-completion"
 
           # NOTE: We use Tumbleweed to make sure we get a recent enough version of bash.
           - container: "opensuse/tumbleweed:latest"
             description: "openSUSE Tumbleweed/latest"
-            prereqs_command: "zypper install -y bash-completion git"
+            prereqs_command: "zypper install -y bash-completion git which"
 
     name: "OS target tests (${{ matrix.description }})"
     runs-on: ubuntu-24.04
@@ -649,6 +694,11 @@ jobs:
           # Allow use of experimental features to avoid nix from complaining.
           export NIX_CONFIG="extra-experimental-features = nix-command flakes"
 
+          # The nixos/nix image ships no /etc/os-release (unlike a full NixOS install
+          # and every other container we test against). Provide one so the test harness
+          # can identify the OS, which it relies on for tests' `incompatible_os` tags.
+          printf 'NAME=NixOS\nID=nixos\nPRETTY_NAME="NixOS (nix container)"\n' > /etc/os-release
+
           # Hacks to get the mounted nodejs by github actions work as it's dynamically linked
           # https://github.com/actions/checkout/issues/334#issuecomment-716068696
           nix build --no-link --max-jobs 2 --cores 0 'nixpkgs#stdenv.cc.cc.lib' 'nixpkgs#glibc'
@@ -663,7 +713,7 @@ jobs:
 
       # Checkout sources for YAML-based test cases
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           path: sources

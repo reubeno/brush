@@ -43,16 +43,16 @@ cases:
   - name: "$_ - external command dispatch path"
     stdin: |
       echo seed last
-      /usr/bin/true ext1 ext2
+      $(which true) ext1 ext2
       echo "[$_]"
-      /usr/bin/env ENV=1 /usr/bin/true external_final
+      env ENV=1 $(which true) external_final
       echo "[$_]"
 
   - name: "$_ - external command exports resolved path via env"
     stdin: |
       # When invoking an external command, it should see _ set
       # to the resolved pathname of the command (not "last arg").
-      /usr/bin/env | grep '^_='
+      $(which env) | grep '^_='
 
   - name: "$_ - function dispatch sets to call-site last arg"
     stdin: |
@@ -227,7 +227,7 @@ cases:
       # bash does not set _ in the child's env for exec; the child inherits
       # the parent's _ value. brush currently sets _ to the resolved command
       # path (same as a normal external command), which is wrong for exec.
-      (exec /usr/bin/env) | grep '^_='
+      (exec $(which env)) | grep '^_='
 
   - name: "$@ and $*"
     stdin: |

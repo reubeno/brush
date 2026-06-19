@@ -148,42 +148,24 @@ impl CommonCompleteCommandArgs {
     fn resolve_actions(&self) -> Vec<CompleteAction> {
         let mut actions = self.actions.clone();
 
-        if self.action_alias {
-            actions.push(CompleteAction::Alias);
-        }
-        if self.action_builtin {
-            actions.push(CompleteAction::Builtin);
-        }
-        if self.action_command {
-            actions.push(CompleteAction::Command);
-        }
-        if self.action_directory {
-            actions.push(CompleteAction::Directory);
-        }
-        if self.action_exported {
-            actions.push(CompleteAction::Export);
-        }
-        if self.action_file {
-            actions.push(CompleteAction::File);
-        }
-        if self.action_group {
-            actions.push(CompleteAction::Group);
-        }
-        if self.action_job {
-            actions.push(CompleteAction::Job);
-        }
-        if self.action_keyword {
-            actions.push(CompleteAction::Keyword);
-        }
-        if self.action_service {
-            actions.push(CompleteAction::Service);
-        }
-        if self.action_user {
-            actions.push(CompleteAction::User);
-        }
-        if self.action_variable {
-            actions.push(CompleteAction::Variable);
-        }
+        actions.extend(
+            [
+                (self.action_alias, CompleteAction::Alias),
+                (self.action_builtin, CompleteAction::Builtin),
+                (self.action_command, CompleteAction::Command),
+                (self.action_directory, CompleteAction::Directory),
+                (self.action_exported, CompleteAction::Export),
+                (self.action_file, CompleteAction::File),
+                (self.action_group, CompleteAction::Group),
+                (self.action_job, CompleteAction::Job),
+                (self.action_keyword, CompleteAction::Keyword),
+                (self.action_service, CompleteAction::Service),
+                (self.action_user, CompleteAction::User),
+                (self.action_variable, CompleteAction::Variable),
+            ]
+            .into_iter()
+            .filter_map(|(enabled, action)| enabled.then_some(action)),
+        );
 
         actions
     }
@@ -575,7 +557,8 @@ impl builtins::Command for CompOptCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut options = HashMap::new();
+        let mut options =
+            HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
         for option in &self.disabled_options {
             options.insert(option.clone(), false);
         }
@@ -637,14 +620,17 @@ impl builtins::Command for CompOptCommand {
 }
 
 impl CompOptCommand {
-    fn set_options_for_spec(spec: &mut Spec, options: &HashMap<CompleteOption, bool>) {
+    fn set_options_for_spec<'a, I>(spec: &mut Spec, options: I)
+    where
+        I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
+    {
         Self::set_options(&mut spec.options, options);
     }
 
-    fn set_options(
-        target_options: &mut completion::GenerationOptions,
-        options: &HashMap<CompleteOption, bool>,
-    ) {
+    fn set_options<'a, I>(target_options: &mut completion::GenerationOptions, options: I)
+    where
+        I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
+    {
         for (option, value) in options {
             match option {
                 CompleteOption::BashDefault => target_options.bash_default = *value,

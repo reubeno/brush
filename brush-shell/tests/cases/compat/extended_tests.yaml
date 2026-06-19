@@ -432,3 +432,117 @@ cases:
       arr=(a b c)
       declare -n ref='arr[5]'
       [[ -v ref ]] && echo "set" || echo "unset"
+
+  #
+  # Newlines within [[ ]] conditional expressions.
+  #
+  # bash allows newlines (1) at the start of a term (after `[[`, `(`, `&&`,
+  # `||`, `!`) and (2) trailing after a complete binary/unary/parenthesized
+  # term -- but NOT after a bare-word string test. These cases pin down both
+  # the accepted and rejected forms. See issue #1176.
+  #
+
+  - name: "Newline after ( in [[ ]]"
+    stdin: |
+      [[ (
+      a = a ) ]] && echo ok
+
+  - name: "Newline after ( before bare word in [[ ]]"
+    stdin: |
+      [[ (
+      a ) ]] && echo ok
+
+  - name: "Newline before ) after binary test in [[ ]]"
+    stdin: |
+      [[ ( a = a
+      ) ]] && echo ok
+
+  - name: "Newline before ) after unary test in [[ ]]"
+    stdin: |
+      [[ ( -n a
+      ) ]] && echo ok
+
+  - name: "Newline before ) after nested parens in [[ ]]"
+    stdin: |
+      [[ ( ( a = a )
+      ) ]] && echo ok
+
+  - name: "Multiple newlines before ) in [[ ]]"
+    stdin: |
+      [[ ( a = a
+
+
+
+      ) ]] && echo ok
+
+  - name: "Newline after && in [[ ]]"
+    stdin: |
+      [[ ( a = a &&
+      b = b ) ]] && echo ok
+
+  - name: "Newline before && after binary test in [[ ]]"
+    stdin: |
+      [[ a = a
+      && b = b ]] && echo ok
+
+  - name: "Newline before || after binary test in [[ ]]"
+    stdin: |
+      [[ a = b
+      || b = b ]] && echo ok
+
+  - name: "Leading newline after [[ "
+    stdin: |
+      [[
+      a = a ]] && echo ok
+
+  - name: "Newline after ! in [[ ]]"
+    stdin: |
+      [[ !
+      a = b ]] && echo ok
+
+  - name: "Newline before ]] after binary test"
+    stdin: |
+      [[ a = a
+      ]] && echo ok
+
+  - name: "Newline before ]] after unary test"
+    stdin: |
+      [[ -n a
+      ]] && echo ok
+
+  - name: "Newline before ]] after parenthesized expression"
+    stdin: |
+      [[ ( a = a )
+      ]] && echo ok
+
+  - name: "Newline before ]] after not of parenthesized expression"
+    stdin: |
+      [[ ! ( a = b )
+      ]] && echo ok
+
+  # Cases bash rejects as syntax errors: a newline may not follow a bare-word
+  # string test (whether before `]]`, `)`, or a binary/logical operator).
+
+  - name: "Error: newline before ]] after bare word"
+    ignore_stderr: true
+    stdin: |
+      [[ a
+      ]] && echo should-not-print
+
+  - name: "Error: newline before ) after bare word"
+    ignore_stderr: true
+    stdin: |
+      [[ ( a
+      ) ]] && echo should-not-print
+
+  - name: "Error: newline before && after bare word"
+    ignore_stderr: true
+    stdin: |
+      [[ a
+      && b ]] && echo should-not-print
+
+  - name: "Error: newline before ) after not of bare word"
+    ignore_stderr: true
+    stdin: |
+      [[ ( ! a
+      ) ]] && echo should-not-print

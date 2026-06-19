@@ -46,14 +46,16 @@ pub trait Command: clap::Parser {
         if !Self::takes_plus_options() {
             Self::try_parse_from(args)
         } else {
+            let args = args.into_iter();
+
+            let (lower, _) = args.size_hint();
+
             // N.B. clap doesn't support named options like '+x'. To work around this, we
             // establish a pattern of renaming them.
-            let mut updated_args = vec![];
+            let mut updated_args = Vec::with_capacity(lower);
             for arg in args {
                 if let Some(plus_options) = arg.strip_prefix("+") {
-                    for c in plus_options.chars() {
-                        updated_args.push(format!("--+{c}"));
-                    }
+                    updated_args.extend(plus_options.chars().map(|c| format!("--+{c}")));
                 } else {
                     updated_args.push(arg);
                 }

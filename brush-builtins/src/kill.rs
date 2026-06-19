@@ -71,18 +71,19 @@ impl builtins::Command for KillCommand {
         // Look through the remaining args for a pid/job spec or a -sigspec style option.
         let mut pid_or_job_spec = None;
         for arg in &self.args {
-            // See if this is -sigspec syntax.
             if let Some(possible_sigspec) = arg.strip_prefix("-") {
-                // See if this is -sigspec syntax.
-                if let Ok(parsed_trap_signal) = TrapSignal::try_from(possible_sigspec) {
+                // See if this is -sigspec syntax. The sigspec may be a signal name
+                // (e.g., -TERM) or a signal number (e.g., -9).
+                if let Ok(parsed_trap_signal) = possible_sigspec.parse::<TrapSignal>() {
                     trap_signal = parsed_trap_signal;
                 } else {
                     writeln!(
                         context.stderr(),
-                        "{}: invalid signal name",
-                        context.command_name
+                        "{}: {}: invalid signal specification",
+                        context.command_name,
+                        possible_sigspec
                     )?;
-                    return Ok(ExecutionExitCode::InvalidUsage.into());
+                    return Ok(ExecutionResult::general_error());
                 }
             } else if pid_or_job_spec.is_none() {
                 pid_or_job_spec = Some(arg);

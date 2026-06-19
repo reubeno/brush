@@ -370,7 +370,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
                         .invoke_function(
                             func_name,
                             std::iter::empty::<&str>(),
-                            &shell.default_exec_params(),
+                            shell.default_exec_params(),
                         )
                         .await;
                 }
@@ -407,7 +407,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             {
                 for func_name in preexec_funcs.values() {
                     let _ = shell
-                        .invoke_function(func_name, &[command_line], &shell.default_exec_params())
+                        .invoke_function(func_name, &[command_line], shell.default_exec_params())
                         .await;
                 }
             }

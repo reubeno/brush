@@ -31,6 +31,10 @@ path = "../brush-core"
 path = "../brush-parser"
 features = ["arbitrary"]
 
+[dependencies.brush-interactive]
+path = "../brush-interactive"
+features = ["highlighting"]
+
 [[bin]]
 name = "fuzz_parse"
 path = "fuzz_targets/fuzz_parse.rs"
@@ -41,6 +45,13 @@ bench = false
 [[bin]]
 name = "fuzz_arithmetic"
 path = "fuzz_targets/fuzz_arithmetic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_highlight"
+path = "fuzz_targets/fuzz_highlight.rs"
 test = false
 doc = false
 bench = false

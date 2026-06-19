@@ -64,9 +64,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         };
 
         // If we have a valid trace file, write to it.
-        if let Some(trace_file) = trace_file
-            && let Ok(mut trace_file) = trace_file.try_clone()
-        {
+        if let Some(mut trace_file) = trace_file {
             let _ = writeln!(trace_file, "{prefix}{}", command.as_ref());
         }
     }

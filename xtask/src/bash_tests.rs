@@ -6,7 +6,9 @@
 //! (oracle mode).
 
 use std::collections::BTreeMap;
-use std::io::{Read as _, Write as _};
+#[cfg(pty)]
+use std::io::Read as _;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -201,7 +203,7 @@ pub struct BashTestsArgs {
     test_filter: Option<String>,
 
     /// Per-test timeout in seconds.
-    #[clap(long, default_value = "30")]
+    #[clap(long, default_value_t = 30)]
     timeout: u64,
 
     /// Number of parallel workers (default: number of CPUs).
@@ -866,6 +868,21 @@ fn execute_test_pipe(
 }
 
 /// Execute a test in a PTY for tests that need a controlling terminal.
+#[cfg(not(pty))]
+fn execute_test_pty(
+    _shell_path: &Path,
+    _entry: &TestEntry,
+    _work_dir: &Path,
+    _tests_dir: &Path,
+    _bash_source_dir: &Path,
+    _tmpdir: &str,
+    _timeout: Duration,
+) -> Result<(String, Duration)> {
+    anyhow::bail!("pty tests not supported on this platform");
+}
+
+/// Execute a test in a PTY for tests that need a controlling terminal.
+#[cfg(pty)]
 fn execute_test_pty(
     shell_path: &Path,
     entry: &TestEntry,
@@ -941,6 +958,7 @@ fn execute_test_pty(
 
 /// Configure PTY master termios: disable ECHO (don't echo input) and
 /// OPOST (don't translate \n to \r\n in output).
+#[cfg(pty)]
 fn configure_pty_termios(pty: &pty_process::blocking::Pty) {
     use std::os::unix::io::AsRawFd;
     let fd = pty.as_raw_fd();

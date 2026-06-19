@@ -385,7 +385,7 @@ impl Spec {
             let prefix = self.prefix.as_ref().unwrap_or(&empty);
             let suffix = self.suffix.as_ref().unwrap_or(&empty);
 
-            let mut updated = Vec::new();
+            let mut updated = Vec::with_capacity(candidates.len() * (prefix.len() + suffix.len()));
             for candidate in candidates {
                 updated.push(std::format!("{prefix}{candidate}{suffix}"));
             }
@@ -495,9 +495,9 @@ impl Spec {
                     }
                 }
                 CompleteAction::Command => {
-                    let mut command_completions =
+                    let command_completions =
                         get_external_command_completions(shell, context.token_to_complete);
-                    candidates.append(&mut command_completions);
+                    candidates.extend(command_completions);
                     for name in shell.builtins().keys() {
                         if name.starts_with(token) {
                             candidates.push(name.to_owned());
@@ -662,7 +662,7 @@ impl Spec {
         // Move to a subshell so we can start filling out variables.
         let mut shell = shell.clone();
 
-        let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
+        let vars_and_values: [(&str, ShellValueLiteral); 4] = [
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
             ("COMP_KEY", context.trigger.comp_key().to_string().into()),
@@ -708,10 +708,7 @@ impl Spec {
                 .await?;
 
         // Split results.
-        let mut candidates = Vec::new();
-        for line in output.lines() {
-            candidates.push(line.to_owned());
-        }
+        let candidates = output.lines().map(str::to_owned).collect();
 
         Ok(candidates)
     }
@@ -723,7 +720,7 @@ impl Spec {
         context: &Context<'_>,
     ) -> Result<Answer, error::Error> {
         // TODO(completions): Don't pollute the persistent environment with these?
-        let vars_and_values: Vec<(&str, ShellValueLiteral)> = vec![
+        let vars_and_values: [(&str, ShellValueLiteral); 6] = [
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
             ("COMP_KEY", context.trigger.comp_key().to_string().into()),
@@ -774,7 +771,7 @@ impl Spec {
 
         let params = shell.default_exec_params();
         let invoke_result = shell
-            .invoke_function(function_name, args.iter(), &params)
+            .invoke_function(function_name, args.iter(), params)
             .await;
 
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
@@ -1257,20 +1254,16 @@ async fn get_file_completions(
 fn get_external_command_completions(
     shell: &Shell<impl extensions::ShellExtensions>,
     prefix: &str,
-) -> Vec<String> {
-    let mut candidates = Vec::new();
-
-    // Look for external commands.
-    for path in shell.find_executables_in_path_with_prefix(
-        prefix,
-        shell.options().case_insensitive_pathname_expansion,
-    ) {
-        if let Some(file_name) = path.file_name() {
-            candidates.push(file_name.to_string_lossy().to_string());
-        }
-    }
-
-    candidates.into_iter().collect()
+) -> impl Iterator<Item = String> {
+    shell
+        .find_executables_in_path_with_prefix(
+            prefix,
+            shell.options().case_insensitive_pathname_expansion,
+        )
+        .filter_map(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
 }
 
 /// Attempts to complete a variable name from the given token.
@@ -1335,8 +1328,8 @@ fn add_command_completions(
     candidates: &mut Vec<String>,
 ) {
     // Add external commands.
-    let mut command_completions = get_external_command_completions(shell, prefix);
-    candidates.append(&mut command_completions);
+    let command_completions = get_external_command_completions(shell, prefix);
+    candidates.extend(command_completions);
 
     // Add built-in commands.
     for (name, registration) in shell.builtins() {
