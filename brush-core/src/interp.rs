@@ -1545,16 +1545,20 @@ async fn apply_assignment(
 
     // See if we need to eval an array index.
     if let Some(idx) = &array_index {
-        let will_be_indexed_array = if let Some((_, existing_value)) =
-            shell.env().get(variable_name)
-        {
-            matches!(
-                existing_value.value(),
-                ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
-            )
-        } else {
-            true
-        };
+        // An array subscript is arithmetically evaluated unless the target is an
+        // associative array (in which case the subscript is used as a literal key).
+        // A scalar or unset/untyped variable becomes an indexed array, so its
+        // subscript still needs to be evaluated.
+        let will_be_indexed_array =
+            if let Some((_, existing_value)) = shell.env().get(variable_name) {
+                !matches!(
+                    existing_value.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                )
+            } else {
+                true
+            };
 
         if will_be_indexed_array {
             array_index = Some(

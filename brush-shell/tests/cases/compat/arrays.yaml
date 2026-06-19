@@ -105,6 +105,36 @@ cases:
       y[x[1]]=11
       declare -p y
 
+  - name: "Arithmetic index assignment on declared-but-unset variable"
+    stdin: |
+      declare a
+      i=1
+      a[i]=help
+      declare -p a
+
+  - name: "Arithmetic index assignment on local declared-but-unset variable"
+    stdin: |
+      f() {
+        local a
+        i=1
+        a[i]=help
+        declare -p a
+      }
+      f
+
+  - name: "Arithmetic index assignment on scalar variable"
+    stdin: |
+      a=foo
+      i=1
+      a[i]=help
+      declare -p a
+
+  - name: "Arithmetic index assignment on undeclared variable"
+    stdin: |
+      i=1
+      a[i]=help
+      declare -p a
+
   - name: "Replacing array with string"
     stdin: |
       var=(a b c)
