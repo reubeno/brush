@@ -199,7 +199,7 @@ peg::parser! {
             body:brace_group() { ast::DoGroupCommand { list: body.list, loc: body.loc } }
 
         rule extended_test_command() -> ast::ExtendedTestExprCommand =
-            s:specific_word("[[") linebreak() expr:extended_test_expression() linebreak() e:specific_word("]]") {
+            s:specific_word("[[") linebreak() expr:extended_test_expression() e:specific_word("]]") {
                 let start = s.location();
                 let end = e.location();
                 let loc = SourceSpan::within(start, end);
@@ -207,28 +207,41 @@ peg::parser! {
                 ast::ExtendedTestExprCommand { expr, loc }
             }
 
+        // N.B. The placement of linebreak() here matches bash's handling of newlines
+        // within `[[ ]]` conditionals. Newlines are consumed (1) at the start of every
+        // term (after `[[`, `(`, `&&`, `||`, `!`), and (2) trailing after a *complete*
+        // binary test, unary-predicate test, or parenthesized expression -- but never
+        // after a bare-word string test (e.g. `[[ x \n ]]` is a syntax error in bash).
         rule extended_test_expression() -> ast::ExtendedTestExpr = precedence! {
-            left:(@) linebreak() specific_operator("||") linebreak() right:@ { ast::ExtendedTestExpr::Or(Box::from(left), Box::from(right)) }
+            left:(@) specific_operator("||") linebreak() right:@ { ast::ExtendedTestExpr::Or(Box::from(left), Box::from(right)) }
             --
-            left:(@) linebreak() specific_operator("&&") linebreak() right:@ { ast::ExtendedTestExpr::And(Box::from(left), Box::from(right)) }
+            left:(@) specific_operator("&&") linebreak() right:@ { ast::ExtendedTestExpr::And(Box::from(left), Box::from(right)) }
             --
-            specific_word("!") e:@ { ast::ExtendedTestExpr::Not(Box::from(e)) }
+            specific_word("!") linebreak() e:@ { ast::ExtendedTestExpr::Not(Box::from(e)) }
             --
-            specific_operator("(") e:extended_test_expression() specific_operator(")") { ast::ExtendedTestExpr::Parenthesized(Box::from(e)) }
+            specific_operator("(") linebreak() e:extended_test_expression() specific_operator(")") linebreak() { ast::ExtendedTestExpr::Parenthesized(Box::from(e)) }
             --
+            e:extended_test_binary_predicate() linebreak() { e }
+            --
+            p:extended_unary_predicate() f:word() linebreak() { ast::ExtendedTestExpr::UnaryTest(p, ast::Word::from(f)) }
+            --
+            w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
+        }
+
+        rule extended_test_binary_predicate() -> ast::ExtendedTestExpr =
             // Arithmetic operators
-            left:word() specific_word("-eq") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticEqualTo, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("-ne") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticNotEqualTo, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("-lt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticLessThan, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("-le") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticLessThanOrEqualTo, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("-gt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticGreaterThan, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("-ge") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-eq") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticEqualTo, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("-ne") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticNotEqualTo, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("-lt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticLessThan, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("-le") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticLessThanOrEqualTo, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("-gt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticGreaterThan, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("-ge") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::ArithmeticGreaterThanOrEqualTo, ast::Word::from(left), ast::Word::from(right)) } /
             // Non-arithmetic binary operators
-            left:word() specific_word("-ef") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("-nt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("-ot") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() (specific_word("==") / specific_word("=")) right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringExactlyMatchesPattern, ast::Word::from(left), ast::Word::from(right)) }
-            left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringDoesNotExactlyMatchPattern, ast::Word::from(left), ast::Word::from(right)) }
+            left:word() specific_word("-ef") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("-nt") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("-ot") right:word() { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftFileIsOlderOrDoesNotExistWhenRightDoes, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() (specific_word("==") / specific_word("=")) right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringExactlyMatchesPattern, ast::Word::from(left), ast::Word::from(right)) } /
+            left:word() specific_word("!=") right:word()  { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringDoesNotExactlyMatchPattern, ast::Word::from(left), ast::Word::from(right)) } /
             left:word() specific_word("=~") right:regex_word()  {
                 if right.value.starts_with(['\'', '\"']) {
                     // TODO(test): Confirm it ends with that too?
@@ -236,14 +249,9 @@ peg::parser! {
                 } else {
                     ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::StringMatchesRegex, ast::Word::from(left), right)
                 }
-            }
-            left:word() specific_operator("<") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsBeforeRight, ast::Word::from(left), ast::Word::from(right)) }
+            } /
+            left:word() specific_operator("<") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsBeforeRight, ast::Word::from(left), ast::Word::from(right)) } /
             left:word() specific_operator(">") right:word()   { ast::ExtendedTestExpr::BinaryTest(ast::BinaryPredicate::LeftSortsAfterRight, ast::Word::from(left), ast::Word::from(right)) }
-            --
-            p:extended_unary_predicate() f:word() { ast::ExtendedTestExpr::UnaryTest(p, ast::Word::from(f)) }
-            --
-            w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
-        }
 
         rule extended_unary_predicate() -> ast::UnaryPredicate =
             specific_word("-a") { ast::UnaryPredicate::FileExists } /
