@@ -50,6 +50,7 @@ pub(crate) struct HistoryCommand {
 
 struct HistoryConfig {
     default_history_file_path: Option<PathBuf>,
+    shell_name: String,
     time_format: Option<String>,
 }
 
@@ -63,6 +64,10 @@ impl builtins::Command for HistoryCommand {
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
             default_history_file_path: context.shell.history_file_path(),
+            shell_name: context
+                .shell
+                .current_shell_name()
+                .map_or_else(|| String::from("brush"), |name| name.to_string()),
             time_format: context.shell.history_time_format(),
         };
 
@@ -135,7 +140,8 @@ impl HistoryCommand {
                 None => {
                     writeln!(
                         stderr,
-                        "brush: history: HISTFILE: parameter null or not set"
+                        "{}: history: HISTFILE: parameter null or not set",
+                        config.shell_name
                     )?;
                 }
             }
@@ -167,7 +173,8 @@ impl HistoryCommand {
                 None => {
                     writeln!(
                         stderr,
-                        "brush: history: HISTFILE: parameter null or not set"
+                        "{}: history: HISTFILE: parameter null or not set",
+                        config.shell_name
                     )?;
                 }
             }
@@ -261,5 +268,21 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_empty_default_history_file_path_is_unset() {
+        assert_eq!(
+            get_effective_history_file_path(Some(PathBuf::from("")), None),
+            None
+        );
+    }
+
+    #[test]
+    fn test_explicit_empty_history_file_path_is_authoritative() {
+        assert_eq!(
+            get_effective_history_file_path(Some(PathBuf::from("default-history")), Some(&String::new())),
+            Some(PathBuf::from(""))
+        );
     }
 }
