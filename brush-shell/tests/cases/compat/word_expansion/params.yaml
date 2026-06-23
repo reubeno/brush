@@ -175,6 +175,21 @@ cases:
       echo "single[@]+     : [${single[@]+ALT}]"
       echo "single[@]-     : [${single[@]-DEF}]"
 
+  - name: "Parameter expression: index-listing combined with conditional operator"
+    # brush currently fails to parse the ${!arr[@]} index-listing form when it is
+    # combined with a conditional operator (+/-/:+/:-). bash accepts it; for an
+    # empty array the indices are unset, so these forms behave like an unset value.
+    # (Non-empty arrays intentionally omitted: there bash reinterprets `!` as
+    # indirection, which is a separate behavior.)
+    known_failure: true
+    stdin: |
+      empty=()
+      echo "[${!empty[@]+ALT}]"
+      echo "[${!empty[@]-DEF}]"
+      echo "[${!empty[*]+ALT}]"
+      echo "[${!empty[@]:+ALT}]"
+      echo "[${!empty[@]:-DEF}]"
+
   - name: "Parameter expression: error on condition (interactive)"
     ignore_stderr: true
     args: ["-i"]
