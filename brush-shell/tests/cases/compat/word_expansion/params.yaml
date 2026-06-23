@@ -146,6 +146,50 @@ cases:
       echo "${value:+"x\xy"}"
       echo "${value:+z"x\xy"z}"
 
+  - name: "Parameter expression: conditional on empty/unset array"
+    stdin: |
+      empty=()
+      declare -A assoc=()
+      nonempty=(one two)
+      single=("")
+
+      # An array referenced via [@]/[*] with no elements is treated as unset
+      # for the +/- operators (without colon).
+      echo "empty[@]+      : [${empty[@]+ALT}]"
+      echo "empty[*]+      : [${empty[*]+ALT}]"
+      echo "empty[@]-      : [${empty[@]-DEF}]"
+      echo "empty[*]-      : [${empty[*]-DEF}]"
+      echo "empty[@] multi : [${empty[@]+one two}]"
+
+      # Associative empty array behaves the same way.
+      echo "assoc[@]+      : [${assoc[@]+ALT}]"
+      echo "assoc[@]-      : [${assoc[@]-DEF}]"
+
+      # Colon variants treat empty array as unset/null too.
+      echo "empty[@]:+     : [${empty[@]:+ALT}]"
+      echo "empty[@]:-     : [${empty[@]:-DEF}]"
+
+      # A non-empty array is set; a single empty element still counts as set.
+      echo "nonempty[@]+   : [${nonempty[@]+ALT}]"
+      echo "nonempty[@]-   : [${nonempty[@]-DEF}]"
+      echo "single[@]+     : [${single[@]+ALT}]"
+      echo "single[@]-     : [${single[@]-DEF}]"
+
+  - name: "Parameter expression: index-listing combined with conditional operator"
+    # brush currently fails to parse the ${!arr[@]} index-listing form when it is
+    # combined with a conditional operator (+/-/:+/:-). bash accepts it; for an
+    # empty array the indices are unset, so these forms behave like an unset value.
+    # (Non-empty arrays intentionally omitted: there bash reinterprets `!` as
+    # indirection, which is a separate behavior.)
+    known_failure: true
+    stdin: |
+      empty=()
+      echo "[${!empty[@]+ALT}]"
+      echo "[${!empty[@]-DEF}]"
+      echo "[${!empty[*]+ALT}]"
+      echo "[${!empty[@]:+ALT}]"
+      echo "[${!empty[@]:-DEF}]"
+
   - name: "Parameter expression: error on condition (interactive)"
     ignore_stderr: true
     args: ["-i"]
