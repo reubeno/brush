@@ -48,6 +48,23 @@ cases:
       export ${var}+=":b"
       echo "ACC: $ACC"
 
+  - name: "Export append to existing variable"
+    stdin: |
+      CFLAGS="-O3 -pipe"
+      export CFLAGS+=" -Wno-foo"
+      echo "CFLAGS: $CFLAGS"
+
+  - name: "Export append to already-exported variable"
+    stdin: |
+      export Z="-O3 -pipe"
+      export Z+=" -Wno-baz"
+      echo "Z: $Z"
+
+  - name: "Export append to unset variable"
+    stdin: |
+      export NEWVAR+="first"
+      echo "NEWVAR: $NEWVAR"
+
   - name: "Export of invalid identifier via expansion"
     stdin: |
       var="1BAD"

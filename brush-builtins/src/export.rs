@@ -198,6 +198,24 @@ impl ExportCommand {
                     }
                 };
 
+                // `export name+=value` appends to the existing value, exactly
+                // like a bare `name+=value`. update_or_add always replaces, so
+                // when the variable already exists honor the append here (e.g.
+                // flag-o-matic's `export CFLAGS+=" $*"`, which otherwise loses
+                // the prior CFLAGS). A missing variable falls through: appending
+                // to nothing is a plain assignment.
+                if assignment.append
+                    && let Some(mut resolved) = context.shell.env_mut().get_mut(name)
+                {
+                    resolved.base_var_mut().assign(value, true)?;
+                    if self.unexport {
+                        resolved.base_var_mut().unexport();
+                    } else {
+                        resolved.base_var_mut().export();
+                    }
+                    return Ok(ExecutionResult::success());
+                }
+
                 context.shell.env_mut().update_or_add(
                     name,
                     value,
