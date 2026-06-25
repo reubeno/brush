@@ -117,6 +117,22 @@ impl ExportCommand {
                     }
                 };
 
+                // `export name+=value` appends to the existing value, exactly like a
+                // bare `name+=value`. update_or_add always replaces, so when the
+                // variable already exists honor the append here. A missing variable
+                // falls through: appending to nothing is a plain assignment.
+                if assignment.append
+                    && let Some((_, variable)) = context.shell.env_mut().get_mut(name)
+                {
+                    variable.assign(value, true)?;
+                    if self.unexport {
+                        variable.unexport();
+                    } else {
+                        variable.export();
+                    }
+                    return Ok(ExecutionResult::success());
+                }
+
                 // Update the variable with the provided value and then mark it exported.
                 context.shell.env_mut().update_or_add(
                     name,
