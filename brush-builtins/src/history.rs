@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn test_empty_default_history_file_path_is_unset() {
         assert_eq!(
-            get_effective_history_file_path(Some(PathBuf::from("")), None),
+            get_effective_history_file_path(Some(Path::new("")), None),
             None
         );
     }
@@ -281,8 +281,8 @@ mod tests {
     #[test]
     fn test_explicit_empty_history_file_path_is_authoritative() {
         assert_eq!(
-            get_effective_history_file_path(Some(PathBuf::from("default-history")), Some(&String::new())),
-            Some(PathBuf::from(""))
+            get_effective_history_file_path(Some(Path::new("default-history")), Some("")),
+            Some(Path::new(""))
         );
     }
 }
