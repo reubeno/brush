@@ -753,7 +753,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
 
 #[inline]
 fn locations_are_contiguous(loc_left: &crate::SourceSpan, loc_right: &crate::SourceSpan) -> bool {
-    loc_left.end.index == loc_right.start.index
+    loc_left.end.offset == loc_right.start.offset
 }
 
 impl peg::Parse for Tokens<'_> {
@@ -811,13 +811,13 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
             let loc = token.location();
 
             if let Some(prev_end) = prev_end_index {
-                if loc.start.index > prev_end {
+                if loc.start.offset > prev_end {
                     result.push(' ');
                 }
             }
 
             result.push_str(token.to_str());
-            prev_end_index = Some(loc.end.index);
+            prev_end_index = Some(loc.end.offset);
         }
 
         result
