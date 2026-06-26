@@ -274,6 +274,28 @@ cases:
       echo */banana.txt
       echo */*.txt
 
+  - name: "Trailing literal keeps dangling symlinks but drops missing"
+    test_files:
+      - path: "a/real.txt"
+      - path: "b/real.txt"
+      - path: "c/other.txt"
+    stdin: |
+      # a/link.txt is a *dangling* symlink: bash's glob matches it (directory-entry
+      # existence, via lstat), so brush must too. b and c have no link.txt and must
+      # be dropped.
+      ln -s nonexistent-target a/link.txt
+      echo "link.txt:" */link.txt
+      echo "real.txt:" */real.txt
+
+  - name: "Trailing literal with directory symlinks"
+    test_files:
+      - path: "realdir/file.txt"
+    stdin: |
+      # A symlink to a directory should be traversed like a real directory.
+      ln -s realdir linkdir
+      ln -s nonexistent danglingdir
+      echo "*/file.txt:" */file.txt
+
   - name: "Globstar disabled by default"
     test_files:
       - path: "a/b/c.txt"
