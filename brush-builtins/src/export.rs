@@ -6,12 +6,16 @@ use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
     parser::ast,
-    variables,
+    variables::{self, ShellValue, ShellValueUnsetType, ShellVariable},
 };
 
 /// Add or update exported shell variables.
 #[derive(Parser)]
 pub(crate) struct ExportCommand {
+    /// Mark names as indexed arrays (combined with the export attribute).
+    #[arg(short = 'a')]
+    make_indexed_array: bool,
+
     /// Names are treated as function names.
     #[arg(short = 'f')]
     names_are_functions: bool,
@@ -88,11 +92,29 @@ impl ExportCommand {
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
                 else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
+                    if self.make_indexed_array {
+                        variable.convert_to_indexed_array()?;
+                    }
                     if self.unexport {
                         variable.unexport();
                     } else {
                         variable.export();
                     }
+                }
+                // If `-a` was passed and the name doesn't yet exist, create it as an unset
+                // indexed array with the export attribute (mirrors `declare -ax NAME`). This
+                // is what bash does for `export -a NAME` and what `mise activate bash` relies
+                // on when seeding `chpwd_functions`.
+                else if self.make_indexed_array {
+                    let mut var =
+                        ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::IndexedArray));
+                    if !self.unexport {
+                        var.export();
+                    }
+                    context
+                        .shell
+                        .env_mut()
+                        .add(s.clone(), var, EnvironmentScope::Global)?;
                 }
             }
             brush_core::CommandArg::Assignment(assignment) => {
@@ -118,10 +140,16 @@ impl ExportCommand {
                 };
 
                 // Update the variable with the provided value and then mark it exported.
+                // When `-a` is set, ensure the variable is converted to an indexed array
+                // before the assignment lands (so a scalar assignment like `export -a foo=x`
+                // ends up as `foo=([0]="x")`, matching bash's `declare -ax foo=([0]="x")`).
                 context.shell.env_mut().update_or_add(
                     name,
                     value,
                     |var| {
+                        if self.make_indexed_array {
+                            var.convert_to_indexed_array()?;
+                        }
                         if self.unexport {
                             var.unexport();
                         } else {

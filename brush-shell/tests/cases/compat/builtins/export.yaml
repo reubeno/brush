@@ -34,3 +34,33 @@ cases:
       export ref="exported_value"
       echo "MY_EXPORT_VAR: $MY_EXPORT_VAR"
       env | grep MY_EXPORT_VAR
+
+  - name: "export -a marks indexed array and exports (with array element assignment)"
+    stdin: |
+      export -a arr
+      arr[0]=hello
+      arr[1]=world
+      declare -p arr
+
+  - name: "export -a with scalar assignment auto-promotes to array"
+    stdin: |
+      export -a arr=hello
+      declare -p arr
+
+  - name: "export -a with array literal assignment"
+    stdin: |
+      export -a arr=(a b c)
+      declare -p arr
+
+  - name: "export -a converts an existing scalar to an indexed array"
+    stdin: |
+      foo=hello
+      export -a foo
+      foo[1]=world
+      declare -p foo
+
+  - name: "export -an unmarks an indexed array's export attribute"
+    stdin: |
+      export -a arr=(x y z)
+      export -n arr
+      declare -p arr
