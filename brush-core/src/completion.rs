@@ -1143,8 +1143,13 @@ impl Config {
         // See if we can find a completion spec matching the current command.
         let mut found_spec: Option<&Spec> = None;
 
+        // After a command separator the next token is in command position,
+        // regardless of its index in the flat token list.
+        let after_separator = context
+            .preceding_token
+            .is_some_and(|t| matches!(t, "|" | "||" | "&&" | ";" | "&"));
         if let Some(command_name) = context.command_name {
-            if context.token_index == 0 {
+            if context.token_index == 0 || after_separator {
                 if let Some(spec) = &self.initial_word {
                     found_spec = Some(spec);
                 }
@@ -1371,21 +1376,27 @@ async fn get_completions_using_basic_lookup(
         return answer;
     }
 
-    // File completions
-    let mut candidates = get_file_completions(shell, token, false).await;
-
-    // If this appears to be the command token (and if there's *some* prefix without
-    // a path separator) then also consider whether we should search the path for
-    // completions too.
-    // TODO(completions): Do a better job than just checking if index == 0.
-    let is_command_position =
-        context.token_index == 0 && !token.is_empty() && !sys::fs::contains_path_separator(token);
+    // A token is in command position if it is the first token on the line or
+    // immediately follows a command separator (|, ||, &&, ;, &). In that case
+    // complete from $PATH (commands, builtins, functions, aliases) rather than
+    // from $PWD files.
+    let after_separator = context
+        .preceding_token
+        .is_some_and(|t| matches!(t, "|" | "||" | "&&" | ";" | "&"));
+    let is_command_position = !token.is_empty()
+        && !sys::fs::contains_path_separator(token)
+        && (context.token_index == 0 || after_separator);
 
     if is_command_position {
+        let mut candidates = vec![];
         add_command_completions(shell, token, &mut candidates);
         candidates.sort();
+        candidates.dedup();
+        return Answer::Candidates(candidates, ProcessingOptions::default());
     }
 
+    // File completions for argument position.
+    let candidates = get_file_completions(shell, token, false).await;
     Answer::Candidates(candidates, ProcessingOptions::default())
 }
 
