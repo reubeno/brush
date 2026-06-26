@@ -909,7 +909,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
             brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
+                // Literal text from the original word should not be split by IFS;
+                // only portions produced by expansions are split. Mark as unsplittable.
+                Expansion::from(ExpansionPiece::Unsplittable(s))
             }
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
                 Expansion::from(ExpansionPiece::Unsplittable(s))
@@ -2264,5 +2266,36 @@ mod tests {
         assert_eq!(to_initial_capitals("ab bc cd"), String::from("Ab Bc Cd"));
         assert_eq!(to_initial_capitals(" a "), String::from(" A "));
         assert_eq!(to_initial_capitals(""), String::new());
+    }
+
+    // Literal word containing IFS characters should NOT be split.
+    #[tokio::test]
+    async fn literal_text_not_split_by_ifs() -> Result<()> {
+        let mut shell = crate::shell::Shell::builder().build().await?;
+        // set IFS to ':' for the test
+        shell.set_env_global("IFS", crate::variables::ShellVariable::new(":"))?;
+
+        let params = crate::ExecutionParameters::default();
+        let fields = full_expand_and_split_word(&mut shell, &params, "a:b:c").await?;
+
+        // Expect a single field (no splitting of literal text)
+        assert_eq!(fields, vec!["a:b:c".to_string()]);
+        Ok(())
+    }
+
+    // When the same text comes from an expansion, it should be split by IFS.
+    #[tokio::test]
+    async fn expanded_text_is_split_by_ifs() -> Result<()> {
+        let mut shell = crate::shell::Shell::builder().build().await?;
+        shell.set_env_global("IFS", crate::variables::ShellVariable::new(":"))?;
+        // set variable x to a:b:c so $x expansion yields the colon-delimited string
+        shell.set_env_global("x", crate::variables::ShellVariable::new("a:b:c"))?;
+
+        let params = crate::ExecutionParameters::default();
+        let fields = full_expand_and_split_word(&mut shell, &params, "$x").await?;
+
+        // Expect splitting into three fields
+        assert_eq!(fields, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        Ok(())
     }
 }
