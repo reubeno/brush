@@ -55,9 +55,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         let prev_last_result = self.last_exit_status();
         let prev_last_pipeline_statuses = self.last_pipeline_statuses.clone();
 
-        // Expand it.
+        // Expand it. We must own the spec here: it borrows `self` (via the
+        // returned `Cow`), and `expand_prompt` needs `&mut self`.
+        let prompt_spec = prompt_spec.into_owned();
         let params = self.default_exec_params();
-        let result = prompt::expand_prompt(self, &params, prompt_spec.into_owned()).await;
+        let result = prompt::expand_prompt(self, &params, &prompt_spec).await;
 
         // Restore the last exit status.
         self.last_pipeline_statuses = prev_last_pipeline_statuses;
