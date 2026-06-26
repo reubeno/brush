@@ -139,3 +139,13 @@ cases:
       unset myvar3
       echo "Assign colon-tilde: ${myvar3:=~:~/bin}"
       echo "myvar3 after := ${myvar3}"
+
+  - name: "Tilde expansion in list"
+    known_failure: true
+    env:
+      HOME: .
+    test_files:
+      - path: "file.txt"
+      - path: "file.txt.bak"
+    stdin: |
+      echo ~/{file.txt,file.txt.bak}
