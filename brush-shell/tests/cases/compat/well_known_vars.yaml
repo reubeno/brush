@@ -113,6 +113,45 @@ cases:
 
       echo "Input exit"; declare -p FUNCNAME
 
+  # Regression test for https://github.com/reubeno/brush/issues/1212: BASH_ARGV
+  # and BASH_ARGC are populated for script-level frames (the top-level invocation
+  # plus sourced scripts) even without extended debugging mode. A sourced script
+  # invoked with no positional arguments contributes its own name.
+  - name: "BASH_ARGV/BASH_ARGC - sourced script without arguments"
+    test_files:
+      - path: "argv.sh"
+        contents: |
+          declare -p BASH_ARGV BASH_ARGC
+    stdin: |
+      . ./argv.sh
+
+  - name: "BASH_ARGV/BASH_ARGC - nested sourced scripts without arguments"
+    test_files:
+      - path: "outer.sh"
+        contents: |
+          . ./inner.sh
+      - path: "inner.sh"
+        contents: |
+          declare -p BASH_ARGV BASH_ARGC
+    stdin: |
+      . ./outer.sh
+
+  - name: "BASH_ARGV/BASH_ARGC - empty inside function without extdebug"
+    stdin: |
+      myfunc() {
+        declare -p BASH_ARGV BASH_ARGC
+      }
+      myfunc a b c
+
+  - name: "BASH_ARGV/BASH_ARGC - sourced script without arguments with extdebug"
+    test_files:
+      - path: "argv.sh"
+        contents: |
+          declare -p BASH_ARGV BASH_ARGC
+    stdin: |
+      shopt -s extdebug
+      . ./argv.sh
+
   - name: "BASH_SUBSHELL"
     stdin: |
       echo "Initial BASH_SUBSHELL: $BASH_SUBSHELL"
