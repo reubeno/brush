@@ -286,6 +286,20 @@ cargo xtask analyze bench  # Run benchmarks
 
 ---
 
+## 7. Commit Message Conventions
+
+Following the Linux kernel convention, when AI assistants or advanced coding tools have been used in the development of a change, include an `Assisted-by:` tag in the commit message. This provides transparency about the use of such tools in the development process.
+
+The format for the Assisted-by tag is:
+```
+Assisted-by: AGENT_NAME:MODEL_VERSION [TOOL1] [TOOL2]
+```
+
+Example:
+```
+Assisted-by: Mistral Vibe:mistral-medium-3.5
+```
+
 ## Quick Reference Checklist
 
 When making changes to brush:
@@ -309,6 +323,7 @@ When making changes to brush:
 - [ ] Format code: `cargo fmt` (see section 5 for tool details)
 - [ ] Check linting: `cargo clippy`
 - [ ] Use conventional commit format
+- [ ] If using AI assistants or advanced coding tools, include an `Assisted-by:` tag in the format `AGENT_NAME:MODEL_VERSION` (following Linux kernel convention)
 
 ### Documentation
 
