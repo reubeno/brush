@@ -425,14 +425,11 @@ cases:
       [[ -v ref ]] && echo "set" || echo "unset"
 
   - name: "Nameref -v with explicit subscript on nameref to whole array"
-    # TODO(nameref): brush doesn't yet handle [[ -v "ref[N]" ]] where ref is
-    # a nameref to a whole array. Bash resolves ref→arr and then checks arr[2],
-    # but brush currently treats the subscript as part of the nameref target
-    # string rather than applying it after resolution. The fix belongs in
-    # extendedtests.rs (ShellVariableIsSetAndAssigned) — the operand "ref[2]"
-    # needs to be split into name="ref" + subscript="2", the nameref resolved
-    # on the name portion, then the subscript applied to the resolved target.
-    known_failure: true
+    # `[[ -v "ref[N]" ]]` where ref is a nameref to an array: bash resolves
+    # ref→arr, then checks arr[N]. Handled in extendedtests.rs
+    # (ShellVariableIsSetAndAssigned via split_subscript): the operand "ref[2]"
+    # is split into name="ref" + subscript="2", the nameref resolved on the name,
+    # then the subscript applied to the resolved array.
     stdin: |
       arr=(a b c d)
       declare -n ref2=arr
@@ -443,6 +440,21 @@ cases:
       arr=(a b c)
       declare -n ref='arr[5]'
       [[ -v ref ]] && echo "set" || echo "unset"
+
+  - name: "Extended test -v on associative array element"
+    stdin: |
+      declare -A A=([cachecontrol]=MIT [certifi]=MPL)
+      for k in cachecontrol certifi missing; do
+        [[ -v "A[$k]" ]] && echo "$k set" || echo "$k unset"
+      done
+
+  - name: "Extended test -v on indexed array element and whole-array forms"
+    stdin: |
+      declare -a I=(a b c)
+      s=hello
+      for t in "I[0]" "I[2]" "I[5]" "I[@]" "I[*]" "s[0]" "s[1]"; do
+        [[ -v "$t" ]] && echo "$t set" || echo "$t unset"
+      done
 
   - name: "Regex match with POSIX character class"
     stdin: |

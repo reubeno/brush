@@ -45,6 +45,18 @@ pub(crate) async fn eval_extended_test_expr(
     }
 }
 
+/// Split an extended-test operand of the form `name[subscript]` into its parts,
+/// or `None` when there's no explicit subscript. The name must be non-empty and
+/// the operand must end with `]`; the subscript is everything between the first
+/// `[` and the final `]` (already expanded by the time the test sees it).
+fn split_subscript(operand: &str) -> Option<(&str, &str)> {
+    let open = operand.find('[')?;
+    if open == 0 || !operand.ends_with(']') {
+        return None;
+    }
+    Some((&operand[..open], &operand[open + 1..operand.len() - 1]))
+}
+
 async fn apply_unary_predicate(
     op: &ast::UnaryPredicate,
     operand: &ast::Word,
@@ -186,30 +198,31 @@ pub(crate) fn apply_unary_predicate_to_str(
             }
         }
         ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
-            // Resolve the nameref chain, then look up the resolved name as a
-            // plain variable (without further nameref resolution or subscript
-            // parsing). In bash, `[[ -v ref ]]` where ref→arr[2] does NOT
-            // parse the subscript — it looks for a variable literally named
-            // `arr[2]`, which doesn't exist. Only explicit subscript syntax like
-            // `[[ -v "ref[2]" ]]` triggers element-level checks.
-            //
-            // TODO(nameref): Handle `[[ -v "ref[N]" ]]` where ref is a nameref
-            // to a whole array. Fix requires:
-            //   1. Split `operand` on the first `[` into (name_part, subscript_part)
-            //   2. Resolve the nameref on name_part only (e.g., "ref" → "arr")
-            //   3. Look up the resolved variable with get_raw()
-            //   4. Check if the specific element at subscript_part is set
-            // Currently blocked because the operand arrives as a single string
-            // without prior parsing. See the known_failure test
-            // "Nameref -v with explicit subscript on nameref to whole array"
-            // in extended_tests.yaml.
-            // resolve_nameref_to_name returns the resolved name without parsing
-            // subscripts — exactly what bash's `-v` test expects. In bash,
-            // `[[ -v ref ]]` where ref→arr[2] looks for a variable literally
-            // named `"arr[2]"`, not array element arr at index 2.
-            //
-            // Circular namerefs silently fall back to the operand name, which
-            // won't be found — correctly treating them as unset.
+            // An explicit subscript — `[[ -v "name[sub]" ]]` — is an *element*-level
+            // test: is that specific array element set? (`name` may be a nameref to
+            // the array.) For an associative array `sub` is the literal key; for an
+            // indexed array it's an arithmetic index; `@`/`*` ask whether the array
+            // has any set element. Bash does this only for an explicit subscript —
+            // `[[ -v ref ]]` on a nameref to `arr[2]` looks for a variable literally
+            // named `arr[2]`, which is the plain-name path below.
+            if let Some((name_part, subscript)) = split_subscript(operand) {
+                let resolved_name = shell
+                    .env()
+                    .resolve_nameref_to_name(name_part)
+                    .unwrap_or_else(|_| name_part.to_owned());
+                let resolved = crate::env::ResolvedName::already_resolved(resolved_name);
+                return match shell.env().lookup(&resolved).get_direct() {
+                    Some((_, var)) if subscript == "@" || subscript == "*" => {
+                        Ok(!var.value().element_keys(shell).is_empty())
+                    }
+                    Some((_, var)) => Ok(var.value().get_at(subscript, shell)?.is_some()),
+                    None => Ok(false),
+                };
+            }
+
+            // Plain name (no subscript): resolve the nameref chain, then look up the
+            // resolved name as a plain variable. Circular namerefs silently fall
+            // back to the operand name, which won't be found — correctly unset.
             let resolved_name = shell
                 .env()
                 .resolve_nameref_to_name(operand)
