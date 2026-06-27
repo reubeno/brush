@@ -1081,24 +1081,22 @@ pub mod async_file {
                 #[cfg(unix)]
                 super::OpenFile::PipeWriter(w) => Self::PipeWriter(SharedPipeWriter(w)),
                 #[cfg(not(unix))]
-                super::OpenFile::File(f) => f
+                super::OpenFile::File(f) => f.try_clone().ok().map_or_else(
+                    || Self::Stdin(stdin()),
+                    |file| Self::File(File::from_std(file)),
+                ),
+                #[cfg(not(unix))]
+                super::OpenFile::PipeReader(r) => r
                     .try_clone()
                     .ok()
-                    .map_or_else(|| Self::Stdin(stdin()), |file| Self::File(File::from_std(file))),
+                    .and_then(|p| Self::from_pipe_reader(p).ok())
+                    .unwrap_or_else(|| Self::Stdin(stdin())),
                 #[cfg(not(unix))]
-                super::OpenFile::PipeReader(r) => {
-                    r.try_clone()
-                        .ok()
-                        .and_then(|p| Self::from_pipe_reader(p).ok())
-                        .unwrap_or_else(|| Self::Stdin(stdin()))
-                }
-                #[cfg(not(unix))]
-                super::OpenFile::PipeWriter(w) => {
-                    w.try_clone()
-                        .ok()
-                        .and_then(|p| Self::from_pipe_writer(p).ok())
-                        .unwrap_or_else(|| Self::Stdout(stdout()))
-                }
+                super::OpenFile::PipeWriter(w) => w
+                    .try_clone()
+                    .ok()
+                    .and_then(|p| Self::from_pipe_writer(p).ok())
+                    .unwrap_or_else(|| Self::Stdout(stdout())),
                 super::OpenFile::Stream(_) => Self::Stdin(stdin()),
             }
         }
