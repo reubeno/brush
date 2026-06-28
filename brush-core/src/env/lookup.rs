@@ -351,7 +351,10 @@ impl ShellEnvironment {
 
     /// Retrieves the string value of a variable, resolving namerefs and subscripts
     /// correctly. Convenience for `self.get(name)?.value_str(shell)`.
-    pub fn get_str<S: AsRef<str>, SE: extensions::ShellExtensions>(
+    ///
+    /// Internal: an environment method that needs the whole `Shell` is a
+    /// layering inversion; the public surface is [`Shell::env_str`].
+    pub(crate) fn get_str<S: AsRef<str>, SE: extensions::ShellExtensions>(
         &self,
         name: S,
         shell: &Shell<SE>,
@@ -361,7 +364,9 @@ impl ShellEnvironment {
 
     /// Checks if a variable of the given name is set, resolving namerefs.
     /// For subscripted namerefs, checks whether the specific element exists.
-    pub fn is_set<S: AsRef<str>, SE: extensions::ShellExtensions>(
+    ///
+    /// Internal: the public surface is [`Shell::env_is_set`].
+    pub(crate) fn is_set<S: AsRef<str>, SE: extensions::ShellExtensions>(
         &self,
         name: S,
         shell: &Shell<SE>,

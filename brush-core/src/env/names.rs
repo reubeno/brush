@@ -173,7 +173,7 @@ impl From<ResolvedName> for NameRef {
 ///
 /// To look up a variable without nameref resolution, use
 /// `env.lookup("name").bypassing_nameref().get()`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ResolvedName {
     pub(super) name: String,
     pub(super) subscript: Option<String>,
