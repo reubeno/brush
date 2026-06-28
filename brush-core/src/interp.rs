@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
-use crate::env::{self, EnvironmentLookup, EnvironmentScope, valid_variable_name};
+use crate::env::{self, EnvironmentScope, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -869,12 +869,9 @@ impl Execute for ast::ForClauseCommand {
                 break;
             }
 
-            shell.env_mut().update_or_add(
+            shell.env_mut().set_var(
                 crate::env::NameRef::bypass(&self.variable_name),
                 ShellValueLiteral::Scalar(value),
-                |_| Ok(()),
-                EnvironmentLookup::Anywhere,
-                EnvironmentScope::Global,
             )?;
 
             result = self.body.list.execute(shell, params).await?;

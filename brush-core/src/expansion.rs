@@ -1733,22 +1733,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // resolved target — so `${ref:=x}` through `ref→arr[2]` correctly
         // writes to arr[2], not scalar-assigns to arr.
         if let Some(index) = index {
-            self.shell.env_mut().update_or_add_array_element(
-                resolved_name,
-                index,
-                value,
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
+            self.shell
+                .env_mut()
+                .set_var_element(resolved_name, index, value)?;
         } else {
-            self.shell.env_mut().update_or_add(
-                resolved_name,
-                variables::ShellValueLiteral::Scalar(value),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
+            self.shell
+                .env_mut()
+                .set_var(resolved_name, variables::ShellValueLiteral::Scalar(value))?;
         }
         Ok(true)
     }

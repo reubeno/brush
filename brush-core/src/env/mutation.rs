@@ -182,15 +182,21 @@ impl ShellEnvironment {
         self.update_or_add_impl(base, value, updater, lookup_policy, scope_if_creating)
     }
 
-    /// Convenience: set a variable value with default options.
-    /// Resolves namerefs, looks anywhere, creates in global scope.
+    /// Convenience for the common assignment: no post-update attribute tweak,
+    /// look anywhere, create in the global scope. Accepts anything that names a
+    /// variable — a `&str`/`String` (resolves namerefs), a [`ResolvedName`], or
+    /// a [`NameRef`] (e.g. [`NameRef::bypass`]) — so callers don't spell out the
+    /// trivial updater / policy / scope of
+    /// [`update_or_add`](Self::update_or_add).
+    ///
+    /// [`ResolvedName`]: super::ResolvedName
     pub fn set_var(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<NameRef>,
         value: variables::ShellValueLiteral,
     ) -> Result<(), error::Error> {
         self.update_or_add(
-            name.into(),
+            name,
             value,
             |_| Ok(()),
             EnvironmentLookup::Anywhere,
@@ -198,15 +204,17 @@ impl ShellEnvironment {
         )
     }
 
-    /// Convenience: set an array element with default options.
+    /// Convenience: set an array element with default options. See [`set_var`].
+    ///
+    /// [`set_var`]: Self::set_var
     pub fn set_var_element(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<NameRef>,
         index: String,
         value: String,
     ) -> Result<(), error::Error> {
         self.update_or_add_array_element(
-            name.into(),
+            name,
             index,
             value,
             |_| Ok(()),
