@@ -189,8 +189,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         // Execute the command string.
         let params = self.default_exec_params();
+        let signal_listeners = spawn_host_signal_listeners(&params)?;
         let source_info = SourceInfo::from("-c");
-        let result = self.run_string(command, &source_info, &params).await?;
+        let result = self.run_string(command, &source_info, &params).await;
+        abort_host_signal_listeners(signal_listeners);
+        let result = result?;
 
         self.end_command_string_mode()?;
 
@@ -216,6 +219,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
+        let signal_listeners = spawn_host_signal_listeners(&params)?;
         let result = self
             .parse_and_execute_script_file(
                 script_path.as_ref(),
@@ -223,7 +227,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
                 &params,
                 callstack::ScriptCallType::Run,
             )
-            .await?;
+            .await;
+        abort_host_signal_listeners(signal_listeners);
+        let result = result?;
 
         // Give the shell a chance to run on-exit tasks, but ignore the result.
         let _ = self.on_exit().await;
@@ -282,4 +288,42 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<i64, error::Error> {
         Ok(expr.eval(self)?)
     }
+}
+
+fn abort_host_signal_listeners(signal_listeners: Vec<tokio::task::JoinHandle<()>>) {
+    for signal_listener in signal_listeners {
+        signal_listener.abort();
+    }
+}
+
+#[cfg(unix)]
+fn spawn_host_signal_listeners(
+    params: &ExecutionParameters,
+) -> Result<Vec<tokio::task::JoinHandle<()>>, error::Error> {
+    use crate::sys::signal::Signal;
+
+    let mut signal_listeners = Vec::new();
+    for signal in [Signal::SIGHUP, Signal::SIGTERM] {
+        let mut signal_stream =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(signal as i32))?;
+        let params = params.clone();
+        signal_listeners.push(tokio::spawn(async move {
+            while signal_stream.recv().await.is_some() {
+                params.request_host_signal(signal as i32);
+            }
+        }));
+    }
+
+    Ok(signal_listeners)
+}
+
+#[cfg(not(unix))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "keeps call sites platform-independent"
+)]
+fn spawn_host_signal_listeners(
+    _params: &ExecutionParameters,
+) -> Result<Vec<tokio::task::JoinHandle<()>>, error::Error> {
+    Ok(Vec::new())
 }

@@ -153,7 +153,7 @@ pub fn run() {
         }
     }
 
-    let parsed_args = match CommandLineArgs::try_parse_from(args.iter().cloned()) {
+    let mut parsed_args = match CommandLineArgs::try_parse_from(args.iter().cloned()) {
         Ok(parsed_args) => parsed_args,
         Err(e) => {
             let _ = e.print();
@@ -169,6 +169,7 @@ pub fn run() {
             std::process::exit(exit_code);
         }
     };
+    inherit_parent_fds(&mut parsed_args);
 
     //
     // Run.
@@ -194,6 +195,13 @@ pub fn run() {
     };
 
     std::process::exit(i32::from(exit_code));
+}
+
+fn inherit_parent_fds(args: &mut CommandLineArgs) {
+    args.inherited_fds
+        .extend(brush_core::sys::fd::try_iter_open_fds().map(|(fd, _)| fd));
+    args.inherited_fds.sort_unstable();
+    args.inherited_fds.dedup();
 }
 
 /// Installs panic handlers to report our panic and cleanly exit on panic.
@@ -677,7 +685,7 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
 
     fn args(strs: &[&str]) -> Vec<String> {
-        strs.iter().map(|s| s.to_string()).collect()
+        strs.iter().copied().map(str::to_owned).collect()
     }
 
     #[test]

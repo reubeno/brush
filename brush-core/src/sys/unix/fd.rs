@@ -37,24 +37,27 @@ cfg_if::cfg_if! {
     target_os = "openbsd"
 ))]
 pub fn try_iter_open_fds() -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
-    std::fs::read_dir(FD_DIR_PATH)
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let fd: RawFd = entry.file_name().to_str()?.parse().ok()?;
-
-            // SAFETY:
-            // We are trying to open the file descriptor we found listed
-            // in the filesystem, but there's a risk that it's not the same one
-            // that we enumerated or that it's since been closed. For the purposes
-            // of this function, either of those outcomes are acceptable. We
-            // simply skip any fds that we can't open, and the function's purpose
-            // is to make a best-effort attempt to open all available fds.
-            let file = unsafe { open_file_by_fd(fd) }.ok()?;
-
-            Some((fd, file))
+    let fds: Vec<_> = std::fs::read_dir(FD_DIR_PATH)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().to_str()?.parse::<RawFd>().ok())
+                .collect()
         })
+        .unwrap_or_default();
+
+    fds.into_iter().filter_map(|fd| {
+        // SAFETY:
+        // We are trying to open the file descriptor we found listed
+        // in the filesystem, but there's a risk that it's not the same one
+        // that we enumerated or that it's since been closed. For the purposes
+        // of this function, either of those outcomes are acceptable. We
+        // simply skip any fds that we can't open, and the function's purpose
+        // is to make a best-effort attempt to open all available fds.
+        let file = unsafe { open_file_by_fd(fd) }.ok()?;
+
+        Some((fd, file))
+    })
 }
 
 /// Attempts to retrieve an `OpenFile` representation for the given already-open file descriptor.
