@@ -356,7 +356,8 @@ impl DeclareCommand {
         let will_be_nameref = self.will_be_nameref();
         if will_be_nameref
             && let Some(ShellValueLiteral::Scalar(target)) = initial_value.as_ref()
-            && let Some(msg) = Self::validate_nameref_target(Some(name.as_str()), target)
+            && let Some(msg) =
+                Self::validate_nameref_target(Some(name.as_str()), target, !create_var_local)
         {
             writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
             return Ok(false);
@@ -412,7 +413,7 @@ impl DeclareCommand {
             // No self-ref check — bash allows implicit self-refs at this stage.
             if var.is_treated_as_nameref()
                 && let ShellValue::String(target) = var.value()
-                && let Some(msg) = Self::validate_nameref_target(None, target)
+                && let Some(msg) = Self::validate_nameref_target(None, target, !create_var_local)
             {
                 writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
                 return Ok(false);
@@ -441,7 +442,7 @@ impl DeclareCommand {
             // Validate nameref target name after assignment.
             if var.is_treated_as_nameref()
                 && let ShellValue::String(target) = var.value()
-                && let Some(msg) = Self::validate_nameref_target(None, target)
+                && let Some(msg) = Self::validate_nameref_target(None, target, !create_var_local)
             {
                 writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
                 return Ok(false);
@@ -554,18 +555,25 @@ impl DeclareCommand {
 
     /// Validates a nameref target name, returning an error message if invalid.
     /// If `creation_var_name` is `Some`, rejects explicit self-references
-    /// (`declare -n x=x`); if `None`, allows them — bash permits implicit
-    /// self-refs like `x=x; declare -n x`.
+    /// (`declare -n x=x`) **only when `creating_at_global`** — bash allows a
+    /// self-referential `local -n x=x` at function scope (it resolves to the
+    /// global `x`), and permits implicit self-refs like `x=x; declare -n x`
+    /// (`creation_var_name` is `None` there).
     ///
     /// This is only ever called with an *explicit* value, so an empty target
     /// means `declare -n ref=` / `declare -n ref=""`, which bash rejects as not
     /// a valid identifier. (A bare `declare -n ref` with no value never reaches
     /// here — it has no initial value to validate.)
-    fn validate_nameref_target(creation_var_name: Option<&str>, target: &str) -> Option<String> {
+    fn validate_nameref_target(
+        creation_var_name: Option<&str>,
+        target: &str,
+        creating_at_global: bool,
+    ) -> Option<String> {
         if target.is_empty() {
             return Some("`': not a valid identifier".to_owned());
         }
-        if let Some(var_name) = creation_var_name
+        if creating_at_global
+            && let Some(var_name) = creation_var_name
             && target == var_name
         {
             return Some(format!(

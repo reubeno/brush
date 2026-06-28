@@ -1581,9 +1581,13 @@ async fn apply_assignment(
     // True when this assignment *sets* an untargeted nameref's target (rather
     // than writing through an already-targeted one). A nameref resolves to its
     // own name only when it has no target yet — targeted refs resolve to the
-    // target, and self/circular refs faulted above. bash validates the RHS as a
-    // nameref target name in this case.
-    let assigning_nameref_target = is_nameref && resolved_name.name() == variable_name.as_str();
+    // target, and circular refs faulted above. bash validates the RHS as a
+    // nameref target name in this case. A self-referential nameref
+    // (`local -n x=x`) also resolves to its own name, but it writes *through* to
+    // the global `x` rather than setting a target, so it's excluded.
+    let assigning_nameref_target = is_nameref
+        && resolved_name.name() == variable_name.as_str()
+        && !resolved_name.is_global_scope();
 
     // Expand the values.
     let new_value = match &assignment.value {
@@ -1776,6 +1780,14 @@ async fn apply_assignment(
     if export {
         new_var.export();
     }
+
+    // A self-referential nameref (`local -n x=x`) creates its target in the
+    // global scope, not the assignment's default creation scope.
+    let creation_scope = if resolved_name.is_global_scope() {
+        EnvironmentScope::Global
+    } else {
+        creation_scope
+    };
 
     shell
         .env_mut()

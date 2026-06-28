@@ -91,7 +91,7 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let (base, subscript) = match name.into().0 {
+        let (base, subscript, global_scope) = match name.into().0 {
             NameRefStrategy::Resolve(s) => {
                 // Fast path: only walk the nameref chain when `s` actually names
                 // a live nameref. The overwhelmingly common case (a plain
@@ -117,7 +117,7 @@ impl ShellEnvironment {
                         }
                         .into());
                     }
-                    (resolved.name, resolved.subscript)
+                    (resolved.name, resolved.subscript, resolved.global_scope)
                 } else {
                     // Not a live nameref. We still must parse a possible
                     // subscript — `read 'arr[0]'` reaches here with a
@@ -125,14 +125,23 @@ impl ShellEnvironment {
                     // subscript handling. `ResolvedName::parse` does no scope
                     // walk, so the fast-path perf win stands.
                     let resolved = ResolvedName::parse(s);
-                    (resolved.name, resolved.subscript)
+                    (resolved.name, resolved.subscript, false)
                 }
             }
-            NameRefStrategy::PreResolved(r) => (r.name, r.subscript),
+            NameRefStrategy::PreResolved(r) => (r.name, r.subscript, r.global_scope),
             NameRefStrategy::Bypass(s) => {
                 super::names::assert_bare_name(&s, "NameRef::Bypass");
-                (s, None)
+                (s, None, false)
             }
+        };
+
+        // A self-referential nameref (`local -n x=x`) resolves to the global
+        // `x`: look it up and create it in the global scope, overriding the
+        // caller's policy/scope.
+        let (lookup_policy, scope_if_creating) = if global_scope {
+            (EnvironmentLookup::OnlyInGlobal, EnvironmentScope::Global)
+        } else {
+            (lookup_policy, scope_if_creating)
         };
 
         // The base must be a legal identifier. User-facing callers (`read`,
@@ -247,7 +256,7 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let base = match name.into().0 {
+        let (base, global_scope) = match name.into().0 {
             NameRefStrategy::Resolve(s) => {
                 // Fast path: skip chain resolution for plain (non-nameref)
                 // names — see `update_or_add`.
@@ -265,7 +274,7 @@ impl ShellEnvironment {
                         }
                         .into());
                     }
-                    resolved.name
+                    (resolved.name, resolved.global_scope)
                 } else {
                     // Not a live nameref. A subscripted name here plus an
                     // explicit index would be `arr[0][idx]` — bash rejects it
@@ -279,7 +288,7 @@ impl ShellEnvironment {
                         }
                         .into());
                     }
-                    resolved.name
+                    (resolved.name, false)
                 }
             }
             NameRefStrategy::PreResolved(r) => {
@@ -293,12 +302,19 @@ impl ShellEnvironment {
                     r.name,
                     r.subscript,
                 );
-                r.name
+                (r.name, r.global_scope)
             }
             NameRefStrategy::Bypass(s) => {
                 super::names::assert_bare_name(&s, "NameRef::Bypass");
-                s
+                (s, false)
             }
+        };
+
+        // Self-referential nameref → global scope (see `update_or_add`).
+        let (lookup_policy, scope_if_creating) = if global_scope {
+            (EnvironmentLookup::OnlyInGlobal, EnvironmentScope::Global)
+        } else {
+            (lookup_policy, scope_if_creating)
         };
 
         // The base must be a legal identifier (see `update_or_add`).

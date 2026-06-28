@@ -126,18 +126,34 @@ impl ShellEnvironment {
     // prefer the lookup builders in `lookup.rs` (`lookup` / `lookup_resolved`).
     //
 
-    /// Resolves a nameref chain, returning the final target string. On a cycle
-    /// or depth overflow, returns a [`NameRefFault`] that blames `name` (the
-    /// head of the chain), matching bash's diagnostics.
-    fn resolve_nameref_chain<'a>(&'a self, name: &'a str) -> Result<Cow<'a, str>, NameRefFault> {
+    /// Resolves a nameref chain, returning `(final target string, resolve at
+    /// global scope?)`. The `bool` is set when a *self-referential* nameref
+    /// (`x → "x"`) at a function-local scope is hit: bash resolves such a
+    /// nameref's target against the **global** scope (so `local -n x=x` targets
+    /// the global `x`), and callers must look the result up there. On a cycle or
+    /// depth overflow, returns a [`NameRefFault`] that blames `name` (the head
+    /// of the chain), matching bash's diagnostics.
+    fn resolve_nameref_chain<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> Result<(Cow<'a, str>, bool), NameRefFault> {
         // Quick check: is this even a nameref?
-        let first_target = match self.get_by_exact_name(name) {
-            Some((_, var)) if var.is_treated_as_nameref() => match var.value() {
-                ShellValue::String(s) if !s.is_empty() => s.as_str(),
-                _ => return Ok(Cow::Borrowed(name)),
+        let (head_scope, first_target) = match self.get_by_exact_name(name) {
+            Some((scope, var)) if var.is_treated_as_nameref() => match var.value() {
+                ShellValue::String(s) if !s.is_empty() => (scope, s.as_str()),
+                _ => return Ok((Cow::Borrowed(name), false)),
             },
-            _ => return Ok(Cow::Borrowed(name)),
+            _ => return Ok((Cow::Borrowed(name), false)),
         };
+
+        // A self-referential nameref (`x → "x"`) is special: bash resolves it
+        // against the GLOBAL scope. A function-local `local -n x=x` therefore
+        // refers to the global `x` (skipping its own and intermediate locals).
+        // At global scope there is no enclosing scope to fall back to, so it's a
+        // true cycle.
+        if first_target == name {
+            return Self::resolve_self_reference(name, name, head_scope);
+        }
 
         // Follow the chain with cycle detection and a hard depth limit.
         // All references borrow from `self` (immutable), so no allocations
@@ -162,47 +178,68 @@ impl ShellEnvironment {
             // `parse_nameref_subscript`. Do NOT "fix" this to parse subscripts
             // here; that would cause double resolution when callers use
             // resolve_nameref().
-            match self.get_by_exact_name(current) {
-                Some((_, var)) if var.is_treated_as_nameref() => match var.value() {
-                    ShellValue::String(s) if !s.is_empty() => {
-                        visited.push(current);
-                        // Check depth *after* following this link, matching bash's
-                        // NAMEREF_MAX which counts resolution steps, not chain length.
-                        if visited.len() > MAX_NAMEREF_DEPTH {
-                            return Err(NameRefFault::max_depth(name, MAX_NAMEREF_DEPTH));
-                        }
-                        current = s.as_str();
-                    }
-                    _ => return Ok(Cow::Borrowed(current)),
+            let (scope, target) = match self.get_by_exact_name(current) {
+                Some((scope, var)) if var.is_treated_as_nameref() => match var.value() {
+                    ShellValue::String(s) if !s.is_empty() => (scope, s.as_str()),
+                    _ => return Ok((Cow::Borrowed(current), false)),
                 },
-                _ => return Ok(Cow::Borrowed(current)),
+                _ => return Ok((Cow::Borrowed(current), false)),
+            };
+
+            // Self-reference mid-chain (e.g. `a → b`, `b → "b"`).
+            if target == current {
+                return Self::resolve_self_reference(name, current, scope);
             }
+
+            visited.push(current);
+            // Check depth *after* following this link, matching bash's
+            // NAMEREF_MAX which counts resolution steps, not chain length.
+            if visited.len() > MAX_NAMEREF_DEPTH {
+                return Err(NameRefFault::max_depth(name, MAX_NAMEREF_DEPTH));
+            }
+            current = target;
+        }
+    }
+
+    /// Resolves a self-referential nameref whose value equals its own name.
+    /// `blame` is the chain head (named in a fault); `self_name` is the
+    /// self-referencing variable (the one to resolve at global scope); `scope`
+    /// is the scope `self_name` was found in. At a non-global scope the result
+    /// resolves `self_name` against the global scope (the returned `bool`); at
+    /// global scope there's nothing to fall back to, so it's a true cycle.
+    fn resolve_self_reference<'a>(
+        blame: &str,
+        self_name: &'a str,
+        scope: EnvironmentScope,
+    ) -> Result<(Cow<'a, str>, bool), NameRefFault> {
+        if matches!(scope, EnvironmentScope::Global) {
+            Err(NameRefFault::circular(blame))
+        } else {
+            Ok((Cow::Borrowed(self_name), true))
         }
     }
 
     /// Resolves a nameref chain and parses any subscript from the final target.
     /// `ref→"arr[2]"` returns `ResolvedName { name: "arr", subscript: Some("2") }`.
     ///
-    /// # Limitations
+    /// A self-referential function-local nameref (`local -n x=x`) resolves to
+    /// `x` flagged for global-scope lookup — see [`ResolvedName::is_global_scope`].
     ///
-    /// Each link is resolved by a global top-down scope walk; there is no
-    /// scope-relative resolution. This means a function-local `local -n ref=ref`
-    /// (a nameref whose target shares its own name) is *not* resolved to the
-    /// same-named variable in an enclosing scope the way bash does — adding that
-    /// will require threading a starting scope through this method. Likewise the
-    /// returned [`ResolvedName`] only models named/subscripted targets, not
-    /// positional parameters (`declare -n ref=1`).
+    /// The returned [`ResolvedName`] models only named/subscripted targets, not
+    /// positional parameters (`declare -n ref=1`, which bash also rejects).
     pub fn resolve_nameref(&self, name: &str) -> Result<ResolvedName, NameRefFault> {
-        let resolved = self.resolve_nameref_chain(name)?;
-        Ok(ResolvedName::parse(resolved.into_owned()))
+        let (resolved, global_scope) = self.resolve_nameref_chain(name)?;
+        Ok(ResolvedName::parse(resolved.into_owned()).with_global_scope(global_scope))
     }
 
-    /// Resolves a nameref chain, returning the final target string verbatim
-    /// (no subscript parsing). For `[[ -v ref ]]` semantics, where bash treats
-    /// `arr[2]` as a literal variable name.
-    pub fn resolve_nameref_unparsed(&self, name: &str) -> Result<String, NameRefFault> {
-        let resolved = self.resolve_nameref_chain(name)?;
-        Ok(resolved.into_owned())
+    /// Resolves a nameref chain, returning `(final target string, resolve at
+    /// global scope?)` verbatim (no subscript parsing). For `[[ -v ref ]]`
+    /// semantics, where bash treats `arr[2]` as a literal variable name. The
+    /// `bool` flags a self-referential function-local nameref (`local -n x=x`),
+    /// whose existence must be checked in the global scope.
+    pub fn resolve_nameref_unparsed(&self, name: &str) -> Result<(String, bool), NameRefFault> {
+        let (resolved, global_scope) = self.resolve_nameref_chain(name)?;
+        Ok((resolved.into_owned(), global_scope))
     }
 
     /// Resolves a nameref, falling back to an identity `ResolvedName` on **any**
@@ -448,14 +485,50 @@ mod tests {
     }
 
     #[test]
+    fn resolve_nameref_self_name_local_resolves_to_global() {
+        // A function-local `local -n x=x` resolves `x` flagged for global scope.
+        let mut env = ShellEnvironment::new();
+        env.add("x", make_var("global"), EnvironmentScope::Global)
+            .unwrap();
+        env.push_scope(EnvironmentScope::Local);
+        env.add("x", make_nameref("x"), EnvironmentScope::Local)
+            .unwrap();
+
+        let r = env.resolve_nameref("x").unwrap();
+        assert_eq!(r.name(), "x");
+        assert!(r.is_global_scope());
+        // The auto-resolving lookup follows it to the GLOBAL `x`, not the local
+        // nameref.
+        let resolved = env.lookup("x").get().expect("should find global x");
+        assert_eq!(resolved.scope(), EnvironmentScope::Global);
+        assert_eq!(var_str(resolved.base_var()), "global");
+
+        env.pop_scope(EnvironmentScope::Local).unwrap();
+    }
+
+    #[test]
+    fn resolve_nameref_self_name_global_is_circular() {
+        // At global scope there's no enclosing scope to fall back to.
+        let mut env = ShellEnvironment::new();
+        env.add("x", make_nameref("x"), EnvironmentScope::Global)
+            .unwrap();
+        let err = env.resolve_nameref("x").unwrap_err();
+        assert!(err.is_circular());
+    }
+
+    #[test]
     fn resolve_nameref_unparsed_strips_no_subscript() {
         let mut env = ShellEnvironment::new();
         env.add("target", make_var("v"), EnvironmentScope::Global)
             .unwrap();
         env.add("ref", make_nameref("target"), EnvironmentScope::Global)
             .unwrap();
-        // Plain target — name should be "target", no subscript handling.
-        assert_eq!(env.resolve_nameref_unparsed("ref").unwrap(), "target");
+        // Plain target — name should be "target", no subscript handling, and
+        // not global-scoped (no self-reference).
+        assert_eq!(
+            env.resolve_nameref_unparsed("ref").unwrap(),
+            ("target".to_owned(), false)
+        );
     }
 
     #[test]
@@ -466,7 +539,10 @@ mod tests {
         let mut env = ShellEnvironment::new();
         env.add("ref", make_nameref("arr[2]"), EnvironmentScope::Global)
             .unwrap();
-        assert_eq!(env.resolve_nameref_unparsed("ref").unwrap(), "arr[2]");
+        assert_eq!(
+            env.resolve_nameref_unparsed("ref").unwrap(),
+            ("arr[2]".to_owned(), false)
+        );
     }
 
     #[test]

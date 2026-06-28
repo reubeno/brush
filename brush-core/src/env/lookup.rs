@@ -218,7 +218,7 @@ impl ShellEnvironment {
         DirectVarLookup {
             env: self,
             name: resolved.name(),
-            policy: EnvironmentLookup::Anywhere,
+            policy: resolved.default_lookup_policy(),
         }
     }
 
@@ -238,7 +238,7 @@ impl ShellEnvironment {
         DirectVarLookupMut {
             env: self,
             name: resolved.name(),
-            policy: EnvironmentLookup::Anywhere,
+            policy: resolved.default_lookup_policy(),
         }
     }
 
@@ -262,13 +262,19 @@ impl ShellEnvironment {
         if !var.is_treated_as_nameref() {
             return Ok(Some(ResolvedVarRef::new(scope, var, None)));
         }
-        // Slow path: walk the chain, then re-lookup the resolved base.
-        let resolved = self.resolve_nameref_chain(name)?;
+        // Slow path: walk the chain, then re-lookup the resolved base. A
+        // self-referential nameref (`local -n x=x`) resolves to the global `x`,
+        // so the re-lookup must be global-scoped (not the usual scope walk,
+        // which would find the local nameref again).
+        let (resolved, global_scope) = self.resolve_nameref_chain(name)?;
         let (base, subscript) = parse_nameref_subscript(resolved.as_ref());
         let subscript_owned = subscript.map(|s| s.to_owned());
-        Ok(self
-            .get_by_exact_name(base)
-            .map(|(scope, var)| ResolvedVarRef::new(scope, var, subscript_owned)))
+        let found = if global_scope {
+            self.get_by_exact_name_using_policy(base, EnvironmentLookup::OnlyInGlobal)
+        } else {
+            self.get_by_exact_name(base)
+        };
+        Ok(found.map(|(scope, var)| ResolvedVarRef::new(scope, var, subscript_owned)))
     }
 
     /// Looks up a variable by exact string name without nameref resolution.

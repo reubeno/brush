@@ -177,6 +177,10 @@ impl From<ResolvedName> for NameRef {
 pub struct ResolvedName {
     pub(super) name: String,
     pub(super) subscript: Option<String>,
+    /// When `true`, `name` must be looked up (and created) in the **global**
+    /// scope only, not via the usual scope walk. Set when a self-referential
+    /// function-local nameref (`local -n x=x`) resolves to the global `x`.
+    pub(super) global_scope: bool,
 }
 
 impl ResolvedName {
@@ -190,12 +194,37 @@ impl ResolvedName {
         self.subscript.as_deref()
     }
 
+    /// Whether this name must be resolved against the global scope only. `true`
+    /// for a self-referential function-local nameref (`local -n x=x`), which
+    /// bash resolves to the global `x`. Lookups and mutations honor this.
+    pub const fn is_global_scope(&self) -> bool {
+        self.global_scope
+    }
+
+    /// Returns a copy of this name with the global-scope flag set to `global`.
+    #[must_use]
+    pub(super) const fn with_global_scope(mut self, global: bool) -> Self {
+        self.global_scope = global;
+        self
+    }
+
+    /// The lookup policy a lookup/mutation should use for this name by default:
+    /// global-only for a self-referential nameref target, anywhere otherwise.
+    pub(super) const fn default_lookup_policy(&self) -> super::EnvironmentLookup {
+        if self.global_scope {
+            super::EnvironmentLookup::OnlyInGlobal
+        } else {
+            super::EnvironmentLookup::Anywhere
+        }
+    }
+
     /// Consumes this `ResolvedName` and returns the base variable name.
     pub fn into_name(self) -> String {
         self.name
     }
 
-    /// Returns a copy with the subscript stripped, keeping only the base name.
+    /// Returns a copy with the subscript stripped, keeping only the base name
+    /// (and the global-scope flag).
     ///
     /// Useful when a nameref resolved to a subscripted target (e.g., `arr[2]`)
     /// but you need to operate on the base variable (e.g., for attribute changes
@@ -205,6 +234,7 @@ impl ResolvedName {
         Self {
             name: self.name.clone(),
             subscript: None,
+            global_scope: self.global_scope,
         }
     }
 
@@ -215,11 +245,13 @@ impl ResolvedName {
             Self {
                 name: base.to_owned(),
                 subscript: Some(idx.to_owned()),
+                global_scope: false,
             }
         } else {
             Self {
                 name: resolved,
                 subscript: None,
+                global_scope: false,
             }
         }
     }
@@ -237,6 +269,7 @@ impl ResolvedName {
         Self {
             name,
             subscript: None,
+            global_scope: false,
         }
     }
 }

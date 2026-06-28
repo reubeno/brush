@@ -2668,8 +2668,7 @@ cases:
   # tracks them and flags an "unexpected success" once fixed).
   #
 
-  - name: "Nameref local -n same-name target needs scope-aware resolution (KNOWN BUG)"
-    known_failure: true  # brush rejects `local -n X=X` (self-ref); bash resolves to the enclosing-scope X. Breaks `local -n ref=$1` when the caller's var name collides; visible under set -e.
+  - name: "Nameref local -n same-name target resolves to global (scope-aware)"
     ignore_stderr: true
     stdin: |
       set -e
@@ -2677,6 +2676,22 @@ cases:
       data=(1 2 3)
       show data
       echo END
+
+  - name: "Nameref local -n same-name writes through to the global"
+    ignore_stderr: true
+    stdin: |
+      n=5
+      f() { local -n n=n; n=99; }
+      f
+      echo "n=$n"
+
+  - name: "Nameref local -n same-name skips intermediate locals to global"
+    ignore_stderr: true
+    stdin: |
+      x=G
+      mid() { local x=L1; inner; }
+      inner() { local -n x=x; echo "[$x]"; }
+      mid
 
   - name: "Nameref indirect expansion on circular reference (KNOWN BUG)"
     known_failure: true  # bash treats ${!ref} on a cycle as a fatal "invalid indirect expansion"; brush warns and continues.
