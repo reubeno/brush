@@ -257,13 +257,47 @@ pub(crate) fn parse_nameref_subscript(target: &str) -> (&str, Option<&str>) {
     (target, None)
 }
 
-/// Returns `true` if `target` is a valid nameref target name: the base name
-/// (before any `[subscript]`) must be a legal variable name.
+/// Returns `true` if `target` is a valid nameref target name: either a bare
+/// legal variable name, or a well-formed array reference `name[subscript]`.
+///
+/// "Well-formed" matches bash's `valid_array_reference`: the base before the
+/// first `[` must be a legal variable name, and that `[`'s *matching* `]` (with
+/// balanced nesting, so associative keys like `a[b]` are allowed) must be the
+/// final character. This rejects malformed targets such as `m[a]b]`, `m[x][y]`,
+/// and `a[b[c]` that the looser [`parse_nameref_subscript`] would otherwise
+/// split into a plausible-looking base + subscript.
 ///
 /// Does NOT check for self-references — callers must handle that separately.
 pub fn valid_nameref_target_name(target: &str) -> bool {
-    let (base, _) = parse_nameref_subscript(target);
-    valid_variable_name(base)
+    // Split at the first `[`. No `[` means a bare name, which must be legal.
+    let Some((base, rest)) = target.split_once('[') else {
+        return valid_variable_name(target);
+    };
+
+    // The base before the first `[` must be a legal variable name.
+    if !valid_variable_name(base) {
+        return false;
+    }
+
+    // Walk `rest` (everything after the first `[`), tracking bracket depth. The
+    // matching `]` (depth back to zero) must be the last character of `target`.
+    let mut depth = 1usize;
+    for (i, c) in rest.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    // `]` is ASCII (1 byte), so it's the last char iff its byte
+                    // offset is the final index of `rest`.
+                    return i + 1 == rest.len();
+                }
+            }
+            _ => {}
+        }
+    }
+    // No matching `]`.
+    false
 }
 
 /// Checks if the given name is a valid variable name.
@@ -412,6 +446,10 @@ mod tests {
         assert!(valid_nameref_target_name("_bar"));
         assert!(valid_nameref_target_name("arr[2]"));
         assert!(valid_nameref_target_name("arr[@]"));
+        assert!(valid_nameref_target_name("arr[]"));
+        // Nested brackets (associative key) are allowed when balanced.
+        assert!(valid_nameref_target_name("m[a[b]]"));
+        assert!(valid_nameref_target_name("m[a[b]c]"));
     }
 
     #[test]
@@ -419,6 +457,13 @@ mod tests {
         assert!(!valid_nameref_target_name(""));
         assert!(!valid_nameref_target_name("1bad"));
         assert!(!valid_nameref_target_name("[idx]"));
+        // Malformed array references: the first `[`'s matching `]` must be the
+        // final character (bash's valid_array_reference).
+        assert!(!valid_nameref_target_name("m[a]b]"));
+        assert!(!valid_nameref_target_name("m[x][y]"));
+        assert!(!valid_nameref_target_name("a[b[c]"));
+        assert!(!valid_nameref_target_name("arr[2]x"));
+        assert!(!valid_nameref_target_name("arr["));
     }
 
     //

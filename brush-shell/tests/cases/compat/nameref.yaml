@@ -2130,6 +2130,23 @@ cases:
       echo "rc=$?"
       declare -p bad 2>/dev/null || echo unchanged
 
+  - name: "Malformed array-reference nameref targets are rejected"
+    ignore_stderr: true
+    stdin: |
+      declare -A m
+      declare -n r1="m[a]b]"
+      echo "rc1=$?"
+      declare -n r2="m[x][y]"
+      echo "rc2=$?"
+      declare -n r3="a[b[c]"
+      echo "rc3=$?"
+      declare -A mm=([k]=v)
+      declare -n r4="mm[k]"
+      echo "r4=$r4"
+      arr=(0 1 2)
+      declare -n r5="arr[2]"
+      echo "r5=$r5"
+
   - name: "Array assignment to an untargeted nameref removes the nameref attribute"
     ignore_stderr: true
     stdin: |
