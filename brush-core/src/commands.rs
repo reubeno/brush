@@ -198,7 +198,10 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
             // NOTE: To match bash behavior, we only include exported variables
             // that are set (i.e., have a value). This means a variable that
             // shows up in `declare -p` but has no *set* value will be omitted.
-            if v.value().is_set() {
+            // Arrays are also omitted: bash never passes an array variable to a
+            // child's environment (serializing it as element [0] would be
+            // misleading).
+            if v.value().is_set() && !v.value().is_array() {
                 cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
             }
         }

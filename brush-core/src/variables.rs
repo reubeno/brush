@@ -190,8 +190,11 @@ impl ShellVariable {
     /// Converts the variable to an indexed array.
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
         match self.value() {
-            ShellValue::IndexedArray(_) => Ok(()),
-            ShellValue::AssociativeArray(_) => {
+            ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray) => {
+                Ok(())
+            }
+            ShellValue::AssociativeArray(_)
+            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray) => {
                 Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
             }
             _ => {
@@ -209,8 +212,13 @@ impl ShellVariable {
     /// Converts the variable to an associative array.
     pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
         match self.value() {
-            ShellValue::AssociativeArray(_) => Ok(()),
-            ShellValue::IndexedArray(_) => {
+            // Already associative (set or declared-but-unset): nothing to do.
+            ShellValue::AssociativeArray(_)
+            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray) => Ok(()),
+            // Indexed (set OR declared-but-unset) can't be reinterpreted as
+            // associative — bash rejects this regardless of whether it has
+            // elements yet.
+            ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray) => {
                 Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
             }
             _ => {

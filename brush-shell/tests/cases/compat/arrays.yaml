@@ -402,11 +402,36 @@ cases:
       m[a b]=spaced
       echo "${m[@]}"
 
-  - name: "Empty associative-array subscript is rejected (KNOWN BUG)"
-    known_failure: true  # bash rejects `m[]=x` ("bad array subscript", exit 1); brush accepts it.
+  - name: "Empty array subscript is rejected (literal vs expanded)"
     ignore_stderr: true
     stdin: |
       declare -A m
       m[]=empty
-      echo "rc=$?"
-      echo "${m[@]}"
+      echo "rc1=$?"
+      echo "${m[@]:-(unset)}"
+      arr=(a b c)
+      arr[]=z
+      echo "rc2=$?"
+      echo "${arr[@]}"
+      # An index that EXPANDS to empty is index 0, not rejected:
+      e=
+      arr2=(p q)
+      arr2[$e]=Z
+      echo "${arr2[@]}"
+
+  - name: "declare -a then -A (and vice versa) on an unset array is rejected"
+    ignore_stderr: true
+    stdin: |
+      declare -a x
+      declare -A x
+      echo "rc1=$?"
+      declare -p x
+      declare -A y
+      declare -a y
+      echo "rc2=$?"
+      declare -p y
+
+  - name: "Exported arrays are not passed to child environments"
+    stdin: |
+      export arr=(a b c)
+      env | grep "^arr" || echo "(arr not in child env)"

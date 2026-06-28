@@ -1514,6 +1514,12 @@ async fn apply_assignment(
             name
         }
         ast::AssignmentName::ArrayElementName(name, index) => {
+            // A literal empty subscript (`arr[]=x`) is rejected by bash as a bad
+            // array subscript. An index that *expands* to empty (`arr[$unset]`)
+            // is a separate case (treated as 0), so this checks the raw word.
+            if index.is_empty() {
+                return Err(error::ErrorKind::BadArraySubscript(name.clone()).into());
+            }
             let expanded = expansion::basic_expand_word(shell, params, index).await?;
             array_index = Some(expanded);
             name

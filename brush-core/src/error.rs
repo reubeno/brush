@@ -341,6 +341,11 @@ pub enum ErrorKind {
     #[error("`{0}': not a valid identifier")]
     InvalidVariableName(String),
 
+    /// A literal empty array subscript was used — e.g. `arr[]=x`. (An index that
+    /// merely *expands* to empty, like `arr[$unset]`, is treated as 0 instead.)
+    #[error("{0}[]: bad array subscript")]
+    BadArraySubscript(String),
+
     /// A nameref resolved to a subscripted target (e.g., `arr[2]`) but the
     /// caller's operation requires a plain variable name — e.g. compound
     /// array assignment, or an explicit subscript override.
