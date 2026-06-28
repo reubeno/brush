@@ -37,8 +37,8 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 /// tasks against one process-wide descriptor table (rather than via `fork(2)` like a traditional
 /// shell); sharing the descriptor keeps deeply nested or highly concurrent execution from
 /// exhausting that table. A descriptor is duplicated for real only when an independently owned
-/// copy is needed to hand to an external child process — see [`OpenFile::try_clone_to_owned`] and
-/// the `Stdio` conversion below.
+/// copy is needed to hand to an external child process — see the
+/// `try_clone_to_owned` method and the `Stdio` conversion below.
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin(std::io::Stdin),
