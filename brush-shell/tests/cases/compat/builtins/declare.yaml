@@ -455,11 +455,17 @@ cases:
   # nameref review. Not yet fixed; tracked as known failures.
   #
 
-  - name: "declare -i evaluates arithmetic in the initial value (KNOWN BUG)"
-    known_failure: true  # `declare -i x=20+5` should be 25 (bash); brush stores 0. Integer eval only happens for later assignments, not the declare initial value.
+  - name: "declare -i evaluates arithmetic in the initial value"
     stdin: |
       declare -i x=20+5
       echo "$x"
+      declare -i y="3 * 4"
+      echo "$y"
+      declare -ia arr=(1+1 2+2 3+3)
+      echo "${arr[@]}"
+      n=10
+      declare -i z=n+5
+      echo "$z"
 
   - name: "declare with an expansion-formed name assigns (KNOWN BUG)"
     known_failure: true  # `declare ${pre}var=val` (name built via expansion) is misclassified as a non-assignment word in brush.
@@ -468,8 +474,7 @@ cases:
       declare ${pre}var=hello
       echo "${yvar:-MISSING}"
 
-  - name: "declare -g targets the global scope, not a same-name local (KNOWN BUG)"
-    known_failure: true  # inside a function, `declare -g x` should write the global x; brush mutates the same-name local instead.
+  - name: "declare -g targets the global scope, not a same-name local"
     stdin: |
       f() { local x=local_val; declare -g x=global_val; echo "in:$x"; }
       x=orig

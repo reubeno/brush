@@ -49,3 +49,15 @@ cases:
       ref="new_value" 2>/dev/null
       echo "exit: $?"
       echo "target: $target"
+
+  - name: "readonly array element assignment is rejected"
+    ignore_stderr: true
+    stdin: |
+      readonly arr=(a b c)
+      arr[0]=z
+      echo "rc1=$?"
+      echo "${arr[@]}"
+      declare -rA m=([k]=v)
+      m[k]=z
+      echo "rc2=$?"
+      echo "${m[k]}"

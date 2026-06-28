@@ -295,6 +295,10 @@ impl DeclareCommand {
         // Figure out where we should look.
         let lookup = if create_var_local {
             EnvironmentLookup::OnlyInCurrentLocal
+        } else if self.create_global {
+            // `declare -g` operates on the global scope, even when a same-name
+            // local shadows it (bash: `local x; declare -g x=v` updates global).
+            EnvironmentLookup::OnlyInGlobal
         } else {
             EnvironmentLookup::Anywhere
         };
@@ -362,6 +366,26 @@ impl DeclareCommand {
             writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
             return Ok(false);
         }
+
+        // An integer-typed initializer is arithmetically evaluated, matching
+        // bash (`declare -i x=2+3` is 5, not the literal "2+3"). The plain
+        // `ShellVariable::assign` only parses an integer literal, so we must
+        // evaluate here — the integer attribute applies when `-i` is being set,
+        // or when modifying an existing integer var without `+i`.
+        let will_be_integer = match self.make_integer.to_bool() {
+            Some(set_integer) => set_integer,
+            None => context
+                .shell
+                .env()
+                .lookup_resolved(&env::ResolvedName::plain(name.as_str()))
+                .in_scope(lookup)
+                .get()
+                .is_some_and(|(_, v)| v.is_treated_as_integer()),
+        };
+        let initial_value = match (will_be_integer, initial_value) {
+            (true, Some(value)) => Some(Self::eval_integer_initializer(context, value)?),
+            (_, other) => other,
+        };
 
         // Look up the variable. Name is already resolved through
         // resolve_nameref_for_declaration above.
@@ -551,6 +575,39 @@ impl DeclareCommand {
         }
 
         Ok((name, assigned_index, initial_value, name_is_array))
+    }
+
+    /// Arithmetically evaluates an integer variable's initializer (`declare -i
+    /// x=2+3` stores 5, not the literal `"2+3"`). Scalars are evaluated
+    /// directly; each element of an `-ia`/`-iA` array initializer is evaluated
+    /// independently (`declare -ia a=(1+1 2+2)` → `2 4`).
+    fn eval_integer_initializer(
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        value: ShellValueLiteral,
+    ) -> Result<ShellValueLiteral, brush_core::Error> {
+        Ok(match value {
+            ShellValueLiteral::Scalar(s) => {
+                ShellValueLiteral::Scalar(Self::eval_arith_to_string(context, &s)?)
+            }
+            ShellValueLiteral::Array(ArrayLiteral(elements)) => {
+                let mut evaluated = Vec::with_capacity(elements.len());
+                for (key, element) in elements {
+                    evaluated.push((key, Self::eval_arith_to_string(context, &element)?));
+                }
+                ShellValueLiteral::Array(ArrayLiteral(evaluated))
+            }
+        })
+    }
+
+    /// Parses and evaluates an arithmetic expression, returning its decimal
+    /// string form. The input has already been word-expanded by the time a
+    /// declaration's value reaches here, so no further expansion is needed.
+    fn eval_arith_to_string(
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        expr: &str,
+    ) -> Result<String, brush_core::Error> {
+        let parsed = brush_parser::arithmetic::parse(expr)?;
+        Ok(context.shell.eval_arithmetic(&parsed)?.to_string())
     }
 
     /// Validates a nameref target name, returning an error message if invalid.

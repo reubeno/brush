@@ -390,6 +390,12 @@ impl ShellVariable {
         value: String,
         append: bool,
     ) -> Result<(), error::Error> {
+        // A readonly variable rejects element writes too, not just whole-variable
+        // reassignment (`readonly arr=(a b); arr[0]=z` is an error in bash).
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &self.value {
             ShellValue::Unset(_) => {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
