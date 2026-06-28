@@ -359,3 +359,8 @@ cases:
       (( ref += 5 ))
       echo "after +=5: $counter"
       echo "expr: $(( ref * 2 ))"
+
+  - name: "Out-of-range integer literal wraps (KNOWN BUG)"
+    known_failure: true  # bash wraps an out-of-i64-range integer literal (mod 2^64), e.g. 99999999999999999999 -> 7766279631452241919; brush's arithmetic parser rejects it ("failed to parse expression"), so $(( )) produces empty output and an error. Fix lives in the arithmetic subsystem (literal parsing), not the vars surface.
+    stdin: |
+      echo $((99999999999999999999))

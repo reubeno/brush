@@ -490,3 +490,9 @@ cases:
       x=orig
       f
       echo "out:$x"
+
+  - name: "declare -u uses locale case-folding, not Unicode full uppercasing (KNOWN BUG)"
+    known_failure: true  # bash uppercases per-character via the locale (towupper), leaving 'ß' as 'ß' (-> STRAßE) in C, C.UTF-8, and en_US.UTF-8. brush uses Rust str::to_uppercase, which applies the Unicode full-uppercase mapping 'ß' -> 'SS' (-> STRASSE). Edge case; the divergence is stable across locales here.
+    stdin: |
+      declare -u x=straße
+      echo "$x"
