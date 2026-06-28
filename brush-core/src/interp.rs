@@ -1592,6 +1592,26 @@ async fn apply_assignment(
         && resolved_name.name() == variable_name.as_str()
         && !resolved_name.is_global_scope();
 
+    // Inspect the existing variable for the two attribute flags we need before
+    // any expansion: indexed-array-ness (indexed subscripts are arithmetic
+    // expressions, e.g. `[i+1]`; associative keys are literal strings) and
+    // integer-ness (RHS arithmetic eval). A scalar/unset/untyped or non-existent
+    // variable becomes an indexed array, so its subscripts are still evaluated.
+    // This is a fresh read that isn't held across later shell mutations.
+    let (will_be_indexed_array, target_is_integer) =
+        if let Some((_, existing)) = shell.env().lookup_resolved(&resolved_name).get() {
+            (
+                !matches!(
+                    existing.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                ),
+                existing.is_treated_as_integer(),
+            )
+        } else {
+            (true, false)
+        };
+
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
@@ -1603,6 +1623,18 @@ async fn apply_assignment(
             let mut elements = vec![];
             for (unexpanded_key, unexpanded_value) in unexpanded_values {
                 let key = match unexpanded_key {
+                    // An indexed-array subscript is an arithmetic expression;
+                    // an associative-array key is a literal (expanded) string.
+                    Some(unexpanded_key) if will_be_indexed_array => Some(
+                        arithmetic::expand_and_eval(
+                            shell,
+                            params,
+                            &unexpanded_key.flatten(),
+                            false,
+                        )
+                        .await?
+                        .to_string(),
+                    ),
                     Some(unexpanded_key) => Some(
                         expansion::basic_expand_assignment_word(shell, params, unexpanded_key)
                             .await?,
@@ -1668,32 +1700,6 @@ async fn apply_assignment(
             "warning: {variable_name}: removing nameref attribute"
         )?;
     }
-
-    // Inspect the existing variable for both attribute flags we need —
-    // indexed-array-ness (for array-index arithmetic eval) and integer-ness
-    // (for RHS arithmetic eval) — in a single read. The mutable lookup later
-    // is unavoidable: arithmetic expansions between here and the write may
-    // mutate `shell`, so the borrow checker won't let us hold this read across
-    // them.
-    //
-    // An array subscript is arithmetically evaluated unless the target is an
-    // associative array (in which case the subscript is used as a literal key).
-    // A scalar or unset/untyped variable becomes an indexed array, so its
-    // subscript still needs to be evaluated. Non-existent variables default to
-    // indexed and non-integer.
-    let (will_be_indexed_array, target_is_integer) =
-        if let Some((_, existing)) = shell.env().lookup_resolved(&resolved_name).get() {
-            (
-                !matches!(
-                    existing.value(),
-                    ShellValue::AssociativeArray(_)
-                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                ),
-                existing.is_treated_as_integer(),
-            )
-        } else {
-            (true, false)
-        };
 
     // See if we need to eval an array index as arithmetic.
     if let Some(idx) = &array_index

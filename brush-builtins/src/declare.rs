@@ -387,6 +387,32 @@ impl DeclareCommand {
             (_, other) => other,
         };
 
+        // Indexed-array element subscripts in an initializer are arithmetic
+        // expressions (`declare a=([i+1]=v)` → index 1); associative-array keys
+        // are literal strings. Evaluate the keys for an indexed target.
+        let target_is_associative = self.make_associative_array.to_bool() == Some(true)
+            || (self.make_indexed_array.to_bool() != Some(true)
+                && !name_is_array
+                && context
+                    .shell
+                    .env()
+                    .lookup_resolved(&env::ResolvedName::plain(name.as_str()))
+                    .in_scope(lookup)
+                    .get()
+                    .is_some_and(|(_, v)| {
+                        matches!(
+                            v.value(),
+                            ShellValue::AssociativeArray(_)
+                                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                        )
+                    }));
+        let initial_value = match initial_value {
+            Some(ShellValueLiteral::Array(array)) if !target_is_associative => Some(
+                ShellValueLiteral::Array(Self::eval_indexed_array_keys(context, array)?),
+            ),
+            other => other,
+        };
+
         // Look up the variable. Name is already resolved through
         // resolve_nameref_for_declaration above.
         let resolved_name = env::ResolvedName::plain(name.as_str());
@@ -635,6 +661,24 @@ impl DeclareCommand {
                 ShellValueLiteral::Array(ArrayLiteral(evaluated))
             }
         })
+    }
+
+    /// Arithmetically evaluates the explicit subscripts of an indexed-array
+    /// initializer (`declare a=([i+1]=v)` → index 1), leaving element values and
+    /// keyless entries untouched.
+    fn eval_indexed_array_keys(
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        array: ArrayLiteral,
+    ) -> Result<ArrayLiteral, brush_core::Error> {
+        let mut evaluated = Vec::with_capacity(array.0.len());
+        for (key, value) in array.0 {
+            let key = match key {
+                Some(key) => Some(Self::eval_arith_to_string(context, &key)?),
+                None => None,
+            };
+            evaluated.push((key, value));
+        }
+        Ok(ArrayLiteral(evaluated))
     }
 
     /// Parses and evaluates an arithmetic expression, returning its decimal

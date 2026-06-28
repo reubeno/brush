@@ -435,3 +435,31 @@ cases:
     stdin: |
       export arr=(a b c)
       env | grep "^arr" || echo "(arr not in child env)"
+
+  - name: "Indexed array literal subscripts are arithmetic expressions"
+    stdin: |
+      # Normal compound assignment.
+      i=0
+      arr=([i+1]=a [2*3]=b [i]=c)
+      declare -p arr
+      # Single-element form.
+      j=4
+      arr2[j+1]=x
+      declare -p arr2
+      # declare/local forms route through a different path.
+      declare darr=([1+1]=d)
+      declare -p darr
+      declare darr2[3*2]=e
+      declare -p darr2
+      # Integer attribute evaluates BOTH key and value.
+      declare -i iarr=([i+1]=2+5)
+      declare -p iarr
+
+  - name: "Associative array keys stay literal (not arithmetic)"
+    stdin: |
+      declare -A m=([a+b]=1 [3-1]=2)
+      echo "${m[a+b]}"
+      echo "${m[3-1]}"
+      n=k
+      declare -A m2=([${n}1]=v)
+      echo "${m2[k1]}"
