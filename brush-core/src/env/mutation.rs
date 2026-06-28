@@ -2,7 +2,7 @@
 //! `add`, `set_var`, etc. The lookup and resolution APIs live in `mod.rs` and
 //! `lookup.rs`; this file is the write-side counterpart.
 
-use super::names::NameRefStrategy;
+use super::names::{NameRefStrategy, ResolvedScope};
 use super::{
     EnvironmentLookup, EnvironmentScope, NameRef, ResolvedName, ShellEnvironment, ShellVariableMap,
 };
@@ -91,7 +91,7 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let (base, subscript, global_scope) = match name.into().0 {
+        let (base, subscript, scope) = match name.into().0 {
             NameRefStrategy::Resolve(s) => {
                 // Fast path: only walk the nameref chain when `s` actually names
                 // a live nameref. The overwhelmingly common case (a plain
@@ -117,7 +117,7 @@ impl ShellEnvironment {
                         }
                         .into());
                     }
-                    (resolved.name, resolved.subscript, resolved.global_scope)
+                    (resolved.name, resolved.subscript, resolved.scope)
                 } else {
                     // Not a live nameref. We still must parse a possible
                     // subscript — `read 'arr[0]'` reaches here with a
@@ -125,24 +125,21 @@ impl ShellEnvironment {
                     // subscript handling. `ResolvedName::parse` does no scope
                     // walk, so the fast-path perf win stands.
                     let resolved = ResolvedName::parse(s);
-                    (resolved.name, resolved.subscript, false)
+                    (resolved.name, resolved.subscript, ResolvedScope::Default)
                 }
             }
-            NameRefStrategy::PreResolved(r) => (r.name, r.subscript, r.global_scope),
+            NameRefStrategy::PreResolved(r) => (r.name, r.subscript, r.scope),
             NameRefStrategy::Bypass(s) => {
                 super::names::assert_bare_name(&s, "NameRef::Bypass");
-                (s, None, false)
+                (s, None, ResolvedScope::Default)
             }
         };
 
         // A self-referential nameref (`local -n x=x`) resolves to the global
-        // `x`: look it up and create it in the global scope, overriding the
-        // caller's policy/scope.
-        let (lookup_policy, scope_if_creating) = if global_scope {
-            (EnvironmentLookup::OnlyInGlobal, EnvironmentScope::Global)
-        } else {
-            (lookup_policy, scope_if_creating)
-        };
+        // `x`: `ResolvedScope::Global` forces global lookup and creation,
+        // overriding the caller's policy/scope. (Single source of truth.)
+        let lookup_policy = scope.lookup_policy_or(lookup_policy);
+        let scope_if_creating = scope.creation_scope_or(scope_if_creating);
 
         // The base must be a legal identifier. User-facing callers (`read`,
         // `printf -v`, …) can pass arbitrary names like `foo[` or `1bad`; bash
@@ -264,7 +261,7 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let (base, global_scope) = match name.into().0 {
+        let (base, scope) = match name.into().0 {
             NameRefStrategy::Resolve(s) => {
                 // Fast path: skip chain resolution for plain (non-nameref)
                 // names — see `update_or_add`.
@@ -282,7 +279,7 @@ impl ShellEnvironment {
                         }
                         .into());
                     }
-                    (resolved.name, resolved.global_scope)
+                    (resolved.name, resolved.scope)
                 } else {
                     // Not a live nameref. A subscripted name here plus an
                     // explicit index would be `arr[0][idx]` — bash rejects it
@@ -296,7 +293,7 @@ impl ShellEnvironment {
                         }
                         .into());
                     }
-                    (resolved.name, false)
+                    (resolved.name, ResolvedScope::Default)
                 }
             }
             NameRefStrategy::PreResolved(r) => {
@@ -310,20 +307,17 @@ impl ShellEnvironment {
                     r.name,
                     r.subscript,
                 );
-                (r.name, r.global_scope)
+                (r.name, r.scope)
             }
             NameRefStrategy::Bypass(s) => {
                 super::names::assert_bare_name(&s, "NameRef::Bypass");
-                (s, false)
+                (s, ResolvedScope::Default)
             }
         };
 
         // Self-referential nameref → global scope (see `update_or_add`).
-        let (lookup_policy, scope_if_creating) = if global_scope {
-            (EnvironmentLookup::OnlyInGlobal, EnvironmentScope::Global)
-        } else {
-            (lookup_policy, scope_if_creating)
-        };
+        let lookup_policy = scope.lookup_policy_or(lookup_policy);
+        let scope_if_creating = scope.creation_scope_or(scope_if_creating);
 
         // The base must be a legal identifier (see `update_or_add`).
         if !super::names::valid_variable_name(&base) {

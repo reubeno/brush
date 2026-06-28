@@ -214,24 +214,19 @@ pub(crate) fn apply_unary_predicate_to_str(
                 // Case 1: unparsed-resolve + literal HashMap lookup. A nameref
                 // fault (cycle / max-depth) is reported as "unset", matching
                 // bash — NOT as the nameref's own (existing) name.
-                let Ok((resolved_name, global_scope)) =
-                    shell.env().resolve_nameref_unparsed(operand)
+                let Ok((resolved_name, scope)) = shell.env().resolve_nameref_unparsed(operand)
                 else {
                     return Ok(false);
                 };
                 // A self-referential nameref (`local -n x=x`) checks the global
-                // `x`, not the local nameref itself.
-                let lookup = shell
+                // `x`, not the local nameref itself — the resolved scope's
+                // policy enforces that without re-deriving it here.
+                let found = shell
                     .env()
                     .lookup(resolved_name.as_str())
-                    .bypassing_nameref();
-                let found = if global_scope {
-                    lookup
-                        .in_scope(crate::env::EnvironmentLookup::OnlyInGlobal)
-                        .get()
-                } else {
-                    lookup.get()
-                };
+                    .bypassing_nameref()
+                    .in_scope(scope.lookup_policy_or(crate::env::EnvironmentLookup::Anywhere))
+                    .get();
                 if let Some((_, var)) = found {
                     Ok(!matches!(
                         var.value(),

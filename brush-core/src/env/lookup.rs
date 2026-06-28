@@ -205,10 +205,9 @@ impl ShellEnvironment {
     /// environment performs no further resolution or subscript parsing.
     /// Chain `.in_scope(policy)` to restrict by scope.
     ///
-    /// Looks up the **base** name only: any `subscript` on `resolved` is ignored,
-    /// so for a subscripted target (`arr[2]`) this returns the array `arr`, not
-    /// the element. Callers wanting the element must apply the subscript
-    /// themselves (see [`ResolvedVarRef::value_str`]).
+    /// **Requires** a subscript-free `resolved` (the base name only) — strip any
+    /// subscript with [`ResolvedName::without_subscript`] first and apply it at
+    /// the call site (the element is not looked up here). Debug-asserts this.
     pub fn lookup_resolved<'a>(&'a self, resolved: &'a ResolvedName) -> DirectVarLookup<'a> {
         debug_assert!(
             resolved.subscript().is_none(),
@@ -224,8 +223,8 @@ impl ShellEnvironment {
 
     /// Creates a mutable lookup builder for an already-resolved name. No further
     /// resolution or subscript parsing. Chain `.in_scope(policy)` to restrict by
-    /// scope. Like [`lookup_resolved`](Self::lookup_resolved), the subscript on
-    /// `resolved` is ignored (returns the base variable).
+    /// scope. Like [`lookup_resolved`](Self::lookup_resolved), **requires** a
+    /// subscript-free `resolved` (strip it first; debug-asserted).
     pub fn lookup_mut_resolved<'a>(
         &'a mut self,
         resolved: &'a ResolvedName,
@@ -262,18 +261,17 @@ impl ShellEnvironment {
         if !var.is_treated_as_nameref() {
             return Ok(Some(ResolvedVarRef::new(scope, var, None)));
         }
-        // Slow path: walk the chain, then re-lookup the resolved base. A
-        // self-referential nameref (`local -n x=x`) resolves to the global `x`,
-        // so the re-lookup must be global-scoped (not the usual scope walk,
-        // which would find the local nameref again).
-        let (resolved, global_scope) = self.resolve_nameref_chain(name)?;
+        // Slow path: walk the chain, then re-lookup the resolved base under the
+        // resolved scope. A self-referential nameref (`local -n x=x`) resolves
+        // to the global `x`, so the re-lookup is global-scoped (not the usual
+        // scope walk, which would find the local nameref again).
+        let (resolved, scope) = self.resolve_nameref_chain(name)?;
         let (base, subscript) = parse_nameref_subscript(resolved.as_ref());
         let subscript_owned = subscript.map(|s| s.to_owned());
-        let found = if global_scope {
-            self.get_by_exact_name_using_policy(base, EnvironmentLookup::OnlyInGlobal)
-        } else {
-            self.get_by_exact_name(base)
-        };
+        let found = self.get_by_exact_name_using_policy(
+            base,
+            scope.lookup_policy_or(EnvironmentLookup::Anywhere),
+        );
         Ok(found.map(|(scope, var)| ResolvedVarRef::new(scope, var, subscript_owned)))
     }
 

@@ -21,7 +21,8 @@ use crate::variables::{ShellValue, ShellVariable};
 
 pub use lookup::{DirectVarLookup, DirectVarLookupMut, ResolvedVarRef, VarLookup};
 pub use names::{
-    NameRef, NameRefFault, ResolvedName, valid_nameref_target_name, valid_variable_name,
+    NameRef, NameRefFault, ResolvedName, ResolvedScope, valid_nameref_target_name,
+    valid_variable_name,
 };
 pub(crate) use scope::ScopeGuard;
 pub use scope::{EnvironmentLookup, EnvironmentScope};
@@ -126,24 +127,24 @@ impl ShellEnvironment {
     // prefer the lookup builders in `lookup.rs` (`lookup` / `lookup_resolved`).
     //
 
-    /// Resolves a nameref chain, returning `(final target string, resolve at
-    /// global scope?)`. The `bool` is set when a *self-referential* nameref
-    /// (`x → "x"`) at a function-local scope is hit: bash resolves such a
-    /// nameref's target against the **global** scope (so `local -n x=x` targets
-    /// the global `x`), and callers must look the result up there. On a cycle or
-    /// depth overflow, returns a [`NameRefFault`] that blames `name` (the head
-    /// of the chain), matching bash's diagnostics.
+    /// Resolves a nameref chain, returning `(final target string, scope)`. The
+    /// [`ResolvedScope`] is [`Global`](ResolvedScope::Global) when a
+    /// *self-referential* nameref (`x → "x"`) at a function-local scope is hit:
+    /// bash resolves such a nameref's target against the global scope (so
+    /// `local -n x=x` targets the global `x`), and callers must look the result
+    /// up there. On a cycle or depth overflow, returns a [`NameRefFault`] that
+    /// blames `name` (the head of the chain), matching bash's diagnostics.
     fn resolve_nameref_chain<'a>(
         &'a self,
         name: &'a str,
-    ) -> Result<(Cow<'a, str>, bool), NameRefFault> {
+    ) -> Result<(Cow<'a, str>, ResolvedScope), NameRefFault> {
         // Quick check: is this even a nameref?
         let (head_scope, first_target) = match self.get_by_exact_name(name) {
             Some((scope, var)) if var.is_treated_as_nameref() => match var.value() {
                 ShellValue::String(s) if !s.is_empty() => (scope, s.as_str()),
-                _ => return Ok((Cow::Borrowed(name), false)),
+                _ => return Ok((Cow::Borrowed(name), ResolvedScope::Default)),
             },
-            _ => return Ok((Cow::Borrowed(name), false)),
+            _ => return Ok((Cow::Borrowed(name), ResolvedScope::Default)),
         };
 
         // A self-referential nameref (`x → "x"`) is special: bash resolves it
@@ -181,9 +182,9 @@ impl ShellEnvironment {
             let (scope, target) = match self.get_by_exact_name(current) {
                 Some((scope, var)) if var.is_treated_as_nameref() => match var.value() {
                     ShellValue::String(s) if !s.is_empty() => (scope, s.as_str()),
-                    _ => return Ok((Cow::Borrowed(current), false)),
+                    _ => return Ok((Cow::Borrowed(current), ResolvedScope::Default)),
                 },
-                _ => return Ok((Cow::Borrowed(current), false)),
+                _ => return Ok((Cow::Borrowed(current), ResolvedScope::Default)),
             };
 
             // Self-reference mid-chain (e.g. `a → b`, `b → "b"`).
@@ -205,17 +206,17 @@ impl ShellEnvironment {
     /// `blame` is the chain head (named in a fault); `self_name` is the
     /// self-referencing variable (the one to resolve at global scope); `scope`
     /// is the scope `self_name` was found in. At a non-global scope the result
-    /// resolves `self_name` against the global scope (the returned `bool`); at
-    /// global scope there's nothing to fall back to, so it's a true cycle.
+    /// resolves `self_name` against the global scope ([`ResolvedScope::Global`]);
+    /// at global scope there's nothing to fall back to, so it's a true cycle.
     fn resolve_self_reference<'a>(
         blame: &str,
         self_name: &'a str,
         scope: EnvironmentScope,
-    ) -> Result<(Cow<'a, str>, bool), NameRefFault> {
+    ) -> Result<(Cow<'a, str>, ResolvedScope), NameRefFault> {
         if matches!(scope, EnvironmentScope::Global) {
             Err(NameRefFault::circular(blame))
         } else {
-            Ok((Cow::Borrowed(self_name), true))
+            Ok((Cow::Borrowed(self_name), ResolvedScope::Global))
         }
     }
 
@@ -223,23 +224,26 @@ impl ShellEnvironment {
     /// `ref→"arr[2]"` returns `ResolvedName { name: "arr", subscript: Some("2") }`.
     ///
     /// A self-referential function-local nameref (`local -n x=x`) resolves to
-    /// `x` flagged for global-scope lookup — see [`ResolvedName::is_global_scope`].
+    /// `x` with [`ResolvedScope::Global`] — see [`ResolvedName::resolved_scope`].
     ///
     /// The returned [`ResolvedName`] models only named/subscripted targets, not
     /// positional parameters (`declare -n ref=1`, which bash also rejects).
     pub fn resolve_nameref(&self, name: &str) -> Result<ResolvedName, NameRefFault> {
-        let (resolved, global_scope) = self.resolve_nameref_chain(name)?;
-        Ok(ResolvedName::parse(resolved.into_owned()).with_global_scope(global_scope))
+        let (resolved, scope) = self.resolve_nameref_chain(name)?;
+        Ok(ResolvedName::parse(resolved.into_owned()).with_scope(scope))
     }
 
-    /// Resolves a nameref chain, returning `(final target string, resolve at
-    /// global scope?)` verbatim (no subscript parsing). For `[[ -v ref ]]`
-    /// semantics, where bash treats `arr[2]` as a literal variable name. The
-    /// `bool` flags a self-referential function-local nameref (`local -n x=x`),
-    /// whose existence must be checked in the global scope.
-    pub fn resolve_nameref_unparsed(&self, name: &str) -> Result<(String, bool), NameRefFault> {
-        let (resolved, global_scope) = self.resolve_nameref_chain(name)?;
-        Ok((resolved.into_owned(), global_scope))
+    /// Resolves a nameref chain, returning `(final target string, scope)`
+    /// verbatim (no subscript parsing). For `[[ -v ref ]]` semantics, where bash
+    /// treats `arr[2]` as a literal variable name. The [`ResolvedScope`] is
+    /// [`Global`](ResolvedScope::Global) for a self-referential function-local
+    /// nameref (`local -n x=x`), whose existence must be checked globally.
+    pub fn resolve_nameref_unparsed(
+        &self,
+        name: &str,
+    ) -> Result<(String, ResolvedScope), NameRefFault> {
+        let (resolved, scope) = self.resolve_nameref_chain(name)?;
+        Ok((resolved.into_owned(), scope))
     }
 
     /// Resolves a nameref, falling back to an identity `ResolvedName` on **any**
@@ -527,7 +531,7 @@ mod tests {
         // not global-scoped (no self-reference).
         assert_eq!(
             env.resolve_nameref_unparsed("ref").unwrap(),
-            ("target".to_owned(), false)
+            ("target".to_owned(), ResolvedScope::Default)
         );
     }
 
@@ -541,7 +545,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             env.resolve_nameref_unparsed("ref").unwrap(),
-            ("arr[2]".to_owned(), false)
+            ("arr[2]".to_owned(), ResolvedScope::Default)
         );
     }
 

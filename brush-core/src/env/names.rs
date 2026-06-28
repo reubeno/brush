@@ -160,6 +160,49 @@ impl From<ResolvedName> for NameRef {
     }
 }
 
+/// The scope a resolved nameref target must be looked up and created in.
+///
+/// Almost always [`Default`](Self::Default) — the usual innermost-out scope
+/// walk. A self-referential function-local nameref (`local -n x=x`) resolves to
+/// [`Global`](Self::Global): bash looks up the global `x`, skipping the
+/// nameref's own and any intermediate local scopes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ResolvedScope {
+    /// The usual scope walk.
+    Default,
+    /// The global scope only.
+    Global,
+}
+
+impl ResolvedScope {
+    /// The lookup policy implied for a *resolved* name, given the caller's
+    /// default policy. `Global` forces global-only; `Default` keeps the
+    /// caller's. This is the single place the global-scope override is applied,
+    /// so callers honor scope-aware resolution without re-deriving it.
+    pub const fn lookup_policy_or(
+        self,
+        default: super::EnvironmentLookup,
+    ) -> super::EnvironmentLookup {
+        match self {
+            Self::Default => default,
+            Self::Global => super::EnvironmentLookup::OnlyInGlobal,
+        }
+    }
+
+    /// The scope a *newly created* variable should go in, given the caller's
+    /// default. `Global` forces the global scope; `Default` keeps the caller's.
+    pub(super) const fn creation_scope_or(
+        self,
+        default: super::EnvironmentScope,
+    ) -> super::EnvironmentScope {
+        match self {
+            Self::Default => default,
+            Self::Global => super::EnvironmentScope::Global,
+        }
+    }
+}
+
 /// A fully resolved nameref target, split into base name and optional array subscript.
 ///
 /// When a nameref resolves to a plain variable name like `"target"`, `subscript` is `None`.
@@ -173,14 +216,16 @@ impl From<ResolvedName> for NameRef {
 ///
 /// To look up a variable without nameref resolution, use
 /// `env.lookup("name").bypassing_nameref().get()`.
+///
+/// Equality and hashing are scope-sensitive: a global-scoped target and an
+/// otherwise-identical default-scoped one name *different* variables (a global
+/// `x` vs. a local `x`), so they compare unequal — intentional.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ResolvedName {
     pub(super) name: String,
     pub(super) subscript: Option<String>,
-    /// When `true`, `name` must be looked up (and created) in the **global**
-    /// scope only, not via the usual scope walk. Set when a self-referential
-    /// function-local nameref (`local -n x=x`) resolves to the global `x`.
-    pub(super) global_scope: bool,
+    /// The scope `name` resolves against (see [`ResolvedScope`]).
+    pub(super) scope: ResolvedScope,
 }
 
 impl ResolvedName {
@@ -194,28 +239,30 @@ impl ResolvedName {
         self.subscript.as_deref()
     }
 
-    /// Whether this name must be resolved against the global scope only. `true`
-    /// for a self-referential function-local nameref (`local -n x=x`), which
-    /// bash resolves to the global `x`. Lookups and mutations honor this.
-    pub const fn is_global_scope(&self) -> bool {
-        self.global_scope
+    /// The scope this name resolves against. [`ResolvedScope::Global`] for a
+    /// self-referential function-local nameref (`local -n x=x`), which bash
+    /// resolves to the global `x`; [`ResolvedScope::Default`] otherwise. Lookups
+    /// and mutations honor it.
+    pub const fn resolved_scope(&self) -> ResolvedScope {
+        self.scope
     }
 
-    /// Returns a copy of this name with the global-scope flag set to `global`.
+    /// Convenience predicate over [`resolved_scope`](Self::resolved_scope).
+    pub const fn is_global_scope(&self) -> bool {
+        matches!(self.scope, ResolvedScope::Global)
+    }
+
+    /// Returns a copy of this name with the resolution scope set to `scope`.
     #[must_use]
-    pub(super) const fn with_global_scope(mut self, global: bool) -> Self {
-        self.global_scope = global;
+    pub(super) const fn with_scope(mut self, scope: ResolvedScope) -> Self {
+        self.scope = scope;
         self
     }
 
-    /// The lookup policy a lookup/mutation should use for this name by default:
-    /// global-only for a self-referential nameref target, anywhere otherwise.
+    /// The lookup policy this name uses when no caller policy is supplied.
     pub(super) const fn default_lookup_policy(&self) -> super::EnvironmentLookup {
-        if self.global_scope {
-            super::EnvironmentLookup::OnlyInGlobal
-        } else {
-            super::EnvironmentLookup::Anywhere
-        }
+        self.scope
+            .lookup_policy_or(super::EnvironmentLookup::Anywhere)
     }
 
     /// Consumes this `ResolvedName` and returns the base variable name.
@@ -234,7 +281,7 @@ impl ResolvedName {
         Self {
             name: self.name.clone(),
             subscript: None,
-            global_scope: self.global_scope,
+            scope: self.scope,
         }
     }
 
@@ -245,13 +292,13 @@ impl ResolvedName {
             Self {
                 name: base.to_owned(),
                 subscript: Some(idx.to_owned()),
-                global_scope: false,
+                scope: ResolvedScope::Default,
             }
         } else {
             Self {
                 name: resolved,
                 subscript: None,
-                global_scope: false,
+                scope: ResolvedScope::Default,
             }
         }
     }
@@ -269,7 +316,7 @@ impl ResolvedName {
         Self {
             name,
             subscript: None,
-            global_scope: false,
+            scope: ResolvedScope::Default,
         }
     }
 }
