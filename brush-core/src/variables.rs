@@ -237,6 +237,16 @@ impl ShellVariable {
             return Err(error::ErrorKind::ReadonlyVariable.into());
         }
 
+        // Assigning an array value to a nameref removes the nameref attribute: a
+        // nameref holds only its target name, so an array landing on it
+        // (`declare -n ref; ref=(a b)`, `declare -a ref=(…)`, `read -a ref`, …)
+        // turns it into a plain array. bash warns "removing nameref attribute";
+        // we clear the attribute here so every assignment path is covered, and
+        // callers with stderr access emit the warning.
+        if self.is_treated_as_nameref() && matches!(value, ShellValueLiteral::Array(_)) {
+            self.unset_treat_as_nameref();
+        }
+
         let value = self.convert_value_literal_for_assignment(value);
 
         if append {

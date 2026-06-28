@@ -2147,6 +2147,16 @@ cases:
       declare -p ref
       declare -p arr
 
+  - name: "declare -a and read -a on an untargeted nameref remove the attribute"
+    ignore_stderr: true
+    stdin: |
+      declare -n r1
+      declare -a r1=(a b)
+      declare -p r1
+      declare -n r2
+      read -a r2 <<< "x y z"
+      declare -p r2
+
   - name: "Circular nameref ${ref:=x} returns empty, doesn't write"
     ignore_stderr: true
     stdin: |

@@ -1738,10 +1738,8 @@ async fn apply_assignment(
                     export = true;
                 }
 
+                // (assign() clears the nameref attribute for array values.)
                 existing_value.assign(new_value, assignment.append)?;
-                if clear_nameref_attr {
-                    existing_value.unset_treat_as_nameref();
-                }
             }
 
             if export {
