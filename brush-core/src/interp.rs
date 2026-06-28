@@ -1633,19 +1633,33 @@ async fn apply_assignment(
     // rejects e.g. `declare -n ref; ref=5`, while an already-targeted nameref
     // writes through unchecked. Only plain scalar target-setting is validated;
     // array/explicit-subscript writes aren't target-setting.
-    if assigning_nameref_target
+    // A transient command-prefix assignment (`VAR=v cmd`, command scope) is just
+    // a temporary env var — bash never validates or retargets a nameref through
+    // it — so the nameref-target rules below apply only to non-command scopes.
+    let setting_nameref_target =
+        assigning_nameref_target && !matches!(required_scope, Some(EnvironmentScope::Command));
+
+    if setting_nameref_target
         && array_index.is_none()
         && let ShellValueLiteral::Scalar(target) = &new_value
         && !env::valid_nameref_target_name(target)
     {
-        // Same transient-vs-standalone recovery as a circular assignment: a
-        // command-prefix assignment warns and still runs the command; a
-        // standalone assignment aborts the rest of its command list.
-        if matches!(required_scope, Some(EnvironmentScope::Command)) {
-            writeln!(shell.stderr(), "`{target}': not a valid identifier")?;
-            return Ok(());
-        }
+        // Setting an untargeted nameref's target to a non-identifier is rejected
+        // by bash; a standalone assignment aborts the rest of its command list
+        // (the program loop renders the diagnostic).
         return Err(error::ErrorKind::InvalidNameRefTarget(target.clone()).into());
+    }
+
+    // Assigning an array to an untargeted nameref removes the nameref attribute:
+    // `ref` becomes a plain array (bash warns "removing nameref attribute").
+    let clear_nameref_attr = setting_nameref_target
+        && array_index.is_none()
+        && matches!(new_value, ShellValueLiteral::Array(_));
+    if clear_nameref_attr {
+        writeln!(
+            shell.stderr(),
+            "warning: {variable_name}: removing nameref attribute"
+        )?;
     }
 
     // Inspect the existing variable for both attribute flags we need —
@@ -1725,6 +1739,9 @@ async fn apply_assignment(
                 }
 
                 existing_value.assign(new_value, assignment.append)?;
+                if clear_nameref_attr {
+                    existing_value.unset_treat_as_nameref();
+                }
             }
 
             if export {

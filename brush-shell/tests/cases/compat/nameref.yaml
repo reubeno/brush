@@ -2130,6 +2130,23 @@ cases:
       echo "rc=$?"
       declare -p bad 2>/dev/null || echo unchanged
 
+  - name: "Array assignment to an untargeted nameref removes the nameref attribute"
+    ignore_stderr: true
+    stdin: |
+      declare -n ref
+      ref=(a b c)
+      declare -p ref
+      ref="now scalar"
+      declare -p ref
+
+  - name: "Array assignment through a targeted nameref writes the target"
+    stdin: |
+      arr=()
+      declare -n ref=arr
+      ref=(x y z)
+      declare -p ref
+      declare -p arr
+
   - name: "Circular nameref ${ref:=x} returns empty, doesn't write"
     ignore_stderr: true
     stdin: |

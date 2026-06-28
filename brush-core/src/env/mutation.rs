@@ -135,6 +135,15 @@ impl ShellEnvironment {
             }
         };
 
+        // The base must be a legal identifier. User-facing callers (`read`,
+        // `printf -v`, …) can pass arbitrary names like `foo[` or `1bad`; bash
+        // rejects them as "not a valid identifier". Without this guard such a
+        // name would reach `add` and trip its bare-name assertion (panic in
+        // debug / junk variable in release).
+        if !super::names::valid_variable_name(&base) {
+            return Err(error::ErrorKind::InvalidVariableName(base).into());
+        }
+
         // If the resolved target includes an array subscript (e.g., arr[2]),
         // a scalar value writes to that element.
         if let Some(idx) = subscript {
@@ -291,6 +300,11 @@ impl ShellEnvironment {
                 s
             }
         };
+
+        // The base must be a legal identifier (see `update_or_add`).
+        if !super::names::valid_variable_name(&base) {
+            return Err(error::ErrorKind::InvalidVariableName(base).into());
+        }
 
         self.update_or_add_array_element_impl(
             base,

@@ -397,3 +397,12 @@ cases:
       declare -A m
       read 'm[key]' <<< val
       declare -p m
+
+  - name: "read rejects invalid variable names"
+    ignore_stderr: true
+    stdin: |
+      read 'foo[' <<< hi
+      echo "rc1=$?"
+      read 1bad <<< hi
+      echo "rc2=$?"
+      echo running

@@ -148,11 +148,19 @@ impl builtins::Command for ReadCommand {
             self.array_variable.as_deref(),
             &self.variable_names,
         ) {
-            if let ErrorKind::NameRef(fault) = err.kind() {
-                context.shell.warn_nameref_fault(fault)?;
-                return Ok(brush_core::ExecutionResult::general_error());
+            match err.kind() {
+                ErrorKind::NameRef(fault) => {
+                    context.shell.warn_nameref_fault(fault)?;
+                    return Ok(brush_core::ExecutionResult::general_error());
+                }
+                // An invalid target name (`read 'foo['`, `read 1bad`) is a
+                // read-level failure (exit 1), not a fatal/aborting error.
+                ErrorKind::InvalidVariableName(_) => {
+                    writeln!(context.stderr(), "{}: {err}", context.command_name)?;
+                    return Ok(brush_core::ExecutionResult::general_error());
+                }
+                _ => return Err(err),
             }
-            return Err(err);
         }
 
         Ok(result)
