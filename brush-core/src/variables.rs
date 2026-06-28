@@ -613,8 +613,11 @@ impl ShellVariable {
     }
 }
 
-type DynamicValueGetter = fn(&dyn ShellState) -> ShellValue;
-type DynamicValueSetter = fn(&dyn ShellState) -> ();
+/// Computes the current value of a [`ShellValue::Dynamic`] variable (e.g.
+/// `RANDOM`, `SECONDS`) from the live shell state.
+pub type DynamicValueGetter = fn(&dyn ShellState) -> ShellValue;
+/// Receives writes to a [`ShellValue::Dynamic`] variable.
+pub type DynamicValueSetter = fn(&dyn ShellState) -> ();
 
 /// A shell value.
 #[derive(Clone, Debug)]
@@ -732,7 +735,10 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
-/// An array literal.
+/// An array literal as written in an assignment (`(a [k]=b c)`): an ordered list
+/// of `(optional key, value)` pairs. A `None` key means the next sequential
+/// index (for indexed arrays); `Some(key)` is an explicit indexed or associative
+/// key.
 #[derive(Clone, Debug)]
 pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
 
@@ -807,6 +813,14 @@ impl ShellValue {
         }
 
         Self::IndexedArray(owned_values)
+    }
+
+    /// Constructs a dynamically-computed value, like the shell's own `RANDOM` or
+    /// `SECONDS`. `getter` computes the current value from live shell state;
+    /// `setter` handles writes. Embedders can use this to expose custom dynamic
+    /// variables.
+    pub const fn dynamic(getter: DynamicValueGetter, setter: DynamicValueSetter) -> Self {
+        Self::Dynamic { getter, setter }
     }
 
     /// Returns a new indexed array value constructed from the given literals.
