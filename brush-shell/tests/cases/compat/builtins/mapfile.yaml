@@ -142,6 +142,10 @@ cases:
   - name: "mapfile -u invalid fd"
     ignore_stderr: true
     stdin: |
+      # Close fd 99 first so it's deterministically invalid — the parallel test
+      # harness can otherwise leave high fds open, making `mapfile -u 99` read
+      # from an open descriptor instead of failing.
+      exec 99<&- 2>/dev/null
       mapfile -u 99 arr
       echo "exit: $?"
 

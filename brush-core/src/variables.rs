@@ -735,10 +735,11 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
-/// An array literal as written in an assignment (`(a [k]=b c)`): an ordered list
-/// of `(optional key, value)` pairs. A `None` key means the next sequential
-/// index (for indexed arrays); `Some(key)` is an explicit indexed or associative
-/// key.
+/// An array literal as written in an assignment, e.g. `(a [k]=b c)`.
+///
+/// An ordered list of `(optional key, value)` pairs: a `None` key means the next
+/// sequential index (for indexed arrays); `Some(key)` is an explicit indexed or
+/// associative key.
 #[derive(Clone, Debug)]
 pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
 
