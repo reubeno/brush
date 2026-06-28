@@ -1536,13 +1536,24 @@ async fn apply_assignment(
     let resolved_name = if is_nameref {
         let resolved = match shell.env().resolve_nameref(variable_name) {
             Ok(r) => r,
-            // A circular (or too-deep) nameref makes the assignment fail. Per
-            // bash, this aborts the rest of the current command list but lets
-            // subsequent newline-separated commands run — exactly the
-            // propagate-as-(non-fatal)-error behavior already used for readonly
-            // assignments. The program loop renders the diagnostic, so we don't
-            // emit a warning here (that would double-report).
-            Err(fault) => return Err(fault.into()),
+            Err(fault) => {
+                // A circular (or too-deep) nameref makes the assignment fail.
+                // bash's recovery depends on whether the assignment is transient
+                // or standalone:
+                //   - A command-prefix assignment (`VAR=v cmd`, command scope)
+                //     warns and still runs the command — so we warn and return
+                //     Ok, letting execute_command proceed.
+                //   - A standalone assignment aborts the rest of its command
+                //     list (but newline-separated commands continue). We
+                //     propagate a non-fatal error — the same mechanism readonly
+                //     assignments use — and the program loop renders the
+                //     diagnostic (so we don't warn here, to avoid double-report).
+                if matches!(required_scope, Some(EnvironmentScope::Command)) {
+                    shell.warn_nameref_fault(&fault)?;
+                    return Ok(());
+                }
+                return Err(fault.into());
+            }
         };
         // If the nameref resolved to `arr[i]`, use that subscript as the array
         // index (unless an explicit subscript is already present). Compound or
@@ -1566,6 +1577,13 @@ async fn apply_assignment(
     } else {
         env::ResolvedName::plain(variable_name.clone())
     };
+
+    // True when this assignment *sets* an untargeted nameref's target (rather
+    // than writing through an already-targeted one). A nameref resolves to its
+    // own name only when it has no target yet — targeted refs resolve to the
+    // target, and self/circular refs faulted above. bash validates the RHS as a
+    // nameref target name in this case.
+    let assigning_nameref_target = is_nameref && resolved_name.name() == variable_name.as_str();
 
     // Expand the values.
     let new_value = match &assignment.value {
@@ -1609,6 +1627,25 @@ async fn apply_assignment(
         shell
             .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
             .await;
+    }
+
+    // Setting an untargeted nameref's target requires a valid identifier: bash
+    // rejects e.g. `declare -n ref; ref=5`, while an already-targeted nameref
+    // writes through unchecked. Only plain scalar target-setting is validated;
+    // array/explicit-subscript writes aren't target-setting.
+    if assigning_nameref_target
+        && array_index.is_none()
+        && let ShellValueLiteral::Scalar(target) = &new_value
+        && !env::valid_nameref_target_name(target)
+    {
+        // Same transient-vs-standalone recovery as a circular assignment: a
+        // command-prefix assignment warns and still runs the command; a
+        // standalone assignment aborts the rest of its command list.
+        if matches!(required_scope, Some(EnvironmentScope::Command)) {
+            writeln!(shell.stderr(), "`{target}': not a valid identifier")?;
+            return Ok(());
+        }
+        return Err(error::ErrorKind::InvalidNameRefTarget(target.clone()).into());
     }
 
     // Inspect the existing variable for both attribute flags we need —

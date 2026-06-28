@@ -2106,6 +2106,30 @@ cases:
       echo BEFORE; a=value; echo AFTER
       echo "next line still runs"
 
+  - name: "Circular nameref command-prefix assignment still runs the command"
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      a=value echo HELLO
+      echo "rc=$?"
+
+  - name: "Assigning a valid target name to an untargeted nameref sets the target"
+    stdin: |
+      declare -n ref
+      ref=actual
+      actual=42
+      echo "${ref}"
+      declare -p ref
+
+  - name: "Assigning an invalid target name to an untargeted nameref is rejected"
+    ignore_stderr: true
+    stdin: |
+      declare -n bad
+      bad=5
+      echo "rc=$?"
+      declare -p bad 2>/dev/null || echo unchanged
+
   - name: "Circular nameref ${ref:=x} returns empty, doesn't write"
     ignore_stderr: true
     stdin: |

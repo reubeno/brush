@@ -3,7 +3,9 @@
 //! `lookup.rs`; this file is the write-side counterpart.
 
 use super::names::NameRefStrategy;
-use super::{EnvironmentLookup, EnvironmentScope, NameRef, ShellEnvironment, ShellVariableMap};
+use super::{
+    EnvironmentLookup, EnvironmentScope, NameRef, ResolvedName, ShellEnvironment, ShellVariableMap,
+};
 use crate::error;
 use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
 
@@ -117,7 +119,13 @@ impl ShellEnvironment {
                     }
                     (resolved.name, resolved.subscript)
                 } else {
-                    (s, None)
+                    // Not a live nameref. We still must parse a possible
+                    // subscript — `read 'arr[0]'` reaches here with a
+                    // subscripted name. Only the chain walk is skipped, not
+                    // subscript handling. `ResolvedName::parse` does no scope
+                    // walk, so the fast-path perf win stands.
+                    let resolved = ResolvedName::parse(s);
+                    (resolved.name, resolved.subscript)
                 }
             }
             NameRefStrategy::PreResolved(r) => (r.name, r.subscript),
@@ -250,7 +258,19 @@ impl ShellEnvironment {
                     }
                     resolved.name
                 } else {
-                    s
+                    // Not a live nameref. A subscripted name here plus an
+                    // explicit index would be `arr[0][idx]` — bash rejects it
+                    // as not a valid identifier. Match the pre-fast-path
+                    // behavior (which parsed and rejected it).
+                    let resolved = ResolvedName::parse(s);
+                    if let Some(subscript) = resolved.subscript {
+                        return Err(error::ErrorKind::SubscriptedNameRefTarget {
+                            name: resolved.name,
+                            subscript,
+                        }
+                        .into());
+                    }
+                    resolved.name
                 }
             }
             NameRefStrategy::PreResolved(r) => {

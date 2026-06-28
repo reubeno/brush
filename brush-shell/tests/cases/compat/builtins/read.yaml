@@ -387,3 +387,13 @@ cases:
       echo "arr[0]: ${arr[0]}"
       echo "arr[1]: ${arr[1]}"
       echo "arr[2]: ${arr[2]}"
+
+  - name: "read into array element targets (subscripted names)"
+    stdin: |
+      read 'arr[0]' <<< hello
+      declare -p arr
+      read 'arr[2]' 'arr[3]' <<< "two three"
+      declare -p arr
+      declare -A m
+      read 'm[key]' <<< val
+      declare -p m
