@@ -513,7 +513,14 @@ impl DeclareCommand {
                 static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
                     LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
 
-                if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
+                // A declaration argument formed by expansion (e.g.
+                // `declare ${pre}var=val` or `declare "$assignment"`) reaches us
+                // as an already-expanded string instead of a parsed assignment.
+                // bash re-parses declaration-builtin arguments as assignments,
+                // so split a leading `name`/`name[idx]` from a `=value` suffix.
+                let (lhs, value_str) = Self::split_declaration_word(s);
+
+                if let Some(captures) = ARRAY_AND_INDEX_RE.captures(lhs)? {
                     name = captures
                         .get(1)
                         .ok_or_else(|| {
@@ -525,11 +532,21 @@ impl DeclareCommand {
                     assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
                     name_is_array = true;
                 } else {
-                    name = s.clone();
+                    name = lhs.to_owned();
                     assigned_index = None;
                     name_is_array = false;
                 }
-                initial_value = None;
+
+                // A `name[idx]=value` element becomes a single-element array
+                // literal (mirroring the parsed-assignment path); `name=value` a
+                // scalar; a bare `name`/`name[idx]` carries no initial value.
+                initial_value = match (value_str, &assigned_index) {
+                    (Some(value), Some(index)) => Some(ShellValueLiteral::Array(ArrayLiteral(
+                        vec![(Some(index.clone()), value.to_owned())],
+                    ))),
+                    (Some(value), None) => Some(ShellValueLiteral::Scalar(value.to_owned())),
+                    (None, _) => None,
+                };
             }
             brush_core::CommandArg::Assignment(assignment) => {
                 match &assignment.name {
@@ -575,6 +592,27 @@ impl DeclareCommand {
         }
 
         Ok((name, assigned_index, initial_value, name_is_array))
+    }
+
+    /// Splits an expansion-formed declaration word into its `name`/`name[idx]`
+    /// part and an optional `=value` suffix. The split is on the first top-level
+    /// `=` (one not nested inside `[...]`), so an arithmetic subscript like
+    /// `arr[i=1]` keeps its `=`. Returns `(lhs, None)` when there is no `=`.
+    fn split_declaration_word(s: &str) -> (&str, Option<&str>) {
+        let mut bracket_depth = 0usize;
+        // `[`, `]`, and `=` are all ASCII, so a byte index at one of them is
+        // always a valid char boundary; `get` keeps this panic-free regardless.
+        for (i, b) in s.bytes().enumerate() {
+            match b {
+                b'[' => bracket_depth += 1,
+                b']' => bracket_depth = bracket_depth.saturating_sub(1),
+                b'=' if bracket_depth == 0 => {
+                    return (s.get(..i).unwrap_or(s), s.get(i + 1..));
+                }
+                _ => {}
+            }
+        }
+        (s, None)
     }
 
     /// Arithmetically evaluates an integer variable's initializer (`declare -i

@@ -467,12 +467,22 @@ cases:
       declare -i z=n+5
       echo "$z"
 
-  - name: "declare with an expansion-formed name assigns (KNOWN BUG)"
-    known_failure: true  # `declare ${pre}var=val` (name built via expansion) is misclassified as a non-assignment word in brush.
+  - name: "declare with an expansion-formed name assigns"
     stdin: |
       pre=y
       declare ${pre}var=hello
       echo "${yvar:-MISSING}"
+      declare "${pre}quoted=a=b"
+      echo "${yquoted:-MISSING}"
+      declare ${pre}arr[2]=elem
+      echo "${yarr[2]:-MISSING}"
+      declare -i ${pre}int=3+4
+      echo "${yint:-MISSING}"
+      n=L
+      f() { local ${n}ocal=hi; echo "${Local:-MISSING}"; }
+      f
+      readonly ${pre}ro=frozen
+      echo "${yro:-MISSING}"
 
   - name: "declare -g targets the global scope, not a same-name local"
     stdin: |
