@@ -4,10 +4,11 @@ use std::collections::HashMap;
 
 use crate::variables::ShellVariable;
 
-/// Represents a map from names to shell variables.
+/// Represents a map from names to shell variables. Internal to the environment;
+/// not part of the public API surface.
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ShellVariableMap {
+pub(crate) struct ShellVariableMap {
     variables: HashMap<String, ShellVariable>,
 }
 
@@ -21,11 +22,6 @@ impl ShellVariableMap {
     /// placeholders left behind by `unset` in a local scope).
     pub fn len(&self) -> usize {
         self.variables.len()
-    }
-
-    /// Returns `true` if the map holds no entries.
-    pub fn is_empty(&self) -> bool {
-        self.variables.is_empty()
     }
 
     /// Tries to retrieve an immutable reference to the variable with the given name.

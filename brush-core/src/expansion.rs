@@ -1638,7 +1638,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 variable_name,
                 concatenate,
             } => {
-                let resolved = self.resolve_nameref_or_self(variable_name.as_str());
+                let resolved = self.resolve_nameref_or_warn(variable_name.as_str());
                 let keys = if resolved.subscript().is_some() {
                     // In bash, ${!ref[@]} where ref→arr[2] returns empty.
                     vec![]
@@ -1854,7 +1854,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// writing through a subscripted base.
     ///
     /// See the "Circular-nameref error handling policy" in `env/mod.rs`.
-    fn resolve_nameref_or_self(&self, name: &str) -> env::ResolvedName {
+    fn resolve_nameref_or_warn(&self, name: &str) -> env::ResolvedName {
         match self.shell.env().resolve_nameref(name) {
             Ok(resolved) => resolved,
             Err(fault) => {
@@ -1978,8 +1978,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .await
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                // Subscripted-target nameref semantics: see resolve_nameref_or_self.
-                let resolved = self.resolve_nameref_or_self(name);
+                // Subscripted-target nameref semantics: see resolve_nameref_or_warn.
+                let resolved = self.resolve_nameref_or_warn(name);
                 if resolved.subscript().is_some() {
                     self.undefined_expansion(parameter, allow_unset_vars)
                 } else {
@@ -1988,8 +1988,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
-                // Subscripted-target nameref semantics: see resolve_nameref_or_self.
-                let resolved = self.resolve_nameref_or_self(name);
+                // Subscripted-target nameref semantics: see resolve_nameref_or_warn.
+                let resolved = self.resolve_nameref_or_warn(name);
                 if resolved.subscript().is_some() {
                     Ok(Expansion {
                         fields: vec![],

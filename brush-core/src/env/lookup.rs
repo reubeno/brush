@@ -204,7 +204,17 @@ impl ShellEnvironment {
     /// Creates an immutable lookup builder for an already-resolved name. The
     /// environment performs no further resolution or subscript parsing.
     /// Chain `.in_scope(policy)` to restrict by scope.
+    ///
+    /// Looks up the **base** name only: any `subscript` on `resolved` is ignored,
+    /// so for a subscripted target (`arr[2]`) this returns the array `arr`, not
+    /// the element. Callers wanting the element must apply the subscript
+    /// themselves (see [`ResolvedVarRef::value_str`]).
     pub fn lookup_resolved<'a>(&'a self, resolved: &'a ResolvedName) -> DirectVarLookup<'a> {
+        debug_assert!(
+            resolved.subscript().is_none(),
+            "lookup_resolved ignores the subscript on {resolved:?}; \
+             apply the subscript at the call site",
+        );
         DirectVarLookup {
             env: self,
             name: resolved.name(),
@@ -213,11 +223,18 @@ impl ShellEnvironment {
     }
 
     /// Creates a mutable lookup builder for an already-resolved name. No further
-    /// resolution or subscript parsing. Chain `.in_scope(policy)` to restrict by scope.
+    /// resolution or subscript parsing. Chain `.in_scope(policy)` to restrict by
+    /// scope. Like [`lookup_resolved`](Self::lookup_resolved), the subscript on
+    /// `resolved` is ignored (returns the base variable).
     pub fn lookup_mut_resolved<'a>(
         &'a mut self,
         resolved: &'a ResolvedName,
     ) -> DirectVarLookupMut<'a> {
+        debug_assert!(
+            resolved.subscript().is_none(),
+            "lookup_mut_resolved ignores the subscript on {resolved:?}; \
+             apply the subscript at the call site",
+        );
         DirectVarLookupMut {
             env: self,
             name: resolved.name(),

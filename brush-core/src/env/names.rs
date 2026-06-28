@@ -9,11 +9,19 @@
 ///
 /// Returned as the `Err` arm of
 /// [`resolve_nameref`](super::ShellEnvironment::resolve_nameref) and friends so
-/// that every caller must *explicitly* choose a recovery policy (warn+skip,
-/// warn+identity, silent identity, or propagate). This is deliberate: when the
-/// fault traveled through `Error::kind()` matching, call sites silently forgot
-/// to handle it or handled it inconsistently. A dedicated error type can't be
-/// ignored without the compiler noticing.
+/// that a caller resolving directly must `match` the fault and choose a recovery
+/// policy (warn+skip, warn+identity, silent identity, or propagate), rather than
+/// rediscovering it from an `Error::kind()` match.
+///
+/// The convenience mutators that resolve internally —
+/// [`set_var`](super::ShellEnvironment::set_var),
+/// [`update_or_add`](super::ShellEnvironment::update_or_add), and
+/// [`unset`](super::ShellEnvironment::unset) — cannot return this type, so they
+/// surface a fault as [`ErrorKind::NameRef`](crate::error::ErrorKind::NameRef)
+/// via the `From<NameRefFault>` conversion (i.e. `?` propagates it as the shell
+/// `Error`). Callers that need to *handle* the fault (warn-and-skip, etc.)
+/// should resolve up front with `resolve_nameref` instead of relying on the
+/// mutator's propagated `Error`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NameRefFault {
     kind: NameRefFaultKind,
@@ -264,8 +272,8 @@ pub(crate) fn parse_nameref_subscript(target: &str) -> (&str, Option<&str>) {
 /// first `[` must be a legal variable name, and that `[`'s *matching* `]` (with
 /// balanced nesting, so associative keys like `a[b]` are allowed) must be the
 /// final character. This rejects malformed targets such as `m[a]b]`, `m[x][y]`,
-/// and `a[b[c]` that the looser [`parse_nameref_subscript`] would otherwise
-/// split into a plausible-looking base + subscript.
+/// and `a[b[c]` that a looser first-`[`/last-`]` split would otherwise accept as
+/// a plausible-looking base + subscript.
 ///
 /// Does NOT check for self-references — callers must handle that separately.
 pub fn valid_nameref_target_name(target: &str) -> bool {

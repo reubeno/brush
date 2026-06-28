@@ -335,15 +335,11 @@ pub enum ErrorKind {
     #[error(transparent)]
     NameRef(#[from] crate::env::NameRefFault),
 
-    /// An attempt was made to assign to a name that is not a valid identifier —
-    /// e.g. `read 'foo['` or `read 1bad`.
+    /// An attempt was made to use a string that is not a valid identifier as a
+    /// variable name — e.g. `read 'foo['`, `read 1bad`, or setting an untargeted
+    /// nameref's target to a non-identifier (`declare -n ref; ref=5`).
     #[error("`{0}': not a valid identifier")]
     InvalidVariableName(String),
-
-    /// An attempt was made to set an (untargeted) nameref's target to a value
-    /// that is not a valid identifier — e.g. `declare -n ref; ref=5`.
-    #[error("`{0}': not a valid identifier")]
-    InvalidNameRefTarget(String),
 
     /// A nameref resolved to a subscripted target (e.g., `arr[2]`) but the
     /// caller's operation requires a plain variable name — e.g. compound

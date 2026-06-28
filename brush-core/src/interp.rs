@@ -1647,7 +1647,7 @@ async fn apply_assignment(
         // Setting an untargeted nameref's target to a non-identifier is rejected
         // by bash; a standalone assignment aborts the rest of its command list
         // (the program loop renders the diagnostic).
-        return Err(error::ErrorKind::InvalidNameRefTarget(target.clone()).into());
+        return Err(error::ErrorKind::InvalidVariableName(target.clone()).into());
     }
 
     // Assigning an array to an untargeted nameref removes the nameref attribute:

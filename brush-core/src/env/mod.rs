@@ -25,7 +25,7 @@ pub use names::{
 };
 pub(crate) use scope::ScopeGuard;
 pub use scope::{EnvironmentLookup, EnvironmentScope};
-pub use var_map::ShellVariableMap;
+pub(crate) use var_map::ShellVariableMap;
 
 /// Maximum depth for nameref chain resolution. Matches bash 5.2's internal
 /// `NAMEREF_MAX` limit (8).
@@ -182,6 +182,16 @@ impl ShellEnvironment {
 
     /// Resolves a nameref chain and parses any subscript from the final target.
     /// `ref→"arr[2]"` returns `ResolvedName { name: "arr", subscript: Some("2") }`.
+    ///
+    /// # Limitations
+    ///
+    /// Each link is resolved by a global top-down scope walk; there is no
+    /// scope-relative resolution. This means a function-local `local -n ref=ref`
+    /// (a nameref whose target shares its own name) is *not* resolved to the
+    /// same-named variable in an enclosing scope the way bash does — adding that
+    /// will require threading a starting scope through this method. Likewise the
+    /// returned [`ResolvedName`] only models named/subscripted targets, not
+    /// positional parameters (`declare -n ref=1`).
     pub fn resolve_nameref(&self, name: &str) -> Result<ResolvedName, NameRefFault> {
         let resolved = self.resolve_nameref_chain(name)?;
         Ok(ResolvedName::parse(resolved.into_owned()))
