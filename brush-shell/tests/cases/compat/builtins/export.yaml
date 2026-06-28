@@ -50,3 +50,18 @@ cases:
     stdin: |
       export MYVAR+="first"
       echo "MYVAR: $MYVAR"
+
+  - name: "export with an expansion-formed name assigns and exports"
+    stdin: |
+      p=z
+      export ${p}var=hi
+      echo "$zvar"
+      env | grep "^zvar="
+      export "q=a=b"
+      echo "$q"
+
+  - name: "export invalid identifier returns 1"
+    ignore_stderr: true
+    stdin: |
+      export arr[0]=v
+      echo "rc=$?"

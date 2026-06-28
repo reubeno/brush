@@ -63,6 +63,48 @@ impl builtins::Command for ExportCommand {
 }
 
 impl ExportCommand {
+    /// Handles an expansion-formed `name=value` export argument (e.g.
+    /// `export ${p}var=val` or `export "x=a=b"`), which reaches the builtin as
+    /// an already-expanded string rather than a parsed assignment. bash
+    /// re-parses declaration-builtin arguments as assignments. Returns `None`
+    /// when `s` isn't an assignment form (a function name, or no `=`), so the
+    /// caller falls through to the mark-existing-variable handling.
+    fn try_export_string_assignment(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        s: &str,
+    ) -> Result<Option<ExecutionResult>, brush_core::Error> {
+        if self.names_are_functions {
+            return Ok(None);
+        }
+        let Some((name, value)) = s.split_once('=') else {
+            return Ok(None);
+        };
+        if !brush_core::env::valid_variable_name(name) {
+            writeln!(
+                context.stderr(),
+                "{}: `{name}': not a valid identifier",
+                context.command_name,
+            )?;
+            return Ok(Some(ExecutionExitCode::GeneralError.into()));
+        }
+        context.shell.env_mut().update_or_add(
+            name,
+            variables::ShellValueLiteral::Scalar(value.to_owned()),
+            |var| {
+                if self.unexport {
+                    var.unexport();
+                } else {
+                    var.export();
+                }
+                Ok(())
+            },
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )?;
+        Ok(Some(ExecutionResult::success()))
+    }
+
     fn process_decl(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -70,6 +112,12 @@ impl ExportCommand {
     ) -> Result<ExecutionResult, brush_core::Error> {
         match decl {
             brush_core::CommandArg::String(s) => {
+                // An expansion-formed assignment (`export ${p}var=val`) arrives
+                // as a string rather than a parsed assignment; handle it first.
+                if let Some(result) = self.try_export_string_assignment(context, s)? {
+                    return Ok(result);
+                }
+
                 // See if this is supposed to be a function name.
                 if self.names_are_functions {
                     // Try to find the function already present; if we find it, then mark it
@@ -82,7 +130,8 @@ impl ExportCommand {
                         }
                     } else {
                         writeln!(context.stderr(), "{s}: not a function")?;
-                        return Ok(ExecutionExitCode::InvalidUsage.into());
+                        // bash returns 1 (general error), not 2, here.
+                        return Ok(ExecutionExitCode::GeneralError.into());
                     }
                 }
                 // Try to find the variable already present; if we find it, then mark it
@@ -119,9 +168,14 @@ impl ExportCommand {
             brush_core::CommandArg::Assignment(assignment) => {
                 let name = match &assignment.name {
                     ast::AssignmentName::VariableName(name) => name,
-                    ast::AssignmentName::ArrayElementName(_, _) => {
-                        writeln!(context.stderr(), "not a valid variable name")?;
-                        return Ok(ExecutionExitCode::InvalidUsage.into());
+                    ast::AssignmentName::ArrayElementName(var_name, index) => {
+                        // bash: `export: `arr[0]': not a valid identifier` (rc 1).
+                        writeln!(
+                            context.stderr(),
+                            "{}: `{var_name}[{index}]': not a valid identifier",
+                            context.command_name,
+                        )?;
+                        return Ok(ExecutionExitCode::GeneralError.into());
                     }
                 };
 
@@ -142,16 +196,19 @@ impl ExportCommand {
                 // bare `name+=value`. update_or_add always replaces, so when the
                 // variable already exists honor the append here. A missing variable
                 // falls through: appending to nothing is a plain assignment.
-                if assignment.append
-                    && let Some((_, variable)) = context.shell.env_mut().get_mut(name)
-                {
-                    variable.assign(value, true)?;
-                    if self.unexport {
-                        variable.unexport();
-                    } else {
-                        variable.export();
+                if assignment.append {
+                    let resolved = brush_core::env::ResolvedName::plain(name.as_str());
+                    if let Some((_, variable)) =
+                        context.shell.env_mut().lookup_mut_resolved(&resolved).get()
+                    {
+                        variable.assign(value, true)?;
+                        if self.unexport {
+                            variable.unexport();
+                        } else {
+                            variable.export();
+                        }
+                        return Ok(ExecutionResult::success());
                     }
-                    return Ok(ExecutionResult::success());
                 }
 
                 // Update the variable with the provided value and then mark it exported.
