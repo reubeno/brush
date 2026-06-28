@@ -198,3 +198,12 @@ cases:
       declare -n ref=target
       mapfile -t -O 2 ref < <(echo -e "a\nb")
       declare -p target
+
+  - name: "mapfile with invalid array name fails without aborting"
+    ignore_stderr: true
+    stdin: |
+      mapfile 1bad <<< x
+      echo "rc=$?"
+      mapfile 'foo[' <<< y
+      echo "rc=$?"
+      echo running

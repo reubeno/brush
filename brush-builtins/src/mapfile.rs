@@ -124,8 +124,10 @@ impl builtins::Command for MapFileCommand {
                     Ok(ExecutionResult::success())
                 }
                 // Bash exits 1 with a "<cmd>: target: not a valid identifier"
-                // diagnostic.
-                ErrorKind::SubscriptedNameRefTarget { .. } => {
+                // diagnostic — for a subscripted-nameref target or an outright
+                // invalid array-variable name. This is a per-command failure,
+                // not a fatal/aborting error (notably inside a pipeline).
+                ErrorKind::SubscriptedNameRefTarget { .. } | ErrorKind::InvalidVariableName(_) => {
                     writeln!(context.stderr(), "{}: {err}", context.command_name)?;
                     Ok(ExecutionResult::general_error())
                 }
