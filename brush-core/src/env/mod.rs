@@ -19,10 +19,10 @@ use std::collections::hash_map;
 use crate::error;
 use crate::variables::{ShellValue, ShellVariable};
 
-pub use lookup::{
-    DirectVarLookup, DirectVarLookupMut, ResolvedVarRef, ResolvedVarRefMut, VarLookup, VarLookupMut,
+pub use lookup::{DirectVarLookup, DirectVarLookupMut, ResolvedVarRef, VarLookup};
+pub use names::{
+    NameRef, NameRefFault, ResolvedName, valid_nameref_target_name, valid_variable_name,
 };
-pub use names::{NameRef, ResolvedName, valid_nameref_target_name, valid_variable_name};
 pub(crate) use scope::ScopeGuard;
 pub use scope::{EnvironmentLookup, EnvironmentScope};
 pub use var_map::ShellVariableMap;
@@ -39,7 +39,13 @@ pub struct ShellEnvironment {
     pub(super) scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
     /// Whether or not to auto-export variables on creation or modification.
     pub(super) export_variables_on_modification: bool,
-    /// Count of total entries (may include duplicates with shadowed variables).
+    /// Total number of entries across all scope maps. A variable shadowed in
+    /// several scopes is counted once per scope, and unset-local placeholders
+    /// count too — so this is an upper bound on the number of *distinct*
+    /// visible variables, used only as a capacity hint for the dedup maps built
+    /// in the `iter*` methods. Kept in sync by `add` (+1 on a fresh insert),
+    /// `unset_raw` (−1 when an entry is truly removed), and `pop_scope` (−N for
+    /// the dropped scope's entries).
     pub(super) entry_count: usize,
 }
 
@@ -78,7 +84,13 @@ impl ShellEnvironment {
         // return Err (rather than panic) so embedders can recover; in practice
         // this should never trigger.
         match self.scopes.pop() {
-            Some((actual_scope_type, _)) if actual_scope_type == expected_scope_type => Ok(()),
+            Some((actual_scope_type, map)) if actual_scope_type == expected_scope_type => {
+                // Keep entry_count in sync: the dropped scope's entries (real
+                // vars and unset placeholders alike) are gone. Without this the
+                // count grew without bound across every `local`-using call.
+                self.entry_count = self.entry_count.saturating_sub(map.len());
+                Ok(())
+            }
             Some((actual_scope_type, _)) => Err(error::ErrorKind::UnexpectedScopeType {
                 expected: expected_scope_type,
                 actual: actual_scope_type,
@@ -91,21 +103,33 @@ impl ShellEnvironment {
     //
     // Nameref resolution
     //
-    // Three public methods, all walking the same chain — they differ only in
-    // what they do with the final string:
+    // All three resolving entry points walk the same chain and differ only in
+    // the final shape, and they all surface a [`NameRefFault`] (cycle or
+    // max-depth) as the `Err` arm — a *dedicated* error type, not a variant of
+    // the catch-all `Error`. That is deliberate: every caller is forced to
+    // choose a recovery policy at the call site, so the cycle case can't be
+    // silently dropped or handled inconsistently.
     //   resolve_nameref          → ResolvedName, parses "arr[2]" into base + subscript
     //   resolve_nameref_unparsed → String, returns the final string as-is (used
     //                              for `[[ -v ref ]]` where bash takes the
     //                              resolved target as a literal variable name)
+    //   resolve_nameref_or_self  → ResolvedName, infallible — silent identity on
+    //                              any fault (for existence checks / element unset)
     //   resolve_nameref_chain    → Cow<str>, lowest-level (private)
     //
+    // The remaining recovery policies (warn+identity, warn+skip, propagate)
+    // live at the call sites because emitting a warning needs stderr access the
+    // environment doesn't have; the call site `match`es the fault and calls
+    // `Shell::warn_nameref_fault` / `WordExpander::warn_nameref_fault`.
+    //
     // For *lookups* that resolve namerefs and want subscript-aware access,
-    // prefer the lookup builders in `lookup.rs` (`get` / `get_mut`).
+    // prefer the lookup builders in `lookup.rs` (`lookup` / `lookup_resolved`).
     //
 
-    /// Resolves a nameref chain, returning the final target string. Errors on
-    /// circular references and depth overflow.
-    fn resolve_nameref_chain<'a>(&'a self, name: &'a str) -> Result<Cow<'a, str>, error::Error> {
+    /// Resolves a nameref chain, returning the final target string. On a cycle
+    /// or depth overflow, returns a [`NameRefFault`] that blames `name` (the
+    /// head of the chain), matching bash's diagnostics.
+    fn resolve_nameref_chain<'a>(&'a self, name: &'a str) -> Result<Cow<'a, str>, NameRefFault> {
         // Quick check: is this even a nameref?
         let first_target = match self.get_by_exact_name(name) {
             Some((_, var)) if var.is_treated_as_nameref() => match var.value() {
@@ -126,7 +150,9 @@ impl ShellEnvironment {
 
         loop {
             if visited.contains(&current) {
-                return Err(error::ErrorKind::CircularNameReference(current.to_owned()).into());
+                // bash blames the head of the chain (`name`), not the node where
+                // the cycle was detected.
+                return Err(NameRefFault::circular(name));
             }
 
             // N.B. When `current` is a subscripted target like "arr[2]",
@@ -143,10 +169,7 @@ impl ShellEnvironment {
                         // Check depth *after* following this link, matching bash's
                         // NAMEREF_MAX which counts resolution steps, not chain length.
                         if visited.len() > MAX_NAMEREF_DEPTH {
-                            return Err(error::ErrorKind::CircularNameReference(
-                                current.to_owned(),
-                            )
-                            .into());
+                            return Err(NameRefFault::max_depth(name, MAX_NAMEREF_DEPTH));
                         }
                         current = s.as_str();
                     }
@@ -159,7 +182,7 @@ impl ShellEnvironment {
 
     /// Resolves a nameref chain and parses any subscript from the final target.
     /// `ref→"arr[2]"` returns `ResolvedName { name: "arr", subscript: Some("2") }`.
-    pub fn resolve_nameref(&self, name: &str) -> Result<ResolvedName, error::Error> {
+    pub fn resolve_nameref(&self, name: &str) -> Result<ResolvedName, NameRefFault> {
         let resolved = self.resolve_nameref_chain(name)?;
         Ok(ResolvedName::parse(resolved.into_owned()))
     }
@@ -167,42 +190,18 @@ impl ShellEnvironment {
     /// Resolves a nameref chain, returning the final target string verbatim
     /// (no subscript parsing). For `[[ -v ref ]]` semantics, where bash treats
     /// `arr[2]` as a literal variable name.
-    pub fn resolve_nameref_unparsed(&self, name: &str) -> Result<String, error::Error> {
+    pub fn resolve_nameref_unparsed(&self, name: &str) -> Result<String, NameRefFault> {
         let resolved = self.resolve_nameref_chain(name)?;
         Ok(resolved.into_owned())
     }
 
-    //
-    // Circular-nameref handling
-    //
-    // When `resolve_nameref` hits a cycle, callers pick one of four policies:
-    //   1. Warn + identity (value expansion) — emit "warning: ref: circular
-    //      name reference", then treat as identity for the value lookup.
-    //      `WordExpander::resolve_nameref_or_self` in expansion.rs.
-    //   2. Warn + skip (writes through nameref) — `apply_assignment`,
-    //      `assign_to_parameter`. Emit warning, exit 1 from the assignment,
-    //      don't propagate fatally; bash matches.
-    //   3. Silent identity (existence checks) — `[[ -v ref ]]`,
-    //      `unset ref[N]`. Use `resolve_nameref_or_self_on_cycle` below.
-    //   4. Propagate (declarations) — `declare -x ref`, where bash exits
-    //      non-zero from the declaration itself. Use `resolve_nameref()?`.
-    // Builtins with custom diagnostic formatting (e.g., export) handle the
-    // cycle error inline.
-    //
-
-    /// Resolves a nameref, falling back to an identity `ResolvedName` **only**
-    /// for `CircularNameReference` errors. Other errors propagate.
-    pub fn resolve_nameref_or_self_on_cycle(
-        &self,
-        name: &str,
-    ) -> Result<ResolvedName, error::Error> {
-        match self.resolve_nameref(name) {
-            Ok(r) => Ok(r),
-            Err(e) if matches!(e.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                Ok(ResolvedName::plain(name))
-            }
-            Err(e) => Err(e),
-        }
+    /// Resolves a nameref, falling back to an identity `ResolvedName` on **any**
+    /// fault (cycle or depth overflow), silently. For existence checks
+    /// (`[[ -v ref ]]`) and element unset (`unset ref[N]`), where bash treats an
+    /// unresolvable nameref as the (absent) literal variable.
+    pub fn resolve_nameref_or_self(&self, name: &str) -> ResolvedName {
+        self.resolve_nameref(name)
+            .unwrap_or_else(|_| ResolvedName::plain(name))
     }
 
     //
@@ -365,10 +364,9 @@ mod tests {
         env.add("self", make_nameref("self"), EnvironmentScope::Global)
             .unwrap();
         let err = env.resolve_nameref("self").unwrap_err();
-        assert!(matches!(
-            err.kind(),
-            error::ErrorKind::CircularNameReference(_)
-        ));
+        assert!(err.is_circular());
+        // bash blames the head of the chain.
+        assert_eq!(err.head(), "self");
     }
 
     #[test]
@@ -379,10 +377,8 @@ mod tests {
         env.add("b", make_nameref("a"), EnvironmentScope::Global)
             .unwrap();
         let err = env.resolve_nameref("a").unwrap_err();
-        assert!(matches!(
-            err.kind(),
-            error::ErrorKind::CircularNameReference(_)
-        ));
+        assert!(err.is_circular());
+        assert_eq!(err.head(), "a");
     }
 
     #[test]
@@ -395,10 +391,8 @@ mod tests {
         env.add("c3", make_nameref("c1"), EnvironmentScope::Global)
             .unwrap();
         let err = env.resolve_nameref("c1").unwrap_err();
-        assert!(matches!(
-            err.kind(),
-            error::ErrorKind::CircularNameReference(_)
-        ));
+        assert!(err.is_circular());
+        assert_eq!(err.head(), "c1");
     }
 
     #[test]
@@ -438,10 +432,9 @@ mod tests {
             prev = name;
         }
         let err = env.resolve_nameref(&prev).unwrap_err();
-        assert!(matches!(
-            err.kind(),
-            error::ErrorKind::CircularNameReference(_)
-        ));
+        // A too-deep but acyclic chain reports a max-depth fault, NOT a cycle.
+        assert!(!err.is_circular());
+        assert_eq!(err.head(), prev);
     }
 
     #[test]
@@ -479,28 +472,28 @@ mod tests {
     }
 
     //
-    // resolve_nameref_or_self_on_cycle
+    // resolve_nameref_or_self
     //
 
     #[test]
-    fn resolve_nameref_or_self_on_cycle_returns_resolved_on_success() {
+    fn resolve_nameref_or_self_returns_resolved_on_success() {
         let mut env = ShellEnvironment::new();
         env.add("target", make_var("v"), EnvironmentScope::Global)
             .unwrap();
         env.add("ref", make_nameref("target"), EnvironmentScope::Global)
             .unwrap();
-        let r = env.resolve_nameref_or_self_on_cycle("ref").unwrap();
+        let r = env.resolve_nameref_or_self("ref");
         assert_eq!(r.name(), "target");
     }
 
     #[test]
-    fn resolve_nameref_or_self_on_cycle_returns_identity_on_circular() {
+    fn resolve_nameref_or_self_returns_identity_on_circular() {
         let mut env = ShellEnvironment::new();
         env.add("a", make_nameref("b"), EnvironmentScope::Global)
             .unwrap();
         env.add("b", make_nameref("a"), EnvironmentScope::Global)
             .unwrap();
-        let r = env.resolve_nameref_or_self_on_cycle("a").unwrap();
+        let r = env.resolve_nameref_or_self("a");
         assert_eq!(r.name(), "a");
         assert_eq!(r.subscript(), None);
     }
@@ -605,34 +598,36 @@ mod tests {
     }
 
     #[test]
-    fn lookup_mut_auto_resolves_nameref() {
+    fn entry_count_returns_to_baseline_after_scope_pop() {
+        // Regression: entry_count must not grow without bound across
+        // push_scope/add/pop_scope cycles (it feeds iter*'s capacity hint).
         let mut env = ShellEnvironment::new();
-        env.add("target", make_var("original"), EnvironmentScope::Global)
-            .unwrap();
-        env.add("ref", make_nameref("target"), EnvironmentScope::Global)
-            .unwrap();
-
-        // Mutating through nameref should affect the target.
-        let resolved = env.lookup_mut("ref").get().expect("should find target");
-        assert_eq!(resolved.scope(), EnvironmentScope::Global);
-        assert!(!resolved.has_subscript());
+        let baseline = env.entry_count;
+        for _ in 0..5 {
+            env.push_scope(EnvironmentScope::Local);
+            env.add("a", make_var("1"), EnvironmentScope::Local)
+                .unwrap();
+            env.add("b", make_var("2"), EnvironmentScope::Local)
+                .unwrap();
+            env.pop_scope(EnvironmentScope::Local).unwrap();
+        }
+        assert_eq!(env.entry_count, baseline);
     }
 
     #[test]
-    fn lookup_mut_bypassing_nameref_returns_nameref_itself() {
+    fn lookup_mut_resolved_finds_and_allows_mutation() {
         let mut env = ShellEnvironment::new();
-        env.add("target", make_var("hello"), EnvironmentScope::Global)
-            .unwrap();
-        env.add("ref", make_nameref("target"), EnvironmentScope::Global)
+        env.add("target", make_var("original"), EnvironmentScope::Global)
             .unwrap();
 
+        // Pre-resolved mutable lookup is the supported mutation path.
+        let resolved = ResolvedName::plain("target");
         let (scope, var) = env
-            .lookup_mut("ref")
-            .bypassing_nameref()
+            .lookup_mut_resolved(&resolved)
             .get()
-            .expect("should find ref");
+            .expect("should find target");
         assert_eq!(scope, EnvironmentScope::Global);
-        assert!(var.is_treated_as_nameref());
+        assert!(!var.is_treated_as_nameref());
     }
 
     #[test]

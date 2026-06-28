@@ -291,16 +291,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         }
     }
 
-    /// Emits a circular-nameref warning to `self.stderr()`, matching bash's
-    /// format `"<prefix>: warning: <err>"`. Asserts in debug builds that the
-    /// error kind is `CircularNameReference`.
-    pub fn warn_circular_nameref(&mut self, err: &error::Error) -> std::io::Result<()> {
-        debug_assert!(
-            matches!(err.kind(), error::ErrorKind::CircularNameReference(_)),
-            "warn_circular_nameref called with non-cycle error: {err:?}",
-        );
+    /// Emits a nameref-resolution-fault warning (cycle or max-depth) to
+    /// `self.stderr()`, matching bash's format `"<prefix>: warning: <fault>"`.
+    pub fn warn_nameref_fault(&mut self, fault: &crate::env::NameRefFault) -> std::io::Result<()> {
         let prefix = self.diagnostic_prefix().into_owned();
-        writeln!(self.stderr(), "{prefix}: warning: {err}")
+        writeln!(self.stderr(), "{prefix}: warning: {fault}")
     }
 
     /// Updates the currently executing command in the shell.

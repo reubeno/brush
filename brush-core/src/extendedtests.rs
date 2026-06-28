@@ -211,11 +211,12 @@ pub(crate) fn apply_unary_predicate_to_str(
                 };
                 Ok(var.value().has_element_at(index_part, shell))
             } else {
-                // Case 1: unparsed-resolve + literal HashMap lookup.
-                let resolved_name = shell
-                    .env()
-                    .resolve_nameref_unparsed(operand)
-                    .unwrap_or_else(|_| operand.to_owned());
+                // Case 1: unparsed-resolve + literal HashMap lookup. A nameref
+                // fault (cycle / max-depth) is reported as "unset", matching
+                // bash — NOT as the nameref's own (existing) name.
+                let Ok(resolved_name) = shell.env().resolve_nameref_unparsed(operand) else {
+                    return Ok(false);
+                };
                 if let Some((_, var)) = shell
                     .env()
                     .lookup(resolved_name.as_str())

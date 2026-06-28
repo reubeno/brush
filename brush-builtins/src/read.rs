@@ -137,15 +137,23 @@ impl builtins::Command for ReadCommand {
             ReadResult::InputReady => (None, brush_core::ExecutionResult::success()),
         };
 
-        // Assign input to variables based on options.
-        assign_input_to_variables(
+        // Assign input to variables based on options. A nameref fault (cycle /
+        // max-depth) on a target is, per bash, a warning + exit 1 — not a fatal
+        // error — matching `printf -v` / `mapfile` / `export`.
+        if let Err(err) = assign_input_to_variables(
             context.shell,
             input_line.as_deref(),
             &ifs,
             skip_ifs_splitting,
             self.array_variable.as_deref(),
             &self.variable_names,
-        )?;
+        ) {
+            if let ErrorKind::NameRef(fault) = err.kind() {
+                context.shell.warn_nameref_fault(fault)?;
+                return Ok(brush_core::ExecutionResult::general_error());
+            }
+            return Err(err);
+        }
 
         Ok(result)
     }

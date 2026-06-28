@@ -20,6 +20,7 @@ pub struct Error {
 
 /// Monolithic error type for the shell
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// A tilde expression was used without a valid HOME variable
     #[error("cannot expand tilde expression with HOME not set")]
@@ -326,9 +327,13 @@ pub enum ErrorKind {
     #[error("no match: {0}")]
     NoMatch(String),
 
-    /// A circular name reference was detected.
-    #[error("{0}: circular name reference")]
-    CircularNameReference(String),
+    /// A nameref chain could not be resolved: either a cycle or a chain that
+    /// exceeds the maximum resolution depth. Carries a [`NameRefFault`] with the
+    /// bash-compatible diagnostic.
+    ///
+    /// [`NameRefFault`]: crate::env::NameRefFault
+    #[error(transparent)]
+    NameRef(#[from] crate::env::NameRefFault),
 
     /// A nameref resolved to a subscripted target (e.g., `arr[2]`) but the
     /// caller's operation requires a plain variable name — e.g. compound

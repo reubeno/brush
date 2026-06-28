@@ -17,6 +17,17 @@ impl ShellVariableMap {
         self.variables.iter()
     }
 
+    /// Returns the number of entries in the map (including any unset
+    /// placeholders left behind by `unset` in a local scope).
+    pub fn len(&self) -> usize {
+        self.variables.len()
+    }
+
+    /// Returns `true` if the map holds no entries.
+    pub fn is_empty(&self) -> bool {
+        self.variables.is_empty()
+    }
+
     /// Tries to retrieve an immutable reference to the variable with the given name.
     pub fn get(&self, name: &str) -> Option<&ShellVariable> {
         self.variables.get(name)

@@ -5,7 +5,6 @@ use std::io::Write;
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
-    error,
     parser::ast,
     variables,
 };
@@ -94,13 +93,10 @@ impl ExportCommand {
                     // check and the mutable lookup (no redundant chain walk).
                     let resolved = match context.shell.env().resolve_nameref(s) {
                         Ok(r) => r,
-                        Err(err)
-                            if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) =>
-                        {
-                            context.shell.warn_circular_nameref(&err)?;
+                        Err(fault) => {
+                            context.shell.warn_nameref_fault(&fault)?;
                             return Ok(ExecutionResult::success());
                         }
-                        Err(err) => return Err(err),
                     };
                     if let Some(sub) = resolved.subscript() {
                         writeln!(

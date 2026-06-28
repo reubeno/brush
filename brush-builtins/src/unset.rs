@@ -114,9 +114,9 @@ fn unset_array_index(
     index: &str,
 ) -> Result<bool, brush_core::Error> {
     // Resolve the nameref once upfront to avoid double resolution.
-    // Circular namerefs silently fall back to the identity name (bash doesn't
-    // warn in the unset-array-element path).
-    let resolved = shell.env().resolve_nameref_or_self_on_cycle(name)?;
+    // Nameref faults (cycle / max-depth) silently fall back to the identity
+    // name (bash doesn't warn in the unset-array-element path).
+    let resolved = shell.env().resolve_nameref_or_self(name);
 
     // Subscripted-target nameref + explicit index is rejected by bash —
     // `arr[N][explicit_idx]` isn't a valid identifier. Treat as no-op.

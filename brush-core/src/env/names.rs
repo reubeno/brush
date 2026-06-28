@@ -1,22 +1,101 @@
 //! Variable name types for the shell environment.
 //!
-//! The central types are [`ResolvedName`] (a nameref-resolved variable target)
-//! and [`NameRef`] (the resolution strategy for mutations).
+//! The central types are [`ResolvedName`] (a nameref-resolved variable target),
+//! [`NameRef`] (the resolution strategy for mutations), and [`NameRefFault`]
+//! (a resolution failure callers must explicitly recover from).
+
+/// A failure to resolve a nameref chain: either a true cycle or a chain that
+/// exceeds the maximum supported resolution depth.
+///
+/// Returned as the `Err` arm of
+/// [`resolve_nameref`](super::ShellEnvironment::resolve_nameref) and friends so
+/// that every caller must *explicitly* choose a recovery policy (warn+skip,
+/// warn+identity, silent identity, or propagate). This is deliberate: when the
+/// fault traveled through `Error::kind()` matching, call sites silently forgot
+/// to handle it or handled it inconsistently. A dedicated error type can't be
+/// ignored without the compiler noticing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NameRefFault {
+    kind: NameRefFaultKind,
+    head: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NameRefFaultKind {
+    /// The chain forms a cycle (a variable transitively references itself).
+    Circular,
+    /// The chain exceeded the maximum resolution depth without terminating.
+    MaxDepthExceeded { max: usize },
+}
+
+impl NameRefFault {
+    /// Constructs a circular-reference fault blaming `head` (the variable that
+    /// resolution started from — the name bash names in its diagnostic).
+    pub(crate) fn circular(head: impl Into<String>) -> Self {
+        Self {
+            kind: NameRefFaultKind::Circular,
+            head: head.into(),
+        }
+    }
+
+    /// Constructs a max-depth fault blaming `head`.
+    pub(crate) fn max_depth(head: impl Into<String>, max: usize) -> Self {
+        Self {
+            kind: NameRefFaultKind::MaxDepthExceeded { max },
+            head: head.into(),
+        }
+    }
+
+    /// The variable name resolution started from — the one bash names in its
+    /// diagnostic.
+    pub fn head(&self) -> &str {
+        &self.head
+    }
+
+    /// Returns `true` if this is a true cycle (as opposed to a too-deep but
+    /// acyclic chain).
+    pub const fn is_circular(&self) -> bool {
+        matches!(self.kind, NameRefFaultKind::Circular)
+    }
+}
+
+impl std::fmt::Display for NameRefFault {
+    /// Renders the bash-compatible diagnostic text (without any `warning:`
+    /// prefix), e.g. `"ref: circular name reference"` or
+    /// `"ref: maximum nameref depth (8) exceeded"`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            NameRefFaultKind::Circular => {
+                write!(f, "{}: circular name reference", self.head)
+            }
+            NameRefFaultKind::MaxDepthExceeded { max } => {
+                write!(f, "{}: maximum nameref depth ({max}) exceeded", self.head)
+            }
+        }
+    }
+}
+
+impl std::error::Error for NameRefFault {}
 
 /// How a variable name should be resolved for a mutation (unset, update, etc.).
 ///
-/// | Variant       | Follows chain | Target of write                    |
-/// |---------------|---------------|------------------------------------|
-/// | `Resolve`     | yes           | final target (base + any subscript)|
-/// | `PreResolved` | already done  | pre-resolved target + subscript    |
-/// | `Bypass`      | no            | the named variable itself          |
+/// Construct via [`NameRef::resolve`] (follow chains; the `From<&str>`/`String`
+/// default), [`NameRef::pre_resolved`] (target already resolved, subscript
+/// preserved), or [`NameRef::bypass`] (write the named variable itself — a
+/// *semantic* choice for `unset -n` / `for ref in …`, not a perf shortcut).
 ///
-/// `Bypass` is a *semantic* choice (write the nameref var itself, e.g. for
-/// `unset -n` or `for ref in …`), not a perf shortcut. Use `PreResolved` to
-/// skip re-resolution while preserving subscripts.
+/// The discriminant is intentionally opaque: callers cannot construct a
+/// `Bypass` carrying a subscripted name (which would silently no-op against a
+/// `HashMap` keyed by the literal `"arr[2]"`), because the only construction
+/// paths run through the validating constructors above.
 #[derive(Clone, Debug)]
-pub enum NameRef {
-    /// Follow nameref chains before writing. Default; `&str` / `String` convert here.
+pub struct NameRef(pub(super) NameRefStrategy);
+
+/// Internal discriminant for [`NameRef`]. Not part of the public API — see the
+/// `NameRef` constructors. Matched only within the `env` module.
+#[derive(Clone, Debug)]
+pub(super) enum NameRefStrategy {
+    /// Follow nameref chains before writing.
     Resolve(String),
     /// Name already resolved via
     /// [`ShellEnvironment::resolve_nameref`](super::ShellEnvironment::resolve_nameref).
@@ -26,50 +105,50 @@ pub enum NameRef {
 }
 
 impl NameRef {
-    /// Constructs a [`NameRef::Resolve`]. Equivalent to `name.into()`.
+    /// Constructs a chain-following reference. Equivalent to `name.into()`.
     pub fn resolve(name: impl Into<String>) -> Self {
-        Self::Resolve(name.into())
+        Self(NameRefStrategy::Resolve(name.into()))
     }
 
-    /// Constructs a [`NameRef::PreResolved`]. Equivalent to `resolved.into()`.
+    /// Constructs a pre-resolved reference. Equivalent to `resolved.into()`.
     pub const fn pre_resolved(resolved: ResolvedName) -> Self {
-        Self::PreResolved(resolved)
+        Self(NameRefStrategy::PreResolved(resolved))
     }
 
-    /// Constructs a [`NameRef::Bypass`]: write the named variable itself,
-    /// not what it references. See the variant docs.
+    /// Constructs a bypass reference: write the named variable itself, not what
+    /// it references. See the type docs.
     ///
     /// Debug-asserts that `name` doesn't contain `[`. Reach for
-    /// [`PreResolved`](Self::PreResolved) when you want to skip re-resolution
+    /// [`pre_resolved`](Self::pre_resolved) when you want to skip re-resolution
     /// while preserving subscripts.
     pub fn bypass(name: impl Into<String>) -> Self {
         let name = name.into();
         assert_bare_name(&name, "NameRef::bypass");
-        Self::Bypass(name)
+        Self(NameRefStrategy::Bypass(name))
     }
 }
 
 impl From<String> for NameRef {
     fn from(s: String) -> Self {
-        Self::Resolve(s)
+        Self::resolve(s)
     }
 }
 
 impl From<&str> for NameRef {
     fn from(s: &str) -> Self {
-        Self::Resolve(s.to_owned())
+        Self::resolve(s)
     }
 }
 
 impl From<&String> for NameRef {
     fn from(s: &String) -> Self {
-        Self::Resolve(s.clone())
+        Self::resolve(s.clone())
     }
 }
 
 impl From<ResolvedName> for NameRef {
     fn from(r: ResolvedName) -> Self {
-        Self::PreResolved(r)
+        Self::pre_resolved(r)
     }
 }
 
@@ -80,8 +159,9 @@ impl From<ResolvedName> for NameRef {
 /// is `Some("2")`.
 ///
 /// Constructed by [`ShellEnvironment::resolve_nameref`](super::ShellEnvironment::resolve_nameref).
-/// Converts to [`NameRef::PreResolved`] via the `From` impl, so you can pass it directly
-/// to methods that accept `impl Into<NameRef>`.
+/// Converts to a pre-resolved [`NameRef`] via the `From` impl (see
+/// [`NameRef::pre_resolved`]), so you can pass it directly to methods that
+/// accept `impl Into<NameRef>`.
 ///
 /// To look up a variable without nameref resolution, use
 /// `env.lookup("name").bypassing_nameref().get()`.
@@ -140,8 +220,9 @@ impl ResolvedName {
     /// you've resolved a name externally and want to pass it to
     /// `lookup_resolved` without re-walking the chain.
     ///
-    /// Debug-asserts `name` doesn't contain `[` — for subscripted targets,
-    /// use [`ResolvedName::parse`] (which splits `"arr[2]"` into base + subscript).
+    /// Debug-asserts `name` doesn't contain `[` — subscripted targets must be
+    /// produced by resolution (which splits `"arr[2]"` into base + subscript),
+    /// not wrapped verbatim here.
     pub fn plain(name: impl Into<String>) -> Self {
         let name = name.into();
         assert_bare_name(&name, "ResolvedName::plain");
@@ -347,28 +428,28 @@ mod tests {
     #[test]
     fn nameref_from_str_is_resolve() {
         let nr: NameRef = "foo".into();
-        assert!(matches!(nr, NameRef::Resolve(s) if s == "foo"));
+        assert!(matches!(nr.0, NameRefStrategy::Resolve(s) if s == "foo"));
     }
 
     #[test]
     fn nameref_from_string_is_resolve() {
         let nr: NameRef = String::from("bar").into();
-        assert!(matches!(nr, NameRef::Resolve(s) if s == "bar"));
+        assert!(matches!(nr.0, NameRefStrategy::Resolve(s) if s == "bar"));
     }
 
     #[test]
     fn nameref_from_ref_string_is_resolve() {
         let s = String::from("baz");
         let nr: NameRef = (&s).into();
-        assert!(matches!(nr, NameRef::Resolve(t) if t == "baz"));
+        assert!(matches!(nr.0, NameRefStrategy::Resolve(t) if t == "baz"));
     }
 
     #[test]
     fn nameref_from_resolved_name() {
         let r = ResolvedName::parse("arr[2]".to_owned());
         let nr: NameRef = r.into();
-        match nr {
-            NameRef::PreResolved(r) => {
+        match nr.0 {
+            NameRefStrategy::PreResolved(r) => {
                 assert_eq!(r.name(), "arr");
                 assert_eq!(r.subscript(), Some("2"));
             }
@@ -379,19 +460,39 @@ mod tests {
     #[test]
     fn nameref_bypass_constructor() {
         let nr = NameRef::bypass("ref");
-        assert!(matches!(nr, NameRef::Bypass(s) if s == "ref"));
+        assert!(matches!(nr.0, NameRefStrategy::Bypass(s) if s == "ref"));
     }
 
     #[test]
     fn nameref_resolve_constructor() {
         let nr = NameRef::resolve("ref");
-        assert!(matches!(nr, NameRef::Resolve(s) if s == "ref"));
+        assert!(matches!(nr.0, NameRefStrategy::Resolve(s) if s == "ref"));
     }
 
     #[test]
     fn nameref_pre_resolved_constructor() {
         let r = ResolvedName::plain("ref");
         let nr = NameRef::pre_resolved(r);
-        assert!(matches!(nr, NameRef::PreResolved(r) if r.name() == "ref"));
+        assert!(matches!(nr.0, NameRefStrategy::PreResolved(r) if r.name() == "ref"));
+    }
+
+    //
+    // NameRefFault
+    //
+
+    #[test]
+    fn nameref_fault_circular_message() {
+        let f = NameRefFault::circular("ref");
+        assert!(f.is_circular());
+        assert_eq!(f.head(), "ref");
+        assert_eq!(f.to_string(), "ref: circular name reference");
+    }
+
+    #[test]
+    fn nameref_fault_max_depth_message() {
+        let f = NameRefFault::max_depth("c1", 8);
+        assert!(!f.is_circular());
+        assert_eq!(f.head(), "c1");
+        assert_eq!(f.to_string(), "c1: maximum nameref depth (8) exceeded");
     }
 }

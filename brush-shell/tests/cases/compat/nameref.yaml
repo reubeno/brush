@@ -209,6 +209,21 @@ cases:
       ref="value" 2>/dev/null
       echo "done"
 
+  - name: "Nameref explicit empty target is rejected and not created"
+    ignore_stderr: true
+    stdin: |
+      declare -n ref=""
+      echo "declare_rc=$?"
+      echo "set=${ref+yes}"
+      declare -p ref 2>/dev/null || echo "ref not defined"
+
+  - name: "Nameref explicit empty target via local is rejected"
+    ignore_stderr: true
+    stdin: |
+      f() { local -n r=$1; r=assigned; }
+      f ""
+      echo "func_rc=$?"
+
   - name: "Multiple namerefs to same target"
     stdin: |
       target="initial"
@@ -388,6 +403,21 @@ cases:
       [[ -v ref ]] && echo "set" || echo "unset"
       nonesuch="now"
       [[ -v ref ]] && echo "set" || echo "unset"
+
+  - name: "Nameref - test -v on circular reference is unset"
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      [[ -v a ]] && echo "set" || echo "unset"
+
+  - name: "Nameref chain exceeding max depth resolves to empty"
+    ignore_stderr: true
+    stdin: |
+      v=V
+      declare -n c9=v c8=c9 c7=c8 c6=c7 c5=c6 c4=c5 c3=c4 c2=c3 c1=c2
+      echo "[$c1]"
+      echo "done"
 
   - name: "Nameref to array - length and keys"
     stdin: |
@@ -2067,6 +2097,14 @@ cases:
       echo "after: assign_exit=$assign_exit"
       declare -p a b 2>/dev/null
       echo "still running"
+
+  - name: "Circular nameref assignment aborts rest of its command list"
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      echo BEFORE; a=value; echo AFTER
+      echo "next line still runs"
 
   - name: "Circular nameref ${ref:=x} returns empty, doesn't write"
     ignore_stderr: true

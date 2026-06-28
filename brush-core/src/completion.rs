@@ -641,8 +641,11 @@ impl Spec {
                     }
                 }
                 CompleteAction::Variable => {
-                    for (key, _) in shell.env().iter() {
-                        if key.starts_with(token) {
+                    for (key, var) in shell.env().iter() {
+                        // Skip unset placeholders (e.g. left by `unset` of a
+                        // local) — they read as unset everywhere else, so they
+                        // shouldn't be offered as `compgen -v` candidates.
+                        if var.value().is_set() && key.starts_with(token) {
                             candidates.push(key.to_owned());
                         }
                     }

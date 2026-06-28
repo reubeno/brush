@@ -1638,7 +1638,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 variable_name,
                 concatenate,
             } => {
-                let resolved = self.resolve_nameref_or_self(variable_name.as_str())?;
+                let resolved = self.resolve_nameref_or_self(variable_name.as_str());
                 let keys = if resolved.subscript().is_some() {
                     // In bash, ${!ref[@]} where ref→arr[2] returns empty.
                     vec![]
@@ -1676,13 +1676,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             | brush_parser::word::Parameter::NamedWithIndex { name, .. } => {
                 match self.shell.env().resolve_nameref(name) {
                     Ok(r) => r,
-                    Err(err)
-                        if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) =>
-                    {
-                        self.warn_circular_nameref(&err);
+                    Err(fault) => {
+                        self.warn_nameref_fault(&fault);
                         return Ok(false);
                     }
-                    Err(err) => return Err(err),
                 }
             }
             brush_parser::word::Parameter::Positional(_)
@@ -1737,7 +1734,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // writes to arr[2], not scalar-assigns to arr.
         if let Some(index) = index {
             self.shell.env_mut().update_or_add_array_element(
-                env::NameRef::PreResolved(resolved_name),
+                resolved_name,
                 index,
                 value,
                 |_| Ok(()),
@@ -1746,7 +1743,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             )?;
         } else {
             self.shell.env_mut().update_or_add(
-                env::NameRef::PreResolved(resolved_name),
+                resolved_name,
                 variables::ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
@@ -1762,20 +1759,20 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         indirect: bool,
     ) -> Result<ResolvedParameterVar, error::Error> {
         if !indirect {
-            self.try_resolve_parameter_to_variable_without_indirect(parameter)
+            Ok(self.try_resolve_parameter_to_variable_without_indirect(parameter))
         } else {
             let expansion = self.expand_parameter(parameter, false).await?;
             let parameter_str: String = self.fields_to_string(expansion);
             let inner_parameter =
                 brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
-            self.try_resolve_parameter_to_variable_without_indirect(&inner_parameter)
+            Ok(self.try_resolve_parameter_to_variable_without_indirect(&inner_parameter))
         }
     }
 
     fn try_resolve_parameter_to_variable_without_indirect(
         &self,
         parameter: &brush_parser::word::Parameter,
-    ) -> Result<ResolvedParameterVar, error::Error> {
+    ) -> ResolvedParameterVar {
         // Both subscripted-target namerefs (`ref→arr[N]`) and circular namerefs
         // are treated as "no var" by bash for parameter @-transformations
         // (`@A`/`@a`/`@K`/`@Q`/etc. all return empty). Returning (None, None,
@@ -1783,16 +1780,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let (resolved, index) = match parameter {
             brush_parser::word::Parameter::Positional(_)
             | brush_parser::word::Parameter::Special(_) => (None, None),
-            brush_parser::word::Parameter::Named(name) => (
-                self.resolve_named_for_transform(name)?,
-                Some("0".to_owned()),
-            ),
+            brush_parser::word::Parameter::Named(name) => {
+                (self.resolve_named_for_transform(name), Some("0".to_owned()))
+            }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => (
-                self.resolve_named_for_transform(name)?,
+                self.resolve_named_for_transform(name),
                 Some(index.to_owned()),
             ),
             brush_parser::word::Parameter::NamedWithAllIndices { name, .. } => {
-                (self.resolve_named_for_transform(name)?, None)
+                (self.resolve_named_for_transform(name), None)
             }
         };
 
@@ -1813,41 +1809,36 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // the index was None too. Otherwise we keep whatever index we computed.
         let index = if name.is_none() { None } else { index };
 
-        Ok((name, index, var))
+        (name, index, var)
     }
 
     /// Resolves a named-parameter's nameref chain for parameter @-transformations.
     /// Returns:
     /// - `Some(resolved)` for a plain (non-subscripted) target;
-    /// - `None` for subscripted targets (`ref→arr[N]`) and circular references —
-    ///   bash treats both cases as unresolved for transformations.
-    fn resolve_named_for_transform(
-        &self,
-        name: &str,
-    ) -> Result<Option<env::ResolvedName>, error::Error> {
+    /// - `None` for subscripted targets (`ref→arr[N]`) and nameref faults
+    ///   (cycle / max-depth) — bash treats both cases as unresolved for
+    ///   transformations (and warns on the fault).
+    fn resolve_named_for_transform(&self, name: &str) -> Option<env::ResolvedName> {
         match self.shell.env().resolve_nameref(name) {
-            Ok(resolved) if resolved.subscript().is_some() => Ok(None),
-            Ok(resolved) => Ok(Some(resolved)),
-            Err(err) if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                self.warn_circular_nameref(&err);
-                Ok(None)
+            Ok(resolved) if resolved.subscript().is_some() => None,
+            Ok(resolved) => Some(resolved),
+            Err(fault) => {
+                self.warn_nameref_fault(&fault);
+                None
             }
-            Err(err) => Err(err),
         }
     }
 
-    /// Emits a circular-nameref warning to the expansion's stderr, matching
-    /// bash's `"bash: warning: ref: circular name reference"` format.
+    /// Emits a nameref-fault warning (cycle or max-depth) to the expansion's
+    /// stderr, matching bash's `"bash: warning: ref: circular name reference"`
+    /// format.
     ///
-    /// Mirrors [`Shell::warn_circular_nameref`] but writes to the expansion's
-    /// configured stderr (via `params`) rather than the shell's default.
-    fn warn_circular_nameref(&self, err: &error::Error) {
-        debug_assert!(
-            matches!(err.kind(), error::ErrorKind::CircularNameReference(_)),
-            "warn_circular_nameref called with non-cycle error: {err:?}",
-        );
+    /// Mirrors [`Shell::warn_nameref_fault`](crate::Shell::warn_nameref_fault)
+    /// but writes to the expansion's configured stderr (via `params`) rather
+    /// than the shell's default.
+    fn warn_nameref_fault(&self, fault: &env::NameRefFault) {
         let prefix = self.shell.diagnostic_prefix();
-        let _ = writeln!(self.params.stderr(self.shell), "{prefix}: warning: {err}",);
+        let _ = writeln!(self.params.stderr(self.shell), "{prefix}: warning: {fault}");
     }
 
     /// Resolves a nameref, emitting a warning and falling back to an identity
@@ -1863,14 +1854,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// writing through a subscripted base.
     ///
     /// See the "Circular-nameref error handling policy" in `env/mod.rs`.
-    fn resolve_nameref_or_self(&self, name: &str) -> Result<env::ResolvedName, error::Error> {
+    fn resolve_nameref_or_self(&self, name: &str) -> env::ResolvedName {
         match self.shell.env().resolve_nameref(name) {
-            Ok(resolved) => Ok(resolved),
-            Err(err) if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                self.warn_circular_nameref(&err);
-                Ok(env::ResolvedName::plain(name))
+            Ok(resolved) => resolved,
+            Err(fault) => {
+                self.warn_nameref_fault(&fault);
+                env::ResolvedName::plain(name)
             }
-            Err(err) => Err(err),
         }
     }
 
@@ -1936,17 +1926,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             return Ok(Expansion::from(resolved));
                         }
                         Ok(_) => {}
-                        Err(err)
-                            if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) =>
-                        {
-                            // Cycle: warn and treat as undefined; do NOT fall
-                            // through to standard indirect expansion (which
-                            // would try to parse the empty resolved name and
-                            // fail with a "bad substitution" error).
-                            self.warn_circular_nameref(&err);
+                        Err(fault) => {
+                            // Fault (cycle / max-depth): warn and treat as
+                            // undefined; do NOT fall through to standard
+                            // indirect expansion (which would try to parse the
+                            // empty resolved name and fail with a "bad
+                            // substitution" error).
+                            self.warn_nameref_fault(&fault);
                             return self.undefined_expansion(parameter, allow_unset_vars);
                         }
-                        Err(err) => return Err(err),
                     }
                 }
             }
@@ -1991,7 +1979,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                 // Subscripted-target nameref semantics: see resolve_nameref_or_self.
-                let resolved = self.resolve_nameref_or_self(name)?;
+                let resolved = self.resolve_nameref_or_self(name);
                 if resolved.subscript().is_some() {
                     self.undefined_expansion(parameter, allow_unset_vars)
                 } else {
@@ -2001,7 +1989,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 // Subscripted-target nameref semantics: see resolve_nameref_or_self.
-                let resolved = self.resolve_nameref_or_self(name)?;
+                let resolved = self.resolve_nameref_or_self(name);
                 if resolved.subscript().is_some() {
                     Ok(Expansion {
                         fields: vec![],
@@ -2048,11 +2036,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // Slow path: resolve the chain.
         let resolved = match self.shell.env().resolve_nameref(n) {
             Ok(resolved) => resolved,
-            Err(err) if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                self.warn_circular_nameref(&err);
+            Err(fault) => {
+                self.warn_nameref_fault(&fault);
                 return self.undefined_expansion(parameter, allow_unset_vars);
             }
-            Err(err) => return Err(err),
         };
 
         // If the nameref resolved to a subscripted target, dispatch to the

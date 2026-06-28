@@ -321,11 +321,10 @@ impl DeclareCommand {
         let resolved = if !explicitly_modifying_nameref_attr && !creating_new_local {
             match context.shell.env().resolve_nameref(name.as_str()) {
                 Ok(r) => Some(r),
-                Err(err) if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                    context.shell.warn_circular_nameref(&err)?;
+                Err(fault) => {
+                    context.shell.warn_nameref_fault(&fault)?;
                     None
                 }
-                Err(err) => return Err(err),
             }
         } else {
             None
@@ -553,13 +552,18 @@ impl DeclareCommand {
         Ok((name, assigned_index, initial_value, name_is_array))
     }
 
-    /// Validates a nameref target name. If `creation_var_name` is `Some`,
-    /// rejects explicit self-references (`declare -n x=x`); if `None`, allows
-    /// them — bash permits implicit self-refs like `x=x; declare -n x`.
-    /// Empty targets are always accepted.
+    /// Validates a nameref target name, returning an error message if invalid.
+    /// If `creation_var_name` is `Some`, rejects explicit self-references
+    /// (`declare -n x=x`); if `None`, allows them — bash permits implicit
+    /// self-refs like `x=x; declare -n x`.
+    ///
+    /// This is only ever called with an *explicit* value, so an empty target
+    /// means `declare -n ref=` / `declare -n ref=""`, which bash rejects as not
+    /// a valid identifier. (A bare `declare -n ref` with no value never reaches
+    /// here — it has no initial value to validate.)
     fn validate_nameref_target(creation_var_name: Option<&str>, target: &str) -> Option<String> {
         if target.is_empty() {
-            return None;
+            return Some("`': not a valid identifier".to_owned());
         }
         if let Some(var_name) = creation_var_name
             && target == var_name

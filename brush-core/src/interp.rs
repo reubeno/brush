@@ -1536,12 +1536,13 @@ async fn apply_assignment(
     let resolved_name = if is_nameref {
         let resolved = match shell.env().resolve_nameref(variable_name) {
             Ok(r) => r,
-            Err(err) if matches!(err.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                shell.warn_circular_nameref(&err)?;
-                shell.set_last_exit_status(1);
-                return Ok(());
-            }
-            Err(err) => return Err(err),
+            // A circular (or too-deep) nameref makes the assignment fail. Per
+            // bash, this aborts the rest of the current command list but lets
+            // subsequent newline-separated commands run — exactly the
+            // propagate-as-(non-fatal)-error behavior already used for readonly
+            // assignments. The program loop renders the diagnostic, so we don't
+            // emit a warning here (that would double-report).
+            Err(fault) => return Err(fault.into()),
         };
         // If the nameref resolved to `arr[i]`, use that subscript as the array
         // index (unless an explicit subscript is already present). Compound or
@@ -1622,20 +1623,19 @@ async fn apply_assignment(
     // A scalar or unset/untyped variable becomes an indexed array, so its
     // subscript still needs to be evaluated. Non-existent variables default to
     // indexed and non-integer.
-    let (will_be_indexed_array, target_is_integer) = if let Some((_, existing)) =
-        shell.env().lookup_resolved(&resolved_name).get()
-    {
-        (
-            !matches!(
-                existing.value(),
-                ShellValue::AssociativeArray(_)
-                    | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-            ),
-            existing.is_treated_as_integer(),
-        )
-    } else {
-        (true, false)
-    };
+    let (will_be_indexed_array, target_is_integer) =
+        if let Some((_, existing)) = shell.env().lookup_resolved(&resolved_name).get() {
+            (
+                !matches!(
+                    existing.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                ),
+                existing.is_treated_as_integer(),
+            )
+        } else {
+            (true, false)
+        };
 
     // See if we need to eval an array index as arithmetic.
     if let Some(idx) = &array_index

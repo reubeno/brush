@@ -2,6 +2,7 @@
 //! `add`, `set_var`, etc. The lookup and resolution APIs live in `mod.rs` and
 //! `lookup.rs`; this file is the write-side counterpart.
 
+use super::names::NameRefStrategy;
 use super::{EnvironmentLookup, EnvironmentScope, NameRef, ShellEnvironment, ShellVariableMap};
 use crate::error;
 use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
@@ -22,17 +23,14 @@ impl ShellEnvironment {
         &mut self,
         name: impl Into<NameRef>,
     ) -> Result<Option<ShellVariable>, error::Error> {
-        let resolved = match name.into() {
-            NameRef::Resolve(s) => match self.resolve_nameref(&s) {
+        let resolved = match name.into().0 {
+            NameRefStrategy::Resolve(s) => match self.resolve_nameref(&s) {
                 Ok(r) => r,
-                Err(e) if matches!(e.kind(), error::ErrorKind::CircularNameReference(_)) => {
-                    // Circular nameref: bash removes the variable itself.
-                    return self.unset_raw(&s);
-                }
-                Err(e) => return Err(e),
+                // Nameref fault (cycle / max-depth): bash removes the variable itself.
+                Err(_) => return self.unset_raw(&s),
             },
-            NameRef::PreResolved(r) => r,
-            NameRef::Bypass(s) => {
+            NameRefStrategy::PreResolved(r) => r,
+            NameRefStrategy::Bypass(s) => {
                 super::names::assert_bare_name(&s, "NameRef::Bypass");
                 return self.unset_raw(&s);
             }
@@ -76,20 +74,6 @@ impl ShellEnvironment {
         Ok(None)
     }
 
-    /// Tries to unset an array element from the environment, using the given name and
-    /// element index for lookup. Returns whether or not an element was unset.
-    ///
-    /// Resolves namerefs via [`get_mut`] to find the target variable; the explicit
-    /// `index` parameter always takes precedence over any subscript embedded in a
-    /// nameref target.
-    pub fn unset_index(&mut self, name: &str, index: &str) -> Result<bool, error::Error> {
-        if let Some(mut resolved) = self.get_mut(name) {
-            resolved.base_var_mut().unset_index(index)
-        } else {
-            Ok(false)
-        }
-    }
-
     /// Update a variable in the environment, or add it if it doesn't already exist.
     ///
     /// Resolution strategy depends on the [`NameRef`] variant:
@@ -105,25 +89,39 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let (base, subscript) = match name.into() {
-            NameRef::Resolve(s) => {
-                let resolved = self.resolve_nameref(&s)?;
-                // Compound (array) assignment through a subscripted-target
-                // nameref is rejected by bash as "not a valid identifier".
-                // Scalar assignment redirects to the array element below.
-                if let Some(idx) = &resolved.subscript {
-                    if matches!(value, variables::ShellValueLiteral::Array(_)) {
+        let (base, subscript) = match name.into().0 {
+            NameRefStrategy::Resolve(s) => {
+                // Fast path: only walk the nameref chain when `s` actually names
+                // a live nameref. The overwhelmingly common case (a plain
+                // variable, e.g. every arithmetic-loop counter and `read`/
+                // `getopts`/`mapfile` target) then skips the chain walk and the
+                // String allocation `resolve_nameref` performs. Mirrors the
+                // bypass-check fast paths in `interp::apply_assignment` and
+                // `expansion::expand_named_parameter`.
+                if self
+                    .get_by_exact_name(&s)
+                    .is_some_and(|(_, v)| v.is_treated_as_nameref())
+                {
+                    let resolved = self.resolve_nameref(&s)?;
+                    // Compound (array) assignment through a subscripted-target
+                    // nameref is rejected by bash as "not a valid identifier".
+                    // Scalar assignment redirects to the array element below.
+                    if let Some(idx) = &resolved.subscript
+                        && matches!(value, variables::ShellValueLiteral::Array(_))
+                    {
                         return Err(error::ErrorKind::SubscriptedNameRefTarget {
                             name: resolved.name,
                             subscript: idx.clone(),
                         }
                         .into());
                     }
+                    (resolved.name, resolved.subscript)
+                } else {
+                    (s, None)
                 }
-                (resolved.name, resolved.subscript)
             }
-            NameRef::PreResolved(r) => (r.name, r.subscript),
-            NameRef::Bypass(s) => {
+            NameRefStrategy::PreResolved(r) => (r.name, r.subscript),
+            NameRefStrategy::Bypass(s) => {
                 super::names::assert_bare_name(&s, "NameRef::Bypass");
                 (s, None)
             }
@@ -220,9 +218,9 @@ impl ShellEnvironment {
 
     /// Update an array element in the environment, or add it if it doesn't already exist.
     ///
-    /// Resolution strategy depends on the [`NameRef`] variant (same as [`update_or_add`]).
-    /// The explicit `index` parameter always takes precedence over any subscript
-    /// embedded in a nameref target.
+    /// Resolution strategy depends on the [`NameRef`] variant (same as
+    /// [`update_or_add`](Self::update_or_add)). The explicit `index` parameter
+    /// always takes precedence over any subscript embedded in a nameref target.
     pub fn update_or_add_array_element(
         &mut self,
         name: impl Into<NameRef>,
@@ -232,21 +230,30 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let base = match name.into() {
-            NameRef::Resolve(s) => {
-                let resolved = self.resolve_nameref(&s)?;
-                // Subscripted-target nameref + explicit index is rejected by
-                // bash (`arr[N][explicit_idx]` isn't a valid identifier).
-                if let Some(idx) = resolved.subscript {
-                    return Err(error::ErrorKind::SubscriptedNameRefTarget {
-                        name: resolved.name,
-                        subscript: idx,
+        let base = match name.into().0 {
+            NameRefStrategy::Resolve(s) => {
+                // Fast path: skip chain resolution for plain (non-nameref)
+                // names — see `update_or_add`.
+                if self
+                    .get_by_exact_name(&s)
+                    .is_some_and(|(_, v)| v.is_treated_as_nameref())
+                {
+                    let resolved = self.resolve_nameref(&s)?;
+                    // Subscripted-target nameref + explicit index is rejected by
+                    // bash (`arr[N][explicit_idx]` isn't a valid identifier).
+                    if let Some(idx) = resolved.subscript {
+                        return Err(error::ErrorKind::SubscriptedNameRefTarget {
+                            name: resolved.name,
+                            subscript: idx,
+                        }
+                        .into());
                     }
-                    .into());
+                    resolved.name
+                } else {
+                    s
                 }
-                resolved.name
             }
-            NameRef::PreResolved(r) => {
+            NameRefStrategy::PreResolved(r) => {
                 // Callers using PreResolved must pre-validate; the subscripted
                 // case is a foot-gun that would silently drop the resolved
                 // subscript in favor of the explicit index.
@@ -259,7 +266,7 @@ impl ShellEnvironment {
                 );
                 r.name
             }
-            NameRef::Bypass(s) => {
+            NameRefStrategy::Bypass(s) => {
                 super::names::assert_bare_name(&s, "NameRef::Bypass");
                 s
             }

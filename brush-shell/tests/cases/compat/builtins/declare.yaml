@@ -439,3 +439,13 @@ cases:
       declare -n ref2=regular
       not_a_ref="also plain"
       declare -p -n 2>/dev/null | sort
+
+  - name: "Integer attribute evaluates arithmetic on later scalar assignment"
+    stdin: |
+      declare -i x
+      x=20+5
+      echo "$x"
+      x+=10
+      echo "$x"
+      x="2 * 8"
+      echo "$x"

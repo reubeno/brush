@@ -116,18 +116,21 @@ impl builtins::Command for MapFileCommand {
 
         match write_result {
             Ok(()) => Ok(ExecutionResult::success()),
-            Err(err) if matches!(err.kind(), ErrorKind::CircularNameReference(_)) => {
-                // Bash emits a warning but exits 0 from mapfile on cycle.
-                context.shell.warn_circular_nameref(&err)?;
-                Ok(ExecutionResult::success())
-            }
-            Err(err) if matches!(err.kind(), ErrorKind::SubscriptedNameRefTarget { .. }) => {
+            Err(err) => match err.kind() {
+                // Bash emits a warning but exits 0 from mapfile on a nameref
+                // fault (cycle / max-depth).
+                ErrorKind::NameRef(fault) => {
+                    context.shell.warn_nameref_fault(fault)?;
+                    Ok(ExecutionResult::success())
+                }
                 // Bash exits 1 with a "<cmd>: target: not a valid identifier"
                 // diagnostic.
-                writeln!(context.stderr(), "{}: {err}", context.command_name)?;
-                Ok(ExecutionResult::general_error())
-            }
-            Err(err) => Err(err),
+                ErrorKind::SubscriptedNameRefTarget { .. } => {
+                    writeln!(context.stderr(), "{}: {err}", context.command_name)?;
+                    Ok(ExecutionResult::general_error())
+                }
+                _ => Err(err),
+            },
         }
     }
 }
