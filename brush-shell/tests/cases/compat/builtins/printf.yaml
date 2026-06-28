@@ -394,3 +394,10 @@ cases:
       printf -v ref "formatted %d" 42
       echo "target: $target"
       echo "ref: $ref"
+
+  - name: "printf -v with an invalid identifier exits 2 (KNOWN BUG)"
+    known_failure: true  # bash exits 2 for `printf -v 'bad[' v`; brush exits 1. Functional behavior (no write) is correct.
+    ignore_stderr: true
+    stdin: |
+      printf -v "bad[" v
+      echo "rc=$?"

@@ -389,3 +389,24 @@ cases:
     stdin: |
       declare -a myarray=(
       )
+
+  #
+  # Known-failure cases: associative-array subscript bugs discovered during
+  # nameref review. Not yet fixed.
+  #
+
+  - name: "Associative array key containing a space (KNOWN BUG)"
+    known_failure: true  # `m[a b]=x` should set key "a b" (bash); brush mishandles the spaced subscript.
+    stdin: |
+      declare -A m
+      m[a b]=spaced
+      echo "${m[@]}"
+
+  - name: "Empty associative-array subscript is rejected (KNOWN BUG)"
+    known_failure: true  # bash rejects `m[]=x` ("bad array subscript", exit 1); brush accepts it.
+    ignore_stderr: true
+    stdin: |
+      declare -A m
+      m[]=empty
+      echo "rc=$?"
+      echo "${m[@]}"

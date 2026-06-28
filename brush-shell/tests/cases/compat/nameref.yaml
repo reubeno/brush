@@ -2661,3 +2661,55 @@ cases:
       declare -n b=a
       declare -x a
       echo "after: $?"
+
+  #
+  # Known-failure cases: bugs discovered during review that are not yet fixed.
+  # Each diverges from bash on stdout/exit (marked known_failure so the harness
+  # tracks them and flags an "unexpected success" once fixed).
+  #
+
+  - name: "Nameref local -n same-name target needs scope-aware resolution (KNOWN BUG)"
+    known_failure: true  # brush rejects `local -n X=X` (self-ref); bash resolves to the enclosing-scope X. Breaks `local -n ref=$1` when the caller's var name collides; visible under set -e.
+    ignore_stderr: true
+    stdin: |
+      set -e
+      show() { local -n data=$1; echo "${data[@]}"; }
+      data=(1 2 3)
+      show data
+      echo END
+
+  - name: "Nameref indirect expansion on circular reference (KNOWN BUG)"
+    known_failure: true  # bash treats ${!ref} on a cycle as a fatal "invalid indirect expansion"; brush warns and continues.
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      echo "[${!a}]"
+      echo AFTER
+
+  - name: "Nameref whole-array expansion on circular reference (KNOWN BUG)"
+    known_failure: true  # bash yields empty for ${ref[@]} on a cycle; brush yields the raw target name.
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      echo "[${a[@]}]"
+      echo AFTER
+
+  - name: "Nameref default-assign on circular reference in expansion (KNOWN BUG)"
+    known_failure: true  # ${ref:=x} on a cycle: bash aborts the command, brush continues.
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      echo "[${a:=def}]"
+      echo AFTER
+
+  - name: "unset of array element through a circular nameref (KNOWN BUG)"
+    known_failure: true  # bash warns and exits 0; brush errors with exit 1.
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      unset "a[0]"
+      echo "rc=$?"
