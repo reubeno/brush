@@ -1633,27 +1633,41 @@ async fn execute_command<T: Into<String>>(
     assignments: &[&ast::Assignment],
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
-    // Push a new ephemeral environment scope for the duration of the command. We'll
-    // set command-scoped variable assignments after doing so, and revert them before
-    // returning.
-    let mut guard = crate::env::ScopeGuard::new(&mut context.shell, EnvironmentScope::Command);
+    let pushed_command_scope = !assignments.is_empty();
+    if pushed_command_scope {
+        // Push a new ephemeral environment scope for the duration of the command. We'll
+        // set command-scoped variable assignments after doing so, and revert them before
+        // returning.
+        let mut guard = crate::env::ScopeGuard::new(&mut context.shell, EnvironmentScope::Command);
 
-    for assignment in assignments {
-        // Ensure it's tagged as exported and created in the command scope.
-        apply_assignment(
-            assignment,
-            guard.shell(),
-            &params,
-            true,
-            Some(EnvironmentScope::Command),
-            EnvironmentScope::Command,
-        )
-        .await?;
-    }
+        for assignment in assignments {
+            // Ensure it's tagged as exported and created in the command scope.
+            apply_assignment(
+                assignment,
+                guard.shell(),
+                &params,
+                true,
+                Some(EnvironmentScope::Command),
+                EnvironmentScope::Command,
+            )
+            .await?;
+        }
 
-    if guard.shell().options().print_commands_and_arguments {
-        guard
-            .shell()
+        if guard.shell().options().print_commands_and_arguments {
+            guard
+                .shell()
+                .trace_command(
+                    &params,
+                    args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
+                )
+                .await;
+        }
+
+        guard.detach();
+        drop(guard);
+    } else if context.shell.options().print_commands_and_arguments {
+        context
+            .shell
             .trace_command(
                 &params,
                 args.iter().map(|arg| arg.quote_for_tracing()).join(" "),
@@ -1661,16 +1675,15 @@ async fn execute_command<T: Into<String>>(
             .await;
     }
 
-    guard.detach();
-    drop(guard);
-
     // Construct the command struct.
     let mut cmd =
         commands::SimpleCommand::new(context.shell, params, cmd_name.into(), args.iter().cloned());
     cmd.process_group_id = context.process_group_id;
 
-    // Arrange to pop off that ephemeral environment scope.
-    cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
+    if pushed_command_scope {
+        // Arrange to pop off that ephemeral environment scope.
+        cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
+    }
 
     // Run through any pre-execution hooks as best effort.
     let _ = commands::on_preexecute(&mut cmd).await;
