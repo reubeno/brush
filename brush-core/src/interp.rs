@@ -1601,7 +1601,7 @@ async fn apply_assignment(
     // variable becomes an indexed array, so its subscripts are still evaluated.
     // This is a fresh read that isn't held across later shell mutations.
     let (will_be_indexed_array, target_is_integer) =
-        if let Some(existing) = shell.env().lookup_resolved(&resolved_name).get() {
+        if let Some(existing) = shell.env().lookup_resolved(resolved_name.base()).get() {
             (
                 !matches!(
                     existing.base_var().value(),
@@ -1742,8 +1742,10 @@ async fn apply_assignment(
     let export_variables_on_modification = shell.options().export_variables_on_modification;
 
     // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().lookup_mut_resolved(&resolved_name).get()
+    if let Some((existing_value_scope, existing_value)) = shell
+        .env_mut()
+        .lookup_mut_resolved(resolved_name.base())
+        .get()
     {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
             if let Some(array_index) = array_index {

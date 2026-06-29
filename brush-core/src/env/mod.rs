@@ -21,8 +21,8 @@ use crate::variables::{ShellValue, ShellVariable};
 
 pub use lookup::{DirectVarLookup, DirectVarLookupMut, ResolvedVarRef, VarLookup};
 pub use names::{
-    NameRef, NameRefFault, ResolvedName, ResolvedScope, UnparsedNameRef, valid_nameref_target_name,
-    valid_variable_name,
+    BaseRef, NameRef, NameRefFault, ResolvedName, ResolvedScope, UnparsedNameRef,
+    valid_nameref_target_name, valid_variable_name,
 };
 pub(crate) use scope::ScopeGuard;
 pub use scope::{EnvironmentLookup, EnvironmentScope};
@@ -658,7 +658,7 @@ mod tests {
 
         let resolved = ResolvedName::plain("target");
         let r = env
-            .lookup_resolved(&resolved)
+            .lookup_resolved(resolved.base())
             .get()
             .expect("should find target");
         assert_eq!(r.scope(), EnvironmentScope::Global);
@@ -749,7 +749,7 @@ mod tests {
         // Pre-resolved mutable lookup is the supported mutation path.
         let resolved = ResolvedName::plain("target");
         let (scope, var) = env
-            .lookup_mut_resolved(&resolved)
+            .lookup_mut_resolved(resolved.base())
             .get()
             .expect("should find target");
         assert_eq!(scope, EnvironmentScope::Global);
@@ -767,7 +767,7 @@ mod tests {
                 .is_none()
         );
         let resolved = ResolvedName::plain("nonexistent");
-        assert!(env.lookup_resolved(&resolved).get().is_none());
+        assert!(env.lookup_resolved(resolved.base()).get().is_none());
     }
 
     #[test]
@@ -811,7 +811,7 @@ mod tests {
 
         // OnlyInGlobal should find the global one.
         let r = env
-            .lookup_resolved(&resolved)
+            .lookup_resolved(resolved.base())
             .in_scope(EnvironmentLookup::OnlyInGlobal)
             .get()
             .expect("should find global x");
@@ -820,7 +820,7 @@ mod tests {
 
         // OnlyInCurrentLocal should find the local one.
         let r = env
-            .lookup_resolved(&resolved)
+            .lookup_resolved(resolved.base())
             .in_scope(EnvironmentLookup::OnlyInCurrentLocal)
             .get()
             .expect("should find local x");

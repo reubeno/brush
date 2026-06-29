@@ -155,8 +155,11 @@ impl ExportCommand {
                             context.command_name,
                             resolved.name(),
                         )?;
-                    } else if let Some((_, var)) =
-                        context.shell.env_mut().lookup_mut_resolved(&resolved).get()
+                    } else if let Some((_, var)) = context
+                        .shell
+                        .env_mut()
+                        .lookup_mut_resolved(resolved.base())
+                        .get()
                     {
                         if self.unexport {
                             var.unexport();
@@ -210,7 +213,7 @@ impl ExportCommand {
                             if let Some((_, variable)) = context
                                 .shell
                                 .env_mut()
-                                .lookup_mut_resolved(&base_resolved)
+                                .lookup_mut_resolved(base_resolved.base())
                                 .get()
                             {
                                 variable.assign_at_index(index, value, true)?;
@@ -239,8 +242,11 @@ impl ExportCommand {
                         }
                         return Ok(ExecutionResult::success());
                     }
-                    if let Some((_, variable)) =
-                        context.shell.env_mut().lookup_mut_resolved(&resolved).get()
+                    if let Some((_, variable)) = context
+                        .shell
+                        .env_mut()
+                        .lookup_mut_resolved(resolved.base())
+                        .get()
                     {
                         variable.assign(value, true)?;
                         if self.unexport {
@@ -281,7 +287,7 @@ impl ExportCommand {
         let is_associative = context
             .shell
             .env()
-            .lookup_resolved(resolved_name)
+            .lookup_resolved(resolved_name.base())
             .get()
             .is_some_and(|v| {
                 matches!(

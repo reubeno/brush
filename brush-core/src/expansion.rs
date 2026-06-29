@@ -1642,7 +1642,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let keys = if resolved.subscript().is_some() {
                     // In bash, ${!ref[@]} where ref→arr[2] returns empty.
                     vec![]
-                } else if let Some(var) = self.shell.env().lookup_resolved(&resolved).get() {
+                } else if let Some(var) = self.shell.env().lookup_resolved(resolved.base()).get() {
                     var.base_var().value().element_keys(self.shell)
                 } else {
                     vec![]
@@ -1709,16 +1709,17 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
         let index = match parameter {
             brush_parser::word::Parameter::NamedWithIndex { index, .. } => {
-                let is_set_assoc_array =
-                    if let Some(var) = self.shell.env().lookup_resolved(&resolved_name).get() {
-                        matches!(
-                            var.base_var().value(),
-                            ShellValue::AssociativeArray(_)
-                                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                        )
-                    } else {
-                        false
-                    };
+                let is_set_assoc_array = if let Some(var) =
+                    self.shell.env().lookup_resolved(resolved_name.base()).get()
+                {
+                    matches!(
+                        var.base_var().value(),
+                        ShellValue::AssociativeArray(_)
+                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                    )
+                } else {
+                    false
+                };
 
                 Some(
                     self.expand_array_index(index.as_str(), is_set_assoc_array)
@@ -1763,7 +1764,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     fn resolved_name_is_associative(&self, resolved: &env::ResolvedName) -> bool {
         self.shell
             .env()
-            .lookup_resolved(resolved)
+            .lookup_resolved(resolved.base())
             .get()
             .is_some_and(|v| {
                 matches!(
@@ -1819,7 +1820,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let var = resolved.as_ref().and_then(|r| {
             self.shell
                 .env()
-                .lookup_resolved(r)
+                .lookup_resolved(r.base())
                 .get()
                 .map(|r| r.base_var().clone())
         });
@@ -2082,7 +2083,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
 
         // Name is already resolved — use lookup_resolved to skip re-resolution.
-        if let Some(var) = self.shell.env().lookup_resolved(&resolved).get() {
+        if let Some(var) = self.shell.env().lookup_resolved(resolved.base()).get() {
             if matches!(var.base_var().value(), ShellValue::Unset(_)) {
                 self.undefined_expansion(parameter, allow_unset_vars)
             } else {
@@ -2106,7 +2107,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let is_base_nameref = self
             .shell
             .env()
-            .lookup_resolved(&base_resolved)
+            .lookup_resolved(base_resolved.base())
             .get()
             .is_some_and(|v| v.base_var().is_treated_as_nameref());
         if !is_base_nameref {
@@ -2123,7 +2124,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// through any nameref chain — this method uses `lookup()` with the
     /// already-resolved name to avoid redundant or lossy re-resolution.
     fn expand_all_indices(&self, resolved: &env::ResolvedName, concatenate: bool) -> Expansion {
-        if let Some(var) = self.shell.env().lookup_resolved(resolved).get() {
+        if let Some(var) = self.shell.env().lookup_resolved(resolved.base()).get() {
             let values = var.base_var().value().element_values(self.shell);
             Expansion {
                 fields: values
@@ -2157,7 +2158,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let is_assoc = self
             .shell
             .env()
-            .lookup_resolved(resolved)
+            .lookup_resolved(resolved.base())
             .get()
             .is_some_and(|v| {
                 matches!(
@@ -2167,7 +2168,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 )
             });
         let index_to_use = self.expand_array_index(index, is_assoc).await?;
-        if let Some(var) = self.shell.env().lookup_resolved(resolved).get()
+        if let Some(var) = self.shell.env().lookup_resolved(resolved.base()).get()
             && let Ok(Some(value)) = var.base_var().value().get_at(&index_to_use, self.shell)
         {
             Ok(Expansion::from(value.to_string()))

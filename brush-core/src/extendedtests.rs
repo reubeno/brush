@@ -206,7 +206,7 @@ pub(crate) fn apply_unary_predicate_to_str(
                     // ref→arr[N] with explicit `[index]` is treated as unset.
                     return Ok(false);
                 }
-                let Some(var) = shell.env().lookup_resolved(&resolved).get() else {
+                let Some(var) = shell.env().lookup_resolved(resolved.base()).get() else {
                     return Ok(false);
                 };
                 Ok(var.base_var().value().has_element_at(index_part, shell))

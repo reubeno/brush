@@ -1,8 +1,9 @@
 //! Variable lookup API.
 //!
 //! Immutable entry points: `ShellEnvironment::lookup(name)` (auto-resolving) and
-//! `lookup_resolved(&resolved)` (pre-resolved/bypass). Mutable access is
-//! pre-resolved only: `lookup_mut_resolved(&resolved)`. Each returns a builder:
+//! `lookup_resolved(base)` (pre-resolved, takes a [`BaseRef`] from
+//! [`ResolvedName::base`]). Mutable access is pre-resolved only:
+//! `lookup_mut_resolved(base)`. Each returns a builder:
 //!   - Auto-resolving (`lookup`): `.get()` / `.bypassing_nameref()`
 //!   - Pre-resolved / bypass: `.get()` / `.in_scope(policy)`
 //!
@@ -15,7 +16,7 @@
 use std::borrow::Cow;
 
 use super::names::parse_nameref_subscript;
-use super::{EnvironmentLookup, EnvironmentScope, ResolvedName, ShellEnvironment};
+use super::{BaseRef, EnvironmentLookup, EnvironmentScope, ShellEnvironment};
 use crate::{
     Shell, error, extensions,
     variables::{ShellValue, ShellValueUnsetType, ShellVariable},
@@ -207,43 +208,30 @@ impl ShellEnvironment {
         VarLookup { env: self, name }
     }
 
-    /// Creates an immutable lookup builder for an already-resolved name. The
-    /// environment performs no further resolution or subscript parsing.
-    /// Chain `.in_scope(policy)` to restrict by scope.
-    ///
-    /// **Requires** a subscript-free `resolved` (the base name only) — strip any
-    /// subscript with [`ResolvedName::without_subscript`] first and apply it at
-    /// the call site (the element is not looked up here). Debug-asserts this.
-    pub fn lookup_resolved<'a>(&'a self, resolved: &'a ResolvedName) -> DirectVarLookup<'a> {
-        debug_assert!(
-            resolved.subscript().is_none(),
-            "lookup_resolved ignores the subscript on {resolved:?}; \
-             apply the subscript at the call site",
-        );
+    /// Creates an immutable lookup builder for an already-resolved base name.
+    /// The environment performs no further resolution or subscript parsing.
+    /// Chain `.in_scope(policy)` to restrict by scope. Takes a [`BaseRef`]
+    /// (via [`ResolvedName::base`]) so a subscript can't reach here.
+    pub const fn lookup_resolved<'a>(&'a self, base: BaseRef<'a>) -> DirectVarLookup<'a> {
         DirectVarLookup {
             env: self,
-            name: resolved.name(),
-            policy: resolved.default_lookup_policy(),
+            name: base.name(),
+            policy: base.default_lookup_policy(),
         }
     }
 
-    /// Creates a mutable lookup builder for an already-resolved name. No further
-    /// resolution or subscript parsing. Chain `.in_scope(policy)` to restrict by
-    /// scope. Like [`lookup_resolved`](Self::lookup_resolved), **requires** a
-    /// subscript-free `resolved` (strip it first; debug-asserted).
-    pub fn lookup_mut_resolved<'a>(
+    /// Creates a mutable lookup builder for an already-resolved base name. No
+    /// further resolution or subscript parsing. Chain `.in_scope(policy)` to
+    /// restrict by scope. Takes a [`BaseRef`] like
+    /// [`lookup_resolved`](Self::lookup_resolved).
+    pub const fn lookup_mut_resolved<'a>(
         &'a mut self,
-        resolved: &'a ResolvedName,
+        base: BaseRef<'a>,
     ) -> DirectVarLookupMut<'a> {
-        debug_assert!(
-            resolved.subscript().is_none(),
-            "lookup_mut_resolved ignores the subscript on {resolved:?}; \
-             apply the subscript at the call site",
-        );
         DirectVarLookupMut {
             env: self,
-            name: resolved.name(),
-            policy: resolved.default_lookup_policy(),
+            name: base.name(),
+            policy: base.default_lookup_policy(),
         }
     }
 

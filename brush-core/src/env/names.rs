@@ -282,17 +282,22 @@ impl ResolvedName {
         matches!(self.scope, ResolvedScope::Global)
     }
 
+    /// Borrows the base variable name + scope as a [`BaseRef`], the subscript
+    /// dropped. This is the only way to feed a resolved target into the
+    /// pre-resolved lookups, so a subscript can never silently reach a base
+    /// lookup.
+    pub const fn base(&self) -> BaseRef<'_> {
+        BaseRef {
+            name: self.name.as_str(),
+            scope: self.scope,
+        }
+    }
+
     /// Returns a copy of this name with the resolution scope set to `scope`.
     #[must_use]
     pub(super) const fn with_scope(mut self, scope: ResolvedScope) -> Self {
         self.scope = scope;
         self
-    }
-
-    /// The lookup policy this name uses when no caller policy is supplied.
-    pub(super) const fn default_lookup_policy(&self) -> super::EnvironmentLookup {
-        self.scope
-            .lookup_policy_or(super::EnvironmentLookup::Anywhere)
     }
 
     /// Consumes this `ResolvedName` and returns the base variable name.
@@ -362,9 +367,35 @@ impl ResolvedName {
     }
 }
 
-/// Parse a potential `name[index]` subscript from a resolved nameref target string.
-/// Returns `(base_name, Some(index))` if a subscript is present, or `(original, None)`.
+/// A borrowed, subscript-free view of a resolved variable name plus its scope.
 ///
+/// Produced by [`ResolvedName::base`] and required by the pre-resolved lookup
+/// builders. By construction it carries no subscript, so a subscripted target
+/// cannot silently degrade to a base-variable lookup.
+#[derive(Clone, Copy, Debug)]
+pub struct BaseRef<'a> {
+    pub(super) name: &'a str,
+    pub(super) scope: ResolvedScope,
+}
+
+impl<'a> BaseRef<'a> {
+    /// The base variable name.
+    pub const fn name(&self) -> &'a str {
+        self.name
+    }
+
+    /// The scope this name resolves against.
+    pub const fn resolved_scope(&self) -> ResolvedScope {
+        self.scope
+    }
+
+    /// The lookup policy this base uses when no caller policy is supplied.
+    pub(super) const fn default_lookup_policy(&self) -> super::EnvironmentLookup {
+        self.scope
+            .lookup_policy_or(super::EnvironmentLookup::Anywhere)
+    }
+}
+
 /// Splits on the first `[` and requires a trailing `]`. Everything between the first
 /// `[` and the final `]` is the index, which may contain arbitrary characters (including
 /// nested brackets) for associative array keys.

@@ -407,7 +407,7 @@ impl DeclareCommand {
             None => context
                 .shell
                 .env()
-                .lookup_resolved(&env::ResolvedName::try_plain(name.as_str())?)
+                .lookup_resolved(env::ResolvedName::try_plain(name.as_str())?.base())
                 .in_scope(lookup)
                 .get()
                 .is_some_and(|v| v.base_var().is_treated_as_integer()),
@@ -426,7 +426,7 @@ impl DeclareCommand {
                 && context
                     .shell
                     .env()
-                    .lookup_resolved(&env::ResolvedName::try_plain(name.as_str())?)
+                    .lookup_resolved(env::ResolvedName::try_plain(name.as_str())?.base())
                     .in_scope(lookup)
                     .get()
                     .is_some_and(|v| {
@@ -458,7 +458,7 @@ impl DeclareCommand {
         if let Some((_, var)) = context
             .shell
             .env_mut()
-            .lookup_mut_resolved(&resolved_name)
+            .lookup_mut_resolved(resolved_name.base())
             .in_scope(lookup)
             .get()
         {
@@ -701,7 +701,7 @@ impl DeclareCommand {
         let is_associative = context
             .shell
             .env()
-            .lookup_resolved(resolved_name)
+            .lookup_resolved(resolved_name.base())
             .in_scope(
                 resolved_name
                     .resolved_scope()

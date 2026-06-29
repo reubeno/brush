@@ -126,7 +126,7 @@ fn unset_array_index(
 
     // Check if the resolved target is an associative array (use lookup with the
     // already-resolved name to avoid redundant nameref resolution).
-    let is_assoc_array = if let Some(var) = shell.env().lookup_resolved(&resolved).get() {
+    let is_assoc_array = if let Some(var) = shell.env().lookup_resolved(resolved.base()).get() {
         matches!(
             var.base_var().value(),
             ShellValue::AssociativeArray(_)
@@ -148,7 +148,7 @@ fn unset_array_index(
     };
 
     // Use lookup_mut with the already-resolved name to avoid redundant nameref resolution.
-    if let Some((_, var)) = shell.env_mut().lookup_mut_resolved(&resolved).get() {
+    if let Some((_, var)) = shell.env_mut().lookup_mut_resolved(resolved.base()).get() {
         var.unset_index(index_to_use.as_ref())
     } else {
         Ok(false)
