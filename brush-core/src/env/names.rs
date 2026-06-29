@@ -92,7 +92,8 @@ impl std::error::Error for NameRefFault {}
 /// [`resolve_nameref_unparsed`](super::ShellEnvironment::resolve_nameref_unparsed)
 /// for `[[ -v ref ]]` semantics, where bash treats `arr[2]` as a literal name.
 /// The scope is part of the result so callers can't accidentally drop it; use
-/// [`scope`](Self::scope) (or ignore it explicitly) rather than re-deriving.
+/// [`resolved_scope`](Self::resolved_scope) (or ignore it explicitly) rather
+/// than re-deriving.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnparsedNameRef {
     pub(super) name: String,
@@ -106,7 +107,7 @@ impl UnparsedNameRef {
     }
 
     /// The scope the target resolves against.
-    pub const fn scope(&self) -> ResolvedScope {
+    pub const fn resolved_scope(&self) -> ResolvedScope {
         self.scope
     }
 }

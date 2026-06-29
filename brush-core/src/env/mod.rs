@@ -556,7 +556,7 @@ mod tests {
         // not global-scoped (no self-reference).
         let r = env.resolve_nameref_unparsed("ref").unwrap();
         assert_eq!(r.name(), "target");
-        assert_eq!(r.scope(), ResolvedScope::Default);
+        assert_eq!(r.resolved_scope(), ResolvedScope::Default);
     }
 
     #[test]
@@ -569,7 +569,7 @@ mod tests {
             .unwrap();
         let r = env.resolve_nameref_unparsed("ref").unwrap();
         assert_eq!(r.name(), "arr[2]");
-        assert_eq!(r.scope(), ResolvedScope::Default);
+        assert_eq!(r.resolved_scope(), ResolvedScope::Default);
     }
 
     #[test]

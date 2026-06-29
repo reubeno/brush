@@ -226,7 +226,7 @@ pub(crate) fn apply_unary_predicate_to_str(
                     .bypassing_nameref()
                     .in_scope(
                         resolved
-                            .scope()
+                            .resolved_scope()
                             .lookup_policy_or(crate::env::EnvironmentLookup::Anywhere),
                     )
                     .get();
