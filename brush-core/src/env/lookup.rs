@@ -117,6 +117,7 @@ impl<'a> ResolvedVarRef<'a> {
 }
 
 /// Immutable lookup builder for auto-resolving nameref lookups.
+#[must_use]
 pub struct VarLookup<'a> {
     pub(super) env: &'a ShellEnvironment,
     pub(super) name: &'a str,
@@ -131,7 +132,6 @@ impl<'a> VarLookup<'a> {
 
     /// Switch to bypass mode: look up the variable by its literal name
     /// without following nameref chains.
-    #[must_use]
     pub const fn bypassing_nameref(self) -> DirectVarLookup<'a> {
         DirectVarLookup {
             env: self.env,
@@ -143,6 +143,7 @@ impl<'a> VarLookup<'a> {
 
 /// Immutable lookup builder for pre-resolved or bypassed names.
 /// Performs exact-name lookups without further nameref resolution.
+#[must_use]
 pub struct DirectVarLookup<'a> {
     pub(super) env: &'a ShellEnvironment,
     pub(super) name: &'a str,
@@ -151,7 +152,6 @@ pub struct DirectVarLookup<'a> {
 
 impl<'a> DirectVarLookup<'a> {
     /// Restrict the lookup to a specific scope.
-    #[must_use]
     pub const fn in_scope(mut self, policy: EnvironmentLookup) -> Self {
         self.policy = policy;
         self
@@ -165,6 +165,7 @@ impl<'a> DirectVarLookup<'a> {
 }
 
 /// Mutable lookup builder for pre-resolved or bypassed names.
+#[must_use]
 pub struct DirectVarLookupMut<'a> {
     pub(super) env: &'a mut ShellEnvironment,
     pub(super) name: &'a str,
@@ -173,7 +174,6 @@ pub struct DirectVarLookupMut<'a> {
 
 impl<'a> DirectVarLookupMut<'a> {
     /// Restrict the lookup to a specific scope.
-    #[must_use]
     pub const fn in_scope(mut self, policy: EnvironmentLookup) -> Self {
         self.policy = policy;
         self
@@ -249,7 +249,10 @@ impl ShellEnvironment {
 
     /// Tries to retrieve an immutable reference by exact name without nameref
     /// resolution.
-    pub fn get_exact<S: AsRef<str>>(&self, name: S) -> Option<(EnvironmentScope, &ShellVariable)> {
+    pub(crate) fn get_exact<S: AsRef<str>>(
+        &self,
+        name: S,
+    ) -> Option<(EnvironmentScope, &ShellVariable)> {
         self.get_by_exact_name(name)
     }
 
@@ -271,7 +274,7 @@ impl ShellEnvironment {
 
     /// Tries to retrieve a mutable reference by exact name without nameref
     /// resolution.
-    pub fn get_mut_exact<S: AsRef<str>>(
+    pub(crate) fn get_mut_exact<S: AsRef<str>>(
         &mut self,
         name: S,
     ) -> Option<(EnvironmentScope, &mut ShellVariable)> {

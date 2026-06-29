@@ -254,6 +254,12 @@ impl ShellVariable {
         if self.is_treated_as_nameref() && matches!(value, ShellValueLiteral::Array(_)) {
             self.unset_treat_as_nameref();
         }
+        if self.is_treated_as_nameref()
+            && let ShellValueLiteral::Scalar(target) = &value
+            && !crate::env::valid_nameref_target_name(target)
+        {
+            return Err(error::ErrorKind::InvalidVariableName(target.clone()).into());
+        }
 
         let value = self.convert_value_literal_for_assignment(value);
 
@@ -1244,5 +1250,25 @@ mod tests {
         assert!(v.has_element_at("10", &shell));
         assert!(!v.has_element_at("0", &shell));
         assert!(!v.has_element_at("7", &shell));
+    }
+
+    #[test]
+    fn nameref_assignment_rejects_invalid_scalar_targets() {
+        let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
+        var.treat_as_nameref();
+        assert!(
+            var.assign(ShellValueLiteral::Scalar("1bad".to_owned()), false)
+                .is_err()
+        );
+        assert!(
+            var.assign(ShellValueLiteral::Scalar("arr[]".to_owned()), false)
+                .is_err()
+        );
+        var.assign(ShellValueLiteral::Scalar("valid_target".to_owned()), false)
+            .unwrap();
+        assert_eq!(
+            var.value().try_get_cow_str(&test_shell()).as_deref(),
+            Some("valid_target")
+        );
     }
 }

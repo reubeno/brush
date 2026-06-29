@@ -62,7 +62,7 @@ impl builtins::Command for UnsetCommand {
                     context
                         .shell
                         .env_mut()
-                        .unset(brush_core::env::NameRef::bypass(name.as_str()))?;
+                        .unset(brush_core::env::NameRef::bypass(name.as_str())?)?;
                 }
                 // `unset -n` never touches functions or array elements — it
                 // operates only on nameref variables. Skip the rest of the loop.

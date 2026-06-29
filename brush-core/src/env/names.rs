@@ -85,6 +85,32 @@ impl std::fmt::Display for NameRefFault {
 
 impl std::error::Error for NameRefFault {}
 
+/// A nameref chain resolved without subscript parsing.
+///
+/// Holds the final target string verbatim plus the scope it must be looked up
+/// in. Returned by
+/// [`resolve_nameref_unparsed`](super::ShellEnvironment::resolve_nameref_unparsed)
+/// for `[[ -v ref ]]` semantics, where bash treats `arr[2]` as a literal name.
+/// The scope is part of the result so callers can't accidentally drop it; use
+/// [`scope`](Self::scope) (or ignore it explicitly) rather than re-deriving.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnparsedNameRef {
+    pub(super) name: String,
+    pub(super) scope: ResolvedScope,
+}
+
+impl UnparsedNameRef {
+    /// The resolved target string, verbatim (may include a subscript).
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The scope the target resolves against.
+    pub const fn scope(&self) -> ResolvedScope {
+        self.scope
+    }
+}
+
 /// How a variable name should be resolved for a mutation (unset, update, etc.).
 ///
 /// Construct via [`NameRef::resolve`] (follow chains; the `From<&str>`/`String`
@@ -126,13 +152,15 @@ impl NameRef {
     /// Constructs a bypass reference: write the named variable itself, not what
     /// it references. See the type docs.
     ///
-    /// Debug-asserts that `name` doesn't contain `[`. Reach for
-    /// [`pre_resolved`](Self::pre_resolved) when you want to skip re-resolution
-    /// while preserving subscripts.
-    pub fn bypass(name: impl Into<String>) -> Self {
+    /// Rejects subscripted or otherwise invalid variable names at runtime.
+    /// Reach for [`pre_resolved`](Self::pre_resolved) when you want to skip
+    /// re-resolution while preserving subscripts.
+    pub fn bypass(name: impl Into<String>) -> Result<Self, crate::error::Error> {
         let name = name.into();
-        assert_bare_name(&name, "NameRef::bypass");
-        Self(NameRefStrategy::Bypass(name))
+        if !valid_variable_name(&name) {
+            return Err(crate::error::ErrorKind::InvalidVariableName(name).into());
+        }
+        Ok(Self(NameRefStrategy::Bypass(name)))
     }
 }
 
@@ -180,6 +208,7 @@ impl ResolvedScope {
     /// default policy. `Global` forces global-only; `Default` keeps the
     /// caller's. This is the single place the global-scope override is applied,
     /// so callers honor scope-aware resolution without re-deriving it.
+    #[doc(hidden)]
     pub const fn lookup_policy_or(
         self,
         default: super::EnvironmentLookup,
@@ -307,12 +336,23 @@ impl ResolvedName {
     /// you've resolved a name externally and want to pass it to
     /// `lookup_resolved` without re-walking the chain.
     ///
-    /// Debug-asserts `name` doesn't contain `[` — subscripted targets must be
-    /// produced by resolution (which splits `"arr[2]"` into base + subscript),
-    /// not wrapped verbatim here.
-    pub fn plain(name: impl Into<String>) -> Self {
+    /// Rejects subscripted or otherwise invalid variable names. Subscripted
+    /// targets must be produced by resolution (which splits `"arr[2]"` into
+    /// base + subscript), not wrapped verbatim here.
+    pub fn try_plain(name: impl Into<String>) -> Result<Self, crate::error::Error> {
         let name = name.into();
-        assert_bare_name(&name, "ResolvedName::plain");
+        if !valid_variable_name(&name) {
+            return Err(crate::error::ErrorKind::InvalidVariableName(name).into());
+        }
+        Ok(Self::plain(name))
+    }
+
+    /// Wraps a plain name without runtime validation. Internal callers only use
+    /// this after parser/environment validation has already established that the
+    /// name is a legal, subscript-free variable name.
+    pub(crate) fn plain(name: impl Into<String>) -> Self {
+        let name = name.into();
+        debug_assert!(valid_variable_name(&name));
         Self {
             name,
             subscript: None,
@@ -489,9 +529,15 @@ mod tests {
 
     #[test]
     fn resolved_name_from_name_no_subscript() {
-        let r = ResolvedName::plain("target");
+        let r = ResolvedName::try_plain("target").unwrap();
         assert_eq!(r.name(), "target");
         assert_eq!(r.subscript(), None);
+    }
+
+    #[test]
+    fn resolved_name_try_plain_rejects_invalid_names() {
+        assert!(ResolvedName::try_plain("1bad").is_err());
+        assert!(ResolvedName::try_plain("arr[0]").is_err());
     }
 
     #[test]
@@ -534,7 +580,6 @@ mod tests {
         assert!(valid_nameref_target_name("_bar"));
         assert!(valid_nameref_target_name("arr[2]"));
         assert!(valid_nameref_target_name("arr[@]"));
-        assert!(valid_nameref_target_name("arr[]"));
         // Nested brackets (associative key) are allowed when balanced.
         assert!(valid_nameref_target_name("m[a[b]]"));
         assert!(valid_nameref_target_name("m[a[b]c]"));
@@ -552,6 +597,7 @@ mod tests {
         assert!(!valid_nameref_target_name("a[b[c]"));
         assert!(!valid_nameref_target_name("arr[2]x"));
         assert!(!valid_nameref_target_name("arr["));
+        assert!(!valid_nameref_target_name("arr[]"));
     }
 
     //
@@ -592,8 +638,14 @@ mod tests {
 
     #[test]
     fn nameref_bypass_constructor() {
-        let nr = NameRef::bypass("ref");
+        let nr = NameRef::bypass("ref").unwrap();
         assert!(matches!(nr.0, NameRefStrategy::Bypass(s) if s == "ref"));
+    }
+
+    #[test]
+    fn nameref_bypass_constructor_rejects_invalid_names() {
+        assert!(NameRef::bypass("1bad").is_err());
+        assert!(NameRef::bypass("arr[0]").is_err());
     }
 
     #[test]
@@ -604,7 +656,7 @@ mod tests {
 
     #[test]
     fn nameref_pre_resolved_constructor() {
-        let r = ResolvedName::plain("ref");
+        let r = ResolvedName::try_plain("ref").unwrap();
         let nr = NameRef::pre_resolved(r);
         assert!(matches!(nr.0, NameRefStrategy::PreResolved(r) if r.name() == "ref"));
     }

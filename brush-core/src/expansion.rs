@@ -1944,9 +1944,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             {
                 if var.is_treated_as_nameref() {
                     match self.shell.env().resolve_nameref_unparsed(n) {
-                        // `_global` (self-name nameref) is not modeled for `${!ref}`.
-                        Ok((resolved, _global)) if resolved.as_str() != n.as_str() => {
-                            return Ok(Expansion::from(resolved));
+                        // The self-name scope is not modeled for `${!ref}`.
+                        Ok(resolved) if resolved.name() != n.as_str() => {
+                            return Ok(Expansion::from(resolved.name().to_owned()));
                         }
                         Ok(_) => {}
                         Err(fault) => {

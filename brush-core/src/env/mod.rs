@@ -21,7 +21,7 @@ use crate::variables::{ShellValue, ShellVariable};
 
 pub use lookup::{DirectVarLookup, DirectVarLookupMut, ResolvedVarRef, VarLookup};
 pub use names::{
-    NameRef, NameRefFault, ResolvedName, ResolvedScope, valid_nameref_target_name,
+    NameRef, NameRefFault, ResolvedName, ResolvedScope, UnparsedNameRef, valid_nameref_target_name,
     valid_variable_name,
 };
 pub(crate) use scope::ScopeGuard;
@@ -248,6 +248,7 @@ impl ShellEnvironment {
     /// This is primarily for declaration builtins with an explicit scope policy
     /// such as `declare -g`, where local namerefs must not redirect a global
     /// declaration.
+    #[doc(hidden)]
     pub fn resolve_nameref_using_policy(
         &self,
         name: &str,
@@ -262,12 +263,12 @@ impl ShellEnvironment {
     /// treats `arr[2]` as a literal variable name. The [`ResolvedScope`] is
     /// [`Global`](ResolvedScope::Global) for a self-referential function-local
     /// nameref (`local -n x=x`), whose existence must be checked globally.
-    pub fn resolve_nameref_unparsed(
-        &self,
-        name: &str,
-    ) -> Result<(String, ResolvedScope), NameRefFault> {
+    pub fn resolve_nameref_unparsed(&self, name: &str) -> Result<UnparsedNameRef, NameRefFault> {
         let (resolved, scope) = self.resolve_nameref_chain(name)?;
-        Ok((resolved.into_owned(), scope))
+        Ok(UnparsedNameRef {
+            name: resolved.into_owned(),
+            scope,
+        })
     }
 
     /// Resolves a nameref, falling back to an identity `ResolvedName` on **any**
@@ -553,10 +554,9 @@ mod tests {
             .unwrap();
         // Plain target — name should be "target", no subscript handling, and
         // not global-scoped (no self-reference).
-        assert_eq!(
-            env.resolve_nameref_unparsed("ref").unwrap(),
-            ("target".to_owned(), ResolvedScope::Default)
-        );
+        let r = env.resolve_nameref_unparsed("ref").unwrap();
+        assert_eq!(r.name(), "target");
+        assert_eq!(r.scope(), ResolvedScope::Default);
     }
 
     #[test]
@@ -567,10 +567,9 @@ mod tests {
         let mut env = ShellEnvironment::new();
         env.add("ref", make_nameref("arr[2]"), EnvironmentScope::Global)
             .unwrap();
-        assert_eq!(
-            env.resolve_nameref_unparsed("ref").unwrap(),
-            ("arr[2]".to_owned(), ResolvedScope::Default)
-        );
+        let r = env.resolve_nameref_unparsed("ref").unwrap();
+        assert_eq!(r.name(), "arr[2]");
+        assert_eq!(r.scope(), ResolvedScope::Default);
     }
 
     #[test]
@@ -726,6 +725,19 @@ mod tests {
             env.pop_scope(EnvironmentScope::Local).unwrap();
         }
         assert_eq!(env.entry_count, baseline);
+    }
+
+    #[test]
+    fn add_rejects_invalid_variable_names() {
+        let mut env = ShellEnvironment::new();
+        assert!(
+            env.add("arr[0]", make_var("value"), EnvironmentScope::Global)
+                .is_err()
+        );
+        assert!(
+            env.add("1bad", make_var("value"), EnvironmentScope::Global)
+                .is_err()
+        );
     }
 
     #[test]

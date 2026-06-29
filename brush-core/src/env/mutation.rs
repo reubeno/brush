@@ -9,7 +9,53 @@ use super::{
 use crate::error;
 use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
 
+/// A validated write target derived from a [`NameRef`]: the base variable name,
+/// an optional array subscript, and the scope the name resolves against. This is
+/// the single shape every mutation path resolves to before touching storage.
+struct WriteTarget {
+    base: String,
+    subscript: Option<String>,
+    scope: ResolvedScope,
+}
+
 impl ShellEnvironment {
+    /// Resolves a [`NameRef`] to a validated [`WriteTarget`], the shared first
+    /// step of every mutation. Walks the nameref chain only when `name` is a
+    /// live nameref (fast path otherwise), parses any subscript, and rejects a
+    /// base that isn't a legal identifier — so `read 'foo['` / `printf -v 1bad`
+    /// fail here rather than corrupting the map.
+    fn resolve_write_target(&self, name: NameRef) -> Result<WriteTarget, error::Error> {
+        let (base, subscript, scope) = match name.0 {
+            NameRefStrategy::Resolve(s) => {
+                // Fast path: only walk the chain when `s` is a live nameref. The
+                // common case (a plain counter, `read`/`getopts`/`mapfile`
+                // target) skips the walk and the resolve allocation, but still
+                // parses a possible subscript (e.g. `read 'arr[0]'`).
+                if self
+                    .get_by_exact_name(&s)
+                    .is_some_and(|(_, v)| v.is_treated_as_nameref())
+                {
+                    let resolved = self.resolve_nameref(&s)?;
+                    (resolved.name, resolved.subscript, resolved.scope)
+                } else {
+                    let resolved = ResolvedName::parse(s);
+                    (resolved.name, resolved.subscript, ResolvedScope::Default)
+                }
+            }
+            NameRefStrategy::PreResolved(r) => (r.name, r.subscript, r.scope),
+            NameRefStrategy::Bypass(s) => (s, None, ResolvedScope::Default),
+        };
+
+        if !super::names::valid_variable_name(&base) {
+            return Err(error::ErrorKind::InvalidVariableName(base).into());
+        }
+
+        Ok(WriteTarget {
+            base,
+            subscript,
+            scope,
+        })
+    }
     /// Unsets a variable from the environment.
     ///
     /// Resolution strategy depends on the [`NameRef`] variant:
@@ -25,25 +71,24 @@ impl ShellEnvironment {
         &mut self,
         name: impl Into<NameRef>,
     ) -> Result<Option<ShellVariable>, error::Error> {
-        let resolved = match name.into().0 {
-            NameRefStrategy::Resolve(s) => match self.resolve_nameref(&s) {
-                Ok(r) => r,
-                // Nameref fault (cycle / max-depth): bash removes the variable itself.
+        let strategy = name.into().0;
+        // A nameref fault (cycle / max-depth) means bash unsets the head variable
+        // itself, so a Resolve that faults falls back to the raw name. Bypass and
+        // PreResolved never fault, so resolution is infallible for them.
+        let target = match strategy {
+            NameRefStrategy::Resolve(s) => match self.resolve_write_target(NameRef::resolve(&s)) {
+                Ok(t) => t,
                 Err(_) => return self.unset_raw(&s),
             },
-            NameRefStrategy::PreResolved(r) => r,
-            NameRefStrategy::Bypass(s) => {
-                super::names::assert_bare_name(&s, "NameRef::Bypass");
-                return self.unset_raw(&s);
-            }
+            other => self.resolve_write_target(NameRef(other))?,
         };
-        if let Some(idx) = resolved.subscript() {
-            if let Some((_, var)) = self.get_mut_by_exact_name(resolved.name()) {
-                var.unset_index(idx)?;
+        if let Some(idx) = target.subscript {
+            if let Some((_, var)) = self.get_mut_by_exact_name(&target.base) {
+                var.unset_index(&idx)?;
             }
             return Ok(None);
         }
-        self.unset_raw(resolved.name())
+        self.unset_raw(&target.base)
     }
 
     /// Internal: unset by raw string name, no nameref resolution.
@@ -91,92 +136,44 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let (base, subscript, scope) = match name.into().0 {
-            NameRefStrategy::Resolve(s) => {
-                // Fast path: only walk the nameref chain when `s` actually names
-                // a live nameref. The overwhelmingly common case (a plain
-                // variable, e.g. every arithmetic-loop counter and `read`/
-                // `getopts`/`mapfile` target) then skips the chain walk and the
-                // String allocation `resolve_nameref` performs. Mirrors the
-                // bypass-check fast paths in `interp::apply_assignment` and
-                // `expansion::expand_named_parameter`.
-                if self
-                    .get_by_exact_name(&s)
-                    .is_some_and(|(_, v)| v.is_treated_as_nameref())
-                {
-                    let resolved = self.resolve_nameref(&s)?;
-                    // Compound (array) assignment through a subscripted-target
-                    // nameref is rejected by bash as "not a valid identifier".
-                    // Scalar assignment redirects to the array element below.
-                    if let Some(idx) = &resolved.subscript
-                        && matches!(value, variables::ShellValueLiteral::Array(_))
-                    {
-                        return Err(error::ErrorKind::SubscriptedNameRefTarget {
-                            name: resolved.name,
-                            subscript: idx.clone(),
-                        }
-                        .into());
-                    }
-                    (resolved.name, resolved.subscript, resolved.scope)
-                } else {
-                    // Not a live nameref. We still must parse a possible
-                    // subscript — `read 'arr[0]'` reaches here with a
-                    // subscripted name. Only the chain walk is skipped, not
-                    // subscript handling. `ResolvedName::parse` does no scope
-                    // walk, so the fast-path perf win stands.
-                    let resolved = ResolvedName::parse(s);
-                    (resolved.name, resolved.subscript, ResolvedScope::Default)
-                }
-            }
-            NameRefStrategy::PreResolved(r) => (r.name, r.subscript, r.scope),
-            NameRefStrategy::Bypass(s) => {
-                super::names::assert_bare_name(&s, "NameRef::Bypass");
-                (s, None, ResolvedScope::Default)
-            }
-        };
+        let target = self.resolve_write_target(name.into())?;
 
         // A self-referential nameref (`local -n x=x`) resolves to the global
         // `x`: `ResolvedScope::Global` forces global lookup and creation,
         // overriding the caller's policy/scope. (Single source of truth.)
-        let lookup_policy = scope.lookup_policy_or(lookup_policy);
-        let scope_if_creating = scope.creation_scope_or(scope_if_creating);
+        let lookup_policy = target.scope.lookup_policy_or(lookup_policy);
+        let scope_if_creating = target.scope.creation_scope_or(scope_if_creating);
 
-        // The base must be a legal identifier. User-facing callers (`read`,
-        // `printf -v`, …) can pass arbitrary names like `foo[` or `1bad`; bash
-        // rejects them as "not a valid identifier". Without this guard such a
-        // name would reach `add` and trip its bare-name assertion (panic in
-        // debug / junk variable in release).
-        if !super::names::valid_variable_name(&base) {
-            return Err(error::ErrorKind::InvalidVariableName(base).into());
-        }
-
-        // If the resolved target includes an array subscript (e.g., arr[2]),
-        // a scalar value writes to that element.
-        if let Some(idx) = subscript {
-            match value {
-                variables::ShellValueLiteral::Scalar(scalar) => {
-                    return self.update_or_add_array_element_impl(
-                        base,
+        // A subscripted target writes the element for a scalar; compound (array)
+        // assignment through it is rejected by bash as "not a valid identifier".
+        if let Some(idx) = target.subscript {
+            return match value {
+                variables::ShellValueLiteral::Scalar(scalar) => self
+                    .update_or_add_array_element_impl(
+                        target.base,
                         idx,
                         scalar,
                         updater,
                         lookup_policy,
                         scope_if_creating,
-                    );
-                }
+                    ),
                 variables::ShellValueLiteral::Array(_) => {
-                    // Already rejected above for Resolve. PreResolved callers
-                    // are pre-validated at their own call sites.
-                    return Err(error::ErrorKind::SubscriptedNameRefTarget {
-                        name: base,
+                    Err(error::ErrorKind::SubscriptedNameRefTarget {
+                        name: target.base,
                         subscript: idx,
                     }
-                    .into());
+                    .into())
                 }
-            }
+            };
         }
 
-        self.update_or_add_impl(base, value, updater, lookup_policy, scope_if_creating)
+        self.update_or_add_impl(
+            target.base,
+            value,
+            updater,
+            lookup_policy,
+            scope_if_creating,
+        )
     }
 
     /// Convenience for the common assignment: no post-update attribute tweak,
@@ -267,71 +264,24 @@ impl ShellEnvironment {
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        let (base, scope) = match name.into().0 {
-            NameRefStrategy::Resolve(s) => {
-                // Fast path: skip chain resolution for plain (non-nameref)
-                // names — see `update_or_add`.
-                if self
-                    .get_by_exact_name(&s)
-                    .is_some_and(|(_, v)| v.is_treated_as_nameref())
-                {
-                    let resolved = self.resolve_nameref(&s)?;
-                    // Subscripted-target nameref + explicit index is rejected by
-                    // bash (`arr[N][explicit_idx]` isn't a valid identifier).
-                    if let Some(idx) = resolved.subscript {
-                        return Err(error::ErrorKind::SubscriptedNameRefTarget {
-                            name: resolved.name,
-                            subscript: idx,
-                        }
-                        .into());
-                    }
-                    (resolved.name, resolved.scope)
-                } else {
-                    // Not a live nameref. A subscripted name here plus an
-                    // explicit index would be `arr[0][idx]` — bash rejects it
-                    // as not a valid identifier. Match the pre-fast-path
-                    // behavior (which parsed and rejected it).
-                    let resolved = ResolvedName::parse(s);
-                    if let Some(subscript) = resolved.subscript {
-                        return Err(error::ErrorKind::SubscriptedNameRefTarget {
-                            name: resolved.name,
-                            subscript,
-                        }
-                        .into());
-                    }
-                    (resolved.name, ResolvedScope::Default)
-                }
-            }
-            NameRefStrategy::PreResolved(r) => {
-                // Callers using PreResolved must pre-validate; the subscripted
-                // case is a foot-gun that would silently drop the resolved
-                // subscript in favor of the explicit index.
-                debug_assert!(
-                    r.subscript.is_none(),
-                    "update_or_add_array_element: subscripted PreResolved is ambiguous \
-                     (resolved={:?}[{:?}], explicit index also passed)",
-                    r.name,
-                    r.subscript,
-                );
-                (r.name, r.scope)
-            }
-            NameRefStrategy::Bypass(s) => {
-                super::names::assert_bare_name(&s, "NameRef::Bypass");
-                (s, ResolvedScope::Default)
-            }
-        };
+        let target = self.resolve_write_target(name.into())?;
 
-        // Self-referential nameref → global scope (see `update_or_add`).
-        let lookup_policy = scope.lookup_policy_or(lookup_policy);
-        let scope_if_creating = scope.creation_scope_or(scope_if_creating);
-
-        // The base must be a legal identifier (see `update_or_add`).
-        if !super::names::valid_variable_name(&base) {
-            return Err(error::ErrorKind::InvalidVariableName(base).into());
+        // A target that already carries a subscript plus an explicit index would
+        // be `arr[N][index]` — bash rejects it as not a valid identifier.
+        if let Some(subscript) = target.subscript {
+            return Err(error::ErrorKind::SubscriptedNameRefTarget {
+                name: target.base,
+                subscript,
+            }
+            .into());
         }
 
+        // Self-referential nameref → global scope (see `update_or_add`).
+        let lookup_policy = target.scope.lookup_policy_or(lookup_policy);
+        let scope_if_creating = target.scope.creation_scope_or(scope_if_creating);
+
         self.update_or_add_array_element_impl(
-            base,
+            target.base,
             index,
             value,
             updater,
@@ -376,7 +326,9 @@ impl ShellEnvironment {
         target_scope: EnvironmentScope,
     ) -> Result<(), error::Error> {
         let name = name.into();
-        super::names::assert_bare_name(&name, "ShellEnvironment::add");
+        if !super::names::valid_variable_name(&name) {
+            return Err(error::ErrorKind::InvalidVariableName(name).into());
+        }
 
         if self.export_variables_on_modification {
             var.export();

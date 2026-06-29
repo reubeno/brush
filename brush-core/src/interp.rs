@@ -870,7 +870,7 @@ impl Execute for ast::ForClauseCommand {
             }
 
             shell.env_mut().set_var(
-                crate::env::NameRef::bypass(&self.variable_name),
+                crate::env::NameRef::bypass(&self.variable_name)?,
                 ShellValueLiteral::Scalar(value),
             )?;
 

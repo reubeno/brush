@@ -4,7 +4,6 @@ use crate::extensions;
 
 /// Represents the policy for looking up variables in a shell environment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum EnvironmentLookup {
     /// Look anywhere.
     Anywhere,
@@ -45,7 +44,6 @@ impl EnvironmentLookup {
 /// Represents a shell environment scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum EnvironmentScope {
     /// Scope local to a function instance
     Local,

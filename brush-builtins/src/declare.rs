@@ -407,7 +407,7 @@ impl DeclareCommand {
             None => context
                 .shell
                 .env()
-                .lookup_resolved(&env::ResolvedName::plain(name.as_str()))
+                .lookup_resolved(&env::ResolvedName::try_plain(name.as_str())?)
                 .in_scope(lookup)
                 .get()
                 .is_some_and(|(_, v)| v.is_treated_as_integer()),
@@ -426,7 +426,7 @@ impl DeclareCommand {
                 && context
                     .shell
                     .env()
-                    .lookup_resolved(&env::ResolvedName::plain(name.as_str()))
+                    .lookup_resolved(&env::ResolvedName::try_plain(name.as_str())?)
                     .in_scope(lookup)
                     .get()
                     .is_some_and(|(_, v)| {
@@ -445,7 +445,7 @@ impl DeclareCommand {
 
         // Look up the variable. Name is already resolved through
         // resolve_nameref_for_declaration above.
-        let resolved_name = env::ResolvedName::plain(name.as_str());
+        let resolved_name = env::ResolvedName::try_plain(name.as_str())?;
         let resolved_subscript_index = if let Some(index) = resolved_subscript.as_deref() {
             Some(Self::resolved_subscript_for_assignment(
                 context,
