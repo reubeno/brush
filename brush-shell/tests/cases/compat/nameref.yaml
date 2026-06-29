@@ -2728,3 +2728,90 @@ cases:
       declare -n b=a
       unset "a[0]"
       echo "rc=$?"
+
+  - name: "Nameref to subscript of another nameref resolves base nameref"
+    stdin: |
+      c=(zero one)
+      declare -n b=c
+      declare -n a='b[1]'
+      echo "a=$a"
+
+  - name: "declare assignment through subscripted nameref writes element"
+    stdin: |
+      arr=(a b c)
+      declare -n ref='arr[1]'
+      declare ref=Z
+      declare -p arr
+
+  - name: "declare append through subscripted nameref appends element"
+    stdin: |
+      arr=(a b c)
+      declare -n ref='arr[1]'
+      declare ref+=Z
+      declare -p arr
+
+  - name: "export append through nameref writes and exports target"
+    stdin: |
+      target=old
+      declare -n ref=target
+      export ref+=X
+      declare -p ref target
+
+  - name: "declare -g does not resolve through local nameref"
+    stdin: |
+      target=G
+      f() {
+        local target=L
+        local -n ref=target
+        declare -g ref=NEW
+        declare -p target ref
+      }
+      f
+      declare -p target ref
+
+  - name: "printf -v rejects invalid target for untargeted nameref"
+    ignore_stderr: true
+    stdin: |
+      declare -n ref
+      printf -v ref %s 1bad 2>/dev/null
+      echo "rc=$?"
+      declare -p ref
+
+  - name: "read rejects invalid target for untargeted nameref"
+    ignore_stderr: true
+    stdin: |
+      declare -n ref
+      read ref <<< 1bad 2>/dev/null
+      echo "rc=$?"
+      declare -p ref
+
+  - name: "empty subscript is invalid nameref target"
+    ignore_stderr: true
+    stdin: |
+      declare -n ref='arr[]' 2>/dev/null
+      echo "rc=$?"
+      declare -p ref 2>/dev/null || echo "ref missing"
+
+  - name: "failed declare -n leaves variable unchanged"
+    ignore_stderr: true
+    stdin: |
+      x=1bad
+      declare -n x 2>/dev/null
+      echo "rc=$?"
+      declare -p x
+
+  - name: "indexed nameref target subscript evaluated at use time"
+    stdin: |
+      arr=(10 20 30)
+      i=2
+      declare -n ref='arr[i]'
+      printf -v ref %s 99
+      declare -p arr
+
+  - name: "associative nameref target subscript expanded at use time"
+    stdin: |
+      declare -A m=([key]=old)
+      k=key
+      declare -n ref='m[$k]'
+      ref=new
+      declare -p m

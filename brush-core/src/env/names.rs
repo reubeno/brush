@@ -378,7 +378,7 @@ pub fn valid_nameref_target_name(target: &str) -> bool {
                 if depth == 0 {
                     // `]` is ASCII (1 byte), so it's the last char iff its byte
                     // offset is the final index of `rest`.
-                    return i + 1 == rest.len();
+                    return i > 0 && i + 1 == rest.len();
                 }
             }
             _ => {}

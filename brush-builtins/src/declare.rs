@@ -111,6 +111,14 @@ enum DeclareVerb {
     Readonly,
 }
 
+struct DeclarationParts {
+    name: String,
+    assigned_index: Option<String>,
+    append: bool,
+    initial_value: Option<ShellValueLiteral>,
+    name_is_array: bool,
+}
+
 impl builtins::DeclarationCommand for DeclareCommand {
     fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
         self.declarations = declarations;
@@ -261,8 +269,13 @@ impl DeclareCommand {
         }
 
         // Extract the variable name and the initial value being assigned (if any).
-        let (name, assigned_index, initial_value, name_is_array) =
-            Self::declaration_to_name_and_value(declaration)?;
+        let DeclarationParts {
+            name,
+            assigned_index,
+            append,
+            initial_value,
+            name_is_array,
+        } = Self::declaration_to_name_and_value(declaration)?;
 
         // Special-case: `local -`
         if name == "-" && matches!(verb, DeclareVerb::Local) {
@@ -323,7 +336,16 @@ impl DeclareCommand {
         // Cycle in the nameref chain: bash warns and treats as identity (the
         // attribute change applies to the nameref itself), exit 0.
         let resolved = if !explicitly_modifying_nameref_attr && !creating_new_local {
-            match context.shell.env().resolve_nameref(name.as_str()) {
+            let resolve_policy = if self.create_global {
+                EnvironmentLookup::OnlyInGlobal
+            } else {
+                EnvironmentLookup::Anywhere
+            };
+            match context
+                .shell
+                .env()
+                .resolve_nameref_using_policy(name.as_str(), resolve_policy)
+            {
                 Ok(r) => Some(r),
                 Err(fault) => {
                     context.shell.warn_nameref_fault(&fault)?;
@@ -352,9 +374,17 @@ impl DeclareCommand {
         // Apply nameref resolution to the (name, lookup) pair for attribute
         // changes. Subscripted targets resolve to the base; non-namerefs and
         // identity resolutions fall through unchanged.
-        let (name, lookup) = match resolved {
-            Some(r) if r.name() != name.as_str() => (r.into_name(), EnvironmentLookup::Anywhere),
-            _ => (name, lookup),
+        let (name, lookup, resolved_subscript) = match resolved {
+            Some(r) if r.name() != name.as_str() || r.subscript().is_some() => {
+                let subscript = r.subscript().map(str::to_owned);
+                let lookup = if self.create_global {
+                    lookup
+                } else {
+                    EnvironmentLookup::Anywhere
+                };
+                (r.into_name(), lookup, subscript)
+            }
+            _ => (name, lookup, None),
         };
 
         let will_be_nameref = self.will_be_nameref();
@@ -416,6 +446,15 @@ impl DeclareCommand {
         // Look up the variable. Name is already resolved through
         // resolve_nameref_for_declaration above.
         let resolved_name = env::ResolvedName::plain(name.as_str());
+        let resolved_subscript_index = if let Some(index) = resolved_subscript.as_deref() {
+            Some(Self::resolved_subscript_for_assignment(
+                context,
+                &resolved_name,
+                index,
+            )?)
+        } else {
+            None
+        };
         if let Some((_, var)) = context
             .shell
             .env_mut()
@@ -451,11 +490,27 @@ impl DeclareCommand {
                 var.convert_to_indexed_array()?;
             }
 
+            if will_be_nameref
+                && initial_value.is_none()
+                && !var.is_treated_as_nameref()
+                && let ShellValue::String(target) = var.value()
+                && let Some(msg) = Self::validate_nameref_target(None, target, !create_var_local)
+            {
+                writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                return Ok(false);
+            }
+
             self.apply_attributes_before_update(var)?;
 
             if let Some(initial_value) = initial_value {
-                // We append if the declaration included an explicit index.
-                var.assign(initial_value, assigned_index.is_some())?;
+                if let Some(index) = resolved_subscript_index.as_ref()
+                    && let ShellValueLiteral::Scalar(value) = initial_value
+                {
+                    var.assign_at_index(index.clone(), value, append)?;
+                } else {
+                    // We append if the declaration used += or included an explicit index.
+                    var.assign(initial_value, append || assigned_index.is_some())?;
+                }
             }
 
             // Validate existing value when -n is being added to a variable
@@ -486,7 +541,16 @@ impl DeclareCommand {
             self.apply_attributes_before_update(&mut var)?;
 
             if let Some(initial_value) = initial_value {
-                var.assign(initial_value, false)?;
+                if let Some(index) = resolved_subscript_index
+                    && let ShellValueLiteral::Scalar(value) = initial_value
+                {
+                    var.assign(
+                        ShellValueLiteral::Array(ArrayLiteral(vec![(Some(index), value)])),
+                        false,
+                    )?;
+                } else {
+                    var.assign(initial_value, false)?;
+                }
             }
 
             // Validate nameref target name after assignment.
@@ -520,9 +584,10 @@ impl DeclareCommand {
 
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
-    ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), brush_core::Error> {
+    ) -> Result<DeclarationParts, brush_core::Error> {
         let name;
         let assigned_index;
+        let append;
         let initial_value;
         let name_is_array;
 
@@ -562,6 +627,7 @@ impl DeclareCommand {
                     assigned_index = None;
                     name_is_array = false;
                 }
+                append = false;
 
                 // A `name[idx]=value` element becomes a single-element array
                 // literal (mirroring the parsed-assignment path); `name=value` a
@@ -589,6 +655,7 @@ impl DeclareCommand {
                         assigned_index = Some(index.to_owned());
                     }
                 }
+                append = assignment.append;
 
                 match &assignment.value {
                     ast::AssignmentValue::Scalar(s) => {
@@ -617,7 +684,42 @@ impl DeclareCommand {
             }
         }
 
-        Ok((name, assigned_index, initial_value, name_is_array))
+        Ok(DeclarationParts {
+            name,
+            assigned_index,
+            append,
+            initial_value,
+            name_is_array,
+        })
+    }
+
+    fn resolved_subscript_for_assignment(
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        resolved_name: &env::ResolvedName,
+        index: &str,
+    ) -> Result<String, brush_core::Error> {
+        let is_associative = context
+            .shell
+            .env()
+            .lookup_resolved(resolved_name)
+            .in_scope(
+                resolved_name
+                    .resolved_scope()
+                    .lookup_policy_or(EnvironmentLookup::Anywhere),
+            )
+            .get()
+            .is_some_and(|(_, v)| {
+                matches!(
+                    v.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                )
+            });
+        if is_associative {
+            Ok(index.to_owned())
+        } else {
+            Self::eval_arith_to_string(context, index)
+        }
     }
 
     /// Splits an expansion-formed declaration word into its `name`/`name[idx]`

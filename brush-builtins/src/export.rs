@@ -4,9 +4,9 @@ use std::io::Write;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
-    env::{EnvironmentLookup, EnvironmentScope},
+    env::{self, EnvironmentLookup, EnvironmentScope},
     parser::ast,
-    variables,
+    variables::{self, ShellValue, ShellValueLiteral, ShellValueUnsetType},
 };
 
 /// Add or update exported shell variables.
@@ -105,6 +105,7 @@ impl ExportCommand {
         Ok(Some(ExecutionResult::success()))
     }
 
+    #[expect(clippy::too_many_lines)]
     fn process_decl(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -197,7 +198,47 @@ impl ExportCommand {
                 // variable already exists honor the append here. A missing variable
                 // falls through: appending to nothing is a plain assignment.
                 if assignment.append {
-                    let resolved = brush_core::env::ResolvedName::plain(name.as_str());
+                    let resolved = context.shell.env().resolve_nameref(name)?;
+                    if let Some(index) = resolved.subscript() {
+                        if let ShellValueLiteral::Scalar(value) = value {
+                            let base_resolved = resolved.without_subscript();
+                            let index = Self::resolved_subscript_for_assignment(
+                                context,
+                                &base_resolved,
+                                index,
+                            )?;
+                            if let Some((_, variable)) = context
+                                .shell
+                                .env_mut()
+                                .lookup_mut_resolved(&base_resolved)
+                                .get()
+                            {
+                                variable.assign_at_index(index, value, true)?;
+                                if self.unexport {
+                                    variable.unexport();
+                                } else {
+                                    variable.export();
+                                }
+                            } else {
+                                context.shell.env_mut().update_or_add_array_element(
+                                    base_resolved,
+                                    index,
+                                    value,
+                                    |var| {
+                                        if self.unexport {
+                                            var.unexport();
+                                        } else {
+                                            var.export();
+                                        }
+                                        Ok(())
+                                    },
+                                    EnvironmentLookup::Anywhere,
+                                    EnvironmentScope::Global,
+                                )?;
+                            }
+                        }
+                        return Ok(ExecutionResult::success());
+                    }
                     if let Some((_, variable)) =
                         context.shell.env_mut().lookup_mut_resolved(&resolved).get()
                     {
@@ -230,6 +271,31 @@ impl ExportCommand {
         }
 
         Ok(ExecutionResult::success())
+    }
+
+    fn resolved_subscript_for_assignment(
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        resolved_name: &env::ResolvedName,
+        index: &str,
+    ) -> Result<String, brush_core::Error> {
+        let is_associative = context
+            .shell
+            .env()
+            .lookup_resolved(resolved_name)
+            .get()
+            .is_some_and(|(_, v)| {
+                matches!(
+                    v.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                )
+            });
+        if is_associative {
+            Ok(index.to_owned())
+        } else {
+            let parsed = brush_parser::arithmetic::parse(index)?;
+            Ok(context.shell.eval_arithmetic(&parsed)?.to_string())
+        }
     }
 }
 

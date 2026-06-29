@@ -51,7 +51,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
 
         // Resolve which file descriptor to use for tracing. We default to stderr,
         // but if BASH_XTRACEFD is set and refers to a valid file descriptor, use that instead.
-        let trace_file = if let Some(resolved) = self.env.get("BASH_XTRACEFD")
+        let trace_file = if let Some(resolved) = self.env.get_resolved("BASH_XTRACEFD")
             && let Some(value) = resolved.value_str(self)
             && let Ok(fd) = value.parse::<super::ShellFd>()
             && let Some(file) = self.open_files.try_fd(fd)

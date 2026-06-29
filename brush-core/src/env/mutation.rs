@@ -230,6 +230,12 @@ impl ShellEnvironment {
     ) -> Result<(), error::Error> {
         let auto_export = self.export_variables_on_modification;
         if let Some((_, var)) = self.get_mut_by_exact_name_using_policy(&name, lookup_policy) {
+            if var.is_treated_as_nameref()
+                && let variables::ShellValueLiteral::Scalar(target) = &value
+                && !super::names::valid_nameref_target_name(target)
+            {
+                return Err(error::ErrorKind::InvalidVariableName(target.clone()).into());
+            }
             var.assign(value, false)?;
             if auto_export {
                 var.export();
@@ -397,6 +403,21 @@ impl ShellEnvironment {
         var: ShellVariable,
     ) -> Result<(), error::Error> {
         self.add(name, var, EnvironmentScope::Global)
+    }
+
+    /// Tries to unset an array element from the environment using an exact
+    /// variable name and element index.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. This does not
+    /// resolve namerefs; callers implementing shell semantics should use the
+    /// `unset` builtin's resolved path instead.
+    #[deprecated(since = "0.5.0", note = "use resolved unset paths for shell semantics")]
+    pub fn unset_index(&mut self, name: &str, index: &str) -> Result<bool, error::Error> {
+        if let Some((_, var)) = self.get_mut_by_exact_name(name) {
+            var.unset_index(index)
+        } else {
+            Ok(false)
+        }
     }
 }
 

@@ -180,7 +180,7 @@ fn get_var_value<'a>(
 ) -> Result<Cow<'a, str>, EvalError> {
     // value_str() handles nameref resolution and subscripted namerefs
     // (e.g., ref → arr[2]) in one call — no manual resolution needed.
-    if let Some(resolved) = shell.env_var(name)
+    if let Some(resolved) = shell.env_resolved_var(name)
         && let Some(value) = resolved.value_str(shell)
     {
         return Ok(value.to_string().into());

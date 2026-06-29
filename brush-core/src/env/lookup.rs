@@ -126,7 +126,7 @@ impl<'a> VarLookup<'a> {
     /// Execute the lookup, resolving namerefs transparently. Silently returns
     /// `None` on nameref faults (cycle / max-depth).
     pub fn get(self) -> Option<ResolvedVarRef<'a>> {
-        self.env.get(self.name)
+        self.env.get_resolved(self.name)
     }
 
     /// Switch to bypass mode: look up the variable by its literal name
@@ -243,8 +243,56 @@ impl ShellEnvironment {
 
     /// Internal: resolving lookup that silently returns None on nameref faults.
     /// External callers go through `lookup(name).get()`.
-    pub(crate) fn get<S: AsRef<str>>(&self, name: S) -> Option<ResolvedVarRef<'_>> {
+    pub(crate) fn get_resolved<S: AsRef<str>>(&self, name: S) -> Option<ResolvedVarRef<'_>> {
         self.try_get(name).ok().flatten()
+    }
+
+    /// Tries to retrieve an immutable reference by exact name without nameref
+    /// resolution.
+    pub fn get_exact<S: AsRef<str>>(&self, name: S) -> Option<(EnvironmentScope, &ShellVariable)> {
+        self.get_by_exact_name(name)
+    }
+
+    /// Tries to retrieve an immutable reference to the variable with the given
+    /// literal name in the environment.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. This performs
+    /// an exact lookup and does not resolve namerefs; use
+    /// [`lookup`](Self::lookup) for nameref-aware lookups, or
+    /// [`lookup(name).bypassing_nameref()`](Self::lookup) when exact lookup is
+    /// intentional.
+    #[deprecated(
+        since = "0.5.0",
+        note = "use ShellEnvironment::lookup(name).get() for nameref-aware lookup or lookup(name).bypassing_nameref().get() for exact lookup"
+    )]
+    pub fn get<S: AsRef<str>>(&self, name: S) -> Option<(EnvironmentScope, &ShellVariable)> {
+        self.get_exact(name)
+    }
+
+    /// Tries to retrieve a mutable reference by exact name without nameref
+    /// resolution.
+    pub fn get_mut_exact<S: AsRef<str>>(
+        &mut self,
+        name: S,
+    ) -> Option<(EnvironmentScope, &mut ShellVariable)> {
+        self.get_mut_by_exact_name(name)
+    }
+
+    /// Tries to retrieve a mutable reference to the variable with the given
+    /// literal name in the environment.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. This performs
+    /// an exact lookup and does not resolve namerefs; new mutation paths should
+    /// resolve once and use [`lookup_mut_resolved`](Self::lookup_mut_resolved).
+    #[deprecated(
+        since = "0.5.0",
+        note = "use lookup_mut_resolved for pre-resolved names or the mutation helpers for nameref-aware writes"
+    )]
+    pub fn get_mut<S: AsRef<str>>(
+        &mut self,
+        name: S,
+    ) -> Option<(EnvironmentScope, &mut ShellVariable)> {
+        self.get_mut_exact(name)
     }
 
     /// Internal helper backing [`get`](Self::get): like `get`, but propagates
@@ -267,11 +315,30 @@ impl ShellEnvironment {
         // scope walk, which would find the local nameref again).
         let (resolved, scope) = self.resolve_nameref_chain(name)?;
         let (base, subscript) = parse_nameref_subscript(resolved.as_ref());
+        let mut base = base.to_owned();
+        let mut lookup_policy = scope.lookup_policy_or(EnvironmentLookup::Anywhere);
+
+        // Bash has an rvalue-only special case: if `a` resolves to `b[1]` and
+        // `b` is itself a nameref, reading `$a` reads element 1 of `b`'s target.
+        // Writing through `a` still mutates `b[1]` itself, so this belongs only
+        // in the immutable lookup path.
+        if subscript.is_some()
+            && self
+                .get_by_exact_name_using_policy(&base, lookup_policy)
+                .is_some_and(|(_, var)| var.is_treated_as_nameref())
+        {
+            let (base_resolved, base_scope) = self.resolve_nameref_chain(&base)?;
+            let base_resolved = base_resolved.into_owned();
+            let (resolved_base, base_subscript) = parse_nameref_subscript(&base_resolved);
+            if base_subscript.is_some() {
+                return Ok(None);
+            }
+            resolved_base.clone_into(&mut base);
+            lookup_policy = base_scope.lookup_policy_or(EnvironmentLookup::Anywhere);
+        }
+
         let subscript_owned = subscript.map(|s| s.to_owned());
-        let found = self.get_by_exact_name_using_policy(
-            base,
-            scope.lookup_policy_or(EnvironmentLookup::Anywhere),
-        );
+        let found = self.get_by_exact_name_using_policy(&base, lookup_policy);
         Ok(found.map(|(scope, var)| ResolvedVarRef::new(scope, var, subscript_owned)))
     }
 
@@ -358,24 +425,43 @@ impl ShellEnvironment {
     ///
     /// Internal: an environment method that needs the whole `Shell` is a
     /// layering inversion; the public surface is [`Shell::env_str`].
-    pub(crate) fn get_str<S: AsRef<str>, SE: extensions::ShellExtensions>(
+    pub(crate) fn get_resolved_str<S: AsRef<str>, SE: extensions::ShellExtensions>(
         &self,
         name: S,
         shell: &Shell<SE>,
     ) -> Option<Cow<'_, str>> {
-        self.get(name)?.value_str(shell)
+        self.get_resolved(name)?.value_str(shell)
+    }
+
+    /// Tries to retrieve the string value of the variable with the given literal
+    /// name in the environment.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. This performs
+    /// an exact lookup and returns the base variable value; use
+    /// [`Shell::env_str`](crate::Shell::env_str) for nameref-aware string lookup.
+    #[deprecated(
+        since = "0.5.0",
+        note = "use Shell::env_str for nameref-aware string lookup"
+    )]
+    pub fn get_str<S: AsRef<str>, SE: extensions::ShellExtensions>(
+        &self,
+        name: S,
+        shell: &Shell<SE>,
+    ) -> Option<Cow<'_, str>> {
+        self.get_by_exact_name(name)
+            .map(|(_, v)| v.value().to_cow_str(shell))
     }
 
     /// Checks if a variable of the given name is set, resolving namerefs.
     /// For subscripted namerefs, checks whether the specific element exists.
     ///
     /// Internal: the public surface is [`Shell::env_is_set`].
-    pub(crate) fn is_set<S: AsRef<str>, SE: extensions::ShellExtensions>(
+    pub(crate) fn is_resolved_set<S: AsRef<str>, SE: extensions::ShellExtensions>(
         &self,
         name: S,
         shell: &Shell<SE>,
     ) -> bool {
-        self.get(name).is_some_and(|resolved| {
+        self.get_resolved(name).is_some_and(|resolved| {
             let value = resolved.base_var().value();
             if !value.is_set() {
                 return false;
@@ -386,5 +472,56 @@ impl ShellEnvironment {
                 true
             }
         })
+    }
+
+    /// Checks if a variable of the given literal name is set in the environment.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. This performs
+    /// an exact lookup and does not resolve namerefs; use
+    /// [`Shell::env_is_set`](crate::Shell::env_is_set) for nameref-aware checks.
+    #[deprecated(
+        since = "0.5.0",
+        note = "use Shell::env_is_set for nameref-aware checks"
+    )]
+    pub fn is_set<S: AsRef<str>>(&self, name: S) -> bool {
+        self.get_by_exact_name(name)
+            .is_some_and(|(_, var)| var.value().is_set())
+    }
+
+    /// Tries to retrieve an immutable reference to a variable from the
+    /// environment, using the given literal name and lookup policy.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. This performs
+    /// exact lookup and does not resolve namerefs; use [`lookup_resolved`] or
+    /// [`lookup(name).bypassing_nameref()`](Self::lookup) with `.in_scope(...)`.
+    #[deprecated(
+        since = "0.5.0",
+        note = "use lookup_resolved(...).in_scope(policy).get() or lookup(name).bypassing_nameref().in_scope(policy).get()"
+    )]
+    pub fn get_using_policy<N: AsRef<str>>(
+        &self,
+        name: N,
+        lookup_policy: EnvironmentLookup,
+    ) -> Option<&ShellVariable> {
+        self.get_by_exact_name_using_policy(name, lookup_policy)
+            .map(|(_, var)| var)
+    }
+
+    /// Tries to retrieve a mutable reference to a variable from the environment,
+    /// using the given literal name and lookup policy.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. This performs
+    /// exact lookup and does not resolve namerefs.
+    #[deprecated(
+        since = "0.5.0",
+        note = "use lookup_mut_resolved(...).in_scope(policy).get() for pre-resolved names"
+    )]
+    pub fn get_mut_using_policy<N: AsRef<str>>(
+        &mut self,
+        name: N,
+        lookup_policy: EnvironmentLookup,
+    ) -> Option<&mut ShellVariable> {
+        self.get_mut_by_exact_name_using_policy(name, lookup_policy)
+            .map(|(_, var)| var)
     }
 }

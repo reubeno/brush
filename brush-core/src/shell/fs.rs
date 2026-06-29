@@ -63,7 +63,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
     /// Returns the shell's current home directory, if available.
     pub(crate) fn home_dir(&self) -> Option<PathBuf> {
-        if let Some(home) = self.env.get_str("HOME", self) {
+        if let Some(home) = self.env_str("HOME") {
             Some(PathBuf::from(home.to_string()))
         } else {
             // HOME isn't set, so let's sort it out ourselves.
@@ -80,7 +80,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         &'a self,
         filename: &'a str,
     ) -> impl Iterator<Item = PathBuf> + 'a {
-        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let path_var = self.env_str("PATH").unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
         pathsearch::search_for_executable(paths, filename)
@@ -97,7 +97,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         filename_prefix: &str,
         case_insensitive: bool,
     ) -> impl Iterator<Item = PathBuf> {
-        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let path_var = self.env_str("PATH").unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
         pathsearch::search_for_executable_with_prefix(paths, filename_prefix, case_insensitive)

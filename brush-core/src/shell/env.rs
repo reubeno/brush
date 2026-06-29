@@ -12,7 +12,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// * `name` - The name of the variable to retrieve.
     pub fn env_str(&self, name: &str) -> Option<Cow<'_, str>> {
-        self.env.get_str(name, self)
+        self.env.get_resolved_str(name, self)
     }
 
     /// Tries to retrieve a variable from the shell's environment, resolving namerefs.
@@ -24,8 +24,21 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// # Arguments
     ///
     /// * `name` - The name of the variable to retrieve.
-    pub fn env_var(&self, name: &str) -> Option<crate::env::ResolvedVarRef<'_>> {
-        self.env.get(name)
+    pub fn env_resolved_var(&self, name: &str) -> Option<crate::env::ResolvedVarRef<'_>> {
+        self.env.get_resolved(name)
+    }
+
+    /// Tries to retrieve a variable from the shell's environment without
+    /// resolving namerefs.
+    ///
+    /// Deprecated compatibility wrapper for the pre-nameref API. Use
+    /// [`env_resolved_var`](Self::env_resolved_var) for nameref-aware access.
+    #[deprecated(
+        since = "0.5.0",
+        note = "use Shell::env_resolved_var for nameref-aware access"
+    )]
+    pub fn env_var(&self, name: &str) -> Option<&ShellVariable> {
+        self.env.get_exact(name).map(|(_, var)| var)
     }
 
     /// Checks whether a variable of the given name is set in the shell's
@@ -35,7 +48,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// * `name` - The name of the variable to check.
     pub fn env_is_set(&self, name: &str) -> bool {
-        self.env.is_set(name, self)
+        self.env.is_resolved_set(name, self)
     }
 
     /// Tries to set a global variable in the shell's environment.

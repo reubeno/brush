@@ -339,7 +339,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
 
         // If there's a variable called PROMPT_COMMAND, then run it first.
         if options.run_prompt_command {
-            if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
+            if let Some(prompt_cmd_var) = shell.env_resolved_var("PROMPT_COMMAND") {
                 match prompt_cmd_var.resolved_value(shell).into_owned() {
                     brush_core::ShellValue::String(cmd_str) => {
                         Self::run_pre_prompt_command(shell, cmd_str).await?;
@@ -361,7 +361,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         if options.run_cmd_exec_funcs {
             // If there's a variable called precmd_functions, then call them.
             if let Some(brush_core::ShellValue::IndexedArray(precmd_funcs)) = shell
-                .env_var("precmd_functions")
+                .env_resolved_var("precmd_functions")
                 .map(|resolved| resolved.resolved_value(shell).into_owned())
             {
                 for func_name in precmd_funcs.values() {
@@ -400,7 +400,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         if options.run_cmd_exec_funcs {
             // If there's a variable called preexec_functions, then call them.
             if let Some(brush_core::ShellValue::IndexedArray(preexec_funcs)) = shell
-                .env_var("preexec_functions")
+                .env_resolved_var("preexec_functions")
                 .map(|resolved| resolved.resolved_value(shell).into_owned())
             {
                 for func_name in preexec_funcs.values() {

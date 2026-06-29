@@ -1729,19 +1729,50 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             _ => None,
         };
 
-        // PreResolved skips re-resolution AND preserves any subscript from the
-        // resolved target — so `${ref:=x}` through `ref→arr[2]` correctly
-        // writes to arr[2], not scalar-assigns to arr.
         if let Some(index) = index {
             self.shell
                 .env_mut()
                 .set_var_element(resolved_name, index, value)?;
+        } else if let Some((base_resolved, index)) = self
+            .expand_resolved_subscript_for_write(&resolved_name)
+            .await?
+        {
+            self.shell
+                .env_mut()
+                .set_var_element(base_resolved, index, value)?;
         } else {
             self.shell
                 .env_mut()
                 .set_var(resolved_name, variables::ShellValueLiteral::Scalar(value))?;
         }
         Ok(true)
+    }
+
+    async fn expand_resolved_subscript_for_write(
+        &mut self,
+        resolved: &env::ResolvedName,
+    ) -> Result<Option<(env::ResolvedName, String)>, error::Error> {
+        let Some(index) = resolved.subscript() else {
+            return Ok(None);
+        };
+        let base_resolved = resolved.without_subscript();
+        let is_assoc = self.resolved_name_is_associative(&base_resolved);
+        let index = self.expand_array_index(index, is_assoc).await?;
+        Ok(Some((base_resolved, index)))
+    }
+
+    fn resolved_name_is_associative(&self, resolved: &env::ResolvedName) -> bool {
+        self.shell
+            .env()
+            .lookup_resolved(resolved)
+            .get()
+            .is_some_and(|(_, v)| {
+                matches!(
+                    v.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                )
+            })
     }
 
     async fn try_resolve_parameter_to_variable(
@@ -2037,7 +2068,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // If the nameref resolved to a subscripted target, dispatch to the
         // array-element / all-indices handlers.
         if let Some(idx) = resolved.subscript() {
-            let base_resolved = resolved.without_subscript();
+            let Some(base_resolved) = self.resolve_subscripted_target_base_for_read(&resolved)
+            else {
+                return self.undefined_expansion(parameter, allow_unset_vars);
+            };
             if idx == "@" || idx == "*" {
                 return Ok(self.expand_all_indices(&base_resolved, idx == "*"));
             }
@@ -2060,6 +2094,27 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
         } else {
             self.undefined_expansion(parameter, allow_unset_vars)
+        }
+    }
+
+    fn resolve_subscripted_target_base_for_read(
+        &self,
+        resolved: &env::ResolvedName,
+    ) -> Option<env::ResolvedName> {
+        let base_resolved = resolved.without_subscript();
+        let is_base_nameref = self
+            .shell
+            .env()
+            .lookup_resolved(&base_resolved)
+            .get()
+            .is_some_and(|(_, v)| v.is_treated_as_nameref());
+        if !is_base_nameref {
+            return Some(base_resolved);
+        }
+
+        match self.shell.env().resolve_nameref(base_resolved.name()) {
+            Ok(r) if r.subscript().is_none() => Some(r),
+            _ => None,
         }
     }
 

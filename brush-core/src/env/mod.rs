@@ -138,14 +138,23 @@ impl ShellEnvironment {
         &'a self,
         name: &'a str,
     ) -> Result<(Cow<'a, str>, ResolvedScope), NameRefFault> {
+        self.resolve_nameref_chain_using_policy(name, EnvironmentLookup::Anywhere)
+    }
+
+    fn resolve_nameref_chain_using_policy<'a>(
+        &'a self,
+        name: &'a str,
+        lookup_policy: EnvironmentLookup,
+    ) -> Result<(Cow<'a, str>, ResolvedScope), NameRefFault> {
         // Quick check: is this even a nameref?
-        let (head_scope, first_target) = match self.get_by_exact_name(name) {
-            Some((scope, var)) if var.is_treated_as_nameref() => match var.value() {
-                ShellValue::String(s) if !s.is_empty() => (scope, s.as_str()),
+        let (head_scope, first_target) =
+            match self.get_by_exact_name_using_policy(name, lookup_policy) {
+                Some((scope, var)) if var.is_treated_as_nameref() => match var.value() {
+                    ShellValue::String(s) if !s.is_empty() => (scope, s.as_str()),
+                    _ => return Ok((Cow::Borrowed(name), ResolvedScope::Default)),
+                },
                 _ => return Ok((Cow::Borrowed(name), ResolvedScope::Default)),
-            },
-            _ => return Ok((Cow::Borrowed(name), ResolvedScope::Default)),
-        };
+            };
 
         // A self-referential nameref (`x → "x"`) is special: bash resolves it
         // against the GLOBAL scope. A function-local `local -n x=x` therefore
@@ -179,7 +188,8 @@ impl ShellEnvironment {
             // `parse_nameref_subscript`. Do NOT "fix" this to parse subscripts
             // here; that would cause double resolution when callers use
             // resolve_nameref().
-            let (scope, target) = match self.get_by_exact_name(current) {
+            let (scope, target) = match self.get_by_exact_name_using_policy(current, lookup_policy)
+            {
                 Some((scope, var)) if var.is_treated_as_nameref() => match var.value() {
                     ShellValue::String(s) if !s.is_empty() => (scope, s.as_str()),
                     _ => return Ok((Cow::Borrowed(current), ResolvedScope::Default)),
@@ -230,6 +240,20 @@ impl ShellEnvironment {
     /// positional parameters (`declare -n ref=1`, which bash also rejects).
     pub fn resolve_nameref(&self, name: &str) -> Result<ResolvedName, NameRefFault> {
         let (resolved, scope) = self.resolve_nameref_chain(name)?;
+        Ok(ResolvedName::parse(resolved.into_owned()).with_scope(scope))
+    }
+
+    /// Resolves a nameref chain using `lookup_policy` for each nameref lookup.
+    ///
+    /// This is primarily for declaration builtins with an explicit scope policy
+    /// such as `declare -g`, where local namerefs must not redirect a global
+    /// declaration.
+    pub fn resolve_nameref_using_policy(
+        &self,
+        name: &str,
+        lookup_policy: EnvironmentLookup,
+    ) -> Result<ResolvedName, NameRefFault> {
+        let (resolved, scope) = self.resolve_nameref_chain_using_policy(name, lookup_policy)?;
         Ok(ResolvedName::parse(resolved.into_owned()).with_scope(scope))
     }
 

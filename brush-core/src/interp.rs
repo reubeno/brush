@@ -1508,6 +1508,7 @@ async fn apply_assignment(
     // Figure out if we are trying to assign to a variable or assign to an element of an existing
     // array.
     let mut array_index;
+    let mut array_index_from_nameref_target = false;
     let variable_name = match &assignment.name {
         ast::AssignmentName::VariableName(name) => {
             array_index = None;
@@ -1575,6 +1576,7 @@ async fn apply_assignment(
                 return Ok(());
             }
             array_index = Some(idx.to_owned());
+            array_index_from_nameref_target = true;
         }
         resolved.without_subscript()
     } else {
@@ -1611,6 +1613,16 @@ async fn apply_assignment(
         } else {
             (true, false)
         };
+
+    if array_index_from_nameref_target && let Some(index) = array_index.take() {
+        array_index = Some(if will_be_indexed_array {
+            arithmetic::expand_and_eval(shell, params, &index, false)
+                .await?
+                .to_string()
+        } else {
+            expansion::basic_expand_word(shell, params, &index).await?
+        });
+    }
 
     // Expand the values.
     let new_value = match &assignment.value {
