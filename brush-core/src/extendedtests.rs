@@ -206,10 +206,10 @@ pub(crate) fn apply_unary_predicate_to_str(
                     // ref→arr[N] with explicit `[index]` is treated as unset.
                     return Ok(false);
                 }
-                let Some((_, var)) = shell.env().lookup_resolved(&resolved).get() else {
+                let Some(var) = shell.env().lookup_resolved(&resolved).get() else {
                     return Ok(false);
                 };
-                Ok(var.value().has_element_at(index_part, shell))
+                Ok(var.base_var().value().has_element_at(index_part, shell))
             } else {
                 // Case 1: unparsed-resolve + literal HashMap lookup. A nameref
                 // fault (cycle / max-depth) is reported as "unset", matching
@@ -230,9 +230,9 @@ pub(crate) fn apply_unary_predicate_to_str(
                             .lookup_policy_or(crate::env::EnvironmentLookup::Anywhere),
                     )
                     .get();
-                if let Some((_, var)) = found {
+                if let Some(var) = found {
                     Ok(!matches!(
-                        var.value(),
+                        var.base_var().value(),
                         crate::variables::ShellValue::Unset(_)
                     ))
                 } else {
@@ -242,7 +242,10 @@ pub(crate) fn apply_unary_predicate_to_str(
         }
         ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
             match shell.env().lookup(operand).bypassing_nameref().get() {
-                Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
+                Some(reffed) => {
+                    Ok(reffed.base_var().value().is_set()
+                        && reffed.base_var().is_treated_as_nameref())
+                }
                 None => Ok(false),
             }
         }

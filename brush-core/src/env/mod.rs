@@ -640,14 +640,14 @@ mod tests {
             .unwrap();
 
         // lookup("ref").bypassing_nameref().get() should return the nameref variable.
-        let (scope, var) = env
+        let r = env
             .lookup("ref")
             .bypassing_nameref()
             .get()
             .expect("should find ref");
-        assert_eq!(scope, EnvironmentScope::Global);
-        assert!(var.is_treated_as_nameref());
-        assert_eq!(var_str(var), "target");
+        assert_eq!(r.scope(), EnvironmentScope::Global);
+        assert!(r.base_var().is_treated_as_nameref());
+        assert_eq!(var_str(r.base_var()), "target");
     }
 
     #[test]
@@ -657,12 +657,12 @@ mod tests {
             .unwrap();
 
         let resolved = ResolvedName::plain("target");
-        let (scope, var) = env
+        let r = env
             .lookup_resolved(&resolved)
             .get()
             .expect("should find target");
-        assert_eq!(scope, EnvironmentScope::Global);
-        assert_eq!(var_str(var), "hello");
+        assert_eq!(r.scope(), EnvironmentScope::Global);
+        assert_eq!(var_str(r.base_var()), "hello");
     }
 
     #[test]
@@ -699,14 +699,14 @@ mod tests {
         env.add("x", make_var("local"), EnvironmentScope::Local)
             .unwrap();
 
-        let (scope, var) = env
+        let r = env
             .lookup("x")
             .bypassing_nameref()
             .in_scope(EnvironmentLookup::OnlyInCurrentLocal)
             .get()
             .expect("should find local x");
-        assert_eq!(scope, EnvironmentScope::Local);
-        assert_eq!(var_str(var), "local");
+        assert_eq!(r.scope(), EnvironmentScope::Local);
+        assert_eq!(var_str(r.base_var()), "local");
         env.pop_scope(EnvironmentScope::Local).unwrap();
     }
 
@@ -810,22 +810,22 @@ mod tests {
         let resolved = ResolvedName::plain("x");
 
         // OnlyInGlobal should find the global one.
-        let (scope, var) = env
+        let r = env
             .lookup_resolved(&resolved)
             .in_scope(EnvironmentLookup::OnlyInGlobal)
             .get()
             .expect("should find global x");
-        assert_eq!(scope, EnvironmentScope::Global);
-        assert_eq!(var_str(var), "global");
+        assert_eq!(r.scope(), EnvironmentScope::Global);
+        assert_eq!(var_str(r.base_var()), "global");
 
         // OnlyInCurrentLocal should find the local one.
-        let (scope, var) = env
+        let r = env
             .lookup_resolved(&resolved)
             .in_scope(EnvironmentLookup::OnlyInCurrentLocal)
             .get()
             .expect("should find local x");
-        assert_eq!(scope, EnvironmentScope::Local);
-        assert_eq!(var_str(var), "local");
+        assert_eq!(r.scope(), EnvironmentScope::Local);
+        assert_eq!(var_str(r.base_var()), "local");
 
         env.pop_scope(EnvironmentScope::Local).unwrap();
     }

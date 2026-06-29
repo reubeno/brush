@@ -324,7 +324,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             .lookup("_")
             .bypassing_nameref()
             .get()
-            .is_some_and(|(_, v)| v.is_readonly())
+            .is_some_and(|r| r.base_var().is_readonly())
         {
             return;
         }

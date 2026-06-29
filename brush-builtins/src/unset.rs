@@ -57,7 +57,7 @@ impl builtins::Command for UnsetCommand {
                     .lookup(name.as_str())
                     .bypassing_nameref()
                     .get()
-                    .is_some_and(|(_, v)| v.is_treated_as_nameref());
+                    .is_some_and(|r| r.base_var().is_treated_as_nameref());
                 if is_nameref {
                     context
                         .shell
@@ -126,9 +126,9 @@ fn unset_array_index(
 
     // Check if the resolved target is an associative array (use lookup with the
     // already-resolved name to avoid redundant nameref resolution).
-    let is_assoc_array = if let Some((_, var)) = shell.env().lookup_resolved(&resolved).get() {
+    let is_assoc_array = if let Some(var) = shell.env().lookup_resolved(&resolved).get() {
         matches!(
-            var.value(),
+            var.base_var().value(),
             ShellValue::AssociativeArray(_)
                 | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
         )

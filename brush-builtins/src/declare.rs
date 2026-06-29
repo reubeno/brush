@@ -219,7 +219,7 @@ impl DeclareCommand {
                 // For some reason, bash does not print an error message in this case.
                 Ok(false)
             }
-        } else if let Some((_, variable)) = context
+        } else if let Some(variable) = context
             .shell
             .env()
             .lookup(name.as_str())
@@ -227,12 +227,12 @@ impl DeclareCommand {
             .in_scope(lookup)
             .get()
         {
-            let mut cs = variable.attribute_flags(context.shell);
+            let mut cs = variable.base_var().attribute_flags(context.shell);
             if cs.is_empty() {
                 cs.push('-');
             }
 
-            let resolved_value = variable.resolve_value(context.shell);
+            let resolved_value = variable.base_var().resolve_value(context.shell);
             let separator_str = if matches!(resolved_value, ShellValue::Unset(_)) {
                 ""
             } else {
@@ -410,7 +410,7 @@ impl DeclareCommand {
                 .lookup_resolved(&env::ResolvedName::try_plain(name.as_str())?)
                 .in_scope(lookup)
                 .get()
-                .is_some_and(|(_, v)| v.is_treated_as_integer()),
+                .is_some_and(|v| v.base_var().is_treated_as_integer()),
         };
         let initial_value = match (will_be_integer, initial_value) {
             (true, Some(value)) => Some(Self::eval_integer_initializer(context, value)?),
@@ -429,9 +429,9 @@ impl DeclareCommand {
                     .lookup_resolved(&env::ResolvedName::try_plain(name.as_str())?)
                     .in_scope(lookup)
                     .get()
-                    .is_some_and(|(_, v)| {
+                    .is_some_and(|v| {
                         matches!(
-                            v.value(),
+                            v.base_var().value(),
                             ShellValue::AssociativeArray(_)
                                 | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
                         )
@@ -708,9 +708,9 @@ impl DeclareCommand {
                     .lookup_policy_or(EnvironmentLookup::Anywhere),
             )
             .get()
-            .is_some_and(|(_, v)| {
+            .is_some_and(|v| {
                 matches!(
-                    v.value(),
+                    v.base_var().value(),
                     ShellValue::AssociativeArray(_)
                         | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
                 )

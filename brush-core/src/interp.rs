@@ -862,7 +862,7 @@ impl Execute for ast::ForClauseCommand {
                 .lookup(self.variable_name.as_str())
                 .bypassing_nameref()
                 .get()
-                .is_some_and(|(_, v)| v.is_treated_as_nameref());
+                .is_some_and(|r| r.base_var().is_treated_as_nameref());
             if is_nameref && !crate::env::valid_nameref_target_name(&value) {
                 writeln!(shell.stderr(), "`{value}': not a valid identifier")?;
                 result = ExecutionExitCode::GeneralError.into();
@@ -1535,7 +1535,7 @@ async fn apply_assignment(
         .lookup(variable_name.as_str())
         .bypassing_nameref()
         .get()
-        .is_some_and(|(_, v)| v.is_treated_as_nameref());
+        .is_some_and(|r| r.base_var().is_treated_as_nameref());
 
     let resolved_name = if is_nameref {
         let resolved = match shell.env().resolve_nameref(variable_name) {
@@ -1601,14 +1601,14 @@ async fn apply_assignment(
     // variable becomes an indexed array, so its subscripts are still evaluated.
     // This is a fresh read that isn't held across later shell mutations.
     let (will_be_indexed_array, target_is_integer) =
-        if let Some((_, existing)) = shell.env().lookup_resolved(&resolved_name).get() {
+        if let Some(existing) = shell.env().lookup_resolved(&resolved_name).get() {
             (
                 !matches!(
-                    existing.value(),
+                    existing.base_var().value(),
                     ShellValue::AssociativeArray(_)
                         | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
                 ),
-                existing.is_treated_as_integer(),
+                existing.base_var().is_treated_as_integer(),
             )
         } else {
             (true, false)

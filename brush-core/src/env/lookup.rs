@@ -6,8 +6,11 @@
 //!   - Auto-resolving (`lookup`): `.get()` / `.bypassing_nameref()`
 //!   - Pre-resolved / bypass: `.get()` / `.in_scope(policy)`
 //!
-//! Mutation through a nameref is done by resolving once (immutably) and then
-//! writing via the resolved name — see `update_or_add` / `lookup_mut_resolved`.
+//! Both immutable builders' `.get()` return the same [`ResolvedVarRef`] shape
+//! (the bypass/pre-resolved ones never carry a subscript). The single mutable
+//! builder returns `(scope, &mut var)`. Mutation through a nameref resolves once
+//! (immutably), then writes via the resolved name — see `update_or_add` /
+//! `lookup_mut_resolved`.
 
 use std::borrow::Cow;
 
@@ -157,10 +160,13 @@ impl<'a> DirectVarLookup<'a> {
         self
     }
 
-    /// Execute the lookup without nameref resolution.
-    pub fn get(self) -> Option<(EnvironmentScope, &'a ShellVariable)> {
+    /// Execute the lookup without nameref resolution, returning the same
+    /// [`ResolvedVarRef`] shape as the auto-resolving builder (with no
+    /// subscript). Mirrors [`VarLookup::get`] so both immutable builders agree.
+    pub fn get(self) -> Option<ResolvedVarRef<'a>> {
         self.env
             .get_by_exact_name_using_policy(self.name, self.policy)
+            .map(|(scope, var)| ResolvedVarRef::new(scope, var, None))
     }
 }
 

@@ -283,9 +283,9 @@ impl ExportCommand {
             .env()
             .lookup_resolved(resolved_name)
             .get()
-            .is_some_and(|(_, v)| {
+            .is_some_and(|v| {
                 matches!(
-                    v.value(),
+                    v.base_var().value(),
                     ShellValue::AssociativeArray(_)
                         | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
                 )

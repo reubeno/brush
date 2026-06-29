@@ -1642,8 +1642,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let keys = if resolved.subscript().is_some() {
                     // In bash, ${!ref[@]} where ref→arr[2] returns empty.
                     vec![]
-                } else if let Some((_, var)) = self.shell.env().lookup_resolved(&resolved).get() {
-                    var.value().element_keys(self.shell)
+                } else if let Some(var) = self.shell.env().lookup_resolved(&resolved).get() {
+                    var.base_var().value().element_keys(self.shell)
                 } else {
                     vec![]
                 };
@@ -1709,17 +1709,16 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
         let index = match parameter {
             brush_parser::word::Parameter::NamedWithIndex { index, .. } => {
-                let is_set_assoc_array = if let Some((_, var)) =
-                    self.shell.env().lookup_resolved(&resolved_name).get()
-                {
-                    matches!(
-                        var.value(),
-                        ShellValue::AssociativeArray(_)
-                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                    )
-                } else {
-                    false
-                };
+                let is_set_assoc_array =
+                    if let Some(var) = self.shell.env().lookup_resolved(&resolved_name).get() {
+                        matches!(
+                            var.base_var().value(),
+                            ShellValue::AssociativeArray(_)
+                                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                        )
+                    } else {
+                        false
+                    };
 
                 Some(
                     self.expand_array_index(index.as_str(), is_set_assoc_array)
@@ -1766,9 +1765,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             .env()
             .lookup_resolved(resolved)
             .get()
-            .is_some_and(|(_, v)| {
+            .is_some_and(|v| {
                 matches!(
-                    v.value(),
+                    v.base_var().value(),
                     ShellValue::AssociativeArray(_)
                         | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
                 )
@@ -1822,7 +1821,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 .env()
                 .lookup_resolved(r)
                 .get()
-                .map(|(_, var)| var.clone())
+                .map(|r| r.base_var().clone())
         });
         // Drop ResolvedName, hand back the owned name for the caller.
         let name = resolved.map(env::ResolvedName::into_name);
@@ -1935,14 +1934,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // expansion through the value.  For example, if top→middle→ultimate,
         // ${!top} returns "ultimate", not "middle".
         if let brush_parser::word::Parameter::Named(n) = parameter {
-            if let Some((_, var)) = self
+            if let Some(var) = self
                 .shell
                 .env()
                 .lookup(n.as_str())
                 .bypassing_nameref()
                 .get()
             {
-                if var.is_treated_as_nameref() {
+                if var.base_var().is_treated_as_nameref() {
                     match self.shell.env().resolve_nameref_unparsed(n) {
                         // The self-name scope is not modeled for `${!ref}`.
                         Ok(resolved) if resolved.name() != n.as_str() => {
@@ -2042,12 +2041,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // resolve_nameref call (which would allocate via Cow::into_owned even
         // when no chain is followed).
         let lookup = self.shell.env().lookup(n).bypassing_nameref().get();
-        let is_nameref = lookup.is_some_and(|(_, v)| v.is_treated_as_nameref());
+        let is_nameref = lookup
+            .as_ref()
+            .is_some_and(|r| r.base_var().is_treated_as_nameref());
 
         if !is_nameref {
             return Ok(match lookup {
-                Some((_, var)) if !matches!(var.value(), ShellValue::Unset(_)) => {
-                    match var.value().try_get_cow_str(self.shell) {
+                Some(r) if !matches!(r.base_var().value(), ShellValue::Unset(_)) => {
+                    match r.base_var().value().try_get_cow_str(self.shell) {
                         Some(value) => Expansion::from(value.to_string()),
                         None => return self.undefined_expansion(parameter, allow_unset_vars),
                     }
@@ -2081,11 +2082,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
 
         // Name is already resolved — use lookup_resolved to skip re-resolution.
-        if let Some((_, var)) = self.shell.env().lookup_resolved(&resolved).get() {
-            if matches!(var.value(), ShellValue::Unset(_)) {
+        if let Some(var) = self.shell.env().lookup_resolved(&resolved).get() {
+            if matches!(var.base_var().value(), ShellValue::Unset(_)) {
                 self.undefined_expansion(parameter, allow_unset_vars)
             } else {
-                let value = var.value().try_get_cow_str(self.shell);
+                let value = var.base_var().value().try_get_cow_str(self.shell);
                 if let Some(value) = value {
                     Ok(Expansion::from(value.to_string()))
                 } else {
@@ -2107,7 +2108,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             .env()
             .lookup_resolved(&base_resolved)
             .get()
-            .is_some_and(|(_, v)| v.is_treated_as_nameref());
+            .is_some_and(|v| v.base_var().is_treated_as_nameref());
         if !is_base_nameref {
             return Some(base_resolved);
         }
@@ -2122,8 +2123,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// through any nameref chain — this method uses `lookup()` with the
     /// already-resolved name to avoid redundant or lossy re-resolution.
     fn expand_all_indices(&self, resolved: &env::ResolvedName, concatenate: bool) -> Expansion {
-        if let Some((_, var)) = self.shell.env().lookup_resolved(resolved).get() {
-            let values = var.value().element_values(self.shell);
+        if let Some(var) = self.shell.env().lookup_resolved(resolved).get() {
+            let values = var.base_var().value().element_values(self.shell);
             Expansion {
                 fields: values
                     .into_iter()
@@ -2158,16 +2159,16 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             .env()
             .lookup_resolved(resolved)
             .get()
-            .is_some_and(|(_, v)| {
+            .is_some_and(|v| {
                 matches!(
-                    v.value(),
+                    v.base_var().value(),
                     ShellValue::AssociativeArray(_)
                         | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
                 )
             });
         let index_to_use = self.expand_array_index(index, is_assoc).await?;
-        if let Some((_, var)) = self.shell.env().lookup_resolved(resolved).get()
-            && let Ok(Some(value)) = var.value().get_at(&index_to_use, self.shell)
+        if let Some(var) = self.shell.env().lookup_resolved(resolved).get()
+            && let Ok(Some(value)) = var.base_var().value().get_at(&index_to_use, self.shell)
         {
             Ok(Expansion::from(value.to_string()))
         } else {
