@@ -111,8 +111,8 @@ mod builder;
 mod factory;
 mod unimp;
 
-pub use builder::ShellBuilderExt;
-pub use factory::{BuiltinSet, default_builtins};
+pub use builder::ShellExt;
+pub use factory::{BuiltinSet, register_default_builtins};
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.
