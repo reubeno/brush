@@ -195,6 +195,23 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let path_to_open = self.absolute_path(path.as_ref());
 
+        // Consult the configured command interceptor (capability confinement)
+        // before opening. This is the single choke point through which all
+        // filesystem-path opens flow (redirections and `source`/`.`), so a
+        // policy applied here covers every path-based open in the shell.
+        {
+            use crate::extensions::CommandInterceptor as _;
+            let write = open_options_request_write(options);
+            if let crate::extensions::OpenDecision::Deny(reason) =
+                self.command_interceptor().before_open(&path_to_open, write)
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("open denied: {reason}"),
+                ));
+            }
+        }
+
         // See if this is a reference to a file descriptor. These paths should
         // reflect the shell's current execution fds, which can differ from the
         // host process fds after redirections like here-docs.
@@ -240,5 +257,40 @@ fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
         filename.to_string_lossy().parse::<ShellFd>().ok()
     } else {
         None
+    }
+}
+
+/// Best-effort determination of whether an [`std::fs::OpenOptions`] requests
+/// write access (including append). Used solely to inform the capability
+/// interceptor's `before_open` hook of write-intent.
+///
+/// `std::fs::OpenOptions` exposes no getters for its configured flags, so we
+/// inspect its `Debug` representation, which is documented to render the
+/// `write` and `append` booleans. If the format ever changes such that we
+/// cannot determine intent, we conservatively report `true` (write) so that a
+/// confinement policy never under-reports access.
+fn open_options_request_write(options: &std::fs::OpenOptions) -> bool {
+    let rendered = format!("{options:?}");
+
+    // Reads the boolean value of a `name: <bool>` field from the rendered
+    // debug string without slicing on byte offsets (which could panic on
+    // multi-byte boundaries).
+    let flag = |name: &str| -> Option<bool> {
+        let needle = format!("{name}: ");
+        let tail = rendered.split_once(&needle)?.1;
+        if tail.starts_with("true") {
+            Some(true)
+        } else if tail.starts_with("false") {
+            Some(false)
+        } else {
+            None
+        }
+    };
+
+    match (flag("write"), flag("append")) {
+        // We could read both flags: write access iff either is set.
+        (Some(write), Some(append)) => write || append,
+        // Could not parse the expected fields; fail safe toward "write".
+        _ => true,
     }
 }
