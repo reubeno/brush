@@ -70,7 +70,7 @@ crate::minus_or_plus_flag_arg!(
     "Shell functions inherit DEBUG and RETURN traps"
 );
 
-#[derive(clap::Parser)]
+#[derive(clap::Parser, Default)]
 pub(crate) struct SetOption {
     #[arg(short = 'o', name = "setopt_enable", num_args=0..=1, value_name = "OPT")]
     enable: Option<Vec<String>>,
@@ -79,7 +79,7 @@ pub(crate) struct SetOption {
 }
 
 /// Manage set-based shell options.
-#[derive(Parser)]
+#[derive(Parser, Default)]
 #[clap(disable_help_flag = true)]
 pub(crate) struct SetCommand {
     /// Display help for this command.
@@ -131,6 +131,9 @@ pub(crate) struct SetCommand {
 
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     positional_args: Vec<String>,
+
+    #[arg(skip)]
+    positional_only: bool,
 }
 
 impl builtins::Command for SetCommand {
@@ -145,6 +148,18 @@ impl builtins::Command for SetCommand {
     where
         I: IntoIterator<Item = String>,
     {
+        let args: Vec<_> = args.into_iter().collect();
+        if args
+            .get(1)
+            .is_some_and(|arg| Self::starts_positional_args(arg))
+        {
+            return Ok(Self {
+                positional_args: args.into_iter().skip(1).collect(),
+                positional_only: true,
+                ..Self::default()
+            });
+        }
+
         //
         // TODO(set): This is getting pretty messy; we need to see how to avoid this -- handling
         // from leaking into too many commands' custom parsing.
@@ -193,6 +208,14 @@ impl builtins::Command for SetCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
+        if self.positional_only {
+            Self::apply_positional_args(
+                context.shell.current_shell_args_mut(),
+                self.positional_args.as_slice(),
+            );
+            return Ok(ExecutionResult::success());
+        }
+
         let mut result = ExecutionResult::success();
 
         let mut saw_option = false;
@@ -374,9 +397,29 @@ impl builtins::Command for SetCommand {
 
         let args = context.shell.current_shell_args_mut();
 
-        let skip = match self.positional_args.first() {
+        let skip = Self::apply_positional_args(args, self.positional_args.as_slice());
+
+        saw_option = saw_option || skip.is_some();
+
+        // If we *still* haven't seen any options, then we need to display all variables and
+        // functions.
+        if !saw_option {
+            display_all(&context)?;
+        }
+
+        Ok(result)
+    }
+}
+
+impl SetCommand {
+    fn starts_positional_args(arg: &str) -> bool {
+        arg == "-" || arg == "--" || !arg.starts_with(['-', '+'])
+    }
+
+    fn apply_positional_args(args: &mut Vec<String>, positional_args: &[String]) -> Option<usize> {
+        let skip = match positional_args.first() {
             Some(x) if x == "-" => {
-                if self.positional_args.len() > 1 {
+                if positional_args.len() > 1 {
                     args.clear();
                 }
                 1
@@ -389,22 +432,14 @@ impl builtins::Command for SetCommand {
                 args.clear();
                 0
             }
-            None => 0,
+            None => return None,
         };
 
-        for arg in self.positional_args.iter().skip(skip) {
+        for arg in positional_args.iter().skip(skip) {
             args.push(arg.to_owned());
         }
 
-        saw_option = saw_option || !self.positional_args.is_empty();
-
-        // If we *still* haven't seen any options, then we need to display all variables and
-        // functions.
-        if !saw_option {
-            display_all(&context)?;
-        }
-
-        Ok(result)
+        Some(skip)
     }
 }
 
