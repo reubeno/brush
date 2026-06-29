@@ -33,6 +33,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// Deprecated compatibility wrapper for the pre-nameref API. Use
     /// [`env_resolved_var`](Self::env_resolved_var) for nameref-aware access.
+    #[doc(hidden)]
     #[deprecated(
         since = "0.5.0",
         note = "use Shell::env_resolved_var for nameref-aware access"

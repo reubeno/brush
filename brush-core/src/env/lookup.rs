@@ -270,6 +270,7 @@ impl ShellEnvironment {
     /// [`lookup`](Self::lookup) for nameref-aware lookups, or
     /// [`lookup(name).bypassing_nameref()`](Self::lookup) when exact lookup is
     /// intentional.
+    #[doc(hidden)]
     #[deprecated(
         since = "0.5.0",
         note = "use ShellEnvironment::lookup(name).get() for nameref-aware lookup or lookup(name).bypassing_nameref().get() for exact lookup"
@@ -293,6 +294,7 @@ impl ShellEnvironment {
     /// Deprecated compatibility wrapper for the pre-nameref API. This performs
     /// an exact lookup and does not resolve namerefs; new mutation paths should
     /// resolve once and use [`lookup_mut_resolved`](Self::lookup_mut_resolved).
+    #[doc(hidden)]
     #[deprecated(
         since = "0.5.0",
         note = "use lookup_mut_resolved for pre-resolved names or the mutation helpers for nameref-aware writes"
@@ -448,6 +450,7 @@ impl ShellEnvironment {
     /// Deprecated compatibility wrapper for the pre-nameref API. This performs
     /// an exact lookup and returns the base variable value; use
     /// [`Shell::env_str`](crate::Shell::env_str) for nameref-aware string lookup.
+    #[doc(hidden)]
     #[deprecated(
         since = "0.5.0",
         note = "use Shell::env_str for nameref-aware string lookup"
@@ -488,6 +491,7 @@ impl ShellEnvironment {
     /// Deprecated compatibility wrapper for the pre-nameref API. This performs
     /// an exact lookup and does not resolve namerefs; use
     /// [`Shell::env_is_set`](crate::Shell::env_is_set) for nameref-aware checks.
+    #[doc(hidden)]
     #[deprecated(
         since = "0.5.0",
         note = "use Shell::env_is_set for nameref-aware checks"
@@ -503,6 +507,7 @@ impl ShellEnvironment {
     /// Deprecated compatibility wrapper for the pre-nameref API. This performs
     /// exact lookup and does not resolve namerefs; use [`lookup_resolved`] or
     /// [`lookup(name).bypassing_nameref()`](Self::lookup) with `.in_scope(...)`.
+    #[doc(hidden)]
     #[deprecated(
         since = "0.5.0",
         note = "use lookup_resolved(...).in_scope(policy).get() or lookup(name).bypassing_nameref().in_scope(policy).get()"
@@ -521,6 +526,7 @@ impl ShellEnvironment {
     ///
     /// Deprecated compatibility wrapper for the pre-nameref API. This performs
     /// exact lookup and does not resolve namerefs.
+    #[doc(hidden)]
     #[deprecated(
         since = "0.5.0",
         note = "use lookup_mut_resolved(...).in_scope(policy).get() for pre-resolved names"

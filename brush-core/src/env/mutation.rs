@@ -363,6 +363,7 @@ impl ShellEnvironment {
     /// Deprecated compatibility wrapper for the pre-nameref API. This does not
     /// resolve namerefs; callers implementing shell semantics should use the
     /// `unset` builtin's resolved path instead.
+    #[doc(hidden)]
     #[deprecated(since = "0.5.0", note = "use resolved unset paths for shell semantics")]
     pub fn unset_index(&mut self, name: &str, index: &str) -> Result<bool, error::Error> {
         if let Some((_, var)) = self.get_mut_by_exact_name(name) {
