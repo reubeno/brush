@@ -104,6 +104,41 @@ fn parse_command_with_backslash_escape() -> Result<()> {
 }
 
 #[test]
+fn parse_operator_followed_by_escaped_word() -> Result<()> {
+    for input in [
+        r"cat <\file",
+        r"printf hi |\cat",
+        r"false &&\echo ok",
+        r"echo one;\echo two",
+    ] {
+        let _ = test_with_snapshot(input)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn parse_line_continuation_inside_operators() -> Result<()> {
+    for input in [
+        r"true &\
+& echo yes",
+        r"false |\
+| echo no",
+        r"echo x |\
+& cat",
+        r"case x in a) : ;\
+; esac",
+        r"cat <\
+<EOF
+body
+EOF
+",
+    ] {
+        let _ = test_with_snapshot(input)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn parse_command_with_variable() -> Result<()> {
     let input = "echo $HOME";
     let result = test_with_snapshot(input)?;
