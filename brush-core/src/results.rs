@@ -3,7 +3,7 @@
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 
-use crate::{error, processes};
+use crate::{ExecutionParameters, error, processes};
 
 /// Represents the result of executing a command or similar item.
 #[derive(Default)]
@@ -49,6 +49,29 @@ impl ExecutionResult {
         Self {
             next_control_flow: ExecutionControlFlow::Normal,
             exit_code: ExecutionExitCode::GeneralError,
+        }
+    }
+
+    /// Returns a new `ExecutionResult` for an interrupted execution.
+    pub const fn interrupted() -> Self {
+        Self {
+            next_control_flow: ExecutionControlFlow::Interrupted,
+            exit_code: ExecutionExitCode::Interrupted,
+        }
+    }
+
+    /// Returns a new `ExecutionResult` for execution interrupted by a signal.
+    pub fn signaled(signal_number: i32) -> Self {
+        let exit_code = match u8::try_from(signal_number) {
+            Ok(signal_number) if (1..=127).contains(&signal_number) => {
+                ExecutionExitCode::from(128 + signal_number)
+            }
+            _ => ExecutionExitCode::Interrupted,
+        };
+
+        Self {
+            next_control_flow: ExecutionControlFlow::Interrupted,
+            exit_code,
         }
     }
 
@@ -218,6 +241,8 @@ pub enum ExecutionControlFlow {
     ReturnFromFunctionOrScript,
     /// Exit the shell.
     ExitShell,
+    /// Stop execution because a signal interrupted the shell.
+    Interrupted,
 }
 
 impl ExecutionControlFlow {
@@ -260,13 +285,42 @@ impl From<ExecutionResult> for ExecutionSpawnResult {
 impl ExecutionSpawnResult {
     /// Waits for the command to complete.
     pub async fn wait(self) -> Result<ExecutionWaitResult, error::Error> {
+        self.wait_impl(None).await
+    }
+
+    pub(crate) async fn wait_with_params(
+        self,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionWaitResult, error::Error> {
+        self.wait_impl(Some(params)).await
+    }
+
+    async fn wait_impl(
+        self,
+        params: Option<&ExecutionParameters>,
+    ) -> Result<ExecutionWaitResult, error::Error> {
         let result = match self {
             Self::StartedProcess(mut child) => {
                 // Wait for the process to exit or for a relevant signal, whichever happens
                 // first.
-                match child.wait().await? {
+                let wait_result = if let Some(params) = params {
+                    child.wait_with_params(params).await?
+                } else {
+                    child.wait().await?
+                };
+
+                let forwarded_signal = child.forwarded_signal();
+                match wait_result {
                     processes::ProcessWaitResult::Completed(output) => {
-                        ExecutionWaitResult::Completed(ExecutionResult::from(output))
+                        let result = ExecutionResult::from(output);
+                        if forwarded_signal
+                            && !matches!(result.exit_code, ExecutionExitCode::Interrupted)
+                            && let Some(params) = params
+                        {
+                            params.clear_pending_signal();
+                        }
+
+                        ExecutionWaitResult::Completed(result)
                     }
                     processes::ProcessWaitResult::Stopped => ExecutionWaitResult::Stopped(child),
                 }
