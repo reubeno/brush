@@ -257,7 +257,7 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
             .shell
             .env_mut()
             .write(VAR_GETOPTS_NEXT_CHAR_INDEX)
-            .updating(|v| {
+            .modifying(|v| {
                 v.hide_from_enumeration();
                 Ok(())
             })
@@ -370,7 +370,7 @@ fn update_variables<SE: brush_core::ShellExtensions>(
         .shell
         .env_mut()
         .write(VAR_GETOPTS_LAST_OPTIND)
-        .updating(|v| {
+        .modifying(|v| {
             v.hide_from_enumeration();
             Ok(())
         })

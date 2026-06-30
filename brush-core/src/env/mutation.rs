@@ -19,7 +19,7 @@ struct WriteTarget {
     scope: ResolvedScope,
 }
 
-/// Post-assignment hook stored by [`VarWrite::updating`].
+/// Post-assignment hook stored by [`VarWrite::modifying`].
 type VarUpdater<'a> = Box<dyn Fn(&mut ShellVariable) -> Result<(), error::Error> + 'a>;
 
 /// Fluent builder for a variable write, created by [`ShellEnvironment::write`] —
@@ -27,7 +27,7 @@ type VarUpdater<'a> = Box<dyn Fn(&mut ShellVariable) -> Result<(), error::Error>
 /// builders.
 ///
 /// Collects optional modifiers — an array element [`at_index`](Self::at_index),
-/// a post-assignment [`updating`](Self::updating) hook, a lookup
+/// a post-assignment [`modifying`](Self::modifying) hook, a lookup
 /// [`in_scope`](Self::in_scope) restriction, and the
 /// [`creating_in`](Self::creating_in) scope for a freshly-created variable —
 /// then performs the write on [`set`](Self::set). Nameref resolution follows the
@@ -229,7 +229,7 @@ impl ShellEnvironment {
     /// Begins a fluent variable write — the mutating counterpart to
     /// [`lookup`](Self::lookup). Defaults to a whole-variable assignment that
     /// looks anywhere and creates in the global scope; chain
-    /// [`at_index`](VarWrite::at_index), [`updating`](VarWrite::updating),
+    /// [`at_index`](VarWrite::at_index), [`modifying`](VarWrite::modifying),
     /// [`in_scope`](VarWrite::in_scope), or [`creating_in`](VarWrite::creating_in)
     /// to refine it, then finish with [`set`](VarWrite::set).
     ///
@@ -399,7 +399,7 @@ impl<'a> VarWrite<'a> {
 
     /// Runs `f` on the variable immediately after assignment — for attribute
     /// tweaks such as marking it exported or hidden from enumeration.
-    pub fn updating(
+    pub fn modifying(
         mut self,
         f: impl Fn(&mut ShellVariable) -> Result<(), error::Error> + 'a,
     ) -> Self {

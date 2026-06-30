@@ -677,7 +677,7 @@ impl Spec {
             shell
                 .env_mut()
                 .write(var)
-                .updating(|v| {
+                .modifying(|v| {
                     v.export();
                     Ok(())
                 })

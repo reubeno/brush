@@ -92,7 +92,7 @@ impl ExportCommand {
             .shell
             .env_mut()
             .write(name)
-            .updating(|var| {
+            .modifying(|var| {
                 if self.unexport {
                     var.unexport();
                 } else {
@@ -227,7 +227,7 @@ impl ExportCommand {
                                     .env_mut()
                                     .write(base_resolved)
                                     .at_index(index)
-                                    .updating(|var| {
+                                    .modifying(|var| {
                                         if self.unexport {
                                             var.unexport();
                                         } else {
@@ -261,7 +261,7 @@ impl ExportCommand {
                     .shell
                     .env_mut()
                     .write(name)
-                    .updating(|var| {
+                    .modifying(|var| {
                         if self.unexport {
                             var.unexport();
                         } else {
