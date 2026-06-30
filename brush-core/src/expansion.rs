@@ -1732,14 +1732,18 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if let Some(index) = index {
             self.shell
                 .env_mut()
-                .set_var_element(resolved_name, index, value)?;
+                .write(resolved_name)
+                .at_index(index)
+                .set(value)?;
         } else if let Some((base_resolved, index)) = self
             .expand_resolved_subscript_for_write(&resolved_name)
             .await?
         {
             self.shell
                 .env_mut()
-                .set_var_element(base_resolved, index, value)?;
+                .write(base_resolved)
+                .at_index(index)
+                .set(value)?;
         } else {
             self.shell
                 .env_mut()

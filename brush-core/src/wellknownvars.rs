@@ -184,17 +184,14 @@ pub(crate) fn init_well_known_vars(
     )?;
 
     // BASH_VERSINFO
-    let mut bash_versinfo_var = ShellVariable::new(ShellValue::indexed_array_from_strs(
-        [
-            BASH_MAJOR.to_string().as_str(),
-            BASH_MINOR.to_string().as_str(),
-            BASH_PATCH.to_string().as_str(),
-            BASH_BUILD.to_string().as_str(),
-            BASH_RELEASE,
-            BASH_MACHINE,
-        ]
-        .as_slice(),
-    ));
+    let mut bash_versinfo_var = ShellVariable::new(ShellValue::indexed_array([
+        BASH_MAJOR.to_string().as_str(),
+        BASH_MINOR.to_string().as_str(),
+        BASH_PATCH.to_string().as_str(),
+        BASH_BUILD.to_string().as_str(),
+        BASH_RELEASE,
+        BASH_MACHINE,
+    ]));
     bash_versinfo_var.set_readonly();
     shell
         .env_mut()
@@ -290,9 +287,7 @@ pub(crate) fn init_well_known_vars(
         ShellVariable::new(ShellValue::Dynamic {
             getter: |_shell| {
                 let groups = get_current_user_gids();
-                ShellValue::indexed_array_from_strings(
-                    groups.into_iter().map(|gid| gid.to_string()),
-                )
+                ShellValue::indexed_array(groups.into_iter().map(|gid| gid.to_string()))
             },
             setter: |_| (),
         }),
@@ -413,7 +408,7 @@ pub(crate) fn init_well_known_vars(
         "PIPESTATUS",
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
-                ShellValue::indexed_array_from_strings(
+                ShellValue::indexed_array(
                     shell.last_pipeline_statuses().iter().map(|s| s.to_string()),
                 )
             },
@@ -710,7 +705,7 @@ fn bash_args_suppressed(shell: &dyn ShellState) -> bool {
 
 fn get_bash_argc_value(shell: &dyn ShellState) -> variables::ShellValue {
     if bash_args_suppressed(shell) {
-        return ShellValue::indexed_array_from_strs(&[]);
+        return ShellValue::indexed_array(std::iter::empty::<&str>());
     }
 
     let extdebug = shell.options().enable_debugger;
@@ -724,7 +719,7 @@ fn get_bash_argc_value(shell: &dyn ShellState) -> variables::ShellValue {
 
 fn get_bash_argv_value(shell: &dyn ShellState) -> variables::ShellValue {
     if bash_args_suppressed(shell) {
-        return ShellValue::indexed_array_from_strs(&[]);
+        return ShellValue::indexed_array(std::iter::empty::<&str>());
     }
 
     let extdebug = shell.options().enable_debugger;

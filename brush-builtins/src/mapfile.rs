@@ -98,11 +98,12 @@ impl builtins::Command for MapFileCommand {
                     // If the user is getting to wraparounds in *bash*, they got bigger problems.
                     #[allow(clippy::cast_possible_wrap)]
                     let elem_idx = elem_idx as i64;
-                    context.shell.env_mut().set_var_element(
-                        &self.array_var_name,
-                        (elem_idx + origin).to_string(),
-                        value,
-                    )?;
+                    context
+                        .shell
+                        .env_mut()
+                        .write(&self.array_var_name)
+                        .at_index((elem_idx + origin).to_string())
+                        .set(value)?;
                 }
                 Ok(())
             })()

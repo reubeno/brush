@@ -253,16 +253,15 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
     } else {
         // We have more to go in this argument, so update the internal char index
         // and request that OPTIND not be updated.
-        context.shell.env_mut().update_or_add(
-            VAR_GETOPTS_NEXT_CHAR_INDEX,
-            variables::ShellValueLiteral::Scalar((next_char_index + 1).to_string()),
-            |v| {
+        context
+            .shell
+            .env_mut()
+            .write(VAR_GETOPTS_NEXT_CHAR_INDEX)
+            .updating(|v| {
                 v.hide_from_enumeration();
                 Ok(())
-            },
-            brush_core::env::EnvironmentLookup::Anywhere,
-            brush_core::env::EnvironmentScope::Global,
-        )?;
+            })
+            .set((next_char_index + 1).to_string())?;
         next_index
     };
 
@@ -363,20 +362,19 @@ fn update_variables<SE: brush_core::ShellExtensions>(
 
     // Update OPTIND and record it so we can detect external modifications.
     let optind_str = result.optind.to_string();
-    context.shell.env_mut().set_var(
-        "OPTIND",
-        variables::ShellValueLiteral::Scalar(optind_str.clone()),
-    )?;
-    context.shell.env_mut().update_or_add(
-        VAR_GETOPTS_LAST_OPTIND,
-        variables::ShellValueLiteral::Scalar(optind_str),
-        |v| {
+    context
+        .shell
+        .env_mut()
+        .set_var("OPTIND", optind_str.clone())?;
+    context
+        .shell
+        .env_mut()
+        .write(VAR_GETOPTS_LAST_OPTIND)
+        .updating(|v| {
             v.hide_from_enumeration();
             Ok(())
-        },
-        brush_core::env::EnvironmentLookup::Anywhere,
-        brush_core::env::EnvironmentScope::Global,
-    )?;
+        })
+        .set(optind_str)?;
 
     Ok(result.exit_code)
 }

@@ -608,7 +608,7 @@ fn enable_xtrace_to_file(
     let file_fd = shell.open_files_mut().add(file)?;
 
     shell.options_mut().print_commands_and_arguments = true;
-    shell.set_env_global(
+    shell.env_mut().set_global(
         "BASH_XTRACEFD",
         brush_core::ShellVariable::new(file_fd.to_string()),
     )?;

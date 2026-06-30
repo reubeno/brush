@@ -4,7 +4,7 @@ use std::io::Write;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
-    env::{self, EnvironmentLookup, EnvironmentScope},
+    env,
     parser::ast,
     variables::{self, ShellValue, ShellValueLiteral, ShellValueUnsetType},
 };
@@ -88,20 +88,19 @@ impl ExportCommand {
             )?;
             return Ok(Some(ExecutionExitCode::GeneralError.into()));
         }
-        context.shell.env_mut().update_or_add(
-            name,
-            variables::ShellValueLiteral::Scalar(value.to_owned()),
-            |var| {
+        context
+            .shell
+            .env_mut()
+            .write(name)
+            .updating(|var| {
                 if self.unexport {
                     var.unexport();
                 } else {
                     var.export();
                 }
                 Ok(())
-            },
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
+            })
+            .set(value.to_owned())?;
         Ok(Some(ExecutionResult::success()))
     }
 
@@ -223,21 +222,20 @@ impl ExportCommand {
                                     variable.export();
                                 }
                             } else {
-                                context.shell.env_mut().update_or_add_array_element(
-                                    base_resolved,
-                                    index,
-                                    value,
-                                    |var| {
+                                context
+                                    .shell
+                                    .env_mut()
+                                    .write(base_resolved)
+                                    .at_index(index)
+                                    .updating(|var| {
                                         if self.unexport {
                                             var.unexport();
                                         } else {
                                             var.export();
                                         }
                                         Ok(())
-                                    },
-                                    EnvironmentLookup::Anywhere,
-                                    EnvironmentScope::Global,
-                                )?;
+                                    })
+                                    .set(value)?;
                             }
                         }
                         return Ok(ExecutionResult::success());
@@ -259,20 +257,19 @@ impl ExportCommand {
                 }
 
                 // Update the variable with the provided value and then mark it exported.
-                context.shell.env_mut().update_or_add(
-                    name,
-                    value,
-                    |var| {
+                context
+                    .shell
+                    .env_mut()
+                    .write(name)
+                    .updating(|var| {
                         if self.unexport {
                             var.unexport();
                         } else {
                             var.export();
                         }
                         Ok(())
-                    },
-                    EnvironmentLookup::Anywhere,
-                    EnvironmentScope::Global,
-                )?;
+                    })
+                    .set(value)?;
             }
         }
 

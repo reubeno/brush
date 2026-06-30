@@ -380,7 +380,9 @@ fn assign(
             let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
             shell
                 .env_mut()
-                .set_var_element(name.as_str(), index_str, value.to_string())
+                .write(name.as_str())
+                .at_index(index_str)
+                .set(value.to_string())
         }
     };
 

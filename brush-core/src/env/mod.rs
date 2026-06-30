@@ -1,8 +1,8 @@
 //! Implements a shell variable environment.
 //!
 //! Reads go through [`ShellEnvironment::lookup`] (auto-resolving) or
-//! [`ShellEnvironment::lookup_resolved`] (pre-resolved). Mutations go through
-//! [`ShellEnvironment::update_or_add`] / [`ShellEnvironment::unset`] — or
+//! [`ShellEnvironment::lookup_resolved`] (pre-resolved). Mutations go through the
+//! [`ShellEnvironment::write`] builder / [`ShellEnvironment::unset`] — or
 //! [`ShellEnvironment::set_var`] for the common case. See [`NameRef`] for the
 //! three mutation dispatch strategies.
 
@@ -20,10 +20,12 @@ use crate::error;
 use crate::variables::{ShellValue, ShellVariable};
 
 pub use lookup::{DirectVarLookup, DirectVarLookupMut, ResolvedVarRef, VarLookup};
+pub use mutation::VarWrite;
 pub use names::{
-    BaseRef, NameRef, NameRefFault, ResolvedName, ResolvedScope, UnparsedNameRef,
-    valid_nameref_target_name, valid_variable_name,
+    BaseRef, NameRef, NameRefFault, ResolvedName, ResolvedScope, valid_nameref_target_name,
+    valid_variable_name,
 };
+pub(crate) use names::UnparsedNameRef;
 pub(crate) use scope::ScopeGuard;
 pub use scope::{EnvironmentLookup, EnvironmentScope};
 pub(crate) use var_map::ShellVariableMap;
@@ -263,7 +265,10 @@ impl ShellEnvironment {
     /// treats `arr[2]` as a literal variable name. The [`ResolvedScope`] is
     /// [`Global`](ResolvedScope::Global) for a self-referential function-local
     /// nameref (`local -n x=x`), whose existence must be checked globally.
-    pub fn resolve_nameref_unparsed(&self, name: &str) -> Result<UnparsedNameRef, NameRefFault> {
+    pub(crate) fn resolve_nameref_unparsed(
+        &self,
+        name: &str,
+    ) -> Result<UnparsedNameRef, NameRefFault> {
         let (resolved, scope) = self.resolve_nameref_chain(name)?;
         Ok(UnparsedNameRef {
             name: resolved.into_owned(),
@@ -628,7 +633,7 @@ mod tests {
         assert_eq!(resolved.scope(), EnvironmentScope::Global);
         // base_var() should be the target variable, not the nameref.
         assert_eq!(var_str(resolved.base_var()), "hello");
-        assert!(!resolved.has_subscript());
+        assert!(resolved.subscript().is_none());
     }
 
     #[test]
@@ -773,13 +778,13 @@ mod tests {
     #[test]
     fn lookup_str_auto_resolve_with_subscripted_nameref() {
         let mut env = ShellEnvironment::new();
-        let arr = ShellVariable::new(ShellValue::indexed_array_from_strs(&["zero", "one", "two"]));
+        let arr = ShellVariable::new(ShellValue::indexed_array(["zero", "one", "two"]));
         env.add("arr", arr, EnvironmentScope::Global).unwrap();
         env.add("ref", make_nameref("arr[1]"), EnvironmentScope::Global)
             .unwrap();
 
         let resolved = env.lookup("ref").get().expect("should find arr");
-        assert!(resolved.has_subscript());
+        assert!(resolved.subscript().is_some());
         // base_var() should be the array itself.
         assert!(matches!(
             resolved.base_var().value(),

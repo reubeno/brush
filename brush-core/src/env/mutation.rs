@@ -1,6 +1,7 @@
-//! Mutation methods on [`ShellEnvironment`]: `unset`, `update_or_add`,
-//! `add`, `set_var`, etc. The lookup and resolution APIs live in `mod.rs` and
-//! `lookup.rs`; this file is the write-side counterpart.
+//! Mutation methods on [`ShellEnvironment`]: `unset`, `set_var`, the
+//! [`VarWrite`] builder (via [`ShellEnvironment::write`]), and `add`. The lookup
+//! and resolution APIs live in `mod.rs` and `lookup.rs`; this file is the
+//! write-side counterpart.
 
 use super::names::{NameRefStrategy, ResolvedScope};
 use super::{
@@ -16,6 +17,29 @@ struct WriteTarget {
     base: String,
     subscript: Option<String>,
     scope: ResolvedScope,
+}
+
+/// Post-assignment hook stored by [`VarWrite::updating`].
+type VarUpdater<'a> = Box<dyn Fn(&mut ShellVariable) -> Result<(), error::Error> + 'a>;
+
+/// Fluent builder for a variable write, created by [`ShellEnvironment::write`] —
+/// the mutating counterpart to the [`lookup`](ShellEnvironment::lookup) read
+/// builders.
+///
+/// Collects optional modifiers — an array element [`at_index`](Self::at_index),
+/// a post-assignment [`updating`](Self::updating) hook, a lookup
+/// [`in_scope`](Self::in_scope) restriction, and the
+/// [`creating_in`](Self::creating_in) scope for a freshly-created variable —
+/// then performs the write on [`set`](Self::set). Nameref resolution follows the
+/// [`NameRef`] the builder was created from.
+#[must_use = "a VarWrite performs no write until `.set(value)` is called"]
+pub struct VarWrite<'a> {
+    env: &'a mut ShellEnvironment,
+    name: NameRef,
+    index: Option<String>,
+    updater: Option<VarUpdater<'a>>,
+    lookup_policy: EnvironmentLookup,
+    scope_if_creating: EnvironmentScope,
 }
 
 impl ShellEnvironment {
@@ -128,7 +152,10 @@ impl ShellEnvironment {
     /// - `PreResolved` — uses the resolved base name; if a subscript is present,
     ///   redirects scalar values to array-element assignment.
     /// - `Bypass` — writes to the variable itself, bypassing namerefs.
-    pub fn update_or_add(
+    ///
+    /// Internal lowering target for [`set_var`](Self::set_var) and the
+    /// [`write`](Self::write) builder.
+    fn update_or_add(
         &mut self,
         name: impl Into<NameRef>,
         value: variables::ShellValueLiteral,
@@ -179,42 +206,44 @@ impl ShellEnvironment {
     /// Convenience for the common assignment: no post-update attribute tweak,
     /// look anywhere, create in the global scope. Accepts anything that names a
     /// variable — a `&str`/`String` (resolves namerefs), a [`ResolvedName`], or
-    /// a [`NameRef`] (e.g. [`NameRef::bypass`]) — so callers don't spell out the
-    /// trivial updater / policy / scope of
-    /// [`update_or_add`](Self::update_or_add).
+    /// a [`NameRef`] (e.g. [`NameRef::bypass`]) — and any value that converts
+    /// into a [`ShellValueLiteral`](variables::ShellValueLiteral), so
+    /// `set_var(name, "value")` needs no ceremony. For element writes or
+    /// non-default scope/attribute handling, use [`write`](Self::write).
     ///
     /// [`ResolvedName`]: super::ResolvedName
     pub fn set_var(
         &mut self,
         name: impl Into<NameRef>,
-        value: variables::ShellValueLiteral,
+        value: impl Into<variables::ShellValueLiteral>,
     ) -> Result<(), error::Error> {
         self.update_or_add(
             name,
-            value,
+            value.into(),
             |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
         )
     }
 
-    /// Convenience: set an array element with default options. See [`set_var`].
+    /// Begins a fluent variable write — the mutating counterpart to
+    /// [`lookup`](Self::lookup). Defaults to a whole-variable assignment that
+    /// looks anywhere and creates in the global scope; chain
+    /// [`at_index`](VarWrite::at_index), [`updating`](VarWrite::updating),
+    /// [`in_scope`](VarWrite::in_scope), or [`creating_in`](VarWrite::creating_in)
+    /// to refine it, then finish with [`set`](VarWrite::set).
     ///
-    /// [`set_var`]: Self::set_var
-    pub fn set_var_element(
-        &mut self,
-        name: impl Into<NameRef>,
-        index: String,
-        value: String,
-    ) -> Result<(), error::Error> {
-        self.update_or_add_array_element(
-            name,
-            index,
-            value,
-            |_| Ok(()),
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )
+    /// `name` resolves namerefs by default; pass a [`NameRef`] for another
+    /// strategy (e.g. [`NameRef::bypass`]).
+    pub fn write(&mut self, name: impl Into<NameRef>) -> VarWrite<'_> {
+        VarWrite {
+            env: self,
+            name: name.into(),
+            index: None,
+            updater: None,
+            lookup_policy: EnvironmentLookup::Anywhere,
+            scope_if_creating: EnvironmentScope::Global,
+        }
     }
 
     fn update_or_add_impl(
@@ -253,9 +282,10 @@ impl ShellEnvironment {
     /// Update an array element in the environment, or add it if it doesn't already exist.
     ///
     /// Resolution strategy depends on the [`NameRef`] variant (same as
-    /// [`update_or_add`](Self::update_or_add)). The explicit `index` parameter
-    /// always takes precedence over any subscript embedded in a nameref target.
-    pub fn update_or_add_array_element(
+    /// `update_or_add`). The explicit `index` parameter always takes precedence
+    /// over any subscript embedded in a nameref target. Internal lowering target
+    /// for the [`write`](Self::write) builder's element path.
+    fn update_or_add_array_element(
         &mut self,
         name: impl Into<NameRef>,
         index: String,
@@ -356,20 +386,71 @@ impl ShellEnvironment {
     ) -> Result<(), error::Error> {
         self.add(name, var, EnvironmentScope::Global)
     }
+}
 
-    /// Tries to unset an array element from the environment using an exact
-    /// variable name and element index.
-    ///
-    /// Deprecated compatibility wrapper for the pre-nameref API. This does not
-    /// resolve namerefs; callers implementing shell semantics should use the
-    /// `unset` builtin's resolved path instead.
-    #[doc(hidden)]
-    #[deprecated(since = "0.5.0", note = "use resolved unset paths for shell semantics")]
-    pub fn unset_index(&mut self, name: &str, index: &str) -> Result<bool, error::Error> {
-        if let Some((_, var)) = self.get_mut_by_exact_name(name) {
-            var.unset_index(index)
-        } else {
-            Ok(false)
+impl<'a> VarWrite<'a> {
+    /// Targets the array element at `index` instead of the whole variable. The
+    /// explicit index takes precedence over any subscript embedded in a nameref
+    /// target.
+    pub fn at_index(mut self, index: impl Into<String>) -> Self {
+        self.index = Some(index.into());
+        self
+    }
+
+    /// Runs `f` on the variable immediately after assignment — for attribute
+    /// tweaks such as marking it exported or hidden from enumeration.
+    pub fn updating(
+        mut self,
+        f: impl Fn(&mut ShellVariable) -> Result<(), error::Error> + 'a,
+    ) -> Self {
+        self.updater = Some(Box::new(f));
+        self
+    }
+
+    /// Restricts which scope an *existing* variable is looked up in. Defaults to
+    /// [`EnvironmentLookup::Anywhere`].
+    pub const fn in_scope(mut self, policy: EnvironmentLookup) -> Self {
+        self.lookup_policy = policy;
+        self
+    }
+
+    /// Sets the scope a *newly created* variable lands in. Defaults to
+    /// [`EnvironmentScope::Global`].
+    pub const fn creating_in(mut self, scope: EnvironmentScope) -> Self {
+        self.scope_if_creating = scope;
+        self
+    }
+
+    /// Performs the write, assigning `value` and creating the variable if it
+    /// doesn't yet exist. Assigning an array literal to an
+    /// [`at_index`](Self::at_index) element target is rejected (bash forbids
+    /// assigning a list to an array member).
+    pub fn set(self, value: impl Into<variables::ShellValueLiteral>) -> Result<(), error::Error> {
+        let Self {
+            env,
+            name,
+            index,
+            updater,
+            lookup_policy,
+            scope_if_creating,
+        } = self;
+        let updater = updater.unwrap_or_else(|| Box::new(|_| Ok(())));
+        let value = value.into();
+        match index {
+            Some(index) => match value {
+                variables::ShellValueLiteral::Scalar(scalar) => env.update_or_add_array_element(
+                    name,
+                    index,
+                    scalar,
+                    updater,
+                    lookup_policy,
+                    scope_if_creating,
+                ),
+                variables::ShellValueLiteral::Array(_) => {
+                    Err(error::ErrorKind::AssigningListToArrayMember.into())
+                }
+            },
+            None => env.update_or_add(name, value, updater, lookup_policy, scope_if_creating),
         }
     }
 }

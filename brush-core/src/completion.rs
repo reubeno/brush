@@ -9,7 +9,7 @@ use std::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    Shell, commands, env, error, escape, expansion, extensions, interfaces, jobs, namedoptions,
+    Shell, commands, error, escape, expansion, extensions, interfaces, jobs, namedoptions,
     patterns,
     sys::{self, users},
     trace_categories, traps,
@@ -674,16 +674,14 @@ impl Spec {
 
         // Fill out variables.
         for (var, value) in vars_and_values {
-            shell.env_mut().update_or_add(
-                var,
-                value,
-                |v| {
+            shell
+                .env_mut()
+                .write(var)
+                .updating(|v| {
                     v.export();
                     Ok(())
-                },
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
+                })
+                .set(value)?;
         }
 
         // Compute args.

@@ -791,33 +791,24 @@ impl ShellValue {
         self.get_at(index, shell).is_ok_and(|v| v.is_some())
     }
 
-    /// Returns a new indexed array value constructed from the given slice of owned strings.
+    /// Returns a new indexed array value built from a sequence of strings, keyed
+    /// by position (`0, 1, 2, …`).
     ///
-    /// # Arguments
-    ///
-    /// * `values` - The slice of strings to construct the indexed array from.
-    pub fn indexed_array_from_strings<S>(values: S) -> Self
+    /// Accepts anything iterable whose items convert into `String`, so it serves
+    /// both owned input (`Vec<String>`, an iterator of `String`) and borrowed
+    /// input (`["a", "b"]`, `Vec<&str>`). For an array with explicit or
+    /// associative keys, use
+    /// [`indexed_array_from_literals`](Self::indexed_array_from_literals).
+    pub fn indexed_array<I>(values: I) -> Self
     where
-        S: IntoIterator<Item = String>,
+        I: IntoIterator,
+        I::Item: Into<String>,
     {
-        let mut owned_values = BTreeMap::new();
-        for (i, value) in values.into_iter().enumerate() {
-            owned_values.insert(i as u64, value);
-        }
-
-        Self::IndexedArray(owned_values)
-    }
-
-    /// Returns a new indexed array value constructed from the given slice of unowned strings.
-    ///
-    /// # Arguments
-    ///
-    /// * `values` - The slice of strings to construct the indexed array from.
-    pub fn indexed_array_from_strs(values: &[&str]) -> Self {
-        let mut owned_values = BTreeMap::new();
-        for (i, value) in values.iter().enumerate() {
-            owned_values.insert(i as u64, (*value).to_string());
-        }
+        let owned_values = values
+            .into_iter()
+            .enumerate()
+            .map(|(i, value)| (i as u64, value.into()))
+            .collect();
 
         Self::IndexedArray(owned_values)
     }
@@ -1140,13 +1131,13 @@ impl From<OsString> for ShellValue {
 
 impl From<Vec<String>> for ShellValue {
     fn from(values: Vec<String>) -> Self {
-        Self::indexed_array_from_strings(values)
+        Self::indexed_array(values)
     }
 }
 
 impl From<Vec<&str>> for ShellValue {
     fn from(values: Vec<&str>) -> Self {
-        Self::indexed_array_from_strs(values.as_slice())
+        Self::indexed_array(values)
     }
 }
 
@@ -1193,7 +1184,7 @@ mod tests {
     #[test]
     fn has_element_at_indexed_array_present() {
         let shell = test_shell();
-        let v = ShellValue::indexed_array_from_strs(&["a", "b", "c"]);
+        let v = ShellValue::indexed_array(["a", "b", "c"]);
         assert!(v.has_element_at("0", &shell));
         assert!(v.has_element_at("1", &shell));
         assert!(v.has_element_at("2", &shell));
@@ -1202,7 +1193,7 @@ mod tests {
     #[test]
     fn has_element_at_indexed_array_missing() {
         let shell = test_shell();
-        let v = ShellValue::indexed_array_from_strs(&["a", "b", "c"]);
+        let v = ShellValue::indexed_array(["a", "b", "c"]);
         assert!(!v.has_element_at("3", &shell));
         assert!(!v.has_element_at("99", &shell));
     }
@@ -1210,7 +1201,7 @@ mod tests {
     #[test]
     fn has_element_at_indexed_array_negative_index() {
         let shell = test_shell();
-        let v = ShellValue::indexed_array_from_strs(&["a", "b", "c"]);
+        let v = ShellValue::indexed_array(["a", "b", "c"]);
         // Negative indices wrap from the end: -1 = "c".
         assert!(v.has_element_at("-1", &shell));
         assert!(v.has_element_at("-3", &shell));

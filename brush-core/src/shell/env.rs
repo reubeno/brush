@@ -2,8 +2,6 @@
 
 use std::borrow::Cow;
 
-use crate::{ShellVariable, error};
-
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Tries to retrieve a variable from the shell's environment, converting it into its
     /// string form.
@@ -28,20 +26,6 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         self.env.get_resolved(name)
     }
 
-    /// Tries to retrieve a variable from the shell's environment without
-    /// resolving namerefs.
-    ///
-    /// Deprecated compatibility wrapper for the pre-nameref API. Use
-    /// [`env_resolved_var`](Self::env_resolved_var) for nameref-aware access.
-    #[doc(hidden)]
-    #[deprecated(
-        since = "0.5.0",
-        note = "use Shell::env_resolved_var for nameref-aware access"
-    )]
-    pub fn env_var(&self, name: &str) -> Option<&ShellVariable> {
-        self.env.get_exact(name).map(|(_, var)| var)
-    }
-
     /// Checks whether a variable of the given name is set in the shell's
     /// environment, resolving namerefs transparently.
     ///
@@ -50,15 +34,5 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `name` - The name of the variable to check.
     pub fn env_is_set(&self, name: &str) -> bool {
         self.env.is_resolved_set(name, self)
-    }
-
-    /// Tries to set a global variable in the shell's environment.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable to add.
-    /// * `var` - The variable contents to add.
-    pub fn set_env_global(&mut self, name: &str, var: ShellVariable) -> Result<(), error::Error> {
-        self.env.set_global(name, var)
     }
 }

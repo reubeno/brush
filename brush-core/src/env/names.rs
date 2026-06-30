@@ -15,7 +15,7 @@
 ///
 /// The convenience mutators that resolve internally —
 /// [`set_var`](super::ShellEnvironment::set_var),
-/// [`update_or_add`](super::ShellEnvironment::update_or_add), and
+/// [`write`](super::ShellEnvironment::write), and
 /// [`unset`](super::ShellEnvironment::unset) — cannot return this type, so they
 /// surface a fault as [`ErrorKind::NameRef`](crate::error::ErrorKind::NameRef)
 /// via the `From<NameRefFault>` conversion (i.e. `?` propagates it as the shell
@@ -95,7 +95,7 @@ impl std::error::Error for NameRefFault {}
 /// [`resolved_scope`](Self::resolved_scope) (or ignore it explicitly) rather
 /// than re-deriving.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UnparsedNameRef {
+pub(crate) struct UnparsedNameRef {
     pub(super) name: String,
     pub(super) scope: ResolvedScope,
 }
