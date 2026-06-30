@@ -27,11 +27,11 @@ type VarUpdater<'a> = Box<dyn Fn(&mut ShellVariable) -> Result<(), error::Error>
 /// builders.
 ///
 /// Collects optional modifiers — an array element [`at_index`](Self::at_index),
-/// a post-assignment [`modifying`](Self::modifying) hook, a lookup
-/// [`in_scope`](Self::in_scope) restriction, and the
-/// [`creating_in`](Self::creating_in) scope for a freshly-created variable —
-/// then performs the write on [`set`](Self::set). Nameref resolution follows the
-/// [`NameRef`] the builder was created from.
+/// [`appending`](Self::appending) (`+=`), a post-assignment
+/// [`modifying`](Self::modifying) hook, a lookup [`in_scope`](Self::in_scope)
+/// restriction, and the [`creating_in`](Self::creating_in) scope for a
+/// freshly-created variable — then performs the write on [`set`](Self::set).
+/// Nameref resolution follows the [`NameRef`] the builder was created from.
 #[must_use = "a VarWrite performs no write until `.set(value)` is called"]
 pub struct VarWrite<'a> {
     env: &'a mut ShellEnvironment,
@@ -40,6 +40,7 @@ pub struct VarWrite<'a> {
     updater: Option<VarUpdater<'a>>,
     lookup_policy: EnvironmentLookup,
     scope_if_creating: EnvironmentScope,
+    append: bool,
 }
 
 impl ShellEnvironment {
@@ -162,6 +163,7 @@ impl ShellEnvironment {
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
+        append: bool,
     ) -> Result<(), error::Error> {
         let target = self.resolve_write_target(name.into())?;
 
@@ -183,6 +185,7 @@ impl ShellEnvironment {
                         updater,
                         lookup_policy,
                         scope_if_creating,
+                        append,
                     ),
                 variables::ShellValueLiteral::Array(_) => {
                     Err(error::ErrorKind::SubscriptedNameRefTarget {
@@ -200,6 +203,7 @@ impl ShellEnvironment {
             updater,
             lookup_policy,
             scope_if_creating,
+            append,
         )
     }
 
@@ -223,15 +227,17 @@ impl ShellEnvironment {
             |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
+            false,
         )
     }
 
     /// Begins a fluent variable write — the mutating counterpart to
     /// [`lookup`](Self::lookup). Defaults to a whole-variable assignment that
     /// looks anywhere and creates in the global scope; chain
-    /// [`at_index`](VarWrite::at_index), [`modifying`](VarWrite::modifying),
-    /// [`in_scope`](VarWrite::in_scope), or [`creating_in`](VarWrite::creating_in)
-    /// to refine it, then finish with [`set`](VarWrite::set).
+    /// [`at_index`](VarWrite::at_index), [`appending`](VarWrite::appending),
+    /// [`modifying`](VarWrite::modifying), [`in_scope`](VarWrite::in_scope), or
+    /// [`creating_in`](VarWrite::creating_in) to refine it, then finish with
+    /// [`set`](VarWrite::set).
     ///
     /// `name` resolves namerefs by default; pass a [`NameRef`] for another
     /// strategy (e.g. [`NameRef::bypass`]).
@@ -243,6 +249,7 @@ impl ShellEnvironment {
             updater: None,
             lookup_policy: EnvironmentLookup::Anywhere,
             scope_if_creating: EnvironmentScope::Global,
+            append: false,
         }
     }
 
@@ -253,6 +260,7 @@ impl ShellEnvironment {
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
+        append: bool,
     ) -> Result<(), error::Error> {
         let auto_export = self.export_variables_on_modification;
         if let Some((_, var)) = self.get_mut_by_exact_name_using_policy(&name, lookup_policy) {
@@ -262,14 +270,14 @@ impl ShellEnvironment {
             {
                 return Err(error::ErrorKind::InvalidVariableName(target.clone()).into());
             }
-            var.assign(value, false)?;
+            var.assign(value, append)?;
             if auto_export {
                 var.export();
             }
             updater(var)
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
-            var.assign(value, false)?;
+            var.assign(value, append)?;
             if auto_export {
                 var.export();
             }
@@ -285,6 +293,7 @@ impl ShellEnvironment {
     /// `update_or_add`). The explicit `index` parameter always takes precedence
     /// over any subscript embedded in a nameref target. Internal lowering target
     /// for the [`write`](Self::write) builder's element path.
+    #[expect(clippy::too_many_arguments)]
     fn update_or_add_array_element(
         &mut self,
         name: impl Into<NameRef>,
@@ -293,6 +302,7 @@ impl ShellEnvironment {
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
+        append: bool,
     ) -> Result<(), error::Error> {
         let target = self.resolve_write_target(name.into())?;
 
@@ -317,10 +327,12 @@ impl ShellEnvironment {
             updater,
             lookup_policy,
             scope_if_creating,
+            append,
         )
     }
 
     /// Internal: update an array element where the name has already been resolved.
+    #[expect(clippy::too_many_arguments)]
     fn update_or_add_array_element_impl(
         &mut self,
         name: String,
@@ -329,9 +341,10 @@ impl ShellEnvironment {
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
+        append: bool,
     ) -> Result<(), error::Error> {
         if let Some((_, var)) = self.get_mut_by_exact_name_using_policy(&name, lookup_policy) {
-            var.assign_at_index(index, value, false)?;
+            var.assign_at_index(index, value, append)?;
             updater(var)
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
@@ -421,6 +434,14 @@ impl<'a> VarWrite<'a> {
         self
     }
 
+    /// Appends to the existing value instead of replacing it (the shell's `+=`
+    /// operator). When the variable (or array element) doesn't yet exist,
+    /// appending is equivalent to a plain assignment.
+    pub const fn appending(mut self) -> Self {
+        self.append = true;
+        self
+    }
+
     /// Performs the write, assigning `value` and creating the variable if it
     /// doesn't yet exist. Assigning an array literal to an
     /// [`at_index`](Self::at_index) element target is rejected (bash forbids
@@ -433,6 +454,7 @@ impl<'a> VarWrite<'a> {
             updater,
             lookup_policy,
             scope_if_creating,
+            append,
         } = self;
         let updater = updater.unwrap_or_else(|| Box::new(|_| Ok(())));
         let value = value.into();
@@ -445,12 +467,20 @@ impl<'a> VarWrite<'a> {
                     updater,
                     lookup_policy,
                     scope_if_creating,
+                    append,
                 ),
                 variables::ShellValueLiteral::Array(_) => {
                     Err(error::ErrorKind::AssigningListToArrayMember.into())
                 }
             },
-            None => env.update_or_add(name, value, updater, lookup_policy, scope_if_creating),
+            None => env.update_or_add(
+                name,
+                value,
+                updater,
+                lookup_policy,
+                scope_if_creating,
+                append,
+            ),
         }
     }
 }

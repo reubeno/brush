@@ -195,10 +195,11 @@ impl ExportCommand {
                     }
                 };
 
-                // `export name+=value` appends to the existing value, exactly like a
-                // bare `name+=value`. update_or_add always replaces, so when the
-                // variable already exists honor the append here. A missing variable
-                // falls through: appending to nothing is a plain assignment.
+                // `export name+=value` appends. A nameref whose target is an
+                // array element needs its subscript evaluated up front (the
+                // builder treats a resolved subscript literally); the element
+                // append then folds through `.appending()`. Everything else
+                // folds into the builder below.
                 if assignment.append {
                     let resolved = context.shell.env().resolve_nameref(name)?;
                     if let Some(index) = resolved.subscript() {
@@ -209,58 +210,32 @@ impl ExportCommand {
                                 &base_resolved,
                                 index,
                             )?;
-                            if let Some((_, variable)) = context
+                            context
                                 .shell
                                 .env_mut()
-                                .lookup_mut_resolved(base_resolved.base())
-                                .get()
-                            {
-                                variable.assign_at_index(index, value, true)?;
-                                if self.unexport {
-                                    variable.unexport();
-                                } else {
-                                    variable.export();
-                                }
-                            } else {
-                                context
-                                    .shell
-                                    .env_mut()
-                                    .write(base_resolved)
-                                    .at_index(index)
-                                    .modifying(|var| {
-                                        if self.unexport {
-                                            var.unexport();
-                                        } else {
-                                            var.export();
-                                        }
-                                        Ok(())
-                                    })
-                                    .set(value)?;
-                            }
-                        }
-                        return Ok(ExecutionResult::success());
-                    }
-                    if let Some((_, variable)) = context
-                        .shell
-                        .env_mut()
-                        .lookup_mut_resolved(resolved.base())
-                        .get()
-                    {
-                        variable.assign(value, true)?;
-                        if self.unexport {
-                            variable.unexport();
-                        } else {
-                            variable.export();
+                                .write(base_resolved)
+                                .at_index(index)
+                                .appending()
+                                .modifying(|var| {
+                                    if self.unexport {
+                                        var.unexport();
+                                    } else {
+                                        var.export();
+                                    }
+                                    Ok(())
+                                })
+                                .set(value)?;
                         }
                         return Ok(ExecutionResult::success());
                     }
                 }
 
-                // Update the variable with the provided value and then mark it exported.
-                context
-                    .shell
-                    .env_mut()
-                    .write(name)
+                // Plain assignment, or scalar `+=` to a (possibly missing) variable.
+                let mut write = context.shell.env_mut().write(name);
+                if assignment.append {
+                    write = write.appending();
+                }
+                write
                     .modifying(|var| {
                         if self.unexport {
                             var.unexport();
