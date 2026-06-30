@@ -1,6 +1,7 @@
 //! Arithmetic evaluation
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 
 use crate::{ExecutionParameters, Shell, env, expansion, extensions, variables};
 use brush_parser::ast;
@@ -8,6 +9,11 @@ use brush_parser::ast;
 /// Maximum recursion depth for arithmetic variable dereference chains
 /// (e.g., a=b, b=c, c=a would cycle through variable dereferences).
 const MAX_VARIABLE_DEREF_DEPTH: u32 = 1024;
+
+thread_local! {
+    static LAST_PARSED_ARITHMETIC_EXPR: RefCell<Option<(String, ast::ArithmeticExpr)>> =
+        const { RefCell::new(None) };
+}
 
 /// Represents an error that occurs during evaluation of an arithmetic expression.
 #[derive(Debug, thiserror::Error)]
@@ -98,19 +104,41 @@ pub(crate) async fn expand_and_eval(
         .await
         .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
 
-    // Now parse.
-    let expr = brush_parser::arithmetic::parse(&expanded_self)
-        .map_err(|_e| EvalError::ParseError(expanded_self))?;
-
     // Trace if applicable.
     if trace_if_needed && shell.options().print_commands_and_arguments {
+        let expr_display = with_parsed_expr(&expanded_self, ToString::to_string)?;
         shell
-            .trace_command(params, std::format!("(( {expr} ))"))
+            .trace_command(params, std::format!("(( {expr_display} ))"))
             .await;
     }
 
     // Now evaluate.
-    expr.eval(shell)
+    with_parsed_expr(&expanded_self, |expr| expr.eval(shell))?
+}
+
+fn with_parsed_expr<R>(
+    expr: &str,
+    f: impl FnOnce(&ast::ArithmeticExpr) -> R,
+) -> Result<R, EvalError> {
+    LAST_PARSED_ARITHMETIC_EXPR.with(|cache| {
+        {
+            let mut cached = cache.borrow_mut();
+            let cache_hit = cached
+                .as_ref()
+                .is_some_and(|(cached_expr, _)| cached_expr == expr);
+            if !cache_hit {
+                let parsed = brush_parser::arithmetic::parse(expr)
+                    .map_err(|_e| EvalError::ParseError(expr.to_owned()))?;
+                *cached = Some((expr.to_owned(), parsed));
+            }
+        }
+
+        let cached = cache.borrow();
+        let Some((_, parsed)) = cached.as_ref() else {
+            return Err(EvalError::ParseError(expr.to_owned()));
+        };
+        Ok(f(parsed))
+    })
 }
 
 /// Trait implemented by evaluatable arithmetic expressions.
@@ -214,6 +242,10 @@ fn deref_lvalue(
         }
     };
 
+    if let Some(value) = parse_simple_decimal_literal(value_str.as_ref()) {
+        return Ok(value);
+    }
+
     let parsed_value = brush_parser::arithmetic::parse(value_str.as_ref())
         .map_err(|_err| EvalError::ParseError(value_str.to_string()))?;
 
@@ -230,6 +262,27 @@ fn deref_lvalue(
     }
 
     eval_expr_impl(&parsed_value, shell, new_depth)
+}
+
+fn parse_simple_decimal_literal(s: &str) -> Option<i64> {
+    let mut chars = s.chars();
+    let first = chars.next()?;
+    let rest = if first == '-' || first == '+' {
+        chars.as_str()
+    } else {
+        s
+    };
+
+    if rest.is_empty() {
+        return None;
+    }
+
+    let mut rest_chars = rest.chars();
+    match rest_chars.next()? {
+        '0' if rest_chars.as_str().is_empty() => s.parse().ok(),
+        '1'..='9' if rest_chars.all(|c| c.is_ascii_digit()) => s.parse().ok(),
+        _ => None,
+    }
 }
 
 fn apply_unary_op(
