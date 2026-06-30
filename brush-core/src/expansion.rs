@@ -1361,24 +1361,53 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     );
                 }
 
+                // For an indexed array sliced via [@]/[*], bash interprets the offset as a
+                // subscript value rather than a position in the (possibly sparse) list of
+                // present elements. Capture the sorted subscripts so we can translate the
+                // offset below; positional parameters, scalars, and associative arrays keep
+                // their positional behavior.
+                let array_subscripts: Option<Vec<u64>> = if indirect {
+                    None
+                } else if let brush_parser::word::Parameter::NamedWithAllIndices { name, .. } =
+                    &parameter
+                {
+                    match self.shell.env().get(name) {
+                        Some((_, var)) => match var.value() {
+                            ShellValue::IndexedArray(array) => {
+                                Some(array.keys().copied().collect())
+                            }
+                            _ => None,
+                        },
+                        None => None,
+                    }
+                } else {
+                    None
+                };
+
                 #[expect(clippy::cast_possible_wrap)]
                 let expanded_parameter_len = expanded_parameter.polymorphic_len() as i64;
-                let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
+                let raw_offset = offset.eval(self.shell, self.params, false).await?;
 
-                // We handle negative indexes as offsets from the end of the element, with -1
-                // referencing the last element.
-                if expanded_offset < 0 {
-                    expanded_offset += expanded_parameter_len;
+                let expanded_offset = if let Some(subscripts) = &array_subscripts {
+                    // Translate the subscript-space offset into a dense position.
+                    array_offset_to_position(subscripts, raw_offset, expanded_parameter_len)
+                } else {
+                    // We handle negative indexes as offsets from the end of the element, with
+                    // -1 referencing the last element.
+                    let mut position = raw_offset;
+                    if position < 0 {
+                        position += expanded_parameter_len;
 
-                    // If the offset is still negative, then we need to yield an empty slice.
-                    // We force the offset to the end of the array.
-                    if expanded_offset < 0 {
-                        expanded_offset = expanded_parameter_len;
+                        // If the offset is still negative, then we need to yield an empty
+                        // slice. We force the offset to the end of the array.
+                        if position < 0 {
+                            position = expanded_parameter_len;
+                        }
                     }
-                }
 
-                // Make sure the offset is within the bounds of the item.
-                let expanded_offset = min(expanded_offset, expanded_parameter_len);
+                    // Make sure the offset is within the bounds of the item.
+                    min(position, expanded_parameter_len)
+                };
 
                 let end_offset = if let Some(length) = length {
                     let mut expanded_length = length.eval(self.shell, self.params, false).await?;
@@ -2055,6 +2084,36 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
         }
     }
+}
+
+/// Translates a substring-expansion offset into a dense position within an
+/// indexed array's element list.
+///
+/// For indexed arrays, bash treats the offset of `${array[@]:offset:length}` as a
+/// subscript value rather than a position in the (possibly sparse) list of present
+/// elements. This maps that subscript-space offset onto the dense position of the
+/// first element whose subscript is at least `offset`. `subscripts` must be sorted
+/// in ascending order. A negative offset counts back from one past the largest
+/// subscript (matching bash); if it still falls before the start of the array,
+/// `empty_position` is returned so the resulting slice is empty.
+fn array_offset_to_position(subscripts: &[u64], offset: i64, empty_position: i64) -> i64 {
+    let effective_offset = if offset < 0 {
+        #[expect(clippy::cast_possible_wrap)]
+        let one_past_last = subscripts.last().map_or(0, |last| *last as i64 + 1);
+        offset + one_past_last
+    } else {
+        offset
+    };
+
+    if effective_offset < 0 {
+        return empty_position;
+    }
+
+    #[expect(clippy::cast_sign_loss)]
+    let threshold = effective_offset as u64;
+    let position = subscripts.partition_point(|&subscript| subscript < threshold);
+
+    i64::try_from(position).unwrap_or(empty_position)
 }
 
 fn coalesce_expansions(expansions: Vec<Expansion>) -> Expansion {
