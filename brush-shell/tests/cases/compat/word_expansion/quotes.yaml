@@ -69,6 +69,26 @@ cases:
       echo -n "38. "$'\c\n' | hexdump -C
       echo -n "39. "$'\\' | hexdump -C
 
+  - name: "ANSI-C quotes: double quote is a literal character"
+    stdin: |
+      # A " inside $'...' must not open a construct that eats the closing '.
+      echo -n "1. "$'"' | hexdump -C
+      echo -n "2. "$'"\'' | hexdump -C
+      echo -n "3. "$' \t\n"\'><=;|&(:@' | hexdump -C
+      x=$'"\''
+      echo "len: ${#x}"
+
+  - name: "ANSI-C quotes: declare -p round-trip"
+    stdin: |
+      # bash prints COMP_WORDBREAKS-like values in $'...' form; the dump must
+      # re-source cleanly.
+      x=$' \t\n"\'><=;|&(:@'
+      dump=$(declare -p x)
+      unset x
+      eval "$dump"
+      echo "len: ${#x}"
+      echo -n "$x" | hexdump -C
+
   - name: "ANSI-C quote syntax inside double quotes (literal, not processed)"
     stdin: |
       # When $'...' appears inside double quotes, it should be treated as literal text

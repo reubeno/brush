@@ -219,9 +219,30 @@ pub(super) fn single_quoted_string<'a>()
 
 /// Parse an ANSI-C quoted string: $'text'.
 /// Returns the full string including the $'...' syntax (e.g., `$'text'`).
-/// In ANSI-C quotes, backslash escapes are processed specially.
+/// The body follows C escape rules only: a backslash escapes the next
+/// character (including `\'` and `\\`), and no other shell construct exists
+/// inside — a `"` is a literal character, so this cannot go through
+/// `parse_balanced_delimiters`, whose construct scanner would consume a
+/// double-quoted string across the closing `'` (e.g. `$'"\''`).
 pub(super) fn ansi_c_quoted_string<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> {
-    parse_balanced_delimiters("$'", None, '\'', 1, false, false)
+    move |input: &mut StrStream<'a>| {
+        let start = input.checkpoint();
+        winnow::token::literal("$'").parse_next(input)?;
+        loop {
+            match winnow::token::any::<_, ContextError>.parse_next(input) {
+                Ok('\'') => break,
+                Ok('\\') => {
+                    // Escaped char (may itself be `'`); consume it. A trailing
+                    // backslash at end of input fails on the next iteration.
+                    let _ = winnow::token::any::<_, ContextError>.parse_next(input);
+                }
+                Ok(_) => {}
+                // Unterminated: fatal, as with single_quoted_string.
+                Err(_) => return Err(winnow::error::ErrMode::Cut(ContextError::default())),
+            }
+        }
+        super::helpers::take_slice_from_checkpoints(input, &start)
+    }
 }
 
 /// Parse a gettext-style double-quoted string: $"text".
@@ -496,5 +517,28 @@ mod tests {
         let result = super::ansi_c_quoted_string().parse_next(&mut input.clone());
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "$'\\n'");
+    }
+
+    #[test]
+    fn test_ansi_c_quoted_string_escaped_quote() {
+        let input = StrStream::new("$'a\\'b'");
+        let result = super::ansi_c_quoted_string().parse_next(&mut input.clone());
+        assert_eq!(result.unwrap(), "$'a\\'b'");
+    }
+
+    #[test]
+    fn test_ansi_c_quoted_string_double_quote_is_literal() {
+        // bash `declare -p COMP_WORDBREAKS` emits this shape; the `"` must not
+        // open a construct that swallows the closing `'`.
+        let input = StrStream::new("$'\"\\''");
+        let result = super::ansi_c_quoted_string().parse_next(&mut input.clone());
+        assert_eq!(result.unwrap(), "$'\"\\''");
+    }
+
+    #[test]
+    fn test_ansi_c_quoted_string_unterminated_is_fatal() {
+        let input = StrStream::new("$'oops");
+        let result = super::ansi_c_quoted_string().parse_next(&mut input.clone());
+        assert!(matches!(result, Err(winnow::error::ErrMode::Cut(_))));
     }
 }
