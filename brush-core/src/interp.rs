@@ -1580,7 +1580,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 process_group_id: context.process_group_id,
             };
 
-            match execute_command(context, params, cmd_name, &assignments, &args).await {
+            match execute_command(context, params, cmd_name, &assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
@@ -1631,7 +1631,7 @@ async fn execute_command<T: Into<String>>(
     params: ExecutionParameters,
     cmd_name: T,
     assignments: &[&ast::Assignment],
-    args: &[CommandArg],
+    args: Vec<CommandArg>,
 ) -> Result<ExecutionSpawnResult, error::Error> {
     let pushed_command_scope = !assignments.is_empty();
     if pushed_command_scope {
@@ -1676,8 +1676,7 @@ async fn execute_command<T: Into<String>>(
     }
 
     // Construct the command struct.
-    let mut cmd =
-        commands::SimpleCommand::new(context.shell, params, cmd_name.into(), args.iter().cloned());
+    let mut cmd = commands::SimpleCommand::new(context.shell, params, cmd_name.into(), args);
     cmd.process_group_id = context.process_group_id;
 
     if pushed_command_scope {
