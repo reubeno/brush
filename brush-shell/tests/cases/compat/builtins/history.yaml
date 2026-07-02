@@ -164,6 +164,16 @@ cases:
     expected_exit_code: 0
     expected_stderr: "brush: history: HISTFILE: parameter null or not set\n"
 
+  - name: "history -a without HISTFILE respects argv0"
+    args: ["-o", "history", "-c", "exec -a custom-brush $0 -o history -c 'unset HISTFILE; history -a'"]
+    expected_exit_code: 0
+    expected_stderr: "custom-brush: history: HISTFILE: parameter null or not set\n"
+
+  - name: "history -w without HISTFILE respects argv0"
+    args: ["-o", "history", "-c", "exec -a custom-brush $0 -o history -c 'unset HISTFILE; history -w'"]
+    expected_exit_code: 0
+    expected_stderr: "custom-brush: history: HISTFILE: parameter null or not set\n"
+
   - name: "history -w with explicit file"
     args: ["-o", "history"]
     env:
