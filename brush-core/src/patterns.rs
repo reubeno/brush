@@ -438,7 +438,21 @@ impl Pattern {
 /// pathname expansion. Delegates to the pattern parser's grammar, which is
 /// the single source of truth for what constitutes a glob metacharacter.
 fn requires_expansion(s: &str, enable_extended_globbing: bool) -> bool {
+    if !could_contain_glob_metacharacters(s, enable_extended_globbing) {
+        return false;
+    }
+
     brush_parser::pattern::pattern_has_glob_metacharacters(s, enable_extended_globbing)
+}
+
+fn could_contain_glob_metacharacters(s: &str, enable_extended_globbing: bool) -> bool {
+    // Most shell words are plain literals; avoid invoking the pattern grammar
+    // unless a cheap scan sees a character that could start a glob. The grammar
+    // remains authoritative for candidates, especially escaped or malformed forms.
+    s.chars().any(|c| {
+        matches!(c, '*' | '?' | '[')
+            || (enable_extended_globbing && matches!(c, '@' | '!' | '+' | '(') && s.contains(')'))
+    })
 }
 
 fn pattern_to_regex_str(
@@ -794,6 +808,24 @@ mod tests {
         assert!(!Pattern::from("*a").exactly_matches("xax")?);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_could_contain_glob_metacharacters() {
+        for literal in ["", "abc", "set", "--", "1", "a+b", "foo]"] {
+            assert!(!could_contain_glob_metacharacters(literal, false));
+        }
+
+        for glob in ["*", "?", "[abc]", "a*b", "a?b", "a[b"] {
+            assert!(could_contain_glob_metacharacters(glob, false));
+        }
+
+        assert!(!could_contain_glob_metacharacters("@(a)", false));
+        assert!(!could_contain_glob_metacharacters("+(a)", false));
+        assert!(could_contain_glob_metacharacters("@(a)", true));
+        assert!(could_contain_glob_metacharacters("+(a)", true));
+        assert!(!could_contain_glob_metacharacters("+", true));
+        assert!(!could_contain_glob_metacharacters("a+b", true));
     }
 
     fn make_extglob(s: &str) -> Pattern {
