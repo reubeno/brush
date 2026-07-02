@@ -50,6 +50,7 @@ pub(crate) struct HistoryCommand {
 
 struct HistoryConfig {
     default_history_file_path: Option<PathBuf>,
+    shell_name: String,
     time_format: Option<String>,
 }
 
@@ -63,6 +64,10 @@ impl builtins::Command for HistoryCommand {
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
             default_history_file_path: context.shell.history_file_path(),
+            shell_name: context
+                .shell
+                .current_shell_name()
+                .map_or_else(|| String::from("brush"), |name| name.to_string()),
             time_format: context.shell.history_time_format(),
         };
 
@@ -120,16 +125,25 @@ impl HistoryCommand {
         }
 
         if let Some(append_option) = &self.append_session_to_file {
-            if let Some(file_path) = get_effective_history_file_path(
+            match get_effective_history_file_path(
                 config.default_history_file_path.as_deref(),
                 append_option.as_deref(),
             ) {
-                history.flush(
-                    file_path,
-                    true,                         /* append? */
-                    true,                         /* unsaved items only */
-                    config.time_format.is_some(), /* write timestamps? */
-                )?;
+                Some(file_path) => {
+                    history.flush(
+                        file_path,
+                        true,                         /* append? */
+                        true,                         /* unsaved items only */
+                        config.time_format.is_some(), /* write timestamps? */
+                    )?;
+                }
+                None => {
+                    writeln!(
+                        stderr,
+                        "{}: history: HISTFILE: parameter null or not set",
+                        config.shell_name
+                    )?;
+                }
             }
 
             return Ok(ExecutionResult::success());
@@ -144,16 +158,25 @@ impl HistoryCommand {
         }
 
         if let Some(write_option) = &self.write_session_to_file {
-            if let Some(file_path) = get_effective_history_file_path(
+            match get_effective_history_file_path(
                 config.default_history_file_path.as_deref(),
                 write_option.as_deref(),
             ) {
-                history.flush(
-                    file_path,
-                    false,                        /* append? */
-                    false,                        /* unsaved items only? */
-                    config.time_format.is_some(), /* write timestamps? */
-                )?;
+                Some(file_path) => {
+                    history.flush(
+                        file_path,
+                        false,                        /* append? */
+                        false,                        /* unsaved items only? */
+                        config.time_format.is_some(), /* write timestamps? */
+                    )?;
+                }
+                None => {
+                    writeln!(
+                        stderr,
+                        "{}: history: HISTFILE: parameter null or not set",
+                        config.shell_name
+                    )?;
+                }
             }
 
             return Ok(ExecutionResult::success());
@@ -218,7 +241,10 @@ fn get_effective_history_file_path<'a>(
     default_history_file_path: Option<&'a Path>,
     option: Option<&'a str>,
 ) -> Option<&'a Path> {
-    option.map(Path::new).or(default_history_file_path)
+    match option {
+        Some(file_path) => Some(Path::new(file_path)),
+        None => default_history_file_path.filter(|path| !path.as_os_str().is_empty()),
+    }
 }
 
 #[cfg(test)]
@@ -242,5 +268,21 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_empty_default_history_file_path_is_unset() {
+        assert_eq!(
+            get_effective_history_file_path(Some(Path::new("")), None),
+            None
+        );
+    }
+
+    #[test]
+    fn test_explicit_empty_history_file_path_is_authoritative() {
+        assert_eq!(
+            get_effective_history_file_path(Some(Path::new("default-history")), Some("")),
+            Some(Path::new(""))
+        );
     }
 }
