@@ -3,7 +3,7 @@
 use std::{
     borrow::Cow,
     ffi::OsStr,
-    fmt::Display,
+    fmt::{Display, Write as _},
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -106,6 +106,13 @@ impl From<&String> for CommandArg {
 }
 
 impl CommandArg {
+    const fn to_string_len_hint(&self) -> usize {
+        match self {
+            Self::String(s) => s.len(),
+            Self::Assignment(_) => 0,
+        }
+    }
+
     pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             Self::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
@@ -258,7 +265,7 @@ pub(crate) async fn on_preexecute(
 ) -> Result<(), error::Error> {
     // Set BASH_COMMAND before invoking the DEBUG trap (and generally before
     // executing commands).
-    let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
+    let full_cmd = format_command_args(&cmd.args);
     cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
         variables::ShellValueLiteral::Scalar(full_cmd),
@@ -276,6 +283,24 @@ pub(crate) async fn on_preexecute(
     }
 
     Ok(())
+}
+
+fn format_command_args(args: &[CommandArg]) -> String {
+    let capacity = args
+        .iter()
+        .map(CommandArg::to_string_len_hint)
+        .sum::<usize>()
+        + args.len().saturating_sub(1);
+    let mut result = String::with_capacity(capacity);
+
+    for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+            result.push(' ');
+        }
+        let _ = write!(result, "{arg}");
+    }
+
+    result
 }
 
 /// Represents a simple command to be executed.
