@@ -258,6 +258,15 @@ impl WordField {
     pub fn len(&self) -> usize {
         self.0.iter().fold(0, |acc, piece| acc + piece.len())
     }
+
+    fn could_contain_glob_metacharacters(&self, enable_extended_globbing: bool) -> bool {
+        self.0.iter().any(|piece| match piece {
+            ExpansionPiece::Splittable(s) => {
+                patterns::could_contain_glob_metacharacters(s, enable_extended_globbing)
+            }
+            ExpansionPiece::Unsplittable(_) => false,
+        })
+    }
 }
 
 impl From<WordField> for String {
@@ -836,18 +845,28 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 match piece {
                     ExpansionPiece::Unsplittable(_) => current_field.0.push(piece),
                     ExpansionPiece::Splittable(s) => {
-                        for c in s.chars() {
-                            if ifs.contains(c) {
-                                if !current_field.0.is_empty() {
-                                    fields.push(std::mem::take(&mut current_field));
+                        if !s.contains(|c| ifs.contains(c)) {
+                            match current_field.0.last_mut() {
+                                Some(ExpansionPiece::Splittable(last)) => last.push_str(&s),
+                                Some(ExpansionPiece::Unsplittable(_)) | None if !s.is_empty() => {
+                                    current_field.0.push(ExpansionPiece::Splittable(s));
                                 }
-                            } else {
-                                match current_field.0.last_mut() {
-                                    Some(ExpansionPiece::Splittable(last)) => last.push(c),
-                                    Some(ExpansionPiece::Unsplittable(_)) | None => {
-                                        current_field
-                                            .0
-                                            .push(ExpansionPiece::Splittable(c.to_string()));
+                                Some(ExpansionPiece::Unsplittable(_)) | None => (),
+                            }
+                        } else {
+                            for c in s.chars() {
+                                if ifs.contains(c) {
+                                    if !current_field.0.is_empty() {
+                                        fields.push(std::mem::take(&mut current_field));
+                                    }
+                                } else {
+                                    match current_field.0.last_mut() {
+                                        Some(ExpansionPiece::Splittable(last)) => last.push(c),
+                                        Some(ExpansionPiece::Unsplittable(_)) | None => {
+                                            current_field
+                                                .0
+                                                .push(ExpansionPiece::Splittable(c.to_string()));
+                                        }
                                     }
                                 }
                             }
@@ -865,8 +884,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     }
 
     fn expand_pathnames_in_field(&self, field: WordField) -> Result<Vec<String>, error::Error> {
-        let pattern = patterns::Pattern::from(field.clone())
-            .set_extended_globbing(self.parser_options.enable_extended_globbing)
+        let enable_extended_globbing = self.parser_options.enable_extended_globbing;
+        if !field.could_contain_glob_metacharacters(enable_extended_globbing) {
+            return Ok(vec![String::from(field)]);
+        }
+
+        let field_str = String::from(field.clone());
+        let pattern = patterns::Pattern::from(field)
+            .set_extended_globbing(enable_extended_globbing)
             .set_case_insensitive(self.shell.options().case_insensitive_pathname_expansion);
 
         let options = patterns::FilenameExpansionOptions {
@@ -886,7 +911,6 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if expansion.is_unmatched_glob()
             && self.shell.options().fail_expansion_on_globs_without_match
         {
-            let field_str = String::from(field);
             return Err(error::ErrorKind::NoMatch(field_str).into());
         }
 
@@ -895,7 +919,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             if self.shell.options().expand_non_matching_patterns_to_null {
                 Ok(vec![])
             } else {
-                Ok(vec![String::from(field)])
+                Ok(vec![field_str])
             }
         } else {
             Ok(paths)

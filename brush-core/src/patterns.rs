@@ -445,7 +445,7 @@ fn requires_expansion(s: &str, enable_extended_globbing: bool) -> bool {
     brush_parser::pattern::pattern_has_glob_metacharacters(s, enable_extended_globbing)
 }
 
-fn could_contain_glob_metacharacters(s: &str, enable_extended_globbing: bool) -> bool {
+pub(crate) fn could_contain_glob_metacharacters(s: &str, enable_extended_globbing: bool) -> bool {
     // Most shell words are plain literals; avoid invoking the pattern grammar
     // unless a cheap scan sees a character that could start a glob. The grammar
     // remains authoritative for candidates, especially escaped or malformed forms.
