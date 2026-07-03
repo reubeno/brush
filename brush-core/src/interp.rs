@@ -1295,7 +1295,8 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                         &params,
                         kind,
                         subshell_command,
-                    )?;
+                    )
+                    .await?;
 
                     params
                         .open_files
@@ -1968,7 +1969,8 @@ pub(crate) async fn setup_redirect(
                                 params,
                                 substitution_kind,
                                 subshell_cmd,
-                            )?;
+                            )
+                            .await?;
 
                             let target_file = substitution_file.clone();
                             params.open_files.set_fd(substitution_fd, substitution_file);
@@ -2068,7 +2070,7 @@ const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> She
     }
 }
 
-fn setup_process_substitution(
+async fn setup_process_substitution(
     shell: &Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
@@ -2107,6 +2109,15 @@ fn setup_process_substitution(
             .execute(&mut subshell, &child_params)
             .await;
     });
+
+    // When called from inside another spawned task (e.g. a command substitution
+    // body), the fresh task lands in this worker's LIFO slot, which other workers
+    // cannot steal. If the caller then blocks the thread on the substitution pipe
+    // (shared pipe I/O is synchronous) before returning to the scheduler, the body
+    // is stranded and the shell deadlocks. Yielding forces one trip through the
+    // scheduler loop, which polls the LIFO slot first and re-queues this task at
+    // the stealable end of the run queue.
+    tokio::task::yield_now().await;
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
     // available fd.
