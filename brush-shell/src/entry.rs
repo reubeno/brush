@@ -2,15 +2,11 @@
 
 use crate::args::CommandLineArgs;
 use crate::args::InputBackendType;
-use crate::brushctl::ShellBuilderBrushBuiltinExt as _;
 use crate::bundled;
 use crate::config;
 use crate::error_formatter;
 use crate::events;
 use crate::productinfo;
-use brush_builtins::ShellBuilderExt as _;
-#[cfg(feature = "experimental-builtins")]
-use brush_experimental_builtins::ShellBuilderExt as _;
 use clap::CommandFactory;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
@@ -459,17 +455,12 @@ fn instantiate_shell_from_file(
         brush_builtins::BuiltinSet::BashMode
     };
 
-    let builtins = brush_builtins::default_builtins(builtin_set);
-
-    for (builtin_name, builtin) in builtins {
-        shell.register_builtin(&builtin_name, builtin);
-    }
+    brush_builtins::register_default_builtins(&mut shell, builtin_set);
+    crate::brushctl::register_brush_builtins(&mut shell);
 
     // Add experimental builtins (if enabled).
     #[cfg(feature = "experimental-builtins")]
-    for (builtin_name, builtin) in brush_experimental_builtins::experimental_builtins() {
-        shell.register_builtin(&builtin_name, builtin);
-    }
+    brush_experimental_builtins::register_experimental_builtins(&mut shell);
 
     Ok(shell)
 }
@@ -573,15 +564,16 @@ async fn instantiate_shell_from_args(
         .error_formatter(new_error_behavior(args))
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
+    // Build the shell.
+    let mut shell = shell.build().await?;
+
     // Add builtins.
-    let shell = shell.default_builtins(builtin_set).brush_builtins();
+    brush_builtins::register_default_builtins(&mut shell, builtin_set);
+    crate::brushctl::register_brush_builtins(&mut shell);
 
     // Add experimental builtins (if enabled).
     #[cfg(feature = "experimental-builtins")]
-    let shell = shell.experimental_builtins();
-
-    // Build the shell.
-    let mut shell = shell.build().await?;
+    brush_experimental_builtins::register_experimental_builtins(&mut shell);
 
     // Make adjustments.
     if let Some(xtrace_file_path) = &args.xtrace_file_path {

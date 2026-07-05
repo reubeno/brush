@@ -120,6 +120,8 @@ impl From<&BindError> for brush_core::ExecutionExitCode {
 }
 
 impl builtins::Command for BindCommand {
+    type State = ();
+    type SharedState = ();
     type Error = BindError;
 
     async fn execute<SE: brush_core::ShellExtensions>(

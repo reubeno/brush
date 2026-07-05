@@ -118,6 +118,8 @@ impl builtins::DeclarationCommand for DeclareCommand {
 }
 
 impl builtins::Command for DeclareCommand {
+    type State = ();
+    type SharedState = ();
     fn takes_plus_options() -> bool {
         true
     }
