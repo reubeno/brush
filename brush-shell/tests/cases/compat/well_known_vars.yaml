@@ -256,3 +256,27 @@ cases:
       second=${SRANDOM}
 
       [[ $first != $second ]] && echo "Confirmed SRANDOM at least isn't static"
+
+  - name: "PIPESTATUS stays live after declare -a conversion"
+    stdin: |
+      # `declare -a` on a dynamic well-known variable must not permanently freeze
+      # it. Real bash refreshes PIPESTATUS on every pipeline regardless of prior
+      # declarations, so after the next pipe the array must reflect the actual
+      # statuses, not the declared value.
+      declare -a PIPESTATUS=([0]="1")
+      true | true | true
+      echo "after declare -a: ${PIPESTATUS[@]}"
+
+  - name: "PIPESTATUS stays live after plain array assignment"
+    stdin: |
+      PIPESTATUS=([0]="9")
+      true | false | true
+      echo "after plain assign: ${PIPESTATUS[@]}"
+
+  - name: "PIPESTATUS freezes after declare -A conversion"
+    stdin: |
+      # bash itself permanently converts PIPESTATUS to a plain associative
+      # array after `declare -A`, so it no longer refreshes on pipelines.
+      declare -A PIPESTATUS=([x]="9")
+      true | true | true
+      echo "after declare -A: ${PIPESTATUS[@]}"
