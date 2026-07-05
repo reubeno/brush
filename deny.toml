@@ -24,7 +24,15 @@ version = 2
 yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    # Both advisories affect quick-xml's *parsing* paths (Attributes duplicate
+    # check, NsReader namespace resolution). quick-xml is pulled in only via
+    # junit-report (a dev-dependency for test reporting), which exclusively
+    # *writes* XML and never parses untrusted input. Remove these once
+    # junit-report releases with quick-xml >= 0.41.
+    { id = "RUSTSEC-2026-0194", reason = "parse-only DoS; junit-report (dev-only) only writes XML" },
+    { id = "RUSTSEC-2026-0195", reason = "NsReader-only DoS; junit-report (dev-only) only writes XML" },
+]
 #git-fetch-with-cli = true
 
 # This section is considered when running `cargo deny check licenses`
