@@ -194,6 +194,12 @@ impl ShellVariable {
             ShellValue::AssociativeArray(_) => {
                 Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
             }
+            // Dynamic variables (e.g. PIPESTATUS, RANDOM) are backed by getter/setter
+            // closures. "Converting" them to an array would discard the binding and
+            // freeze the variable at whatever snapshot we materialized, breaking it
+            // forever. Real bash keeps these variables live across `declare -a`, so
+            // accept the declaration syntactically but leave the value untouched.
+            ShellValue::Dynamic { .. } => Ok(()),
             _ => {
                 let mut new_values = BTreeMap::new();
                 new_values.insert(
@@ -333,8 +339,7 @@ impl ShellVariable {
                     | ShellValue::Unset(
                         ShellValueUnsetType::IndexedArray | ShellValueUnsetType::Untyped,
                     )
-                    | ShellValue::String(_)
-                    | ShellValue::Dynamic { .. },
+                    | ShellValue::String(_),
                     ShellValueLiteral::Array(literal_values),
                 ) => {
                     self.value = ShellValue::indexed_array_from_literals(literal_values);
