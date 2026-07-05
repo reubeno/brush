@@ -677,7 +677,7 @@ mod tests {
     use pretty_assertions::{assert_eq, assert_matches};
 
     fn args(strs: &[&str]) -> Vec<String> {
-        strs.iter().map(|s| s.to_string()).collect()
+        strs.iter().copied().map(str::to_owned).collect()
     }
 
     #[test]
