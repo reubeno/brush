@@ -1,6 +1,5 @@
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
-no-clearly-defined = true
 
 accepted = [
     "MIT",
