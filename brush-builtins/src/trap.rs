@@ -95,11 +95,13 @@ impl TrapCommand {
         context.shell.traps_mut().remove_handlers(signal);
     }
 
-    fn register_handler(
+    fn register_handler<I>(
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        signals: Vec<TrapSignal>,
+        signals: I,
         handler: &str,
-    ) {
+    ) where
+        I: IntoIterator<Item = TrapSignal>,
+    {
         // Our new source context is relative to the current position.
         // TODO(source-info): Provide the location of the specific token that makes up
         // `self.args[0]`.
