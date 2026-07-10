@@ -428,3 +428,42 @@ cases:
       unset -f myfunc
       eval "$dump"
       myfunc
+
+  - name: "Declare -f round-trips a case statement whose last branch has no explicit separator before ;;"
+    # Reduced from Gentoo's multilib.eclass (multilib_env): idiomatic bash
+    # never writes a redundant `;` before `;;`, but the printer used to
+    # rely on `CompoundList`'s last-item separator omission (correct before
+    # a keyword like `}`/`fi`/`done`, wrong before `;;`), dropping the
+    # statement/`;;` boundary entirely on re-serialization.
+    stdin: |
+      myfunc() {
+      	case "$1" in
+      	arm*)
+      		: "${DEFAULT_ABI=arm64}"
+      		;;
+      	*)
+      		echo other
+      		;;
+      	esac
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc arm64
+      echo "DEFAULT_ABI=${DEFAULT_ABI}"
+
+  - name: "Declare -f round-trips a for loop with no in-clause (implicit positional params)"
+    # Reduced from python-utils-r1.eclass's _python_export: `for var; do`
+    # implicitly iterates "$@". The printer used to always write `in `,
+    # collapsing this into `for var in ; do` (an explicit empty list),
+    # silently turning the loop body into a no-op.
+    stdin: |
+      myfunc() {
+      	for var; do
+      		echo "got: $var"
+      	done
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc a b c

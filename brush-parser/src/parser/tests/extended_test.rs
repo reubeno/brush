@@ -107,6 +107,24 @@ fn parse_extended_test_string_not_equal() -> Result<()> {
     Ok(())
 }
 
+/// Regression test: two adjacent parameter expansions with no separating
+/// whitespace in the source (`${CTARGET}-${PV}`, common in eclasses like
+/// `sys-devel/binutils`'s `pkg_postrm`) must round-trip as a single word,
+/// not `${CTARGET} -${PV}` — the winnow `ext_test_regex_word` parser used
+/// to synthesize a space whenever the previous component didn't end in a
+/// "structural" character, corrupting this into two words and producing
+/// invalid `[[ ]]` syntax on a later re-parse (e.g. via `declare -f`).
+#[test]
+fn parse_extended_test_adjacent_expansions_no_space() -> Result<()> {
+    let input = "[[ x == ${CTARGET}-${PV} ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
 #[test]
 fn parse_extended_test_string_pattern() -> Result<()> {
     let input = r#"[[ "$str" == *pattern* ]]"#;

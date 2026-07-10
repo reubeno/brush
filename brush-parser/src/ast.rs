@@ -695,9 +695,17 @@ impl SourceLocation for ForClauseCommand {
 
 impl Display for ForClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "for {} in ", self.variable_name)?;
+        write!(f, "for {}", self.variable_name)?;
 
+        // `values: None` means the source had no `in ...` clause at all
+        // (the `for var; do ...` form, implicitly iterating `$@`) — a
+        // different, valid construct from an explicit-but-empty list
+        // (`for var in ; do ...`, which iterates zero times). Unconditionally
+        // writing `in ` here collapsed the former into the latter, silently
+        // turning a common idiom (e.g. python-utils-r1.eclass's
+        // `_python_export`) into a loop whose body never runs.
         if let Some(values) = &self.values {
+            write!(f, " in ")?;
             for (i, value) in values.iter().enumerate() {
                 if i > 0 {
                     write!(f, " ")?;
@@ -1040,6 +1048,21 @@ impl Display for CaseItem {
 
         if let Some(cmd) = &self.cmd {
             write_indented(f, cmd)?;
+            // `CompoundList`'s own `Display` omits the last item's `;` when
+            // it's a bare `Sequence` separator — correct right before a
+            // keyword like `}`/`fi`/`done` that already implies statement
+            // termination, but wrong here: what follows is `;;`, which
+            // (unlike real bash, which accepts a bare newline there too)
+            // our own parser requires an explicit separator before. Restore
+            // it — unless the last item already ends in a here-document,
+            // whose own closing delimiter line must never be followed by a
+            // `;` in this position either (see `ends_in_heredoc`).
+            if let Some(last) = cmd.0.last()
+                && matches!(last.1, SeparatorOperator::Sequence)
+                && !last.0.ends_in_heredoc()
+            {
+                write!(f, ";")?;
+            }
         }
         writeln!(f)?;
         write!(f, "{}", self.post_action)

@@ -509,24 +509,19 @@ fn ext_test_regex_word<'a>(
                         winnow::token::any.parse_next(input)?;
                     }
                     _ => {
-                        // Regular word character
-                        // Add space only if the last character was a regular word character
-                        if !result.is_empty() {
-                            let last_ch = result.chars().last();
-                            // Don't add space after structural characters: ( ) [ ] |
-                            // Also don't add space after $ (variable expansion prefix)
-                            // or if the last character was part of an escape sequence (preceded by \)
-                            let chars: Vec<char> = result.chars().collect();
-                            let len = chars.len();
-                            let is_escaped = len >= 2 && chars[len - 2] == '\\';
-                            if !matches!(
-                                last_ch,
-                                Some('(' | ')' | '[' | ']' | '|' | '$' | ' ' | '\t' | '\n')
-                            ) && !is_escaped
-                            {
-                                result.push(' ');
-                            }
-                        }
+                        // Regular word character: append verbatim. Real
+                        // whitespace between components is already handled
+                        // above (breaks the word outside brackets/parens at
+                        // :499, or is kept literal inside them at :506) —
+                        // nothing here should ever synthesize a separator
+                        // that wasn't in the source. This used to insert a
+                        // space whenever the previous component didn't end
+                        // in a "structural" character, which corrupted an
+                        // adjacent concatenation like `${CTARGET}-${PV}`
+                        // (ends in `}`, not in the exclusion list) into
+                        // `${CTARGET} -${PV}` — two words instead of one,
+                        // invalid `[[ ]]` syntax on any later re-parse
+                        // (e.g. via `declare -f`).
                         let word = take_while(1.., |c: char| {
                             !matches!(
                                 c,
