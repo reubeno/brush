@@ -520,7 +520,12 @@ impl Display for Command {
             Self::Compound(compound_command, redirect_list) => {
                 write!(f, "{compound_command}")?;
                 if let Some(redirect_list) = redirect_list {
-                    write!(f, "{redirect_list}")?;
+                    // The compound command's own closing token (`}`, `fi`,
+                    // `done`, `esac`, ...) is a reserved word that must be
+                    // followed by a separator — `}3>&1` lexes as a single
+                    // token, not `}` followed by the redirect, and fails to
+                    // re-parse.
+                    write!(f, " {redirect_list}")?;
                 }
                 Ok(())
             }
@@ -528,7 +533,7 @@ impl Display for Command {
             Self::ExtendedTest(extended_test_expr, redirect_list) => {
                 write!(f, "[[ {extended_test_expr} ]]")?;
                 if let Some(redirect_list) = redirect_list {
-                    write!(f, "{redirect_list}")?;
+                    write!(f, " {redirect_list}")?;
                 }
                 Ok(())
             }

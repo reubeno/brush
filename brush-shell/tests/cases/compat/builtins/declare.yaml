@@ -497,3 +497,20 @@ cases:
       unset -f myfunc
       eval "$dump"
       myfunc go
+
+  - name: "Declare -f round-trips a brace group with a trailing fd-duplication redirect"
+    # Reduced from sys-libs/glibc's run_locale_gen: `{ cmd; } 3>&1` needs a
+    # separator between the brace group's closing `}` (a reserved word) and
+    # the redirect that follows it — `}3>&1` lexes as a single token, not
+    # `}` followed by the redirect, and fails to re-parse. The printer used
+    # to write a compound command's trailing redirect list with no space
+    # at all.
+    stdin: |
+      myfunc() {
+      	{ out=$(echo hi 1>&2); } 2>&1
+      	echo "$out"
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
