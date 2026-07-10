@@ -370,3 +370,61 @@ cases:
       v=TVAR
       typeset ${v}="tval"
       echo "TVAR=[$TVAR]"
+
+  - name: "Declare -f round-trips a function containing a heredoc"
+    stdin: |
+      myfunc() {
+      	cat <<-EOF
+      	content line
+      	EOF
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a function with a command after a heredoc"
+    # No trailing redirect at all here — the gap this covers is a plain
+    # `;`/sequence separator ending up on its own line right after a
+    # heredoc's closing delimiter (bash never emits one there; the
+    # delimiter line already ends the statement), which broke regardless of
+    # whether anything followed the heredoc operator on its own line.
+    stdin: |
+      myfunc() {
+      	cat <<-EOF
+      	content line
+      	EOF
+      	echo "after"
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a function containing a heredoc with a quoted delimiter"
+    stdin: |
+      myfunc() {
+      	cat <<-'EOF'
+      	no $expansion here
+      	EOF
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a function containing a heredoc with a trailing redirect"
+    stdin: |
+      myfunc() {
+      	echo "before"
+      	cat <<-EOF > "${TMPDIR:-/tmp}/declare_f_heredoc_test.txt"
+      	content line
+      	EOF
+      	echo "after"
+      	cat "${TMPDIR:-/tmp}/declare_f_heredoc_test.txt"
+      	rm -f "${TMPDIR:-/tmp}/declare_f_heredoc_test.txt"
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc

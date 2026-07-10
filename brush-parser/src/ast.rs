@@ -1,11 +1,71 @@
 //! Defines the Abstract Syntax Tree (ast) for shell programs. Includes types and utilities
 //! for manipulating the AST.
 
-use std::fmt::{Display, Write};
+use std::fmt::{Display, Write as _};
 
 use crate::{SourceSpan, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
+
+std::thread_local! {
+    /// Set for the duration of [`IoHereDocument::write_body`]'s own writes.
+    /// Consulted by every (possibly nested) [`write_indented`] wrapper on
+    /// the call stack so heredoc content/delimiter lines are never
+    /// reindented, however deep the surrounding compound command nesting
+    /// is — see [`write_indented`] for why that matters. A thread-local
+    /// (not a parameter) because `Display::fmt`'s signature can't carry
+    /// extra context through the standard `write!`/`{value}` machinery.
+    static SUPPRESS_INDENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// RAII guard: sets [`SUPPRESS_INDENT`] on construction, clears it on drop
+/// (including on an early `?`-return from a failed write), so a mid-body
+/// I/O error can never leave indentation suppressed for everything after.
+struct SuppressIndent;
+
+impl SuppressIndent {
+    fn enter() -> Self {
+        SUPPRESS_INDENT.set(true);
+        Self
+    }
+}
+
+impl Drop for SuppressIndent {
+    fn drop(&mut self) {
+        SUPPRESS_INDENT.set(false);
+    }
+}
+
+/// Render `value`'s `Display` output indented by [`DISPLAY_INDENT`].
+///
+/// `indenter`'s default uniform indentation would space-indent a
+/// here-document's content *and* its closing delimiter line — for a
+/// `<<-`-heredoc that breaks the delimiter match entirely (only leading
+/// *tabs* are stripped, not spaces), so the parser never finds the
+/// terminator and runs off the end of input; a plain `<<` heredoc's
+/// delimiter must start at column 0 regardless. Real shells never reformat
+/// heredoc content either way. This uses a custom inserter that skips
+/// indentation while [`SUPPRESS_INDENT`] is set, which
+/// [`IoHereDocument::write_body`] does for exactly its own lines —
+/// precise by construction (driven by the actual heredoc node being
+/// rendered, not by pattern-matching text for `<<`), and correctly composes
+/// across nested `write_indented` calls since the flag is shared process-wide
+/// for the duration of one body write.
+fn write_indented(f: &mut std::fmt::Formatter<'_>, value: &impl Display) -> std::fmt::Result {
+    let mut inserter = |_line: usize, f: &mut dyn std::fmt::Write| {
+        if SUPPRESS_INDENT.get() {
+            Ok(())
+        } else {
+            f.write_str(DISPLAY_INDENT)
+        }
+    };
+    write!(
+        indenter::indented(f).with_format(indenter::Format::Custom {
+            inserter: &mut inserter
+        }),
+        "{value}"
+    )
+}
 
 /// Trait implemented by all AST nodes. Used to aggregate traits expected
 /// to be implemented.
@@ -41,7 +101,10 @@ pub struct Program {
     /// Byte spans of comments found during parsing (`#` to end of line, excluding the `\n`).
     /// Populated by the winnow parser; empty when using the PEG parser.
     /// Useful for tools that need to preserve or analyse comments (e.g. config file editors).
-    #[cfg_attr(any(test, feature = "serde"), serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg_attr(
+        any(test, feature = "serde"),
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub comments: Vec<SourceSpan>,
 }
 
@@ -129,6 +192,19 @@ impl SourceLocation for AndOrList {
         match (start, end) {
             (Some(s), Some(e)) => Some(SourceSpan::within(&s, &e)),
             (start, _) => start,
+        }
+    }
+}
+
+impl AndOrList {
+    /// Whether this list's last pipeline's last command ends in a
+    /// here-document — see [`CompoundList`]'s `Display`, which must
+    /// suppress the separator that would otherwise follow (a heredoc's own
+    /// closing delimiter line already ends the statement).
+    fn ends_in_heredoc(&self) -> bool {
+        match self.additional.last() {
+            Some(AndOr::And(p) | AndOr::Or(p)) => p.ends_in_heredoc(),
+            None => self.first.ends_in_heredoc(),
         }
     }
 }
@@ -344,6 +420,13 @@ impl SourceLocation for Pipeline {
     }
 }
 
+impl Pipeline {
+    /// See [`AndOrList::ends_in_heredoc`].
+    fn ends_in_heredoc(&self) -> bool {
+        self.seq.last().is_some_and(Command::ends_in_heredoc)
+    }
+}
+
 impl Display for Pipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(timed) = &self.timed {
@@ -397,6 +480,29 @@ impl SourceLocation for Command {
             }
             Self::Function(f) => f.location(),
             Self::ExtendedTest(e, _) => e.location(),
+        }
+    }
+}
+
+impl Command {
+    /// See [`AndOrList::ends_in_heredoc`]. A compound/function command's own
+    /// closing syntax (`}`/`fi`/`done`/…) already forces a line break after
+    /// whatever it contains, so only an explicit *trailing* redirect list
+    /// attached to the whole construct (rare, e.g. `{ ...; } <<EOF`) is
+    /// checked here — never the construct's own inner body.
+    fn ends_in_heredoc(&self) -> bool {
+        match self {
+            Self::Simple(simple_command) => simple_command.ends_in_heredoc(),
+            Self::Compound(_, redirect_list) | Self::ExtendedTest(_, redirect_list) => {
+                redirect_list
+                    .as_ref()
+                    .is_some_and(RedirectList::ends_in_heredoc)
+            }
+            Self::Function(function_definition) => function_definition
+                .body
+                .1
+                .as_ref()
+                .is_some_and(RedirectList::ends_in_heredoc),
         }
     }
 }
@@ -690,7 +796,7 @@ impl Display for CaseClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "case {} in", self.value)?;
         for case in &self.cases {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{case}")?;
+            write_indented(f, case)?;
         }
         writeln!(f)?;
         write!(f, "esac")
@@ -732,8 +838,15 @@ impl Display for CompoundList {
             // Write the and-or list.
             write!(f, "{}", item.0)?;
 
-            // Write the separator... unless we're on the list item and it's a ';'.
-            if i == self.0.len() - 1 && matches!(item.1, SeparatorOperator::Sequence) {
+            // Write the separator... unless it's a bare `;` and either this
+            // is the last item, or the item's last command ended in a
+            // here-document — whose closing delimiter line already ends
+            // the statement, so an explicit `;` right after it would land
+            // on its own line, which no shell accepts as a token there
+            // (bash itself just starts the next statement on the next line
+            // instead, exactly like the last-item case this already skips).
+            let last = i == self.0.len() - 1;
+            if (last || item.0.ends_in_heredoc()) && matches!(item.1, SeparatorOperator::Sequence) {
                 // Skip
             } else {
                 write!(f, "{}", item.1)?;
@@ -803,11 +916,7 @@ impl SourceLocation for IfClauseCommand {
 impl Display for IfClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "if {}; then", self.condition)?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.then
-        )?;
+        write_indented(f, &self.then)?;
         if let Some(elses) = &self.elses {
             for else_clause in elses {
                 write!(f, "{else_clause}")?;
@@ -848,11 +957,7 @@ impl Display for ElseClause {
             writeln!(f, "else")?;
         }
 
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.body
-        )
+        write_indented(f, &self.body)
     }
 }
 
@@ -934,7 +1039,7 @@ impl Display for CaseItem {
         writeln!(f, ")")?;
 
         if let Some(cmd) = &self.cmd {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{cmd}")?;
+            write_indented(f, cmd)?;
         }
         writeln!(f)?;
         write!(f, "{}", self.post_action)
@@ -1095,11 +1200,7 @@ impl SourceLocation for BraceGroupCommand {
 impl Display for BraceGroupCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{ ")?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.list
-        )?;
+        write_indented(f, &self.list)?;
         writeln!(f)?;
         write!(f, "}}")?;
 
@@ -1124,11 +1225,7 @@ pub struct DoGroupCommand {
 impl Display for DoGroupCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "do")?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.list
-        )?;
+        write_indented(f, &self.list)?;
         writeln!(f)?;
         write!(f, "done")
     }
@@ -1181,6 +1278,25 @@ impl SourceLocation for SimpleCommand {
             (None, Some(mid), None) => Some(mid.clone()),
             _ => None,
         }
+    }
+}
+
+impl SimpleCommand {
+    /// See [`AndOrList::ends_in_heredoc`]: whether the last thing this
+    /// command actually writes (matching [`Display`]'s own prefix →
+    /// word/name → suffix order) is a here-document redirect.
+    fn ends_in_heredoc(&self) -> bool {
+        if let Some(suffix) = &self.suffix
+            && !suffix.0.is_empty()
+        {
+            return suffix.ends_in_heredoc();
+        }
+        if self.word_or_name.is_some() {
+            return false;
+        }
+        self.prefix
+            .as_ref()
+            .is_some_and(CommandPrefix::ends_in_heredoc)
     }
 }
 
@@ -1238,6 +1354,17 @@ impl SourceLocation for CommandPrefix {
     }
 }
 
+impl CommandPrefix {
+    /// See [`AndOrList::ends_in_heredoc`]. Checks *any* item, not just the
+    /// last: `write_inline`/`write_heredoc_body` defer every heredoc's body
+    /// to the end of this list's own rendering regardless of where it sits
+    /// in source order, so a heredoc anywhere here still ends up being the
+    /// last thing actually written.
+    fn ends_in_heredoc(&self) -> bool {
+        self.0.iter().any(CommandPrefixOrSuffixItem::is_heredoc)
+    }
+}
+
 impl Display for CommandPrefix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
@@ -1245,7 +1372,10 @@ impl Display for CommandPrefix {
                 write!(f, " ")?;
             }
 
-            write!(f, "{item}")?;
+            item.write_inline(f)?;
+        }
+        for item in &self.0 {
+            item.write_heredoc_body(f)?;
         }
         Ok(())
     }
@@ -1271,6 +1401,13 @@ impl SourceLocation for CommandSuffix {
     }
 }
 
+impl CommandSuffix {
+    /// See [`CommandPrefix::ends_in_heredoc`] — same "any item" reasoning.
+    fn ends_in_heredoc(&self) -> bool {
+        self.0.iter().any(CommandPrefixOrSuffixItem::is_heredoc)
+    }
+}
+
 impl Display for CommandSuffix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
@@ -1278,7 +1415,10 @@ impl Display for CommandSuffix {
                 write!(f, " ")?;
             }
 
-            write!(f, "{item}")?;
+            item.write_inline(f)?;
+        }
+        for item in &self.0 {
+            item.write_heredoc_body(f)?;
         }
         Ok(())
     }
@@ -1349,6 +1489,36 @@ impl Display for CommandPrefixOrSuffixItem {
                 write!(f, "{kind}({subshell_command})")
             }
         }
+    }
+}
+
+impl CommandPrefixOrSuffixItem {
+    /// See [`IoRedirect::write_inline`] — identical for every non-redirect
+    /// variant (the whole thing, matching `Display`).
+    fn write_inline(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        match self {
+            Self::IoRedirect(io_redirect) => io_redirect.write_inline(f),
+            Self::Word(word) => write!(f, "{word}"),
+            Self::AssignmentWord(_assignment, word) => write!(f, "{word}"),
+            Self::ProcessSubstitution(kind, subshell_command) => {
+                write!(f, "{kind}({subshell_command})")
+            }
+        }
+    }
+
+    /// See [`IoRedirect::write_heredoc_body`] — a no-op for every
+    /// non-redirect variant.
+    fn write_heredoc_body(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        if let Self::IoRedirect(io_redirect) = self {
+            io_redirect.write_heredoc_body(f)?;
+        }
+        Ok(())
+    }
+
+    /// See [`IoRedirect::is_heredoc`] — `false` for every non-redirect
+    /// variant.
+    const fn is_heredoc(&self) -> bool {
+        matches!(self, Self::IoRedirect(io_redirect) if io_redirect.is_heredoc())
     }
 }
 
@@ -1487,10 +1657,20 @@ impl SourceLocation for RedirectList {
     }
 }
 
+impl RedirectList {
+    /// See [`CommandPrefix::ends_in_heredoc`] — same "any item" reasoning.
+    fn ends_in_heredoc(&self) -> bool {
+        self.0.iter().any(IoRedirect::is_heredoc)
+    }
+}
+
 impl Display for RedirectList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for item in &self.0 {
-            write!(f, "{item}")?;
+            item.write_inline(f)?;
+        }
+        for item in &self.0 {
+            item.write_heredoc_body(f)?;
         }
         Ok(())
     }
@@ -1560,6 +1740,46 @@ impl Display for IoRedirect {
         }
 
         Ok(())
+    }
+}
+
+impl IoRedirect {
+    /// The part of this redirect's rendering that must appear on the same
+    /// line as whatever else the enclosing prefix/suffix/redirect list
+    /// carries — for every kind but a here-document, this is the whole
+    /// thing (matching [`Display`]); for a here-document it's just the
+    /// `<<` operator and delimiter, with the body deferred to
+    /// [`Self::write_heredoc_body`] so a later item in the same list (e.g.
+    /// `cat <<-EOF > file`'s trailing `> file`) still lands on that first
+    /// line, before the heredoc's own body/terminator, matching real shells.
+    fn write_inline(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        match self {
+            Self::HereDocument(fd_num, here_doc) => {
+                if let Some(fd_num) = fd_num {
+                    write!(f, "{fd_num}")?;
+                }
+                write!(f, "<<")?;
+                here_doc.write_operator(f)
+            }
+            other => write!(f, "{other}"),
+        }
+    }
+
+    /// The deferred here-document body + closing delimiter, if this is one;
+    /// nothing for every other redirect kind. See [`Self::write_inline`].
+    fn write_heredoc_body(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        if let Self::HereDocument(_, here_doc) = self {
+            here_doc.write_body(f)?;
+        }
+        Ok(())
+    }
+
+    /// Whether this redirect is a here-document — see
+    /// [`CompoundListItem`]'s `Display`, which must suppress the trailing
+    /// `;`/newline separator bash itself never emits after one (the
+    /// heredoc's own closing delimiter line already ends the statement).
+    const fn is_heredoc(&self) -> bool {
+        matches!(self, Self::HereDocument(..))
     }
 }
 
@@ -1672,15 +1892,54 @@ impl SourceLocation for IoHereDocument {
 
 impl Display for IoHereDocument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.write_operator(f)?;
+        self.write_body(f)
+    }
+}
+
+impl IoHereDocument {
+    /// The inline part of this here-document's rendering: the `-` (when
+    /// [`Self::remove_tabs`]) and delimiter word that appear right after
+    /// `<<` on the command's own line. Does not include the body or the
+    /// closing delimiter line — see [`Self::write_body`], which must be
+    /// written *after* every other token on that same line (any other
+    /// redirect/word following a heredoc operator in source order still
+    /// belongs on that first line, not after the heredoc's body).
+    fn write_operator(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
         if self.remove_tabs {
             write!(f, "-")?;
         }
+        write!(f, "{}", self.here_end)
+    }
 
-        writeln!(f, "{}", self.here_end)?;
+    /// The deferred body: a newline ending the operator line, the content,
+    /// then the closing delimiter line. Suppresses [`write_indented`]'s
+    /// indentation for exactly these lines (see [`SUPPRESS_INDENT`]).
+    fn write_body(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        writeln!(f)?;
+        let _suppress = SuppressIndent::enter();
         write!(f, "{}", self.doc)?;
-        writeln!(f, "{}", self.here_end)?;
+        // The closing delimiter is never quoted, even if the opening
+        // `<<'EOF'`/`<<"EOF"` was — quoting there only suppresses expansion
+        // inside the body, it's not part of the delimiter's own spelling.
+        // `write_operator` (the opening line) intentionally keeps the
+        // quotes as written; only this closing line needs them stripped.
+        writeln!(f, "{}", self.closing_delimiter())
+    }
 
-        Ok(())
+    /// [`Self::here_end`]'s bare text for the closing delimiter line, with
+    /// a single matching pair of leading/trailing quotes stripped if
+    /// present (`'EOF'`/`"EOF"` → `EOF`).
+    fn closing_delimiter(&self) -> &str {
+        let text = self.here_end.value.as_str();
+        let quoted = text.len() >= 2
+            && ((text.starts_with('\'') && text.ends_with('\''))
+                || (text.starts_with('"') && text.ends_with('"')));
+        if quoted {
+            text.get(1..text.len() - 1).unwrap_or(text)
+        } else {
+            text
+        }
     }
 }
 
