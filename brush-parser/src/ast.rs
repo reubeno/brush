@@ -18,21 +18,27 @@ std::thread_local! {
     static SUPPRESS_INDENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// RAII guard: sets [`SUPPRESS_INDENT`] on construction, clears it on drop
-/// (including on an early `?`-return from a failed write), so a mid-body
-/// I/O error can never leave indentation suppressed for everything after.
-struct SuppressIndent;
+/// RAII guard: sets [`SUPPRESS_INDENT`] on construction, restores whatever
+/// value it had before on drop (including on an early `?`-return from a
+/// failed write). Restoring the *previous* value rather than unconditionally
+/// clearing to `false` makes nested `enter()` calls safe — e.g. a `Word`
+/// inside a heredoc body (itself a `Word`, already suppressed by
+/// [`IoHereDocument::write_body`]) must not un-suppress indentation for its
+/// enclosing scope's remaining writes once its own guard drops.
+struct SuppressIndent {
+    previous: bool,
+}
 
 impl SuppressIndent {
     fn enter() -> Self {
-        SUPPRESS_INDENT.set(true);
-        Self
+        let previous = SUPPRESS_INDENT.replace(true);
+        Self { previous }
     }
 }
 
 impl Drop for SuppressIndent {
     fn drop(&mut self) {
-        SUPPRESS_INDENT.set(false);
+        SUPPRESS_INDENT.set(self.previous);
     }
 }
 
@@ -2274,7 +2280,28 @@ impl SourceLocation for Word {
 
 impl Display for Word {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        // `self.value` is raw, already-lexed text — a multi-line command
+        // substitution (`$( ... )` spanning several physical lines) is
+        // stored verbatim here, not as a nested, separately-indented AST.
+        // Any embedded newlines must survive untouched regardless of how
+        // deeply this word sits inside enclosing indented compound commands
+        // (case items, if/do-group bodies, ...), or an ancestor's
+        // `write_indented` would inject its own prefix after each of them,
+        // corrupting the substitution's internal structure. The word's own
+        // *first* line still needs normal indent treatment — it may be the
+        // first thing written after a fresh `writeln!` (a case pattern, a
+        // command name, ...) and legitimately belongs at the current nesting
+        // level. Only lines *after* that first embedded newline are
+        // suppressed: they're the substitution's own internal content and
+        // must survive exactly as captured.
+        match self.value.split_once('\n') {
+            None => write!(f, "{}", self.value),
+            Some((first, rest)) => {
+                writeln!(f, "{first}")?;
+                let _suppress = SuppressIndent::enter();
+                write!(f, "{rest}")
+            }
+        }
     }
 }
 

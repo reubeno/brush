@@ -467,3 +467,33 @@ cases:
       unset -f myfunc
       eval "$dump"
       myfunc a b c
+
+  - name: "Declare -f round-trips a multi-line command substitution inside a case item"
+    # Reduced from python-utils-r1.eclass's _python_export (the
+    # PYTHON_STDLIB branch): a `$( ... )` command substitution spanning
+    # several physical lines is stored as raw text in the AST, not as a
+    # separately-indented nested program. The printer's generic
+    # `write_indented` used to inject its own prefix after every embedded
+    # newline inside that raw text (since it can't tell "recursive Display
+    # call" from "literal newline in a string"), corrupting the
+    # substitution's own heredoc — its body and closing delimiter picked up
+    # extra leading spaces they were never meant to have, breaking the
+    # `<<-` tab-only stripping rule and leaving the heredoc unterminated.
+    stdin: |
+      myfunc() {
+      	case "$1" in
+      	go)
+      		out=$(
+      			cat <<-EOF
+      				first
+      				second
+      			EOF
+      		)
+      		echo "$out"
+      		;;
+      	esac
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc go
