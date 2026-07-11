@@ -462,7 +462,8 @@ impl<'a> Iterator for Search<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(index) = self.next_index {
+            {
+                let index = self.next_index?;
                 // Make sure we haven't hit the end of the history.
                 if index >= self.history.items.len() {
                     return None;
@@ -491,8 +492,6 @@ impl<'a> Iterator for Search<'a> {
                         return Some(item);
                     }
                 }
-            } else {
-                return None;
             }
         }
     }
