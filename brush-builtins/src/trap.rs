@@ -82,7 +82,7 @@ impl TrapCommand {
             writeln!(
                 context.stdout(),
                 "trap -- '{}' {signal_type}",
-                &handler.command
+                handler.command
             )?;
         }
         Ok(())
