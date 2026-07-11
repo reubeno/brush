@@ -11,3 +11,15 @@ cases:
     ignore_stderr: true
     stdin: |
       help echo
+
+  - name: "Help for unknown topic returns non-zero"
+    ignore_stdout: true
+    ignore_stderr: true
+    stdin: |
+      help this-is-not-a-real-builtin
+
+  - name: "Help for known and unknown topics returns zero"
+    ignore_stdout: true
+    ignore_stderr: true
+    stdin: |
+      help echo this-is-not-a-real-builtin
