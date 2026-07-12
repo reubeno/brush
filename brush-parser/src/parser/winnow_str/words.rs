@@ -152,7 +152,7 @@ pub(super) fn special_parameter<'a>() -> impl ModalParser<StrStream<'a>, &'a str
 ///
 /// Order matters: more specific patterns must come before more general ones:
 /// - `$'` (ANSI-C quote) before `$` followed by anything
-/// - `$"` (gettext quote) before `$` followed by anything  
+/// - `$"` (gettext quote) before `$` followed by anything
 /// - `$((` (arithmetic) before `$(` (command substitution)
 /// - `${` (braced variable) before `$VAR` (simple variable)
 pub(super) fn dollar_expansion<'a>() -> impl ModalParser<StrStream<'a>, &'a str, ContextError> + 'a

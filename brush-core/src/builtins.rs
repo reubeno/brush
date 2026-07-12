@@ -281,13 +281,11 @@ pub struct ContentOptions {
 /// # Type parameters
 ///
 /// * `SE` — the [`ShellExtensions`](extensions::ShellExtensions) type.
-/// * `S`  — the **shared-state** phantom. `S = ()` (default) means this
-///   registration can be passed directly to
-///   [`Shell::register_builtin`](crate::Shell::register_builtin). Any other
-///   `S` (e.g. `Arc<RepoCache>`) means it must go through
-///   [`SharedBuilder`] or [`SharedHandle`].
-/// * `L`  — the **local-state** phantom, governing
-///   [`with_state`](Registration::with_state) availability:
+/// * `S`  — the **shared-state** phantom. `S = ()` (default) means this registration can be passed
+///   directly to [`Shell::register_builtin`](crate::Shell::register_builtin). Any other `S` (e.g.
+///   `Arc<RepoCache>`) means it must go through [`SharedBuilder`] or [`SharedHandle`].
+/// * `L`  — the **local-state** phantom, governing [`with_state`](Registration::with_state)
+///   availability:
 ///   - [`NeedsLocalState<St>`] — `with_state` is available, takes `St`.
 ///   - [`HasLocalState`] — `with_state` is not available (terminal/storage form).
 ///

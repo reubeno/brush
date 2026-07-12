@@ -76,11 +76,8 @@ fn complete_command_continuation<'a>(
 ) -> impl ModalParser<StrStream<'a>, ast::CompleteCommand, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         // newlines between statements may contain comment-only lines; track them.
-        winnow::combinator::preceded(
-            newline_list_tracking(ctx),
-            complete_command(ctx, tracker),
-        )
-        .parse_next(input)
+        winnow::combinator::preceded(newline_list_tracking(ctx), complete_command(ctx, tracker))
+            .parse_next(input)
     }
 }
 

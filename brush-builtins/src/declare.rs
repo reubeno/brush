@@ -363,8 +363,7 @@ impl DeclareCommand {
                         expr.as_str(),
                         context.shell.parser_options().parser_impl,
                     )?;
-                    let result =
-                        brush_core::arithmetic::Evaluatable::eval(&parsed, context.shell)?;
+                    let result = brush_core::arithmetic::Evaluatable::eval(&parsed, context.shell)?;
                     Some(ShellValueLiteral::Scalar(result.to_string()))
                 } else {
                     Some(ShellValueLiteral::Scalar(expr))

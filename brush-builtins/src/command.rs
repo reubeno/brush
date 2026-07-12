@@ -43,11 +43,9 @@ impl builtins::Command for CommandCommand {
     ) -> Result<ExecutionResult, Self::Error> {
         if let Some(command_name) = self.command() {
             if self.print_description || self.print_verbose_description {
-                if let Some(found_cmd) = Self::try_find_command(
-                    context.shell,
-                    command_name,
-                    self.use_default_path,
-                ) {
+                if let Some(found_cmd) =
+                    Self::try_find_command(context.shell, command_name, self.use_default_path)
+                {
                     let mut output = Vec::new();
                     if self.print_description {
                         writeln!(output, "{found_cmd}")?;

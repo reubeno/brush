@@ -68,8 +68,8 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// # Arguments
     ///
-    /// * `builder` - A [`SharedBuilder`](builtins::SharedBuilder) produced by
-    ///   chaining `.builtin(name, reg)` calls.
+    /// * `builder` - A [`SharedBuilder`](builtins::SharedBuilder) produced by chaining
+    ///   `.builtin(name, reg)` calls.
     pub fn register_shared<T>(&mut self, builder: builtins::SharedBuilder<T, SE>)
     where
         T: Clone + Send + Sync + 'static,

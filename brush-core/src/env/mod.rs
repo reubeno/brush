@@ -69,12 +69,12 @@ fn resolve_value_str<'a, SE: extensions::ShellExtensions>(
 /// reference points to the **base** variable (`arr`) and [`has_subscript`](Self::has_subscript)
 /// returns `true`.
 ///
-/// - For **attribute/type inspection** (is it an array? exported? readonly?),
-///   use [`base_var`](Self::base_var) — the base variable is always correct
-///   for these queries, even for subscripted namerefs.
-/// - For **value extraction**, use [`value_str`](Self::value_str) — it handles
-///   subscripts correctly. Do NOT call `base_var().value().to_cow_str()` directly;
-///   that would return the whole array instead of the targeted element.
+/// - For **attribute/type inspection** (is it an array? exported? readonly?), use
+///   [`base_var`](Self::base_var) — the base variable is always correct for these queries, even for
+///   subscripted namerefs.
+/// - For **value extraction**, use [`value_str`](Self::value_str) — it handles subscripts
+///   correctly. Do NOT call `base_var().value().to_cow_str()` directly; that would return the whole
+///   array instead of the targeted element.
 #[derive(Debug)]
 pub struct ResolvedVarRef<'a> {
     scope: EnvironmentScope,
@@ -148,10 +148,9 @@ impl<'a> ResolvedVarRef<'a> {
 /// See [`ResolvedVarRef`] for subscript semantics.
 ///
 /// - For **reading** the current value, use [`value_str`](Self::value_str).
-/// - For **attribute mutation** (export, readonly, etc.), use
-///   [`base_var_mut`](Self::base_var_mut).
-/// - For **type inspection**, use [`base_var`](Self::base_var) — the base
-///   variable is always correct for type/attribute queries.
+/// - For **attribute mutation** (export, readonly, etc.), use [`base_var_mut`](Self::base_var_mut).
+/// - For **type inspection**, use [`base_var`](Self::base_var) — the base variable is always
+///   correct for type/attribute queries.
 #[derive(Debug)]
 pub struct ResolvedVarRefMut<'a> {
     scope: EnvironmentScope,
@@ -565,17 +564,16 @@ impl ShellEnvironment {
     //
     // Circular namerefs can be handled three ways depending on context:
     //
-    // 1. **Warn + identity fallback** — used for value expansion (`${ref}`,
-    //    `${!ref[@]}`, etc.) where bash emits a warning to stderr and treats the
-    //    variable as unset. See `WordExpander::resolve_nameref_or_self()` in
-    //    expansion.rs.
+    // 1. **Warn + identity fallback** — used for value expansion (`${ref}`, `${!ref[@]}`, etc.)
+    //    where bash emits a warning to stderr and treats the variable as unset. See
+    //    `WordExpander::resolve_nameref_or_self()` in expansion.rs.
     //
-    // 2. **Propagate the error** — used for declarations (`declare -x ref`)
-    //    where bash fails the command. Callers use `resolve_nameref()?` directly.
+    // 2. **Propagate the error** — used for declarations (`declare -x ref`) where bash fails the
+    //    command. Callers use `resolve_nameref()?` directly.
     //
-    // 3. **Silent identity fallback** — used for tests (`[[ -v ref ]]`) and
-    //    array element unset (`unset ref[N]`) where bash silently treats the
-    //    variable as not found. Use `resolve_nameref_or_default()` below.
+    // 3. **Silent identity fallback** — used for tests (`[[ -v ref ]]`) and array element unset
+    //    (`unset ref[N]`) where bash silently treats the variable as not found. Use
+    //    `resolve_nameref_or_default()` below.
     //
     // Builtins that emit their own warnings (e.g., `export`) handle the error
     // inline because they format the warning with `context.command_name`.
@@ -876,8 +874,8 @@ impl ShellEnvironment {
     /// # Arguments
     ///
     /// * `name` - The name of the variable to check.
-    /// * `shell` - The shell owning the environment (needed for subscripted
-    ///   nameref element checks).
+    /// * `shell` - The shell owning the environment (needed for subscripted nameref element
+    ///   checks).
     pub fn is_set<S: AsRef<str>, SE: extensions::ShellExtensions>(
         &self,
         name: S,
@@ -903,8 +901,8 @@ impl ShellEnvironment {
     /// Tries to unset the variable with the given name in the environment.
     ///
     /// Behavior depends on the [`VarName`] variant:
-    /// - `VarName::Auto` — resolves namerefs, unsets the target. On circular
-    ///   namerefs, falls back to unsetting the variable itself.
+    /// - `VarName::Auto` — resolves namerefs, unsets the target. On circular namerefs, falls back
+    ///   to unsetting the variable itself.
     /// - `VarName::Resolved` — unsets by the pre-resolved base name.
     /// - `VarName::Direct` — unsets the variable itself, bypassing namerefs.
     ///
@@ -981,8 +979,8 @@ impl ShellEnvironment {
     /// `index` parameter always takes precedence over any subscript embedded in a
     /// nameref target. For example, `unset_index("ref", "3")` where `ref → arr[2]`
     /// unsets `arr[3]`, not `arr[2]`. If the name has already been resolved through
-    /// the nameref chain, use [`get_mut_by_exact_name`](Self::get_mut_by_exact_name) + [`ShellVariable::unset_index`] directly
-    /// to avoid double resolution.
+    /// the nameref chain, use [`get_mut_by_exact_name`](Self::get_mut_by_exact_name) +
+    /// [`ShellVariable::unset_index`] directly to avoid double resolution.
     ///
     /// # Arguments
     ///

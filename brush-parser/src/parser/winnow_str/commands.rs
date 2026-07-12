@@ -555,7 +555,8 @@ pub(super) fn command<'a>(
                                 fail.parse_next(input)
                             }
                         }
-                        // Not a keyword - check if it looks like a function definition (name followed by ())
+                        // Not a keyword - check if it looks like a function definition (name
+                        // followed by ())
                         _ => {
                             // Peek for function definition pattern: name + optional_spaces + "()"
                             // Function names may contain hyphens, dots, and other

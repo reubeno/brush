@@ -436,8 +436,8 @@ fn skip_bracket_class(input: &mut StrStream<'_>, end_char: char) -> ModalResult<
 /// - `[^...]` or `[!...]` — negated bracket expression
 /// - `[:class:]`, `[=equiv=]`, `[.coll.]` — POSIX bracket expression classes
 /// - Backslash escapes inside the expression
-/// - Single/double-quoted strings and `$`-expansions (their `]` chars are not
-///   treated as closing the bracket expression)
+/// - Single/double-quoted strings and `$`-expansions (their `]` chars are not treated as closing
+///   the bracket expression)
 ///
 /// Returns `Ok` if a complete `[...]` was consumed, `Err` if no closing `]`
 /// was found (meaning the `[` was just a literal character).
@@ -526,7 +526,8 @@ fn handle_heredoc_open<'a>(
 /// - `open_char`: Character that increases depth (e.g., '(' or '{'), or None for backticks
 /// - `close_char`: Character that decreases depth (e.g., ')' or '}' or backtick)
 /// - `initial_depth`: Starting depth (e.g., 1 for most, 2 for arithmetic `$((`)
-/// - `allow_comments`: Whether to recognize `#` as starting a comment (true for command substitutions)
+/// - `allow_comments`: Whether to recognize `#` as starting a comment (true for command
+///   substitutions)
 /// - `allow_heredocs`: Whether to recognize heredocs (true for command substitutions)
 ///
 /// # Examples

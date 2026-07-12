@@ -135,17 +135,21 @@ pub(super) fn pipe_sequence<'a>(
     tracker: &'a PositionTracker,
 ) -> impl ModalParser<StrStream<'a>, Vec<ast::Command>, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
-        let (first, rest) = (
-            command(ctx, tracker),
-            repeat::<_, _, Vec<_>, _, _>(
-                0..,
-                (
-                    winnow::combinator::preceded(spaces(), pipe_operator()), // spaces then |
-                    winnow::combinator::preceded((linebreak(), spaces()), command(ctx, tracker)), // optional newlines+spaces then command
+        let (first, rest) =
+            (
+                command(ctx, tracker),
+                repeat::<_, _, Vec<_>, _, _>(
+                    0..,
+                    (
+                        winnow::combinator::preceded(spaces(), pipe_operator()), // spaces then |
+                        winnow::combinator::preceded(
+                            (linebreak(), spaces()),
+                            command(ctx, tracker),
+                        ), /* optional newlines+spaces then command */
+                    ),
                 ),
-            ),
-        )
-            .parse_next(input)?;
+            )
+                .parse_next(input)?;
 
         // Build initial commands vector
         let mut commands =

@@ -103,7 +103,6 @@ impl HistoryCommand {
     ) -> Result<(Vec<u8>, Vec<u8>), brush_core::Error> {
         let mut stderr_output = Vec::new();
 
-
         if self.clear_history {
             history.clear()?;
         }

@@ -162,7 +162,8 @@ impl ResolvedName {
         &self.name
     }
 
-    /// The array subscript, if the resolved target includes one (e.g., `arr[2]` yields `Some("2")`).
+    /// The array subscript, if the resolved target includes one (e.g., `arr[2]` yields
+    /// `Some("2")`).
     pub fn subscript(&self) -> Option<&str> {
         self.subscript.as_deref()
     }
