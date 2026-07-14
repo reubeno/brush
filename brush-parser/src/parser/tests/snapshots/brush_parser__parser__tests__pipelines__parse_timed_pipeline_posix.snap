@@ -11,12 +11,12 @@ ParseResult(
           first: Pipeline(
             timed: Some(TimedWithPosixOutput(SourceSpan(
               start: SourcePosition(
-                index: 0,
+                offset: 0,
                 line: 1,
                 column: 1,
               ),
               end: SourcePosition(
-                index: 7,
+                offset: 7,
                 line: 1,
                 column: 8,
               ),
