@@ -99,6 +99,12 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Clone depth from the original ancestor shell.
     depth: usize,
 
+    /// The number of loops (`for`/`while`/`until`) enclosing the currently
+    /// executing command within the current function scope. Reset on function
+    /// entry and in child shells (per bash, `break`/`continue` don't reach loops
+    /// across those boundaries); sourcing and `eval` don't reset it.
+    loop_depth: usize,
+
     /// Shell name
     name: Option<String>,
 
@@ -149,7 +155,14 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
             error_formatter: self.error_formatter.clone(),
-            traps: self.traps.clone(),
+            // Per bash, trap inheritance is resolved when the child shell is
+            // created: handlers the child doesn't inherit (given the options in
+            // effect right now) remain visible to `trap -p` but are never
+            // executed, until the child registers its own. N.B. Pre-trap `$?`
+            // statuses recorded on trap-handler call frames deliberately survive
+            // cloning — bash's `$( )` sees them but `( )` doesn't, so the `( )`
+            // execution site clears them itself rather than here.
+            traps: self.traps.child_copy(&self.options),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
             env: self.env.clone(),
@@ -182,6 +195,9 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            // Per bash, `break`/`continue` in a child shell can't reach the
+            // parent's enclosing loops.
+            loop_depth: 0,
         }
     }
 }
@@ -511,7 +527,9 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
         self.last_exit_status
     }
 
-    /// Updates the last exit status.
+    /// Updates the last exit status. N.B. When recording the result of an
+    /// executed command, prefer `record_last_exit_status`, which correctly
+    /// leaves `$?` untouched for results unwinding a `return`.
     pub fn set_last_exit_status(&mut self, status: u8) {
         self.last_exit_status = status;
         self.last_exit_status_change_count += 1;

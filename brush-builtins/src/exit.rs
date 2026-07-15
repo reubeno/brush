@@ -21,7 +21,14 @@ impl builtins::Command for ExitCommand {
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8
         } else {
-            context.shell.last_exit_status()
+            // Without an operand, `exit` uses `$?` — except during a trap
+            // action (at any call depth within it), where per bash it uses the
+            // status of the last command executed before the trap handler.
+            context
+                .shell
+                .call_stack()
+                .pre_trap_exit_status_for_exit()
+                .unwrap_or_else(|| context.shell.last_exit_status())
         };
 
         let mut result = ExecutionResult::new(code_8bit);

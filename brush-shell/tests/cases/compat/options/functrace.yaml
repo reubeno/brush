@@ -114,7 +114,6 @@ cases:
       echo "after"
 
   - name: "RETURN trap - fires in called function with set -T"
-    known_failure: true # TODO(functrace): RETURN trap inheritance not implemented
     stdin: |
       set -T
       trap 'echo "[return: ${FUNCNAME:-main}]"' RETURN
@@ -130,7 +129,6 @@ cases:
       echo "after"
 
   - name: "RETURN trap - fires for each nested function return with set -T"
-    known_failure: true # TODO(functrace): RETURN trap inheritance not implemented
     stdin: |
       set -T
       trap 'echo "[return: ${FUNCNAME:-main} -> $?]"' RETURN
@@ -283,7 +281,6 @@ cases:
   # RETURN trap with sourced scripts and set -T
   #
   - name: "RETURN trap - fires for function in sourced script with set -T"
-    known_failure: true # TODO(functrace): RETURN trap inheritance not implemented
     test_files:
       - path: "sourced.sh"
         contents: |

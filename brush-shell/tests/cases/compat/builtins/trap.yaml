@@ -161,21 +161,527 @@ cases:
       echo "after"
 
   - name: "trap ERR - has access to BASH_COMMAND"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
+    known_failure: true # TODO(BASH_COMMAND): value should be the command's source text (original quoting, redirections), not expanded args
     stdin: |
       trap 'echo "ERR for: $BASH_COMMAND"' ERR
       nonexistent_command_xyz 2>/dev/null
       echo "after"
 
   - name: "trap ERR - has access to LINENO"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |
       trap 'echo "ERR at line: $LINENO"' ERR
       false
       echo "after"
 
+  #
+  # ERR/RETURN traps set within functions
+  #
+  - name: "ERR+RETURN traps - set inside and outside function"
+    ignore_stderr: true # cd error message text differs
+    stdin: |
+      function oopsies() {
+          echo "OOPS"
+      }
+
+      function failure_point() {
+          {
+              ignore_stack=false
+              set -o pipefail
+              trap oopsies ERR RETURN
+          }
+          cd /not_a_dir
+      }
+
+      {
+          export ignore_stack=false
+          set -o pipefail
+          trap oopsies ERR RETURN
+      }
+
+      failure_point
+
+  - name: "ERR trap - set inside function fires within it"
+    stdin: |
+      f() {
+        trap 'echo "ERR in f"' ERR
+        false
+        echo "after false"
+      }
+      f
+      echo "after f"
+
+  - name: "ERR trap - suspended in function, restored after return"
+    stdin: |
+      trap 'echo "outer ERR"' ERR
+      f() {
+        false
+        echo "in f"
+        trap -p ERR
+      }
+      f
+      false
+      echo "after"
+
+  - name: "ERR trap - set inside function persists after return"
+    stdin: |
+      trap 'echo "outer ERR"' ERR
+      f() {
+        trap 'echo "inner ERR"' ERR
+      }
+      f
+      trap -p ERR
+      false
+      echo "after"
+
+  - name: "RETURN trap - set inside function fires on its return"
+    stdin: |
+      f() {
+        trap 'echo "RET"' RETURN
+        echo "in f"
+      }
+      f
+      echo "after f"
+
+  - name: "RETURN trap - set inside function persists but stays suspended in other functions"
+    stdin: |
+      f() {
+        trap 'echo "RET"' RETURN
+      }
+      g() {
+        echo "in g"
+      }
+      f
+      trap -p RETURN
+      g
+      echo "after"
+
+  - name: "RETURN trap - set inside function fires on return builtin"
+    stdin: |
+      f() {
+        trap 'echo "RET"' RETURN
+        return 42
+      }
+      f
+      echo "rc: $?"
+
+  - name: "RETURN trap - sees function name and local variables"
+    stdin: |
+      v=outer
+      f() {
+        local v=inner
+        trap 'echo "v=$v fn=${FUNCNAME[0]:-main}"' RETURN
+        echo "in f"
+      }
+      f
+      echo "after"
+
+  - name: "RETURN trap - does not fire when function exits the shell"
+    stdin: |
+      f() {
+        trap 'echo "RET"' RETURN
+        exit 5
+      }
+      f
+      echo "not reached"
+
+  - name: "RETURN trap - fires for nested function that set it"
+    stdin: |
+      outer() {
+        inner() {
+          trap 'echo "RET"' RETURN
+          echo "in inner"
+        }
+        inner
+        echo "after inner"
+      }
+      outer
+      echo "done"
+
+  - name: "RETURN trap - sees status of last command before return builtin"
+    stdin: |
+      f() {
+        trap 'echo "RET: $?"' RETURN
+        false
+        return 7
+      }
+      f
+      echo "rc: $?"
+
+  - name: "RETURN trap - sees success status before return builtin"
+    stdin: |
+      f() {
+        trap 'echo "RET: $?"' RETURN
+        true
+        return 5
+      }
+      f
+      echo "rc: $?"
+
+  - name: "RETURN trap - status before return from nested construct"
+    stdin: |
+      f() {
+        trap 'echo "RET: $?"' RETURN
+        if true; then
+          false
+          return 7
+        fi
+      }
+      f
+      echo "rc: $?"
+
+  - name: "RETURN trap - does not fire when errexit exits during function"
+    stdin: |
+      set -e
+      f() {
+        trap 'echo "RET"' RETURN
+        false
+      }
+      f
+      echo "not reached"
+
+  - name: "RETURN trap - exit within handler exits the shell"
+    stdin: |
+      f() {
+        trap 'exit 9' RETURN
+        echo "in f"
+      }
+      f
+      echo "not reached"
+
+  - name: "ERR trap - exit within handler exits the shell"
+    stdin: |
+      trap 'exit 9' ERR
+      false
+      echo "not reached"
+
+  - name: "ERR trap - not fired for failing return builtin"
+    stdin: |
+      f() {
+        trap 'echo "ERR"' ERR
+        true
+        return 1
+      }
+      f
+      echo "rc: $?"
+
+  - name: "ERR trap - fires at caller for function failing via return"
+    stdin: |
+      trap 'echo "ERR"' ERR
+      f() {
+        return 1
+      }
+      f
+      echo "rc: $?"
+
+  - name: "ERR trap - registered by failing function call fires only within it"
+    stdin: |
+      f() {
+        trap 'echo "ERR"' ERR
+        false
+      }
+      f
+      echo "rc: $?"
+
+  - name: "ERR trap - return within handler returns from enclosing function"
+    stdin: |
+      f() {
+        trap 'echo "ERR"; return 5' ERR
+        false
+        echo "in f"
+      }
+      f
+      echo "rc: $?"
+
+  - name: "ERR trap - bare return within handler uses pre-trap status"
+    stdin: |
+      g() {
+        trap 'echo "T"; return' ERR
+        sh -c 'exit 42'
+        echo "not reached"
+      }
+      g
+      echo "rc: $?"
+
+  - name: "ERR trap - bare exit within handler uses pre-trap status"
+    stdin: |
+      trap 'echo "T"; exit' ERR
+      sh -c 'exit 42'
+
+  - name: "ERR trap - bare return in sourced script handler uses pre-trap status"
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          trap 'echo "T"; return' ERR
+          sh -c 'exit 9'
+          echo "not reached"
+    stdin: |
+      . ./sourced.sh
+      echo "rc: $?"
+
+  - name: "ERR trap - break within handler breaks enclosing loop"
+    stdin: |
+      trap 'echo "H"; break' ERR
+      for j in a b; do
+        false
+        echo "iter $j"
+      done
+      echo "after: $?"
+
+  - name: "ERR trap - continue within handler continues enclosing loop"
+    stdin: |
+      trap 'continue' ERR
+      for i in 1 2 3; do
+        false
+        echo "body $i"
+      done
+      echo "after: $?"
+
+  - name: "ERR trap - break within handler cannot cross function boundary"
+    ignore_stderr: true # warning message prefix differs from bash
+    stdin: |
+      set -E
+      trap 'echo "T"; break' ERR
+      f() {
+        sh -c 'exit 9'
+        echo "in f"
+      }
+      for i in 1 2; do
+        f
+        echo "iter $i"
+      done
+      echo "after: $?"
+
+  - name: "ERR trap - break within handler with no enclosing loop"
+    ignore_stderr: true # warning message prefix differs from bash
+    stdin: |
+      trap 'echo "T"; break' ERR
+      false
+      echo "after: $?"
+      echo "end"
+
+  - name: "ERR trap - errexit overrides continue within handler"
+    stdin: |
+      set -e
+      trap 'echo "T"; continue' ERR
+      for i in 1 2; do
+        sh -c 'exit 5'
+        echo "body $i"
+      done
+      echo "after"
+
+  - name: "ERR trap - bare exit in function called from handler uses pre-trap status"
+    stdin: |
+      f() {
+        sh -c 'exit 4'
+        exit
+      }
+      trap 'f' EXIT
+      exit 9
+
+  - name: "ERR trap - bare exit through nested functions from handler"
+    stdin: |
+      h() { exit; }
+      f() {
+        sh -c 'exit 4'
+        h
+      }
+      trap 'f' EXIT
+      exit 27
+
+  - name: "ERR trap - LINENO continues handler accumulation in subshell"
+    stdin: |
+      trap 'echo "h: $LINENO"
+      ( true
+      echo "s: $LINENO" )' ERR
+      true
+      false
+      echo "after"
+
+  - name: "ERR trap - bare exit in subshell from handler doesn't see pre-trap status"
+    stdin: |
+      trap '( true; exit ); echo "sub rc: $?"' ERR
+      sh -c 'exit 7'
+      echo "after"
+
+  - name: "ERR trap - LINENO advances across multi-line handler"
+    stdin: |
+      trap 'echo "one: $LINENO"
+      echo "two: $LINENO"' ERR
+      true
+      false
+      echo "after"
+
+  - name: "ERR trap - fires once at origin during errexit unwinding"
+    stdin: |
+      set -eE
+      trap 'echo "ERR"' ERR
+      h() { false; }
+      g() { h; }
+      f() { g; }
+      f
+
+  - name: "ERR trap - not fired during errexit unwinding without errtrace"
+    stdin: |
+      set -e
+      trap 'echo "ERR"' ERR
+      f() { false; }
+      f
+
+  - name: "ERR trap - exit within handler fires once through nested frames"
+    stdin: |
+      set -E
+      trap 'echo "ERR"; exit 3' ERR
+      g() { false; echo "g continues"; }
+      f() { g; echo "f continues"; }
+      f
+      echo "not reached"
+
+  - name: "ERR trap - not fired for exit builtin with non-zero status"
+    stdin: |
+      trap 'echo "ERR"' ERR
+      exit 3
+
+  - name: "ERR trap - exit within handler preserves time report"
+    stdin: |
+      (trap 'exit 3' ERR; time false) 2>time.out
+      echo "rc: $?"
+      grep -c real time.out
+
+  - name: "ERR trap - fired once for failing compound command"
+    stdin: |
+      trap 'echo "ERR"' ERR
+      { false; }
+      echo "---"
+      { false; false; }
+      echo "after"
+
+  - name: "DEBUG trap - exit within handler exits the shell"
+    known_failure: true # TODO(traps): control flow from DEBUG trap handlers
+    stdin: |
+      trap 'exit 9' DEBUG
+      echo "not reached"
+      echo "also not reached"
+
+  - name: "trap '' - ignore visible inside functions"
+    stdin: |
+      trap '' ERR
+      trap '' RETURN
+      f() {
+        trap -p ERR
+        trap -p RETURN
+        echo "in fn"
+      }
+      f
+      echo "after"
+
+  - name: "trap '' - ignore kept in subshell after trap modification"
+    stdin: |
+      trap '' USR1
+      trap '' EXIT
+      (trap 'echo m' USR2; trap -p USR1; trap -p EXIT; echo "sub done")
+      echo "after"
+
+  - name: "ERR trap - set inside subshell fires"
+    stdin: |
+      (trap 'echo "sub ERR"' ERR; false)
+      echo "after"
+
+  - name: "ERR trap - subshell inheritance decided at creation time"
+    stdin: |
+      trap 'echo "ERR"' ERR
+      (set -E; false; echo "sub done")
+      echo "after"
+
+  - name: "ERR trap - errtrace at subshell creation keeps trap live"
+    stdin: |
+      set -E
+      trap 'echo "ERR"' ERR
+      (set +E; false; echo "sub done")
+      echo "after"
+
+  - name: "trap modification in subshell discards inherited display strings"
+    stdin: |
+      trap 'echo u1' USR1
+      trap 'echo u2' USR2
+      (trap - USR1; trap -p USR1 USR2; echo "sub done")
+      echo "---"
+      (trap 'echo new' USR2; trap -p USR1 USR2)
+      echo "---"
+      trap -p USR1 USR2
+
+  - name: "trap -p inside function inside subshell shows inherited trap"
+    stdin: |
+      trap 'echo "E"' ERR
+      f() {
+        trap -p ERR
+        echo "fn done"
+      }
+      (f; trap -p ERR)
+      echo "after"
+
+  - name: "RETURN trap - set inside sourced script fires at its end"
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          trap 'echo "src RET"' RETURN
+          echo "in sourced"
+    stdin: |
+      . ./sourced.sh
+      echo "after source"
+
+  - name: "RETURN trap - sourcing inside function fires in function context"
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          echo "in sourced"
+    stdin: |
+      f() {
+        trap 'echo "RET ${FUNCNAME[0]:-main}"' RETURN
+        . ./sourced.sh
+        echo "after source"
+      }
+      f
+      echo "done"
+
+  - name: "RETURN trap - sourced script status before return builtin"
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          false
+          return 3
+    stdin: |
+      trap 'echo "RET: $?"' RETURN
+      . ./sourced.sh
+      echo "rc: $?"
+
+  - name: "RETURN trap - not fired when sourced script ends via break"
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          break
+    stdin: |
+      trap 'echo "RET"' RETURN
+      for i in 1 2; do
+        . ./sourced.sh
+        echo "loop body"
+      done
+      echo "done"
+
+  - name: "RETURN trap - not fired when sourced script ends via continue"
+    test_files:
+      - path: "sourced.sh"
+        contents: |
+          continue
+    stdin: |
+      trap 'echo "RET"' RETURN
+      for i in 1 2; do
+        . ./sourced.sh
+        echo "loop body"
+      done
+      echo "done"
+
   - name: "return in EXIT trap within function"
-    known_failure: true # TODO(traps): return in trap handler behavior differs
+    ignore_stderr: true # `return` outside function/source: error message wording differs from bash
     stdin: |
       myfunc() {
         trap 'return 0' EXIT
@@ -222,8 +728,22 @@ cases:
       (echo "subshell")
       echo "back in parent"
 
+  - name: "subshell EXIT trap - can replace subshell exit status"
+    stdin: |
+      (trap 'exit 3' EXIT; exit 99)
+      echo "rc: $?"
+
+  - name: "command substitution EXIT trap - can replace exit status"
+    stdin: |
+      x=$(trap 'exit 3' EXIT; exit 99)
+      echo "rc: $?"
+
+  - name: "subshell EXIT trap - output honors redirections"
+    stdin: |
+      (trap 'echo "sub bye"' EXIT; echo "s") > out.txt
+      cat out.txt
+
   - name: "subshell can set its own EXIT trap"
-    known_failure: true # TODO(traps): EXIT trap in subshell
     stdin: |
       trap 'echo "[parent exit]"' EXIT
       echo "parent"
@@ -266,7 +786,6 @@ cases:
       echo "result: $result"
 
   - name: "command substitution can have its own EXIT trap"
-    known_failure: true # TODO: EXIT trap in command substitution subshell
     stdin: |
       trap 'echo "[parent exit]"' EXIT
       result=$(trap 'echo "[sub exit]"' EXIT; echo "inside")
@@ -423,7 +942,6 @@ cases:
       echo "after func"
 
   - name: "RETURN trap - fires on sourced script completion"
-    known_failure: true # TODO(traps): RETURN trap not firing for sourced scripts
     test_files:
       - path: "sourced.sh"
         contents: |
@@ -448,7 +966,6 @@ cases:
       echo "done"
 
   - name: "RETURN trap - inherited with functrace"
-    known_failure: true # TODO(traps): RETURN trap inheritance with functrace not implemented
     stdin: |
       set -T
       trap 'echo "[return: ${FUNCNAME[0]:-main}]"' RETURN
@@ -618,7 +1135,6 @@ cases:
       echo "x is $x"
 
   - name: "DEBUG trap - sees LINENO"
-    known_failure: true # TODO(traps): LINENO in DEBUG trap not accurate
     stdin: |
       trap 'echo "line: $LINENO"' DEBUG
       echo first
@@ -658,10 +1174,24 @@ cases:
       echo "not reached"
 
   - name: "EXIT trap - can modify exit status"
-    known_failure: true # TODO(traps): EXIT trap exit doesn't modify status
     stdin: |
       trap 'exit 0' EXIT
       exit 99
+
+  - name: "EXIT trap - exit with new status within handler"
+    stdin: |
+      trap 'exit 5' EXIT
+      exit 99
+
+  - name: "EXIT trap - bare exit within handler keeps original status"
+    stdin: |
+      trap 'true; exit' EXIT
+      exit 33
+
+  - name: "EXIT trap - failing last command doesn't change status"
+    stdin: |
+      trap 'false' EXIT
+      exit 7
 
   - name: "EXIT trap - multiple assignments last one wins"
     stdin: |

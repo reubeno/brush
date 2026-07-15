@@ -583,7 +583,7 @@ fn get_funcname_value(shell: &dyn ShellState) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::FrameType::TrapHandler(_)
+                crate::callstack::FrameType::TrapHandler { .. }
                 | crate::callstack::FrameType::Eval
                 | crate::callstack::FrameType::CommandString
                 | crate::callstack::FrameType::InteractiveSession => None,
@@ -620,7 +620,7 @@ fn get_bash_lineno_value(shell: &dyn ShellState) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::FrameType::TrapHandler(_)
+                crate::callstack::FrameType::TrapHandler { .. }
                 | crate::callstack::FrameType::Eval
                 | crate::callstack::FrameType::CommandString
                 | crate::callstack::FrameType::InteractiveSession => None,
@@ -655,9 +655,8 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
                         None
                     }
                 }
-                crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => {
-                    None
-                }
+                crate::callstack::FrameType::TrapHandler { .. }
+                | crate::callstack::FrameType::Eval => None,
                 crate::callstack::FrameType::CommandString
                 | crate::callstack::FrameType::InteractiveSession => None,
             })
@@ -696,7 +695,7 @@ fn frame_bash_args(
         crate::callstack::FrameType::Function(..) => {
             extdebug.then_some(Cow::Borrowed(frame.args.as_slice()))
         }
-        crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => None,
+        crate::callstack::FrameType::TrapHandler { .. } | crate::callstack::FrameType::Eval => None,
     }
 }
 
@@ -743,9 +742,23 @@ fn get_bash_argv_value(shell: &dyn ShellState) -> variables::ShellValue {
 }
 
 fn get_lineno(shell: &dyn ShellState) -> usize {
-    shell
-        .call_stack()
-        .current_frame()
-        .and_then(|frame| frame.current_line())
-        .unwrap_or(DEFAULT_LINENO)
+    // Per bash, LINENO inside a trap handler is based on the line of the
+    // command that was executing when the trap fired — the transfer site
+    // recorded on the frame beneath the handler's, frozen for the handler's
+    // duration — advanced by the handler's own line progression past its first
+    // line. Nested handlers accumulate: each handler frame contributes the
+    // lines it had advanced when the inner trap fired.
+    let mut handler_line_offsets = 0;
+    for frame in shell.call_stack().iter() {
+        if frame.frame_type.is_trap_handler() {
+            handler_line_offsets += frame
+                .current_frame_relative_line()
+                .unwrap_or(DEFAULT_LINENO)
+                .saturating_sub(1);
+        } else {
+            return frame.current_line().unwrap_or(DEFAULT_LINENO) + handler_line_offsets;
+        }
+    }
+
+    DEFAULT_LINENO + handler_line_offsets
 }

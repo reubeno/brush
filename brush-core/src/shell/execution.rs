@@ -9,6 +9,21 @@ use crate::{
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
+    /// Records the given execution result's exit code as the last exit status
+    /// (`$?`) — unless the result is unwinding a `return`. Per bash, the `return`
+    /// builtin leaves `$?` untouched (RETURN trap handlers observe the status of
+    /// the last command executed *before* the `return`); its operand becomes the
+    /// exit status of the enclosing function call or `source` command, recorded
+    /// by the caller once the call frame completes.
+    pub(crate) fn record_last_exit_status(&mut self, result: &ExecutionResult) {
+        if !matches!(
+            result.next_control_flow,
+            ExecutionControlFlow::ReturnFromFunctionOrScript
+        ) {
+            self.set_last_exit_status(result.exit_code.into());
+        }
+    }
+
     /// Returns the default execution parameters for this shell.
     pub fn default_exec_params(&self) -> ExecutionParameters {
         let mut params = ExecutionParameters::default();
@@ -144,11 +159,18 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         self.call_stack
             .push_script(call_type, source_info, script_positional_args);
 
-        let result = self
+        let mut result = self
             .run_parsed_result(parse_result, source_info, params)
             .await;
 
         self.call_stack.pop();
+
+        // The RETURN trap fires when a sourced script finishes executing (unlike
+        // functions, sourcing doesn't suspend the trap). Per bash, it runs after
+        // the sourced frame has been exited, in the caller's context.
+        if matches!(call_type, callstack::ScriptCallType::Source) {
+            result = self.invoke_return_trap(result, params).await;
+        }
 
         result
     }
@@ -190,12 +212,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // Execute the command string.
         let params = self.default_exec_params();
         let source_info = SourceInfo::from("-c");
-        let result = self.run_string(command, &source_info, &params).await?;
+        let mut result = self.run_string(command, &source_info, &params).await?;
 
         self.end_command_string_mode()?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Give the shell a chance to run on-exit tasks; an `exit` executed
+        // within the EXIT trap handler replaces the shell's exit status.
+        self.on_exit_folding_into(&mut result, &params).await;
 
         Ok(result)
     }
@@ -216,7 +239,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
-        let result = self
+        let mut result = self
             .parse_and_execute_script_file(
                 script_path.as_ref(),
                 args,
@@ -225,8 +248,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             )
             .await?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Give the shell a chance to run on-exit tasks; an `exit` executed
+        // within the EXIT trap handler replaces the shell's exit status.
+        self.on_exit_folding_into(&mut result, &params).await;
 
         Ok(result)
     }

@@ -24,6 +24,37 @@ cases:
       (echo "in subshell")
       echo "after"
 
+  - name: "extdebug implies functrace - RETURN inherited in functions"
+    stdin: |
+      shopt -s extdebug
+      trap 'echo "[return]"' RETURN
+      myfunc() {
+        echo "in func"
+      }
+      myfunc
+      echo "after"
+
+  #
+  # extdebug implies errtrace (-E)
+  #
+  - name: "extdebug implies errtrace - ERR inherited in functions"
+    stdin: |
+      shopt -s extdebug
+      trap 'echo "[err]"' ERR
+      myfunc() {
+        false
+        echo "in func"
+      }
+      myfunc
+      echo "after"
+
+  - name: "extdebug implies errtrace - ERR inherited in subshells"
+    stdin: |
+      shopt -s extdebug
+      trap 'echo "[err]"' ERR
+      (false; echo "in subshell")
+      echo "after"
+
   #
   # DEBUG trap return value effects (extdebug-specific)
   #

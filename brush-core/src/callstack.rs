@@ -55,7 +55,15 @@ pub enum FrameType {
     /// A function was called.
     Function(FunctionCall),
     /// A trap handler was invoked.
-    TrapHandler(traps::TrapSignal),
+    TrapHandler {
+        /// The signal whose trap is being handled.
+        signal: traps::TrapSignal,
+        /// The value of `$?` at the time the trap fired. Per bash, a `return` or
+        /// `exit` without an operand executed within a trap action reports the
+        /// status of the last command executed *before* the trap handler.
+        /// Cleared in `( )` subshells spawned from within the handler.
+        pre_trap_exit_status: Option<u8>,
+    },
     /// A string was eval'd.
     Eval,
     /// A command-line string (i.e., -c) was executed.
@@ -70,7 +78,7 @@ impl FrameType {
         match self {
             Self::Script(call) => call.name(),
             Self::Function(call) => call.name(),
-            Self::TrapHandler(_) => "trap".into(),
+            Self::TrapHandler { .. } => "trap".into(),
             Self::Eval => "eval".into(),
             Self::CommandString => "-c".into(),
             Self::InteractiveSession => "interactive".into(),
@@ -89,7 +97,7 @@ impl FrameType {
 
     /// Returns `true` if the frame is for a trap handler.
     pub const fn is_trap_handler(&self) -> bool {
-        matches!(self, Self::TrapHandler(_))
+        matches!(self, Self::TrapHandler { .. })
     }
 
     /// Returns `true` if the frame is for an interactive session.
@@ -118,7 +126,7 @@ impl std::fmt::Display for FrameType {
         match self {
             Self::Script(call) => call.fmt(f),
             Self::Function(call) => call.fmt(f),
-            Self::TrapHandler(_) => write!(f, "trap"),
+            Self::TrapHandler { .. } => write!(f, "trap"),
             Self::Eval => write!(f, "eval"),
             Self::CommandString => write!(f, "-c"),
             Self::InteractiveSession => write!(f, "interactive"),
@@ -134,6 +142,11 @@ pub struct FunctionCall {
     pub function_name: String,
     /// The invoked function.
     pub function: functions::Registration,
+    /// The shell's loop depth at the time of the call, restored when the
+    /// function returns. Per bash, `break`/`continue` within the function body
+    /// can't reach loops enclosing the call.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) saved_loop_depth: usize,
 }
 
 impl FunctionCall {
@@ -398,7 +411,7 @@ impl CallStack {
             self.script_source_depth = self.script_source_depth.saturating_sub(1);
         }
 
-        if let FrameType::TrapHandler(signal) = &frame.frame_type {
+        if let FrameType::TrapHandler { signal, .. } = &frame.frame_type {
             self.active_trap_signals.remove(signal);
         }
 
@@ -479,16 +492,21 @@ impl CallStack {
     ///
     /// * `signal` - The signal being handled.
     /// * `handler` - The trap handler being invoked, if any.
+    /// * `pre_trap_exit_status` - The value of `$?` at the time the trap fired.
     pub fn push_trap_handler(
         &mut self,
         signal: traps::TrapSignal,
         handler: Option<&traps::TrapHandler>,
+        pre_trap_exit_status: u8,
     ) {
         let source_info =
             handler.map_or_else(crate::SourceInfo::default, |h| h.source_info.clone());
 
         self.frames.push_front(Frame {
-            frame_type: FrameType::TrapHandler(signal),
+            frame_type: FrameType::TrapHandler {
+                signal,
+                pre_trap_exit_status: Some(pre_trap_exit_status),
+            },
             args: vec![],
             source_info,
             current_line_offset: 0,
@@ -497,6 +515,62 @@ impl CallStack {
         });
 
         self.active_trap_signals.insert(signal);
+    }
+
+    /// Clears the recorded pre-trap `$?` on any trap-handler frames. Used when
+    /// spawning a `( )` subshell from within a trap handler: per bash, bare
+    /// `exit`/`return` executed in the subshell don't see the parent handler's
+    /// pre-trap status.
+    pub(crate) fn clear_pre_trap_exit_statuses(&mut self) {
+        for frame in &mut self.frames {
+            if let FrameType::TrapHandler {
+                pre_trap_exit_status,
+                ..
+            } = &mut frame.frame_type
+            {
+                *pre_trap_exit_status = None;
+            }
+        }
+    }
+
+    /// If a `return` executed right now would be within a trap action — i.e.,
+    /// not separated from the innermost trap-handler frame by an intervening
+    /// function or script frame — returns the value `$?` had when that trap
+    /// fired. Per bash, a `return` without an operand executed during a trap
+    /// action uses this status rather than the handler's own last command;
+    /// functions and sourced scripts *called from* the handler have their own
+    /// (normal) `return` semantics.
+    pub fn pre_trap_exit_status_for_return(&self) -> Option<u8> {
+        for frame in &self.frames {
+            match &frame.frame_type {
+                FrameType::TrapHandler {
+                    pre_trap_exit_status,
+                    ..
+                } => return *pre_trap_exit_status,
+                FrameType::Function(_) | FrameType::Script(_) => return None,
+                _ => (),
+            }
+        }
+
+        None
+    }
+
+    /// If the shell is currently executing during any trap action — including
+    /// within functions or sourced scripts called from a handler — returns the
+    /// value `$?` had when the innermost active trap fired. Per bash, an `exit`
+    /// without an operand executed at any depth during a trap action uses this
+    /// status. (One knowing divergence: bash tracks this as a global that an
+    /// inner trap's completion doesn't restore; brush scopes it per handler.)
+    pub fn pre_trap_exit_status_for_exit(&self) -> Option<u8> {
+        self.frames
+            .iter()
+            .find_map(|frame| match &frame.frame_type {
+                FrameType::TrapHandler {
+                    pre_trap_exit_status,
+                    ..
+                } => Some(*pre_trap_exit_status),
+                _ => None,
+            })?
     }
 
     /// Pushes a new eval frame onto the stack.
@@ -547,11 +621,13 @@ impl CallStack {
         name: impl Into<String>,
         function: &functions::Registration,
         args: impl IntoIterator<Item = String>,
+        saved_loop_depth: usize,
     ) {
         self.frames.push_front(Frame {
             frame_type: FrameType::Function(FunctionCall {
                 function_name: name.into(),
                 function: function.to_owned(),
+                saved_loop_depth,
             }),
             args: args.into_iter().collect(),
             source_info: function.source().clone(),
@@ -606,6 +682,13 @@ impl CallStack {
     /// (i.e., there is an active frame on the stack for this signal).
     pub fn is_trap_signal_active(&self, signal: traps::TrapSignal) -> bool {
         self.active_trap_signals.contains(&signal)
+    }
+
+    /// Returns whether the shell is currently executing any trap handler.
+    pub fn in_trap_handler(&self) -> bool {
+        self.frames
+            .iter()
+            .any(|frame| frame.frame_type.is_trap_handler())
     }
 
     /// Clears the set of active trap signals. This should be called when

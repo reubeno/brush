@@ -21,7 +21,15 @@ impl builtins::Command for ReturnCommand {
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8
         } else {
-            context.shell.last_exit_status()
+            // Without an operand, `return` uses `$?` — except directly within a
+            // trap action, where per bash it uses the status of the last command
+            // executed before the trap handler. (Functions and sourced scripts
+            // *called from* the handler keep normal `return` semantics.)
+            context
+                .shell
+                .call_stack()
+                .pre_trap_exit_status_for_return()
+                .unwrap_or_else(|| context.shell.last_exit_status())
         };
 
         if context.shell.in_function() || context.shell.in_sourced_script() {

@@ -257,18 +257,22 @@ pub(crate) async fn on_preexecute(
     cmd: &mut commands::SimpleCommand<'_, impl extensions::ShellExtensions>,
 ) -> Result<(), error::Error> {
     // Set BASH_COMMAND before invoking the DEBUG trap (and generally before
-    // executing commands).
-    let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
-    cmd.shell.env_mut().update_or_add(
-        "BASH_COMMAND",
-        variables::ShellValueLiteral::Scalar(full_cmd),
-        |_| Ok(()),
-        env::EnvironmentLookup::Anywhere,
-        env::EnvironmentScope::Global,
-    )?;
+    // executing commands). Per bash, BASH_COMMAND stays frozen while a trap
+    // handler executes: it continues to name the command that was running when
+    // the trap fired, not the handler's own commands.
+    if !cmd.shell.call_stack().in_trap_handler() {
+        let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
+        cmd.shell.env_mut().update_or_add(
+            "BASH_COMMAND",
+            variables::ShellValueLiteral::Scalar(full_cmd),
+            |_| Ok(()),
+            env::EnvironmentLookup::Anywhere,
+            env::EnvironmentScope::Global,
+        )?;
+    }
 
     // Fire the DEBUG trap if one is registered.
-    if cmd.shell.traps().handles(traps::TrapSignal::Debug) {
+    if cmd.shell.traps().has_live_handler(traps::TrapSignal::Debug) {
         let _ = cmd
             .shell
             .invoke_trap_handler(traps::TrapSignal::Debug, &cmd.params)
@@ -729,6 +733,14 @@ pub(crate) async fn invoke_shell_function(
     // may still change the shell's persistent open files via builtins (e.g. `exec`).
     let result = body.execute(context.shell, &context.params).await;
 
+    // Fire any live RETURN trap (registered by the body itself or inherited via
+    // functrace) while the function's scope is still in place; per bash, the
+    // handler sees the function's locals and FUNCNAME.
+    let result = context
+        .shell
+        .invoke_return_trap(result, &context.params)
+        .await;
+
     // We've come back out, reflect it.
     context.shell.leave_function()?;
 
@@ -814,9 +826,16 @@ async fn run_substitution_command(
     let source_info = crate::SourceInfo::from("main");
 
     // Handle the parse result using default shell behavior.
-    shell
+    let mut result = shell
         .run_parsed_result(parse_result, &source_info, &params)
-        .await
+        .await?;
+
+    // Per bash, an EXIT trap registered within the command substitution fires
+    // when it finishes, and may replace its exit status. (Traps carried over
+    // from the parent are display-only and don't run.)
+    shell.on_exit_folding_into(&mut result, &params).await;
+
+    Ok(result)
 }
 
 // Detects a subshell command that consists solely of a single input redirection

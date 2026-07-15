@@ -193,3 +193,30 @@ cases:
           echo "loop: target=$target"
       done
       echo "final: target=$target"
+
+  - name: "break outside any loop warns and continues"
+    ignore_stderr: true # warning message prefix differs from bash
+    stdin: |
+      break
+      echo "status: $?"
+      echo "after"
+
+  - name: "continue outside any loop warns and continues"
+    ignore_stderr: true # warning message prefix differs from bash
+    stdin: |
+      continue
+      echo "status: $?"
+      echo "after"
+
+  - name: "break inside function cannot reach caller's loop"
+    ignore_stderr: true # warning message prefix differs from bash
+    stdin: |
+      f() {
+        break
+        echo "in f after break"
+      }
+      for i in 1 2; do
+        f
+        echo "iter $i"
+      done
+      echo "done"

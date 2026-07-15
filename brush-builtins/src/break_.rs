@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::io::Write;
 
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
@@ -15,11 +16,21 @@ impl builtins::Command for BreakCommand {
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        _context: brush_core::ExecutionContext<'_, SE>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // If specified, which_loop needs to be positive.
         if self.which_loop <= 0 {
             return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+
+        // Per bash, `break` outside any enclosing loop (in the current function
+        // scope) warns and succeeds without effect.
+        if context.shell.loop_depth() == 0 {
+            let _ = writeln!(
+                context.stderr(),
+                "break: only meaningful in a `for', `while', or `until' loop"
+            );
+            return Ok(ExecutionResult::success());
         }
 
         let mut result = ExecutionResult::success();

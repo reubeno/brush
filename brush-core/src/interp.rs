@@ -10,7 +10,8 @@ use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
-    ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult,
+    ExecutionWaitResult,
 };
 use crate::shell::Shell;
 use crate::variables::{
@@ -224,7 +225,7 @@ impl Execute for ast::Program {
             }
 
             // Update status
-            shell.set_last_exit_status(result.exit_code.into());
+            shell.record_last_exit_status(&result);
 
             // Check if we should stop executing subsequent commands
             if !result.is_normal_flow() {
@@ -261,7 +262,7 @@ impl Execute for ast::CompoundList {
                 result = ao_list.execute(shell, params).await?;
 
                 // Update status
-                shell.set_last_exit_status(result.exit_code.into());
+                shell.record_last_exit_status(&result);
             }
 
             if !result.is_normal_flow() {
@@ -381,6 +382,14 @@ impl Execute for ast::Pipeline {
             params.suppress_errexit = true;
         }
 
+        // Per bash, the ERR trap that fires for this pipeline's failure is the one
+        // in effect when the pipeline started; a trap registered *by* the pipeline
+        // (e.g. by a function call that installs one and then fails) doesn't fire
+        // for that same failure.
+        let err_trap_was_live = shell
+            .traps()
+            .has_live_handler(crate::traps::TrapSignal::Err);
+
         // Spawn all the processes required for the pipeline, connecting outputs/inputs with pipes
         // as needed.
         let spawn_results = spawn_pipeline_processes(self, shell, &params).await?;
@@ -395,18 +404,58 @@ impl Execute for ast::Pipeline {
             result.exit_code = ExecutionExitCode::from(if result.is_success() { 1 } else { 0 });
         }
 
-        // Update exit status.
-        shell.set_last_exit_status(result.exit_code.into());
+        // Update exit status. (A result unwinding a `return` doesn't update `$?`;
+        // its operand becomes the function's or sourced script's exit status,
+        // which the *caller's* pipeline records once the call frame completes.)
+        shell.record_last_exit_status(&result);
 
         // Fire the ERR trap if the pipeline failed in a non-conditional context.
         // We reuse `suppress_errexit` here because bash suppresses the ERR trap in
         // exactly the same contexts it suppresses errexit (conditionals, `!`-prefixed
-        // pipelines, etc.).
-        if !result.is_success() && !params.suppress_errexit && !self.bang {
-            if shell.traps().handles(crate::traps::TrapSignal::Err) {
-                shell
+        // pipelines, etc.). The trap only fires where the failure originates: a
+        // result already unwinding (`return`, `exit`, errexit propagating through
+        // enclosing frames, `break`/`continue`) doesn't re-fire it, and neither do
+        // wrapper compound commands whose failing inner command already fired it.
+        if !result.is_success()
+            && matches!(result.next_control_flow, ExecutionControlFlow::Normal)
+            && !params.suppress_errexit
+            && !self.bang
+            && pipeline_originates_err_trap(self)
+        {
+            if err_trap_was_live
+                && shell
+                    .traps()
+                    .has_live_handler(crate::traps::TrapSignal::Err)
+            {
+                let trap_result = shell
                     .invoke_trap_handler(crate::traps::TrapSignal::Err, &params)
                     .await?;
+
+                // Per bash, control flow initiated within the handler acts on the
+                // context that was executing when the trap fired: `exit` exits the
+                // shell, `return` returns from the enclosing function or sourced
+                // script, and `break`/`continue` affect the enclosing loop (while
+                // leaving the failing command's status as `$?`). We adopt the
+                // handler's result but still fall through so e.g. `time` reporting
+                // further below is not skipped.
+                match trap_result.next_control_flow {
+                    ExecutionControlFlow::Normal => (),
+                    ExecutionControlFlow::ExitShell
+                    | ExecutionControlFlow::ReturnFromFunctionOrScript => {
+                        result = trap_result;
+                    }
+                    ExecutionControlFlow::BreakLoop { .. }
+                    | ExecutionControlFlow::ContinueLoop { .. } => {
+                        // Per bash, when errexit is in effect it takes precedence
+                        // over a `break`/`continue` requested by the handler: the
+                        // failure unwinds the shell rather than resuming the loop.
+                        // (An explicit `return`/`exit` from the handler, above,
+                        // *does* override errexit.)
+                        if !shell.options().exit_on_nonzero_command_exit {
+                            result.next_control_flow = trap_result.next_control_flow;
+                        }
+                    }
+                }
             }
         }
 
@@ -440,6 +489,37 @@ impl Execute for ast::Pipeline {
         }
 
         Ok(result)
+    }
+}
+
+/// Returns whether a failure of this pipeline counts as *originating* a failure
+/// for ERR trap purposes. Per bash, the trap fires for failing simple commands
+/// (which is how function calls parse), multi-element pipelines,
+/// `((...))`/`[[...]]` expressions, and subshells (which are opaque to the
+/// calling shell) — but not for wrapper compound commands (brace groups,
+/// `if`/`case`/loop constructs), whose failing inner command already fired it.
+/// (The `Function` arm below matches function *definitions*, which succeed
+/// unless malformed.)
+///
+/// N.B. A wrapper can also fail on its own via a redirection error without any
+/// inner command having fired; today that path propagates as a fatal error and
+/// never reaches the fire site, but if it's ever converted to a normal failing
+/// result, this classification will need to account for it.
+const fn pipeline_originates_err_trap(pipeline: &ast::Pipeline) -> bool {
+    let [command] = pipeline.seq.as_slice() else {
+        return true;
+    };
+
+    match command {
+        ast::Command::Simple(_) | ast::Command::ExtendedTest(..) | ast::Command::Function(_) => {
+            true
+        }
+        ast::Command::Compound(compound, _) => matches!(
+            compound,
+            ast::CompoundCommand::Arithmetic(_)
+                | ast::CompoundCommand::Subshell(_)
+                | ast::CompoundCommand::Coprocess(_)
+        ),
     }
 }
 
@@ -555,7 +635,7 @@ async fn wait_for_pipeline_processes_and_update_status(
         match wait_result {
             ExecutionWaitResult::Completed(current_result) => {
                 result = current_result;
-                shell.set_last_exit_status(result.exit_code.into());
+                shell.record_last_exit_status(&result);
                 shell
                     .last_pipeline_statuses_mut()
                     .push(result.exit_code.into());
@@ -686,9 +766,15 @@ impl Execute for ast::CompoundCommand {
                 // TODO(source-info): Do we need to reset the line number?
                 let mut subshell = shell.clone();
 
+                // Per bash, bare `exit`/`return` in a `( )` subshell spawned from
+                // within a trap handler don't see the parent handler's pre-trap
+                // status. (The handler's call frames otherwise remain visible —
+                // e.g., LINENO continues the handler's line accumulation.)
+                subshell.clear_pre_trap_exit_statuses();
+
                 // Handle errors within the subshell context to prevent fatal errors
                 // from propagating to the parent shell.
-                let subshell_result = match list.execute(&mut subshell, params).await {
+                let mut subshell_result = match list.execute(&mut subshell, params).await {
                     Ok(result) => result,
                     Err(error) => {
                         // Display the error to stderr, but prevent fatal error propagation
@@ -700,20 +786,40 @@ impl Execute for ast::CompoundCommand {
                     }
                 };
 
+                // Per bash, an EXIT trap registered within the subshell fires when
+                // the subshell finishes, and may replace its exit status. (Traps
+                // carried over from the parent are display-only and don't run.)
+                subshell
+                    .on_exit_folding_into(&mut subshell_result, params)
+                    .await;
+
                 // Preserve the subshell's exit code, but don't honor any of its requests to exit
                 // the shell, break out of loops, etc.
                 Ok(ExecutionResult::from(subshell_result.exit_code))
             }
-            Self::ForClause(f) => f.execute(shell, params).await,
+            Self::ForClause(f) => execute_loop(f, shell, params).await,
             Self::CaseClause(c) => c.execute(shell, params).await,
             Self::IfClause(i) => i.execute(shell, params).await,
-            Self::WhileClause(w) => (WhileOrUntil::While, w).execute(shell, params).await,
-            Self::UntilClause(u) => (WhileOrUntil::Until, u).execute(shell, params).await,
+            Self::WhileClause(w) => execute_loop(&(WhileOrUntil::While, w), shell, params).await,
+            Self::UntilClause(u) => execute_loop(&(WhileOrUntil::Until, u), shell, params).await,
             Self::Arithmetic(a) => a.execute(shell, params).await,
-            Self::ArithmeticForClause(a) => a.execute(shell, params).await,
+            Self::ArithmeticForClause(a) => execute_loop(a, shell, params).await,
             Self::Coprocess(c) => c.execute(shell, params).await,
         }
     }
+}
+
+/// Executes a loop construct, tracking the shell's loop depth around it (which
+/// informs `break`/`continue` whether an enclosing loop is reachable).
+async fn execute_loop(
+    loop_command: &(impl Execute + Sync),
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+) -> Result<ExecutionResult, error::Error> {
+    shell.enter_loop();
+    let result = loop_command.execute(shell, params).await;
+    shell.leave_loop();
+    result
 }
 
 #[async_trait::async_trait]
@@ -867,7 +973,7 @@ impl Execute for ast::ForClauseCommand {
             }
         }
 
-        shell.set_last_exit_status(result.exit_code.into());
+        shell.record_last_exit_status(&result);
         Ok(result)
     }
 }
@@ -933,7 +1039,7 @@ impl Execute for ast::CaseClauseCommand {
             }
         }
 
-        shell.set_last_exit_status(result.exit_code.into());
+        shell.record_last_exit_status(&result);
 
         Ok(result)
     }
@@ -1016,7 +1122,7 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             let condition_result = test_condition.execute(shell, &condition_params).await?;
 
             // Update status for condition
-            shell.set_last_exit_status(condition_result.exit_code.into());
+            shell.record_last_exit_status(&condition_result);
 
             if !condition_result.is_normal_flow() {
                 result = condition_result;
@@ -1045,7 +1151,7 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
             }
         }
 
-        shell.set_last_exit_status(result.exit_code.into());
+        shell.record_last_exit_status(&result);
         Ok(result)
     }
 }
@@ -1108,7 +1214,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
         }
 
-        shell.set_last_exit_status(result.exit_code.into());
+        shell.record_last_exit_status(&result);
         Ok(result)
     }
 }

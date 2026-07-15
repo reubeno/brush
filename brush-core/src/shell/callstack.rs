@@ -3,6 +3,28 @@
 use crate::{ExecutionParameters, callstack, env, error, functions, trace_categories};
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
+    /// Clears the recorded pre-trap `$?` on any trap-handler frames; see
+    /// [`callstack::CallStack::clear_pre_trap_exit_statuses`].
+    pub(crate) fn clear_pre_trap_exit_statuses(&mut self) {
+        self.call_stack.clear_pre_trap_exit_statuses();
+    }
+
+    /// Returns the number of loops enclosing the currently executing command
+    /// within the current function scope.
+    pub const fn loop_depth(&self) -> usize {
+        self.loop_depth
+    }
+
+    /// Notes that a loop is being entered. Must be paired with [`Self::leave_loop`].
+    pub(crate) const fn enter_loop(&mut self) {
+        self.loop_depth += 1;
+    }
+
+    /// Notes that the most recently entered loop is being exited.
+    pub(crate) const fn leave_loop(&mut self) {
+        self.loop_depth = self.loop_depth.saturating_sub(1);
+    }
+
     /// Returns whether or not the shell is actively executing in a sourced script.
     pub fn in_sourced_script(&self) -> bool {
         self.call_stack.in_sourced_script()
@@ -63,7 +85,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         signal: crate::traps::TrapSignal,
         handler: Option<&crate::traps::TrapHandler>,
     ) {
-        self.call_stack.push_trap_handler(signal, handler);
+        // Record the current `$?` as the pre-trap status; bare `return`/`exit`
+        // executed during the trap action report it.
+        self.call_stack
+            .push_trap_handler(signal, handler, self.last_exit_status);
     }
 
     pub(crate) fn leave_trap_handler(&mut self) {
@@ -111,8 +136,34 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             tracing::debug!(target: trace_categories::FUNCTIONS, "Entering func [depth={depth}]: {prefix}{name}");
         }
 
-        self.call_stack.push_function(name, function, args);
+        // Per bash, `break`/`continue` within the function body can't reach
+        // loops enclosing the function call; the saved depth is restored from
+        // the call frame in `leave_function`.
+        let saved_loop_depth = std::mem::take(&mut self.loop_depth);
+
+        self.call_stack
+            .push_function(name, function, args, saved_loop_depth);
         self.env.push_scope(env::EnvironmentScope::Local);
+
+        // Traps that shell functions don't inherit (`ERR` without errtrace;
+        // `DEBUG`/`RETURN` without functrace) are suspended for the duration of
+        // the call: a handler registered by the function body itself is live (and
+        // persists after return), while a suspended one is reinstated on exit
+        // only if the body didn't replace it.
+        let non_inherited_traps = [
+            crate::traps::TrapSignal::Err,
+            crate::traps::TrapSignal::Debug,
+            crate::traps::TrapSignal::Return,
+        ]
+        .into_iter()
+        .filter(|signal| !signal.inherited_by_functions(&self.options));
+        self.traps.enter_suspension_scope(non_inherited_traps);
+
+        debug_assert_eq!(
+            self.traps.suspension_scope_count(),
+            self.call_stack.function_call_depth(),
+            "trap suspension scopes out of sync with function call depth"
+        );
 
         Ok(())
     }
@@ -120,10 +171,20 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Updates the shell's internal tracking state to reflect that the shell
     /// has exited the top-most function on its call stack.
     pub(crate) fn leave_function(&mut self) -> Result<(), error::Error> {
+        debug_assert_eq!(
+            self.traps.suspension_scope_count(),
+            self.call_stack.function_call_depth(),
+            "trap suspension scopes out of sync with function call depth"
+        );
+
+        self.traps.exit_suspension_scope();
         self.env.pop_scope(env::EnvironmentScope::Local)?;
 
         if let Some(exited_call) = self.call_stack.pop() {
             if let callstack::FrameType::Function(func_call) = exited_call.frame_type {
+                // Restore the loop depth in effect at the time of the call.
+                self.loop_depth = func_call.saved_loop_depth;
+
                 if tracing::enabled!(target: trace_categories::FUNCTIONS, tracing::Level::DEBUG) {
                     let depth = self.call_stack.function_call_depth();
                     let prefix = repeated_char_str(' ', depth);

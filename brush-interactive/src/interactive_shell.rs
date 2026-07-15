@@ -169,8 +169,11 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             tracing::debug!("couldn't save history: {e}");
         }
 
-        // Give the shell an opportunity to perform any on-exit operations.
-        shell.on_exit().await?;
+        // Give the shell an opportunity to perform any on-exit operations. (An
+        // `exit` executed within the EXIT trap handler replaces the shell's
+        // exit status; `on_exit` records that itself.)
+        let exec_params = shell.default_exec_params();
+        let _ = shell.on_exit(&exec_params).await?;
 
         drop(shell);
 
