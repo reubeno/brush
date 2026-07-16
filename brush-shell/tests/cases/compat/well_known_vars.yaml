@@ -217,3 +217,51 @@ cases:
       second=${SRANDOM}
 
       [[ $first != $second ]] && echo "Confirmed SRANDOM at least isn't static"
+
+  - name: "PIPESTATUS stays live after declare -a conversion"
+    stdin: |
+      # `declare -a` on a dynamic well-known variable must not permanently freeze
+      # it. Real bash refreshes PIPESTATUS on every pipeline regardless of prior
+      # declarations, so after the next pipe the array must reflect the actual
+      # statuses, not the declared value.
+      declare -a PIPESTATUS=([0]="1")
+      true | true | true
+      echo "after declare -a: ${PIPESTATUS[@]}"
+
+  - name: "PIPESTATUS stays live after plain array assignment"
+    stdin: |
+      PIPESTATUS=([0]="9")
+      true | false | true
+      echo "after plain assign: ${PIPESTATUS[@]}"
+
+  - name: "PIPESTATUS freezes after declare -A conversion"
+    stdin: |
+      # bash itself permanently converts PIPESTATUS to a plain associative
+      # array after `declare -A`, so it no longer refreshes on pipelines.
+      declare -A PIPESTATUS=([x]="9")
+      true | true | true
+      echo "after declare -A: ${PIPESTATUS[@]}"
+
+  - name: "RANDOM freezes after declare -a conversion"
+    stdin: |
+      # Unlike PIPESTATUS, RANDOM is scalar-shaped, not indexed-array-shaped.
+      # `declare -a` on it materializes (and permanently freezes) a real array,
+      # rather than keeping the dynamic binding live the way it would for a
+      # variable whose native shape already matches (e.g. PIPESTATUS).
+      declare -a RANDOM
+      first=${RANDOM}
+      second=${RANDOM}
+      [[ $first == $second ]] && echo "RANDOM stayed frozen after declare -a"
+
+  - name: "BASH_ALIASES rejects declare -a conversion"
+    ignore_stderr: true # bash and brush word the "cannot convert" error differently
+    stdin: |
+      # BASH_ALIASES is associative-shaped, so a bare `declare -a` (with no
+      # accompanying value) must be rejected exactly like converting a real
+      # associative array to an indexed array would be, leaving the dynamic
+      # binding untouched.
+      alias x=y
+      declare -a BASH_ALIASES
+      echo "declare exit status: $?"
+      echo "BASH_ALIASES stays live: ${BASH_ALIASES[@]}"
+      unalias x

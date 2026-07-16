@@ -427,10 +427,18 @@ impl DeclareCommand {
             .get_direct()
         {
             if self.make_associative_array.is_some() {
-                var.convert_to_associative_array()?;
+                if initial_value.is_some() {
+                    var.convert_to_associative_array_for_reassignment()?;
+                } else {
+                    var.convert_to_associative_array()?;
+                }
             }
             if self.make_indexed_array.is_some() {
-                var.convert_to_indexed_array()?;
+                if initial_value.is_some() {
+                    var.convert_to_indexed_array_for_reassignment()?;
+                } else {
+                    var.convert_to_indexed_array()?;
+                }
             }
 
             self.apply_attributes_before_update(var)?;

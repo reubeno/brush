@@ -189,11 +189,51 @@ impl ShellVariable {
 
     /// Converts the variable to an indexed array.
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
+        self.convert_to_indexed_array_impl(false)
+    }
+
+    /// Like [`Self::convert_to_indexed_array`], but for use when a `declare -a
+    /// name=value` is about to immediately overwrite this variable's value.
+    ///
+    /// Bash lets that accompanying assignment fully replace (and permanently
+    /// freeze) a shape-mismatched dynamic special variable such as
+    /// `BASH_ALIASES`, rather than rejecting the conversion the way a bare
+    /// `declare -a name` (with no value) would. A real (non-dynamic) associative
+    /// array is still rejected either way, matching bash.
+    pub fn convert_to_indexed_array_for_reassignment(&mut self) -> Result<(), error::Error> {
+        self.convert_to_indexed_array_impl(true)
+    }
+
+    fn convert_to_indexed_array_impl(
+        &mut self,
+        allow_dynamic_mismatch: bool,
+    ) -> Result<(), error::Error> {
         match self.value() {
             ShellValue::IndexedArray(_) => Ok(()),
             ShellValue::AssociativeArray(_) => {
                 Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
             }
+            // Dynamic variables that are already indexed-array-shaped (e.g. PIPESTATUS)
+            // are backed by getter/setter closures. Bash keeps these live across
+            // `declare -a` rather than freezing a snapshot, so accept the declaration
+            // syntactically but leave the binding untouched.
+            ShellValue::Dynamic {
+                kind: DynamicValueKind::IndexedArray,
+                ..
+            } => Ok(()),
+            ShellValue::Dynamic {
+                kind: DynamicValueKind::AssociativeArray,
+                ..
+            } if !allow_dynamic_mismatch => {
+                Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
+            }
+            // Scalars, including scalar-shaped dynamics like RANDOM/SECONDS, get
+            // materialized into a real indexed array and lose their dynamic binding,
+            // matching bash's `declare -a RANDOM` freezing behavior. Shape-mismatched
+            // associative dynamics fall here too when `allow_dynamic_mismatch` is set.
+            // TODO(dynamic): this should snapshot the dynamic value's *current*
+            // reading rather than an empty string; doing so requires plumbing a
+            // shell reference through to this conversion.
             _ => {
                 let mut new_values = BTreeMap::new();
                 new_values.insert(
@@ -208,11 +248,39 @@ impl ShellVariable {
 
     /// Converts the variable to an associative array.
     pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
+        self.convert_to_associative_array_impl(false)
+    }
+
+    /// Like [`Self::convert_to_associative_array`], but for use when a `declare
+    /// -A name=value` is about to immediately overwrite this variable's value.
+    /// See [`Self::convert_to_indexed_array_for_reassignment`] for why this
+    /// exists.
+    pub fn convert_to_associative_array_for_reassignment(&mut self) -> Result<(), error::Error> {
+        self.convert_to_associative_array_impl(true)
+    }
+
+    fn convert_to_associative_array_impl(
+        &mut self,
+        allow_dynamic_mismatch: bool,
+    ) -> Result<(), error::Error> {
         match self.value() {
             ShellValue::AssociativeArray(_) => Ok(()),
+            ShellValue::Dynamic {
+                kind: DynamicValueKind::AssociativeArray,
+                ..
+            } => Ok(()),
             ShellValue::IndexedArray(_) => {
                 Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
             }
+            ShellValue::Dynamic {
+                kind: DynamicValueKind::IndexedArray,
+                ..
+            } if !allow_dynamic_mismatch => {
+                Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
+            }
+            // TODO(dynamic): see the note in convert_to_indexed_array_impl; this
+            // should snapshot the dynamic value's current reading rather than an
+            // empty string.
             _ => {
                 let mut new_values: BTreeMap<String, String> = BTreeMap::new();
                 new_values.insert(
@@ -333,8 +401,7 @@ impl ShellVariable {
                     | ShellValue::Unset(
                         ShellValueUnsetType::IndexedArray | ShellValueUnsetType::Untyped,
                     )
-                    | ShellValue::String(_)
-                    | ShellValue::Dynamic { .. },
+                    | ShellValue::String(_),
                     ShellValueLiteral::Array(literal_values),
                 ) => {
                     self.value = ShellValue::indexed_array_from_literals(literal_values);
@@ -612,6 +679,12 @@ pub enum ShellValue {
     IndexedArray(BTreeMap<u64, String>),
     /// A value that is dynamically computed.
     Dynamic {
+        /// The shape of value that `getter` produces (scalar, indexed array, or
+        /// associative array). This lets conversion logic (e.g. `declare -a`/`-A`)
+        /// treat a dynamic variable the same way it would treat a materialized
+        /// value of that shape, without having to invoke `getter` (which needs a
+        /// shell reference that isn't always available).
+        kind: DynamicValueKind,
         /// Function that can query the value.
         /// TODO(serde): figure out how to serialize/deserialize dynamic values.
         #[cfg_attr(
@@ -627,6 +700,18 @@ pub enum ShellValue {
         )]
         setter: DynamicValueSetter,
     },
+}
+
+/// The shape of value produced by a dynamic variable's getter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum DynamicValueKind {
+    /// The dynamic value resolves to a scalar string (e.g. `RANDOM`, `SECONDS`).
+    Scalar,
+    /// The dynamic value resolves to an indexed array (e.g. `PIPESTATUS`).
+    IndexedArray,
+    /// The dynamic value resolves to an associative array (e.g. `BASH_ALIASES`).
+    AssociativeArray,
 }
 
 #[cfg(feature = "serde")]
