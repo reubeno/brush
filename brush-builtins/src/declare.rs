@@ -419,6 +419,24 @@ impl DeclareCommand {
         // Look up the variable. Name is already resolved through
         // resolve_nameref_for_declaration above.
         let resolved_name = env::ResolvedName::already_resolved(name.as_str());
+
+        // If the variable currently holds a dynamic value, resolve its current
+        // reading now, before taking a mutable borrow of the shell below. This
+        // lets a scalar dynamic (e.g. RANDOM) that ends up getting materialized
+        // by a shape conversion freeze at its actual current value instead of
+        // an empty string.
+        let resolved_dynamic_value = context
+            .shell
+            .env()
+            .lookup(&resolved_name)
+            .in_scope(lookup)
+            .get_direct()
+            .and_then(|(_, var)| {
+                matches!(var.value(), brush_core::ShellValue::Dynamic { .. })
+                    .then(|| var.resolve_value(context.shell))
+            });
+
+        // Look up the variable.
         if let Some((_, var)) = context
             .shell
             .env_mut()
@@ -428,16 +446,18 @@ impl DeclareCommand {
         {
             if self.make_associative_array.is_some() {
                 if initial_value.is_some() {
-                    var.convert_to_associative_array_for_reassignment()?;
+                    var.convert_to_associative_array_for_reassignment(
+                        resolved_dynamic_value.as_ref(),
+                    )?;
                 } else {
-                    var.convert_to_associative_array()?;
+                    var.convert_to_associative_array(resolved_dynamic_value.as_ref())?;
                 }
             }
             if self.make_indexed_array.is_some() {
                 if initial_value.is_some() {
-                    var.convert_to_indexed_array_for_reassignment()?;
+                    var.convert_to_indexed_array_for_reassignment(resolved_dynamic_value.as_ref())?;
                 } else {
-                    var.convert_to_indexed_array()?;
+                    var.convert_to_indexed_array(resolved_dynamic_value.as_ref())?;
                 }
             }
 
