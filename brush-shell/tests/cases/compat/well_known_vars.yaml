@@ -280,3 +280,27 @@ cases:
       declare -A PIPESTATUS=([x]="9")
       true | true | true
       echo "after declare -A: ${PIPESTATUS[@]}"
+
+  - name: "RANDOM freezes after declare -a conversion"
+    stdin: |
+      # Unlike PIPESTATUS, RANDOM is scalar-shaped, not indexed-array-shaped.
+      # `declare -a` on it materializes (and permanently freezes) a real array,
+      # rather than keeping the dynamic binding live the way it would for a
+      # variable whose native shape already matches (e.g. PIPESTATUS).
+      declare -a RANDOM
+      first=${RANDOM}
+      second=${RANDOM}
+      [[ $first == $second ]] && echo "RANDOM stayed frozen after declare -a"
+
+  - name: "BASH_ALIASES rejects declare -a conversion"
+    ignore_stderr: true # bash and brush word the "cannot convert" error differently
+    stdin: |
+      # BASH_ALIASES is associative-shaped, so a bare `declare -a` (with no
+      # accompanying value) must be rejected exactly like converting a real
+      # associative array to an indexed array would be, leaving the dynamic
+      # binding untouched.
+      alias x=y
+      declare -a BASH_ALIASES
+      echo "declare exit status: $?"
+      echo "BASH_ALIASES stays live: ${BASH_ALIASES[@]}"
+      unalias x
