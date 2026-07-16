@@ -281,6 +281,20 @@ impl DeclareCommand {
             EnvironmentLookup::Anywhere
         };
 
+        // If the variable currently holds a dynamic value, resolve its current
+        // reading now, before taking a mutable borrow of the shell below. This
+        // lets a scalar dynamic (e.g. RANDOM) that ends up getting materialized
+        // by a shape conversion freeze at its actual current value instead of
+        // an empty string.
+        let resolved_dynamic_value = context
+            .shell
+            .env()
+            .get_using_policy(name.as_str(), lookup)
+            .and_then(|var| {
+                matches!(var.value(), brush_core::ShellValue::Dynamic { .. })
+                    .then(|| var.resolve_value(context.shell))
+            });
+
         // Look up the variable.
         if let Some(var) = context
             .shell
@@ -289,16 +303,18 @@ impl DeclareCommand {
         {
             if self.make_associative_array.is_some() {
                 if initial_value.is_some() {
-                    var.convert_to_associative_array_for_reassignment()?;
+                    var.convert_to_associative_array_for_reassignment(
+                        resolved_dynamic_value.as_ref(),
+                    )?;
                 } else {
-                    var.convert_to_associative_array()?;
+                    var.convert_to_associative_array(resolved_dynamic_value.as_ref())?;
                 }
             }
             if self.make_indexed_array.is_some() {
                 if initial_value.is_some() {
-                    var.convert_to_indexed_array_for_reassignment()?;
+                    var.convert_to_indexed_array_for_reassignment(resolved_dynamic_value.as_ref())?;
                 } else {
-                    var.convert_to_indexed_array()?;
+                    var.convert_to_indexed_array(resolved_dynamic_value.as_ref())?;
                 }
             }
 

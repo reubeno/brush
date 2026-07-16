@@ -188,8 +188,20 @@ impl ShellVariable {
     }
 
     /// Converts the variable to an indexed array.
-    pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
-        self.convert_to_indexed_array_impl(false)
+    ///
+    /// # Arguments
+    ///
+    /// * `resolved_dynamic_value` - If this variable currently holds a dynamic
+    ///   value, the caller may pass in the value it currently resolves to
+    ///   (e.g. via [`Self::resolve_value`]) so that a scalar dynamic (such as
+    ///   `RANDOM`) that ends up getting materialized freezes at its actual
+    ///   current reading rather than an empty string. Pass `None` if no such
+    ///   snapshot is available, or if the variable is known not to be dynamic.
+    pub fn convert_to_indexed_array(
+        &mut self,
+        resolved_dynamic_value: Option<&ShellValue>,
+    ) -> Result<(), error::Error> {
+        self.convert_to_indexed_array_impl(false, resolved_dynamic_value)
     }
 
     /// Like [`Self::convert_to_indexed_array`], but for use when a `declare -a
@@ -200,13 +212,17 @@ impl ShellVariable {
     /// `BASH_ALIASES`, rather than rejecting the conversion the way a bare
     /// `declare -a name` (with no value) would. A real (non-dynamic) associative
     /// array is still rejected either way, matching bash.
-    pub fn convert_to_indexed_array_for_reassignment(&mut self) -> Result<(), error::Error> {
-        self.convert_to_indexed_array_impl(true)
+    pub fn convert_to_indexed_array_for_reassignment(
+        &mut self,
+        resolved_dynamic_value: Option<&ShellValue>,
+    ) -> Result<(), error::Error> {
+        self.convert_to_indexed_array_impl(true, resolved_dynamic_value)
     }
 
     fn convert_to_indexed_array_impl(
         &mut self,
         allow_dynamic_mismatch: bool,
+        resolved_dynamic_value: Option<&ShellValue>,
     ) -> Result<(), error::Error> {
         match self.value() {
             ShellValue::IndexedArray(_) => Ok(()),
@@ -231,15 +247,10 @@ impl ShellVariable {
             // materialized into a real indexed array and lose their dynamic binding,
             // matching bash's `declare -a RANDOM` freezing behavior. Shape-mismatched
             // associative dynamics fall here too when `allow_dynamic_mismatch` is set.
-            // TODO(dynamic): this should snapshot the dynamic value's *current*
-            // reading rather than an empty string; doing so requires plumbing a
-            // shell reference through to this conversion.
             _ => {
                 let mut new_values = BTreeMap::new();
-                new_values.insert(
-                    0,
-                    self.value.to_cow_str_without_dynamic_support().to_string(),
-                );
+                let source = resolved_dynamic_value.unwrap_or(&self.value);
+                new_values.insert(0, source.to_cow_str_without_dynamic_support().to_string());
                 self.value = ShellValue::IndexedArray(new_values);
                 Ok(())
             }
@@ -247,21 +258,31 @@ impl ShellVariable {
     }
 
     /// Converts the variable to an associative array.
-    pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
-        self.convert_to_associative_array_impl(false)
+    ///
+    /// See [`Self::convert_to_indexed_array`] for the meaning of
+    /// `resolved_dynamic_value`.
+    pub fn convert_to_associative_array(
+        &mut self,
+        resolved_dynamic_value: Option<&ShellValue>,
+    ) -> Result<(), error::Error> {
+        self.convert_to_associative_array_impl(false, resolved_dynamic_value)
     }
 
     /// Like [`Self::convert_to_associative_array`], but for use when a `declare
     /// -A name=value` is about to immediately overwrite this variable's value.
     /// See [`Self::convert_to_indexed_array_for_reassignment`] for why this
     /// exists.
-    pub fn convert_to_associative_array_for_reassignment(&mut self) -> Result<(), error::Error> {
-        self.convert_to_associative_array_impl(true)
+    pub fn convert_to_associative_array_for_reassignment(
+        &mut self,
+        resolved_dynamic_value: Option<&ShellValue>,
+    ) -> Result<(), error::Error> {
+        self.convert_to_associative_array_impl(true, resolved_dynamic_value)
     }
 
     fn convert_to_associative_array_impl(
         &mut self,
         allow_dynamic_mismatch: bool,
+        resolved_dynamic_value: Option<&ShellValue>,
     ) -> Result<(), error::Error> {
         match self.value() {
             ShellValue::AssociativeArray(_) => Ok(()),
@@ -278,14 +299,12 @@ impl ShellVariable {
             } if !allow_dynamic_mismatch => {
                 Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
             }
-            // TODO(dynamic): see the note in convert_to_indexed_array_impl; this
-            // should snapshot the dynamic value's current reading rather than an
-            // empty string.
             _ => {
                 let mut new_values: BTreeMap<String, String> = BTreeMap::new();
+                let source = resolved_dynamic_value.unwrap_or(&self.value);
                 new_values.insert(
                     String::from("0"),
-                    self.value.to_cow_str_without_dynamic_support().to_string(),
+                    source.to_cow_str_without_dynamic_support().to_string(),
                 );
                 self.value = ShellValue::AssociativeArray(new_values);
                 Ok(())
@@ -329,7 +348,7 @@ impl ShellVariable {
                 // If we're trying to append an array to a string, we first promote the string to be
                 // an array with the string being present at index 0.
                 (ShellValue::String(_), ShellValueLiteral::Array(_)) => {
-                    self.convert_to_indexed_array()?;
+                    self.convert_to_indexed_array(None)?;
                 }
                 _ => (),
             }
@@ -452,7 +471,7 @@ impl ShellVariable {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
             }
             ShellValue::String(_) => {
-                self.convert_to_indexed_array()?;
+                self.convert_to_indexed_array(None)?;
             }
             _ => (),
         }
