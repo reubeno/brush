@@ -1473,7 +1473,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let mut transformed_fields = vec![];
                 for field in expanded_parameter.fields {
                     let s = String::from(field);
-                    let transformed = self.apply_transform_to(&op, s, came_from_undefined).await?;
+                    let transformed = self
+                        .apply_transform_to(&op, &s, came_from_undefined)
+                        .await?;
                     transformed_fields.push(WordField::from(transformed));
                 }
 
@@ -2006,7 +2008,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     async fn apply_transform_to(
         &mut self,
         op: &ParameterTransformOp,
-        s: String,
+        s: &str,
         came_from_undefined: bool,
     ) -> Result<String, error::Error> {
         match op {
@@ -2014,13 +2016,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 prompt::expand_prompt(self.shell, self.params, s).await
             }
             brush_parser::word::ParameterTransformOp::CapitalizeInitial => {
-                Ok(to_initial_capitals(s.as_str()))
+                Ok(to_initial_capitals(s))
             }
             brush_parser::word::ParameterTransformOp::ExpandEscapeSequences => {
-                let (result, _) = escape::expand_backslash_escapes(
-                    s.as_str(),
-                    escape::EscapeExpansionMode::AnsiCQuotes,
-                )?;
+                let (result, _) =
+                    escape::expand_backslash_escapes(s, escape::EscapeExpansionMode::AnsiCQuotes)?;
                 Ok(String::from_utf8_lossy(result.as_slice()).into_owned())
             }
             brush_parser::word::ParameterTransformOp::PossiblyQuoteWithArraysExpanded {
@@ -2031,20 +2031,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 } else {
                     // TODO(expansion): This isn't right for arrays.
                     // TODO(expansion): This doesn't honor 'separate_words'
-                    Ok(escape::force_quote(
-                        s.as_str(),
-                        escape::QuoteMode::SingleQuote,
-                    ))
+                    Ok(escape::force_quote(s, escape::QuoteMode::SingleQuote))
                 }
             }
             brush_parser::word::ParameterTransformOp::Quoted => {
                 if came_from_undefined {
                     Ok(String::new())
                 } else {
-                    Ok(escape::force_quote(
-                        s.as_str(),
-                        escape::QuoteMode::SingleQuote,
-                    ))
+                    Ok(escape::force_quote(s, escape::QuoteMode::SingleQuote))
                 }
             }
             brush_parser::word::ParameterTransformOp::ToLowerCase => Ok(s.to_lowercase()),

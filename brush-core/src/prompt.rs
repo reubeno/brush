@@ -12,7 +12,7 @@ const VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub(crate) async fn expand_prompt(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
-    spec: String,
+    spec: &str,
 ) -> Result<String, error::Error> {
     // Parse the prompt spec into its pieces.
     let prompt_pieces = parse_prompt(spec)?;
@@ -58,11 +58,11 @@ pub(crate) async fn expand_prompt(
     Ok(formatted_prompt)
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
+#[cached::macros::cached(max_size = 64, key = "String", convert = r#"{ spec.to_owned() }"#)]
 fn parse_prompt(
-    spec: String,
+    spec: &str,
 ) -> Result<Vec<brush_parser::prompt::PromptPiece>, brush_parser::WordParseError> {
-    brush_parser::prompt::parse(spec.as_str())
+    brush_parser::prompt::parse(spec)
 }
 
 fn format_prompt_piece(
