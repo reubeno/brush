@@ -11,6 +11,11 @@ use crate::error;
 /// Represents a unique identifier for a history item.
 type ItemId = i64;
 
+/// Maximum file size accepted when importing a history file. Files larger than this are
+/// rejected with `HistoryFileTooLargeToImport`. Applies to all file-import paths
+/// (`load_history`, `read_new_from_file`, `reload_from_file`).
+pub(crate) const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
+
 /// Interface for querying and manipulating the shell's recorded history of commands.
 // TODO(history): support maximum item count
 #[derive(Clone, Default)]
@@ -19,6 +24,12 @@ pub struct History {
     items: rpds::VectorSync<ItemId>,
     id_map: rpds::HashTrieMapSync<ItemId, Item>,
     next_id: ItemId,
+    /// Tracks how many items were present in the history file the last time we read it.
+    /// Used by `read_new_from_file` (`history -n`) to skip already-loaded entries.
+    /// Serde-skipped: not persisted across serialization boundaries; resets to 0 on
+    /// deserialization (safe — subsequent `-n` reads everything new from the file).
+    #[cfg_attr(feature = "serde", serde(skip))]
+    last_file_read_count: usize,
 }
 
 impl History {
@@ -32,11 +43,106 @@ impl History {
     /// * `reader` - The readable stream to import history from.
     pub fn import(reader: impl Read) -> Result<Self, error::Error> {
         let mut history = Self::default();
+        history.parse_and_append_lines(std::io::BufReader::new(reader).lines())?;
+        history.last_file_read_count = history.count();
+        Ok(history)
+    }
 
-        let buf_reader = std::io::BufReader::new(reader);
+    /// Reads any history entries that were added to the file since the last time we read it,
+    /// appending them to the current in-memory history. This implements `history -n` semantics.
+    ///
+    /// If the file appears to have been truncated externally (i.e., it now contains fewer entries
+    /// than we last read), the baseline is reset so future appends remain visible.
+    ///
+    /// Note: this re-parses the full file on each call. Acceptable for typical history sizes;
+    /// this is a known cost, not an optimization target.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the history file.
+    pub fn read_new_from_file(&mut self, path: impl AsRef<Path>) -> Result<(), error::Error> {
+        let file = std::fs::File::options().read(true).open(path.as_ref())?;
 
+        let file_size = file.metadata()?.len();
+        if file_size > MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
+            return Err(error::ErrorKind::HistoryFileTooLargeToImport.into());
+        }
+
+        // Re-parse the full file into a scratch history to count entries.
+        let scratch = Self::import(file)?;
+
+        if scratch.count() < self.last_file_read_count {
+            // File was truncated externally. Reset the baseline so the next call sees new
+            // entries correctly, but do not append anything this time.
+            self.last_file_read_count = scratch.count();
+            return Ok(());
+        }
+
+        // Append only the entries that are new (i.e., those after the last read position).
+        let skip = self.last_file_read_count;
+        for item in scratch.iter().skip(skip) {
+            let new_item = Item {
+                id: self.next_id,
+                command_line: item.command_line.clone(),
+                timestamp: item.timestamp,
+                dirty: false,
+            };
+            self.add(new_item)?;
+        }
+
+        self.last_file_read_count = scratch.count();
+
+        Ok(())
+    }
+
+    /// Appends the full contents of the given file to the current in-memory history.
+    /// This implements `history -r` semantics: bash appends (does not replace) the
+    /// file content, matching the field name `append_file_to_session`.
+    ///
+    /// `last_file_read_count` is updated to reflect the new file baseline so that a
+    /// subsequent `history -n` does not re-read these entries.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the history file.
+    pub fn reload_from_file(&mut self, path: impl AsRef<Path>) -> Result<(), error::Error> {
+        let file = std::fs::File::options().read(true).open(path.as_ref())?;
+
+        let file_size = file.metadata()?.len();
+        if file_size > MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
+            return Err(error::ErrorKind::HistoryFileTooLargeToImport.into());
+        }
+
+        // Re-parse the full file into a scratch history to count entries.
+        let scratch = Self::import(file)?;
+
+        // Append all file entries to the current in-memory history (bash -r semantics: append,
+        // not replace).
+        for item in scratch.iter() {
+            let new_item = Item {
+                id: self.next_id,
+                command_line: item.command_line.clone(),
+                timestamp: item.timestamp,
+                dirty: false,
+            };
+            self.add(new_item)?;
+        }
+
+        // Update the baseline so subsequent history -n calls skip these entries.
+        self.last_file_read_count = scratch.count();
+
+        Ok(())
+    }
+
+    /// Parses history lines from the given iterator and appends the resulting items to `self`.
+    /// Items are constructed with `dirty: false` because they originate from a file (not from
+    /// the user's current session).
+    fn parse_and_append_lines(
+        &mut self,
+        lines: impl Iterator<Item = std::io::Result<String>>,
+    ) -> Result<(), error::Error> {
         let mut next_timestamp = None;
-        for line_result in buf_reader.lines() {
+        for line_result in lines {
             let line = match line_result {
                 Ok(line) => line,
                 // If we couldn't decode the line due to invalid data (perhaps it wasn't
@@ -65,16 +171,16 @@ impl History {
             }
 
             let item = Item {
-                id: history.next_id,
+                id: self.next_id,
                 command_line: line,
                 timestamp: next_timestamp.take(),
                 dirty: false,
             };
 
-            history.add(item)?;
+            self.add(item)?;
         }
 
-        Ok(history)
+        Ok(())
     }
 
     /// Tries to retrieve a history item by its unique identifier. Returns `None` if no item is
@@ -158,10 +264,14 @@ impl History {
         Ok(())
     }
 
-    /// Clears all history items.
+    /// Clears all history items and resets the file-read baseline used by `read_new_from_file`.
     pub fn clear(&mut self) -> Result<(), error::Error> {
         self.id_map = rpds::HashTrieMapSync::new_sync();
         self.items = rpds::VectorSync::new_sync();
+        self.last_file_read_count = 0;
+        // NOTE: `next_id` is intentionally NOT reset here: item IDs must remain
+        // monotonically increasing across a `history -c` / `history -r` cycle so
+        // that reedline's ID-based lookups remain stable.
         Ok(())
     }
 

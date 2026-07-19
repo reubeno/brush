@@ -191,3 +191,198 @@ cases:
     stdin: |
       bash -c 'printf "\xff\xfe\xfd" >history-file.txt'
       HISTFILE=history-file.txt $0 -o history -c 'echo hi'
+
+  # Tests for history -r and history -n.
+  #
+  # These tests use skip_oracle + expected_stdout rather than comparing against bash's oracle,
+  # because bash non-interactive mode does not load HISTFILE at startup (unlike brush), and
+  # bash records stdin commands in history (unlike brush non-interactive mode). The functional
+  # behavior being tested -- that -r appends file content and -n reads only new entries -- is
+  # independent of these pre-existing behavioral differences.
+
+  - name: "history -r: loads file contents into session"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "source.txt"
+        contents: |
+          a b c
+          1 2 3
+    stdin: |
+      history -r ./source.txt
+      history -w out.txt
+      cat out.txt
+    # Brush runs interactively (add_to_history before each command), so stdin commands
+    # appear in history. history -w out.txt captures all entries at write time.
+    expected_stdout: |
+      history -r ./source.txt
+      a b c
+      1 2 3
+      history -w out.txt
+
+  - name: "history -r: appends to existing in-memory history"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "source.txt"
+        contents: |
+          from-file
+    stdin: |
+      history -s in-mem
+      history -r ./source.txt
+      history -w out.txt
+      cat out.txt
+    # history -s in-mem adds "in-mem" entry (dirty). Then history -r appends from-file.
+    # history -w writes: history -s in-mem, in-mem, history -r ..., from-file, history -w ...
+    expected_stdout: |
+      history -s in-mem
+      in-mem
+      history -r ./source.txt
+      from-file
+      history -w out.txt
+
+  - name: "history -r: with explicit file argument"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "other.txt"
+        contents: |
+          explicit-entry
+    stdin: |
+      history -r ./other.txt
+      history -w out.txt
+      cat out.txt
+    expected_stdout: |
+      history -r ./other.txt
+      explicit-entry
+      history -w out.txt
+
+  - name: "history -n: reads new entries from file"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          cmd1
+    stdin: |
+      history -n
+      echo "cmd2" >> "$HISTFILE"
+      history -n
+      history -w out.txt
+      cat out.txt
+    # Brush starts with [cmd1] (loaded from HISTFILE, last_file_read_count=1).
+    # history -n (first): no new entries. Stdin commands accumulate in history.
+    # echo "cmd2" >> $HISTFILE: appends cmd2 to file.
+    # history -n (second): reads cmd2 from file, appends to in-memory history.
+    # history -w writes: cmd1, history -n, echo cmd2..., history -n, cmd2, history -w ...
+    expected_stdout: |
+      cmd1
+      history -n
+      echo "cmd2" >> "$HISTFILE"
+      history -n
+      cmd2
+      history -w out.txt
+
+  - name: "history -n: idempotent when no new entries"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          cmd1
+    stdin: |
+      history -n
+      history -n
+      echo "done"
+    # Two successive history -n calls with no file changes; second should add nothing.
+    expected_stdout: |
+      done
+
+  - name: "history -n: with explicit file argument"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "other.txt"
+        contents: |
+          explicit-n-entry
+    stdin: |
+      history -n ./other.txt
+      history -w out.txt
+      cat out.txt
+    # HISTFILE does not exist; brush starts with empty history.
+    # history -n ./other.txt reads explicit-n-entry from other.txt.
+    expected_stdout: |
+      history -n ./other.txt
+      explicit-n-entry
+      history -w out.txt
+
+  - name: "history -r and -n after history -c"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "source.txt"
+        contents: |
+          after-clear
+    stdin: |
+      history -c
+      history -r ./source.txt
+      history -w out.txt
+      cat out.txt
+    # history -c: clears history (including the history-c entry itself -- it was added
+    # before running, then clear wipes it). history -r appends after-clear from source.txt.
+    expected_stdout: |
+      history -r ./source.txt
+      after-clear
+      history -w out.txt
+
+  - name: "history -n after external truncation"
+    skip_oracle: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          entry1
+          entry2
+          entry3
+    stdin: |
+      history -n
+      : > "$HISTFILE"
+      history -n
+      echo "cmd2" >> "$HISTFILE"
+      history -n
+      history -w out.txt
+      cat out.txt
+    # Brush starts with [entry1, entry2, entry3], last_file_read_count=3.
+    # history -n (1st): no new entries.
+    # : > $HISTFILE: truncates file.
+    # history -n (2nd): detects truncation (scratch.count()=0 < 3), resets baseline to 0.
+    # echo "cmd2" >> $HISTFILE: writes cmd2 to file.
+    # history -n (3rd): reads cmd2, appends to history.
+    # history -w writes all in-memory history.
+    expected_stdout: |
+      entry1
+      entry2
+      entry3
+      history -n
+      : > "$HISTFILE"
+      history -n
+      echo "cmd2" >> "$HISTFILE"
+      history -n
+      cmd2
+      history -w out.txt
