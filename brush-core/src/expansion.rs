@@ -1819,6 +1819,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         var.value(),
                         ShellValue::AssociativeArray(_)
                             | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                            | ShellValue::Dynamic {
+                                kind: variables::DynamicValueKind::AssociativeArray,
+                                ..
+                            }
                     )
                 } else {
                     false
