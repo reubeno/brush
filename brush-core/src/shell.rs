@@ -61,6 +61,13 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: SE::ErrorFormatter,
 
+    /// Injected command interceptor (capability confinement) behavior.
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "default_command_interceptor")
+    )]
+    command_interceptor: SE::CommandInterceptor,
+
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
 
@@ -149,6 +156,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
             error_formatter: self.error_formatter.clone(),
+            command_interceptor: self.command_interceptor.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -212,6 +220,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             error_formatter: options.error_formatter,
+            command_interceptor: options.command_interceptor,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -348,6 +357,14 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
+    }
+
+    /// Returns a reference to the shell's configured command interceptor
+    /// (capability-confinement) behavior. Hosts rarely need to call this
+    /// directly; the shell consults it automatically before spawning external
+    /// commands and opening files.
+    pub const fn command_interceptor(&self) -> &SE::CommandInterceptor {
+        &self.command_interceptor
     }
 }
 
@@ -547,4 +564,9 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_command_interceptor<CI: extensions::CommandInterceptor>() -> CI {
+    CI::default()
 }
