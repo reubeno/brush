@@ -630,10 +630,22 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                     }
                 }
 
-                Ok(compound
-                    .execute(&mut pipeline_context.shell, &params)
-                    .await?
-                    .into())
+                match pipeline_context.shell {
+                    // An owned shell is a discarded clone, so this stage can run asynchronously.
+                    // That lets the pipeline start readers before writers fill the pipe.
+                    commands::ShellForCommand::OwnedShell { target, .. } => {
+                        let (mut shell, compound) = (*target, compound.clone());
+                        Ok(ExecutionSpawnResult::StartedTask(
+                            sys::tasks::spawn_blocking(async move {
+                                compound.execute(&mut shell, &params).await
+                            })
+                            .await,
+                        ))
+                    }
+                    commands::ShellForCommand::ParentShell(shell) => {
+                        Ok(compound.execute(shell, &params).await?.into())
+                    }
+                }
             }
             Self::Function(func) => Ok(func
                 .execute(&mut pipeline_context.shell, &params)

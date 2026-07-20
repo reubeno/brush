@@ -115,3 +115,8 @@ cases:
     timeout_in_seconds: 3
     stdin: |
       while true; do echo y; done | head -n 1
+
+  - name: "Compound writer exceeds pipe capacity"
+    stdin: |
+      i=0
+      while [ $i -lt 4096 ]; do printf '%s\n' 0123456789012345678901234567890; i=$((i+1)); done | wc -l
