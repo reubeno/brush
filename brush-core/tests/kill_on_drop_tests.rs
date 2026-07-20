@@ -1,29 +1,11 @@
-//! Integration tests for the opt-in `kill_external_commands_on_drop` creation
-//! option.
+//! Integration tests for the opt-in `kill_external_commands_on_drop` option:
+//! that a child outlives its shell by default, and is reaped when the option is set.
 //!
-//! By default a spawned child outlives the shell that spawned it. That is the
-//! only correct behavior for a real shell — job control, disowned jobs, and
-//! `nohup`-style usage all depend on it — and these tests pin it as the
-//! default. An *embedded* shell has the opposite requirement: there the shell
-//! is an object the host creates and destroys, so a child that survives
-//! teardown is a leak. It keeps running unattended, and it holds a duplicate of
-//! the shell's stdout/stderr pipe, so a host draining that output never sees
-//! EOF.
-//!
-//! # What owns a spawned child
-//!
-//! These tests tear down the whole runtime rather than just dropping the
-//! `Shell`, because that is what actually reaches a running child. A
-//! backgrounded command (`cmd &`) is executed by a detached `tokio` task
-//! operating on a *clone* of the shell, and the resulting `ChildProcess` is
-//! owned by that task — not by the spawning shell's job table, which only holds
-//! the task's `JoinHandle`. Dropping a `JoinHandle` detaches rather than
-//! aborts, so dropping the parent shell alone leaves such a child untouched.
-//! Shutting the runtime down drops the tasks, which drops the `Child`, which is
+//! Note: these tear down the whole runtime, not just the `Shell`. A backgrounded
+//! command runs in a detached `tokio` task owning a *clone* of the shell; the
+//! shell's job table holds only the task's `JoinHandle`, and dropping that
+//! detaches rather than aborts. Dropping the tasks is what drops the `Child`,
 //! where `kill_on_drop` takes effect.
-//!
-//! The shell under test has no builtins registered; everything it runs here is
-//! an external command named by absolute path.
 
 #![cfg(unix)]
 #![cfg(test)]

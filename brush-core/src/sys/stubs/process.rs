@@ -32,8 +32,7 @@ pub(crate) fn spawn(
     mut command: std::process::Command,
     kill_on_drop: bool,
 ) -> std::io::Result<Child> {
-    // This stub platform has no process reaping to speak of; `std::process::Child`
-    // has no kill-on-drop facility, so the request is accepted and ignored.
+    // No kill-on-drop on this stub platform; accepted and ignored.
     let _ = kill_on_drop;
     let child = command.spawn()?;
     Ok(Child { inner: child })

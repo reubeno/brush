@@ -182,20 +182,10 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Whether to launch external commands as session leaders.
     #[builder(default)]
     pub external_cmd_leads_session: bool,
-    /// Whether externally spawned commands should be killed when the shell that
-    /// spawned them is dropped.
-    ///
-    /// Defaults to `false`, which is the behavior a real shell must have: a
-    /// child outlives the shell that started it, which is what makes job
-    /// control, disowned jobs, and `nohup`-style usage work. Turning this on
-    /// breaks that contract deliberately.
-    ///
-    /// It is intended for *embedded* shells, where the shell is an object the
-    /// host creates and destroys rather than the user's session. There, a child
-    /// that survives teardown is a leak: it keeps running unattended, and it
-    /// holds a duplicate of the shell's stdout/stderr pipe, so the host's
-    /// attempt to drain that output never sees EOF and hangs. Enabling this
-    /// makes shell teardown also reap what the shell spawned.
+    /// Whether externally spawned commands should be killed when their spawning
+    /// shell is dropped. Defaults to `false` (children outlive the shell, as a
+    /// real shell requires); enable for embedded shells, where a surviving child
+    /// leaks and can hold the shell's output pipe open past teardown.
     #[builder(default)]
     pub kill_external_commands_on_drop: bool,
     /// Initial working dir for the shell. If left unspecified, will be populated from

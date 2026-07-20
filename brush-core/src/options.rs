@@ -198,10 +198,7 @@ pub struct RuntimeOptions {
     pub sh_mode: bool,
     /// Whether to treat external commands as session leaders.
     pub external_cmd_leads_session: bool,
-    /// Whether externally spawned commands should be killed when the shell that
-    /// spawned them is dropped. Defaults to `false` (a child outlives its
-    /// shell); see
-    /// [`CreateOptions::kill_external_commands_on_drop`](crate::CreateOptions::kill_external_commands_on_drop).
+    /// Whether externally spawned commands are killed when their spawning shell is dropped.
     pub kill_external_commands_on_drop: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
