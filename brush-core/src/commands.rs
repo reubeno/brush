@@ -633,7 +633,7 @@ pub(crate) fn execute_external_command(
             .join(" ")
     );
 
-    match sys::process::spawn(cmd) {
+    match sys::process::spawn(cmd, context.shell.options().kill_external_commands_on_drop) {
         Ok(child) => {
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
