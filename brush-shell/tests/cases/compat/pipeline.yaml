@@ -58,3 +58,8 @@ cases:
     stdin: |
       printf '%s\n' {0..10000} | x=1
       echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
+
+  - name: "Compound command writing more than a pipe buffer to a later stage"
+    stdin: |
+      i=0
+      while [ $i -lt 4096 ]; do printf '%s\n' 0123456789012345678901234567890; i=$((i+1)); done | wc -l
