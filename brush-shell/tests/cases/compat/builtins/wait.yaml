@@ -33,6 +33,31 @@ cases:
       wait
       echo "after wait all"
 
+  - name: "wait is silent for top-level background job with job control"
+    args:
+      - "-c"
+      - |
+        set -m
+        echo hello &
+        wait
+        echo after
+
+  - name: "wait is silent for background jobs in a subshell piped to a filter"
+    args:
+      - "-c"
+      - |
+        set -m
+        ( for i in 1 2 3; do echo "item-$i" & done; wait ) | sort
+
+  - name: "wait is silent for backgrounded brace group with job control"
+    args:
+      - "-c"
+      - |
+        set -m
+        { echo grouped; } &
+        wait
+        echo done
+
   - name: "wait -n not implemented"
     known_failure: true # TODO(builtins): wait -n not implemented
     stdin: |
