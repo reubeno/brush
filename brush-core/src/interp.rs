@@ -630,10 +630,26 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                     }
                 }
 
-                Ok(compound
-                    .execute(&mut pipeline_context.shell, &params)
-                    .await?
-                    .into())
+                match pipeline_context.shell {
+                    // When we own our shell, we're one of multiple stages in a pipeline; spawn so
+                    // we run concurrently with the others. Running inline would block forever once
+                    // we filled the pipe, because the stage that drains it isn't started until we
+                    // return.
+                    commands::ShellForCommand::OwnedShell { target, .. } => {
+                        let mut shell = *target;
+                        // N.B. We clone the command so the spawned task can own it.
+                        let compound = compound.clone();
+                        Ok(ExecutionSpawnResult::StartedTask(
+                            tokio::task::spawn_blocking(move || {
+                                let rt = tokio::runtime::Handle::current();
+                                rt.block_on(compound.execute(&mut shell, &params))
+                            }),
+                        ))
+                    }
+                    commands::ShellForCommand::ParentShell(shell) => {
+                        Ok(compound.execute(shell, &params).await?.into())
+                    }
+                }
             }
             Self::Function(func) => Ok(func
                 .execute(&mut pipeline_context.shell, &params)
