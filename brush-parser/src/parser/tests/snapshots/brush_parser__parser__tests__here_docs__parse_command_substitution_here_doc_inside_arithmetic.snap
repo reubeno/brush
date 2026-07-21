@@ -1,0 +1,31 @@
+---
+source: brush-parser/src/parser/tests/here_docs.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: ": $(( $(cat <<EOF\n)\nEOF\n) + 2 ))",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: ":",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "$(( $(cat <<EOF\n) + 2 ))",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
