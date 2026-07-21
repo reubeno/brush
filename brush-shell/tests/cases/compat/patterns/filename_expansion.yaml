@@ -50,6 +50,20 @@ cases:
       shopt -s nullglob
       echo "*.jpg:" *.jpg
 
+  - name: "Expansion with matches and non-matches in directory"
+    test_files:
+      - path: "dir/file.txt"
+      - path: "dir/file.jpg"
+    stdin: "echo dir/*.jpg"
+
+  - name: "Expansion with matches and non-matches in directory + nullglob"
+    test_files:
+      - path: "dir/file.txt"
+      - path: "dir/file.jpg"
+    stdin: |
+      shopt -s nullglob
+      echo "dir/*.jpg:" dir/*.jpg
+
   - name: "Expansion with special characters"
     test_files:
       - path: "file1.txt"
@@ -244,15 +258,45 @@ cases:
       echo $x
 
   - name: "Glob with trailing slash matches directories"
-    known_failure: true
     test_files:
       - path: "mydir/file.txt"
       - path: "myfile.txt"
     stdin: |
       echo */
 
+  - name: "Trailing path filters glob results"
+    test_files:
+      - path: "README.md"
+      - path: "photos/photo.png"
+      - path: "a/apple.txt"
+      - path: "b/banana.txt"
+    stdin: |
+      echo */banana.txt
+      echo */*.txt
+
+  - name: "Trailing literal keeps dangling symlinks but drops missing"
+    test_files:
+      - path: "a/real.txt"
+      - path: "b/real.txt"
+      - path: "c/other.txt"
+    stdin: |
+      # a/link.txt is a *dangling* symlink: bash's glob matches it (directory-entry
+      # existence, via lstat), so brush must too. b and c have no link.txt and must
+      # be dropped.
+      ln -s nonexistent-target a/link.txt
+      echo "link.txt:" */link.txt
+      echo "real.txt:" */real.txt
+
+  - name: "Trailing literal with directory symlinks"
+    test_files:
+      - path: "realdir/file.txt"
+    stdin: |
+      # A symlink to a directory should be traversed like a real directory.
+      ln -s realdir linkdir
+      ln -s nonexistent danglingdir
+      echo "*/file.txt:" */file.txt
+
   - name: "Globstar disabled by default"
-    known_failure: true
     test_files:
       - path: "a/b/c.txt"
     stdin: |

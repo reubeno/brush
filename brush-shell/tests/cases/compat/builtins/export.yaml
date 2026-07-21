@@ -34,3 +34,20 @@ cases:
       export ref="exported_value"
       echo "MY_EXPORT_VAR: $MY_EXPORT_VAR"
       env | grep MY_EXPORT_VAR
+
+  - name: "Export append to existing variable"
+    stdin: |
+      MYVAR="-O3 -pipe"
+      export MYVAR+=" -Wno-foo"
+      echo "MYVAR: $MYVAR"
+
+  - name: "Export append to already-exported variable"
+    stdin: |
+      export MYVAR="-O3 -pipe"
+      export MYVAR+=" -Wno-baz"
+      echo "MYVAR: $MYVAR"
+
+  - name: "Export append to unset variable"
+    stdin: |
+      export MYVAR+="first"
+      echo "MYVAR: $MYVAR"

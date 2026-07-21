@@ -130,6 +130,12 @@ impl Expansion {
             ParameterState::Undefined
         } else if non_empty {
             ParameterState::NonZeroLength
+        } else if self.fields.is_empty() {
+            // An array referenced via [@]/[*] that yields no fields (i.e. an empty
+            // array) is treated as unset by bash for the +/- conditional operators.
+            // This is distinct from a scalar holding an empty string, which has a
+            // single (empty) field and remains a defined empty string.
+            ParameterState::Undefined
         } else {
             ParameterState::DefinedEmptyString
         }

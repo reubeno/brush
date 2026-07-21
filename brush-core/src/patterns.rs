@@ -261,13 +261,22 @@ impl Pattern {
                 matches!(piece, PatternPiece::Pattern(_))
                     && requires_expansion(piece.as_str(), self.enable_extended_globbing)
             }) {
-                for p in &mut paths_so_far {
-                    let flattened = component
-                        .iter()
-                        .map(|piece| piece.as_str())
-                        .collect::<String>();
+                let flattened = component
+                    .iter()
+                    .map(|piece| piece.as_str())
+                    .collect::<String>();
+                paths_so_far.retain_mut(|p| {
                     sys::fs::push_path_for_pattern(p, &flattened);
-                }
+
+                    // Drop candidates that don't name an existing directory entry.
+                    // We use `symlink_metadata` (lstat) rather than `exists` (stat) so
+                    // that we match on directory-entry existence -- consistent with the
+                    // `read_dir`-based matching used for glob components below, and with
+                    // bash. In particular this keeps dangling symlinks (which bash
+                    // includes) while still rejecting a literal like `file/` whose
+                    // trailing slash makes lstat fail with ENOTDIR for a regular file.
+                    p.symlink_metadata().is_ok()
+                });
                 continue;
             }
 

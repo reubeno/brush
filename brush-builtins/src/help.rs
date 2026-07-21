@@ -31,13 +31,23 @@ impl builtins::Command for HelpCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
-        } else {
-            for topic_pattern in &self.topic_patterns {
-                self.display_help_for_topic_pattern(&context, topic_pattern)?;
+            return Ok(ExecutionResult::success());
+        }
+
+        // Match bash: succeed if at least one requested topic pattern matched
+        // something; return a non-zero exit code only when none of them matched.
+        let mut any_matched = false;
+        for topic_pattern in &self.topic_patterns {
+            if self.display_help_for_topic_pattern(&context, topic_pattern)? {
+                any_matched = true;
             }
         }
 
-        Ok(ExecutionResult::success())
+        if any_matched {
+            Ok(ExecutionResult::success())
+        } else {
+            Ok(ExecutionResult::general_error())
+        }
     }
 }
 
@@ -73,16 +83,18 @@ impl HelpCommand {
         Ok(())
     }
 
+    /// Displays help for the builtins matching `topic_pattern`, returning whether
+    /// at least one topic matched.
     fn display_help_for_topic_pattern(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         topic_pattern: &str,
-    ) -> Result<(), brush_core::Error> {
+    ) -> Result<bool, brush_core::Error> {
         let pattern = brush_core::patterns::Pattern::from(topic_pattern)
             .set_extended_globbing(context.shell.options().extended_globbing)
             .set_case_insensitive(context.shell.options().case_insensitive_pathname_expansion);
 
-        let mut found_count = 0;
+        let mut matched = false;
         for (builtin_name, builtin_registration) in get_builtins_sorted_by_name(context) {
             if pattern.exactly_matches(builtin_name.as_str())? {
                 self.display_help_for_builtin(
@@ -90,15 +102,15 @@ impl HelpCommand {
                     builtin_name.as_str(),
                     builtin_registration,
                 )?;
-                found_count += 1;
+                matched = true;
             }
         }
 
-        if found_count == 0 {
+        if !matched {
             writeln!(context.stderr(), "No help topics match '{topic_pattern}'")?;
         }
 
-        Ok(())
+        Ok(matched)
     }
 
     fn display_help_for_builtin<SE: brush_core::ShellExtensions>(

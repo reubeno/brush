@@ -883,7 +883,7 @@ impl Execute for ast::CaseClauseCommand {
         // on, but that's not it.
         if shell.options().print_commands_and_arguments {
             shell
-                .trace_command(params, std::format!("case {} in", &self.value))
+                .trace_command(params, std::format!("case {} in", self.value))
                 .await;
         }
 

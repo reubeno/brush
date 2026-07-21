@@ -92,7 +92,10 @@ macro_rules! register {
     ($map:expr, $feature:literal, $name:literal, $util_crate:ident) => {
         #[cfg(feature = $feature)]
         {
-            fn adapter(args: Vec<OsString>) -> i32 {
+            fn adapter<I>(args: I) -> i32
+            where
+                I: IntoIterator<Item = OsString>,
+            {
                 $crate::prepare_uutil_runtime(stringify!($util_crate));
                 let code = $util_crate::uumain(args.into_iter());
                 $crate::finalize_uutil_runtime();
