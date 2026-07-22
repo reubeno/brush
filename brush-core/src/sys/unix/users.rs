@@ -7,6 +7,26 @@ pub(crate) fn is_root() -> bool {
     uzers::get_current_uid() == 0
 }
 
+/// Returns true if the process is running with elevated privileges that came
+/// from a setuid/setgid bit on the executable (i.e., the effective UID/GID
+/// differs from the real UID/GID). Used to avoid reading environment- or
+/// `$HOME`-controlled init files (`BASH_ENV`, `ENV`, `~/.bashrc`,
+/// `~/.bash_profile`, etc.) in privileged contexts, where an unprivileged
+/// caller could otherwise direct the privileged process to source
+/// attacker-owned scripts. Mirrors bash's behavior under `-p`.
+///
+/// Note: this matches bash's check exactly — it does not consider Linux file
+/// capabilities (`cap_setuid`, etc.) granted without the setuid bit, nor
+/// supplementary group membership. Privilege via those mechanisms would not
+/// trip this gate, just as it does not trip bash's.
+pub(crate) fn is_privileged() -> bool {
+    let real_uid = uzers::get_current_uid();
+    let effective_uid = uzers::get_effective_uid();
+    let real_gid = uzers::get_current_gid();
+    let effective_gid = uzers::get_effective_gid();
+    real_uid != effective_uid || real_gid != effective_gid
+}
+
 pub(crate) fn get_user_home_dir(username: &str) -> Option<PathBuf> {
     if let Some(user_info) = uzers::get_user_by_name(username) {
         return Some(user_info.home_dir().to_path_buf());
