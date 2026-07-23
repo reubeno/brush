@@ -88,9 +88,9 @@ fn pre_exec_lead_session() -> Result<(), std::io::Error> {
         )));
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(target_vendor = "apple"))]
     let control = libc::TIOCSCTTY;
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     let control: u64 = libc::TIOCSCTTY.into();
 
     // SAFETY:
