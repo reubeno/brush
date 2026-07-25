@@ -1299,6 +1299,22 @@ cases:
       x=$unset
       echo "after"
 
+  - name: "with -x and if/else ending in assignment"
+    stdin: |
+      set -ex
+      if false; then
+        E=then
+      else
+        E=else
+      fi
+      echo "after ${E}"
+
+  - name: "with -x and assignment after exempted failing command"
+    stdin: |
+      set -ex
+      false || E=value
+      echo "after ${E}"
+
   - name: "syntax error"
     ignore_stderr: true
     stdin: |

@@ -51,8 +51,10 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             return Ok(String::new());
         }
 
-        // Save (and later restore) the last exit status.
+        // Save (and later restore) the last exit status, change count included, so
+        // that expanding here is invisible to `$?`.
         let prev_last_result = self.last_exit_status();
+        let prev_last_result_change_count = self.last_exit_status_change_count;
         let prev_last_pipeline_statuses = self.last_pipeline_statuses.clone();
 
         // Expand it.
@@ -62,6 +64,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Restore the last exit status.
         self.last_pipeline_statuses = prev_last_pipeline_statuses;
         self.set_last_exit_status(prev_last_result);
+        self.last_exit_status_change_count = prev_last_result_change_count;
 
         // Strip out special characters that readline would typically drop:
         // \001 and \002 (start and end of non-printing sequences).

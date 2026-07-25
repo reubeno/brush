@@ -51,6 +51,44 @@ cases:
 
       echo "Status after assignment: $assign_status"
 
+  - name: "Status from assignment with xtrace"
+    stdin: |
+      set -x
+      false
+      scalar=value
+      echo "Status after scalar assignment: $?"
+
+      false
+      arr=(1 2)
+      echo "Status after array assignment: $?"
+
+      false
+      appended+=more
+      echo "Status after appending assignment: $?"
+
+      false
+      first=1 second=2
+      echo "Status after multiple assignments: $?"
+
+      false
+      expanded=${undefined:-fallback}
+      echo "Status after expanded assignment: $?"
+
+  - name: "Status from assignment with command substitution and xtrace"
+    stdin: |
+      set -x
+      f() {
+        echo "out$1"
+        return $1
+      }
+
+      captured=$(f 42)
+      echo "Status after substitution assignment: $?"
+
+      true
+      captured=$(f 42)
+      echo "Status after substitution assignment: $?"
+
   - name: "Status within assignments"
     stdin: |
       f() {

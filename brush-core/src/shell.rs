@@ -90,7 +90,9 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// The status of the last completed command.
     last_exit_status: u8,
 
-    /// Tracks changes to `last_exit_status`.
+    /// Tracks changes to `last_exit_status`. Assignment-only commands observe it
+    /// to tell whether an expansion set a status (see `interp.rs`), so code that
+    /// rolls back `$?` must roll this back too.
     last_exit_status_change_count: usize,
 
     /// The status of each of the commands in the last pipeline.
@@ -511,7 +513,8 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
         self.last_exit_status
     }
 
-    /// Updates the last exit status.
+    /// Updates the last exit status. To *restore* a saved status, restore
+    /// `last_exit_status_change_count` as well.
     pub fn set_last_exit_status(&mut self, status: u8) {
         self.last_exit_status = status;
         self.last_exit_status_change_count += 1;
