@@ -49,11 +49,7 @@ impl BasicInputBackend {
                 ReadResult::Input(s) => {
                     result.push_str(s.as_str());
 
-                    let shell = tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().block_on(shell_ref.lock())
-                    });
-
-                    if Self::is_valid_input(&shell, result.as_str()) {
+                    if !crate::completeness::needs_more_input(shell_ref, result.as_str()) {
                         break;
                     }
 
@@ -79,21 +75,6 @@ impl BasicInputBackend {
     #[expect(clippy::unused_self)]
     fn should_display_prompt(&self) -> bool {
         std::io::stdin().is_terminal()
-    }
-
-    fn is_valid_input(shell: &Shell<impl brush_core::ShellExtensions>, input: &str) -> bool {
-        match shell.parse_string(input) {
-            // Incomplete tokenizing (unclosed quotes, etc.) - need more input
-            Err(brush_parser::ParseError::Tokenizing { inner, position: _ })
-                if inner.is_incomplete() =>
-            {
-                false
-            }
-            // Parse error at end of input - could be incomplete
-            Err(brush_parser::ParseError::ParsingAtEndOfInput) => false,
-            // Parse error at a specific position OR successful parse - complete
-            _ => true,
-        }
     }
 
     fn generate_completions(
