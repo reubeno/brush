@@ -28,7 +28,12 @@ impl Child {
     }
 }
 
-pub(crate) fn spawn(mut command: std::process::Command) -> std::io::Result<Child> {
+pub(crate) fn spawn(
+    mut command: std::process::Command,
+    kill_on_drop: bool,
+) -> std::io::Result<Child> {
+    // No kill-on-drop on this stub platform; accepted and ignored.
+    let _ = kill_on_drop;
     let child = command.spawn()?;
     Ok(Child { inner: child })
 }
