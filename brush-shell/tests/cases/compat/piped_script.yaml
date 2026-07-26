@@ -1,0 +1,208 @@
+name: "Scripts piped in on stdin (a la 'curl | sh')"
+cases:
+  # Cases carrying `removed_default_args` drop `--input-backend=basic` so brush
+  # picks the backend it uses for real when stdin isn't a terminal. Otherwise
+  # that path goes untested.
+
+  - name: "Multi-line if/then/fi"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      if true
+      then
+        echo yes
+      fi
+
+  - name: "Multi-line function definition"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      greet() {
+        echo "hello, $1"
+      }
+
+      greet world
+
+  - name: "Here document"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      cat <<EOF
+      first
+      second
+      EOF
+      echo after
+
+  - name: "Pipeline continued after trailing pipe"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      echo hi |
+        tr a-z A-Z
+
+  - name: "And-and continuation"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      true &&
+        echo yes
+
+  - name: "For loop with do/done on separate lines"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      for i in 1 2 3
+      do
+        echo "item $i"
+      done
+
+  - name: "While loop"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      i=0
+      while [ $i -lt 3 ]
+      do
+        echo "i=$i"
+        i=$((i + 1))
+      done
+
+  - name: "Case statement"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      x=beta
+      case $x in
+        alpha)
+          echo one
+          ;;
+        beta)
+          echo two
+          ;;
+        *)
+          echo other
+          ;;
+      esac
+
+  - name: "Multi-line subshell and command substitution"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      (
+        echo in-subshell
+      )
+      v=$(
+        echo from-cmd-subst
+      )
+      echo "$v"
+
+  - name: "Realistic installer-shaped script"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      set -e
+
+      INSTALL_DIR="./installed"
+
+      log() {
+        echo "[install] $1"
+      }
+
+      detect_platform() {
+        case "$(uname -s)" in
+          Linux*)
+            echo linux
+            ;;
+          Darwin*)
+            echo darwin
+            ;;
+          *)
+            echo unknown
+            ;;
+        esac
+      }
+
+      main() {
+        platform="$(detect_platform)"
+        if [ -z "$platform" ]; then
+          log "could not detect platform"
+          exit 1
+        fi
+
+        mkdir -p "$INSTALL_DIR" &&
+          log "created dir"
+
+        cat >"$INSTALL_DIR/config" <<EOF
+      platform=detected
+      dir=$INSTALL_DIR
+      EOF
+
+        while read -r line; do
+          log "config: $line"
+        done <"$INSTALL_DIR/config"
+
+        log "done"
+      }
+
+      main
+
+  # A stream cut off partway through a construct: everything ahead of the cut
+  # should still run, then the shell should fail. Only the error text differs.
+  - name: "Stream truncated mid-construct"
+    removed_default_args: ["--input-backend=basic"]
+    ignore_stderr: true
+    stdin: |
+      echo start
+      greet() {
+        echo hello
+      }
+      greet
+      if true
+      then
+        echo mid
+
+  # A bad token can't be repaired by anything that follows it, so the shell must
+  # report it rather than accumulate more input -- even when the offending line
+  # ends in a continuation. Only the error text differs from bash.
+  - name: "Syntax error mid-stream"
+    removed_default_args: ["--input-backend=basic"]
+    ignore_stderr: true
+    stdin: |
+      echo before
+      ;;
+      echo after
+
+  - name: "Syntax error mid-stream on a line ending in a continuation"
+    removed_default_args: ["--input-backend=basic"]
+    ignore_stderr: true
+    stdin: |
+      echo before
+      echo ;; \
+      echo after
+
+  # Backslash-newline continuation, which the tokenizer consumes silently at end
+  # of input. Not backend-specific, so the first pair covers both backends.
+
+  - name: "Backslash line continuation (minimal backend)"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      echo a\
+      b
+
+  - name: "Backslash line continuation (basic backend)"
+    stdin: |
+      echo a\
+      b
+
+  - name: "Backslash continuation splitting arguments"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      printf '%s-%s-%s\n' \
+        one \
+        two \
+        three
+
+  # A backslash before a space escapes the space, not the newline, so the first
+  # line is a complete command and must run before the second line fails to
+  # parse. Only the error text differs from bash.
+  - name: "Backslash before trailing whitespace is not a continuation"
+    removed_default_args: ["--input-backend=basic"]
+    ignore_stderr: true
+    stdin: "echo a\\ \n;;\n"
+
+  - name: "Backslash continuation after a comment line"
+    removed_default_args: ["--input-backend=basic"]
+    stdin: |
+      # a comment ending in a backslash\
+      echo a\
+      b
