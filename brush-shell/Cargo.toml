@@ -147,4 +147,4 @@ nix = { version = "0.31.2" }
 # expectrl's pty support (via ptyprocess) is limited to these platforms;
 # the interactive tests that rely on it are gated accordingly.
 [target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "freebsd"))'.dev-dependencies]
-expectrl = "0.8.0"
+expectrl = "0.9.0"
