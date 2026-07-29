@@ -438,6 +438,22 @@ impl ShellVariable {
                     Ok(())
                 }
 
+                // A bare array assignment to a *scalar-shaped* dynamic variable
+                // (e.g. `RANDOM=(1 2 3)`) "de-specials" it: the dynamic binding is
+                // replaced by a real indexed array, matching bash. Array-shaped
+                // dynamics (e.g. `PIPESTATUS`) are left alone by the catch-all
+                // below, so they stay live across plain array assignment.
+                (
+                    ShellValue::Dynamic {
+                        kind: DynamicValueKind::Scalar,
+                        ..
+                    },
+                    ShellValueLiteral::Array(literal_values),
+                ) => {
+                    self.value = ShellValue::indexed_array_from_literals(literal_values);
+                    Ok(())
+                }
+
                 // Handle updates to dynamic values; for now we just drop them.
                 // TODO(dynamic): Allow updates to dynamic values
                 (ShellValue::Dynamic { .. }, _) => Ok(()),

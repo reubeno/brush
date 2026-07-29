@@ -292,6 +292,18 @@ cases:
       second=${RANDOM}
       [[ $first == $second ]] && echo "RANDOM stayed frozen after declare -a"
 
+  - name: "Bare array assignment de-specials a scalar dynamic variable"
+    stdin: |
+      # A bare array assignment to a scalar-shaped dynamic variable (RANDOM)
+      # "de-specials" it: the dynamic binding is replaced by a real indexed
+      # array holding the assigned values. (Array-shaped dynamics like
+      # PIPESTATUS stay live; see "stays live after plain array assignment".)
+      RANDOM=(10 20 30)
+      echo "${RANDOM[0]} ${RANDOM[1]} ${RANDOM[2]}"
+      echo "count=${#RANDOM[@]}"
+      # Subsequent reads are now static, not random.
+      [[ ${RANDOM[0]} == 10 ]] && echo "RANDOM is no longer dynamic"
+
   - name: "BASH_ALIASES rejects declare -a conversion"
     ignore_stderr: true # bash and brush word the "cannot convert" error differently
     stdin: |
