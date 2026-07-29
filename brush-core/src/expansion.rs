@@ -323,8 +323,8 @@ impl From<ExpansionPiece> for String {
 impl From<ExpansionPiece> for patterns::PatternPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => Self::Literal(bstring_to_string(s)),
-            ExpansionPiece::Splittable(s) => Self::Pattern(bstring_to_string(s)),
+            ExpansionPiece::Unsplittable(s) => Self::Literal(s),
+            ExpansionPiece::Splittable(s) => Self::Pattern(s),
         }
     }
 }
@@ -332,8 +332,8 @@ impl From<ExpansionPiece> for patterns::PatternPiece {
 impl From<ExpansionPiece> for crate::regex::RegexPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => Self::Literal(bstring_to_string(s)),
-            ExpansionPiece::Splittable(s) => Self::Pattern(bstring_to_string(s)),
+            ExpansionPiece::Unsplittable(s) => Self::Literal(s),
+            ExpansionPiece::Splittable(s) => Self::Pattern(s),
         }
     }
 }
@@ -670,7 +670,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .map(patterns::PatternPiece::from)
                     .collect::<Vec<_>>()
             })
-            .intersperse(vec![patterns::PatternPiece::Literal(String::from(" "))])
+            .intersperse(vec![patterns::PatternPiece::Literal(
+                String::from(" ").into(),
+            )])
             .flatten()
             .collect();
 
@@ -697,7 +699,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .map(crate::regex::RegexPiece::from)
                     .collect::<Vec<_>>()
             })
-            .intersperse(vec![crate::regex::RegexPiece::Literal(String::from(" "))])
+            .intersperse(vec![crate::regex::RegexPiece::Literal(
+                String::from(" ").into(),
+            )])
             .flatten()
             .collect();
 

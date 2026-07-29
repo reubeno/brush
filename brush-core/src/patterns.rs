@@ -1,5 +1,7 @@
 //! Shell patterns
 
+use bstr::ByteSlice;
+
 use crate::{error, regex, sys, trace_categories};
 use std::{collections::VecDeque, path::Path};
 
@@ -21,16 +23,16 @@ fn file_name_bytes(name: &std::ffi::OsStr) -> &[u8] {
 #[derive(Clone, Debug)]
 pub(crate) enum PatternPiece {
     /// A pattern that should be interpreted as a shell pattern.
-    Pattern(String),
+    Pattern(bstr::BString),
     /// A literal string that should be matched exactly.
-    Literal(String),
+    Literal(bstr::BString),
 }
 
 impl PatternPiece {
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Pattern(s) => s,
-            Self::Literal(s) => s,
+            Self::Pattern(s) => s.to_str().unwrap_or(""),
+            Self::Literal(s) => s.to_str().unwrap_or(""),
         }
     }
 }
@@ -110,7 +112,7 @@ impl From<&PatternWord> for Pattern {
 impl From<&str> for Pattern {
     fn from(value: &str) -> Self {
         Self {
-            pieces: vec![PatternPiece::Pattern(value.to_owned())],
+            pieces: vec![PatternPiece::Pattern(value.into())],
             ..Default::default()
         }
     }
@@ -119,7 +121,7 @@ impl From<&str> for Pattern {
 impl From<String> for Pattern {
     fn from(value: String) -> Self {
         Self {
-            pieces: vec![PatternPiece::Pattern(value)],
+            pieces: vec![PatternPiece::Pattern(value.into())],
             ..Default::default()
         }
     }
@@ -219,8 +221,8 @@ impl Pattern {
         for piece in &self.pieces {
             let mut split_result: VecDeque<_> = sys::fs::split_path_for_pattern(piece.as_str())
                 .map(|s| match piece {
-                    PatternPiece::Pattern(_) => PatternPiece::Pattern(s.to_owned()),
-                    PatternPiece::Literal(_) => PatternPiece::Literal(s.to_owned()),
+                    PatternPiece::Pattern(_) => PatternPiece::Pattern(s.into()),
+                    PatternPiece::Literal(_) => PatternPiece::Literal(s.into()),
                 })
                 .collect();
 
@@ -390,10 +392,10 @@ impl Pattern {
         for piece in &self.pieces {
             match piece {
                 PatternPiece::Pattern(s) => {
-                    current_pattern.push_str(s);
+                    current_pattern.push_str(s.to_str().unwrap_or(""));
                 }
                 PatternPiece::Literal(s) => {
-                    for c in s.chars() {
+                    for c in s.to_str().unwrap_or("").chars() {
                         if crate::regex::regex_char_is_special(c) {
                             current_pattern.push('\\');
                         }
@@ -625,21 +627,21 @@ mod tests {
     #[test]
     fn test_pattern_word_translation() -> Result<()> {
         assert_eq!(
-            pattern_to_exact_regex_str(vec![PatternPiece::Pattern("a*".to_owned())])?.as_str(),
+            pattern_to_exact_regex_str(vec![PatternPiece::Pattern("a*".into())])?.as_str(),
             "^a.*$"
         );
         assert_eq!(
             pattern_to_exact_regex_str(vec![
-                PatternPiece::Pattern("a*".to_owned()),
-                PatternPiece::Literal("b".to_owned()),
+                PatternPiece::Pattern("a*".into()),
+                PatternPiece::Literal("b".into()),
             ])?
             .as_str(),
             "^a.*b$"
         );
         assert_eq!(
             pattern_to_exact_regex_str(vec![
-                PatternPiece::Literal("a*".to_owned()),
-                PatternPiece::Pattern("b".to_owned()),
+                PatternPiece::Literal("a*".into()),
+                PatternPiece::Pattern("b".into()),
             ])?
             .as_str(),
             r"^a\*b$"

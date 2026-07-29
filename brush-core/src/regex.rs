@@ -3,6 +3,8 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 
+use bstr::ByteSlice;
+
 use crate::error;
 use cached::Cached;
 
@@ -15,16 +17,19 @@ thread_local! {
 #[derive(Clone, Debug)]
 pub(crate) enum RegexPiece {
     /// A pattern that should be interpreted as a regular expression.
-    Pattern(String),
+    Pattern(bstr::BString),
     /// A literal string that should be matched exactly.
-    Literal(String),
+    Literal(bstr::BString),
 }
 
 impl RegexPiece {
     fn to_regex_str(&self) -> Cow<'_, str> {
         match self {
-            Self::Pattern(s) => Cow::Borrowed(s.as_str()),
-            Self::Literal(s) => escape_literal_regex_piece(s.as_str()),
+            Self::Pattern(s) => {
+                // Regex pattern syntax is expected to be valid UTF-8.
+                Cow::Owned(s.to_str().unwrap_or("").to_string())
+            }
+            Self::Literal(s) => escape_literal_regex_piece(s.as_slice()),
         }
     }
 }
@@ -180,16 +185,25 @@ fn add_missing_escape_chars_to_regex(s: &str) -> Cow<'_, str> {
     updated.into()
 }
 
-fn escape_literal_regex_piece(s: &str) -> Cow<'_, str> {
+fn escape_literal_regex_piece(s: &[u8]) -> Cow<'_, str> {
     let mut result = String::new();
 
-    for c in s.chars() {
-        match c {
-            c if regex_char_is_special(c) => {
+    for chunk in s.utf8_chunks() {
+        for c in chunk.valid().chars() {
+            if regex_char_is_special(c) {
                 result.push('\\');
-                result.push(c);
             }
-            c => result.push(c),
+            result.push(c);
+        }
+        for &b in chunk.invalid() {
+            // Escape non-UTF-8 bytes as \xHH so the regex engine matches the
+            // raw byte (works with BytesMode::UnicodeBytes enabled at compile
+            // time).
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            result.push('\\');
+            result.push('x');
+            result.push(HEX[(b >> 4) as usize] as char);
+            result.push(HEX[(b & 0xf) as usize] as char);
         }
     }
 
