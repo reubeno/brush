@@ -3,6 +3,20 @@
 use crate::{error, regex, sys, trace_categories};
 use std::{collections::VecDeque, path::Path};
 
+/// Returns the raw bytes of an [`OsStr`] file-name component. On Unix this
+/// preserves non-UTF-8 bytes losslessly; on other platforms it falls back to
+/// the lossy UTF-8 representation.
+fn file_name_bytes(name: &std::ffi::OsStr) -> &[u8] {
+    cfg_if::cfg_if! {
+        if #[cfg(unix)] {
+            use std::os::unix::ffi::OsStrExt;
+            name.as_bytes()
+        } else {
+            name.to_string_lossy().as_bytes()
+        }
+    }
+}
+
 /// Represents a piece of a shell pattern.
 #[derive(Clone, Debug)]
 pub(crate) enum PatternPiece {
@@ -295,13 +309,13 @@ impl Pattern {
                     || subpattern_starts_with_dot;
 
                 let matches_dotfile_policy = |dir_entry: &std::fs::DirEntry| {
-                    !dir_entry.file_name().to_string_lossy().starts_with('.') || allow_dot_files
+                    !file_name_bytes(&dir_entry.file_name()).starts_with(b".") || allow_dot_files
                 };
 
                 let regex = subpattern.to_regex(true, true)?;
                 let matches_regex = |dir_entry: &std::fs::DirEntry| {
                     regex
-                        .is_match(dir_entry.file_name().to_string_lossy().as_ref())
+                        .is_match(file_name_bytes(&dir_entry.file_name()))
                         .unwrap_or(false)
                 };
 

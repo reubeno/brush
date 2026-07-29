@@ -123,6 +123,7 @@ pub(crate) fn compile_regex(
 
     let mut builder = fancy_regex::RegexBuilder::new(regex_str.as_ref());
     builder.case_insensitive(case_insensitive);
+    builder.bytes_mode(fancy_regex::BytesMode::UnicodeBytes);
 
     let re = match builder.build() {
         Ok(re) => re,
