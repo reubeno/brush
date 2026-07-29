@@ -62,3 +62,33 @@ pub use shell::{
 };
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
+
+/// Re-export of [`bstr::BString`] for downstream use.
+pub use bstr::BString;
+
+#[cfg(unix)]
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+/// Converts an [`OsString`] to a [`bstr::BString`], preserving raw bytes on Unix
+/// (so non-UTF-8 paths/environment values are not corrupted). On non-Unix
+/// platforms a lossy conversion is used as a fallback.
+pub fn os_string_to_bstring(value: std::ffi::OsString) -> bstr::BString {
+    cfg_if::cfg_if! {
+        if #[cfg(unix)] {
+            bstr::BString::new(value.into_vec())
+        } else {
+            bstr::BString::from(value.to_string_lossy().into_owned())
+        }
+    }
+}
+
+/// Converts a [`Path`] to a [`bstr::BString`], preserving raw bytes on Unix.
+pub fn path_to_bstring(path: impl AsRef<std::path::Path>) -> bstr::BString {
+    cfg_if::cfg_if! {
+        if #[cfg(unix)] {
+            bstr::BString::new(path.as_ref().as_os_str().as_bytes().to_vec())
+        } else {
+            bstr::BString::from(path.as_ref().to_string_lossy().into_owned())
+        }
+    }
+}

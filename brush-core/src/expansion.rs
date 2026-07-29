@@ -1617,7 +1617,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Ok(Expansion {
                     fields: keys
                         .into_iter()
-                        .map(|key| WordField(vec![ExpansionPiece::Splittable(key)]))
+                        .map(|key| WordField(vec![ExpansionPiece::Splittable(key.to_string())]))
                         .collect(),
                     concatenate,
                     from_array: true,
@@ -1674,7 +1674,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         } else {
             self.shell.env_mut().update_or_add(
                 variable_name,
-                variables::ShellValueLiteral::Scalar(value),
+                variables::ShellValueLiteral::Scalar(value.into()),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -1845,7 +1845,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     Ok(Expansion {
                         fields: values
                             .into_iter()
-                            .map(|value| WordField(vec![ExpansionPiece::Splittable(value)]))
+                            .map(|value| {
+                                WordField(vec![ExpansionPiece::Splittable(value.to_string())])
+                            })
                             .collect(),
                         concatenate: *concatenate,
                         from_array: true,
@@ -1972,9 +1974,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_, str>| {
-                    transform(&caps[0])
-                });
+                let result = regex
+                    .replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_, str>| {
+                        transform(&caps[0])
+                    });
                 Ok(result.into_owned())
             } else {
                 Ok(transform(s))
