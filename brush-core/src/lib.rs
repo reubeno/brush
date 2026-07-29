@@ -72,6 +72,7 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 /// Converts an [`OsString`] to a [`bstr::BString`], preserving raw bytes on Unix
 /// (so non-UTF-8 paths/environment values are not corrupted). On non-Unix
 /// platforms a lossy conversion is used as a fallback.
+#[allow(clippy::needless_pass_by_value)]
 pub fn os_string_to_bstring(value: std::ffi::OsString) -> bstr::BString {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {

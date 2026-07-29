@@ -3,18 +3,19 @@
 use bstr::ByteSlice;
 
 use crate::{error, regex, sys, trace_categories};
+use std::borrow::Cow;
 use std::{collections::VecDeque, path::Path};
 
 /// Returns the raw bytes of an [`OsStr`] file-name component. On Unix this
 /// preserves non-UTF-8 bytes losslessly; on other platforms it falls back to
 /// the lossy UTF-8 representation.
-fn file_name_bytes(name: &std::ffi::OsStr) -> &[u8] {
+fn file_name_bytes(name: &std::ffi::OsStr) -> Cow<'_, [u8]> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
             use std::os::unix::ffi::OsStrExt;
-            name.as_bytes()
+            Cow::Borrowed(name.as_bytes())
         } else {
-            name.to_string_lossy().as_bytes()
+            Cow::Owned(name.to_string_lossy().into_owned().into_bytes())
         }
     }
 }
@@ -317,7 +318,7 @@ impl Pattern {
                 let regex = subpattern.to_regex(true, true)?;
                 let matches_regex = |dir_entry: &std::fs::DirEntry| {
                     regex
-                        .is_match(file_name_bytes(&dir_entry.file_name()))
+                        .is_match(file_name_bytes(&dir_entry.file_name()).as_ref())
                         .unwrap_or(false)
                 };
 
@@ -388,18 +389,28 @@ impl Pattern {
             regex_str.push('^');
         }
 
+        // Build a glob pattern string for the glob-to-regex converter. Non-UTF-8
+        // bytes are encoded as Private Use Area characters (U+E000 + byte value)
+        // so they survive the converter (which requires valid UTF-8 and only
+        // interprets ASCII metacharacters). They are converted to \xHH regex
+        // hex escapes after the conversion.
         let mut current_pattern = String::new();
         for piece in &self.pieces {
             match piece {
                 PatternPiece::Pattern(s) => {
-                    current_pattern.push_str(s.to_str().unwrap_or(""));
+                    append_bytes_with_pua(&mut current_pattern, s.as_slice());
                 }
                 PatternPiece::Literal(s) => {
-                    for c in s.to_str().unwrap_or("").chars() {
-                        if crate::regex::regex_char_is_special(c) {
-                            current_pattern.push('\\');
+                    for chunk in s.as_slice().utf8_chunks() {
+                        for c in chunk.valid().chars() {
+                            if crate::regex::regex_char_is_special(c) {
+                                current_pattern.push('\\');
+                            }
+                            current_pattern.push(c);
                         }
-                        current_pattern.push(c);
+                        for &b in chunk.invalid() {
+                            current_pattern.push(pua_char_for_byte(b));
+                        }
                     }
                 }
             }
@@ -407,7 +418,8 @@ impl Pattern {
 
         let regex_piece =
             pattern_to_regex_str(current_pattern.as_str(), self.enable_extended_globbing)?;
-        regex_str.push_str(regex_piece.as_str());
+        let regex_piece = replace_pua_with_hex_escapes(regex_piece);
+        regex_str.push_str(&regex_piece);
 
         if strict_suffix_match {
             regex_str.push('$');
@@ -455,6 +467,55 @@ impl Pattern {
 /// the single source of truth for what constitutes a glob metacharacter.
 fn requires_expansion(s: &str, enable_extended_globbing: bool) -> bool {
     brush_parser::pattern::pattern_has_glob_metacharacters(s, enable_extended_globbing)
+}
+
+/// Maps a non-UTF-8 byte to a Private Use Area character (U+E000 + byte).
+/// This lets the byte survive the glob-to-regex converter (which requires
+/// valid UTF-8) as an innocuous non-metacharacter. It is later converted
+/// back to a `\xHH` regex hex escape by [`replace_pua_with_hex_escapes`].
+fn pua_char_for_byte(b: u8) -> char {
+    char::from_u32(0xE000 + u32::from(b)).unwrap_or('\u{FFFD}')
+}
+
+/// Appends bytes to a [`String`], encoding non-UTF-8 bytes as PUA characters
+/// via [`pua_char_for_byte`]. Valid UTF-8 sequences pass through unchanged.
+fn append_bytes_with_pua(dest: &mut String, bytes: &[u8]) {
+    for chunk in bytes.utf8_chunks() {
+        dest.push_str(chunk.valid());
+        for &b in chunk.invalid() {
+            dest.push(pua_char_for_byte(b));
+        }
+    }
+}
+
+/// Replaces Private Use Area characters (U+E000–U+E0FF) in a regex string with
+/// `\xHH` hex escapes so the compiled regex matches the original raw bytes.
+fn replace_pua_with_hex_escapes(s: String) -> String {
+    const PUA_START: u32 = 0xE000;
+    const PUA_END: u32 = 0xE0FF;
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    if !s
+        .chars()
+        .any(|c| (PUA_START..=PUA_END).contains(&(c as u32)))
+    {
+        return s;
+    }
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        let code = c as u32;
+        if (PUA_START..=PUA_END).contains(&code) {
+            // Safe: we verified code is in 0xE000..=0xE0FF, so code - 0xE000 fits in u8.
+            #[expect(clippy::cast_possible_truncation)]
+            let b = (code - PUA_START) as u8;
+            result.push('\\');
+            result.push('x');
+            result.push(HEX[(b >> 4) as usize] as char);
+            result.push(HEX[(b & 0xf) as usize] as char);
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 fn pattern_to_regex_str(
