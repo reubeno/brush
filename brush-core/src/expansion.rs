@@ -1972,7 +1972,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
+                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_, str>| {
                     transform(&caps[0])
                 });
                 Ok(result.into_owned())
