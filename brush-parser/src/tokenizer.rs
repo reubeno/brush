@@ -532,6 +532,18 @@ pub fn uncached_tokenize_str(
     Ok(tokens)
 }
 
+/// How far through a `case` construct the tokenizer is, so that a pattern's `)` can be told from
+/// a `)` that closes something.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CaseState {
+    /// Seen `case`, waiting for `in`.
+    AwaitingIn,
+    /// A pattern may start here; the next unquoted `)` ends it.
+    Pattern,
+    /// Inside an arm's command list, until `;;`.
+    Body,
+}
+
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Self {
         Tokenizer {
@@ -614,6 +626,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     ) -> Result<(), TokenizerError> {
         let mut pending_here_doc_tokens = vec![];
         let mut drain_here_doc_tokens = false;
+        // Where we are inside any `case` constructs open in this substitution, innermost last.
+        //
+        // Without this, a case pattern's `)` is indistinguishable from the `)` that ends the
+        // substitution, so `$(case a in a) echo Y;; esac)` terminated at `$(case a in a` and the
+        // rest became a syntax error. A pattern's `)` closes nothing that was opened, so it must
+        // not decrement the nesting count.
+        let mut case_states: Vec<CaseState> = vec![];
 
         loop {
             let cur_token = if drain_here_doc_tokens && !pending_here_doc_tokens.is_empty() {
@@ -647,8 +666,28 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             if let Some(cur_token_value) = cur_token.token {
                 state.append_str(cur_token_value.to_str());
 
+                // Trimmed: a token here carries the blank that preceded it, so `esac` arrives as
+                // `" esac"` and a match on the bare word silently never fires.
+                match cur_token_value.to_str().trim() {
+                    "case" => case_states.push(CaseState::AwaitingIn),
+                    "in" if matches!(case_states.last(), Some(CaseState::AwaitingIn)) => {
+                        *case_states.last_mut().unwrap() = CaseState::Pattern;
+                    }
+                    ";;" | ";&" | ";;&" if matches!(case_states.last(), Some(CaseState::Body)) => {
+                        *case_states.last_mut().unwrap() = CaseState::Pattern;
+                    }
+                    "esac" => {
+                        case_states.pop();
+                    }
+                    _ => {}
+                }
+
                 if matches!(cur_token_value, Token::Operator(o, _) if o == nesting_open) {
-                    nesting_count += 1;
+                    // A `(` that *introduces* a case pattern — the optional `( a )` form — opens
+                    // nothing either, and its matching `)` is handled below.
+                    if !matches!(case_states.last(), Some(CaseState::Pattern)) {
+                        nesting_count += 1;
+                    }
                 }
             }
 
@@ -658,6 +697,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 }
                 TokenEndReason::NonNewLineBlank => state.append_char(' '),
                 TokenEndReason::SpecifiedTerminatingChar => {
+                    // A case pattern's `)` ends the pattern, not the construct.
+                    if matches!(case_states.last(), Some(CaseState::Pattern)) {
+                        *case_states.last_mut().unwrap() = CaseState::Body;
+                        state.append_char(self.next_char()?.unwrap());
+                        continue;
+                    }
                     nesting_count -= 1;
                     if nesting_count == 0 {
                         break;
