@@ -73,6 +73,7 @@ pub(crate) fn init_well_known_vars(
 
     // BASHOPTS
     let mut bashopts_var = ShellVariable::new(ShellValue::Dynamic {
+        kind: variables::DynamicValueKind::Scalar,
         getter: |shell| shell.options().shopt_optstr().into(),
         setter: |_| (),
     });
@@ -92,6 +93,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_ALIASES",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::AssociativeArray,
             getter: |shell| {
                 let values = variables::ArrayLiteral(
                     shell
@@ -112,6 +114,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_ARGC",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |shell| get_bash_argc_value(shell),
             setter: |_| (),
         }),
@@ -121,6 +124,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_ARGV",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |shell| get_bash_argv_value(shell),
             setter: |_| (),
         }),
@@ -130,6 +134,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_ARGV0",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::Scalar,
             getter: |shell| {
                 let argv0 = shell.current_shell_name().unwrap_or_default();
                 argv0.to_string().into()
@@ -143,6 +148,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_CMDS",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::AssociativeArray,
             getter: |shell| {
                 shell
                     .program_location_cache()
@@ -160,6 +166,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_LINENO",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |shell| get_bash_lineno_value(shell),
             setter: |_| (),
         }),
@@ -169,6 +176,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_SOURCE",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |shell| get_bash_source_value(shell),
             setter: |_| (),
         }),
@@ -178,6 +186,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "BASH_SUBSHELL",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::Scalar,
             getter: |shell| shell.depth().to_string().into(),
             setter: |_| (),
         }),
@@ -224,6 +233,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "DIRSTACK",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |shell| {
                 shell
                     .directory_stack()
@@ -240,6 +250,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "EPOCHREALTIME",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::Scalar,
             getter: |_shell| {
                 let now = std::time::SystemTime::now();
                 let since_epoch = now
@@ -255,6 +266,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "EPOCHSECONDS",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::Scalar,
             getter: |_shell| {
                 let now = std::time::SystemTime::now();
                 let since_epoch = now
@@ -277,6 +289,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "FUNCNAME",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |shell| get_funcname_value(shell),
             setter: |_| (),
         }),
@@ -288,6 +301,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "GROUPS",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |_shell| {
                 let groups = get_current_user_gids();
                 ShellValue::indexed_array_from_strings(
@@ -300,6 +314,7 @@ pub(crate) fn init_well_known_vars(
 
     // HISTCMD
     let mut histcmd_var = ShellVariable::new(ShellValue::Dynamic {
+        kind: variables::DynamicValueKind::Scalar,
         getter: |shell| {
             shell
                 .history()
@@ -311,7 +326,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global("HISTCMD", histcmd_var)?;
 
     // HISTFILE (if not already set)
-    if !shell.env().is_set("HISTFILE")
+    if !shell.env_is_set("HISTFILE")
         && let Some(home_dir) = shell.home_dir()
     {
         let histfile = home_dir.join(".brush_history");
@@ -347,6 +362,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "LINENO",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::Scalar,
             getter: |shell| get_lineno(shell).to_string().into(),
             setter: |_| (),
         }),
@@ -358,7 +374,7 @@ pub(crate) fn init_well_known_vars(
         .set_global("MACHTYPE", ShellVariable::new(BASH_MACHINE))?;
 
     // OLDPWD (initialization)
-    if !shell.env().is_set("OLDPWD") {
+    if !shell.env_is_set("OLDPWD") {
         let mut oldpwd_var =
             ShellVariable::new(ShellValue::Unset(variables::ShellValueUnsetType::Untyped));
         oldpwd_var.export();
@@ -398,7 +414,7 @@ pub(crate) fn init_well_known_vars(
         .set_global("OSTYPE", ShellVariable::new(os_type))?;
 
     // PATH (if not already set)
-    if !shell.env().is_set("PATH") {
+    if !shell.env_is_set("PATH") {
         let default_path_str = std::env::join_paths(sys::fs::get_default_executable_search_paths())
             .unwrap_or_else(|_| PathBuf::from("").into());
         shell
@@ -412,6 +428,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "PIPESTATUS",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::IndexedArray,
             getter: |shell| {
                 ShellValue::indexed_array_from_strings(
                     shell.last_pipeline_statuses().iter().map(|s| s.to_string()),
@@ -430,6 +447,7 @@ pub(crate) fn init_well_known_vars(
 
     // RANDOM
     let mut random_var = ShellVariable::new(ShellValue::Dynamic {
+        kind: variables::DynamicValueKind::Scalar,
         getter: get_random_value,
         setter: |_| (),
     });
@@ -440,6 +458,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global(
         "SECONDS",
         ShellVariable::new(ShellValue::Dynamic {
+            kind: variables::DynamicValueKind::Scalar,
             getter: |shell| {
                 let now = std::time::SystemTime::now();
                 let since_last = now
@@ -454,7 +473,7 @@ pub(crate) fn init_well_known_vars(
     )?;
 
     // SHELL (if not already set)
-    if !shell.env().is_set("SHELL") {
+    if !shell.env_is_set("SHELL") {
         // Per docs, this should be the user's default login shell -- not the current shell.
         if let Some(default_shell) = sys::users::get_current_user_default_shell() {
             shell.env_mut().set_global(
@@ -466,6 +485,7 @@ pub(crate) fn init_well_known_vars(
 
     // SHELLOPTS
     let mut shellopts_var = ShellVariable::new(ShellValue::Dynamic {
+        kind: variables::DynamicValueKind::Scalar,
         getter: |shell| shell.options().seto_optstr().into(),
         setter: |_| (),
     });
@@ -481,6 +501,7 @@ pub(crate) fn init_well_known_vars(
 
     // SRANDOM
     let mut random_var = ShellVariable::new(ShellValue::Dynamic {
+        kind: variables::DynamicValueKind::Scalar,
         getter: get_srandom_value,
         setter: |_| (),
     });
@@ -489,13 +510,13 @@ pub(crate) fn init_well_known_vars(
 
     // PS1 / PS2
     if shell.options().interactive {
-        if !shell.env().is_set("PS1") {
+        if !shell.env_is_set("PS1") {
             shell
                 .env_mut()
                 .set_global("PS1", ShellVariable::new(r"\s-\v\$ "))?;
         }
 
-        if !shell.env().is_set("PS2") {
+        if !shell.env_is_set("PS2") {
             shell
                 .env_mut()
                 .set_global("PS2", ShellVariable::new("> "))?;
@@ -503,7 +524,7 @@ pub(crate) fn init_well_known_vars(
     }
 
     // PS4
-    if !shell.env().is_set("PS4") {
+    if !shell.env_is_set("PS4") {
         shell
             .env_mut()
             .set_global("PS4", ShellVariable::new("+ "))?;

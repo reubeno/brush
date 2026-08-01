@@ -172,3 +172,63 @@ cases:
   - name: "Pattern matching: quotes in character class"
     stdin: |
       [[ f == ['f'] ]] && echo "1. Matched"
+
+  - name: "Bracket expression with braces in parameter expansion pattern"
+    stdin: |
+      y='hello{'
+      echo "${y%%[<{().]}"
+      echo "${y%%[<{().]*}"
+
+  - name: "Bracket expression with parens in parameter expansion pattern"
+    known_failure: true
+    stdin: |
+      y='hello('
+      echo "${y%%[<().]}"
+
+  - name: "Bracket expression with negated class in parameter expansion"
+    stdin: |
+      y='hello<'
+      echo "${y%%[^<{}()]}"
+
+  - name: "Literal close bracket in bracket expression"
+    known_failure: true
+    stdin: |
+      y='hello]'
+      echo "${y%%[]]}"
+
+  - name: "Bracket expression in function with complex quoting"
+    stdin: |
+      f() {
+          local _word=${1-}
+          option2=${_word%%[<{().[]*}
+          echo "$option2"
+      }
+      f 'hello{world'
+      f 'hello<world'
+
+  - name: "Escaped bracket in parameter expansion inside function with [[ ]]"
+    stdin: |
+      f() {
+          x=${y//\[/\\[}
+          [[ -n z ]]
+      }
+      f
+
+  - name: "Escaped bracket in parameter expansion with various commands"
+    stdin: |
+      f1() { x=${y//\[/\\[}; [[ a == b ]]; }
+      f2() { from_pat=${from_pat//\[/\\[}; [[ -n foo ]]; }
+      f3() { from_pat=${from_pat//\[/\\[}; [[ "${x}" == "${y}" ]] && echo "msg"; }
+
+  - name: "Literal bracket in parameter replacement"
+    stdin: |
+      y='a[b'
+      echo "${y//a/[}"
+
+  - name: "Bracket expression does not scan past closing brace"
+    stdin: |
+      f() {
+          x=${y//a/[}
+          echo done
+      }
+      f

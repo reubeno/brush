@@ -12,6 +12,8 @@ pub(crate) struct LetCommand {
 }
 
 impl builtins::Command for LetCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -21,12 +23,18 @@ impl builtins::Command for LetCommand {
         let mut result = ExecutionExitCode::InvalidUsage.into();
 
         if self.exprs.is_empty() {
-            writeln!(context.stderr(), "missing expression")?;
+            let mut stderr_output = Vec::new();
+            writeln!(stderr_output, "missing expression")?;
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
             return Ok(result);
         }
 
         for expr in &self.exprs {
-            let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
+            let parsed = brush_parser::arithmetic::parse_with(
+                expr.as_str(),
+                context.shell.parser_options().parser_impl,
+            )?;
             let evaluated = parsed.eval(context.shell)?;
 
             if evaluated == 0 {

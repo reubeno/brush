@@ -13,6 +13,8 @@ pub(crate) struct PopdCommand {
 }
 
 impl builtins::Command for PopdCommand {
+    type State = ();
+    type SharedState = ();
     type Error = crate::dirs::DirError;
 
     async fn execute<SE: brush_core::ShellExtensions>(
