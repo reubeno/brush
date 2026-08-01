@@ -271,6 +271,10 @@ fn shim_registration<SE: ShellExtensions>() -> Registration<SE> {
         disabled: false,
         special_builtin: false,
         declaration_builtin: false,
+        state_init: || Box::new(()),
+        local_override: None,
+        _shared: std::marker::PhantomData,
+        _local: std::marker::PhantomData,
     }
 }
 
