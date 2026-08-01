@@ -19,7 +19,6 @@ cases:
     echo "Result: $?"
 
   - name: "Arithmetic for loop with ;;"
-    known_failure: true
     stdin: |
       for ((;;)); do
         echo "In loop; status: $?"
@@ -100,7 +99,6 @@ cases:
       for ((i = 0; i < 5; i++)) { echo "Iteration $i"; }
 
   - name: "Arithmetic for loop with nameref"
-    known_failure: true
     stdin: |
       target=0
       declare -n ref=target
