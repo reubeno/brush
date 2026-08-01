@@ -125,6 +125,42 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `args` - The arguments to pass to the script as positional parameters.
     /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
+    ///
+    /// Source a pre-parsed program, setting up the appropriate call stack frame.
+    ///
+    /// This is the cached-program counterpart to [`Self::source_script`]:
+    /// it skips parsing and executes the supplied [`brush_parser::ast::Program`]
+    /// directly, which is useful when the same script is sourced many times
+    /// (e.g. eclasses) and the parsed AST can be reused across invocations.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The previously parsed program to execute.
+    /// * `source_info` - Source location information (used for error reporting).
+    /// * `args` - Positional parameters for the sourced script.
+    /// * `params` - Execution parameters.
+    pub async fn source_program<S: Into<String>, I: Iterator<Item = S>>(
+        &mut self,
+        program: &brush_parser::ast::Program,
+        source_info: &crate::SourceInfo,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let script_positional_args = args.map(Into::into);
+
+        self.call_stack.push_script(
+            callstack::ScriptCallType::Source,
+            source_info,
+            script_positional_args,
+        );
+
+        let result = self.run_program(program, params).await;
+
+        self.call_stack.pop();
+
+        result
+    }
+
     async fn source_file<F: Read, S: Into<String>, I: Iterator<Item = S>>(
         &mut self,
         file: F,
@@ -239,7 +275,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<ExecutionResult, error::Error> {
         // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
         let result = match parse_result {
-            Ok(prog) => self.run_program(prog, params).await,
+            Ok(prog) => self.run_program(&prog, params).await,
             Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
                 parse_err,
                 source_info.clone(),
@@ -269,7 +305,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `params` - Execution parameters.
     pub async fn run_program(
         &mut self,
-        program: brush_parser::ast::Program,
+        program: &brush_parser::ast::Program,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         program.execute(self, params).await
