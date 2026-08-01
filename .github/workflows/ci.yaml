@@ -172,7 +172,7 @@ jobs:
     runs-on: ${{ matrix.host }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -196,7 +196,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.cross_tool_to_install != '' }}
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: ${{ matrix.cross_tool_to_install }}
 
@@ -238,7 +238,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        parser:
+          - name: "peg"
+            features: ""
+            brush_args: ""
+          - name: "winnow"
+            features: "experimental-parser"
+            brush_args: ""
+        host_config:
           - host: "ubuntu-24.04"
             variant: "linux-x86_64"
             artifact_suffix: "linux-x86_64"
@@ -281,14 +288,14 @@ jobs:
             wasi_runtime: "wasmtime"
             xtask_test_args: "--wasi"
 
-    name: "Test ${{ matrix.name_suffix }}"
-    runs-on: ${{ matrix.host }}
+    name: "Test ${{ matrix.host_config.name_suffix }} [${{ matrix.parser.name }}]"
+    runs-on: ${{ matrix.host_config.host }}
     defaults:
       run:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -296,7 +303,7 @@ jobs:
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: stable
-          targets: ${{ matrix.extra_rust_targets || '' }}
+          targets: ${{ matrix.host_config.extra_rust_targets || '' }}
           components: llvm-tools-preview
 
       - name: Enable cargo cache
@@ -304,26 +311,27 @@ jobs:
         with:
           # Needed to make sure cargo-deny is correctly cached.
           cache-all-crates: true
+          key: "${{ matrix.parser.name }}"
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
-        if: ${{ matrix.coverage }}
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        if: ${{ matrix.host_config.coverage }}
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: cargo-llvm-cov
 
       - name: Install WASI runtime
-        if: ${{ matrix.wasi_runtime }}
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        if: ${{ matrix.host_config.wasi_runtime }}
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
-          tool: ${{ matrix.wasi_runtime }}
+          tool: ${{ matrix.host_config.wasi_runtime }}
 
       - name: Set up Homebrew
-        if: ${{ matrix.homebrew_supported }}
+        if: ${{ matrix.host_config.homebrew_supported }}
         id: set-up-homebrew
         # We ignore the stale-action-refs check because this action does not have any releases or tags.
         # We're forced to pick a specific commit.
@@ -332,7 +340,7 @@ jobs:
           stable: true
 
       - name: "Install recent bash for tests"
-        if: ${{ matrix.homebrew_supported }}
+        if: ${{ matrix.host_config.homebrew_supported }}
         run: |
           set -x
 
@@ -349,7 +357,7 @@ jobs:
           echo "BASH_PATH=${BASH_PATH}">>$GITHUB_ENV
 
       - name: "Download recent bash-completion sources for tests"
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
@@ -361,31 +369,51 @@ jobs:
 
       - name: Test
         env:
-          VARIANT: ${{ matrix.variant }}
+          VARIANT: ${{ matrix.host_config.variant }}
+          PARSER_NAME: ${{ matrix.parser.name }}
+          PARSER_FEATURES: ${{ matrix.parser.features }}
+          PARSER_BRUSH_ARGS: ${{ matrix.parser.brush_args }}
         run: |
-          args="${{ matrix.xtask_test_args || '' }}"
-          args="${args} --results-output ./test-results-${VARIANT}.xml"
-          if [[ "${{ matrix.coverage }}" == "true" ]]; then
-            args="${args} --coverage --coverage-output ./codecov-${VARIANT}.xml"
+          set -euxo pipefail
+
+          XTASK_ARGS="test integration"
+          if [[ "${{ matrix.host_config.coverage }}" == "true" ]]; then
+            XTASK_ARGS="${XTASK_ARGS} --coverage --coverage-output ./codecov-${VARIANT}-${PARSER_NAME}.xml"
           fi
-          cargo xtask test integration ${args}
+          if [ -n "${PARSER_FEATURES}" ]; then
+            XTASK_ARGS="${XTASK_ARGS} --features ${PARSER_FEATURES}"
+          fi
+          if [ -n "${PARSER_BRUSH_ARGS}" ]; then
+            XTASK_ARGS="${XTASK_ARGS} --brush-args=${PARSER_BRUSH_ARGS}"
+          fi
+          EXTRA_ARGS="${{ matrix.host_config.xtask_test_args || '' }}"
+          if [ -n "${EXTRA_ARGS}" ]; then
+            XTASK_ARGS="${XTASK_ARGS} ${EXTRA_ARGS}"
+          fi
+
+          result=0
+          cargo xtask ${XTASK_ARGS} || result=$?
+
+          mv target/nextest/default/test-results.xml ./test-results-${VARIANT}-${PARSER_NAME}.xml
+
+          exit ${result}
 
       - name: "Upload test results"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: test-reports${{ matrix.artifact_suffix }}
+          name: test-reports${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
           path: test-results-*.xml
 
       - name: "Generate code coverage report"
         uses: clearlyip/code-coverage-report-action@110af9d4ec87b6706f182fd90e3102af9e5203bf # v7.0.0
-        if: ${{ always() && matrix.coverage }}
+        if: ${{ always() && matrix.host_config.coverage }}
         id: "code_coverage_report"
         with:
           artifact_download_workflow_names: "CI"
-          artifact_name: coverage-%name%${{ matrix.artifact_suffix }}
-          filename: codecov-${{ matrix.variant }}.xml
-          overall_coverage_fail_threshold: ${{ matrix.coverage_min_percent }}
+          artifact_name: coverage-%name%${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
+          filename: codecov-${{ matrix.host_config.variant }}-${{ matrix.parser.name }}.xml
+          overall_coverage_fail_threshold: ${{ matrix.host_config.coverage_min_percent }}
           only_list_changed_files: ${{ github.event_name == 'pull_request' }}
           fail_on_negative_difference: true
           negative_difference_by: "overall"
@@ -395,7 +423,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: codecov-reports${{ matrix.artifact_suffix }}
+          name: codecov-reports${{ matrix.host_config.artifact_suffix }}-${{ matrix.parser.name }}
           path: code-coverage-results.md
 
   # Static analysis of the code.
@@ -412,7 +440,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -436,7 +464,7 @@ jobs:
 
       - name: Install cargo-deny
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: cargo-deny
 
@@ -458,7 +486,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -468,7 +496,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: cargo-udeps
 
@@ -481,7 +509,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -503,7 +531,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -513,7 +541,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-public-api
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2.84.0
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: cargo-public-api
 
@@ -538,13 +566,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout PR sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           path: pr
 
       - name: Checkout main sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           path: main
@@ -590,13 +618,13 @@ jobs:
     needs: build
     steps:
       - name: Checkout brush
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           path: "brush"
 
       - name: Checkout bash-completion
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
@@ -713,7 +741,7 @@ jobs:
 
       # Checkout sources for YAML-based test cases
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           path: sources

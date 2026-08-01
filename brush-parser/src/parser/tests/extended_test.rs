@@ -107,6 +107,24 @@ fn parse_extended_test_string_not_equal() -> Result<()> {
     Ok(())
 }
 
+/// Regression test: two adjacent parameter expansions with no separating
+/// whitespace in the source (`${CTARGET}-${PV}`, common in eclasses like
+/// `sys-devel/binutils`'s `pkg_postrm`) must round-trip as a single word,
+/// not `${CTARGET} -${PV}` — the winnow `ext_test_regex_word` parser used
+/// to synthesize a space whenever the previous component didn't end in a
+/// "structural" character, corrupting this into two words and producing
+/// invalid `[[ ]]` syntax on a later re-parse (e.g. via `declare -f`).
+#[test]
+fn parse_extended_test_adjacent_expansions_no_space() -> Result<()> {
+    let input = "[[ x == ${CTARGET}-${PV} ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
 #[test]
 fn parse_extended_test_string_pattern() -> Result<()> {
     let input = r#"[[ "$str" == *pattern* ]]"#;
@@ -259,6 +277,74 @@ fn parse_extended_test_arith_less_than() -> Result<()> {
 #[test]
 fn parse_extended_test_arith_greater_than() -> Result<()> {
     let input = "[[ 5 -gt 3 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_arithmetic_expansion() -> Result<()> {
+    let input = "[[ $((1+2)) -eq 3 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_command_substitution() -> Result<()> {
+    let input = "[[ $(echo hi) == hi ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_arithmetic_with_vars() -> Result<()> {
+    let input = "[[ $((${x} + ${y})) -ge 10 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+// Multi-line tests
+
+#[test]
+fn parse_extended_test_multiline_and() -> Result<()> {
+    let input = "[[ -z ${a} &&\n\t-z ${b} ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_backslash_continuation() -> Result<()> {
+    let input = "[[ -n ${x} && $((1+2)) \\\n\t-ge 3 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_extended_test_multiline_complex() -> Result<()> {
+    let input = "[[ -z ${a} &&\n\t\t\t-z ${b} &&\n\t\t\t-z ${c} &&\n\t\t\t-z ${d} ]]";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
