@@ -26,7 +26,6 @@ cases:
       f
 
   - name: "readonly on nameref makes nameref readonly"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="value"
@@ -42,7 +41,6 @@ cases:
       echo "target: $target"
 
   - name: "readonly target through nameref assignment"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="value"
@@ -51,3 +49,10 @@ cases:
       ref="new_value" 2>/dev/null
       echo "exit: $?"
       echo "target: $target"
+
+  - name: "Readonly with dynamically-expanded assignment word"
+    stdin: |
+      v=ROVAR
+      readonly ${v}="fixed"
+      echo "ROVAR=[$ROVAR]"
+      (ROVAR=changed) 2>/dev/null || echo "reassign-blocked"

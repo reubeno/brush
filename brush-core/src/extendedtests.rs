@@ -2,8 +2,9 @@ use brush_parser::ast;
 use std::path::Path;
 
 use crate::{
-    ExecutionParameters, Shell, ShellFd, arithmetic, env, error, escape, expansion, extensions,
-    namedoptions, patterns,
+    ExecutionParameters, Shell, ShellFd, arithmetic, env,
+    env::VarNameExt,
+    error, escape, expansion, extensions, namedoptions, patterns,
     sys::{
         fs::{MetadataExt, PathExt},
         users,
@@ -42,6 +43,22 @@ pub(crate) async fn eval_extended_test_expr(
             eval_extended_test_expr(expr, shell, params).await
         }
     }
+}
+
+/// Split an extended-test operand of the form `name[subscript]` into its parts,
+/// or `None` when there's no explicit subscript. The name must be non-empty and
+/// the operand must end with `]`; the subscript is everything between the first
+/// `[` and the final `]` (already expanded by the time the test sees it).
+fn split_subscript(operand: &str) -> Option<(&str, &str)> {
+    let (name, rest) = operand.split_once('[')?;
+    if name.is_empty() {
+        return None;
+    }
+    let (subscript, after) = rest.rsplit_once(']')?;
+    if !after.is_empty() {
+        return None;
+    }
+    Some((name, subscript))
 }
 
 async fn apply_unary_predicate(
@@ -184,11 +201,52 @@ pub(crate) fn apply_unary_predicate_to_str(
                 Ok(false)
             }
         }
-        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => Ok(shell.env().is_set(operand)),
-        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => match shell.env().get(operand) {
-            Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
-            None => Ok(false),
-        },
+        ast::UnaryPredicate::ShellVariableIsSetAndAssigned => {
+            // An explicit subscript — `[[ -v "name[sub]" ]]` — is an *element*-level
+            // test: is that specific array element set? (`name` may be a nameref to
+            // the array.) For an associative array `sub` is the literal key; for an
+            // indexed array it's an arithmetic index; `@`/`*` ask whether the array
+            // has any set element. Bash does this only for an explicit subscript —
+            // `[[ -v ref ]]` on a nameref to `arr[2]` looks for a variable literally
+            // named `arr[2]`, which is the plain-name path below.
+            if let Some((name_part, subscript)) = split_subscript(operand) {
+                let resolved_name = shell
+                    .env()
+                    .resolve_nameref_to_name(name_part)
+                    .unwrap_or_else(|_| name_part.to_owned());
+                let resolved = crate::env::ResolvedName::already_resolved(resolved_name);
+                return match shell.env().lookup(&resolved).get_direct() {
+                    Some((_, var)) if subscript == "@" || subscript == "*" => {
+                        Ok(!var.value().element_keys(shell).is_empty())
+                    }
+                    Some((_, var)) => Ok(var.value().get_at(subscript, shell)?.is_some()),
+                    None => Ok(false),
+                };
+            }
+
+            // Plain name (no subscript): resolve the nameref chain, then look up the
+            // resolved name as a plain variable. Circular namerefs silently fall
+            // back to the operand name, which won't be found — correctly unset.
+            let resolved_name = shell
+                .env()
+                .resolve_nameref_to_name(operand)
+                .unwrap_or_else(|_| operand.to_owned());
+            let resolved = crate::env::ResolvedName::already_resolved(resolved_name);
+            if let Some((_, var)) = shell.env().lookup(&resolved).get_direct() {
+                Ok(!matches!(
+                    var.value(),
+                    crate::variables::ShellValue::Unset(_)
+                ))
+            } else {
+                Ok(false)
+            }
+        }
+        ast::UnaryPredicate::ShellVariableIsSetAndNameRef => {
+            match shell.env().lookup(operand.direct()).get_direct() {
+                Some((_, reffed)) => Ok(reffed.value().is_set() && reffed.is_treated_as_nameref()),
+                None => Ok(false),
+            }
+        }
     }
 }
 
