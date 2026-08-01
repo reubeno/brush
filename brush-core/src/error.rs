@@ -50,7 +50,7 @@ pub enum ErrorKind {
     CannotAssignToSpecialParameter,
 
     /// Checked expansion error.
-    #[error("expansion error: {0}")]
+    #[error("{0}")]
     CheckedExpansionError(String),
 
     /// A reference was made to an unknown shell function.
@@ -318,6 +318,18 @@ pub enum ErrorKind {
     /// A glob pattern failed to match any files (failglob).
     #[error("no match: {0}")]
     NoMatch(String),
+
+    /// The requested builtin state was not registered for the given builtin name.
+    #[error("builtin state not registered for '{0}'")]
+    BuiltinStateNotRegistered(String),
+
+    /// The requested shared state type was not registered on the shell.
+    #[error("shared state not registered for '{0}'")]
+    SharedStateNotRegistered(String),
+
+    /// A circular name reference was detected.
+    #[error("{0}: circular name reference")]
+    CircularNameReference(String),
 }
 
 /// Trait implementable by built-in commands to represent errors.
