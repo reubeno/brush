@@ -31,3 +31,10 @@ cases:
       shopt -s expand_aliases
       alias myalias=if
       myalias true; then echo "true"; fi
+
+  - name: "Alias with dynamically-expanded assignment word"
+    stdin: |
+      shopt -s expand_aliases
+      n=greet
+      alias ${n}='echo hello'
+      greet
