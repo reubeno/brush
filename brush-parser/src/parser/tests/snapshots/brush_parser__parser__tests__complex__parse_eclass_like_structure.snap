@@ -1,0 +1,453 @@
+---
+source: brush-parser/src/parser/tests/complex.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "if [[ -z ${_FOO_ECLASS} ]]; then\n_FOO_ECLASS=1\ncase ${EAPI} in\n\t7|8) ;;\n\t*) die \"unsupported\" ;;\nesac\n_ALL_IMPLS=(\n\timpl1\n\timpl2_{3..5}\n)\nreadonly _ALL_IMPLS\n_HIST_IMPLS=(\n\told1\n\told2_{8,9}\n)\nreadonly _HIST_IMPLS\n_verify() {\n\tlocal impl pattern\n\tfor pattern; do\n\t\tcase ${pattern} in\n\t\t\t-[23])\n\t\t\t\tcontinue\n\t\t\t\t;;\n\t\tesac\n\tdone\n}\n_set_impls() {\n\tlocal i\n\tif [[ ${BASH_VERSINFO[0]} -ge 5 ]]; then\n\t\t[[ ${COMPAT@a} == *a* ]]\n\telse\n\t\t[[ $(declare -p COMPAT) == \"declare -a\"* ]]\n\tfi\n\tif [[ ${?} -ne 0 ]]; then\n\t\tdie \'bad\'\n\tfi\n}\nfi\n",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Compound(IfClause(IfClauseCommand(
+                condition: CompoundList([
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        ExtendedTest(ExtendedTestExprCommand(
+                          expr: UnaryTest(StringHasZeroLength, Word(
+                            value: "${_FOO_ECLASS}",
+                            loc: "[location]",
+                          )),
+                          loc: "[location]",
+                        ), None),
+                      ],
+                    ),
+                  ), Sequence),
+                ]),
+                then: CompoundList([
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Simple(SimpleCommand(
+                          prefix: Some(CommandPrefix([
+                            AssignmentWord(Assignment(
+                              name: VariableName("_FOO_ECLASS"),
+                              value: Scalar(Word(
+                                value: "1",
+                                loc: "[location]",
+                              )),
+                              loc: "[location]",
+                            ), Word(
+                              value: "_FOO_ECLASS=1",
+                              loc: "[location]",
+                            )),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Compound(CaseClause(CaseClauseCommand(
+                          value: Word(
+                            value: "${EAPI}",
+                            loc: "[location]",
+                          ),
+                          cases: [
+                            CaseItem(
+                              patterns: [
+                                Word(
+                                  value: "7",
+                                  loc: "[location]",
+                                ),
+                                Word(
+                                  value: "8",
+                                  loc: "[location]",
+                                ),
+                              ],
+                              cmd: None,
+                              post_action: ExitCase,
+                              loc: "[location]",
+                            ),
+                            CaseItem(
+                              patterns: [
+                                Word(
+                                  value: "*",
+                                  loc: "[location]",
+                                ),
+                              ],
+                              cmd: Some(CompoundList([
+                                CompoundListItem(AndOrList(
+                                  first: Pipeline(
+                                    seq: [
+                                      Simple(SimpleCommand(
+                                        word_or_name: Some(Word(
+                                          value: "die",
+                                          loc: "[location]",
+                                        )),
+                                        suffix: Some(CommandSuffix([
+                                          Word(Word(
+                                            value: "\"unsupported\"",
+                                            loc: "[location]",
+                                          )),
+                                        ])),
+                                      )),
+                                    ],
+                                  ),
+                                ), Sequence),
+                              ])),
+                              post_action: ExitCase,
+                              loc: "[location]",
+                            ),
+                          ],
+                          loc: "[location]",
+                        )), None),
+                      ],
+                    ),
+                  ), Sequence),
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Simple(SimpleCommand(
+                          prefix: Some(CommandPrefix([
+                            AssignmentWord(Assignment(
+                              name: VariableName("_ALL_IMPLS"),
+                              value: Array([
+                                (None, Word(
+                                  value: "impl1",
+                                  loc: "[location]",
+                                )),
+                                (None, Word(
+                                  value: "impl2_{3..5}",
+                                  loc: "[location]",
+                                )),
+                              ]),
+                              loc: "[location]",
+                            ), Word(
+                              value: "_ALL_IMPLS=(impl1 impl2_{3..5})",
+                              loc: "[location]",
+                            )),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Simple(SimpleCommand(
+                          word_or_name: Some(Word(
+                            value: "readonly",
+                            loc: "[location]",
+                          )),
+                          suffix: Some(CommandSuffix([
+                            Word(Word(
+                              value: "_ALL_IMPLS",
+                              loc: "[location]",
+                            )),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Simple(SimpleCommand(
+                          prefix: Some(CommandPrefix([
+                            AssignmentWord(Assignment(
+                              name: VariableName("_HIST_IMPLS"),
+                              value: Array([
+                                (None, Word(
+                                  value: "old1",
+                                  loc: "[location]",
+                                )),
+                                (None, Word(
+                                  value: "old2_{8,9}",
+                                  loc: "[location]",
+                                )),
+                              ]),
+                              loc: "[location]",
+                            ), Word(
+                              value: "_HIST_IMPLS=(old1 old2_{8,9})",
+                              loc: "[location]",
+                            )),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Simple(SimpleCommand(
+                          word_or_name: Some(Word(
+                            value: "readonly",
+                            loc: "[location]",
+                          )),
+                          suffix: Some(CommandSuffix([
+                            Word(Word(
+                              value: "_HIST_IMPLS",
+                              loc: "[location]",
+                            )),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Function(FunctionDefinition(
+                          fname: Word(
+                            value: "_verify",
+                            loc: "[location]",
+                          ),
+                          body: FunctionBody(BraceGroup(BraceGroupCommand(
+                            list: CompoundList([
+                              CompoundListItem(AndOrList(
+                                first: Pipeline(
+                                  seq: [
+                                    Simple(SimpleCommand(
+                                      word_or_name: Some(Word(
+                                        value: "local",
+                                        loc: "[location]",
+                                      )),
+                                      suffix: Some(CommandSuffix([
+                                        Word(Word(
+                                          value: "impl",
+                                          loc: "[location]",
+                                        )),
+                                        Word(Word(
+                                          value: "pattern",
+                                          loc: "[location]",
+                                        )),
+                                      ])),
+                                    )),
+                                  ],
+                                ),
+                              ), Sequence),
+                              CompoundListItem(AndOrList(
+                                first: Pipeline(
+                                  seq: [
+                                    Compound(ForClause(ForClauseCommand(
+                                      variable_name: "pattern",
+                                      values: None,
+                                      body: DoGroupCommand(
+                                        list: CompoundList([
+                                          CompoundListItem(AndOrList(
+                                            first: Pipeline(
+                                              seq: [
+                                                Compound(CaseClause(CaseClauseCommand(
+                                                  value: Word(
+                                                    value: "${pattern}",
+                                                    loc: "[location]",
+                                                  ),
+                                                  cases: [
+                                                    CaseItem(
+                                                      patterns: [
+                                                        Word(
+                                                          value: "-[23]",
+                                                          loc: "[location]",
+                                                        ),
+                                                      ],
+                                                      cmd: Some(CompoundList([
+                                                        CompoundListItem(AndOrList(
+                                                          first: Pipeline(
+                                                            seq: [
+                                                              Simple(SimpleCommand(
+                                                                word_or_name: Some(Word(
+                                                                  value: "continue",
+                                                                  loc: "[location]",
+                                                                )),
+                                                              )),
+                                                            ],
+                                                          ),
+                                                        ), Sequence),
+                                                      ])),
+                                                      post_action: ExitCase,
+                                                      loc: "[location]",
+                                                    ),
+                                                  ],
+                                                  loc: "[location]",
+                                                )), None),
+                                              ],
+                                            ),
+                                          ), Sequence),
+                                        ]),
+                                        loc: "[location]",
+                                      ),
+                                      loc: "[location]",
+                                    )), None),
+                                  ],
+                                ),
+                              ), Sequence),
+                            ]),
+                            loc: "[location]",
+                          )), None),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Function(FunctionDefinition(
+                          fname: Word(
+                            value: "_set_impls",
+                            loc: "[location]",
+                          ),
+                          body: FunctionBody(BraceGroup(BraceGroupCommand(
+                            list: CompoundList([
+                              CompoundListItem(AndOrList(
+                                first: Pipeline(
+                                  seq: [
+                                    Simple(SimpleCommand(
+                                      word_or_name: Some(Word(
+                                        value: "local",
+                                        loc: "[location]",
+                                      )),
+                                      suffix: Some(CommandSuffix([
+                                        Word(Word(
+                                          value: "i",
+                                          loc: "[location]",
+                                        )),
+                                      ])),
+                                    )),
+                                  ],
+                                ),
+                              ), Sequence),
+                              CompoundListItem(AndOrList(
+                                first: Pipeline(
+                                  seq: [
+                                    Compound(IfClause(IfClauseCommand(
+                                      condition: CompoundList([
+                                        CompoundListItem(AndOrList(
+                                          first: Pipeline(
+                                            seq: [
+                                              ExtendedTest(ExtendedTestExprCommand(
+                                                expr: BinaryTest(ArithmeticGreaterThanOrEqualTo, Word(
+                                                  value: "${BASH_VERSINFO[0]}",
+                                                  loc: "[location]",
+                                                ), Word(
+                                                  value: "5",
+                                                  loc: "[location]",
+                                                )),
+                                                loc: "[location]",
+                                              ), None),
+                                            ],
+                                          ),
+                                        ), Sequence),
+                                      ]),
+                                      then: CompoundList([
+                                        CompoundListItem(AndOrList(
+                                          first: Pipeline(
+                                            seq: [
+                                              ExtendedTest(ExtendedTestExprCommand(
+                                                expr: BinaryTest(StringExactlyMatchesPattern, Word(
+                                                  value: "${COMPAT@a}",
+                                                  loc: "[location]",
+                                                ), Word(
+                                                  value: "*a*",
+                                                  loc: "[location]",
+                                                )),
+                                                loc: "[location]",
+                                              ), None),
+                                            ],
+                                          ),
+                                        ), Sequence),
+                                      ]),
+                                      elses: Some([
+                                        ElseClause(
+                                          body: CompoundList([
+                                            CompoundListItem(AndOrList(
+                                              first: Pipeline(
+                                                seq: [
+                                                  ExtendedTest(ExtendedTestExprCommand(
+                                                    expr: BinaryTest(StringExactlyMatchesPattern, Word(
+                                                      value: "$(declare -p COMPAT)",
+                                                      loc: "[location]",
+                                                    ), Word(
+                                                      value: "\"declare -a\"*",
+                                                      loc: "[location]",
+                                                    )),
+                                                    loc: "[location]",
+                                                  ), None),
+                                                ],
+                                              ),
+                                            ), Sequence),
+                                          ]),
+                                        ),
+                                      ]),
+                                      loc: "[location]",
+                                    )), None),
+                                  ],
+                                ),
+                              ), Sequence),
+                              CompoundListItem(AndOrList(
+                                first: Pipeline(
+                                  seq: [
+                                    Compound(IfClause(IfClauseCommand(
+                                      condition: CompoundList([
+                                        CompoundListItem(AndOrList(
+                                          first: Pipeline(
+                                            seq: [
+                                              ExtendedTest(ExtendedTestExprCommand(
+                                                expr: BinaryTest(ArithmeticNotEqualTo, Word(
+                                                  value: "${?}",
+                                                  loc: "[location]",
+                                                ), Word(
+                                                  value: "0",
+                                                  loc: "[location]",
+                                                )),
+                                                loc: "[location]",
+                                              ), None),
+                                            ],
+                                          ),
+                                        ), Sequence),
+                                      ]),
+                                      then: CompoundList([
+                                        CompoundListItem(AndOrList(
+                                          first: Pipeline(
+                                            seq: [
+                                              Simple(SimpleCommand(
+                                                word_or_name: Some(Word(
+                                                  value: "die",
+                                                  loc: "[location]",
+                                                )),
+                                                suffix: Some(CommandSuffix([
+                                                  Word(Word(
+                                                    value: "\'bad\'",
+                                                    loc: "[location]",
+                                                  )),
+                                                ])),
+                                              )),
+                                            ],
+                                          ),
+                                        ), Sequence),
+                                      ]),
+                                      loc: "[location]",
+                                    )), None),
+                                  ],
+                                ),
+                              ), Sequence),
+                            ]),
+                            loc: "[location]",
+                          )), None),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                ]),
+                loc: "[location]",
+              )), None),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

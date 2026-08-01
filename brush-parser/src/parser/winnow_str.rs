@@ -1,20 +1,24 @@
-//! String-based winnow parser
+//! String-based winnow parser - mirrors winnow.rs but takes &str instead of &[Token]
+//!
+//! This module converts the token-based winnow parser to work directly on strings.
+//! Each function is converted one at a time and tested against the original.
 
-use winnow::error::ContextError;
+#![allow(dead_code)]
 
-use crate::ast;
-use crate::parser::{ParserOptions, SourceInfo};
+mod and_or;
+mod arithmetic;
+mod commands;
+mod compound;
+mod extended_test;
+mod helpers;
+mod pipelines;
+mod position;
+mod program;
+mod redirections;
+mod types;
+mod words;
 
-/// Type alias for parser error
-type PError = winnow::error::ErrMode<ContextError>;
-
-/// Parse a shell program from a string with full source location tracking
-///
-/// This is not yet implemented.
-pub fn parse_program(
-    _input: &str,
-    _options: &ParserOptions,
-    _source_info: &SourceInfo,
-) -> Result<ast::Program, PError> {
-    unimplemented!("winnow string parser is not yet implemented")
-}
+// Re-export public API
+pub use position::PositionTracker;
+pub use program::parse_program;
+pub use types::{ParseContext, StrStream};

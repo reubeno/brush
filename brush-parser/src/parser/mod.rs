@@ -166,11 +166,6 @@ impl<R: std::io::BufRead> Parser<R> {
                 })?;
 
                 winnow_str::parse_program(&input_str, &self.options, &SourceInfo::default())
-                    .map_err(|_e| {
-                        // Convert winnow error to ParseError
-                        // TODO: Extract position information from winnow error
-                        crate::error::ParseError::ParsingAtEndOfInput
-                    })
             }
         }
     }
