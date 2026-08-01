@@ -25,12 +25,10 @@
 //!
 //! Intentional divergences from `bin!`, all of which are benign in our usage:
 //!
-//! * **No `exit`:** adapters return `i32` instead of calling
-//!   `std::process::exit`.
-//! * **Caller-supplied argv:** `args` is passed in rather than pulled from
-//!   `uucore::args_os()`.
-//! * **Simpler `LocalizationError` formatting:** we render with `Display`
-//!   rather than matching on `ParseResource` for snippet-aware output.
+//! * **No `exit`:** adapters return `i32` instead of calling `std::process::exit`.
+//! * **Caller-supplied argv:** `args` is passed in rather than pulled from `uucore::args_os()`.
+//! * **Simpler `LocalizationError` formatting:** we render with `Display` rather than matching on
+//!   `ParseResource` for snippet-aware output.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
