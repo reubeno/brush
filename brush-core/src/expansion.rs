@@ -12,7 +12,7 @@ use crate::arithmetic;
 use crate::arithmetic::ExpandAndEvaluate;
 use crate::braceexpansion;
 use crate::commands;
-use crate::env;
+use crate::env::{self, VarNameExt};
 use crate::error;
 use crate::escape;
 use crate::extensions;
@@ -755,7 +755,27 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         &mut self,
         word: &str,
     ) -> Result<patterns::Pattern, error::Error> {
-        let expansion = self.basic_expand(word).await?;
+        // A pattern operand must preserve unquoted backslashes so they can
+        // escape pattern metacharacters; the default `Strip` (correct for
+        // ordinary words) would turn e.g. `${var#[\!\^]}` into `[!^]` (a
+        // negated bracket) and `${var#\*}` into `${var#*}` (a wildcard). This
+        // method is reached both from the dedicated pattern entry point (which
+        // already sets `Preserve`) and from parameter expansion via the outer
+        // word's expander (which uses `Strip`), so force `Preserve` here.
+        //
+        // The operand is also not double-quoted text even when the enclosing
+        // `${...}` appears inside double quotes (`"${v#[\!\^]}"`): the backslash
+        // still quotes the pattern metacharacter. Clear `in_double_quotes` too,
+        // otherwise its escape-stripping short-circuit would defeat `Preserve`.
+        let saved_handling = std::mem::replace(
+            &mut self.unquoted_backslash_handling,
+            UnquotedBackslashHandling::Preserve,
+        );
+        let saved_in_quotes = std::mem::replace(&mut self.in_double_quotes, false);
+        let expansion = self.basic_expand(word).await;
+        self.unquoted_backslash_handling = saved_handling;
+        self.in_double_quotes = saved_in_quotes;
+        let expansion = expansion?;
 
         // TODO(IFS): Use IFS instead for separator?
         #[expect(unstable_name_collisions)]
@@ -1163,7 +1183,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::TildeExpr::UserHome(username) => {
                 Ok(sys::users::get_user_home_dir(username).map_or_else(
-                    || Cow::Owned(std::format!("~{username}")),
+                    || Cow::Owned(format!("~{username}")),
                     |p| Cow::Owned(p.to_string_lossy().to_string()),
                 ))
             }
@@ -1185,7 +1205,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 } else if *n == dir_stack_count {
                     Ok(self.shell.working_dir().to_string_lossy())
                 } else {
-                    Ok(Cow::Owned(std::format!("~-{n}")))
+                    Ok(Cow::Owned(format!("~-{n}")))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromTopOfDirStack { n, plus_used } => {
@@ -1201,7 +1221,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
 
                 let plus_or_nothing = if *plus_used { "+" } else { "" };
-                Ok(Cow::Owned(std::format!("~{plus_or_nothing}{n}")))
+                Ok(Cow::Owned(format!("~{plus_or_nothing}{n}")))
             }
         }
     }
@@ -1346,8 +1366,22 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     ) => Ok(expanded_parameter),
                     _ => {
                         let result = self.basic_expand_to_str(error_message).await?;
+                        // Format as "varname: message" to match bash's output.
+                        let var_name: Cow<'_, str> = match &parameter {
+                            brush_parser::word::Parameter::Named(n)
+                            | brush_parser::word::Parameter::NamedWithIndex { name: n, .. }
+                            | brush_parser::word::Parameter::NamedWithAllIndices {
+                                name: n, ..
+                            } => n.as_str().into(),
+                            other => format!("{other}").into(),
+                        };
+                        let message = if result.is_empty() {
+                            format!("{var_name}: parameter null or not set")
+                        } else {
+                            format!("{var_name}: {result}")
+                        };
                         let err: error::Error =
-                            error::ErrorKind::CheckedExpansionError(result).into();
+                            error::ErrorKind::CheckedExpansionError(message).into();
 
                         // Expansion errors are fatal per POSIX spec
                         Err(err.into_fatal())
@@ -1582,16 +1616,16 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                                 "="
                             };
 
-                            Ok(std::format!(
+                            Ok(format!(
                             "declare -{attr_str} {name}{equals_or_nothing}{assignable_value_str}"
                         )
                             .into())
                         }
                         ShellValue::String(_) => {
-                            Ok(std::format!("{name}={assignable_value_str}").into())
+                            Ok(format!("{name}={assignable_value_str}").into())
                         }
                         ShellValue::Unset(_) => {
-                            Ok(std::format!("declare -{attr_str} {name}").into())
+                            Ok(format!("declare -{attr_str} {name}").into())
                         }
                     }
                 } else {
@@ -1751,7 +1785,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 variable_name,
                 concatenate,
             } => {
-                let keys = if let Some((_, var)) = self.shell.env().get(variable_name) {
+                let resolved = self.resolve_nameref_or_self(variable_name.as_str());
+                let keys = if resolved.subscript().is_some() {
+                    // In bash, ${!ref[@]} where ref→arr[2] returns empty.
+                    vec![]
+                } else if let Some((_, var)) = self.shell.env().lookup(&resolved).get_direct() {
                     var.value().element_keys(self.shell)
                 } else {
                     vec![]
@@ -1775,39 +1813,48 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         parameter: &brush_parser::word::Parameter,
         value: T,
     ) -> Result<(), error::Error> {
-        let (variable_name, index) = match parameter {
-            brush_parser::word::Parameter::Named(name) => (name, None),
-            brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
-                    matches!(
-                        var.value(),
-                        ShellValue::AssociativeArray(_)
-                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                    )
-                } else {
-                    false
-                };
-
-                let index_to_use = self
-                    .expand_array_index(index.as_str(), is_set_assoc_array)
-                    .await?;
-                (name, Some(index_to_use))
+        // Resolve the nameref once upfront so the same resolved name is used
+        // for both the type check (associative array detection) and the write.
+        let resolved_name = match parameter {
+            brush_parser::word::Parameter::Named(name)
+            | brush_parser::word::Parameter::NamedWithIndex { name, .. } => {
+                self.shell.env().resolve_nameref(name)?
             }
             brush_parser::word::Parameter::Positional(_)
-            | brush_parser::word::Parameter::NamedWithAllIndices {
-                name: _,
-                concatenate: _,
-            }
+            | brush_parser::word::Parameter::NamedWithAllIndices { .. }
             | brush_parser::word::Parameter::Special(_) => {
                 return Err(error::ErrorKind::CannotAssignToSpecialParameter.into());
             }
         };
 
+        let index = match parameter {
+            brush_parser::word::Parameter::NamedWithIndex { index, .. } => {
+                let is_set_assoc_array =
+                    if let Some((_, var)) = self.shell.env().lookup(&resolved_name).get_direct() {
+                        matches!(
+                            var.value(),
+                            ShellValue::AssociativeArray(_)
+                                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                        )
+                    } else {
+                        false
+                    };
+
+                Some(
+                    self.expand_array_index(index.as_str(), is_set_assoc_array)
+                        .await?,
+                )
+            }
+            _ => None,
+        };
+
+        // Name is already resolved — use the bypassing variant to avoid
+        // redundant nameref resolution inside update_or_add.
         let value = value.into();
 
         if let Some(index) = index {
             self.shell.env_mut().update_or_add_array_element(
-                variable_name,
+                resolved_name.into_name(),
                 index,
                 value,
                 |_| Ok(()),
@@ -1816,7 +1863,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             )
         } else {
             self.shell.env_mut().update_or_add(
-                variable_name,
+                resolved_name.into_name().direct(),
                 variables::ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
@@ -1848,21 +1895,82 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let (name, index) = match parameter {
             brush_parser::word::Parameter::Positional(_)
             | brush_parser::word::Parameter::Special(_) => (None, None),
-            brush_parser::word::Parameter::Named(name) => (Some(name.to_owned()), Some("0".into())),
+            brush_parser::word::Parameter::Named(name) => {
+                // Resolve nameref chain so that transformations like @A
+                // report the target's name, not the nameref's name.
+                let resolved = self.resolve_nameref_or_self(name);
+                let idx = resolved
+                    .subscript()
+                    .map_or_else(|| "0".to_owned(), str::to_owned);
+                (Some(resolved.into_name()), Some(idx))
+            }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                (Some(name.to_owned()), Some(index.to_owned()))
+                // Resolve nameref so transformations report the target's name.
+                // Subscripted namerefs (ref→arr[2]) with explicit subscript are
+                // treated as unset in bash, so leave the name unresolved.
+                let resolved = self.resolve_nameref_or_self(name);
+                if resolved.subscript().is_some() {
+                    (Some(name.to_owned()), Some(index.to_owned()))
+                } else {
+                    (Some(resolved.into_name()), Some(index.to_owned()))
+                }
             }
             brush_parser::word::Parameter::NamedWithAllIndices {
                 name,
                 concatenate: _concatenate,
-            } => (Some(name.to_owned()), None),
+            } => {
+                let resolved = self.resolve_nameref_or_self(name);
+                if resolved.subscript().is_some() {
+                    (Some(name.to_owned()), None)
+                } else {
+                    (Some(resolved.into_name()), None)
+                }
+            }
         };
 
-        let var = name
-            .as_ref()
-            .and_then(|name| self.shell.env().get(name).map(|(_, var)| var.clone()));
+        // Name is already resolved — use get_resolved to avoid redundant nameref resolution.
+        let var = name.as_ref().and_then(|name| {
+            self.shell
+                .env()
+                .lookup(env::ResolvedName::already_resolved(name.as_str()))
+                .get_direct()
+                .map(|(_, var)| var.clone())
+        });
 
         (name, index, var)
+    }
+
+    /// Emits a nameref resolution warning to stderr, matching bash's format:
+    /// `"bash: warning: ref: circular name reference"`.
+    fn warn_nameref_error(&self, err: &error::Error) {
+        let shell_name = self
+            .shell
+            .current_shell_name()
+            .unwrap_or_else(|| "brush".into());
+        let _ = writeln!(
+            self.params.stderr(self.shell),
+            "{shell_name}: warning: {err}",
+        );
+    }
+
+    /// Resolves a nameref, emitting a warning and falling back to an identity
+    /// result on circular references.
+    ///
+    /// Circular namerefs produce a warning to stderr (matching bash's format)
+    /// and are treated as unresolved: the original name is returned with no
+    /// subscript, producing an empty/unset expansion.
+    ///
+    /// See the "Circular-nameref error handling policy" comment in `env.rs`
+    /// for why this is the warn+fallback variant (as opposed to
+    /// `resolve_nameref_or_default` which is silent).
+    fn resolve_nameref_or_self(&self, name: &str) -> env::ResolvedName {
+        match self.shell.env().resolve_nameref(name) {
+            Ok(resolved) => resolved,
+            Err(err) => {
+                self.warn_nameref_error(&err);
+                env::ResolvedName::already_resolved(name)
+            }
+        }
     }
 
     fn undefined_expansion(
@@ -1903,19 +2011,40 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         indirect: bool,
         allow_unset_vars: bool,
     ) -> Result<Expansion, error::Error> {
+        if !indirect {
+            return self
+                .expand_parameter_without_indirect(parameter, allow_unset_vars)
+                .await;
+        }
+
+        // For namerefs, ${!ref} returns the *fully resolved* target name
+        // (i.e., the final non-nameref variable in the chain), not indirect
+        // expansion through the value.  For example, if top→middle→ultimate,
+        // ${!top} returns "ultimate", not "middle".
+        if let brush_parser::word::Parameter::Named(n) = parameter {
+            if let Some((_, var)) = self.shell.env().lookup(n.direct()).get_direct() {
+                if var.is_treated_as_nameref() {
+                    if let Ok(resolved) = self.shell.env().resolve_nameref_to_name(n) {
+                        if resolved.as_str() != n.as_str() {
+                            return Ok(Expansion::from(resolved));
+                        }
+                    }
+                }
+            }
+        }
+
+        // If we reach here, `parameter` is NOT a nameref (or is a nameref that
+        // couldn't be resolved). Fall through to standard indirect expansion:
+        // expand the parameter to get a name, then expand that name as a parameter.
         let expansion = self
             .expand_parameter_without_indirect(parameter, allow_unset_vars)
             .await?;
-        if !indirect {
-            Ok(expansion)
-        } else {
-            let parameter_str: String = self.fields_to_string(expansion);
-            let inner_parameter =
-                brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
+        let parameter_str: String = self.fields_to_string(expansion);
+        let inner_parameter =
+            brush_parser::word::parse_parameter(parameter_str.as_str(), &self.parser_options)?;
 
-            self.expand_parameter_without_indirect(&inner_parameter, allow_unset_vars)
-                .await
-        }
+        self.expand_parameter_without_indirect(&inner_parameter, allow_unset_vars)
+            .await
     }
 
     async fn expand_parameter_without_indirect(
@@ -1938,92 +2067,169 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::Parameter::Special(s) => Ok(self.expand_special_parameter(s)),
             brush_parser::word::Parameter::Named(n) => {
-                if !env::valid_variable_name(n.as_str()) {
-                    Err(error::ErrorKind::BadSubstitution(n.clone()).into())
-                } else if let Some((_, var)) = self.shell.env().get(n) {
-                    if matches!(var.value(), ShellValue::Unset(_)) {
-                        self.undefined_expansion(parameter, allow_unset_vars)
-                    } else {
-                        let value = var.value().try_get_cow_str(self.shell);
-                        if let Some(value) = value {
-                            Ok(Expansion::from(value.to_string()))
-                        } else {
-                            self.undefined_expansion(parameter, allow_unset_vars)
-                        }
-                    }
-                } else {
-                    self.undefined_expansion(parameter, allow_unset_vars)
-                }
+                self.expand_named_parameter(parameter, n, allow_unset_vars)
+                    .await
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                // First check to see if it's an associative array.
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
-                    matches!(
-                        var.value(),
-                        ShellValue::AssociativeArray(_)
-                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                    )
-                } else {
-                    false
-                };
-
-                // Figure out which index to use.
-                let index_to_use = self
-                    .expand_array_index(index.as_str(), is_set_assoc_array)
-                    .await?;
-
-                // Index into the array.
-                if let Some((_, var)) = self.shell.env().get(name)
-                    && let Ok(Some(value)) = var.value().get_at(index_to_use.as_str(), self.shell)
-                {
-                    Ok(Expansion::from(value.to_string()))
-                } else {
+                let resolved = self.resolve_nameref_or_self(name);
+                if resolved.subscript().is_some() {
+                    // In bash, explicit subscripts on subscripted namerefs
+                    // (e.g., ${ref[0]} where ref→arr[2]) yield unset/empty.
                     self.undefined_expansion(parameter, allow_unset_vars)
+                } else {
+                    self.expand_named_array_element(parameter, &resolved, index, allow_unset_vars)
+                        .await
                 }
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
-                if let Some((_, var)) = self.shell.env().get(name) {
-                    // Resolve a dynamic value once, so the kind and the element values
-                    // can't disagree: a getter like RANDOM's changes on every read.
-                    let resolved;
-                    let value = match var.value() {
-                        ShellValue::Dynamic { getter, .. } => {
-                            resolved = getter(self.shell);
-                            &resolved
-                        }
-                        other => other,
-                    };
-                    let fields =
-                        list_element_fields(value.element_values(self.shell), value.is_array());
-
-                    Ok(Expansion {
-                        fields,
-                        concatenate: *concatenate,
-                        kind: match value {
-                            // Slicing addresses an indexed array by subscript, so it needs
-                            // the subscripts themselves and not just the element count.
-                            ShellValue::IndexedArray(array) => {
-                                ExpansionKind::IndexedArray(array.keys().copied().collect())
-                            }
-                            // A scalar written `${x[@]}`: bash slices it as a string.
-                            ShellValue::String(_) => ExpansionKind::ScalarAsArray,
-                            // Associative arrays land here. bash documents substring
-                            // expansion of one as producing undefined results -- it
-                            // selects from an offset of 1 rather than 0 -- so we
-                            // deliberately address them like any other element list.
-                            _ => ExpansionKind::ElementList,
-                        },
-                        undefined: false,
-                    })
-                } else {
+                let resolved = self.resolve_nameref_or_self(name);
+                if resolved.subscript().is_some() {
+                    // In bash, [@]/[*] on a subscripted nameref (e.g.,
+                    // ${ref[@]} where ref→arr[2]) returns empty, not the
+                    // element value.
                     Ok(Expansion {
                         fields: vec![],
                         concatenate: *concatenate,
                         kind: ExpansionKind::ElementList,
                         undefined: false,
                     })
+                } else {
+                    Ok(self.expand_all_indices(&resolved, *concatenate))
                 }
             }
+        }
+    }
+
+    async fn expand_named_parameter(
+        &mut self,
+        parameter: &brush_parser::word::Parameter,
+        n: &str,
+        allow_unset_vars: bool,
+    ) -> Result<Expansion, error::Error> {
+        if !env::valid_variable_name(n) {
+            return Err(error::ErrorKind::BadSubstitution(n.to_owned()).into());
+        }
+
+        // Resolve the nameref chain once; use get_raw below to avoid redundant
+        // resolution inside get().
+        let resolved = match self.shell.env().resolve_nameref(n) {
+            Ok(resolved) => resolved,
+            Err(err) => {
+                self.warn_nameref_error(&err);
+                return self.undefined_expansion(parameter, allow_unset_vars);
+            }
+        };
+
+        // If the nameref resolved to a different name, check for array subscripts.
+        if resolved.name() != n {
+            if let Some(idx) = resolved.subscript() {
+                // Strip the subscript for lookups that target the base variable.
+                let base_resolved = resolved.without_subscript();
+                if idx == "@" || idx == "*" {
+                    return Ok(self.expand_all_indices(&base_resolved, idx == "*"));
+                }
+                return self
+                    .expand_named_array_element(parameter, &base_resolved, idx, allow_unset_vars)
+                    .await;
+            }
+        }
+
+        // Name is already resolved — use lookup to skip redundant nameref resolution.
+        if let Some((_, var)) = self.shell.env().lookup(&resolved).get_direct() {
+            if matches!(var.value(), ShellValue::Unset(_)) {
+                self.undefined_expansion(parameter, allow_unset_vars)
+            } else {
+                let value = var.value().try_get_cow_str(self.shell);
+                if let Some(value) = value {
+                    Ok(Expansion::from(value.to_string()))
+                } else {
+                    self.undefined_expansion(parameter, allow_unset_vars)
+                }
+            }
+        } else {
+            self.undefined_expansion(parameter, allow_unset_vars)
+        }
+    }
+
+    /// Expands `${name[@]}` or `${name[*]}`. The `name` must already be resolved
+    /// through any nameref chain — this method uses `lookup()` with the
+    /// already-resolved name to avoid redundant or lossy re-resolution.
+    fn expand_all_indices(&self, resolved: &env::ResolvedName, concatenate: bool) -> Expansion {
+        let Some((_, var)) = self.shell.env().lookup(resolved).get_direct() else {
+            return Expansion {
+                fields: vec![],
+                concatenate,
+                kind: ExpansionKind::ElementList,
+                undefined: false,
+            };
+        };
+
+        // Resolve a dynamic value once, so the kind and the element values can't
+        // disagree: a getter like RANDOM's changes on every read.
+        let dynamic;
+        let value = match var.value() {
+            ShellValue::Dynamic { getter, .. } => {
+                dynamic = getter(self.shell);
+                &dynamic
+            }
+            other => other,
+        };
+        let fields = list_element_fields(value.element_values(self.shell), value.is_array());
+
+        Expansion {
+            fields,
+            concatenate,
+            kind: match value {
+                // Slicing addresses an indexed array by subscript, so it needs the
+                // subscripts themselves and not just the element count.
+                ShellValue::IndexedArray(array) => {
+                    ExpansionKind::IndexedArray(array.keys().copied().collect())
+                }
+                // A scalar written `${x[@]}`: bash slices it as a string.
+                ShellValue::String(_) => ExpansionKind::ScalarAsArray,
+                // Associative arrays land here. bash documents substring expansion of
+                // one as producing undefined results -- it selects from an offset of 1
+                // rather than 0 -- so we deliberately address them like any other
+                // element list.
+                _ => ExpansionKind::ElementList,
+            },
+            undefined: false,
+        }
+    }
+
+    /// Expands a named array element like `${name[index]}`. The `name` must already
+    /// be resolved through any nameref chain — this method uses `get_resolved()` to
+    /// avoid redundant or lossy re-resolution.
+    async fn expand_named_array_element(
+        &mut self,
+        parameter: &brush_parser::word::Parameter,
+        resolved: &env::ResolvedName,
+        index: &str,
+        allow_unset_vars: bool,
+    ) -> Result<Expansion, error::Error> {
+        let is_assoc = self
+            .shell
+            .env()
+            .lookup(resolved)
+            .get_direct()
+            .is_some_and(|(_, v)| {
+                matches!(
+                    v.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                        | ShellValue::Dynamic {
+                            kind: variables::DynamicValueKind::AssociativeArray,
+                            ..
+                        }
+                )
+            });
+        let index_to_use = self.expand_array_index(index, is_assoc).await?;
+        if let Some((_, var)) = self.shell.env().lookup(resolved).get_direct()
+            && let Ok(Some(value)) = var.value().get_at(&index_to_use, self.shell)
+        {
+            Ok(Expansion::from(value.to_string()))
+        } else {
+            self.undefined_expansion(parameter, allow_unset_vars)
         }
     }
 
@@ -2406,6 +2612,33 @@ mod tests {
         assert_eq!(
             expand("{a,b{1,2}}"),
             Some(vec!["a".into(), "b1".into(), "b2".into()])
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_field_splitting() -> Result<()> {
+        let mut shell = crate::shell::Shell::builder().build().await?;
+        let params = shell.default_exec_params();
+        let expander = WordExpander::new(&mut shell, &params);
+
+        let expansion = Expansion {
+            fields: vec![
+                WordField(vec![ExpansionPiece::Unsplittable("A".into())]),
+                WordField(vec![ExpansionPiece::Unsplittable(String::new())]),
+            ],
+            ..Expansion::default()
+        };
+
+        let fields = expander.split_fields(expansion);
+
+        assert_eq!(
+            fields,
+            vec![
+                WordField(vec![ExpansionPiece::Unsplittable(String::from("A"))]),
+                WordField(vec![ExpansionPiece::Unsplittable(String::new())])
+            ]
         );
 
         Ok(())
