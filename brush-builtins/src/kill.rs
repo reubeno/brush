@@ -27,6 +27,8 @@ pub(crate) struct KillCommand {
 }
 
 impl builtins::Command for KillCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -38,7 +40,6 @@ impl builtins::Command for KillCommand {
         // Default signal is SIGKILL.
         let mut trap_signal = TrapSignal::Signal(nix::sys::signal::Signal::SIGKILL);
 
-        // Try parsing the signal name (if specified).
         if let Some(signal_name) = &self.signal_name {
             if let Ok(parsed_trap_signal) = TrapSignal::try_from(signal_name.as_str()) {
                 trap_signal = parsed_trap_signal;
@@ -53,7 +54,6 @@ impl builtins::Command for KillCommand {
             }
         }
 
-        // Try parsing the signal number (if specified).
         if let Some(signal_number) = &self.signal_number {
             if *signal_number == 0 {
                 signal_zero = true;
@@ -74,7 +74,6 @@ impl builtins::Command for KillCommand {
             }
         }
 
-        // Look through the remaining args for a pid/job spec or a -sigspec style option.
         let mut pid_or_job_spec = None;
         for arg in &self.args {
             // See if this is -sigspec syntax. The sigspec may be a signal name
@@ -107,7 +106,7 @@ impl builtins::Command for KillCommand {
         }
 
         if self.list_signals {
-            return print_signals(&context, self.args.as_ref());
+            return print_signals(&context, self.args.as_ref()).await;
         } else {
             let Some(pid_or_job_spec) = pid_or_job_spec else {
                 writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
@@ -115,7 +114,6 @@ impl builtins::Command for KillCommand {
             };
 
             if pid_or_job_spec.starts_with('%') {
-                // It's a job spec.
                 if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
                     if signal_zero {
                         job.check_signalable()?;
@@ -146,22 +144,22 @@ impl builtins::Command for KillCommand {
     }
 }
 
-fn print_signals(
+async fn print_signals(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     signals: &[String],
 ) -> Result<ExecutionResult, brush_core::Error> {
     let mut exit_code = ExecutionResult::success();
+    let mut output = Vec::new();
+    let mut stderr_output = Vec::new();
+
     if !signals.is_empty() {
         for s in signals {
-            // If the user gives us a code, we print the name; if they give a name, we print its
-            // code.
             enum PrintSignal {
                 Name(&'static str),
                 Num(i32),
             }
 
             let signal = if let Ok(n) = s.parse::<i32>() {
-                // bash compatibility. `SIGHUP` -> `HUP`
                 TrapSignal::try_from(n).map(|s| {
                     PrintSignal::Name(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
                 })
@@ -173,23 +171,40 @@ fn print_signals(
 
             match signal {
                 Ok(PrintSignal::Num(n)) => {
-                    writeln!(context.stdout(), "{n}")?;
+                    writeln!(output, "{n}")?;
                 }
                 Ok(PrintSignal::Name(s)) => {
-                    writeln!(context.stdout(), "{s}")?;
+                    writeln!(output, "{s}")?;
                 }
                 Err(e) => {
-                    writeln!(context.stderr(), "{e}")?;
+                    writeln!(stderr_output, "{e}")?;
                     exit_code = ExecutionResult::general_error();
                 }
             }
         }
     } else {
-        return brush_core::traps::format_signals(
-            context.stdout(),
+        let result = brush_core::traps::format_signals(
+            &mut output,
             TrapSignal::iterator().filter(|s| !matches!(s, TrapSignal::Exit)),
-        )
-        .map(|()| ExecutionResult::success());
+        );
+        if result.is_err() {
+            return result.map(|()| ExecutionResult::success());
+        }
+    }
+
+    if !output.is_empty() {
+        if let Some(mut stdout) = context.stdout_async() {
+            stdout.write_all(&output).await?;
+            stdout.flush().await?;
+        } else {
+            context.stdout().write_all(&output)?;
+            context.stdout().flush()?;
+        }
+    }
+
+    if !stderr_output.is_empty() {
+        context.stderr().write_all(&stderr_output)?;
+        context.stderr().flush()?;
     }
 
     Ok(exit_code)
