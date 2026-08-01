@@ -72,6 +72,73 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
+
+    /// Returns a shared reference to the state of the currently executing builtin.
+    ///
+    /// Uses `self.command_name` as the lookup key and `B::State` as the expected
+    /// type. Returns `Err` if no state is registered for this builtin name, which
+    /// should be structurally impossible when the builtin was registered via
+    /// [`Shell::register_builtin`].
+    pub fn builtin_state<B: builtins::Command>(&self) -> Result<&B::State, error::Error> {
+        self.shell
+            .builtin_state_of::<B>(&self.command_name)
+            .ok_or_else(|| {
+                error::ErrorKind::BuiltinStateNotRegistered(self.command_name.clone()).into()
+            })
+    }
+
+    /// Returns an exclusive reference to the state of the currently executing builtin.
+    ///
+    /// Uses `self.command_name` as the lookup key and `B::State` as the expected
+    /// type. Returns `Err` if no state is registered for this builtin name, which
+    /// should be structurally impossible when the builtin was registered via
+    /// [`Shell::register_builtin`].
+    ///
+    /// The caller must drop the returned reference before calling any other
+    /// `&mut Shell` method (including `source_script`), so that re-entrant
+    /// builtin invocations can access state independently.
+    pub fn builtin_state_mut<B: builtins::Command>(
+        &mut self,
+    ) -> Result<&mut B::State, error::Error> {
+        let name = self.command_name.clone();
+        self.shell
+            .builtin_state_mut_of::<B>(&name)
+            .ok_or_else(|| error::ErrorKind::BuiltinStateNotRegistered(name).into())
+    }
+
+    /// Returns the file descriptor as an async file. Returns `None`
+    /// if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(&self, fd: ShellFd) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_fd_async(self.shell, fd)
+    }
+
+    /// Returns the standard input as an async file.
+    pub fn stdin_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_stdin_async(self.shell)
+    }
+
+    /// Returns the standard output as an async file.
+    pub fn stdout_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_stdout_async(self.shell)
+    }
+
+    /// Returns the standard error as an async file.
+    pub fn stderr_async(&self) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.params.try_stderr_async(self.shell)
+    }
+
+    /// Returns a shared reference to the cross-builtin shared state of type `T`.
+    ///
+    /// Returns `Err` if no shared state of that type has been registered.
+    /// Use interior mutability (e.g. `Mutex`, `papaya::HashMap`, atomics)
+    /// if you need to mutate through the returned reference.
+    pub fn shared<T: Clone + Send + Sync + 'static>(&self) -> Result<&T, error::Error> {
+        self.shell.get_shared::<T>()
+    }
 }
 
 /// An argument to a command.
