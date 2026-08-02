@@ -659,7 +659,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             if let Some(cur_token_value) = &cur_token.token {
                 state.append_str(cur_token_value.to_str());
 
-                if matches!(cur_token_value, Token::Operator(o, _) if o == nesting_open) {
+                // A '(' in the AfterIn state is a POSIX case-pattern opening
+                // paren (e.g. `(foo)`), not a nesting open. Its matching ')' is
+                // consumed by the AfterIn->InBody transition below without
+                // decrementing nesting_count, so don't increment it here either.
+                if matches!(cur_token_value, Token::Operator(o, _) if o == nesting_open)
+                    && !matches!(case_state, CaseState::AfterIn)
+                {
                     nesting_count += 1;
                 }
 
