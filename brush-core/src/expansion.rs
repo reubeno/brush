@@ -718,16 +718,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         // (concatenate, from_array) from the inner expansion. Essential for "${arr[@]}"
         // where concatenate=false means each element is a separate arg.
         if brace_words.len() == 1 {
-            let brace_word = brace_words.into_iter().next().unwrap();
-
             // Expand: tildes, parameters, command substitutions, arithmetic.
             // Heredoc mode only affects top-level parsing (literal quotes); recursive
             // expansion of parameter words (e.g., ${var:-"default"}) uses normal semantics.
             let pieces = if self.heredoc_mode {
                 self.heredoc_mode = false;
-                brush_parser::word::parse_heredoc(brace_word.as_ref(), &self.parser_options)?
+                brush_parser::word::parse_heredoc(brace_words[0].as_ref(), &self.parser_options)?
             } else {
-                brush_parser::word::parse(brace_word.as_ref(), &self.parser_options)?
+                brush_parser::word::parse(brace_words[0].as_ref(), &self.parser_options)?
             };
 
             let mut expansions = Vec::with_capacity(pieces.len());
