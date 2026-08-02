@@ -150,7 +150,10 @@ echo "$X"
     };
     // PEG parser is known to fail on this pattern.
     let result = parse_with_config(input, &config);
-    assert!(result.is_err(), "expected PEG parser to fail on heredoc with ) inside $()");
+    assert!(
+        result.is_err(),
+        "expected PEG parser to fail on heredoc with ) inside $()"
+    );
 }
 
 #[cfg(feature = "winnow-parser")]
@@ -189,7 +192,10 @@ fn parse_here_doc_tab_stripped_with_parens_in_command_substitution_peg() {
         parser_impl: ParserImpl::Peg,
     };
     let result = parse_with_config(input, &config);
-    assert!(result.is_err(), "expected PEG parser to fail on heredoc with ) inside $()");
+    assert!(
+        result.is_err(),
+        "expected PEG parser to fail on heredoc with ) inside $()"
+    );
 }
 
 #[cfg(feature = "winnow-parser")]
@@ -230,7 +236,10 @@ fn parse_here_doc_in_command_substitution_eclass_pattern_peg() {
         parser_impl: ParserImpl::Peg,
     };
     let result = parse_with_config(input, &config);
-    assert!(result.is_err(), "expected PEG parser to fail on eclass heredoc pattern");
+    assert!(
+        result.is_err(),
+        "expected PEG parser to fail on eclass heredoc pattern"
+    );
 }
 
 #[cfg(feature = "winnow-parser")]
