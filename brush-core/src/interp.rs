@@ -249,7 +249,7 @@ impl Execute for ast::CompoundList {
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
-                let job = spawn_async_ao_list_in_task(ao_list, shell, params);
+                let job = start_background_ao_list(ao_list, shell, params).await?;
                 let job_formatted = job.to_pid_style_string();
 
                 if shell.options().interactive && !shell.is_subshell() {
@@ -273,23 +273,74 @@ impl Execute for ast::CompoundList {
     }
 }
 
-fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
+/// Starts an async (`&`-suffixed) and-or list as a background job.
+///
+/// When the list is a single simple external command (no pipes, no
+/// compound commands, no overrides via aliases/builtins/functions, and
+/// no expansion that would re-enter the executor), we take a fast path
+/// that spawns the OS process directly and registers its PID in the jobs
+/// table. This guarantees the child is launched even if the parent shell
+/// exits before the executor has a chance to drive the job to completion
+/// (see issue #1079).
+///
+/// Otherwise we fall back to wrapping the entire list's execution in a
+/// `tokio::spawn` task, which preserves full shell semantics for compound
+/// statements, builtins, etc., at the cost of needing the runtime to
+/// continue polling until the job makes progress.
+async fn start_background_ao_list<'a, SE: extensions::ShellExtensions>(
     ao_list: &ast::AndOrList,
     shell: &'a mut Shell<SE>,
     params: &ExecutionParameters,
+) -> Result<&'a jobs::Job, error::Error> {
+    let background_params = background_job_params(params);
+
+    if is_simple_external_background_candidate(ao_list, shell) {
+        let mut child_shell = shell.clone();
+        child_shell.options_mut().interactive = false;
+
+        let spawn_results =
+            spawn_pipeline_processes(&ao_list.first, &mut child_shell, &background_params).await?;
+
+        let mut tasks = Vec::new();
+        for spawn_result in spawn_results {
+            match spawn_result {
+                ExecutionSpawnResult::StartedProcess(child) => {
+                    tasks.push(jobs::JobTask::External(child));
+                }
+                ExecutionSpawnResult::StartedTask(handle) => {
+                    tasks.push(jobs::JobTask::Internal(handle));
+                }
+                ExecutionSpawnResult::Completed(_) => {}
+            }
+        }
+
+        if !tasks.is_empty() {
+            return Ok(shell.jobs_mut().add_as_current(jobs::Job::new(
+                tasks,
+                ao_list.to_string(),
+                jobs::JobState::Running,
+            )));
+        }
+    }
+
+    Ok(spawn_async_ao_list_in_task(
+        ao_list,
+        shell,
+        background_params,
+    ))
+}
+
+fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
+    ao_list: &ast::AndOrList,
+    shell: &'a mut Shell<SE>,
+    cloned_params: ExecutionParameters,
 ) -> &'a jobs::Job {
     // Clone the inputs.
     let mut cloned_shell = shell.clone();
-    let mut cloned_params = params.clone();
     let cloned_ao_list = ao_list.clone();
 
     // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
     cloned_shell.options_mut().interactive = false;
-
-    // Redirect stdin to null, per spec.
-    if let Ok(null) = openfiles::null() {
-        cloned_params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
-    }
 
     let join_handle = tokio::spawn(async move {
         cloned_ao_list
@@ -302,6 +353,239 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
         ao_list.to_string(),
         jobs::JobState::Running,
     ))
+}
+
+/// Builds the `ExecutionParameters` to use for an async (`&`) job.
+///
+/// POSIX requires that an asynchronous command's standard input be
+/// redirected from `/dev/null` if it isn't otherwise overridden by a
+/// redirection on the command itself, so the child can never accidentally
+/// inherit the controlling terminal's stdin.
+fn background_job_params(params: &ExecutionParameters) -> ExecutionParameters {
+    let mut params = params.clone();
+
+    if let Ok(null) = openfiles::null() {
+        params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
+    }
+
+    params
+}
+
+/// Returns `true` iff the list is shaped such that it can be safely
+/// spawned via the direct-spawn fast path in [`start_background_ao_list`].
+///
+/// The fast path is only applicable when:
+/// 1. The list has no `&&` / `||` continuations.
+/// 2. Its sole pipeline is a single simple command (not negated, not
+///    timed, not piped).
+/// 3. The command's name is a literal that survives every expansion
+///    stage unchanged (see [`is_plain_command_name`]).
+/// 4. None of its words / redirections trigger command or process
+///    substitution, which would re-enter the executor at expansion time.
+/// 5. The literal command name does not resolve to an alias, an enabled
+///    builtin, or a shell function — those overrides must take effect
+///    via the regular (slow) execution path.
+fn is_simple_external_background_candidate<SE: extensions::ShellExtensions>(
+    ao_list: &ast::AndOrList,
+    shell: &Shell<SE>,
+) -> bool {
+    if !ao_list.additional.is_empty() {
+        return false;
+    }
+
+    let pipeline = &ao_list.first;
+    if pipeline.timed.is_some() || pipeline.bang || pipeline.seq.len() != 1 {
+        return false;
+    }
+
+    let ast::Command::Simple(simple) = &pipeline.seq[0] else {
+        return false;
+    };
+
+    let Some(command_name) = simple.word_or_name.as_ref().map(|w| w.value.as_str()) else {
+        return false;
+    };
+
+    is_plain_command_name(command_name, shell)
+        && !simple_command_has_deferred_expansion(simple)
+        && !shell.aliases().contains_key(command_name)
+        && shell
+            .builtins()
+            .get(command_name)
+            .is_none_or(|registration| registration.disabled)
+        && shell.funcs().get(command_name).is_none()
+}
+
+/// Returns `true` iff `name`, used as the name of a simple command, would
+/// pass through every shell expansion stage (quote removal, parameter /
+/// command / arithmetic expansion, tilde and brace expansion, pathname
+/// expansion, and field splitting) unchanged.
+///
+/// The fast path in [`start_background_ao_list`] relies on this property
+/// to (a) hand `name` directly to the OS process spawner and (b) probe
+/// the shell's alias / builtin / function tables with the same string.
+/// If any expansion stage would alter the value — or split it into
+/// multiple fields — we have to use the regular execution path so the
+/// expanded command can be looked up properly.
+///
+/// Detection delegates to the existing parser/pattern infrastructure
+/// (the single source of truth for what constitutes an expansion or
+/// glob metacharacter) rather than maintaining a hand-curated list of
+/// special characters.
+fn is_plain_command_name<SE: extensions::ShellExtensions>(name: &str, shell: &Shell<SE>) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+
+    // Field splitting: reject anything that would be split into multiple
+    // fields by the current `IFS`. We must compare against the live IFS
+    // (not just whitespace) because a custom value such as `IFS=/` would
+    // split a name like `/bin/echo`.
+    let ifs = shell.ifs();
+    if name.chars().any(|c| ifs.contains(c)) {
+        return false;
+    }
+
+    let parser_options = shell.parser_options();
+
+    // Word-level expansion: quote removal, parameter / command /
+    // arithmetic expansion, tilde expansion, escape sequences. The word
+    // must parse as a single literal text piece equal to its input;
+    // anything else means expansion would alter it.
+    let Ok(pieces) = brush_parser::word::parse(name, &parser_options) else {
+        return false;
+    };
+    let [piece] = pieces.as_slice() else {
+        return false;
+    };
+    let brush_parser::word::WordPiece::Text(text) = &piece.piece else {
+        return false;
+    };
+    if text != name {
+        return false;
+    }
+
+    // Brace expansion: the brace parser always wraps non-empty input in
+    // `Some(_)`, with literal pieces represented as `Text` and actual
+    // brace expressions as `Expr`. Only the latter mean expansion would
+    // change the word.
+    if let Ok(Some(brace_pieces)) =
+        brush_parser::word::parse_brace_expansions(name, &parser_options)
+        && brace_pieces
+            .iter()
+            .any(|p| matches!(p, brush_parser::word::BraceExpressionOrText::Expr(_)))
+    {
+        return false;
+    }
+
+    // Pathname (glob) expansion.
+    !brush_parser::pattern::pattern_has_glob_metacharacters(
+        name,
+        parser_options.enable_extended_globbing,
+    )
+}
+
+/// Returns `true` iff any word in `simple` (the command name, any
+/// prefix assignments, redirections, or trailing arguments) would
+/// trigger command substitution (`$(...)` / backticks) or process
+/// substitution (`<(...)` / `>(...)`) during expansion.
+///
+/// Such constructs can re-enter the executor synchronously at expansion
+/// time, so taking the direct-spawn fast path could observably reorder
+/// effects relative to the regular execution path. When this returns
+/// `true`, the caller falls back to the standard background execution
+/// path that spins up a tokio task.
+fn simple_command_has_deferred_expansion(simple: &ast::SimpleCommand) -> bool {
+    simple
+        .word_or_name
+        .as_ref()
+        .is_some_and(word_has_deferred_expansion)
+        || simple
+            .prefix
+            .as_ref()
+            .is_some_and(|prefix| command_items_have_deferred_expansion(&prefix.0))
+        || simple
+            .suffix
+            .as_ref()
+            .is_some_and(|suffix| command_items_have_deferred_expansion(&suffix.0))
+}
+
+/// Returns `true` if any item in a command's prefix or suffix would
+/// trigger command or process substitution during expansion. See
+/// [`simple_command_has_deferred_expansion`].
+fn command_items_have_deferred_expansion(items: &[CommandPrefixOrSuffixItem]) -> bool {
+    items.iter().any(command_item_has_deferred_expansion)
+}
+
+/// Returns `true` if a single prefix/suffix item — a redirection, a
+/// word argument, an assignment word, or a process substitution —
+/// would trigger command or process substitution during expansion.
+fn command_item_has_deferred_expansion(item: &CommandPrefixOrSuffixItem) -> bool {
+    match item {
+        CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
+            io_redirect_has_deferred_expansion(redirect)
+        }
+        CommandPrefixOrSuffixItem::Word(word) => word_has_deferred_expansion(word),
+        CommandPrefixOrSuffixItem::AssignmentWord(assignment, word) => {
+            assignment_has_deferred_expansion(assignment) || word_has_deferred_expansion(word)
+        }
+        CommandPrefixOrSuffixItem::ProcessSubstitution(..) => true,
+    }
+}
+
+/// Returns `true` if the right-hand side of a variable assignment
+/// would trigger command or process substitution during expansion.
+fn assignment_has_deferred_expansion(assignment: &ast::Assignment) -> bool {
+    assignment_value_has_deferred_expansion(&assignment.value)
+}
+
+/// Returns `true` if an assignment value (scalar or array) would
+/// trigger command or process substitution during expansion.
+fn assignment_value_has_deferred_expansion(value: &ast::AssignmentValue) -> bool {
+    match value {
+        ast::AssignmentValue::Scalar(word) => word_has_deferred_expansion(word),
+        ast::AssignmentValue::Array(words) => words.iter().any(|(key, value)| {
+            key.as_ref().is_some_and(word_has_deferred_expansion)
+                || word_has_deferred_expansion(value)
+        }),
+    }
+}
+
+/// Returns `true` if an I/O redirection's target (the filename, duplicated
+/// fd word, or here-string body) would trigger command or process
+/// substitution during expansion. Process-substitution redirections are
+/// always treated as deferred-expansion.
+fn io_redirect_has_deferred_expansion(redirect: &ast::IoRedirect) -> bool {
+    match redirect {
+        ast::IoRedirect::File(_, _, target) => io_redirect_target_has_deferred_expansion(target),
+        ast::IoRedirect::HereDocument(..) => false,
+        ast::IoRedirect::HereString(_, word) | ast::IoRedirect::OutputAndError(word, _) => {
+            word_has_deferred_expansion(word)
+        }
+    }
+}
+
+/// Returns `true` if the target of a file redirection (a filename, an
+/// fd-duplication word, or a process-substitution) would trigger command
+/// or process substitution during expansion.
+fn io_redirect_target_has_deferred_expansion(target: &ast::IoFileRedirectTarget) -> bool {
+    match target {
+        ast::IoFileRedirectTarget::Filename(word) | ast::IoFileRedirectTarget::Duplicate(word) => {
+            word_has_deferred_expansion(word)
+        }
+        ast::IoFileRedirectTarget::Fd(_) => false,
+        ast::IoFileRedirectTarget::ProcessSubstitution(..) => true,
+    }
+}
+
+/// Cheap textual check for whether a word's source contains a command
+/// substitution (`$(...)` or backticked). This is intentionally
+/// conservative: it also matches arithmetic expansion (`$((expr))`)
+/// because that prefix overlaps with `$(...)`. Arithmetic expansion is
+/// pure data and harmless to defer, so a false positive here just sends
+/// the command down the regular execution path.
+fn word_has_deferred_expansion(word: &ast::Word) -> bool {
+    word.value.contains("$(") || word.value.contains('`')
 }
 
 #[async_trait::async_trait]
@@ -1986,4 +2270,93 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     drop(writer);
 
     Ok(reader.into())
+}
+
+#[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+
+    #[tokio::test]
+    async fn test_is_plain_command_name_basics() -> Result<()> {
+        let shell = crate::shell::Shell::builder().build().await?;
+
+        // Plain literal names that should pass through expansion unchanged.
+        assert!(is_plain_command_name("sleep", &shell));
+        assert!(is_plain_command_name("echo", &shell));
+        assert!(is_plain_command_name("/bin/echo", &shell));
+        assert!(is_plain_command_name("./foo", &shell));
+        assert!(is_plain_command_name("foo-bar_baz.123", &shell));
+
+        // Empty name.
+        assert!(!is_plain_command_name("", &shell));
+
+        // Quoting / escapes.
+        assert!(!is_plain_command_name("'foo'", &shell));
+        assert!(!is_plain_command_name("\"foo\"", &shell));
+        assert!(!is_plain_command_name("foo\\bar", &shell));
+
+        // Parameter / arithmetic / command substitution.
+        assert!(!is_plain_command_name("$x", &shell));
+        assert!(!is_plain_command_name("$(echo foo)", &shell));
+        assert!(!is_plain_command_name("`echo foo`", &shell));
+        assert!(!is_plain_command_name("$((1+1))", &shell));
+
+        // Tilde expansion.
+        assert!(!is_plain_command_name("~", &shell));
+        assert!(!is_plain_command_name("~/bin", &shell));
+
+        // Brace expansion: multi-element forms with `,` are expansions, but
+        // single-element `{...}` (no comma/sequence) is just literal text.
+        assert!(!is_plain_command_name("{a,b}", &shell));
+        assert!(!is_plain_command_name("foo{a,b}bar", &shell));
+        assert!(is_plain_command_name("a{b}c", &shell));
+
+        // Pathname / glob expansion.
+        assert!(!is_plain_command_name("foo*", &shell));
+        assert!(!is_plain_command_name("foo?", &shell));
+        assert!(!is_plain_command_name("[abc]", &shell));
+        // A lone `[` without a matching `]` is not a glob metacharacter.
+        assert!(is_plain_command_name("foo[", &shell));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_is_plain_command_name_respects_ifs() -> Result<()> {
+        let mut shell = crate::shell::Shell::builder().build().await?;
+
+        // With default IFS (space, tab, newline), `/bin/echo` is plain.
+        assert!(is_plain_command_name("/bin/echo", &shell));
+
+        // With `IFS=/`, the same name would be split into multiple fields
+        // by the regular path, so the fast path must reject it.
+        shell.env_mut().set_global(
+            "IFS",
+            crate::variables::ShellVariable::new(crate::variables::ShellValue::String("/".into())),
+        )?;
+        assert!(!is_plain_command_name("/bin/echo", &shell));
+
+        // A name with no IFS character is still plain.
+        assert!(is_plain_command_name("echo", &shell));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_is_plain_command_name_respects_extglob() -> Result<()> {
+        let mut shell = crate::shell::Shell::builder().build().await?;
+
+        // With extended globbing disabled (default), `@(...)` is not a
+        // glob metacharacter, so the name is plain.
+        shell.options_mut().extended_globbing = false;
+        assert!(is_plain_command_name("@(foo)", &shell));
+
+        // With extended globbing enabled, `@(...)` is a glob.
+        shell.options_mut().extended_globbing = true;
+        assert!(!is_plain_command_name("@(foo)", &shell));
+
+        Ok(())
+    }
 }
