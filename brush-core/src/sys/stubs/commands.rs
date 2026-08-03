@@ -80,8 +80,12 @@ impl CommandFdInjectionExt for std::process::Command {
 pub trait CommandFgControlExt {
     /// Arranges for the command to take the foreground when it is executed.
     fn take_foreground(&mut self);
+
     /// Arranges for the command to become a session leader when it is executed.
     fn lead_session(&mut self);
+
+    /// Arranges for child job-control signals to use their default dispositions.
+    fn reset_job_control_signals(&mut self);
 }
 
 impl CommandFgControlExt for std::process::Command {
@@ -90,6 +94,10 @@ impl CommandFgControlExt for std::process::Command {
     }
 
     fn lead_session(&mut self) {
+        // NOTE: This is a no-op.
+    }
+
+    fn reset_job_control_signals(&mut self) {
         // NOTE: This is a no-op.
     }
 }

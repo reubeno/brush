@@ -292,11 +292,13 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
 
         // Execute the command.
         let params = shell.default_exec_params();
+        let sigint_listener = Self::spawn_sigint_listener(&params);
         let source_info = brush_core::SourceInfo::from("main");
         let result = match shell.run_string(read_result, &source_info, &params).await {
             Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
             Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
         };
+        sigint_listener.abort();
 
         // Update cumulative line counter based on actual lines in the command.
         shell.increment_interactive_line_offset(line_count);
@@ -328,6 +330,17 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         }
 
         result
+    }
+
+    fn spawn_sigint_listener(
+        params: &brush_core::ExecutionParameters,
+    ) -> tokio::task::JoinHandle<()> {
+        let params = params.clone();
+        tokio::spawn(async move {
+            while brush_core::sys::signal::await_ctrl_c().await.is_ok() {
+                params.request_interactive_sigint();
+            }
+        })
     }
 
     async fn run_pre_prompt_actions(

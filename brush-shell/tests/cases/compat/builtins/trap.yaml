@@ -247,7 +247,6 @@ cases:
       echo "$result"
 
   - name: "command substitution does not fire inherited signal trap"
-    known_failure: true # TODO(signals): signal handling in command substitution
     stdin: |
       trap 'echo "[int]" >&2' INT
       result=$(kill -INT $$; echo "after kill")
@@ -336,7 +335,6 @@ cases:
       wait
 
   - name: "background job does not fire inherited signal trap"
-    known_failure: true # TODO(signals): background job signal handling
     stdin: |
       trap 'echo "[int]" >&2' INT
       { kill -INT $$; echo "after kill"; } &
@@ -489,7 +487,6 @@ cases:
   # Signal trap execution verification
   #
   - name: "trap SIGUSR1"
-    known_failure: true # TODO(signals): signal handling
     stdin: |
       trap 'echo "[usr1 received]"' USR1
       trap -p USR1
@@ -497,7 +494,6 @@ cases:
       echo "after signal"
 
   - name: "trap SIGUSR2"
-    known_failure: true # TODO(signals): signal handling
     stdin: |
       trap 'echo "[usr2 received]"' SIGUSR2
       trap -p USR2
@@ -505,7 +501,6 @@ cases:
       echo "after signal"
 
   - name: "trap multiple signals with same handler"
-    known_failure: true # TODO(signals): signal handling
     stdin: |
       trap 'echo "[signal received]"' USR1 USR2
       kill -USR1 $$
@@ -513,7 +508,6 @@ cases:
       echo "done"
 
   - name: "trap handler can inspect signal"
-    known_failure: true # TODO(signals): signal handling
     stdin: |
       handler() {
         echo "handler called"
@@ -533,7 +527,6 @@ cases:
       trap -p INT
 
   - name: "trap '' ignores signal"
-    known_failure: true # TODO(signals): signal handling
     stdin: |
       trap '' INT
       trap -p INT
