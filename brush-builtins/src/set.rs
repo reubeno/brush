@@ -185,6 +185,8 @@ impl builtins::Command for SetCommand {
         Ok(this)
     }
 
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     #[expect(clippy::too_many_lines)]
