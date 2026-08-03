@@ -637,7 +637,7 @@ All notable changes to this project will be documented in this file.
 - *(completion)* Better handle native errors in completion funcs ([#373](https://github.com/reubeno/brush/pull/373))
 - *(builtins)* Correct parsing of bind positional arg ([#381](https://github.com/reubeno/brush/pull/381))
 - *(patterns)* Fix incorrect parse of char ranges ([#323](https://github.com/reubeno/brush/pull/323))
-- *(exit)* Correct exit semantics in various compund statements ([#347](https://github.com/reubeno/brush/pull/347))
+- *(exit)* Correct exit semantics in various compound statements ([#347](https://github.com/reubeno/brush/pull/347))
 - *(for)* Correct semantics for "for" without "in" ([#348](https://github.com/reubeno/brush/pull/348))
 - Correct semantics of = in non-extended test commands ([#349](https://github.com/reubeno/brush/pull/349))
 - *(return)* Error if return used outside sourced script or function ([#350](https://github.com/reubeno/brush/pull/350))
