@@ -85,5 +85,10 @@ uuid = { version = "1.23.1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
+# Used only by integration tests that need a realistically-populated builtin
+# table (e.g. `echo`, `.`/`source`) to exercise the capability-interceptor
+# hooks. This is a dev-dependency cycle (brush-builtins depends on brush-core),
+# which Cargo permits for dev-dependencies.
+brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 tempfile = "3.27.0"

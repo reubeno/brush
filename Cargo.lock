@@ -433,6 +433,7 @@ dependencies = [
  "async-recursion",
  "async-trait",
  "bon",
+ "brush-builtins",
  "brush-parser",
  "cached",
  "cfg-if",
