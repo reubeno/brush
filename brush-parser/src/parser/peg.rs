@@ -661,7 +661,7 @@ peg::parser! {
 
         pub(crate) rule assignment_word() -> (ast::Assignment, ast::Word) =
             non_posix_extensions_enabled() [Token::Word(w, l)] specific_operator("(") elements:array_elements() end:specific_operator(")") {?
-                let mut parsed = word::parse_array_assignment(w.as_str(), elements.as_slice())?;
+                let mut parsed = word::parse_array_assignment(w.as_str(), elements.as_slice(), parser_options)?;
 
                 let mut all_as_word = w.to_owned();
                 all_as_word.push('(');
@@ -678,9 +678,17 @@ peg::parser! {
                 Ok((parsed, ast::Word::with_location(&all_as_word, &loc)))
             } /
             [Token::Word(w, l)] {?
-                let mut parsed = word::parse_assignment_word(w.as_str()).map_err(|_| "not assignment word")?;
+                let mut parsed = word::parse_scalar_assignment(w.as_str(), parser_options).map_err(|_| "not assignment word")?;
                 parsed.loc = l.clone();
                 Ok((parsed, ast::Word::with_location(w, l)))
+            }
+
+        // A standalone compound assignment value, i.e. the `(...)` half of an array assignment.
+        // Used to reinterpret text that only became recognizable as a compound value after
+        // expansion.
+        pub(crate) rule compound_assignment_value() -> Vec<&'input String> =
+            non_posix_extensions_enabled() specific_operator("(") elements:array_elements() specific_operator(")") {
+                elements
             }
 
         rule array_elements() -> Vec<&'input String> =
