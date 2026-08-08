@@ -106,12 +106,14 @@ impl ExportCommand {
 
                 let value = match &assignment.value {
                     ast::AssignmentValue::Scalar(s) => {
-                        variables::ShellValueLiteral::Scalar(s.flatten())
+                        variables::ShellValueLiteral::Scalar(s.flatten().into())
                     }
                     ast::AssignmentValue::Array(a) => {
                         variables::ShellValueLiteral::Array(variables::ArrayLiteral(
                             a.iter()
-                                .map(|(k, v)| (k.as_ref().map(|k| k.flatten()), v.flatten()))
+                                .map(|(k, v)| {
+                                    (k.as_ref().map(|k| k.flatten().into()), v.flatten().into())
+                                })
                                 .collect(),
                         ))
                     }

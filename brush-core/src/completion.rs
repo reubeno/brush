@@ -799,12 +799,12 @@ impl Spec {
                 match reply.value() {
                     variables::ShellValue::IndexedArray(values) => {
                         return Ok(Answer::Candidates(
-                            values.values().map(|v| v.to_owned()).collect(),
+                            values.values().map(|v| v.to_string()).collect(),
                             ProcessingOptions::default(),
                         ));
                     }
                     variables::ShellValue::String(s) => {
-                        let candidates = vec![s.to_owned()];
+                        let candidates = vec![s.to_string()];
                         return Ok(Answer::Candidates(candidates, ProcessingOptions::default()));
                     }
                     _ => (),

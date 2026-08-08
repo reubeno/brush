@@ -169,7 +169,12 @@ fn assign_input_to_variables(
         let literal_fields = build_array_fields(input_line, ifs, skip_ifs_splitting);
         shell.env_mut().update_or_add(
             array_variable,
-            variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
+            variables::ShellValueLiteral::Array(variables::ArrayLiteral(
+                literal_fields
+                    .into_iter()
+                    .map(|(k, v)| (k.map(Into::into), v.into()))
+                    .collect(),
+            )),
             |_| Ok(()),
             env::EnvironmentLookup::Anywhere,
             env::EnvironmentScope::Global,
@@ -179,7 +184,7 @@ fn assign_input_to_variables(
     } else {
         shell.env_mut().update_or_add(
             "REPLY",
-            variables::ShellValueLiteral::Scalar(input_line.unwrap_or_default().to_owned()),
+            variables::ShellValueLiteral::Scalar(input_line.unwrap_or_default().to_owned().into()),
             |_| Ok(()),
             env::EnvironmentLookup::Anywhere,
             env::EnvironmentScope::Global,
@@ -217,7 +222,7 @@ fn assign_to_named_variables(
 
         shell.env_mut().update_or_add(
             name,
-            variables::ShellValueLiteral::Scalar(value),
+            variables::ShellValueLiteral::Scalar(value.into()),
             |_| Ok(()),
             env::EnvironmentLookup::Anywhere,
             env::EnvironmentScope::Global,

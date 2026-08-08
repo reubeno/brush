@@ -5,6 +5,7 @@ use std::cmp::min;
 use std::io::Write as _;
 
 use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
+use bstr::{BString, ByteSlice, ByteVec};
 use itertools::Itertools;
 
 use crate::ExecutionParameters;
@@ -124,7 +125,7 @@ impl Expansion {
         let non_empty = self
             .fields
             .iter()
-            .any(|field| field.0.iter().any(|piece| !piece.as_str().is_empty()));
+            .any(|field| field.0.iter().any(|piece| !piece.is_empty()));
 
         if self.undefined {
             ParameterState::Undefined
@@ -195,8 +196,7 @@ impl Expansion {
                     // Get the inner string of the piece, and figure out how many
                     // characters are in it; make sure to get the *character count*
                     // and not just call `.len()` to get the byte count.
-                    let piece_str = piece.as_str();
-                    let piece_char_count = piece_str.chars().count();
+                    let piece_char_count = piece.chars().count();
 
                     // If the interesting data isn't even in this piece yet, then
                     // continue until we find it.
@@ -216,13 +216,15 @@ impl Expansion {
                             s.chars()
                                 .skip(desired_offset_into_this_piece)
                                 .take(len_from_this_piece)
-                                .collect(),
+                                .collect::<String>()
+                                .into(),
                         ),
                         ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
                             s.chars()
                                 .skip(desired_offset_into_this_piece)
                                 .take(len_from_this_piece)
-                                .collect(),
+                                .collect::<String>()
+                                .into(),
                         ),
                     };
 
@@ -286,21 +288,34 @@ impl From<ExpansionPiece> for WordField {
 
 impl From<String> for WordField {
     fn from(value: String) -> Self {
+        Self(vec![ExpansionPiece::Splittable(value.into())])
+    }
+}
+
+impl From<BString> for WordField {
+    fn from(value: BString) -> Self {
         Self(vec![ExpansionPiece::Splittable(value)])
     }
 }
 
+/// Converts a [`BString`] to a [`String`], preserving valid UTF-8 and falling
+/// back to lossy conversion only when the bytes are not valid UTF-8.
+fn bstring_to_string(s: BString) -> String {
+    String::from_utf8(Vec::from(s))
+        .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).into_owned())
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum ExpansionPiece {
-    Unsplittable(String),
-    Splittable(String),
+    Unsplittable(BString),
+    Splittable(BString),
 }
 
 impl From<ExpansionPiece> for String {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => s,
-            ExpansionPiece::Splittable(s) => s,
+            ExpansionPiece::Unsplittable(s) => bstring_to_string(s),
+            ExpansionPiece::Splittable(s) => bstring_to_string(s),
         }
     }
 }
@@ -324,17 +339,24 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
 }
 
 impl ExpansionPiece {
-    const fn as_str(&self) -> &str {
+    fn is_empty(&self) -> bool {
         match self {
-            Self::Unsplittable(s) => s.as_str(),
-            Self::Splittable(s) => s.as_str(),
+            Self::Unsplittable(s) => s.is_empty(),
+            Self::Splittable(s) => s.is_empty(),
         }
     }
 
-    const fn len(&self) -> usize {
+    fn len(&self) -> usize {
         match self {
             Self::Unsplittable(s) => s.len(),
             Self::Splittable(s) => s.len(),
+        }
+    }
+
+    fn chars(&self) -> bstr::Chars<'_> {
+        match self {
+            Self::Unsplittable(s) => s.chars(),
+            Self::Splittable(s) => s.chars(),
         }
     }
 
@@ -648,7 +670,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .map(patterns::PatternPiece::from)
                     .collect::<Vec<_>>()
             })
-            .intersperse(vec![patterns::PatternPiece::Literal(String::from(" "))])
+            .intersperse(vec![patterns::PatternPiece::Literal(
+                String::from(" ").into(),
+            )])
             .flatten()
             .collect();
 
@@ -675,7 +699,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .map(crate::regex::RegexPiece::from)
                     .collect::<Vec<_>>()
             })
-            .intersperse(vec![crate::regex::RegexPiece::Literal(String::from(" "))])
+            .intersperse(vec![crate::regex::RegexPiece::Literal(
+                String::from(" ").into(),
+            )])
             .flatten()
             .collect();
 
@@ -699,7 +725,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             &['$', '`', '\\', '\'', '\"', '~', '{']
         };
         if !word.contains(expansion_chars) {
-            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
+            return Ok(Expansion::from(ExpansionPiece::Splittable(
+                word.to_owned().into(),
+            )));
         }
 
         // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
@@ -843,11 +871,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                                 }
                             } else {
                                 match current_field.0.last_mut() {
-                                    Some(ExpansionPiece::Splittable(last)) => last.push(c),
+                                    Some(ExpansionPiece::Splittable(last)) => last.push_char(c),
                                     Some(ExpansionPiece::Unsplittable(_)) | None => {
                                         current_field
                                             .0
-                                            .push(ExpansionPiece::Splittable(c.to_string()));
+                                            .push(ExpansionPiece::Splittable(c.to_string().into()));
                                     }
                                 }
                             }
@@ -909,19 +937,17 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
             brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
+                Expansion::from(ExpansionPiece::Splittable(s.into()))
             }
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
-                Expansion::from(ExpansionPiece::Unsplittable(s))
+                Expansion::from(ExpansionPiece::Unsplittable(s.into()))
             }
             brush_parser::word::WordPiece::AnsiCQuotedText(s) => {
                 let (expanded, _) = escape::expand_backslash_escapes(
                     s.as_str(),
                     escape::EscapeExpansionMode::AnsiCQuotes,
                 )?;
-                Expansion::from(ExpansionPiece::Unsplittable(
-                    String::from_utf8_lossy(expanded.as_slice()).into_owned(),
-                ))
+                Expansion::from(ExpansionPiece::Unsplittable(BString::from(expanded)))
             }
             brush_parser::word::WordPiece::DoubleQuotedSequence(pieces)
             | brush_parser::word::WordPiece::GettextDoubleQuotedSequence(pieces) => {
@@ -944,7 +970,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 // If there were no pieces, then make sure we yield a single field containing an
                 // empty, unsplittable string.
                 if pieces_is_empty {
-                    fields.push(WordField::from(ExpansionPiece::Unsplittable(String::new())));
+                    fields.push(WordField::from(ExpansionPiece::Unsplittable(
+                        String::new().into(),
+                    )));
                 }
 
                 Expansion {
@@ -956,7 +984,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::WordPiece::TildeExpansion(tilde_expr) => {
                 Expansion::from(ExpansionPiece::Unsplittable(
-                    self.expand_tilde_expression(&tilde_expr)?.to_string(),
+                    self.expand_tilde_expression(&tilde_expr)?
+                        .to_string()
+                        .into(),
                 ))
             }
             brush_parser::word::WordPiece::ParameterExpansion(p) => {
@@ -984,13 +1014,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let trimmed_len = cmd_output.trim_end_matches('\n').len();
                 cmd_output.truncate(trimmed_len);
 
-                Expansion::from(ExpansionPiece::Splittable(cmd_output))
+                Expansion::from(ExpansionPiece::Splittable(cmd_output.into()))
             }
             brush_parser::word::WordPiece::EscapeSequence(s) => {
                 let Some(escaped) = s.strip_prefix('\\') else {
                     // We don't ever expect this case, as it breaks our invariant--but
                     // we handle it to avoid panicking.
-                    return Ok(Expansion::from(ExpansionPiece::Unsplittable(s)));
+                    return Ok(Expansion::from(ExpansionPiece::Unsplittable(s.into())));
                 };
 
                 // Inside actual double-quoted text, the parser only emits an
@@ -998,36 +1028,36 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 // we always strip the backslash there.
                 if self.in_double_quotes {
                     return Ok(Expansion::from(ExpansionPiece::Unsplittable(
-                        escaped.to_owned(),
+                        escaped.to_owned().into(),
                     )));
                 }
 
                 match self.unquoted_backslash_handling {
                     UnquotedBackslashHandling::Strip => {
                         // Default unquoted semantics: consume the backslash.
-                        Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                        Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned().into()))
                     }
                     UnquotedBackslashHandling::Preserve => {
                         // Preserve `\X` verbatim (e.g., for pattern syntax).
-                        Expansion::from(ExpansionPiece::Splittable(s))
+                        Expansion::from(ExpansionPiece::Splittable(s.into()))
                     }
                     UnquotedBackslashHandling::DoubleQuoted => {
                         // `\<newline>` is a line continuation: both characters
                         // are consumed.
                         if escaped.starts_with('\n') {
-                            Expansion::from(ExpansionPiece::Unsplittable(String::new()))
+                            Expansion::from(ExpansionPiece::Unsplittable(String::new().into()))
                         } else if escaped.starts_with(DOUBLE_QUOTED_ESCAPE_CHARS) {
                             // Consume the backslash; preserve the next char.
-                            Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned()))
+                            Expansion::from(ExpansionPiece::Unsplittable(escaped.to_owned().into()))
                         } else {
                             // Preserve both characters.
-                            Expansion::from(ExpansionPiece::Unsplittable(s))
+                            Expansion::from(ExpansionPiece::Unsplittable(s.into()))
                         }
                     }
                 }
             }
             brush_parser::word::WordPiece::ArithmeticExpression(e) => Expansion::from(
-                ExpansionPiece::Splittable(self.expand_arithmetic_expr(e).await?),
+                ExpansionPiece::Splittable(self.expand_arithmetic_expr(e).await?.into()),
             ),
         };
 
@@ -1118,7 +1148,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             .collect()
                     })
                     .intersperse(vec![ExpansionPiece::Unsplittable(
-                        concatenation_joiner.to_string(),
+                        concatenation_joiner.to_string().into(),
                     )])
                     .flatten()
                     .collect();
@@ -1126,7 +1156,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 // If there were no pieces, make sure there's an empty string after
                 // concatenation.
                 if concatenated.is_empty() {
-                    concatenated.push(ExpansionPiece::Splittable(String::new()));
+                    concatenated.push(ExpansionPiece::Splittable(String::new().into()));
                 }
 
                 vec![WordField(concatenated)]
@@ -1357,7 +1387,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
                     expanded_parameter.fields.insert(
                         0,
-                        WordField::from(ExpansionPiece::Splittable(shell_name.to_string())),
+                        WordField::from(ExpansionPiece::Splittable(shell_name.to_string().into())),
                     );
                 }
 
@@ -1598,7 +1628,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     Ok(Expansion {
                         fields: matching_names
                             .into_iter()
-                            .map(|name| WordField(vec![ExpansionPiece::Splittable(name)]))
+                            .map(|name| WordField(vec![ExpansionPiece::Splittable(name.into())]))
                             .collect(),
                         concatenate,
                         from_array: true,
@@ -1676,7 +1706,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         } else {
             self.shell.env_mut().update_or_add(
                 variable_name,
-                variables::ShellValueLiteral::Scalar(value),
+                variables::ShellValueLiteral::Scalar(value.into()),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -1892,7 +1922,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Expansion {
                     fields: args
                         .into_iter()
-                        .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
+                        .map(|param| {
+                            WordField(vec![ExpansionPiece::Splittable(param.to_owned().into())])
+                        })
                         .collect(),
                     concatenate: *concatenate,
                     from_array: true,
@@ -1974,9 +2006,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         if let Some(pattern) = pattern {
             if !pattern.is_empty() {
                 let regex = pattern.to_regex(false, false)?;
-                let result = regex.replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_>| {
-                    transform(&caps[0])
-                });
+                let result = regex
+                    .replace_all(s.as_ref(), |caps: &fancy_regex::Captures<'_, str>| {
+                        transform(&caps[0])
+                    });
                 Ok(result.into_owned())
             } else {
                 Ok(transform(s))
@@ -2235,7 +2268,7 @@ mod tests {
         let expansion = Expansion {
             fields: vec![
                 WordField(vec![ExpansionPiece::Unsplittable("A".into())]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())]),
+                WordField(vec![ExpansionPiece::Unsplittable(String::new().into())]),
             ],
             ..Expansion::default()
         };
@@ -2245,8 +2278,8 @@ mod tests {
         assert_eq!(
             fields,
             vec![
-                WordField(vec![ExpansionPiece::Unsplittable(String::from("A"))]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())])
+                WordField(vec![ExpansionPiece::Unsplittable(BString::from("A"))]),
+                WordField(vec![ExpansionPiece::Unsplittable(BString::new(vec![]))])
             ]
         );
 
