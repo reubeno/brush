@@ -115,6 +115,33 @@ EOF
 }
 
 #[test]
+fn parse_here_doc_after_command_substitution_here_doc() -> Result<()> {
+    let input = r#"cat <<OUT "$(cat <<IN
+inner
+IN
+)"
+outer
+OUT
+"#;
+    let _ = test_with_snapshot(input)?;
+    Ok(())
+}
+
+#[test]
+fn parse_command_substitution_here_doc_inside_arithmetic() -> Result<()> {
+    let input = r": $(( $(cat <<EOF
+)
+EOF
+) + 2 ))";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
 fn parse_here_doc_with_fd() -> Result<()> {
     let input = r"command 3<<EOF
 content for fd 3
