@@ -161,7 +161,6 @@ cases:
       echo "after"
 
   - name: "trap ERR - has access to BASH_COMMAND"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |
       trap 'echo "ERR for: $BASH_COMMAND"' ERR
       nonexistent_command_xyz 2>/dev/null
@@ -722,3 +721,12 @@ cases:
       trap -p INT
       trap -p TERM
       echo "done"
+
+  - name: "DEBUG trap - BASH_COMMAND reports commands before expansion"
+    stdin: |
+      value=world
+      trap 'case $BASH_COMMAND in echo*|declare*|printf*) echo "cmd: <$BASH_COMMAND>";; esac' DEBUG
+      echo $value
+      declare declared=$value
+      printf '%s\n' "$value"
+      trap - DEBUG

@@ -19,6 +19,41 @@ cases:
       export arr=(a 1 2)
       declare -p arr
 
+  - name: "Export scalar assignment with parameter expansion"
+    stdin: |
+      value=hello
+      export result="$value world"
+      echo "$result"
+
+  - name: "Export scalar assignment with command substitution"
+    stdin: |
+      export result=$(printf hello)
+      echo "$result"
+
+  - name: "Export structured assignment does not recursively expand its value"
+    stdin: |
+      source='$(printf expanded)'
+      export result=$source
+      declare -p result
+
+  - name: "Export generated assignment does not expand its value again"
+    stdin: |
+      assignment='result=$(printf expanded)'
+      export "$assignment"
+      declare -p result
+
+  - name: "Export indexed array with arithmetic key"
+    stdin: |
+      export arr=([2+2]=value)
+      declare -p arr
+
+  - name: "Export associative array with expanded key"
+    stdin: |
+      declare -A map
+      key="space key"
+      export map=([$key]=value)
+      declare -p map
+
   - name: "Unexporting variable"
     stdin: |
       MY_TEST_VAR="value"
@@ -51,3 +86,76 @@ cases:
     stdin: |
       export MYVAR+="first"
       echo "MYVAR: $MYVAR"
+
+  - name: "Multiple export operands expand before assignments are applied"
+    stdin: |
+      unset first second
+      export first=one second=$first
+      declare -p first second
+
+  - name: "Export command substitutions expand left to right exactly once"
+    stdin: |
+      marker=marker.txt
+      : > "$marker"
+      export first=$(printf one; printf x >> "$marker") second=$(read -r contents < "$marker"; printf %s "$contents")
+      declare -p first second
+      read -r contents < "$marker"
+      echo "marker: $contents"
+
+  - name: "Export expansion error occurs before any operand is applied"
+    known_failure: true # Requires EXIT traps to fire at subshell exit; brush only runs them
+                        # when the top-level shell exits, so the trap below never observes the state.
+    stdin: |
+      state=state.txt
+      : > "$state"
+      (trap 'declare -p first > "$state" 2>/dev/null || printf unset > "$state"' EXIT; set -u; export first=one second=$missing) 2>/dev/null
+      echo "status: $?"
+      read -r contents < "$state"
+      echo "state: ${contents:-empty}"
+
+  - name: "Disabled export uses ordinary argument expansion"
+    stdin: |
+      enable -n export
+      value=world
+      export disabled=$value 2>/dev/null
+      echo "status: $?"
+      enable export
+      declare -p disabled 2>/dev/null || echo unset
+
+  #
+  # Regression coverage: expansion, tracing, and `$_` for operands that arrive already expanded.
+  #
+  - name: "Temporary environment is not visible to an export operand"
+    stdin: |
+      unset FOO
+      FOO=fromprefix export y=$FOO
+      declare -p y
+
+  - name: "Redirections do not apply to an export operand's command substitution"
+    stdin: |
+      export w=$(echo to-stderr >&2; echo val) 2>/dev/null
+      declare -p w
+
+  - name: "Unset variable in an export operand is fatal under set -u"
+    ignore_stderr: true
+    stdin: |
+      ( set -u; export x=$undefined; echo "NOT REACHED" )
+      echo "status: $?"
+
+  - name: "Function shadowing export receives its arguments"
+    stdin: |
+      export() { echo "shadow export: [$*] count=$#"; }
+      export y=2
+      unset -f export
+
+  - name: "Export rejects an array element target"
+    ignore_stderr: true
+    stdin: |
+      export 'ea[0]=1'
+      echo "status: $?"
+
+  - name: "Export recognizes an assignment produced through command"
+    stdin: |
+      value=world
+      command export wrapped=$value
+      declare -p wrapped

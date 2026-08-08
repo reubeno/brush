@@ -14,7 +14,6 @@ cases:
   # DEBUG trap inheritance in functions
   #
   - name: "DEBUG trap - does not fire in function without set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
       myfunc() {
@@ -40,7 +39,6 @@ cases:
   # DEBUG trap inheritance in subshells
   #
   - name: "DEBUG trap - does not fire in subshell without set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
       echo "before subshell"
@@ -48,7 +46,6 @@ cases:
       echo "after subshell"
 
   - name: "DEBUG trap - fires in subshell with set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       set -T
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
@@ -88,7 +85,6 @@ cases:
       echo "after"
 
   - name: "DEBUG trap - fires in pipeline with set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       set -T
       trap 'echo "[debug: $BASH_COMMAND]" >&2' DEBUG
@@ -144,7 +140,6 @@ cases:
   # Function-specific trace attribute (declare -t)
   #
   - name: "declare -t - enables trace for specific function"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
       traced_func() {
