@@ -54,4 +54,4 @@ cfg_aliases = "0.2.1"
 # pty-based tests are reported as unsupported elsewhere. Keep this list in sync
 # with the `pty` cfg in build.rs (which gates the code using this dependency).
 [target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "freebsd"))'.dependencies]
-expectrl = "0.8.0"
+expectrl = "0.9.0"
