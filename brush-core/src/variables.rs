@@ -535,17 +535,10 @@ impl ShellVariable {
 
         let mut result = String::new();
 
-        if matches!(
-            value,
-            ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray)
-        ) {
+        if value.is_indexed_array() {
             result.push('a');
         }
-        if matches!(
-            value,
-            ShellValue::AssociativeArray(_)
-                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-        ) {
+        if value.is_associative_array() {
             result.push('A');
         }
         if matches!(
@@ -719,16 +712,26 @@ pub enum FormatStyle {
 }
 
 impl ShellValue {
-    /// Returns whether or not the value is an array.
-    pub const fn is_array(&self) -> bool {
+    /// Returns whether or not the value is an indexed array, including a declared but unset one.
+    pub const fn is_indexed_array(&self) -> bool {
         matches!(
             self,
-            Self::IndexedArray(_)
-                | Self::AssociativeArray(_)
-                | Self::Unset(
-                    ShellValueUnsetType::IndexedArray | ShellValueUnsetType::AssociativeArray
-                )
+            Self::IndexedArray(_) | Self::Unset(ShellValueUnsetType::IndexedArray)
         )
+    }
+
+    /// Returns whether or not the value is an associative array, including a declared but unset
+    /// one.
+    pub const fn is_associative_array(&self) -> bool {
+        matches!(
+            self,
+            Self::AssociativeArray(_) | Self::Unset(ShellValueUnsetType::AssociativeArray)
+        )
+    }
+
+    /// Returns whether or not the value is an array.
+    pub const fn is_array(&self) -> bool {
+        self.is_indexed_array() || self.is_associative_array()
     }
 
     /// Returns whether or not the value is set.
