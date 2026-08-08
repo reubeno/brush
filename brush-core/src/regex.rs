@@ -6,9 +6,15 @@ use std::cell::RefCell;
 use crate::error;
 use cached::Cached;
 
+/// Cache mapping a (pattern, case-insensitive, multiline) key to a compiled regex.
+type RegexCache = cached::LruCache<(String, bool, bool), fancy_regex::Regex>;
+
 thread_local! {
-    static REGEX_CACHE: RefCell<cached::SizedCache<(String, bool, bool), fancy_regex::Regex>> =
-        RefCell::new(cached::SizedCache::with_size(64));
+    // Wrapped in `Option` so that if cache construction ever fails we gracefully
+    // degrade to compiling regexes uncached rather than panicking. (With a fixed
+    // positive `max_size` this always succeeds, but `build()` is fallible.)
+    static REGEX_CACHE: RefCell<Option<RegexCache>> =
+        RefCell::new(cached::LruCache::builder().max_size(64).build().ok());
 }
 
 /// Represents a piece of a regular expression.
@@ -103,7 +109,12 @@ pub(crate) fn compile_regex(
     // Move regex_str into the key to avoid cloning on cache-hit path.
     let key = (regex_str, case_insensitive, multiline);
 
-    let cached_regex = REGEX_CACHE.with(|cache| cache.borrow_mut().cache_get(&key).cloned());
+    let cached_regex = REGEX_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .as_mut()
+            .and_then(|c| c.cache_get(&key).cloned())
+    });
     if let Some(re) = cached_regex {
         return Ok(re);
     }
@@ -133,7 +144,9 @@ pub(crate) fn compile_regex(
     drop(regex_str);
 
     REGEX_CACHE.with(|cache| {
-        cache.borrow_mut().cache_set(key, re.clone());
+        if let Some(c) = cache.borrow_mut().as_mut() {
+            c.cache_set(key, re.clone());
+        }
     });
 
     Ok(re)

@@ -528,18 +528,22 @@ pub fn parse(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    cacheable_parse(word.to_owned(), options.to_owned())
+    cacheable_parse(word, options)
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
+#[cached::macros::cached(
+    max_size = 64,
+    key = "(String, ParserOptions)",
+    convert = r#"{ (word.to_owned(), options.to_owned()) }"#
+)]
 fn cacheable_parse(
-    word: String,
-    options: ParserOptions,
+    word: &str,
+    options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
     tracing::debug!(target: "expansion", "Parsing word '{}'", word);
 
-    let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
-        .map_err(|err| error::WordParseError::Word(word.clone(), err.into()))?;
+    let pieces = expansion_parser::unexpanded_word(word, options)
+        .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))?;
 
     tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word, pieces);
 
