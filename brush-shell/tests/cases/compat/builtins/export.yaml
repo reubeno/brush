@@ -37,14 +37,12 @@ cases:
       declare -p result
 
   - name: "Export generated assignment does not expand its value again"
-    known_failure: true # TODO: export improvements required
     stdin: |
       assignment='result=$(printf expanded)'
       export "$assignment"
       declare -p result
 
   - name: "Export indexed array with arithmetic key"
-    known_failure: true # TODO: export improvements required
     stdin: |
       export arr=([2+2]=value)
       declare -p arr
@@ -151,14 +149,12 @@ cases:
       unset -f export
 
   - name: "Export rejects an array element target"
-    known_failure: true # TODO: export improvements required
     ignore_stderr: true
     stdin: |
       export 'ea[0]=1'
       echo "status: $?"
 
   - name: "Export recognizes an assignment produced through command"
-    known_failure: true # TODO: export improvements required
     stdin: |
       value=world
       command export wrapped=$value

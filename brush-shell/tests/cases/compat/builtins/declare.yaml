@@ -534,34 +534,29 @@ cases:
       declare -p -n 2>/dev/null | sort
 
   - name: "Single-quoted scalar assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'x=hello'
       echo "$x"
 
   - name: "Single-quoted scalar with dollar sign preserved"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare 'x=$Y'
       echo "$x"
 
   - name: "Double-quoted scalar assignment expands"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare "x=$Y"
       echo "$x"
 
   - name: "Single-quoted array assignment with -a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a 'arr=(1 2 3)'
       echo "${arr[@]}"
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment with deferred expansion"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a 'arr=(${X})'
@@ -569,7 +564,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment with IFS splitting"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a,b"
       IFS=, declare -a 'arr=(${X})'
@@ -577,7 +571,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Double-quoted compound assignment with escaped expansion"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a "arr=(\${X})"
@@ -585,7 +578,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Variable-generated compound assignment syntax"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       value='(${X})'
@@ -594,7 +586,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Command-substitution-generated compound assignment syntax"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a "arr=$(printf '(%s)' '${X}')"
@@ -602,7 +593,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted compound value in parsed assignment is reparsed"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a arr='(${X})'
@@ -610,13 +600,11 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment without -a is scalar"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr=(1 2 3)'
       declare -p arr
 
   - name: "Single-quoted array assignment Gentoo rpm.eclass pattern"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       RPM_COMPRESS_TYPE="lzma zstd"
       IFS=, declare -a 'types=(${RPM_COMPRESS_TYPE})'
@@ -624,7 +612,6 @@ cases:
       echo "${#types[@]}"
 
   - name: "local -a single-quoted array assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       f() {
         X="a b"
@@ -634,13 +621,11 @@ cases:
       f
 
   - name: "Single-quoted indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[0]=hello'
       declare -p arr
 
   - name: "Quoted array assignment does not execute value as shell code"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       payload='(x); printf "INJECTED\n"; #'
       declare -a "arr=$payload"
@@ -655,7 +640,6 @@ cases:
       declare -p arr
 
   - name: "Quoted array assignment applies uppercase attribute"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -au 'arr=(ab Cd)'
       declare -p arr
@@ -668,21 +652,18 @@ cases:
       declare -p arr
 
   - name: "Quoted assignment uses existing indexed array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(old)
       declare 'arr=(new values)'
       declare -p arr
 
   - name: "Quoted assignment uses existing associative array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -A map=([old]=value)
       declare 'map=([new]=value [other]=two)'
       declare -p map
 
   - name: "Quoted assignment uses declaration target scope"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(global)
       f() {
@@ -694,7 +675,6 @@ cases:
       declare -p arr
 
   - name: "Quoted global assignment ignores local array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=global
       f() {
@@ -706,7 +686,6 @@ cases:
       declare -p arr
 
   - name: "Quoted local declaration does not inherit global array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(global)
       f() {
@@ -717,61 +696,52 @@ cases:
       declare -p arr
 
   - name: "Single-quoted nonzero indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[5]=hello'
       declare -p arr
 
   - name: "Single-quoted indexed element append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a arr=([0]=one)
       declare 'arr[0]+=two'
       declare -p arr
 
   - name: "Single-quoted associative element append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -A map=([key]=one)
       declare 'map[key]+=two'
       declare -p map
 
   - name: "Single-quoted arithmetic indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[2+2]=value'
       declare -p arr
 
   - name: "Single-quoted variable arithmetic indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare 'arr[index+1]=value'
       declare -p arr
 
   - name: "Single-quoted parameter-expanded indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare 'arr[$index+1]=value'
       declare -p arr
 
   - name: "Single-quoted command-substitution indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare 'arr[$(echo 2)+index]=value'
       declare -p arr
 
   - name: "Single-quoted parameter-expanded associative element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key="space key"
       declare -A 'map[$key]=value'
       declare -p map
 
   - name: "Single-quoted indexed subscript expands without re-expanding value"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=2
       value=expanded
@@ -779,7 +749,6 @@ cases:
       declare -p arr
 
   - name: "Single-quoted associative subscript expands without re-expanding value"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key="space key"
       value=expanded
@@ -787,7 +756,6 @@ cases:
       declare -p map
 
   - name: "Single-quoted append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'text=one'
       declare 'text+=two' 2>/dev/null
@@ -795,14 +763,12 @@ cases:
       declare -p text
 
   - name: "Single-quoted array-like scalar assignment with +a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare +a 'arr=(1 2)'
       echo "status: $?"
       declare -p arr
 
   - name: "Cannot remove indexed array attribute with +a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a arr=(1 2)
       declare +a arr 2>/dev/null
@@ -817,7 +783,6 @@ cases:
       declare -p arr
 
   - name: "Single-quoted associative array assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -A 'map=([alpha]=one [beta]=two)' 2>/dev/null
       echo "status: $?"
@@ -847,7 +812,6 @@ cases:
       f
 
   - name: "Function shadowing declare is reached through command"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare() { echo "shadow declare: [$*]"; }
       command declare cx=1
@@ -870,7 +834,6 @@ cases:
       declare -p arr
 
   - name: "Temporary IFS does split a quoted compound declare operand"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a,b"
       IFS=, declare -a 'arr=(${X})'
@@ -929,14 +892,12 @@ cases:
   # like a subscript.
   #
   - name: "Assignment value ending in a bracket is not a subscripted name"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       v='[a]'
       declare "x=$v"
       declare -p x
 
   - name: "Assignment value containing brackets is preserved"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'a[1]=v[2]'
       declare -p a
@@ -950,7 +911,6 @@ cases:
   # Regression coverage: `+a`/`+A` report why they refuse to remove an array attribute.
   #
   - name: "Removing array attribute reports an error"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -a arr=(1 2)
@@ -959,7 +919,6 @@ cases:
       declare -p arr
 
   - name: "Removing array attribute from a declared but unset array fails"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -a arr
@@ -968,7 +927,6 @@ cases:
       declare -p arr
 
   - name: "Removing associative array attribute fails"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -A map=([k]=v)
@@ -991,7 +949,6 @@ cases:
   # deliberately expands to command-substitution syntax, so a second expansion is visible in the
   # result and the two cases cannot be collapsed without failing.
   - name: "Subscript of a parsed element assignment is expanded a second time"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key='$(echo SECOND)'
       declare -A m
@@ -1005,7 +962,6 @@ cases:
       declare -p m
 
   - name: "Quoted element subscript is expanded exactly once"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key='$(echo SECOND)'
       declare -A m
@@ -1013,7 +969,6 @@ cases:
       declare -p m
 
   - name: "Parsed indexed subscript is arithmetically evaluated"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare arr[index+1]=v
@@ -1026,7 +981,6 @@ cases:
       declare -p m
 
   - name: "Compound indexed key is arithmetically evaluated"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a a=([2+2]=v)
       declare -p a
@@ -1054,7 +1008,6 @@ cases:
   # Attribute-filtered display.
   #
   - name: "Display filtered by readonly and trace attributes"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -r zzro=1
       declare -t zztr=2
@@ -1093,7 +1046,6 @@ cases:
       declare -p both 2>&1
 
   - name: "Display diagnostics name the builtin as invoked"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       check() {
         case $2 in
@@ -1107,7 +1059,6 @@ cases:
       f
 
   - name: "Display filtered by array attributes includes unassigned arrays"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a zzempty
       declare -A zzemptyA
@@ -1117,7 +1068,6 @@ cases:
       echo "-A:"; declare -pA | grep zz | sort
 
   - name: "Declaration diagnostics name the builtin and quote the operand"
-    known_failure: true # TODO: declare improvements required
     # Covers every diagnostic the declaration builtins emit, so a new one cannot quietly omit the
     # builtin's name. The leading "file: line N:" a shell prefixes is stripped.
     stdin: |

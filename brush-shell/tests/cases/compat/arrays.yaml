@@ -444,14 +444,12 @@ cases:
   # subscripts itself once its options reveal the target array type.
   #
   - name: "declare resolves an arithmetic subscript"
-    known_failure: true # TODO(declare): subscripts are not resolved by declaration builtins
     stdin: |
       i=2
       declare -a a[i]=x
       declare -p a
 
   - name: "declare evaluates subscript arithmetic after the value expands"
-    known_failure: true # TODO(declare): subscripts are not resolved by declaration builtins
     stdin: |
       i=0
       declare -a a[i++]=$i
@@ -459,7 +457,6 @@ cases:
       echo "i=$i"
 
   - name: "declare expands an associative subscript a second time"
-    known_failure: true # TODO(declare): subscripts are not resolved by declaration builtins
     stdin: |
       declare -A n
       k='$(echo expanded-twice)'

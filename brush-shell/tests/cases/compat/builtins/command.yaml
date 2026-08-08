@@ -88,7 +88,6 @@ cases:
       command ls --help
 
   - name: "command forwards expanded declaration assignments"
-    known_failure: true # TODO: command builtin improvements required
     stdin: |
       value=world
       command declare declared=$value
@@ -96,7 +95,6 @@ cases:
       declare -p declared exported
 
   - name: "nested wrappers resolve ordinary and declaration targets"
-    known_failure: true # TODO: command builtin improvements required
     stdin: |
       value=world
       command builtin echo ordinary=$value
@@ -136,7 +134,6 @@ cases:
   # syntax that survives.
   #
   - name: "command does not preserve assignment splitting semantics"
-    known_failure: true # TODO: command builtin improvements required
     ignore_stderr: true
     stdin: |
       v="x y"
@@ -144,7 +141,6 @@ cases:
       declare -p b y
 
   - name: "command forwards a value with no field separators intact"
-    known_failure: true # TODO: command builtin improvements required
     stdin: |
       value=world
       command declare declared=$value
