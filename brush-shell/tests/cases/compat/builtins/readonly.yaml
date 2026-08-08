@@ -25,6 +25,12 @@ cases:
       }
       f
 
+  - name: "Multiple readonly operands expand before assignments are applied"
+    stdin: |
+      unset first second
+      readonly first=one second=$first
+      declare -p first second
+
   - name: "readonly on nameref makes nameref readonly"
     known_failure: true
     ignore_stderr: true
@@ -51,3 +57,17 @@ cases:
       ref="new_value" 2>/dev/null
       echo "exit: $?"
       echo "target: $target"
+
+  - name: "readonly -f marks a function readonly rather than displaying it"
+    # brush routes `readonly -f` through the same display path as `declare -f`, so it prints the
+    # function's definition and never makes it readonly. A shell prints nothing, rejects a later
+    # redefinition, and reports a missing name as "readonly: NAME: not a function".
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      g() { echo original; }
+      readonly -f g
+      echo "status: $?"
+      g() { echo redefined; }
+      g
+      readonly -f nosuchfn

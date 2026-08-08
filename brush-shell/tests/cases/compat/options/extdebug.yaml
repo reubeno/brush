@@ -295,7 +295,6 @@ cases:
       recurse 3
 
   - name: "BASH_COMMAND shows compound command"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       shopt -s extdebug
       trap 'echo "cmd: $BASH_COMMAND"' DEBUG

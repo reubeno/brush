@@ -7,9 +7,6 @@ use clap::Parser;
 pub(crate) struct UnimplementedCommand {
     #[clap(allow_hyphen_values = true)]
     args: Vec<String>,
-
-    #[clap(skip)]
-    declarations: Vec<brush_core::CommandArg>,
 }
 
 impl builtins::Command for UnimplementedCommand {
@@ -25,11 +22,5 @@ impl builtins::Command for UnimplementedCommand {
             self.args.join(" ")
         );
         Ok(ExecutionExitCode::Unimplemented.into())
-    }
-}
-
-impl builtins::DeclarationCommand for UnimplementedCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
     }
 }

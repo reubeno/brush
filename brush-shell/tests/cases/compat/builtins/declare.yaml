@@ -62,6 +62,27 @@ cases:
       declare -i var=value
       declare -p var
 
+  - name: "Removing integer attribute prevents arithmetic evaluation"
+    stdin: |
+      declare -i var=5
+      declare +i var=1+2
+      declare -p var
+
+  - name: "Invalid integer declaration does not evaluate value"
+    stdin: |
+      side_effect=0
+      declare -i 'invalid-name=side_effect=1' 2>/dev/null
+      echo "status: $?"
+      echo "side effect: $side_effect"
+
+  - name: "Readonly integer declaration does not evaluate value"
+    stdin: |
+      side_effect=0
+      readonly var=1
+      declare -i 'var=side_effect=1' 2>/dev/null
+      echo "status: $?"
+      echo "side effect: $side_effect"
+
   - name: "Update integer with non-integer string"
     stdin: |
       declare -i var=10
@@ -139,6 +160,59 @@ cases:
       var="value"
       declare var
       echo "var: ${var}"
+
+  - name: "Appending via declare"
+    stdin: |
+      declare var="value"
+      declare -p var
+
+      declare var+="appended"
+      declare -p var
+
+  - name: "Multiple declare operands expand before assignments are applied"
+    stdin: |
+      unset first second
+      declare first=one second=$first
+      declare -p first second
+
+  - name: "Declare command substitutions expand left to right exactly once"
+    stdin: |
+      marker=marker.txt
+      : > "$marker"
+      declare first=$(printf one; printf x >> "$marker") second=$(read -r contents < "$marker"; printf %s "$contents")
+      declare -p first second
+      read -r contents < "$marker"
+      echo "marker: $contents"
+
+  - name: "Declare expansion error occurs before any operand is applied"
+    known_failure: true # Requires EXIT traps to fire at subshell exit; brush only runs them
+                        # when the top-level shell exits, so the trap below never observes the state.
+    stdin: |
+      state=state.txt
+      : > "$state"
+      (trap 'declare -p first > "$state" 2>/dev/null || printf unset > "$state"' EXIT; set -u; declare first=one second=$missing) 2>/dev/null
+      echo "status: $?"
+      read -r contents < "$state"
+      echo "state: ${contents:-empty}"
+
+  - name: "Aliases preserve declaration assignment expansion"
+    stdin: |
+      shopt -s expand_aliases
+      alias d=declare
+      alias e=export
+      value=world
+      d declared=$value
+      e exported=$value
+      declare -p declared exported
+
+  - name: "Disabled declare uses ordinary argument expansion"
+    stdin: |
+      enable -n declare
+      value=world
+      declare disabled=$value 2>/dev/null
+      echo "status: $?"
+      enable declare
+      declare -p disabled 2>/dev/null || echo unset
 
   - name: "Declaring without value"
     stdin: |
@@ -270,6 +344,15 @@ cases:
       echo "Result: $?"
       declare -p scalar=y
       echo "Result: $?"
+
+  - name: "Declare -p error shows expanded assignment"
+    stdin: |
+      value=world
+      output=$(declare -p missing=$value 2>&1)
+      status=$?
+      output=${output##*declare: }
+      echo "status: $status"
+      echo "error: $output"
 
   - name: "Updating value"
     stdin: |
@@ -449,3 +532,552 @@ cases:
       declare -n ref2=regular
       not_a_ref="also plain"
       declare -p -n 2>/dev/null | sort
+
+  - name: "Single-quoted scalar assignment"
+    stdin: |
+      declare 'x=hello'
+      echo "$x"
+
+  - name: "Single-quoted scalar with dollar sign preserved"
+    stdin: |
+      Y=world
+      declare 'x=$Y'
+      echo "$x"
+
+  - name: "Double-quoted scalar assignment expands"
+    stdin: |
+      Y=world
+      declare "x=$Y"
+      echo "$x"
+
+  - name: "Single-quoted array assignment with -a"
+    stdin: |
+      declare -a 'arr=(1 2 3)'
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Single-quoted array assignment with deferred expansion"
+    stdin: |
+      X="a b"
+      declare -a 'arr=(${X})'
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Single-quoted array assignment with IFS splitting"
+    stdin: |
+      X="a,b"
+      IFS=, declare -a 'arr=(${X})'
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Double-quoted compound assignment with escaped expansion"
+    stdin: |
+      X="a b"
+      declare -a "arr=(\${X})"
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Variable-generated compound assignment syntax"
+    stdin: |
+      X="a b"
+      value='(${X})'
+      declare -a "arr=$value"
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Command-substitution-generated compound assignment syntax"
+    stdin: |
+      X="a b"
+      declare -a "arr=$(printf '(%s)' '${X}')"
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Single-quoted compound value in parsed assignment is reparsed"
+    stdin: |
+      X="a b"
+      declare -a arr='(${X})'
+      echo "${arr[@]}"
+      echo "${#arr[@]}"
+
+  - name: "Single-quoted array assignment without -a is scalar"
+    stdin: |
+      declare 'arr=(1 2 3)'
+      declare -p arr
+
+  - name: "Single-quoted array assignment Gentoo rpm.eclass pattern"
+    stdin: |
+      RPM_COMPRESS_TYPE="lzma zstd"
+      IFS=, declare -a 'types=(${RPM_COMPRESS_TYPE})'
+      echo "${types[@]}"
+      echo "${#types[@]}"
+
+  - name: "local -a single-quoted array assignment"
+    stdin: |
+      f() {
+        X="a b"
+        local -a 'arr=(${X})'
+        echo "${arr[@]}"
+      }
+      f
+
+  - name: "Single-quoted indexed element assignment"
+    stdin: |
+      declare 'arr[0]=hello'
+      declare -p arr
+
+  - name: "Quoted array assignment does not execute value as shell code"
+    stdin: |
+      payload='(x); printf "INJECTED\n"; #'
+      declare -a "arr=$payload"
+      echo "status: $?"
+      declare -p arr
+
+  - name: "Quoted array assignment propagates assignment failure"
+    stdin: |
+      declare -ar arr=(old)
+      declare -a 'arr=(new)' 2>/dev/null
+      echo "status: $?"
+      declare -p arr
+
+  - name: "Quoted array assignment applies uppercase attribute"
+    stdin: |
+      declare -au 'arr=(ab Cd)'
+      declare -p arr
+
+  - name: "Quoted array assignment applies integer attribute"
+    # Integer assignment expression evaluation is a broader core assignment issue.
+    known_failure: true
+    stdin: |
+      declare -ai 'arr=(1+2 3*4)'
+      declare -p arr
+
+  - name: "Quoted assignment uses existing indexed array type"
+    stdin: |
+      arr=(old)
+      declare 'arr=(new values)'
+      declare -p arr
+
+  - name: "Quoted assignment uses existing associative array type"
+    stdin: |
+      declare -A map=([old]=value)
+      declare 'map=([new]=value [other]=two)'
+      declare -p map
+
+  - name: "Quoted assignment uses declaration target scope"
+    stdin: |
+      arr=(global)
+      f() {
+        local arr=scalar
+        declare -g 'arr=(new values)'
+        declare -p arr
+      }
+      f
+      declare -p arr
+
+  - name: "Quoted global assignment ignores local array type"
+    stdin: |
+      arr=global
+      f() {
+        local -a arr=(local)
+        declare -g 'arr=(new values)'
+        declare -p arr
+      }
+      f
+      declare -p arr
+
+  - name: "Quoted local declaration does not inherit global array type"
+    stdin: |
+      arr=(global)
+      f() {
+        declare 'arr=(local values)'
+        declare -p arr
+      }
+      f
+      declare -p arr
+
+  - name: "Single-quoted nonzero indexed element assignment"
+    stdin: |
+      declare 'arr[5]=hello'
+      declare -p arr
+
+  - name: "Single-quoted indexed element append assignment"
+    stdin: |
+      declare -a arr=([0]=one)
+      declare 'arr[0]+=two'
+      declare -p arr
+
+  - name: "Single-quoted associative element append assignment"
+    stdin: |
+      declare -A map=([key]=one)
+      declare 'map[key]+=two'
+      declare -p map
+
+  - name: "Single-quoted arithmetic indexed element assignment"
+    stdin: |
+      declare 'arr[2+2]=value'
+      declare -p arr
+
+  - name: "Single-quoted variable arithmetic indexed element assignment"
+    stdin: |
+      index=3
+      declare 'arr[index+1]=value'
+      declare -p arr
+
+  - name: "Single-quoted parameter-expanded indexed element assignment"
+    stdin: |
+      index=3
+      declare 'arr[$index+1]=value'
+      declare -p arr
+
+  - name: "Single-quoted command-substitution indexed element assignment"
+    stdin: |
+      index=3
+      declare 'arr[$(echo 2)+index]=value'
+      declare -p arr
+
+  - name: "Single-quoted parameter-expanded associative element assignment"
+    stdin: |
+      key="space key"
+      declare -A 'map[$key]=value'
+      declare -p map
+
+  - name: "Single-quoted indexed subscript expands without re-expanding value"
+    stdin: |
+      index=2
+      value=expanded
+      declare 'arr[$index]=$value'
+      declare -p arr
+
+  - name: "Single-quoted associative subscript expands without re-expanding value"
+    stdin: |
+      key="space key"
+      value=expanded
+      declare -A 'map[$key]=$value'
+      declare -p map
+
+  - name: "Single-quoted append assignment"
+    stdin: |
+      declare 'text=one'
+      declare 'text+=two' 2>/dev/null
+      echo "status: $?"
+      declare -p text
+
+  - name: "Single-quoted array-like scalar assignment with +a"
+    stdin: |
+      declare +a 'arr=(1 2)'
+      echo "status: $?"
+      declare -p arr
+
+  - name: "Cannot remove indexed array attribute with +a"
+    stdin: |
+      declare -a arr=(1 2)
+      declare +a arr 2>/dev/null
+      echo "status: $?"
+      declare -p arr
+
+  - name: "Cannot update indexed array while removing attribute with +a"
+    stdin: |
+      declare -a arr=(1 2)
+      declare +a 'arr=(3 4)' 2>/dev/null
+      echo "status: $?"
+      declare -p arr
+
+  - name: "Single-quoted associative array assignment"
+    stdin: |
+      declare -A 'map=([alpha]=one [beta]=two)' 2>/dev/null
+      echo "status: $?"
+      declare -p map 2>/dev/null
+
+  #
+  # Regression coverage: a shell function may shadow a declaration builtin. The builtin's
+  # arguments must still reach the function intact.
+  #
+  - name: "Function shadowing declare receives its arguments"
+    stdin: |
+      declare() { echo "shadow declare: [$*] count=$#"; }
+      declare x=1
+      declare a b c
+      unset -f declare
+
+  - name: "Function shadowing local and readonly receives its arguments"
+    stdin: |
+      readonly() { echo "shadow readonly: [$*] count=$#"; }
+      readonly r=1
+      unset -f readonly
+      f() {
+        local() { echo "shadow local: [$*] count=$#"; }
+        local l=2
+        unset -f local
+      }
+      f
+
+  - name: "Function shadowing declare is reached through command"
+    stdin: |
+      declare() { echo "shadow declare: [$*]"; }
+      command declare cx=1
+      unset -f declare
+
+  #
+  # Regression coverage: an assignment operand is expanded before the command runs, so the
+  # command's own temporary environment and redirections cannot affect that expansion.
+  #
+  - name: "Temporary environment is not visible to a declare operand"
+    stdin: |
+      unset FOO
+      FOO=fromprefix declare y=$FOO
+      declare -p y
+
+  - name: "Temporary IFS does not split an unquoted compound declare operand"
+    stdin: |
+      X="a:b"
+      IFS=: declare -a arr=($X)
+      declare -p arr
+
+  - name: "Temporary IFS does split a quoted compound declare operand"
+    stdin: |
+      X="a,b"
+      IFS=, declare -a 'arr=(${X})'
+      declare -p arr
+
+  - name: "Redirections do not apply to a declare operand's command substitution"
+    stdin: |
+      declare w=$(echo to-stderr >&2; echo val) 2>/dev/null
+      declare -p w
+
+  #
+  # Regression coverage: an expansion error in an operand is fatal, exactly as it is for an
+  # ordinary assignment statement.
+  #
+  - name: "Unset variable in a declare operand is fatal under set -u"
+    ignore_stderr: true
+    stdin: |
+      ( set -u; declare x=$undefined; echo "NOT REACHED" )
+      echo "status: $?"
+
+  - name: "Unset variable in a local operand is fatal under set -u"
+    ignore_stderr: true
+    stdin: |
+      f() { local x=$undefined; echo "NOT REACHED"; }
+      ( set -u; f; echo "NOT REACHED EITHER" )
+      echo "status: $?"
+
+  #
+  # Regression coverage: `$_` and command tracing are the interpreter's responsibility, so they
+  # apply to every form of these builtins, not only to the forms that assign.
+  #
+  - name: "$_ - declare display and query forms"
+    stdin: |
+      value=world
+      echo seed > /dev/null
+      declare -p PWD > /dev/null; printf 'declare -p: [%s]\n' "$_"
+      echo seed > /dev/null
+      declare > /dev/null; printf 'declare bare: [%s]\n' "$_"
+      echo seed > /dev/null
+      f() { :; }
+      declare -f f > /dev/null; printf 'declare -f: [%s]\n' "$_"
+      echo seed > /dev/null
+      declare declared=$value; printf 'declare assign: [%s]\n' "$_"
+
+  - name: "$_ - export and readonly display forms"
+    stdin: |
+      echo seed > /dev/null
+      export > /dev/null; printf 'export bare: [%s]\n' "$_"
+      echo seed > /dev/null
+      readonly > /dev/null; printf 'readonly bare: [%s]\n' "$_"
+      echo seed > /dev/null
+      readonly -p > /dev/null; printf 'readonly -p: [%s]\n' "$_"
+
+  #
+  # Regression coverage: `declare array[index]` versus an assignment whose value merely looks
+  # like a subscript.
+  #
+  - name: "Assignment value ending in a bracket is not a subscripted name"
+    stdin: |
+      v='[a]'
+      declare "x=$v"
+      declare -p x
+
+  - name: "Assignment value containing brackets is preserved"
+    stdin: |
+      declare 'a[1]=v[2]'
+      declare -p a
+
+  - name: "Bare subscripted name declares an array"
+    stdin: |
+      declare 'arr[5]'
+      declare -p arr
+
+  #
+  # Regression coverage: `+a`/`+A` report why they refuse to remove an array attribute.
+  #
+  - name: "Removing array attribute reports an error"
+    ignore_stderr: true
+    stdin: |
+      declare -a arr=(1 2)
+      declare +a arr
+      echo "status: $?"
+      declare -p arr
+
+  - name: "Removing array attribute from a declared but unset array fails"
+    ignore_stderr: true
+    stdin: |
+      declare -a arr
+      declare +a arr
+      echo "status: $?"
+      declare -p arr
+
+  - name: "Removing associative array attribute fails"
+    ignore_stderr: true
+    stdin: |
+      declare -A map=([k]=v)
+      declare +A map
+      echo "status: $?"
+      declare -p map
+
+  #
+  # Regression coverage: subscript expansion for operands that arrive already expanded.
+  #
+  - name: "Parsed associative subscript is expanded"
+    stdin: |
+      declare -A m
+      key="a b"
+      declare m[$key]=v
+      declare -p m
+
+  # These two pin the asymmetry in how subscripts are resolved: a `name[sub]=` subscript is
+  # expanded again by the builtin, while a compound element's key is already final. The key
+  # deliberately expands to command-substitution syntax, so a second expansion is visible in the
+  # result and the two cases cannot be collapsed without failing.
+  - name: "Subscript of a parsed element assignment is expanded a second time"
+    stdin: |
+      key='$(echo SECOND)'
+      declare -A m
+      declare m[$key]=v
+      declare -p m
+
+  - name: "Compound element key is not expanded a second time"
+    stdin: |
+      key='$(echo SECOND)'
+      declare -A m=([$key]=v)
+      declare -p m
+
+  - name: "Quoted element subscript is expanded exactly once"
+    stdin: |
+      key='$(echo SECOND)'
+      declare -A m
+      declare 'm[$key]=v'
+      declare -p m
+
+  - name: "Parsed indexed subscript is arithmetically evaluated"
+    stdin: |
+      index=3
+      declare arr[index+1]=v
+      declare -p arr
+
+  - name: "Compound associative key is expanded exactly once"
+    stdin: |
+      key="a b"
+      declare -A m=([$key]=v)
+      declare -p m
+
+  - name: "Compound indexed key is arithmetically evaluated"
+    stdin: |
+      declare -a a=([2+2]=v)
+      declare -p a
+
+  - name: "Compound value assigned to an array element targets the whole array"
+    # A shell drops the subscript and applies the compound assignment to the whole array; brush
+    # stores the compound text as the element's literal value.
+    known_failure: true
+    stdin: |
+      declare -a n=(1)
+      declare -a 'n[0]=(9 8)'
+      echo "status: $?"
+      declare -p n
+
+  - name: "Empty subscript is rejected"
+    # brush's bare-name array form accepts an empty subscript; a shell rejects it.
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      declare 'b[]'
+      echo "status: $?"
+      declare -p b 2>&1
+
+  #
+  # Attribute-filtered display.
+  #
+  - name: "Display filtered by readonly and trace attributes"
+    stdin: |
+      declare -r zzro=1
+      declare -t zztr=2
+      declare -rt zzboth=3
+      zzplain=4
+      echo "-r:"; declare -pr | grep zz | sort
+      echo "-t:"; declare -pt | grep zz | sort
+
+  - name: "Display filtered by several attributes lists any that match"
+    # A shell combines attribute filters as a union: `declare -rt` lists variables that are
+    # readonly or traced. brush intersects them, listing only variables that are both.
+    known_failure: true
+    stdin: |
+      declare -r zzro=1
+      declare -t zztr=2
+      declare -rt zzboth=3
+      declare -prt | grep zz | sort
+
+  - name: "Display is not filtered by a plus attribute option"
+    # brush treats `+x` as a request for variables lacking the attribute; a shell applies no
+    # filter at all in that case. This affects every attribute, not just the one shown here.
+    known_failure: true
+    stdin: |
+      declare -x zzex=1
+      zzplain=2
+      declare +x | grep zz | sort
+
+  - name: "Combining -a and -A is rejected"
+    # A shell treats `-a` and `-A` together as an invalid option combination. brush accepts it and
+    # lets `-A` win, which lands on the same variable type but without the diagnostic or status.
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      declare -aA both=(x)
+      echo "status: $?"
+      declare -p both 2>&1
+
+  - name: "Display diagnostics name the builtin as invoked"
+    stdin: |
+      check() {
+        case $2 in
+          *"$1") echo "$1: ok";;
+          *) echo "$1: unexpected: $2";;
+        esac
+      }
+      check "declare: nosuch: not found" "$(declare -p nosuch 2>&1)"
+      check "typeset: nosuch: not found" "$(typeset -p nosuch 2>&1)"
+      f() { check "local: nosuch: not found" "$(local -p nosuch 2>&1)"; }
+      f
+
+  - name: "Display filtered by array attributes includes unassigned arrays"
+    stdin: |
+      declare -a zzempty
+      declare -A zzemptyA
+      declare -a zzfull=(1)
+      declare -A zzfullA=([k]=v)
+      echo "-a:"; declare -pa | grep zz | sort
+      echo "-A:"; declare -pA | grep zz | sort
+
+  - name: "Declaration diagnostics name the builtin and quote the operand"
+    # Covers every diagnostic the declaration builtins emit, so a new one cannot quietly omit the
+    # builtin's name. The leading "file: line N:" a shell prefixes is stripped.
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      local x=1 2>&1 | strip
+      v=w; declare -p missing=$v 2>&1 | strip
+      declare -p nosuchvar 2>&1 | strip
+      declare -a da=(1); declare +a da 2>&1 | strip
+      declare 'bad-name=1' 2>&1 | strip
+      f() { local 'bad-name2=1' 2>&1 | strip; }; f
+      readonly 'bad-name3=1' 2>&1 | strip
+      export -f nosuchfn 2>&1 | strip
+      export 'e[0]=1' 2>&1 | strip

@@ -588,41 +588,89 @@ pub fn parse_brace_expansions(
         .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err.into()))
 }
 
-pub(crate) fn parse_assignment_word(
+/// Parses a scalar assignment from a given word.
+///
+/// A parenthesized value is treated as scalar text; see
+/// [`parse_compound_assignment_value`] for reinterpreting such a value as a compound one.
+///
+/// # Arguments
+///
+/// * `word` - The word to parse.
+/// * `options` - The parser options to use.
+pub fn parse_scalar_assignment(
     word: &str,
-) -> Result<ast::Assignment, peg::error::ParseError<peg::str::LineCol>> {
-    expansion_parser::name_equals_scalar_value(word, &ParserOptions::default())
+    options: &ParserOptions,
+) -> Result<ast::Assignment, error::WordParseError> {
+    expansion_parser::name_equals_scalar_value(word, options)
+        .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
 }
 
+/// Parses text as a compound assignment value, returning its optionally-keyed element words.
+/// Returns `None` if the text is not a well-formed compound value.
+///
+/// This exists so that text which only becomes recognizable as a compound value *after* expansion
+/// can be reinterpreted without reconstructing and re-parsing a whole assignment word.
+///
+/// # Arguments
+///
+/// * `value` - The candidate compound value text, including its enclosing parentheses.
+/// * `options` - The parser options to use.
+#[must_use]
+pub fn parse_compound_assignment_value(
+    value: &str,
+    options: &ParserOptions,
+) -> Option<Vec<(Option<ast::Word>, ast::Word)>> {
+    let elements = crate::parser::parse_compound_assignment_value(value, options)?;
+    parse_array_elements(elements.iter(), options).ok()
+}
+
+/// Parses an array assignment from a given word and its array elements.
+///
+/// # Arguments
+///
+/// * `word` - The assignment name and equals sign to parse.
+/// * `elements` - The array element words to parse.
+/// * `options` - The parser options to use.
 pub(crate) fn parse_array_assignment(
     word: &str,
     elements: &[&String],
+    options: &ParserOptions,
 ) -> Result<ast::Assignment, &'static str> {
-    let (assignment_name, append) = expansion_parser::name_equals(word, &ParserOptions::default())
-        .map_err(|_| "not array assignment word")?;
-
-    let elements = elements
-        .iter()
-        .map(|element| expansion_parser::literal_array_element(element, &ParserOptions::default()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| "invalid array element in literal")?;
-
-    let elements_as_words = elements
-        .into_iter()
-        .map(|(key, value)| {
-            (
-                key.map(|k| ast::Word::new(k.as_str())),
-                ast::Word::new(value.as_str()),
-            )
-        })
-        .collect();
+    let (assignment_name, append) =
+        expansion_parser::name_equals(word, options).map_err(|_| "not array assignment word")?;
 
     Ok(ast::Assignment {
         name: assignment_name,
-        value: ast::AssignmentValue::Array(elements_as_words),
+        value: ast::AssignmentValue::Array(parse_array_elements(
+            elements.iter().copied(),
+            options,
+        )?),
         append,
         loc: SourceSpan::default(),
     })
+}
+
+/// Parses literal array element text into optionally-keyed element words.
+///
+/// # Arguments
+///
+/// * `elements` - The array element texts to parse.
+/// * `options` - The parser options to use.
+fn parse_array_elements<'a>(
+    elements: impl IntoIterator<Item = &'a String>,
+    options: &ParserOptions,
+) -> Result<Vec<(Option<ast::Word>, ast::Word)>, &'static str> {
+    elements
+        .into_iter()
+        .map(|element| {
+            let (key, value) = expansion_parser::literal_array_element(element, options)
+                .map_err(|_| "invalid array element in literal")?;
+            Ok((
+                key.map(|key| ast::Word::new(key.as_str())),
+                ast::Word::new(value.as_str()),
+            ))
+        })
+        .collect()
 }
 
 peg::parser! {
@@ -1373,12 +1421,39 @@ mod tests {
     }
 
     #[test]
-    fn parse_assignment_word() -> Result<()> {
-        super::parse_assignment_word("x=3")?;
-        super::parse_assignment_word("x=")?;
-        super::parse_assignment_word("x[3]=a")?;
-        super::parse_assignment_word("x[${y[3]}]=a")?;
-        super::parse_assignment_word("x[y[3]]=a")?;
+    fn test_scalar_assignment_parsing() -> Result<()> {
+        let options = ParserOptions::default();
+
+        super::parse_scalar_assignment("x=3", &options)?;
+        super::parse_scalar_assignment("x=", &options)?;
+        super::parse_scalar_assignment("x[3]=a", &options)?;
+        super::parse_scalar_assignment("x[${y[3]}]=a", &options)?;
+        super::parse_scalar_assignment("x[y[3]]=a", &options)?;
         Ok(())
+    }
+
+    #[test]
+    fn parse_compound_assignment_value() {
+        let options = ParserOptions::default();
+        let parse = |value| super::parse_compound_assignment_value(value, &options);
+
+        assert_matches!(parse("()").as_deref(), Some([]));
+
+        assert_matches!(parse("(1 2)").as_deref(), Some([(None, first), (None, second)])
+            if first.value == "1" && second.value == "2");
+
+        assert_matches!(
+            parse(r#"([key]=value "other one")"#).as_deref(),
+            Some([(Some(key), value), (None, other)])
+                if key.value == "key"
+                    && value.value == "value"
+                    && other.value == r#""other one""#);
+
+        // Text that is not exclusively a compound value must not be accepted; otherwise trailing
+        // shell syntax hidden in an expanded value would be silently dropped.
+        assert!(parse(r#"(x); printf "INJECTED\n"; #"#).is_none());
+        assert!(parse("(unterminated").is_none());
+        assert!(parse("plain text").is_none());
+        assert!(parse("").is_none());
     }
 }
