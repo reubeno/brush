@@ -6,8 +6,6 @@ use crate::{error, openfiles};
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub(super) fn load_history(&self) -> Result<Option<crate::history::History>, error::Error> {
-        const MAX_FILE_SIZE_FOR_HISTORY_IMPORT: u64 = 1024 * 1024 * 1024; // 1 GiB
-
         let Some(history_path) = self.history_file_path() else {
             return Ok(None);
         };
@@ -31,7 +29,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             }
 
             // Bail if the file is unrealistically large. For now we just refuse to import it.
-            if file_size > MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
+            if file_size > crate::history::MAX_FILE_SIZE_FOR_HISTORY_IMPORT {
                 return Err(error::ErrorKind::HistoryFileTooLargeToImport.into());
             }
         }
