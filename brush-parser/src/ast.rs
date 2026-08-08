@@ -1401,6 +1401,17 @@ pub enum AssignmentName {
     ArrayElementName(String, String),
 }
 
+impl AssignmentName {
+    /// Returns the base name of the assignment, without any array indexing
+    /// if present.
+    pub fn base_name(&self) -> &str {
+        match self {
+            Self::VariableName(name) => name,
+            Self::ArrayElementName(name, _index) => name,
+        }
+    }
+}
+
 impl Display for AssignmentName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
