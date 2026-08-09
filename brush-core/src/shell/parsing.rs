@@ -2,7 +2,7 @@
 
 use std::io::Read;
 
-use crate::{Shell, extensions, trace_categories};
+use crate::{Shell, cache, extensions, trace_categories};
 
 impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Parses the given reader as a shell program, returning the resulting Abstract Syntax Tree
@@ -45,12 +45,20 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     }
 }
 
-#[cached::macros::cached(
-    max_size = 64,
-    key = "(String, brush_parser::ParserOptions)",
-    convert = r#"{ (s.to_owned(), parser_options.to_owned()) }"#
-)]
 fn parse_string_impl(
+    s: &str,
+    parser_options: &brush_parser::ParserOptions,
+) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
+    thread_local! {
+        static CACHE: cache::Cache<(String, brush_parser::ParserOptions), brush_parser::ast::Program> =
+            cache::new();
+    }
+    cache::get_or_parse(&CACHE, (s.to_owned(), parser_options.clone()), || {
+        uncached_parse_string(s, parser_options)
+    })
+}
+
+fn uncached_parse_string(
     s: &str,
     parser_options: &brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
