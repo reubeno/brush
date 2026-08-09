@@ -1,5 +1,5 @@
 use crate::{
-    ExecutionParameters, error, expansion, extensions,
+    ExecutionParameters, cache, error, expansion, extensions,
     shell::Shell,
     sys::{self, users},
 };
@@ -59,11 +59,16 @@ pub(crate) async fn expand_prompt(
     Ok(formatted_prompt)
 }
 
-#[cached::macros::cached(max_size = 64, key = "String", convert = r#"{ spec.to_owned() }"#)]
 fn parse_prompt(
     spec: &str,
 ) -> Result<Vec<brush_parser::prompt::PromptPiece>, brush_parser::WordParseError> {
-    brush_parser::prompt::parse(spec)
+    thread_local! {
+        static CACHE: cache::Cache<String, Vec<brush_parser::prompt::PromptPiece>> =
+            cache::new();
+    }
+    cache::get_or_parse(&CACHE, spec.to_owned(), || {
+        brush_parser::prompt::parse(spec)
+    })
 }
 
 fn format_prompt_piece(
