@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use utf8_chars::BufReadCharsExt;
 
+use crate::cache;
 use crate::{SourcePosition, SourceSpan};
 
 mod char_reader;
@@ -676,20 +677,12 @@ pub fn tokenize_str_with_options(
     input: &str,
     options: &TokenizerOptions,
 ) -> Result<Vec<Token>, TokenizerError> {
-    uncached_tokenize_string(input, options)
-}
-
-#[cached::macros::cached(
-    name = "TOKENIZE_CACHE",
-    max_size = 64,
-    key = "(String, TokenizerOptions)",
-    convert = r#"{ (input.to_owned(), options.to_owned()) }"#
-)]
-fn uncached_tokenize_string(
-    input: &str,
-    options: &TokenizerOptions,
-) -> Result<Vec<Token>, TokenizerError> {
-    uncached_tokenize_str(input, options)
+    thread_local! {
+        static CACHE: cache::Cache<(String, TokenizerOptions), Vec<Token>> = cache::new();
+    }
+    cache::get_or_parse(&CACHE, (input.to_owned(), options.clone()), || {
+        uncached_tokenize_str(input, options)
+    })
 }
 
 /// Break the given input shell script string into tokens, returning the tokens.

@@ -15,6 +15,7 @@ use std::fmt::Display;
 use crate::ParserOptions;
 use crate::SourceSpan;
 use crate::ast;
+use crate::cache;
 use crate::error;
 
 /// Encapsulates a `WordPiece` together with its position in the string it came from.
@@ -527,19 +528,22 @@ pub enum BraceExpressionMember {
 ///
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
+// The cache is per thread: one shared behind a mutex stalled many shells
+// parsing at once on many threads.
 pub fn parse(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    cacheable_parse(word, options)
+    thread_local! {
+        static CACHE: cache::Cache<(String, ParserOptions), Vec<WordPieceWithSource>> =
+            cache::new();
+    }
+    cache::get_or_parse(&CACHE, (word.to_owned(), options.clone()), || {
+        uncached_parse(word, options)
+    })
 }
 
-#[cached::macros::cached(
-    max_size = 64,
-    key = "(String, ParserOptions)",
-    convert = r#"{ (word.to_owned(), options.to_owned()) }"#
-)]
-fn cacheable_parse(
+fn uncached_parse(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
