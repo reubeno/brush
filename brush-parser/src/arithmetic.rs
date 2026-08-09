@@ -41,9 +41,9 @@ pub fn parse_with(
     impl_: ParserImpl,
 ) -> Result<ast::ArithmeticExpr, error::WordParseError> {
     match impl_ {
-        ParserImpl::Peg => cacheable_peg_parse(input.to_owned()),
+        ParserImpl::Peg => cacheable_peg_parse(input),
         #[cfg(feature = "winnow-parser")]
-        ParserImpl::Winnow => cacheable_winnow_parse(input.to_owned()),
+        ParserImpl::Winnow => cacheable_winnow_parse(input),
     }
 }
 
@@ -51,10 +51,9 @@ pub fn parse_with(
 // PEG-based implementation
 // ============================================================================
 
-#[cached::proc_macro::cached(size = 64, result = true)]
-fn cacheable_peg_parse(input: String) -> Result<ast::ArithmeticExpr, error::WordParseError> {
+fn cacheable_peg_parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseError> {
     tracing::debug!(target: "arithmetic", "parsing arithmetic expression (peg): '{input}'");
-    peg_arithmetic::full_expression(input.as_str())
+    peg_arithmetic::full_expression(input)
         .map_err(|e| error::WordParseError::ArithmeticExpression(e.to_string()))
 }
 
@@ -173,11 +172,10 @@ peg::parser! {
 // ============================================================================
 
 #[cfg(feature = "winnow-parser")]
-#[cached::proc_macro::cached(size = 64, result = true)]
-fn cacheable_winnow_parse(input: String) -> Result<ast::ArithmeticExpr, error::WordParseError> {
+fn cacheable_winnow_parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseError> {
     tracing::debug!(target: "arithmetic", "parsing arithmetic expression (winnow): '{input}'");
     winnow_full_expression
-        .parse(input.as_str())
+        .parse(input)
         .map_err(|e| error::WordParseError::ArithmeticExpression(e.to_string()))
 }
 

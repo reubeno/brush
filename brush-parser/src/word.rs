@@ -527,19 +527,17 @@ pub enum BraceExpressionMember {
 ///
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
+// Deliberately uncached: `#[cached::proc_macro::cached]` used to wrap this
+// behind a single process-wide LRU behind one mutex, contended by every
+// thread doing word expansion. Under many concurrent shells (e.g. a package
+// manager sourcing thousands of scripts in parallel) that lock became the
+// dominant bottleneck — profiled live: ~40 of ~64 threads simultaneously
+// blocked in `parking_lot::RawMutex::lock_slow` from this exact call, and
+// removing the cache took a representative parallel workload from ~16s
+// (thrashing, getting *worse* with more parallelism) to ~4s (scaling
+// cleanly). The cache's hit rate was low anyway — most words parsed are
+// distinct — so there was little upside to weigh against that cost.
 pub fn parse(
-    word: &str,
-    options: &ParserOptions,
-) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    cacheable_parse(word, options)
-}
-
-#[cached::macros::cached(
-    max_size = 64,
-    key = "(String, ParserOptions)",
-    convert = r#"{ (word.to_owned(), options.to_owned()) }"#
-)]
-fn cacheable_parse(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
