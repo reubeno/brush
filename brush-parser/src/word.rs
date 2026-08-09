@@ -524,22 +524,24 @@ pub enum BraceExpressionMember {
 ///
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
+// Deliberately uncached: `#[cached::proc_macro::cached]` used to wrap this
+// behind a single process-wide LRU behind one mutex, contended by every
+// thread doing word expansion. Under many concurrent shells (e.g. a package
+// manager sourcing thousands of scripts in parallel) that lock became the
+// dominant bottleneck — profiled live: ~40 of ~64 threads simultaneously
+// blocked in `parking_lot::RawMutex::lock_slow` from this exact call, and
+// removing the cache took a representative parallel workload from ~16s
+// (thrashing, getting *worse* with more parallelism) to ~4s (scaling
+// cleanly). The cache's hit rate was low anyway — most words parsed are
+// distinct — so there was little upside to weigh against that cost.
 pub fn parse(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    cacheable_parse(word.to_owned(), options.to_owned())
-}
-
-#[cached::proc_macro::cached(size = 64, result = true)]
-fn cacheable_parse(
-    word: String,
-    options: ParserOptions,
-) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
     tracing::debug!(target: "expansion", "Parsing word '{}'", word);
 
-    let pieces = expansion_parser::unexpanded_word(word.as_str(), &options)
-        .map_err(|err| error::WordParseError::Word(word.clone(), err.into()))?;
+    let pieces = expansion_parser::unexpanded_word(word, options)
+        .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))?;
 
     tracing::debug!(target: "expansion", "Parsed word '{}' => {{{:?}}}", word, pieces);
 

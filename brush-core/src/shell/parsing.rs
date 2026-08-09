@@ -27,7 +27,8 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         &self,
         s: S,
     ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-        parse_string_impl(s.into(), self.parser_options())
+        let s: String = s.into();
+        parse_string_impl(&s, &self.parser_options())
     }
 
     /// Returns the options that should be used for parsing shell programs; reflects
@@ -44,12 +45,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     }
 }
 
-#[cached::proc_macro::cached(size = 64, result = true)]
 fn parse_string_impl(
-    s: String,
-    parser_options: brush_parser::ParserOptions,
+    s: &str,
+    parser_options: &brush_parser::ParserOptions,
 ) -> Result<brush_parser::ast::Program, brush_parser::ParseError> {
-    let mut parser = create_parser(s.as_bytes(), &parser_options);
+    let mut parser = create_parser(s.as_bytes(), parser_options);
 
     tracing::debug!(target: trace_categories::PARSE, "Parsing string as program...");
     parser.parse_program()

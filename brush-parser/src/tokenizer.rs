@@ -487,15 +487,7 @@ pub fn tokenize_str_with_options(
     input: &str,
     options: &TokenizerOptions,
 ) -> Result<Vec<Token>, TokenizerError> {
-    uncached_tokenize_string(input.to_owned(), options.to_owned())
-}
-
-#[cached::proc_macro::cached(name = "TOKENIZE_CACHE", size = 64, result = true)]
-fn uncached_tokenize_string(
-    input: String,
-    options: TokenizerOptions,
-) -> Result<Vec<Token>, TokenizerError> {
-    uncached_tokenize_str(input.as_str(), &options)
+    uncached_tokenize_str(input, options)
 }
 
 /// Break the given input shell script string into tokens, returning the tokens.
