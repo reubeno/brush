@@ -585,7 +585,8 @@ pub(crate) fn execute_external_command(
         .try_fd(openfiles::OpenFiles::STDIN_FD)
         .is_some_and(|f| f.is_terminal());
 
-    // DEBUG: normalize relative executable paths before spawning.
+    // On Windows, normalize relative executable paths before spawning.
+    #[cfg(windows)]
     let normalized_executable = if Path::new(executable_path).is_relative() {
         let joined = context.shell.working_dir().join(executable_path);
 
@@ -611,6 +612,9 @@ pub(crate) fn execute_external_command(
     } else {
         None
     };
+
+    #[cfg(not(windows))]
+    let normalized_executable: Option<String> = None;
 
     let executable_path = normalized_executable.as_deref().unwrap_or(executable_path);
 
