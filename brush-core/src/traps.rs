@@ -92,6 +92,47 @@ pub fn format_signals(
     Ok(())
 }
 
+/// Returns the name bash uses for the given signal number, including
+/// real-time signals like `SIGRTMIN`.
+pub fn signal_name_for_number(n: i32) -> String {
+    if let Ok(signal) = TrapSignal::try_from(n) {
+        return signal.as_str().to_owned();
+    }
+    real_time_signal_name(n).unwrap_or_else(|| n.to_string())
+}
+
+/// Computes the name bash uses for a real-time signal (e.g., `SIGRTMIN`,
+/// `SIGRTMIN+1`, `SIGRTMAX-1`).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn real_time_signal_name(n: i32) -> Option<String> {
+    let rtmin = nix::libc::SIGRTMIN();
+    let rtmax = nix::libc::SIGRTMAX();
+    if n < rtmin || n > rtmax {
+        return None;
+    }
+    let rtcnt = (rtmax - rtmin) / 2;
+    if n - rtmin <= rtcnt {
+        let offset = n - rtmin;
+        if offset == 0 {
+            Some("SIGRTMIN".to_owned())
+        } else {
+            Some(format!("SIGRTMIN+{offset}"))
+        }
+    } else {
+        let offset = rtmax - n;
+        if offset == 0 {
+            Some("SIGRTMAX".to_owned())
+        } else {
+            Some(format!("SIGRTMAX-{offset}"))
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn real_time_signal_name(_n: i32) -> Option<String> {
+    None
+}
+
 // implement s.parse::<TrapSignal>()
 impl FromStr for TrapSignal {
     type Err = error::Error;
@@ -178,6 +219,12 @@ pub struct TrapHandler {
 pub struct TrapHandlerConfig {
     /// Registered handlers for traps; maps signal type to command.
     handlers: HashMap<TrapSignal, TrapHandler>,
+    /// Signal numbers that had a `SIG_IGN` disposition when the shell started.
+    ///
+    /// These are reported by `trap -p` the same way bash reports signals that
+    /// were ignored on entry.
+    #[cfg_attr(feature = "serde", serde(default))]
+    signals_ignored_on_entry: Vec<i32>,
 }
 
 impl TrapHandlerConfig {
@@ -186,6 +233,28 @@ impl TrapHandlerConfig {
         self.handlers
             .iter()
             .map(|(signal, handler)| (*signal, handler))
+    }
+
+    /// Sets the signal numbers that were ignored (had a `SIG_IGN` disposition)
+    /// when the shell started.
+    ///
+    /// # Arguments
+    ///
+    /// * `signals` - The signal numbers that were ignored on shell entry.
+    pub fn set_signals_ignored_on_entry(&mut self, signals: Vec<i32>) {
+        self.signals_ignored_on_entry = signals;
+    }
+
+    /// Iterates over the signal numbers that were ignored when the shell
+    /// started.
+    pub fn iter_signals_ignored_on_entry(&self) -> impl Iterator<Item = i32> + '_ {
+        self.signals_ignored_on_entry.iter().copied()
+    }
+
+    /// Returns whether the given signal number was ignored when the shell
+    /// started.
+    pub fn is_signal_ignored_on_entry(&self, signal_number: i32) -> bool {
+        self.signals_ignored_on_entry.contains(&signal_number)
     }
 
     /// Tries to find the handler associated with the given signal.
@@ -231,5 +300,33 @@ impl TrapHandlerConfig {
     /// * `signal_type` - The type of signal to remove handlers for.
     pub fn remove_handlers(&mut self, signal_type: TrapSignal) {
         self.handlers.remove(&signal_type);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_signal_name_for_number() {
+        assert_eq!(signal_name_for_number(0), "EXIT");
+        assert_eq!(signal_name_for_number(1), "SIGHUP");
+        assert_eq!(signal_name_for_number(13), "SIGPIPE");
+
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            let rtmin = nix::libc::SIGRTMIN();
+            let rtmax = nix::libc::SIGRTMAX();
+            let rtcnt = (rtmax - rtmin) / 2;
+
+            assert_eq!(signal_name_for_number(rtmin), "SIGRTMIN");
+            assert_eq!(signal_name_for_number(rtmin + 1), "SIGRTMIN+1");
+            assert_eq!(
+                signal_name_for_number(rtmin + rtcnt),
+                format!("SIGRTMIN+{rtcnt}")
+            );
+            assert_eq!(signal_name_for_number(rtmax), "SIGRTMAX");
+            assert_eq!(signal_name_for_number(rtmax - 1), "SIGRTMAX-1");
+        }
     }
 }
