@@ -491,19 +491,6 @@ pub fn tokenize_str_with_options(
     input: &str,
     options: &TokenizerOptions,
 ) -> Result<Vec<Token>, TokenizerError> {
-    uncached_tokenize_string(input, options)
-}
-
-#[cached::macros::cached(
-    name = "TOKENIZE_CACHE",
-    max_size = 64,
-    key = "(String, TokenizerOptions)",
-    convert = r#"{ (input.to_owned(), options.to_owned()) }"#
-)]
-fn uncached_tokenize_string(
-    input: &str,
-    options: &TokenizerOptions,
-) -> Result<Vec<Token>, TokenizerError> {
     uncached_tokenize_str(input, options)
 }
 
