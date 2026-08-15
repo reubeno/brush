@@ -129,7 +129,7 @@ fn real_time_signal_name(n: i32) -> Option<String> {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
-fn real_time_signal_name(_n: i32) -> Option<String> {
+const fn real_time_signal_name(_n: i32) -> Option<String> {
     None
 }
 
@@ -310,8 +310,14 @@ mod tests {
     #[test]
     fn test_signal_name_for_number() {
         assert_eq!(signal_name_for_number(0), "EXIT");
-        assert_eq!(signal_name_for_number(1), "SIGHUP");
-        assert_eq!(signal_name_for_number(13), "SIGPIPE");
+
+        // Only platforms with a real `Signal` enum can map signal numbers to
+        // names; the stubbed platforms (e.g., Windows) cannot.
+        #[cfg(unix)]
+        {
+            assert_eq!(signal_name_for_number(1), "SIGHUP");
+            assert_eq!(signal_name_for_number(13), "SIGPIPE");
+        }
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
