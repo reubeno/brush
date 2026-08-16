@@ -137,6 +137,10 @@ pub enum TokenizerError {
     #[error("unterminated here document sequence; tag(s) [{0}] found at: [{1}]")]
     UnterminatedHereDocuments(String, String),
 
+    /// Nested expansions were encountered more deeply than the tokenizer supports.
+    #[error("expansions nested too deeply (limit: {0})")]
+    ExpansionNestingTooDeep(u32),
+
     /// An I/O error occurred while reading from the input stream.
     #[error("failed to read input")]
     ReadError(#[from] std::io::Error),
@@ -242,11 +246,24 @@ impl Default for TokenizerOptions {
     }
 }
 
+/// Maximum depth of nested expansions -- `$(...)`, `$[...]` and friends -- that
+/// the tokenizer will descend into.
+///
+/// `consume_nested_construct` and `next_token_until` are mutually recursive, and
+/// the input alone decides how deep that goes, so without a bound a sufficiently
+/// nested command line overflows the stack and aborts the process. The limit is
+/// far above any plausible real script while staying well inside even a small
+/// (2 MB) thread stack: an unoptimized build uses roughly 8 KB of stack per
+/// level, so this bounds the recursion to about half a megabyte.
+const MAX_EXPANSION_NESTING: u32 = 64;
+
 /// A tokenizer for shell scripts.
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
     char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
     cross_state: CrossTokenParseState,
     options: TokenizerOptions,
+    /// Current depth of nested expansion consumption; see [`MAX_EXPANSION_NESTING`].
+    expansion_depth: u32,
 }
 
 /// Encapsulates the current token parsing state.
@@ -553,6 +570,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 queued_tokens: vec![],
                 arithmetic_expansion: false,
             },
+            expansion_depth: 0,
         }
     }
 
@@ -611,6 +629,32 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     ///   `[`).
     /// * `initial_nesting` - The initial nesting count (e.g., 2 for `$((`, 1 for `$[`).
     fn consume_nested_construct(
+        &mut self,
+        state: &mut TokenParseState,
+        terminating_char: char,
+        nesting_open: &str,
+        nesting_count: u32,
+    ) -> Result<(), TokenizerError> {
+        // This function and `next_token_until` are mutually recursive, driven by
+        // how deeply the *input* nests expansions; bound it so hostile or merely
+        // pathological input cannot overflow the stack.
+        if self.expansion_depth >= MAX_EXPANSION_NESTING {
+            return Err(TokenizerError::ExpansionNestingTooDeep(
+                MAX_EXPANSION_NESTING,
+            ));
+        }
+        self.expansion_depth += 1;
+        let result = self.consume_nested_construct_inner(
+            state,
+            terminating_char,
+            nesting_open,
+            nesting_count,
+        );
+        self.expansion_depth -= 1;
+        result
+    }
+
+    fn consume_nested_construct_inner(
         &mut self,
         state: &mut TokenParseState,
         terminating_char: char,
@@ -736,7 +780,16 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                 // Verify we're not in a here document.
                 if !matches!(self.cross_state.here_state, HereState::None) {
-                    if self.remove_here_end_tag(&mut state, &mut result, false)? {
+                    // Only look for a here-document *end* tag if we are actually
+                    // inside a here-document body. In any other here state the
+                    // body never started, so there is no end tag to find; asking
+                    // anyway can spuriously succeed against the empty current
+                    // token, and because that path only queues a token onto the
+                    // pending here tag it makes no progress -- leaving this loop
+                    // spinning forever and allocating on every pass.
+                    if matches!(self.cross_state.here_state, HereState::InHereDocs)
+                        && self.remove_here_end_tag(&mut state, &mut result, false)?
+                    {
                         // If we hit end tag without a trailing newline, try to get next token.
                         continue;
                     }
@@ -1487,6 +1540,47 @@ SOMETHING
 ",
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn tokenize_unterminated_here_tag_with_unterminated_expansion() {
+        // Regression: an unterminated here tag whose text contains an
+        // unterminated expansion used to spin forever at end-of-input, growing
+        // the pending-token list on every pass until the process was killed.
+        // Two trailing blanks were needed to reach the bad state; one was fine.
+        for input in [
+            "<<E$[\t\t",
+            "<<E$[\t ",
+            "<<E$[ \t",
+            "<<-E$[\t\t",
+            "<<E$(\t\t",
+            "<<E$((\t\t",
+            "<<IFSdountil\"$[\t\t",
+        ] {
+            assert!(
+                tokenize_str(input).is_err(),
+                "expected an error for {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tokenize_deeply_nested_expansions_is_bounded() {
+        // Regression: `consume_nested_construct` and `next_token_until` are
+        // mutually recursive over input nesting, so this used to overflow the
+        // stack and abort the process instead of returning an error.
+        let input = std::format!("echo {}x{}", "$(".repeat(10_000), ")".repeat(10_000));
+        assert!(matches!(
+            tokenize_str(input.as_str()),
+            Err(TokenizerError::ExpansionNestingTooDeep(_))
+        ));
+    }
+
+    #[test]
+    fn tokenize_nesting_within_limit_still_works() {
+        let depth = 32;
+        let input = std::format!("echo {}x{}", "$(".repeat(depth), ")".repeat(depth));
+        assert!(tokenize_str(input.as_str()).is_ok());
     }
 
     #[test]
