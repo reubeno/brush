@@ -10,6 +10,7 @@ mod compound_commands;
 mod extended_test;
 mod functions;
 mod here_docs;
+mod nesting;
 mod pipelines;
 mod redirections;
 mod simple_commands;

@@ -7,8 +7,102 @@ use crate::word;
 
 use super::{ParserOptions, Tokens};
 
+/// Maximum depth of nested grammar constructs -- compound commands, extended test
+/// expressions, and the like -- that the parser will descend into.
+///
+/// The grammar is a recursive descent whose depth is chosen entirely by the input:
+/// `{ { { ... } } }`, `if ...; then if ...; then ... fi; fi`, `coproc coproc ...`,
+/// and nested process substitutions all recurse once per level. Without a bound,
+/// a short command line overflows the stack, and a stack overflow *aborts* the
+/// process rather than unwinding, so no caller can catch it after the fact.
+///
+/// The costliest shapes -- nested `case`, `for` and `if` -- take roughly 17 to 19 KB
+/// of stack per level in an unoptimized build, which puts the abort between 103 and
+/// 118 levels deep on a 2 MB thread stack. This limit keeps the descent to well
+/// under a megabyte even there, while staying far above the nesting any plausible
+/// script uses. It is
+/// deliberately independent of the tokenizer's [`MAX_EXPANSION_NESTING`]: that
+/// one bounds nesting *within* a token, this one bounds nesting *between* them.
+///
+/// [`MAX_EXPANSION_NESTING`]: crate::tokenizer
+pub(crate) const MAX_GRAMMAR_NESTING: u32 = 32;
+
+/// Tracks how deeply the grammar has descended, so the descent can be stopped
+/// with a parse error instead of a stack overflow. See [`MAX_GRAMMAR_NESTING`].
+pub(crate) struct NestingTracker {
+    /// Current depth of the descent.
+    depth: std::cell::Cell<u32>,
+    /// Index of the token at which the limit was first reached, if it ever was.
+    exceeded_at: std::cell::Cell<Option<usize>>,
+}
+
+impl NestingTracker {
+    /// Returns a tracker for a single parse.
+    pub(crate) const fn new() -> Self {
+        Self {
+            depth: std::cell::Cell::new(0),
+            exceeded_at: std::cell::Cell::new(None),
+        }
+    }
+
+    /// Records descending one level, returning the depth to restore on the way back
+    /// out, or `None` -- remembering where it happened -- if the parse has already
+    /// reached [`MAX_GRAMMAR_NESTING`].
+    ///
+    /// # Arguments
+    ///
+    /// * `position` - Index of the token the parser is looking at.
+    fn enter(&self, position: usize) -> Option<u32> {
+        let depth = self.depth.get();
+        if depth >= MAX_GRAMMAR_NESTING {
+            self.record_exceeded(position);
+            return None;
+        }
+
+        self.depth.set(depth + 1);
+        Some(depth)
+    }
+
+    /// Restores the depth to what it was before a construct was entered.
+    ///
+    /// N.B. This restores rather than decrements so that no path out of a rule can
+    /// leave the count too high, however the rules nested inside it were written.
+    ///
+    /// # Arguments
+    ///
+    /// * `depth` - The depth returned by the matching [`Self::enter`].
+    fn restore(&self, depth: u32) {
+        self.depth.set(depth);
+    }
+
+    /// Remembers that the input nested too deeply at the given token. Used by
+    /// constructs that count their own depth instead of descending through
+    /// [`Self::enter`].
+    ///
+    /// # Arguments
+    ///
+    /// * `position` - Index of the token at which the limit was reached.
+    fn record_exceeded(&self, position: usize) {
+        if self.exceeded_at.get().is_none() {
+            self.exceeded_at.set(Some(position));
+        }
+    }
+
+    /// Returns the index of the token at which the nesting limit was first
+    /// reached, or `None` if the parse stayed within the limit.
+    pub(crate) const fn exceeded_at(&self) -> Option<usize> {
+        self.exceeded_at.get()
+    }
+}
+
+impl Default for NestingTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 peg::parser! {
-    pub grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
+    pub grammar token_parser<'a>(parser_options: &ParserOptions, nesting: &NestingTracker) for Tokens<'a> {
         pub(crate) rule program() -> ast::Program =
             linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
             linebreak() { ast::Program { complete_commands: vec![] } }
@@ -84,8 +178,15 @@ peg::parser! {
         rule pipe_extension_redirection() -> &'input Token  =
             non_posix_extensions_enabled() p:specific_operator("|&") { p }
 
-        // N.B. We needed to move the function definition branch up to avoid conflicts with array assignment syntax.
+        // N.B. Every cycle in the command grammar passes through this rule -- compound
+        // commands, coprocess bodies, subshells, function bodies, and process
+        // substitutions all come back around to it -- so bounding the descent here
+        // bounds all of them. See `nesting_bounded` for why the body is factored out.
         rule command() -> ast::Command =
+            nesting_bounded(<command_inner()>)
+
+        // N.B. We needed to move the function definition branch up to avoid conflicts with array assignment syntax.
+        rule command_inner() -> ast::Command =
             f:function_definition() { ast::Command::Function(f) } /
             c:simple_command() { ast::Command::Simple(c) } /
             c:compound_command() r:redirect_list()? { ast::Command::Compound(c, r) } /
@@ -122,7 +223,9 @@ peg::parser! {
 
         rule arithmetic_expression_piece() =
             // Allow a parenthesized expression (with matching opening and closing parens).
-            specific_operator("(") (!specific_operator(")") arithmetic_expression_piece())* specific_operator(")") {} /
+            // N.B. The contents recurse back into this rule once per parenthesis, so they
+            // are parsed one level deeper; see `nesting_bounded`.
+            specific_operator("(") nesting_bounded(<parenthesized_arithmetic_pieces()>) specific_operator(")") {} /
             // Otherwise consume any token that's neither the normal end of the entire arithmetic expression, nor an
             // unexpected mismatched closing parenthesis. In the latter case, it may be that this really was never an
             // arithmetic expression in the first place and we need to backtrack and instead try parsing as a subshell
@@ -133,6 +236,9 @@ peg::parser! {
         // loop, an expression must also stop in front of `;;`.
         rule arithmetic_for_expression() -> ast::UnexpandedArithmeticExpr =
             raw_expr:$((!specific_operator(";;") arithmetic_expression_piece())*) { ast::UnexpandedArithmeticExpr { value: raw_expr } }
+
+        rule parenthesized_arithmetic_pieces() -> () =
+            (!specific_operator(")") arithmetic_expression_piece())* {}
 
         // TODO(arithmetic): evaluate arithmetic end; the semicolon is used in arithmetic for loops.
         rule arithmetic_end() -> () =
@@ -218,12 +324,27 @@ peg::parser! {
         // term (after `[[`, `(`, `&&`, `||`, `!`), and (2) trailing after a *complete*
         // binary test, unary-predicate test, or parenthesized expression -- but never
         // after a bare-word string test (e.g. `[[ x \n ]]` is a syntax error in bash).
-        rule extended_test_expression() -> ast::ExtendedTestExpr = precedence! {
+        rule extended_test_expression() -> ast::ExtendedTestExpr =
+            nesting_bounded(<extended_test_expression_inner()>)
+
+        // N.B. A run of negations is gathered iteratively rather than left to recurse
+        // one level per `!`; `[[ ! ! x ]]` means the same either way, but the recursive
+        // form is inside `precedence!`, where the nesting bound cannot reach it. The
+        // run is still capped, in `extended_test_negation_run`, because the `Not`s it
+        // builds are as deep as the recursion would have been, and dropping or walking
+        // that tree recurses even when parsing it did not.
+        rule extended_test_expression_inner() -> ast::ExtendedTestExpr = precedence! {
             left:(@) specific_operator("||") linebreak() right:@ { ast::ExtendedTestExpr::Or(Box::from(left), Box::from(right)) }
             --
             left:(@) specific_operator("&&") linebreak() right:@ { ast::ExtendedTestExpr::And(Box::from(left), Box::from(right)) }
             --
-            specific_word("!") linebreak() e:@ { ast::ExtendedTestExpr::Not(Box::from(e)) }
+            count:extended_test_negation_run() e:@ {
+                let mut expr = e;
+                for _ in 0..count {
+                    expr = ast::ExtendedTestExpr::Not(Box::from(expr));
+                }
+                expr
+            }
             --
             specific_operator("(") linebreak() e:extended_test_expression() specific_operator(")") linebreak() { ast::ExtendedTestExpr::Parenthesized(Box::from(e)) }
             --
@@ -233,6 +354,39 @@ peg::parser! {
             --
             w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
         }
+
+        /// Matches a run of consecutive `!`s, returning how many there were, and
+        /// declines a run longer than [`MAX_GRAMMAR_NESTING`].
+        ///
+        /// N.B. The run is counted rather than charged to the nesting depth, so that
+        /// each negated term in something like `[[ ! a && ! b && ... ]]` gets its own
+        /// allowance; the terms are siblings, and sibling breadth costs no stack.
+        rule extended_test_negation_run() -> usize =
+            pos:position!() bangs:extended_test_negation()+ {?
+                if bangs.len() > MAX_GRAMMAR_NESTING as usize {
+                    nesting.record_exceeded(pos);
+                    Err("nesting too deep")
+                } else {
+                    Ok(bangs.len())
+                }
+            }
+
+        // N.B. A `!` with nothing after it to negate is the string `!` instead, as the
+        // second `!` of `[[ ! ! && x ]]` is. The run cannot backtrack a `!` into a word
+        // the way the recursion it replaces could, so it declines that `!` up front. It
+        // declines by failing rather than through a negative lookahead so the failure is
+        // reported where the recursion reported it, at the token after the `!`.
+        rule extended_test_negation() -> () =
+            specific_word("!") linebreak() end:(&extended_test_operand_end())? {?
+                if end.is_some() { Err("operand") } else { Ok(()) }
+            }
+
+        // Tokens that end an operand, so cannot begin one.
+        rule extended_test_operand_end() -> () =
+            specific_operator(")") {} /
+            specific_operator("&&") {} /
+            specific_operator("||") {} /
+            ![_] {}
 
         rule extended_test_binary_predicate() -> ast::ExtendedTestExpr =
             // Arithmetic operators
@@ -297,7 +451,12 @@ peg::parser! {
         rule regex_word_piece() =
             word() {} /
             specific_operator("|") {} /
-            specific_operator("(") parenthesized_regex_word()* specific_operator(")") {}
+            // N.B. As with arithmetic, a parenthesized group recurses back into this rule,
+            // so its contents are parsed one level deeper; see `nesting_bounded`.
+            specific_operator("(") nesting_bounded(<parenthesized_regex_words()>) specific_operator(")") {}
+
+        rule parenthesized_regex_words() -> () =
+            parenthesized_regex_word()* {}
 
         rule parenthesized_regex_word() =
             regex_word_piece() /
@@ -730,6 +889,36 @@ peg::parser! {
 
         rule non_posix_extensions_enabled() -> () =
             &[_] {? if !parser_options.sh_mode { Ok(()) } else { Err("posix") } }
+
+        //
+        // Recursion bounding
+        //
+
+        /// Matches `r`, one level deeper in the grammar, and declines to descend at
+        /// all once the nesting limit is reached.
+        ///
+        /// N.B. The inner rule is invoked through `?` on purpose. A plain sequence
+        /// would abandon the rule the moment `r` failed, leaking the entered level;
+        /// with `?` a failing `r` yields `None` with the position restored, so the
+        /// action still runs and every enter is paired with a leave -- including on
+        /// the backtracking paths a PEG parser takes constantly. The action then
+        /// turns that `None` back into an ordinary rule failure.
+        rule nesting_bounded<T>(r: rule<T>) -> T =
+            saved:nesting_enter() v:r()? {?
+                nesting.restore(saved);
+                v.ok_or("nesting bounded rule")
+            }
+
+        /// Counts one level of grammar descent, failing if the input has nested
+        /// deeper than [`MAX_GRAMMAR_NESTING`], and yielding the depth to restore
+        /// afterwards.
+        ///
+        /// N.B. This deliberately matches at end of input rather than guarding on a
+        /// token being there. A lookahead would suppress the expectations the rules
+        /// underneath report at end of input, and those are what tell an interactive
+        /// caller that a line like `echo hi |` is unfinished rather than wrong.
+        rule nesting_enter() -> u32 =
+            pos:position!() {? nesting.enter(pos).ok_or("nesting too deep") }
     }
 }
 

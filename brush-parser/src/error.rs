@@ -11,6 +11,15 @@ pub enum ParseError {
     #[error("syntax error at end of input")]
     ParsingAtEndOfInput,
 
+    /// The input nested grammar constructs more deeply than the parser supports.
+    #[error("nested too deeply (limit: {limit}) at line {} col {}", .position.line, .position.column)]
+    NestingTooDeep {
+        /// The nesting limit that the input exceeded.
+        limit: u32,
+        /// The position at which the limit was reached.
+        position: crate::SourcePosition,
+    },
+
     /// An error occurred while tokenizing the input stream.
     #[error("{} (detected near {})", .inner, .position.as_ref().map_or_else(|| String::from("<unknown position>"), |p| std::format!("line {} col {}", p.line, p.column)))]
     Tokenizing {
@@ -42,6 +51,11 @@ pub mod miette {
                 Self::ParsingAtEndOfInput => {
                     Some(SourceOffset::from_location(&input, usize::MAX, usize::MAX))
                 }
+                Self::NestingTooDeep { ref position, .. } => Some(SourceOffset::from_location(
+                    &input,
+                    position.line,
+                    position.column,
+                )),
             };
 
             PrettyError {
@@ -120,7 +134,19 @@ pub enum BindingParseError {
 pub(crate) fn convert_peg_parse_error(
     err: &peg::error::ParseError<usize>,
     tokens: &[crate::Token],
+    nesting: &crate::parser::peg::NestingTracker,
 ) -> ParseError {
+    // A parse that ran into the nesting bound would have overflowed the stack
+    // without it, so report that rather than the syntax error it surfaced as.
+    // The bound is only consulted on failure: a construct too deep for one
+    // alternative may still have parsed fine through another.
+    if let Some(token) = nesting.exceeded_at().and_then(|index| tokens.get(index)) {
+        return ParseError::NestingTooDeep {
+            limit: crate::parser::peg::MAX_GRAMMAR_NESTING,
+            position: (*token.location().start).clone(),
+        };
+    }
+
     let approx_token_index = err.location;
 
     if approx_token_index < tokens.len() {
