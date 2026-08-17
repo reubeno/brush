@@ -448,6 +448,8 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
     /// A coprocess, which runs a command asynchronously in a subshell.
     Coprocess(CoprocessCommand),
+    /// An extended test command, evaluating an extended test expression.
+    ExtendedTest(ExtendedTestExprCommand),
 }
 
 impl Node for CompoundCommand {}
@@ -465,6 +467,7 @@ impl SourceLocation for CompoundCommand {
             Self::WhileClause(w) => w.location(),
             Self::UntilClause(u) => u.location(),
             Self::Coprocess(c) => c.location(),
+            Self::ExtendedTest(e) => e.location(),
         }
     }
 }
@@ -493,6 +496,9 @@ impl Display for CompoundCommand {
             }
             Self::Coprocess(coproc_clause_command) => {
                 write!(f, "{coproc_clause_command}")
+            }
+            Self::ExtendedTest(extended_test_expr_command) => {
+                write!(f, "{extended_test_expr_command}")
             }
         }
     }

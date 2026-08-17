@@ -454,8 +454,15 @@ peg::parser! {
         pub(crate) rule function_parens_and_body() -> ast::FunctionBody =
             specific_operator("(") specific_operator(")") linebreak() body:function_body() { body }
 
+        // N.B. A function body must be a compound command per POSIX grammar, but bash treats
+        // `[[ ... ]]` (itself a compound command, despite not being part of the shared
+        // `compound_command` rule above to avoid re-deriving `[[`-as-a-bare-command via two
+        // paths) as valid here too, e.g. `is_thing() [[ -n $1 ]]`.
         rule function_body() -> ast::FunctionBody =
-            c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
+            c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) } /
+            non_posix_extensions_enabled() c:extended_test_command() r:redirect_list()? {
+                ast::FunctionBody(ast::CompoundCommand::ExtendedTest(c), r)
+            }
 
         rule fname() -> ast::Word =
             // Special-case: don't allow it to end with an equals sign, to avoid the challenge of
