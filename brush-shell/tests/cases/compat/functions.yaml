@@ -69,6 +69,20 @@ cases:
 
       myfunc
 
+  - name: "Function with extended test body"
+    stdin: |
+      is_thing() [[ -n $1 ]]
+
+      is_thing hello && echo "hello is a thing"
+      is_thing "" || echo "empty string is not a thing"
+
+  - name: "Function with extended test body and redirect"
+    stdin: |
+      is_thing() [[ -n $1 ]] 2>/dev/null
+
+      is_thing hello
+      echo "Result: $?"
+
   - name: "Nested function definition"
     stdin: |
       outer() {
