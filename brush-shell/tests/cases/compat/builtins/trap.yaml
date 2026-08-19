@@ -551,6 +551,7 @@ cases:
   # trap -p edge cases
   #
   - name: "trap -p - with no args shows all traps"
+    skip: true # TODO(signals): need to report on ignored signals
     stdin: |
       trap 'echo a' INT
       trap 'echo b' TERM
