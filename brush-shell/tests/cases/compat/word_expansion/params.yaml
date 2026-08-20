@@ -611,6 +611,19 @@ cases:
       declare -a result2=("${myarray[@]:3}")
       declare -p result2
 
+  - name: "Substring operator on sparse indexed array"
+    stdin: |
+      sparse=([1]=one [5]=five [9]=nine)
+      echo "\${sparse[@]:1}:   ${sparse[@]:1}"
+      echo "\${sparse[@]:2}:   ${sparse[@]:2}"
+      echo "\${sparse[@]:6}:   ${sparse[@]:6}"
+      echo "\${sparse[@]:1:1}: ${sparse[@]:1:1}"
+      echo "\${sparse[@]:1:2}: ${sparse[@]:1:2}"
+      echo "\${sparse[@]:5:0}: ${sparse[@]:5:0}"
+      echo "\${sparse[@]: -1}:  ${sparse[@]: -1}"
+      echo "\${sparse[@]: -5}:  ${sparse[@]: -5}"
+      echo "\${sparse[@]: -11}: ${sparse[@]: -11}"
+
   - name: "Substring with length (with nested expressions)"
     stdin: |
       var="Hello, world!"
