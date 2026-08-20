@@ -230,6 +230,12 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Add in any open files provided.
         shell.open_files.update_from(options.fds.into_iter());
 
+        // Record any signals that were ignored when the shell started so that
+        // `trap -p` can report them (mirroring bash).
+        shell
+            .traps
+            .set_signals_ignored_on_entry(crate::sys::signal::ignored_signals_on_entry());
+
         // TODO(patterns): Without this a script that sets extglob will fail because we
         // parse the entire script with the same settings.
         shell.options.extended_globbing = true;

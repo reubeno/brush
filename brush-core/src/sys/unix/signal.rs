@@ -4,6 +4,58 @@ use crate::{error, sys, traps};
 
 pub(crate) use nix::sys::signal::Signal;
 
+/// Returns the numbers of all signals that currently have a `SIG_IGN`
+/// disposition.
+///
+/// This is used to mirror bash's behavior of reporting signals that were
+/// ignored when the shell started (e.g., `SIGRTMIN` in some environments) via
+/// `trap -p`.
+pub fn ignored_signals_on_entry() -> Vec<i32> {
+    let mut ignored = Vec::new();
+
+    let mut consider = |n: i32| {
+        if signal_is_ignored(n) {
+            ignored.push(n);
+        }
+    };
+
+    for signal in Signal::iterator() {
+        consider(signal as i32);
+    }
+
+    // Real-time signals (e.g., `SIGRTMIN`) aren't part of the `Signal` enum,
+    // so query them separately where they're supported.
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        for n in nix::libc::SIGRTMIN()..=nix::libc::SIGRTMAX() {
+            consider(n);
+        }
+    }
+
+    // The Rust runtime always sets SIGPIPE to `SIG_IGN` at startup, so it does
+    // not reflect the disposition inherited from the parent process. bash (a C
+    // program) starts with `SIGPIPE` at its inherited disposition (typically
+    // `SIG_DFL`) and so does not report it. Skip `SIGPIPE` to match bash.
+    ignored.retain(|&n| n != nix::libc::SIGPIPE);
+
+    ignored
+}
+
+/// Returns whether the given signal number currently has a `SIG_IGN`
+/// disposition.
+fn signal_is_ignored(signal_number: i32) -> bool {
+    // SAFETY: `sigaction` is a plain integer-initialized struct; zeroing it
+    // produces a valid value to receive the current action.
+    let mut old_action: nix::libc::sigaction = unsafe { std::mem::zeroed() };
+
+    // SAFETY: Querying the current action (by passing a null new-action
+    // pointer) is safe and does not modify any signal handler state.
+    let result =
+        unsafe { nix::libc::sigaction(signal_number, std::ptr::null(), &raw mut old_action) };
+
+    result == 0 && old_action.sa_sigaction == nix::libc::SIG_IGN
+}
+
 pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error::Error> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), nix::sys::signal::SIGCONT)
         .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
