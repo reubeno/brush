@@ -579,6 +579,23 @@ pub(crate) fn execute_external_command(
         })
         .collect::<Vec<_>>();
 
+    // Give the configured command interceptor (capability confinement) a chance
+    // to deny this external spawn. This site is the single funnel for *all*
+    // external commands, including the path-separator branch (e.g. `/bin/rm`,
+    // `./x`) that bypasses PATH and the builtin table, so a policy here cannot
+    // be circumvented by spelling the command differently.
+    {
+        use crate::extensions::CommandInterceptor as _;
+        let hook_args: Vec<String> = cmd_args.iter().map(|s| (*s).clone()).collect();
+        if let extensions::ExecDecision::Deny(reason) = context
+            .shell
+            .command_interceptor()
+            .before_exec(executable_path, hook_args.as_slice())
+        {
+            return Err(error::ErrorKind::ExecDenied(context.command_name.clone(), reason).into());
+        }
+    }
+
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
     let child_stdin_is_terminal = context
         .try_fd(openfiles::OpenFiles::STDIN_FD)
