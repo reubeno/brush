@@ -166,6 +166,19 @@ nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
 </details>
 
 <details>
+<summary>📦 <b>Installing on Fedora (community package)</b></summary>
+
+`brush` isn't packaged in Fedora's official repositories, but a community-maintained `brush-shell` package is available from [Terra](https://terrapkg.com/), a separately maintained, third-party repository for Fedora and its derivatives.
+
+Once you've enabled the Terra repository:
+
+```bash
+dnf install brush-shell
+```
+
+</details>
+
+<details>
 <summary> 🔨 <b>Building from sources</b></summary>
 
 To build from sources, first install a working (and recent) `rust` toolchain; we recommend installing it via [`rustup`](https://rustup.rs/). Then run:
