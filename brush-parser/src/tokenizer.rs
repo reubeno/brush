@@ -294,6 +294,15 @@ impl TokenParseState {
         !self.token_so_far.is_empty()
     }
 
+    /// Returns true if the token so far consists only of blanks.
+    ///
+    /// This can only happen when tokenizing with `include_space`, where blanks are accumulated
+    /// into the token so that the original text of a nested construct can be reproduced. Such
+    /// blanks are not a word, so a `#` following them still begins a comment.
+    pub fn only_blanks_so_far(&self) -> bool {
+        !self.token_so_far.is_empty() && self.token_so_far.chars().all(is_blank)
+    }
+
     pub fn append_char(&mut self, c: char) {
         self.token_so_far.push(c);
     }
@@ -1147,8 +1156,18 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             // N.B. We need to remember if we were recursively called in a variable
             // expansion expression; in that case we won't think a token was started but...
             // we'd be wrong.
+            //
+            // The `!only_blanks_so_far` clause keeps a comment recognizable inside a nested
+            // construct. With `include_space`, a blank is appended to the token when none is
+            // started and delimits the token when one is, so the blanks before a `#` alternate
+            // between the two; after an odd number of them a token is "in progress" and the `#`
+            // was appended to it rather than starting a comment. `$( #'<newline>)` then failed to
+            // tokenize with an unterminated single quote, while `$(  #'<newline>)` — two blanks —
+            // was fine.
+            //
             else if !state.token_is_operator
                 && (state.started_token() || matches!(terminating_char, Some('}')))
+                && !(c == '#' && state.only_blanks_so_far())
             {
                 self.consume_char()?;
                 state.append_char(c);
@@ -1393,6 +1412,38 @@ bc"
 "
         )?);
         Ok(())
+    }
+
+    #[test]
+    fn tokenize_comment_in_command_substitution() {
+        // A comment inside `$( )` is a comment however many blanks precede its `#`. An odd number
+        // of them used to leave a token in progress, so the `#` was appended to that token instead
+        // of starting a comment, and the apostrophe in the comment's text then opened a quote that
+        // was never closed.
+        //
+        // The comment is dropped from the text reconstructed for the substitution, leaving just
+        // the blanks that preceded it. A blank that delimits an in-progress token comes back as a
+        // single space, so the blanks aren't always reproduced verbatim; that's insignificant
+        // inside `$( )`, where the text gets re-parsed as a program.
+        for (prefix, reconstructed_blanks) in [
+            ("", ""),
+            (" ", " "),
+            ("  ", "  "),
+            ("   ", "   "),
+            ("\t", "\t"),
+            ("\t\t", "\t "),
+            (" \t", "  "),
+            ("\t ", "\t "),
+        ] {
+            let input = format!("$({prefix}# it's a comment\n)\n");
+            let tokens = tokenize_str(input.as_str()).unwrap();
+            let token_strs: Vec<_> = tokens.iter().map(Token::to_str).collect();
+            assert_eq!(
+                token_strs,
+                [format!("$({reconstructed_blanks}\n)").as_str(), "\n"],
+                "tokenizing {input:?}"
+            );
+        }
     }
 
     #[test]
