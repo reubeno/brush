@@ -1126,9 +1126,16 @@ peg::parser! {
             $(command_piece()*)
 
         pub(crate) rule command_piece() -> () =
+            case_block() /
             word_piece(<[')']>, true /*in_command*/) {} /
             ([' ' | '\t'])+ {} /
             ['\'' | '`'] {}
+
+        // A `case` construct is consumed whole, because its patterns end in `)` and the generic
+        // piece above stops at the first one it sees — so `$(case a in a) echo Y;; esac)` was cut
+        // short at `case a in a`, leaving the rest as a syntax error. Nested `case`s recurse.
+        rule case_block() -> () =
+            "case" (!("case" / "esac") [_])* (case_block() (!("case" / "esac") [_])*)* "esac" {}
 
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }
