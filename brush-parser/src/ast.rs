@@ -488,7 +488,7 @@ impl Display for CompoundCommand {
                 write!(f, "{coproc_clause_command}")
             }
             Self::ExtendedTest(extended_test_expr_command) => {
-                write!(f, "{extended_test_expr_command}")
+                write!(f, "[[ {extended_test_expr_command} ]]")
             }
         }
     }
