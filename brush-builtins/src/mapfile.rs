@@ -168,7 +168,7 @@ impl MapFileCommand {
                 line.pop();
             }
 
-            let line_str = String::from_utf8_lossy(&line).to_string();
+            let line_str = brush_core::BString::from(line);
 
             entries.push((None, line_str));
         }

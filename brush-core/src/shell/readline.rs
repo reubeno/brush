@@ -30,7 +30,14 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         let point = self
             .env
             .unset("READLINE_POINT")?
-            .and_then(|point| point.value().to_cow_str(self).parse::<usize>().ok())
+            .and_then(|point| {
+                point
+                    .value()
+                    .to_cow_str(self)
+                    .to_string()
+                    .parse::<usize>()
+                    .ok()
+            })
             .unwrap_or(0);
 
         if let Some(line) = line {

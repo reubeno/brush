@@ -199,7 +199,8 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
             // that are set (i.e., have a value). This means a variable that
             // shows up in `declare -p` but has no *set* value will be omitted.
             if v.value().is_set() {
-                cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
+                let val = v.value().to_cow_str(context.shell);
+                cmd.env(k.as_str(), val.to_string());
             }
         }
         // Set _ to the resolved command path for external commands.
@@ -261,7 +262,7 @@ pub(crate) async fn on_preexecute(
     let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
     cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
-        variables::ShellValueLiteral::Scalar(full_cmd),
+        variables::ShellValueLiteral::Scalar(full_cmd.into()),
         |_| Ok(()),
         env::EnvironmentLookup::Anywhere,
         env::EnvironmentScope::Global,

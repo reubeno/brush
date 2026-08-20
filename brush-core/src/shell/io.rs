@@ -55,6 +55,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             && let Ok(fd) = xtracefd_var
                 .value()
                 .to_cow_str(self)
+                .to_string()
                 .parse::<super::ShellFd>()
             && let Some(file) = self.open_files.try_fd(fd)
         {

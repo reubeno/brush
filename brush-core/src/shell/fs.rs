@@ -35,7 +35,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // Normalize the path (but don't canonicalize it).
         let cleaned_path = abs_path.normalize();
 
-        let pwd = cleaned_path.to_string_lossy().to_string();
+        let pwd = crate::path_to_bstring(&cleaned_path);
 
         self.env.update_or_add(
             "PWD",
@@ -48,7 +48,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         self.env.update_or_add(
             "OLDPWD",
-            variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
+            variables::ShellValueLiteral::Scalar(crate::path_to_bstring(&oldpwd)),
             |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,

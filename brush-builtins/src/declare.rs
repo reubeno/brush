@@ -398,12 +398,12 @@ impl DeclareCommand {
                     ast::AssignmentValue::Scalar(s) => {
                         if let Some(index) = &assigned_index {
                             initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
-                                Some(index.to_owned()),
-                                s.value.clone(),
+                                Some(index.to_owned().into()),
+                                s.value.clone().into(),
                             )])));
                             name_is_array = true;
                         } else {
-                            initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
+                            initial_value = Some(ShellValueLiteral::Scalar(s.value.clone().into()));
                             name_is_array = false;
                         }
                     }
@@ -411,7 +411,10 @@ impl DeclareCommand {
                         initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
                             a.iter()
                                 .map(|(i, v)| {
-                                    (i.as_ref().map(|w| w.value.clone()), v.value.clone())
+                                    (
+                                        i.as_ref().map(|w| w.value.clone().into()),
+                                        v.value.clone().into(),
+                                    )
                                 })
                                 .collect(),
                         )));
