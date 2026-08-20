@@ -7,24 +7,24 @@ TokenizerResult(
   result: [
     Word("a$((1+2))b", SourceSpan(
       start: SourcePosition(
-        index: 0,
+        offset: 0,
         line: 1,
         column: 1,
       ),
       end: SourcePosition(
-        index: 10,
+        offset: 10,
         line: 1,
         column: 11,
       ),
     )),
     Word("c", SourceSpan(
       start: SourcePosition(
-        index: 11,
+        offset: 11,
         line: 1,
         column: 12,
       ),
       end: SourcePosition(
-        index: 12,
+        offset: 12,
         line: 1,
         column: 13,
       ),
