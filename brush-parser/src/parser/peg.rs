@@ -454,9 +454,7 @@ peg::parser! {
         pub(crate) rule function_parens_and_body() -> ast::FunctionBody =
             specific_operator("(") specific_operator(")") linebreak() body:function_body() { body }
 
-        // N.B. A function body must be a compound command per POSIX grammar; bash additionally
-        // accepts `[[ ... ]]` here (e.g. `is_thing() [[ -n $1 ]]`), which is covered since
-        // `compound_command` itself includes extended test commands.
+        // N.B. A function body must be a compound command per POSIX grammar.
         rule function_body() -> ast::FunctionBody =
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
 
