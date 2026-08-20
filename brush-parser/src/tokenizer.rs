@@ -1420,11 +1420,28 @@ bc"
         // of them used to leave a token in progress, so the `#` was appended to that token instead
         // of starting a comment, and the apostrophe in the comment's text then opened a quote that
         // was never closed.
-        for prefix in ["", " ", "  ", "   ", "\t", "\t\t", " \t", "\t "] {
+        //
+        // The comment is dropped from the text reconstructed for the substitution, leaving just
+        // the blanks that preceded it. A blank that delimits an in-progress token comes back as a
+        // single space, so the blanks aren't always reproduced verbatim; that's insignificant
+        // inside `$( )`, where the text gets re-parsed as a program.
+        for (prefix, reconstructed_blanks) in [
+            ("", ""),
+            (" ", " "),
+            ("  ", "  "),
+            ("   ", "   "),
+            ("\t", "\t"),
+            ("\t\t", "\t "),
+            (" \t", "  "),
+            ("\t ", "\t "),
+        ] {
             let input = format!("$({prefix}# it's a comment\n)\n");
-            assert!(
-                tokenize_str(input.as_str()).is_ok(),
-                "failed to tokenize {input:?}"
+            let tokens = tokenize_str(input.as_str()).unwrap();
+            let token_strs: Vec<_> = tokens.iter().map(Token::to_str).collect();
+            assert_eq!(
+                token_strs,
+                [format!("$({reconstructed_blanks}\n)").as_str(), "\n"],
+                "tokenizing {input:?}"
             );
         }
     }

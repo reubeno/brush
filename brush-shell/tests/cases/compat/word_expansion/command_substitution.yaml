@@ -88,6 +88,37 @@ cases:
     stdin: |
       echo $(echo $#)
 
+  - name: "Comment after blanks in command substitution"
+    stdin: |
+      echo "0 blanks: $(# I'm a comment
+      echo hi)"
+      echo "1 blank: $( # I'm a comment
+      echo hi)"
+      echo "2 blanks: $(  # I'm a comment
+      echo hi)"
+      echo "3 blanks: $(   # I'm a comment
+      echo hi)"
+
+  - name: "Comment after tabs in command substitution"
+    stdin: |
+      echo "1 tab: $(	# I'm a comment
+      echo hi)"
+      echo "2 tabs: $(		# I'm a comment
+      echo hi)"
+      echo "blank and tab: $( 	# I'm a comment
+      echo hi)"
+
+  - name: "Hash after blanks that is not a comment in command substitution"
+    stdin: |
+      echo "1: $( echo a#b )"
+      echo "2: $( echo 'a # b' )"
+      echo "3: $( echo one # I'm a trailing comment
+      echo two)"
+      echo "4: $(cat <<HERE
+       # not a comment
+      HERE
+      )"
+
   - name: "Ignore single quote in comment in command substitution (backticks)"
     stdin: |
       var=`
