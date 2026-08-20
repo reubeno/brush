@@ -10,13 +10,13 @@ ParseResult(
         CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
-              ExtendedTest(ExtendedTestExprCommand(
+              Compound(ExtendedTest(ExtendedTestExprCommand(
                 expr: Not(UnaryTest(FileExistsAndIsRegularFile, Word(
                   value: "file",
                   loc: "[location]",
                 ))),
                 loc: "[location]",
-              ), None),
+              )), None),
             ],
           ),
         ), Sequence),

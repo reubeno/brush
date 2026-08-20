@@ -73,7 +73,7 @@ peg::parser! {
             c:(c:command() r:&pipe_extension_redirection()? {? // check for `|&` without consuming the stream.
                 let mut c = c;
                 if r.is_some() {
-                    add_pipe_extension_redirection(&mut c)?;
+                    add_pipe_extension_redirection(&mut c);
                 }
                 Ok(c)
             }) ** (pipe_operator() linebreak()) {
@@ -92,12 +92,11 @@ peg::parser! {
             f:function_definition() { ast::Command::Function(f) } /
             c:simple_command() { ast::Command::Simple(c) } /
             c:compound_command() r:redirect_list()? { ast::Command::Compound(c, r) } /
-            // N.B. Extended test commands are bash extensions.
-            non_posix_extensions_enabled() c:extended_test_command() r:redirect_list()? { ast::Command::ExtendedTest(c, r) } /
             expected!("command")
 
         // N.B. The arithmetic command is a non-sh extension.
         // N.B. The arithmetic for clause command is a non-sh extension.
+        // N.B. The extended test command is a non-sh extension.
         pub(crate) rule compound_command() -> ast::CompoundCommand =
             non_posix_extensions_enabled() a:arithmetic_command() { ast::CompoundCommand::Arithmetic(a) } /
             non_posix_extensions_enabled() c:coproc_clause() { ast::CompoundCommand::Coprocess(c) } /
@@ -109,6 +108,7 @@ peg::parser! {
             w:while_clause() { ast::CompoundCommand::WhileClause(w) } /
             u:until_clause() { ast::CompoundCommand::UntilClause(u) } /
             non_posix_extensions_enabled() c:arithmetic_for_clause() { ast::CompoundCommand::ArithmeticForClause(c) } /
+            non_posix_extensions_enabled() c:extended_test_command() { ast::CompoundCommand::ExtendedTest(c) } /
             expected!("compound command")
 
         pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
@@ -454,6 +454,7 @@ peg::parser! {
         pub(crate) rule function_parens_and_body() -> ast::FunctionBody =
             specific_operator("(") specific_operator(")") linebreak() body:function_body() { body }
 
+        // N.B. A function body must be a compound command per POSIX grammar.
         rule function_body() -> ast::FunctionBody =
             c:compound_command() r:redirect_list()? { ast::FunctionBody(c, r) }
 
@@ -726,7 +727,7 @@ peg::parser! {
 }
 
 // add `2>&1` to the command if the pipeline is `|&`
-fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static str> {
+fn add_pipe_extension_redirection(c: &mut ast::Command) {
     fn add_to_redirect_list(l: &mut Option<ast::RedirectList>, r: ast::IoRedirect) {
         if let Some(l) = l {
             l.0.push(r);
@@ -753,10 +754,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) -> Result<(), &'static s
         }
         ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
         ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
-        ast::Command::ExtendedTest(..) => return Err("|& unimplemented for extended tests"),
     }
-
-    Ok(())
 }
 
 #[inline]

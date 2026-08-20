@@ -374,8 +374,6 @@ pub enum Command {
     Compound(CompoundCommand, Option<RedirectList>),
     /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
-    /// A command that evaluates an extended test expression.
-    ExtendedTest(ExtendedTestExprCommand, Option<RedirectList>),
 }
 
 impl Node for Command {}
@@ -391,7 +389,6 @@ impl SourceLocation for Command {
                 }
             }
             Self::Function(f) => f.location(),
-            Self::ExtendedTest(e, _) => e.location(),
         }
     }
 }
@@ -408,13 +405,6 @@ impl Display for Command {
                 Ok(())
             }
             Self::Function(function_definition) => write!(f, "{function_definition}"),
-            Self::ExtendedTest(extended_test_expr, redirect_list) => {
-                write!(f, "[[ {extended_test_expr} ]]")?;
-                if let Some(redirect_list) = redirect_list {
-                    write!(f, "{redirect_list}")?;
-                }
-                Ok(())
-            }
         }
     }
 }
@@ -448,6 +438,8 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
     /// A coprocess, which runs a command asynchronously in a subshell.
     Coprocess(CoprocessCommand),
+    /// An extended test command, evaluating an extended test expression.
+    ExtendedTest(ExtendedTestExprCommand),
 }
 
 impl Node for CompoundCommand {}
@@ -465,6 +457,7 @@ impl SourceLocation for CompoundCommand {
             Self::WhileClause(w) => w.location(),
             Self::UntilClause(u) => u.location(),
             Self::Coprocess(c) => c.location(),
+            Self::ExtendedTest(e) => e.location(),
         }
     }
 }
@@ -493,6 +486,9 @@ impl Display for CompoundCommand {
             }
             Self::Coprocess(coproc_clause_command) => {
                 write!(f, "{coproc_clause_command}")
+            }
+            Self::ExtendedTest(extended_test_expr_command) => {
+                write!(f, "[[ {extended_test_expr_command} ]]")
             }
         }
     }
