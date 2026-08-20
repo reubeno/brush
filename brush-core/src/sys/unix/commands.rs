@@ -48,8 +48,12 @@ impl CommandFdInjectionExt for std::process::Command {
 pub trait CommandFgControlExt {
     /// Arranges for the command to take the foreground when it is executed.
     fn take_foreground(&mut self);
+
     /// Arranges for the command to become a session leader when it is executed.
     fn lead_session(&mut self);
+
+    /// Arranges for child job-control signals to use their default dispositions.
+    fn reset_job_control_signals(&mut self);
 }
 
 impl CommandFgControlExt for std::process::Command {
@@ -72,12 +76,22 @@ impl CommandFgControlExt for std::process::Command {
             self.pre_exec(pre_exec_lead_session);
         }
     }
+
+    fn reset_job_control_signals(&mut self) {
+        // SAFETY:
+        // This arranges for a provided function to run in the context of
+        // the forked process before it exec's the target command.
+        unsafe {
+            self.pre_exec(reset_job_control_signals);
+        }
+    }
 }
 
 fn pre_exec_take_foreground() -> Result<(), std::io::Error> {
     use crate::sys;
 
     sys::terminal::move_self_to_foreground()?;
+    reset_job_control_signals()?;
     Ok(())
 }
 
@@ -99,6 +113,42 @@ fn pre_exec_lead_session() -> Result<(), std::io::Error> {
     if result != 0 {
         return Err(std::io::Error::other("failed to set controlling terminal"));
     }
+
+    reset_job_control_signals()?;
+    Ok(())
+}
+
+/// Reset job control signals to `SIG_DFL` (default disposition).
+/// This undoes any `SIG_IGN` settings inherited from parent.
+fn reset_job_control_signals() -> Result<(), std::io::Error> {
+    use nix::sys::signal::{SigHandler, SigSet, SigmaskHow, Signal, signal, sigprocmask};
+
+    // These signals should have default disposition in child processes even if
+    // the parent shell ignores them. SIGPIPE is critical for pipeline handling:
+    // without it, writing to closed pipes can block indefinitely.
+    let signals = [
+        Signal::SIGINT,
+        Signal::SIGQUIT,
+        Signal::SIGTSTP,
+        Signal::SIGTTOU,
+        Signal::SIGTTIN,
+        Signal::SIGPIPE,
+    ];
+
+    for sig in signals {
+        // SAFETY:
+        // This runs in the forked child before exec. Resetting inherited signal
+        // dispositions with signal(2) is async-signal-safe.
+        unsafe {
+            signal(sig, SigHandler::SigDfl).map_err(std::io::Error::from)?;
+        }
+    }
+
+    let mut sigset = SigSet::empty();
+    for sig in signals {
+        sigset.add(sig);
+    }
+    sigprocmask(SigmaskHow::SIG_UNBLOCK, Some(&sigset), None).map_err(std::io::Error::from)?;
 
     Ok(())
 }
