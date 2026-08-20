@@ -235,6 +235,24 @@ pub fn parse_tokens(
     parse_result_to_error(parse_result, tokens)
 }
 
+/// Tokenizes and parses text as a compound assignment value, returning its element words. Returns
+/// `None` if the text is not a well-formed compound value.
+///
+/// # Arguments
+///
+/// * `input` - The text to parse.
+/// * `options` - The options to use when parsing.
+pub(crate) fn parse_compound_assignment_value(
+    input: &str,
+    options: &ParserOptions,
+) -> Option<Vec<String>> {
+    let mut parser = Parser::new(input.as_bytes(), options);
+    let tokens = parser.tokenize().ok()?;
+    let tokens = Tokens { tokens: &tokens };
+    let elements = peg::token_parser::compound_assignment_value(&tokens, options).ok()?;
+    Some(elements.into_iter().cloned().collect())
+}
+
 fn parse_result_to_error<R>(
     parse_result: Result<R, ::peg::error::ParseError<usize>>,
     tokens: &[Token],
