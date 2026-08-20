@@ -34,14 +34,23 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             start,
             end,
             increment,
+            zero_padded_width,
         } => {
             let mut increment = increment.unsigned_abs() as usize;
             if increment == 0 {
                 increment = 1;
             }
 
+            // A bound written with a leading zero asks for every member to be padded
+            // out to the width of the longer bound, so `{01..10}` counts `01 02 ...`
+            // and not `1 2 ...`. The sign takes one of those columns.
+            let format = move |n: i64| match zero_padded_width {
+                Some(width) => std::format!("{n:0width$}"),
+                None => n.to_string(),
+            };
+
             if start <= end {
-                Box::new((start..=end).step_by(increment).map(|n| n.to_string()))
+                Box::new((start..=end).step_by(increment).map(format))
             } else {
                 // Iterate from start down to end by decrementing.
                 #[allow(clippy::cast_possible_wrap)]
@@ -51,7 +60,7 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
                         let next = n - increment;
                         (next >= end).then_some(next)
                     })
-                    .map(|n| n.to_string()),
+                    .map(format),
                 )
             }
         }
