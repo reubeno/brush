@@ -45,11 +45,6 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     }
 }
 
-#[cached::macros::cached(
-    max_size = 64,
-    key = "(String, brush_parser::ParserOptions)",
-    convert = r#"{ (s.to_owned(), parser_options.to_owned()) }"#
-)]
 fn parse_string_impl(
     s: &str,
     parser_options: &brush_parser::ParserOptions,

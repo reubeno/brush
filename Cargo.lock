@@ -593,7 +593,6 @@ dependencies = [
  "anyhow",
  "arbitrary",
  "bon",
- "cached",
  "criterion",
  "getrandom 0.4.3",
  "indenter",
