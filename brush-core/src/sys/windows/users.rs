@@ -46,6 +46,14 @@ pub(crate) fn is_root() -> bool {
     is_elevated()
 }
 
+/// Windows has no setuid concept — the env-controlled-init-file privesc vector
+/// that motivates this check on Unix doesn't exist here, so this is always false.
+/// (An elevated Windows process is elevated end-to-end; it isn't started as a
+/// non-elevated caller exec'ing a setuid binary.)
+pub(crate) const fn is_privileged() -> bool {
+    false
+}
+
 pub(crate) fn get_current_uid() -> Result<u32, error::Error> {
     Ok(if is_elevated() { 0 } else { NON_ELEVATED_UID })
 }

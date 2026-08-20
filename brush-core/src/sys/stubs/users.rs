@@ -17,6 +17,12 @@ pub(crate) fn is_root() -> bool {
     false
 }
 
+/// Sandboxed/stub platforms (e.g., WASI) don't have a real setuid vector;
+/// always report as unprivileged for the purposes of env-controlled init files.
+pub(crate) const fn is_privileged() -> bool {
+    false
+}
+
 pub(crate) fn get_current_uid() -> Result<u32, error::Error> {
     Err(error::ErrorKind::NotSupportedOnThisPlatform("getting current uid").into())
 }

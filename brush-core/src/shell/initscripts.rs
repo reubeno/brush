@@ -1,6 +1,6 @@
 //! Init script support for shells.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{Shell, error, extensions, interp};
 
@@ -55,6 +55,20 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         let mut params = self.default_exec_params();
         params.process_group_policy = interp::ProcessGroupPolicy::SameProcessGroup;
 
+        // When running with privileges (setuid/setgid where effective UID/GID
+        // differs from real), refuse to source any init file whose location is
+        // controlled by the (untrusted) environment. That includes BASH_ENV and
+        // ENV (env-controlled directly) as well as anything under `$HOME` —
+        // because `$HOME` is itself environment-controlled, an unprivileged
+        // caller can otherwise direct the privileged shell to source
+        // attacker-owned `.bash_profile` / `.bashrc` / etc.
+        //
+        // System-wide init files (`/etc/profile`, `/etc/bash.bashrc`) and
+        // explicit `--rcfile` paths remain honored — those are root-owned or
+        // CLI-controlled, not attacker-controlled. This mirrors bash's
+        // behavior under `-p`.
+        let privileged = crate::sys::users::is_privileged();
+
         if self.options.login_shell {
             // --noprofile means skip this.
             if matches!(profile_behavior, ProfileLoadBehavior::Skip) {
@@ -72,7 +86,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             if let Some(system_profile) = crate::sys::fs::get_system_profile_path() {
                 self.source_if_exists(system_profile, &params).await?;
             }
-            if let Some(home_path) = self.home_dir() {
+            if !privileged && let Some(home_path) = self.home_dir() {
                 if self.options.sh_mode {
                     self.source_if_exists(home_path.join(".profile").as_path(), &params)
                         .await?;
@@ -98,6 +112,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
                     RcLoadBehavior::Skip => (),
                     RcLoadBehavior::LoadCustom(rc_file) => {
                         // If an explicit rc file is provided, source it.
+                        // (CLI-controlled, not env-controlled — honored even under privilege.)
                         self.source_if_exists(rc_file, &params).await?;
                     }
                     RcLoadBehavior::LoadDefault => {
@@ -110,7 +125,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
                         if let Some(system_rc) = crate::sys::fs::get_system_rc_path() {
                             self.source_if_exists(system_rc, &params).await?;
                         }
-                        if let Some(home_path) = self.home_dir() {
+                        if !privileged && let Some(home_path) = self.home_dir() {
                             self.source_if_exists(home_path.join(".bashrc").as_path(), &params)
                                 .await?;
                             self.source_if_exists(home_path.join(".brushrc").as_path(), &params)
@@ -125,14 +140,20 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
                     "BASH_ENV"
                 };
 
-                if self.env.is_set(env_var_name) {
-                    //
-                    // TODO(well-known-vars): look at $ENV/BASH_ENV; source its expansion if that
-                    // file exists
-                    //
-                    return error::unimp(
-                        "load config from $ENV/BASH_ENV for non-interactive, non-login shell",
-                    );
+                // Per bash(1) INVOCATION: when BASH_ENV is set on a non-interactive
+                // non-login shell (or ENV in POSIX/sh mode), the value is subjected to
+                // parameter expansion, command substitution, and arithmetic expansion,
+                // and the resulting filename is sourced if it exists. If the file does
+                // not exist or is not readable, bash silently continues. (The
+                // privilege-skip above already short-circuits this in setuid contexts.)
+                if !privileged
+                    && let Some(raw_value) = self.env_str(env_var_name).map(|v| v.into_owned())
+                {
+                    let expanded =
+                        crate::expansion::basic_expand_word(self, &params, raw_value).await?;
+                    if !expanded.is_empty() {
+                        self.source_if_exists(Path::new(&expanded), &params).await?;
+                    }
                 }
             }
         }

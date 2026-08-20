@@ -256,3 +256,46 @@ cases:
       second=${SRANDOM}
 
       [[ $first != $second ]] && echo "Confirmed SRANDOM at least isn't static"
+
+  - name: "BASH_ENV sources file in non-interactive shell"
+    test_files:
+      - path: "envscript"
+        contents: |
+          echo "loaded from BASH_ENV"
+          envvar="from-env-file"
+    env:
+      BASH_ENV: "./envscript"
+    args:
+      - "-c"
+      - "echo \"main: ${envvar}\""
+    expected_exit_code: 0
+    expected_stdout: |
+      loaded from BASH_ENV
+      main: from-env-file
+
+  - name: "BASH_ENV pointing to nonexistent file is silently ignored"
+    env:
+      BASH_ENV: "./does-not-exist"
+    args:
+      - "-c"
+      - "echo \"shell continued\""
+    expected_exit_code: 0
+    expected_stdout: |
+      shell continued
+
+  - name: "BASH_ENV value undergoes parameter expansion"
+    test_files:
+      - path: "envscript"
+        contents: |
+          echo "expanded BASH_ENV worked"
+    env:
+      # The value contains a literal $PWD; bash performs parameter expansion
+      # on BASH_ENV before treating it as a filename.
+      BASH_ENV: "$PWD/envscript"
+    args:
+      - "-c"
+      - "true"
+    expected_exit_code: 0
+    expected_stdout: |
+      expanded BASH_ENV worked
+
