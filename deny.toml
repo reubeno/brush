@@ -25,13 +25,23 @@ yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
-    # Both advisories affect quick-xml's *parsing* paths (Attributes duplicate
-    # check, NsReader namespace resolution). quick-xml is pulled in only via
-    # junit-report (a dev-dependency for test reporting), which exclusively
-    # *writes* XML and never parses untrusted input. Remove these once
-    # junit-report releases with quick-xml >= 0.41.
-    { id = "RUSTSEC-2026-0194", reason = "parse-only DoS; junit-report (dev-only) only writes XML" },
-    { id = "RUSTSEC-2026-0195", reason = "NsReader-only DoS; junit-report (dev-only) only writes XML" },
+    # arrayref 0.3.9 is the last known-good release, and we pin to it deliberately.
+    #
+    # On 2026-08-20 every published arrayref version (0.3.5 through 0.3.9) was
+    # yanked and a 0.3.10 was published in their place. That 0.3.10 has a
+    # byte-identical src/lib.rs to 0.3.9 and differs only by an injected,
+    # never-referenced dependency on `proc-macro1` (a typosquat of proc-macro2)
+    # that crates.io has since removed. The same day, the same owner account
+    # published internment 0.8.7 with the identical injected dependency, so this
+    # looks like an account compromise rather than a maintainer decision.
+    #
+    # We reach arrayref only transitively via uucore -> blake2b_simd. Our lockfile
+    # pins 0.3.9, whose checksum matches the genuine registry checksum.
+    #
+    # Do NOT "fix" this by running `cargo update -p arrayref` as the diagnostic
+    # suggests -- that resolves to the poisoned 0.3.10. Remove this entry once a
+    # clean arrayref is published upstream and blake2b_simd can reach it.
+    { crate = "arrayref@0.3.9", reason = "last known-good version; 0.3.5-0.3.9 yanked during apparent 2026-08-20 account compromise, 0.3.10 injects a removed `proc-macro1` dep" },
 ]
 #git-fetch-with-cli = true
 
