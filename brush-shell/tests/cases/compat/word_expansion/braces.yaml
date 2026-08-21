@@ -143,3 +143,41 @@ cases:
       for i in ${array[@]%a}; do
           echo "Element: '$i'"
       done
+
+  - name: "Expansion with curly braces: zero-padded numeric sequences"
+    stdin: |
+      echo {01..05}
+      echo {1..05}
+      echo {001..3}
+      echo {09..11}
+      echo {0..03}
+      echo {0009..11}
+      echo {05..01}
+      echo {010..1..3}
+      echo {01..10..2}
+      echo x{01..03}y
+
+  - name: "Expansion with curly braces: a lone zero does not pad"
+    stdin: |
+      echo {0..3}
+      echo {0..10}
+      echo {10..0}
+      echo {-0..3}
+      echo {1..5}
+
+  - name: "Expansion with curly braces: zero padding with signs"
+    stdin: |
+      echo {-01..01}
+      echo {005..-2}
+      echo {-1..01}
+      echo {-001..2}
+      echo {01..-1}
+      echo {-01..-05}
+      echo {00..-3}
+      echo {+01..3}
+      echo {+01..05}
+
+  - name: "Expansion with curly braces: numeric bound too large for the sequence"
+    stdin: |
+      echo {99999999999999999999..1}
+      echo {1..99999999999999999999}
