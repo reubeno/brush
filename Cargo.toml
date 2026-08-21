@@ -84,11 +84,12 @@ similar_names = "allow"
 struct_excessive_bools = "allow"
 
 [workspace.metadata.typos]
+files.ignore-hidden = false
 files.extend-exclude = [
     # Exclude the changelog because it's dynamically generated.
     "/CHANGELOG.md",
-    # Remove this once impending mapfile updates are merged.
-    "/brush-core/src/builtins/mapfile.rs",
+    # Exclude .git dir
+    "/.git",
 ]
 
 [workspace.metadata.typos.default]
