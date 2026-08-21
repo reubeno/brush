@@ -142,7 +142,7 @@ Follow this **exact order** for efficient testing:
 2. **Compatibility tests** (critical for shell behavior):
    ```bash
    cargo test --test brush-compat-tests
-   
+
    # Run specific test case:
    cargo test --test brush-compat-tests -- 'builtin/echo'
    ```

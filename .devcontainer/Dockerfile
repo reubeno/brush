@@ -3,7 +3,7 @@ FROM ubuntu:latest
 ARG USERNAME=devel
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
-    
+
 # Install basic utilities and prerequisites.
 #   bash-completion - for completion testing
 #   bsdmainutils - provides hexdump, used by integration tests

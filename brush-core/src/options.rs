@@ -194,7 +194,7 @@ pub struct RuntimeOptions {
     pub read_commands_from_stdin: bool,
     /// Whether the shell is in command string mode (-c).
     pub command_string_mode: bool,
-    /// Whether or not the shell is in maximal `sh` compatibility mode.    
+    /// Whether or not the shell is in maximal `sh` compatibility mode.
     pub sh_mode: bool,
     /// Whether to treat external commands as session leaders.
     pub external_cmd_leads_session: bool,
