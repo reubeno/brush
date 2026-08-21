@@ -48,7 +48,7 @@ jobs:
             binary_name: "brush"
             extra_build_args: ""
           # Build for x86_64/linux using musl as target C runtime.
-          # We don't bother pinning to an ealier version of Ubuntu because
+          # We don't bother pinning to an earlier version of Ubuntu because
           # the produced binary will statically link the C runtime anyhow.
           - host: "ubuntu-24.04"
             target: "x86_64-unknown-linux-musl"
