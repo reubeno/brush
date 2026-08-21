@@ -25,23 +25,27 @@ yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
-    # arrayref 0.3.9 is the last known-good release, and we pin to it deliberately.
+    # RUSTSEC-2026-0253: unsound `LruCache::pop()` in lru 0.16.4, which we reach only
+    # via num-prime -> uu_factor (the `coreutils.factor` builtin).
     #
-    # On 2026-08-20 every published arrayref version (0.3.5 through 0.3.9) was
-    # yanked and a 0.3.10 was published in their place. That 0.3.10 has a
-    # byte-identical src/lib.rs to 0.3.9 and differs only by an injected,
-    # never-referenced dependency on `proc-macro1` (a typosquat of proc-macro2)
-    # that crates.io has since removed. The same day, the same owner account
-    # published internment 0.8.7 with the identical injected dependency, so this
-    # looks like an account compromise rather than a maintainer decision.
+    # Unreachable for us, on three independent grounds:
+    #   1. num-prime never calls `pop()` at all -- its only cache operations are
+    #      `get()` and `put()` (see num-prime's src/buffer.rs). The dangling pointers
+    #      the advisory describes originate solely inside `pop()`.
+    #   2. That cache is `LruCache<(u64, usize), u64>`; the key is `Copy` with no
+    #      `Drop` impl, so the panicking-`Drop`-during-`pop()` precondition cannot hold.
+    #   3. The advisory requires unwinding plus `catch_unwind`. Our release profile
+    #      sets `panic = "abort"`, and our only `catch_unwind` lives in
+    #      brush-test-harness, not in shipped shell code.
     #
-    # We reach arrayref only transitively via uucore -> blake2b_simd. Our lockfile
-    # pins 0.3.9, whose checksum matches the genuine registry checksum.
+    # Not fixable by upgrading: num-prime pins `lru = "0.16.3"` (^0.16) and the fix
+    # landed only in lru 0.18.2, with no 0.16.x backport (0.16.4 ends that line). So
+    # `cargo update -p lru` is a no-op here, despite what the diagnostic suggests.
     #
-    # Do NOT "fix" this by running `cargo update -p arrayref` as the diagnostic
-    # suggests -- that resolves to the poisoned 0.3.10. Remove this entry once a
-    # clean arrayref is published upstream and blake2b_simd can reach it.
-    { crate = "arrayref@0.3.9", reason = "last known-good version; 0.3.5-0.3.9 yanked during apparent 2026-08-20 account compromise, 0.3.10 injects a removed `proc-macro1` dep" },
+    # Upstream is aware but stalled: uutils/num-prime#105 is open, and its lru 0.18
+    # bump (uutils/num-prime#77) was closed unmerged. Remove this entry once num-prime
+    # ships an `lru >=0.18.2` bump and uu_factor picks it up.
+    { id = "RUSTSEC-2026-0253", reason = "unreachable: num-prime never calls pop(); its Copy key has no Drop impl; release builds are panic=abort" },
 ]
 #git-fetch-with-cli = true
 

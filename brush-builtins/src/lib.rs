@@ -1,5 +1,14 @@
 //! Standard builtins.
 
+// `brush_core::builtins::Command::execute` is async by contract: the trait declares a desugared
+// `-> impl Future<...> + Send` so that `brush_core::builtins::exec_builtin` can box and dispatch
+// every builtin uniformly. Most builtins in this crate do purely synchronous work, so their
+// `execute` bodies contain no `.await` -- that is the trait contract being honored, not a defect.
+#![allow(
+    clippy::unused_async_trait_impl,
+    reason = "builtins implement a trait whose `execute` is async by contract"
+)]
+
 #[cfg(feature = "builtin.alias")]
 mod alias;
 #[cfg(feature = "builtin.bg")]
