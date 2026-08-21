@@ -672,7 +672,10 @@ jobs:
 
     name: "OS target tests (${{ matrix.description }})"
     runs-on: ubuntu-24.04
-    container: ${{ matrix.container }}
+    # The floating tags in the matrix above are deliberate: the whole point of
+    # this job is to catch breakage against *current* distro releases, so
+    # digest-pinning these images would defeat it.
+    container: ${{ matrix.container }} # zizmor: ignore[unpinned-images]
     needs: build
     env:
       # Reference: https://github.com/Azure/azure-cli/issues/29835
