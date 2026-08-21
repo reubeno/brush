@@ -28,7 +28,7 @@ pub struct RunResult {
 
 impl TestCase {
     /// Runs this test case with the given shell configuration.
-    pub async fn run_shell(
+    pub fn run_shell(
         &self,
         shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
@@ -36,9 +36,9 @@ impl TestCase {
         let test_cmd = self.create_command_for_shell(shell_config, working_dir);
 
         let result = if self.pty {
-            self.run_command_with_pty(test_cmd).await?
+            self.run_command_with_pty(test_cmd)?
         } else {
-            self.run_command_with_stdin(test_cmd).await?
+            self.run_command_with_stdin(test_cmd)?
         };
 
         Ok(result)
@@ -198,15 +198,15 @@ impl TestCase {
         test_cmd
     }
 
-    #[expect(clippy::unused_async)]
+    // Must keep the same signature as the `cfg(pty)` arm below, which does use `self`.
     #[cfg(not(pty))]
-    async fn run_command_with_pty(&self, _cmd: std::process::Command) -> Result<RunResult> {
+    #[expect(clippy::unused_self, reason = "signature must match the cfg(pty) arm")]
+    fn run_command_with_pty(&self, _cmd: std::process::Command) -> Result<RunResult> {
         Err(anyhow::anyhow!("pty test not supported on this platform"))
     }
 
-    #[expect(clippy::unused_async)]
     #[cfg(pty)]
-    async fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
+    fn run_command_with_pty(&self, cmd: std::process::Command) -> Result<RunResult> {
         use crate::util::{make_expectrl_output_readable, read_expectrl_log};
         use expectrl::{Expect, process::Termios as _};
 
@@ -288,9 +288,8 @@ impl TestCase {
         }
     }
 
-    #[expect(clippy::unused_async)]
     #[allow(unused_mut, reason = "only mutated on some platforms")]
-    async fn run_command_with_stdin(&self, mut cmd: std::process::Command) -> Result<RunResult> {
+    fn run_command_with_stdin(&self, mut cmd: std::process::Command) -> Result<RunResult> {
         // SAFETY:
         // To avoid bash trying to directly access /dev/tty and generate tty-related signals,
         // we create a new session for the child process. The standard library has a setsid()

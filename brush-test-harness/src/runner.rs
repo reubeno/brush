@@ -71,7 +71,7 @@ impl TestRunner {
                 let options = self.options.clone();
 
                 join_handles.push(tokio::spawn(async move {
-                    run_test_case_set(test_case_set, config, options).await
+                    run_test_case_set(&test_case_set, config, &options)
                 }));
             }
         }
@@ -218,10 +218,10 @@ impl TestRunner {
     }
 }
 
-async fn run_test_case_set(
-    test_case_set: TestCaseSet,
+fn run_test_case_set(
+    test_case_set: &TestCaseSet,
     config: RunnerConfig,
-    options: TestOptions,
+    options: &TestOptions,
 ) -> Result<TestCaseSetResults> {
     let mut success_count = 0;
     let mut skip_count = 0;
@@ -232,10 +232,10 @@ async fn run_test_case_set(
 
     for test_case in &test_case_set.cases {
         let runner = TestRunner::new(config.clone(), options.clone());
-        let case_is_skipped = runner.should_skip_test(&test_case_set, test_case)?;
+        let case_is_skipped = runner.should_skip_test(test_case_set, test_case)?;
 
         let test_case_result = if case_is_skipped == options.skipped_tests_only {
-            run_single_test(&test_case_set, test_case, &config).await?
+            run_single_test(test_case_set, test_case, &config)?
         } else {
             TestCaseResult {
                 success: true,
@@ -280,7 +280,7 @@ async fn run_test_case_set(
     })
 }
 
-async fn run_single_test(
+fn run_single_test(
     test_case_set: &TestCaseSet,
     test_case: &TestCase,
     config: &RunnerConfig,
@@ -299,15 +299,13 @@ async fn run_single_test(
     let (oracle_comparison, test_result, test_temp_dir) = if should_run_oracle {
         let oracle_config = config.oracle.as_ref().unwrap();
         let (oracle_comp, test_res) =
-            run_oracle_comparison(test_case_set, test_case, config, oracle_config).await?;
+            run_oracle_comparison(test_case_set, test_case, config, oracle_config)?;
         (Some(oracle_comp), Some(test_res), None)
     } else {
         // Run test shell only
         let test_temp_dir = assert_fs::TempDir::new()?;
         test_case.create_test_files_in(&test_temp_dir, test_case_set)?;
-        let test_res = test_case
-            .run_shell(&config.test_shell, &test_temp_dir)
-            .await?;
+        let test_res = test_case.run_shell(&config.test_shell, &test_temp_dir)?;
         (None, Some(test_res), Some(test_temp_dir))
     };
 
@@ -347,7 +345,7 @@ async fn run_single_test(
     })
 }
 
-async fn run_oracle_comparison(
+fn run_oracle_comparison(
     test_case_set: &TestCaseSet,
     test_case: &TestCase,
     config: &RunnerConfig,
@@ -356,16 +354,12 @@ async fn run_oracle_comparison(
     // Run oracle
     let oracle_temp_dir = assert_fs::TempDir::new()?;
     test_case.create_test_files_in(&oracle_temp_dir, test_case_set)?;
-    let oracle_result = test_case
-        .run_shell(&oracle_config.shell, &oracle_temp_dir)
-        .await?;
+    let oracle_result = test_case.run_shell(&oracle_config.shell, &oracle_temp_dir)?;
 
     // Run test shell
     let test_temp_dir = assert_fs::TempDir::new()?;
     test_case.create_test_files_in(&test_temp_dir, test_case_set)?;
-    let test_result = test_case
-        .run_shell(&config.test_shell, &test_temp_dir)
-        .await?;
+    let test_result = test_case.run_shell(&config.test_shell, &test_temp_dir)?;
 
     // Build comparison
     let mut comparison = OracleComparison {
