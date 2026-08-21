@@ -92,16 +92,21 @@ pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
     Ok(found_stopped)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "netbsd", target_os = "openbsd")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "netbsd",
+    target_os = "openbsd",
+    target_os = "ios"
+)))]
 fn waitid_all(
     flags: nix::sys::wait::WaitPidFlag,
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
     nix::sys::wait::waitid(nix::sys::wait::Id::All, flags)
 }
 
-// nix does not expose `waitid` on NetBSD/OpenBSD; `waitpid` for any child is
+// nix does not expose `waitid` on NetBSD/OpenBSD/iOS; `waitpid` for any child is
 // equivalent for the flags used here.
-#[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+#[cfg(any(target_os = "netbsd", target_os = "openbsd", target_os = "ios"))]
 fn waitid_all(
     flags: nix::sys::wait::WaitPidFlag,
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
