@@ -569,6 +569,32 @@ cases:
       echo "\${var:-1:1}: ${var:-1:1}"
       echo "\${var:-3:1}: ${var:-3:1}"
 
+  - name: "Substring with negative length"
+    stdin: |
+      var="abcdefgh"
+      echo "\${var:2:-2}:    ${var:2:-2}"
+      echo "\${var:0:-1}:    ${var:0:-1}"
+      echo "\${var:0:-8}:   [${var:0:-8}]"
+      echo "\${var: -4:-1}: ${var: -4:-1}"
+      echo "\${var: -4:-4}:[${var: -4:-4}]"
+      echo "\${var:2:-6}:   [${var:2:-6}]"
+      echo "\${var:9:-1}:   [${var:9:-1}]"
+      n=2
+      echo "\${var:1:-n}:    ${var:1:-n}"
+      echo "\${var:1:(-2)}:  ${var:1:(-2)}"
+      elem=(abcdefgh)
+      echo "\${elem[0]:2:-2}:  ${elem[0]:2:-2}"
+
+  - name: "Substring with a negative length reaching past the offset"
+    ignore_stderr: true
+    stdin: |
+      var="abcdefgh"
+      ( echo "[${var:0:-9}]" ); echo "rc=$?"
+      ( echo "[${var:2:-7}]" ); echo "rc=$?"
+      ( echo "[${var:8:-1}]" ); echo "rc=$?"
+      empty=
+      ( echo "[${empty:0:-1}]" ); echo "rc=$?"
+
   - name: "Substring on string with multi-byte chars"
     skip: true # TODO(expansion): succeeds on macOS, fails on Linux
     stdin: |

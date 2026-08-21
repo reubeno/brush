@@ -1377,19 +1377,42 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     }
                 }
 
+                // An offset past the end yields an empty slice, whatever the length says.
+                let offset_past_end = expanded_offset > expanded_parameter_len;
+
                 // Make sure the offset is within the bounds of the item.
                 let expanded_offset = min(expanded_offset, expanded_parameter_len);
 
                 let end_offset = if let Some(length) = length {
                     let mut expanded_length = length.eval(self.shell, self.params, false).await?;
-                    if expanded_length < 0 {
-                        expanded_length += expanded_parameter_len;
+
+                    if expanded_length < 0 && !expanded_parameter.from_array {
+                        // A negative length is an offset from the end of the value rather
+                        // than a count, so it fixes where the slice ends instead of how
+                        // long it is: ${s:2:-2} on `abcdefgh` runs from index 2 to index
+                        // 6, giving `cdef`.
+                        let end_offset = expanded_parameter_len + expanded_length;
+
+                        if offset_past_end {
+                            expanded_offset
+                        } else if end_offset < expanded_offset {
+                            return Err(error::ErrorKind::CheckedExpansionError(format!(
+                                "{expanded_length}: substring expression < 0"
+                            ))
+                            .into());
+                        } else {
+                            end_offset
+                        }
+                    } else {
+                        if expanded_length < 0 {
+                            expanded_length += expanded_parameter_len;
+                        }
+
+                        let expanded_length =
+                            min(expanded_length, expanded_parameter_len - expanded_offset);
+
+                        expanded_offset + expanded_length
                     }
-
-                    let expanded_length =
-                        min(expanded_length, expanded_parameter_len - expanded_offset);
-
-                    expanded_offset + expanded_length
                 } else {
                     expanded_parameter_len
                 };
