@@ -63,6 +63,28 @@ cases:
       myfunc
       echo "After function call"
 
+  - name: "declaration assignments show expanded values"
+    known_failure: true # TODO: xtrace improvements required
+    stdin: |
+      value=world
+      set -x
+      declare declared=$value
+      export exported=$value
+      readonly fixed=$value
+      function f() {
+        local local_value=$value
+      }
+      f
+      set +x
+
+  - name: "wrapper assignment arguments show expanded values"
+    stdin: |
+      value=world
+      set -x
+      builtin echo builtin=$value
+      command echo command=$value
+      set +x
+
   - name: "command line"
     args: ["-x", "script.sh"]
     test_files:
@@ -79,3 +101,112 @@ cases:
       trap 'echo "In trap"' DEBUG
 
       echo "Doing something"
+
+  #
+  # Regression coverage: command tracing covers every form of the declaration builtins and their
+  # wrappers, not only the forms that assign.
+  #
+  - name: "declaration builtins trace their display and query forms"
+    stdin: |
+      f() { :; }
+      set -x
+      declare -p PWD >/dev/null
+      declare >/dev/null
+      export >/dev/null
+      readonly >/dev/null
+      readonly -p >/dev/null
+      declare -f f >/dev/null
+      set +x
+
+  - name: "command and builtin trace their query forms"
+    stdin: |
+      set -x
+      command -v echo >/dev/null
+      command -V echo >/dev/null
+      builtin >/dev/null
+      command >/dev/null
+      set +x
+
+  - name: "command traces its own options"
+    stdin: |
+      set -x
+      command -p echo hi >/dev/null
+      set +x
+
+  - name: "wrappers trace the full invocation for declaration targets"
+    known_failure: true # TODO: xtrace improvements required
+    stdin: |
+      value=world
+      set -x
+      command declare a=$value
+      builtin declare b=$value
+      command builtin declare c=$value
+      builtin command declare d=$value
+      command export e=$value
+      set +x
+
+  - name: "export and readonly echo assignments but not bare names"
+    known_failure: true # TODO: xtrace improvements required
+    stdin: |
+      set -x
+      export a=1 b=2
+      readonly c=3 d
+      declare e=4
+      typeset t=5
+      f() { local g=6 h; }
+      f
+      set +x
+
+  - name: "export and readonly echo assignments recognized from strings"
+    known_failure: true # TODO: xtrace improvements required
+    stdin: |
+      set -x
+      readonly 'q=1'
+      command export 'w=2'
+      set +x
+
+  - name: "assignment operands are traced as single quoted words"
+    known_failure: true # TODO: xtrace improvements required
+    stdin: |
+      v="a b"
+      set -x
+      declare sp="$v"
+      export esp="$v"
+      readonly rsp="$v"
+      set +x
+
+  - name: "invalid export target is not echoed as an assignment"
+    ignore_stderr: true
+    stdin: |
+      set -x
+      export 'ea[0]=1'
+      set +x
+
+  - name: "options following an operand keep their position in the trace"
+    ignore_stderr: true
+    stdin: |
+      set -x
+      declare a=1 -i
+      set +x
+
+  - name: "compound assignment operands are traced as two lines"
+    # A shell traces a compound assignment operand as a standalone assignment line followed by the
+    # declaration command carrying only the variable name; brush emits a single combined line.
+    known_failure: true
+    stdin: |
+      set -x
+      declare -a b=(1 2)
+      declare -A c=([k]=v)
+      export ea=(1 2)
+      readonly ra=(1 2)
+      set +x
+
+  - name: "DEBUG trap fires for a bare assignment statement"
+    # brush only fires the DEBUG trap for commands that reach command execution, so a standalone
+    # assignment statement is skipped.
+    known_failure: true
+    stdin: |
+      trap 'echo "<$BASH_COMMAND>"' DEBUG
+      x=1
+      echo done
+      trap - DEBUG

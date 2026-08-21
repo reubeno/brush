@@ -723,3 +723,13 @@ cases:
       trap -p INT
       trap -p TERM
       echo "done"
+
+  - name: "DEBUG trap - BASH_COMMAND reports commands before expansion"
+    known_failure: true # TODO: BASH_COMMAND improvements required
+    stdin: |
+      value=world
+      trap 'case $BASH_COMMAND in echo*|declare*|printf*) echo "cmd: <$BASH_COMMAND>";; esac' DEBUG
+      echo $value
+      declare declared=$value
+      printf '%s\n' "$value"
+      trap - DEBUG

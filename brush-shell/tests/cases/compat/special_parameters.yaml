@@ -40,6 +40,20 @@ cases:
       printf '%s\n' pf1 pf2
       echo "[$_]"
 
+  - name: "$_ - declaration assignment uses expanded last argument"
+    stdin: |
+      value=world
+      declare declared=$value
+      echo "[$_]"
+
+  - name: "$_ - wrapper assignments use expanded last argument"
+    stdin: |
+      value=world
+      builtin echo builtin=$value
+      echo "builtin: [$_]"
+      command echo command=$value
+      echo "command: [$_]"
+
   - name: "$_ - external command dispatch path"
     stdin: |
       echo seed last
@@ -259,3 +273,12 @@ cases:
       myfunc 1
       myfunc 1 2
       myfunc "a b c" 2
+
+  - name: "$_ - command and builtin query forms"
+    stdin: |
+      echo seed > /dev/null
+      command -v echo > /dev/null; printf 'command -v: [%s]\n' "$_"
+      echo seed > /dev/null
+      builtin > /dev/null; printf 'builtin bare: [%s]\n' "$_"
+      echo seed > /dev/null
+      command > /dev/null; printf 'command bare: [%s]\n' "$_"

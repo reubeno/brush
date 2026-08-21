@@ -87,6 +87,39 @@ cases:
     stdin: |
       command ls --help
 
+  - name: "command forwards expanded declaration assignments"
+    known_failure: true # TODO: command builtin improvements required
+    stdin: |
+      value=world
+      command declare declared=$value
+      command export exported=$value
+      declare -p declared exported
+
+  - name: "nested wrappers resolve ordinary and declaration targets"
+    known_failure: true # TODO: command builtin improvements required
+    stdin: |
+      value=world
+      command builtin echo ordinary=$value
+      command builtin declare declared=$value
+      builtin command echo reverse=$value
+      declare -p declared
+
+  - name: "command expands assignment-looking argument for ordinary builtin"
+    stdin: |
+      value=world
+      command echo argument=$value
+
+  - name: "command expands assignment-looking argument for external command"
+    stdin: |
+      value=world
+      command sh -c 'printf "<%s>\n" "$1"' sh argument=$value
+
+  - name: "command expands assignment-looking command name"
+    stdin: |
+      value=world
+      command missing=$value 2>/dev/null
+      printf 'status=%s last=<%s>\n' "$?" "$_"
+
   - name: "command with -p"
     ignore_stderr: true # In case it fails on the oracle as well, ignore the specific error message.
     # See "command -v -p" above: `command -p`'s default utility path resolves
@@ -96,3 +129,30 @@ cases:
       unset PATH
 
       command -p -- ls
+
+  #
+  # Regression coverage: `command` does not change whether an argument is an assignment word, so
+  # its arguments undergo ordinary word expansion and the nested builtin recognizes any assignment
+  # syntax that survives.
+  #
+  - name: "command does not preserve assignment splitting semantics"
+    known_failure: true # TODO: command builtin improvements required
+    ignore_stderr: true
+    stdin: |
+      v="x y"
+      command declare b=$v
+      declare -p b y
+
+  - name: "command forwards a value with no field separators intact"
+    known_failure: true # TODO: command builtin improvements required
+    stdin: |
+      value=world
+      command declare declared=$value
+      command readonly fixed=$value
+      declare -p declared fixed
+
+  - name: "Function shadowing command receives its arguments"
+    stdin: |
+      command() { echo "shadow command: [$*] count=$#"; }
+      command echo hi
+      unset -f command

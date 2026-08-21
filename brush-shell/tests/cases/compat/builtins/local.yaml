@@ -19,3 +19,12 @@ cases:
         echo "x[0]: ${x[0]}"
       }
       myfunc
+
+  - name: "Multiple local operands expand before assignments are applied"
+    stdin: |
+      myfunc() {
+        unset first second
+        local first=one second=$first
+        declare -p first second
+      }
+      myfunc
