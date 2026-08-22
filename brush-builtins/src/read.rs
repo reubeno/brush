@@ -566,6 +566,17 @@ impl ReadCommand {
         &self,
         file: &brush_core::openfiles::OpenFile,
     ) -> Result<Option<brush_core::terminal::AutoModeGuard>, brush_core::Error> {
+        // Terminal settings only make sense for terminal input. `AutoModeGuard::new`
+        // keys off the process's standard handles, which may be a console even when
+        // the read input is a pipe/file/redirect (e.g. an agent shell hosted in a
+        // terminal): in that case `apply_settings` would hit `SetConsoleMode` on the
+        // non-console input and fail with ERROR_INVALID_PARAMETER (os error 87),
+        // failing the read entirely. Skip terminal setup for non-terminal input,
+        // matching bash's termios behavior.
+        if !file.is_terminal() {
+            return Ok(None);
+        }
+
         let mode = brush_core::terminal::AutoModeGuard::new(file.to_owned()).ok();
         if let Some(mode) = &mode {
             let config = brush_core::terminal::Settings::builder()
@@ -690,6 +701,48 @@ mod tests {
     use itertools::assert_equal;
 
     use super::*;
+
+    // ==================== setup_terminal_settings tests ====================
+
+    /// Terminal setup must be skipped entirely for non-terminal input (pipes,
+    /// files, redirects). `AutoModeGuard::new` keys off the process's standard
+    /// handles, which may be a console even when the read input is not — running
+    /// `apply_settings` on such input fails with ERROR_INVALID_PARAMETER (os
+    /// error 87) on Windows and fails the whole read.
+    #[test]
+    fn test_setup_terminal_settings_skips_pipe_input() {
+        let (reader, _writer) = std::io::pipe().expect("pipe creation must succeed");
+        let file = brush_core::openfiles::OpenFile::from(reader);
+
+        let command = ReadCommand::try_parse_from(["read"]).expect("parse must succeed");
+        let result = command.setup_terminal_settings(&file);
+
+        assert!(result.is_ok(), "non-terminal input must not error");
+        assert!(
+            result.unwrap().is_none(),
+            "non-terminal input must not install a mode guard"
+        );
+    }
+
+    #[test]
+    fn test_setup_terminal_settings_skips_file_input() {
+        let mut tmp = std::env::temp_dir();
+        tmp.push(format!("read-setup-{}.txt", std::process::id()));
+        std::fs::write(&tmp, "x").expect("write fixture must succeed");
+        let file = brush_core::openfiles::OpenFile::from(
+            std::fs::File::open(&tmp).expect("open fixture must succeed"),
+        );
+        let _ = std::fs::remove_file(&tmp);
+
+        let command = ReadCommand::try_parse_from(["read"]).expect("parse must succeed");
+        let result = command.setup_terminal_settings(&file);
+
+        assert!(result.is_ok(), "file input must not error");
+        assert!(
+            result.unwrap().is_none(),
+            "file input must not install a mode guard"
+        );
+    }
 
     // ==================== split_line_by_ifs tests ====================
 
