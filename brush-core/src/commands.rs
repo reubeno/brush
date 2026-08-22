@@ -560,6 +560,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     executable_path: &str,
@@ -583,6 +584,39 @@ pub(crate) fn execute_external_command(
     let child_stdin_is_terminal = context
         .try_fd(openfiles::OpenFiles::STDIN_FD)
         .is_some_and(|f| f.is_terminal());
+
+    // On Windows, normalize relative executable paths before spawning.
+    #[cfg(windows)]
+    let normalized_executable = if Path::new(executable_path).is_relative() {
+        let joined = context.shell.working_dir().join(executable_path);
+
+        let mut normalized = PathBuf::new();
+
+        for component in joined.components() {
+            match component {
+                // Skip "." components.
+                std::path::Component::CurDir => {}
+
+                // For now, keep ".." components as-is.
+                std::path::Component::ParentDir => {
+                    normalized.push(component.as_os_str());
+                }
+
+                _ => {
+                    normalized.push(component.as_os_str());
+                }
+            }
+        }
+
+        Some(normalized.to_string_lossy().into_owned())
+    } else {
+        None
+    };
+
+    #[cfg(not(windows))]
+    let normalized_executable: Option<String> = None;
+
+    let executable_path = normalized_executable.as_deref().unwrap_or(executable_path);
 
     // Figure out if we should be setting up a new process group.
     let new_pg = matches!(
