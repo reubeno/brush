@@ -82,8 +82,10 @@ impl builtins::Command for MapFileCommand {
             .try_fd(self.fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
-        // Read!
-        let results = self.read_entries(input_file)?;
+        // Read! The read is synchronous and can block until the write end is closed,
+        // so it must not hold onto the runtime worker while it waits.
+        let results =
+            brush_core::openfiles::without_parking_worker(|| self.read_entries(input_file))?;
 
         if let Some(origin) = self.origin {
             // -O: preserve existing array, assign at offset.

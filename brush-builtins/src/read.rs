@@ -114,8 +114,12 @@ impl builtins::Command for ReadCommand {
         // Convert timeout to Duration.
         let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
 
-        // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        // Perform the read operation (potentially with timeout). Without -t this blocks
+        // until the write end is closed, so it must not hold onto the runtime worker
+        // while it waits.
+        let read_result = brush_core::openfiles::without_parking_worker(|| {
+            self.read_line(input_stream, context.stderr(), timeout)
+        })?;
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();

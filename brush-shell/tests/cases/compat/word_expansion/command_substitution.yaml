@@ -251,3 +251,21 @@ cases:
 
       $($(:))
       echo "exit code: $?"
+
+  #
+  # A command substitution whose body redirects a builtin from a process
+  # substitution. The producer for `<(...)` is spawned from the worker running
+  # the substitution, so a builtin that reads it synchronously must not hold
+  # that worker while it waits.
+  #
+  - name: "Command substitution containing a builtin fed by process substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      x=$(mapfile -t arr < <(echo -e "one\ntwo"); echo "${arr[*]}")
+      echo "$x"
+
+  - name: "Command substitution containing an external command fed by process substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      x=$(cat < <(echo hello))
+      echo "$x"
