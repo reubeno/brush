@@ -189,3 +189,30 @@ fn parse_here_string_with_variable() -> Result<()> {
     });
     Ok(())
 }
+
+// Out-of-range I/O numbers
+
+#[test]
+fn parse_io_number_out_of_range_does_not_panic() -> Result<()> {
+    // Regression: the `io_number` rule unwrapped the integer parse, so a run of
+    // digits too large for an `IoFd` panicked the parser rather than declining
+    // the rule. The digits are reinterpreted as an ordinary word instead.
+    let input = "echo 99999999999999999999>&1";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_io_number_in_range_still_recognized() -> Result<()> {
+    let input = "echo 2>&1";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}

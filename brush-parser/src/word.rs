@@ -958,9 +958,12 @@ peg::parser! {
         rule tilde_expression() -> TildeExpr =
             &tilde_terminator() { TildeExpr::Home } /
             "+" &tilde_terminator() { TildeExpr::WorkingDir } /
-            plus:("+"?) n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirFromTopOfDirStack { n: n.parse().unwrap(), plus_used: plus.is_some() } } /
+            // N.B. A run of digits need not fit in a `usize`; decline the rule
+            // when it does not, so the word falls through to being treated as a
+            // (non-existent) user name instead of panicking the parser.
+            plus:("+"?) n:$(['0'..='9']*) &tilde_terminator() {? n.parse().map(|n| TildeExpr::NthDirFromTopOfDirStack { n, plus_used: plus.is_some() }).map_err(|_| "dir stack index out of range") } /
             "-" &tilde_terminator() { TildeExpr::OldWorkingDir } /
-            "-" n:$(['0'..='9']*) &tilde_terminator() { TildeExpr::NthDirFromBottomOfDirStack { n: n.parse().unwrap() } } /
+            "-" n:$(['0'..='9']*) &tilde_terminator() {? n.parse().map(|n| TildeExpr::NthDirFromBottomOfDirStack { n }).map_err(|_| "dir stack index out of range") } /
             user:$(portable_filename_char()*) &tilde_terminator() { TildeExpr::UserHome(user.to_owned()) }
 
         rule tilde_terminator() = ['/' | ':' | ';' | '}'] / ![_]
@@ -1252,6 +1255,47 @@ mod tests {
     #[test]
     fn parse_ansi_c_quoted_escape_seq() -> Result<()> {
         assert_ron_snapshot!(test_parse(r"$'\\'")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_tilde_with_out_of_range_dir_stack_index() -> Result<()> {
+        // Regression: the dir-stack index was unwrapped, so a run of digits too
+        // large for a `usize` panicked the parser. It should fall through to
+        // being treated as a user name, which is what bash does with it.
+        // `~N` and `~-N` fall through to a user name; `~+N` cannot, because '+'
+        // is not a valid user-name character, so it stays literal text. Both
+        // match what bash does with an out-of-range index.
+        let parsed = super::parse("~99999999999999999999", &ParserOptions::default())?;
+        assert_eq!(parsed.len(), 1);
+        assert_matches!(
+            parsed[0].piece,
+            WordPiece::TildeExpansion(TildeExpr::UserHome(_))
+        );
+
+        let parsed = super::parse("~-99999999999999999999", &ParserOptions::default())?;
+        assert_eq!(parsed.len(), 1);
+        assert_matches!(
+            parsed[0].piece,
+            WordPiece::TildeExpansion(TildeExpr::UserHome(_))
+        );
+
+        let parsed = super::parse("~+99999999999999999999", &ParserOptions::default())?;
+        assert_eq!(parsed.len(), 1);
+        assert_matches!(parsed[0].piece, WordPiece::Text(_));
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_tilde_with_in_range_dir_stack_index() -> Result<()> {
+        let parsed = super::parse("~+2", &ParserOptions::default())?;
+        assert_eq!(parsed.len(), 1);
+        assert_matches!(
+            parsed[0].piece,
+            WordPiece::TildeExpansion(TildeExpr::NthDirFromTopOfDirStack { n: 2, .. })
+        );
+
         Ok(())
     }
 
