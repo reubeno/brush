@@ -1955,22 +1955,56 @@ fn setup_process_substitution(
     Ok((candidate_fd_num, target_file))
 }
 
+/// Largest payload we will write directly into a freshly created pipe without
+/// a helper thread.
+///
+/// Nothing is reading from the other end of the pipe yet, so an inline
+/// `write_all` can only complete if the whole payload fits in the pipe's
+/// buffer. 4 KiB is the smallest default buffer across the platforms we
+/// target (it is the Windows default; Linux and macOS are larger), so staying
+/// at or below it is safe everywhere.
+const MAX_INLINE_PIPE_WRITE: usize = 4096;
+
+/// Creates a pipe whose read end is preloaded with `contents`, for use in
+/// backing here-documents and here-strings.
 fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
     let (reader, mut writer) = std::io::pipe()?;
 
     let bytes = contents.as_bytes();
 
+    // On Linux we can try to grow the pipe's buffer to fit the entire payload, which
+    // lets us write it inline and hand back a pipe that's already fully populated.
+    // This is best-effort: the request fails for payloads beyond
+    // /proc/sys/fs/pipe-max-size (1 MiB by default for unprivileged processes) and for
+    // a zero-length payload. Any failure just means we fall back to the helper thread
+    // below, so we deliberately ignore the result instead of failing the redirection.
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
+    let resized_to_fit = {
         use std::os::fd::AsFd as _;
 
-        let len = i32::try_from(bytes.len())
-            .map_err(|_err| error::Error::from(error::ErrorKind::TooMuchData))?;
-        nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len))?;
-    }
+        i32::try_from(bytes.len()).is_ok_and(|len| {
+            nix::fcntl::fcntl(reader.as_fd(), nix::fcntl::FcntlArg::F_SETPIPE_SZ(len)).is_ok()
+        })
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    let resized_to_fit = false;
 
-    writer.write_all(bytes)?;
-    drop(writer);
+    if resized_to_fit || bytes.len() <= MAX_INLINE_PIPE_WRITE {
+        writer.write_all(bytes)?;
+        drop(writer);
+    } else {
+        // The payload is too large to be absorbed by the pipe's buffer, so writing it
+        // here would block forever: the reader is the command we haven't spawned yet.
+        // Hand the write off to a helper thread instead. It exits once the payload is
+        // consumed, or earlier with a broken-pipe error if the read end is dropped
+        // first (e.g. a command that never reads its stdin).
+        let contents = contents.to_owned();
+        std::thread::Builder::new()
+            .name(String::from("brush-pipe-writer"))
+            .spawn(move || {
+                let _ = writer.write_all(contents.as_bytes());
+            })?;
+    }
 
     Ok(reader.into())
 }
