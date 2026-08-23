@@ -237,6 +237,21 @@ esac"#;
     Ok(())
 }
 
+#[test]
+fn parse_extglob_pattern_containing_case_keywords() -> Result<()> {
+    let input = r"shopt -s extglob
+echo @(case)
+echo +(esac)
+echo @(in)
+touch case; echo @(case)|cat";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
 // Extglob tests
 
 #[test]
