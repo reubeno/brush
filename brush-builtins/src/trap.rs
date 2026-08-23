@@ -94,7 +94,7 @@ impl TrapCommand {
         output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         if let Some(handler) = context.shell.traps().get_handler(signal_type) {
-            writeln!(output, "trap -- '{}' {signal_type}", &handler.command)?;
+            writeln!(output, "trap -- '{}' {signal_type}", handler.command)?;
         }
         Ok(())
     }
