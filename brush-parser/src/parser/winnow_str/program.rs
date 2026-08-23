@@ -122,7 +122,27 @@ pub(super) fn program<'a>(
         let _: &str =
             winnow::token::take_while(0.., |c: char| c == ' ' || c == '\t').parse_next(input)?;
         opt(comment_tracking(ctx)).parse_next(input)?;
-        winnow::combinator::eof.parse_next(input)?;
+
+        // Anything left unparsed past valid commands means the whole input was
+        // not consumed. Distinguish hard syntax errors (the leftover begins
+        // with something that can never begin or continue a construct here,
+        // e.g. `;;`, `)` or `fi`) from potentially-incomplete input (e.g. an
+        // unclosed `if`, or a trailing `|` awaiting the next command): commit
+        // to the former so it reports a real position, backtrack on the latter
+        // so it keeps being reported as end-of-input.
+        let checkpoint = input.checkpoint();
+        let leftover: &str = winnow::token::rest.parse_next(input)?;
+        input.reset(&checkpoint);
+        let leftover = leftover.trim_end();
+
+        if !leftover.is_empty()
+            && starts_with_unrecoverable_token(leftover, complete_commands.is_empty())
+        {
+            return Err(winnow::error::ErrMode::Cut(ContextError::default()));
+        }
+        if !leftover.is_empty() {
+            return Err(winnow::error::ErrMode::Backtrack(ContextError::default()));
+        }
 
         // Convert accumulated byte ranges to SourceSpans.
         let comments = ctx
@@ -195,6 +215,61 @@ pub fn parse_program(
             }
         }
     })
+}
+
+/// Returns whether the given unparsed trailing content starts with a token
+/// that can never lead to a valid parse: a case terminator operator, a stray
+/// closing delimiter/operator, a reserved word that only appears inside
+/// another construct (`then`, `fi`, `done`, ...), or - when nothing has been
+/// parsed yet - a binary operator like `|` or `&&`.
+///
+/// Operators like `|` and `&&` following already-parsed commands are NOT
+/// unrecoverable: they legitimately continue onto the next line, so their
+/// leftovers indicate incomplete input rather than an error.
+fn starts_with_unrecoverable_token(rest: &str, nothing_parsed: bool) -> bool {
+    /// Operator tokens that can never appear in a valid parse.
+    const UNRECOVERABLE_OPS: &[&str] = &[";;&", ";;", ";&", ")"];
+    /// Operator tokens that may continue a command onto the next line.
+    const CONTINUATION_OPS: &[&str] = &["&&", "||", "|"];
+
+    let rest = rest.trim_start_matches([' ', '\t', '\r', '\n']);
+
+    // Quoted or escaped text can never be a reserved word or operator.
+    if rest.starts_with(['\'', '"', '\\', '`', '$']) {
+        return false;
+    }
+
+    if UNRECOVERABLE_OPS.iter().any(|op| rest.starts_with(op)) {
+        return true;
+    }
+
+    if CONTINUATION_OPS.iter().any(|op| rest.starts_with(op)) {
+        return nothing_parsed;
+    }
+
+    let mut word_end = rest.len();
+    for (idx, c) in rest.char_indices() {
+        if !(c.is_alphanumeric() || c == '_') {
+            word_end = idx;
+            break;
+        }
+    }
+    let Some((word, remainder)) = rest.split_at_checked(word_end) else {
+        return false;
+    };
+
+    if !matches!(
+        word,
+        "then" | "else" | "elif" | "fi" | "do" | "done" | "in" | "esac" | "}" | "]]"
+    ) {
+        return false;
+    }
+
+    // Only a delimiter may follow; `fi=x` and `esac()` are ordinary words.
+    matches!(
+        remainder.chars().next(),
+        None | Some(' ' | '\t' | '\r' | '\n' | ';' | '&' | ')' | '|' | '<' | '>')
+    )
 }
 
 fn calculate_line_column(input: &str, offset: usize) -> (usize, usize) {
