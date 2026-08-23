@@ -82,10 +82,15 @@ impl builtins::Command for MapFileCommand {
             .try_fd(self.fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
-        // Read! The read is synchronous and can block until the write end is closed,
-        // so it must not hold onto the runtime worker while it waits.
-        let results =
-            brush_core::openfiles::without_parking_worker(|| self.read_entries(input_file))?;
+        let read_config = MapFileReadConfig {
+            delimiter: self.delimiter.clone(),
+            max_count: self.max_count,
+            skip_count: self.skip_count,
+            remove_delimiter: self.remove_delimiter,
+        };
+
+        // Read synchronously without blocking an async runtime worker.
+        let results = crate::run_blocking_io(move || read_config.read_entries(input_file)).await?;
 
         if let Some(origin) = self.origin {
             // -O: preserve existing array, assign at offset.
@@ -117,7 +122,14 @@ impl builtins::Command for MapFileCommand {
     }
 }
 
-impl MapFileCommand {
+struct MapFileReadConfig {
+    delimiter: Option<String>,
+    max_count: i64,
+    skip_count: i64,
+    remove_delimiter: bool,
+}
+
+impl MapFileReadConfig {
     fn read_entries(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,

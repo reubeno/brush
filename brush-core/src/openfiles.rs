@@ -102,44 +102,6 @@ pub fn null() -> Result<OpenFile, error::Error> {
     Ok(file.into())
 }
 
-/// Runs a closure that may block indefinitely on a descriptor, without parking the
-/// runtime worker it is running on.
-///
-/// Builtins that consume a descriptor (`mapfile`, `read`) read it synchronously, and
-/// they run inline on the task that invoked them. On the multi-threaded runtime that
-/// task is a worker thread, and a worker sitting in `read(2)` cannot poll the tasks
-/// held in its own queues. That deadlocks whenever one of those tasks is the producer
-/// responsible for closing the write end being read from.
-///
-/// `mapfile -t lines < <(cmd)` inside a command substitution is exactly that shape: the
-/// producer for `<(cmd)` is spawned from the very worker that then blocks, so it lands
-/// in that worker's LIFO slot, which other workers cannot steal. Nothing ever writes the
-/// data or drops the write end, so EOF never arrives and the read never returns.
-///
-/// [`tokio::task::block_in_place`] hands the current worker's queues to another worker
-/// before blocking, which keeps the producer runnable.
-#[cfg(any(unix, windows))]
-pub fn without_parking_worker<T>(f: impl FnOnce() -> T) -> T {
-    // `block_in_place` is only meaningful on the multi-threaded runtime, and panics on
-    // the current-thread one. Outside a runtime there is no worker to park.
-    if tokio::runtime::Handle::try_current()
-        .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
-    {
-        tokio::task::block_in_place(f)
-    } else {
-        f()
-    }
-}
-
-/// Runs a closure that may block indefinitely on a descriptor.
-///
-/// This target only ever runs a current-thread runtime, so there is no worker to hand
-/// off to and the closure is run inline.
-#[cfg(not(any(unix, windows)))]
-pub fn without_parking_worker<T>(f: impl FnOnce() -> T) -> T {
-    f()
-}
-
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
         match self {
