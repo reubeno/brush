@@ -138,17 +138,20 @@ fn render_parse_error(
 
     let (text, kind) = match err {
         Error::Help { cmd, long } => (
-            usage::help::render(spec, cmd, *long).unwrap_or_default(),
+            usage::help::render_styled(spec, cmd, *long, usage::help::Style::auto())
+                .unwrap_or_default(),
             ParseErrorKind::Help,
         ),
         Error::HelpAll { cmd } => (
-            usage::help::render_all(spec, cmd).unwrap_or_default(),
+            usage::help::render_styled(spec, cmd, true, usage::help::Style::auto())
+                .unwrap_or_default(),
             ParseErrorKind::Help,
         ),
         // clap prints the *short* help page to stderr and exits non-zero in this case;
         // preserve that contract.
         Error::MissingArgsHelp { cmd } => (
-            usage::help::render(spec, cmd, false).unwrap_or_default(),
+            usage::help::render_styled(spec, cmd, false, usage::help::Style::auto_stderr())
+                .unwrap_or_default(),
             ParseErrorKind::Failure,
         ),
         Error::Version { .. } => {
