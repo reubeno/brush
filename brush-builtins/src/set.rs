@@ -95,15 +95,19 @@ crate::minus_or_plus_flag_arg!(
     "Shell functions inherit DEBUG and RETURN traps"
 );
 
+/// Sentinel bound to a bare `-o`/`+o` occurrence (a list-all request). Chosen to be
+/// unspellable from shell input so it can never collide with a real option name.
+const BARE_OPTION: &str = "\u{0}";
+
 #[derive(usage::Args)]
 pub(crate) struct SetOption {
-    // N.B. `default_missing = ""` marks each occurrence's value as optional: a bare
-    // `-o`/`+o` (list all options) yields an empty-string entry, while named
-    // occurrences accumulate like they did under the previous clap-based parser.
-    #[usage(short = 'o', default_missing = "", value_name = "OPT")]
+    // N.B. bare `-o`/`+o` occurrences (list-all requests) are rewritten to carry
+    // [`BARE_OPTION`] as an attached value by `SetCommand::new`; named occurrences
+    // accumulate like they did under the previous clap-based parser.
+    #[usage(short = 'o', value_name = "OPT")]
     enable: Vec<String>,
     #[usage(long = "+o")]
-    #[usage(hide, default_missing = "", value_name = "OPT")]
+    #[usage(hide, value_name = "OPT")]
     disable: Vec<String>,
 }
 
@@ -185,13 +189,17 @@ impl builtins::Command for SetCommand {
         //
 
         // Apply the same workaround from the default implementation of Command::new to handle '+'
-        // args.
-        let mut updated_args = vec![];
+        // args. While renaming, also detect bare `-o`/`+o` occurrences (no option name
+        // attached or following) and attach the [`BARE_OPTION`] sentinel to them, so the
+        // list-all request survives parsing without being conflated with an explicitly
+        // empty option name.
+        let argv: Vec<String> = args.into_iter().collect();
+        let mut updated_args = Vec::with_capacity(argv.len());
         let mut now_parsing_positional_args = false;
         let mut next_arg_is_option_value = false;
-        for (i, arg) in args.into_iter().enumerate() {
+        for (i, arg) in argv.iter().enumerate() {
             if now_parsing_positional_args || next_arg_is_option_value {
-                updated_args.push(arg);
+                updated_args.push(arg.clone());
 
                 next_arg_is_option_value = false;
                 continue;
@@ -199,16 +207,38 @@ impl builtins::Command for SetCommand {
 
             if arg == "-" || arg == "--" || (i > 0 && !arg.starts_with(['-', '+'])) {
                 now_parsing_positional_args = true;
+                updated_args.push(arg.clone());
+                continue;
             }
 
-            if let Some(plus_options) = arg.strip_prefix("+") {
-                next_arg_is_option_value = plus_options.ends_with('o');
-                for c in plus_options.chars() {
-                    updated_args.push(format!("--+{c}"));
+            // A `-o`/`+o` occurrence consumes the next word as its option name unless
+            // that word is missing or flag-like, matching how detached values are
+            // treated by the parser.
+            let bare = match argv.get(i + 1) {
+                Some(next) => next.len() > 1 && next.starts_with('-'),
+                None => true,
+            };
+
+            if let Some(plus_options) = arg.strip_prefix('+') {
+                next_arg_is_option_value = plus_options.ends_with('o') && !bare;
+
+                let chars: Vec<char> = plus_options.chars().collect();
+                let last = chars.len().saturating_sub(1);
+                for (n, c) in chars.iter().enumerate() {
+                    if n == last && bare && plus_options.ends_with('o') {
+                        updated_args.push(format!("--+{c}={BARE_OPTION}"));
+                    } else {
+                        updated_args.push(format!("--+{c}"));
+                    }
                 }
             } else {
-                next_arg_is_option_value = arg.starts_with('-') && arg.ends_with('o');
-                updated_args.push(arg);
+                next_arg_is_option_value = arg.starts_with('-') && arg.ends_with('o') && !bare;
+
+                if bare && arg.len() > 1 && arg.starts_with('-') && arg.ends_with('o') {
+                    updated_args.push(format!("{arg}{BARE_OPTION}"));
+                } else {
+                    updated_args.push(arg.clone());
+                }
             }
         }
 
@@ -358,7 +388,12 @@ impl builtins::Command for SetCommand {
         let mut named_options: HashMap<String, bool> = HashMap::new();
         if !self.set_option.disable.is_empty() {
             saw_option = true;
-            if self.set_option.disable.iter().any(String::is_empty) {
+            if self
+                .set_option
+                .disable
+                .iter()
+                .any(|name| name == BARE_OPTION)
+            {
                 // A bare `+o` was given; display all options in set/unset form.
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
@@ -375,14 +410,19 @@ impl builtins::Command for SetCommand {
                 .set_option
                 .disable
                 .iter()
-                .filter(|name| !name.is_empty())
+                .filter(|name| name.as_str() != BARE_OPTION)
             {
                 named_options.insert(option_name.to_owned(), false);
             }
         }
         if !self.set_option.enable.is_empty() {
             saw_option = true;
-            if self.set_option.enable.iter().any(String::is_empty) {
+            if self
+                .set_option
+                .enable
+                .iter()
+                .any(|name| name == BARE_OPTION)
+            {
                 // A bare `-o` was given; display all options in on/off form.
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
@@ -399,7 +439,7 @@ impl builtins::Command for SetCommand {
                 .set_option
                 .enable
                 .iter()
-                .filter(|name| !name.is_empty())
+                .filter(|name| name.as_str() != BARE_OPTION)
             {
                 named_options.insert(option_name.to_owned(), true);
             }
