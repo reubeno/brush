@@ -97,21 +97,14 @@ crate::minus_or_plus_flag_arg!(
 
 #[derive(usage::Args)]
 pub(crate) struct SetOption {
-    // N.B. unlike the previous clap-based parser, which accumulated repeated `-o`
-    // occurrences into a vector, this accepts a single (optional) value per parse.
-    #[usage(short = 'o', value_name = "OPT")]
-    #[allow(
-        clippy::option_option,
-        reason = "distinguishes bare `-o` from `-o <name>`"
-    )]
-    enable: Option<Option<String>>,
+    // N.B. `default_missing = ""` marks each occurrence's value as optional: a bare
+    // `-o`/`+o` (list all options) yields an empty-string entry, while named
+    // occurrences accumulate like they did under the previous clap-based parser.
+    #[usage(short = 'o', default_missing = "", value_name = "OPT")]
+    enable: Vec<String>,
     #[usage(long = "+o")]
-    #[usage(hide, value_name = "OPT")]
-    #[allow(
-        clippy::option_option,
-        reason = "distinguishes bare `+o` from `+o <name>`"
-    )]
-    disable: Option<Option<String>>,
+    #[usage(hide, default_missing = "", value_name = "OPT")]
+    disable: Vec<String>,
 }
 
 /// Manage set-based shell options.
@@ -363,11 +356,10 @@ impl builtins::Command for SetCommand {
         }
 
         let mut named_options: HashMap<String, bool> = HashMap::new();
-        if let Some(option_name) = &self.set_option.disable {
+        if !self.set_option.disable.is_empty() {
             saw_option = true;
-            if let Some(option_name) = option_name {
-                named_options.insert(option_name.to_owned(), false);
-            } else {
+            if self.set_option.disable.iter().any(String::is_empty) {
+                // A bare `+o` was given; display all options in set/unset form.
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
                 )
@@ -379,12 +371,19 @@ impl builtins::Command for SetCommand {
                     writeln!(context.stdout(), "set {option_value_str} {}", option.name)?;
                 }
             }
+            for option_name in self
+                .set_option
+                .disable
+                .iter()
+                .filter(|name| !name.is_empty())
+            {
+                named_options.insert(option_name.to_owned(), false);
+            }
         }
-        if let Some(option_name) = &self.set_option.enable {
+        if !self.set_option.enable.is_empty() {
             saw_option = true;
-            if let Some(option_name) = option_name {
-                named_options.insert(option_name.to_owned(), true);
-            } else {
+            if self.set_option.enable.iter().any(String::is_empty) {
+                // A bare `-o` was given; display all options in on/off form.
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
                 )
@@ -395,6 +394,14 @@ impl builtins::Command for SetCommand {
                     let option_value_str = if option_value { "on" } else { "off" };
                     writeln!(context.stdout(), "{:15}\t{option_value_str}", option.name)?;
                 }
+            }
+            for option_name in self
+                .set_option
+                .enable
+                .iter()
+                .filter(|name| !name.is_empty())
+            {
+                named_options.insert(option_name.to_owned(), true);
             }
         }
 
