@@ -34,12 +34,12 @@ impl builtins::Command for KillCommand {
             .help("Number of the signal to send.")
             .argument::<usize>("SIG_NUM")
             .optional();
-        let list_l = bpaf::short('l')
+        // N.B. `-L` is a hidden alias for `-l`, matching clap's short_alias.
+        let list_signals = bpaf::short('l')
+            .short('L')
             .help("List known signal names.")
             .req_flag(())
-            .map(|(): ()| Some(true));
-        let list_capital_l = bpaf::short('L').req_flag(()).map(|(): ()| Some(true));
-        let list_signals = bpaf::construct!([list_l, list_capital_l])
+            .map(|(): ()| Some(true))
             .fallback(None)
             .map(|v: Option<bool>| v.is_some());
         let args = bpaf::pure(Vec::new());

@@ -242,15 +242,12 @@ impl CommandLineArgs {
             .help("Inherit the specified file descriptors injected by the parent process.")
             .argument::<i32>("FD");
 
-        let login_short = bpaf::short('l')
+        let login = bpaf::short('l')
+            .long("login")
             .help("Make shell act as if it had been invoked as a login shell.")
             .req_flag(())
-            .map(|(): ()| Some(true));
-        let login_long = bpaf::long("login")
-            .help("Make shell act as if it had been invoked as a login shell.")
-            .req_flag(())
-            .map(|(): ()| Some(true));
-        let login = bpaf::construct!([login_short, login_long]).fallback(None);
+            .map(|(): ()| Some(true))
+            .fallback(None);
         let do_not_execute_commands = bpaf::short('n').help("Do not execute commands.").switch();
         let no_editing = long_flag("noediting", "Don't use readline for input.");
         let no_profile = long_flag(
@@ -274,11 +271,11 @@ impl CommandLineArgs {
         let enabled_shopt_options =
             repeated_value(bpaf::short('O'), "SHOPT_OPTION", "Enable `shopt` option.");
         let posix = long_flag("posix", "Disable non-POSIX extensions.");
-        let rcfile = long_config("rcfile")
+        let rc_file = long_option("rcfile")
+            .long("init-file")
             .help("Path to the rc file to load in interactive shells.")
+            .argument::<PathBuf>("FILE")
             .optional();
-        let init_file = long_config("init-file").optional().hide();
-        let rc_file = bpaf::construct!([rcfile, init_file]).fallback(None);
         let read_commands_from_stdin = bpaf::short('s')
             .help("Read commands from standard input.")
             .switch();
@@ -292,15 +289,12 @@ impl CommandLineArgs {
         let treat_unset_variables_as_error = bpaf::short('u')
             .help("Treat expansion of an unset variable as an error.")
             .switch();
-        let verbose_short = bpaf::short('v')
+        let verbose = bpaf::short('v')
+            .long("verbose")
             .help("Print input when it's processed.")
             .req_flag(())
-            .map(|(): ()| Some(true));
-        let verbose_long = bpaf::long("verbose")
-            .help("Print input when it's processed.")
-            .req_flag(())
-            .map(|(): ()| Some(true));
-        let verbose = bpaf::construct!([verbose_short, verbose_long]).fallback(None);
+            .map(|(): ()| Some(true))
+            .fallback(None);
         let print_commands_and_arguments = bpaf::short('x')
             .help("Print commands as they execute.")
             .switch();
@@ -345,22 +339,16 @@ impl CommandLineArgs {
         #[cfg(not(feature = "experimental-load"))]
         let load_file = pure_default(None::<PathBuf>);
 
-        let debug_arg = long_option("debug")
+        let enabled_debug_events = long_option("debug")
+            .long("log-enable")
             .help("Enable debug logging for classes of tracing events.")
-            .argument::<events::TraceEvent>("EVENT");
-        let log_enable_arg = long_option("log-enable")
             .argument::<events::TraceEvent>("EVENT")
-            .hide();
-        let enabled_debug_events = bpaf::construct!([debug_arg, log_enable_arg])
             .many()
             .fallback(Vec::new());
-        let disable_event_arg = long_option("disable-event")
+        let disabled_events = long_option("disable-event")
+            .long("log-disable")
             .help("Disable logging for classes of tracing events.")
-            .argument::<events::TraceEvent>("EVENT");
-        let log_disable_arg = long_option("log-disable")
             .argument::<events::TraceEvent>("EVENT")
-            .hide();
-        let disabled_events = bpaf::construct!([disable_event_arg, log_disable_arg])
             .many()
             .fallback(Vec::new());
 

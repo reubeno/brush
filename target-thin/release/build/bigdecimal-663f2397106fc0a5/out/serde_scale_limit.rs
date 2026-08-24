@@ -1,0 +1,1 @@
+const SERDE_SCALE_LIMIT: i64 = 150000;
