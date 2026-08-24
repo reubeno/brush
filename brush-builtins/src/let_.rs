@@ -1,18 +1,39 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
-#[derive(Parser)]
 pub(crate) struct LetCommand {
     /// Arithmetic expressions to evaluate.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     exprs: Vec<String>,
 }
 
 impl builtins::Command for LetCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        // N.B. Only the leading options are parsed here; all remaining tokens
+        // are captured verbatim via `takes_trailing_args`.
+        let exprs = bpaf::pure(Vec::new());
+
+        bpaf::construct!(LetCommand { exprs })
+    }
+
+    fn about() -> &'static str {
+        "Evaluate arithmetic expressions."
+    }
+
+    fn synopsis() -> &'static str {
+        "[EXPRESSION]..."
+    }
+
+    fn takes_trailing_args() -> bool {
+        true
+    }
+
+    fn set_trailing_args(&mut self, args: Vec<String>) {
+        self.exprs = args;
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

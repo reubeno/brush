@@ -1,12 +1,12 @@
-use clap::Parser;
+use bpaf::Bpaf;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Pop a path from the current directory stack.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct PopdCommand {
     /// Pop the path without changing the current working directory.
-    #[clap(short = 'n')]
+    #[bpaf(short('n'))]
     no_directory_change: bool,
     //
     // TODO(popd): implement +N and -N
@@ -14,6 +14,18 @@ pub(crate) struct PopdCommand {
 
 impl builtins::Command for PopdCommand {
     type Error = crate::dirs::DirError;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        popd_command()
+    }
+
+    fn about() -> &'static str {
+        "Pop a path from the current directory stack."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-n]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

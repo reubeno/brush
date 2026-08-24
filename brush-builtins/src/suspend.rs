@@ -1,18 +1,30 @@
-use clap::Parser;
+use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Suspend the shell.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct SuspendCommand {
     /// Force suspend login shells.
-    #[arg(short = 'f')]
+    #[bpaf(short('f'))]
     force: bool,
 }
 
 impl builtins::Command for SuspendCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        suspend_command()
+    }
+
+    fn about() -> &'static str {
+        "Suspend the shell."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-f]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

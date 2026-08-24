@@ -1,4 +1,4 @@
-use clap::Parser;
+use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -26,22 +26,22 @@ impl From<&DirError> for brush_core::ExecutionExitCode {
 impl brush_core::BuiltinError for DirError {}
 
 /// Manage the current directory stack.
-#[derive(Default, Parser)]
+#[derive(Default, Bpaf)]
 pub(crate) struct DirsCommand {
     /// Clear the directory stack.
-    #[arg(short = 'c')]
+    #[bpaf(short('c'))]
     clear: bool,
 
     /// Don't tilde-shorten paths.
-    #[arg(short = 'l')]
+    #[bpaf(short('l'))]
     tilde_long: bool,
 
     /// Print one directory per line instead of all on one line.
-    #[arg(short = 'p')]
+    #[bpaf(short('p'))]
     print_one_per_line: bool,
 
     /// Print one directory per line with its index.
-    #[arg(short = 'v')]
+    #[bpaf(short('v'))]
     print_one_per_line_with_index: bool,
     //
     // TODO(dirs): implement +N and -N
@@ -49,6 +49,18 @@ pub(crate) struct DirsCommand {
 
 impl builtins::Command for DirsCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        dirs_command()
+    }
+
+    fn about() -> &'static str {
+        "Manage the current directory stack."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-clpv]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

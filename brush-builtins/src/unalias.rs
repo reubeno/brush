@@ -1,21 +1,34 @@
-use clap::Parser;
+use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Unset a shell alias.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct UnaliasCommand {
     /// Remove all aliases.
-    #[arg(short = 'a')]
+    #[bpaf(short('a'))]
     remove_all: bool,
 
     /// Names of aliases to operate on.
+    #[bpaf(positional("ALIASES"))]
     aliases: Vec<String>,
 }
 
 impl builtins::Command for UnaliasCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        unalias_command()
+    }
+
+    fn about() -> &'static str {
+        "Unset a shell alias."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-a] [ALIASES]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

@@ -1,10 +1,10 @@
 //! Types for brush command-line parsing.
 
-use clap::{Parser, builder::styling};
+use crate::{events, productinfo};
+use bpaf::Parser;
 use std::io::IsTerminal;
 use std::path::PathBuf;
-
-use crate::{events, productinfo};
+use std::str::FromStr;
 
 const SHORT_DESCRIPTION: &str = "Bo[u]rn[e] RUsty SHell 🦀 (https://brush.sh)";
 
@@ -14,10 +14,6 @@ brush is distributed under the terms of the MIT license. If you encounter any is
 
 For more information, visit https://brush.sh.";
 
-const USAGE: &str = color_print::cstr!(
-    "<bold>brush</bold> <italics>[OPTIONS]</italics>... <italics>[SCRIPT_PATH [SCRIPT_ARGS]...]</italics>"
-);
-
 const VERSION: &str = const_format::concatcp!(
     productinfo::PRODUCT_VERSION,
     " (",
@@ -25,16 +21,8 @@ const VERSION: &str = const_format::concatcp!(
     ")"
 );
 
-const HEADING_STANDARD_OPTIONS: &str = "Standard shell options";
-
-const HEADING_CONFIG_OPTIONS: &str = "Configuration options";
-
-const HEADING_UI_OPTIONS: &str = "User interface options";
-
-const HEADING_EXPERIMENTAL_OPTIONS: &str = "*Experimental* options (unstable)";
-
 /// Identifies the input backend to use for the shell.
-#[derive(Clone, Copy, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug)]
 pub enum InputBackendType {
     /// Richest input backend, based on reedline.
     Reedline,
@@ -44,209 +32,400 @@ pub enum InputBackendType {
     Minimal,
 }
 
+impl FromStr for InputBackendType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "reedline" => Ok(Self::Reedline),
+            "basic" => Ok(Self::Basic),
+            "minimal" => Ok(Self::Minimal),
+            _ => Err(format!(
+                "invalid input backend: `{s}` (expected one of reedline, basic, minimal)"
+            )),
+        }
+    }
+}
+
 /// Parsed command-line arguments for the brush shell.
-#[derive(Clone, Parser)]
-#[clap(name = productinfo::PRODUCT_NAME,
-       version = VERSION,
-       about = SHORT_DESCRIPTION,
-       long_about = LONG_DESCRIPTION,
-       author,
-       override_usage = USAGE,
-       disable_help_flag = true,
-       disable_version_flag = true,
-       styles = brush_help_styles())]
+#[derive(Clone, Debug, Default)]
 pub struct CommandLineArgs {
-    /// Display usage information.
-    #[clap(long = "help", action = clap::ArgAction::HelpShort)]
-    pub help: Option<bool>,
-
-    /// Display shell version.
-    #[clap(long = "version", action = clap::ArgAction::Version)]
-    pub version: Option<bool>,
-
     /// Path to TOML-based `brush` config file (overrides default location).
-    #[clap(long = "config", value_name = "FILE", help_heading = HEADING_CONFIG_OPTIONS)]
     pub config_file: Option<PathBuf>,
 
     /// Disable loading of TOML-based `brush` config file.
-    #[clap(long = "no-config", help_heading = HEADING_CONFIG_OPTIONS)]
     pub no_config: bool,
 
     /// Enable `noclobber` shell option.
-    #[arg(short = 'C', help_heading = HEADING_STANDARD_OPTIONS)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
 
     /// Execute the provided command and then exit.
-    #[arg(short = 'c', value_name = "COMMAND", help_heading = HEADING_STANDARD_OPTIONS)]
     pub command: Option<String>,
 
     /// Enable error-on-exit behavior.
-    #[clap(short = 'e', help_heading = HEADING_STANDARD_OPTIONS)]
     pub exit_on_nonzero_command_exit: bool,
 
     /// Disable pathname expansion (also known as filename globbing).
-    #[clap(short = 'f', help_heading = HEADING_STANDARD_OPTIONS)]
     pub disable_pathname_expansion: bool,
 
     /// Run in interactive mode.
-    #[clap(short = 'i', help_heading = HEADING_STANDARD_OPTIONS)]
     pub interactive: bool,
 
     /// Inherit the specified file descriptors injected by the parent process.
-    #[clap(long = "inherit-fd", value_name = "FD", help_heading = HEADING_STANDARD_OPTIONS)]
     pub inherited_fds: Vec<i32>,
 
     /// Make shell act as if it had been invoked as a login shell.
-    #[clap(short = 'l', long = "login", help_heading = HEADING_STANDARD_OPTIONS)]
-    pub login: bool,
+    pub login: Option<bool>,
 
     /// Do not execute commands.
-    #[clap(short = 'n', help_heading = HEADING_STANDARD_OPTIONS)]
     pub do_not_execute_commands: bool,
 
     /// Don't use readline for input.
-    #[clap(long = "noediting", help_heading = HEADING_STANDARD_OPTIONS)]
     pub no_editing: bool,
 
     /// Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`,
     /// `~/.profile`).
-    #[clap(long = "noprofile", help_heading = HEADING_STANDARD_OPTIONS)]
     pub no_profile: bool,
 
     /// Don't process "rc" files if the shell is interactive (e.g., `~/.bashrc`, `~/.brushrc`).
-    #[clap(long = "norc", help_heading = HEADING_STANDARD_OPTIONS)]
     pub no_rc: bool,
 
     /// Don't inherit environment variables from the calling process.
-    #[clap(long = "noenv", help_heading = HEADING_STANDARD_OPTIONS)]
     pub do_not_inherit_env: bool,
 
     /// Enable option (`set -o` option).
-    #[clap(short = 'o', value_name = "OPTION", help_heading = HEADING_STANDARD_OPTIONS)]
     pub enabled_options: Vec<String>,
 
     /// Disable option (`set -o` option).
-    #[clap(long = "+o", value_name = "OPTION", hide = true, help_heading = HEADING_STANDARD_OPTIONS)]
     pub disabled_options: Vec<String>,
 
     /// Enable `shopt` option.
-    #[clap(short = 'O', value_name = "SHOPT_OPTION", help_heading = HEADING_STANDARD_OPTIONS)]
     pub enabled_shopt_options: Vec<String>,
 
     /// Disable `shopt` option.
-    #[clap(long = "+O", value_name = "SHOPT_OPTION", hide = true, help_heading = HEADING_STANDARD_OPTIONS)]
     pub disabled_shopt_options: Vec<String>,
 
     /// Disable non-POSIX extensions.
-    #[clap(long = "posix", help_heading = HEADING_STANDARD_OPTIONS)]
     pub posix: bool,
 
     /// Path to the rc file to load in interactive shells (instead of `bash.bashrc` and
     /// `~/.bashrc`).
-    #[clap(long = "rcfile", alias = "init-file", value_name = "FILE", help_heading = HEADING_STANDARD_OPTIONS)]
     pub rc_file: Option<PathBuf>,
 
     /// Read commands from standard input.
-    #[clap(short = 's', help_heading = HEADING_STANDARD_OPTIONS)]
     pub read_commands_from_stdin: bool,
 
     /// Run in `sh` compatibility mode, as if run as `/bin/sh`.
-    #[clap(long = "sh")]
     pub sh_mode: bool,
 
     /// Run only one command and then exit.
-    #[clap(short = 't', help_heading = HEADING_STANDARD_OPTIONS)]
     pub exit_after_one_command: bool,
 
     /// Treat expansion of an unset variable as an error.
-    #[clap(short = 'u', help_heading = HEADING_STANDARD_OPTIONS)]
     pub treat_unset_variables_as_error: bool,
 
     /// Print input when it's processed.
-    #[clap(short = 'v', long = "verbose", help_heading = HEADING_STANDARD_OPTIONS)]
-    pub verbose: bool,
+    pub verbose: Option<bool>,
 
     /// Print commands as they execute.
-    #[clap(short = 'x', help_heading = HEADING_STANDARD_OPTIONS)]
     pub print_commands_and_arguments: bool,
 
     /// Enable xtrace and configure for the given output file.
-    #[clap(long = "xtrace-file", value_name = "FILE", help_heading = HEADING_UI_OPTIONS)]
     pub xtrace_file_path: Option<PathBuf>,
 
     /// Disable bracketed paste.
-    #[clap(long = "disable-bracketed-paste", help_heading = HEADING_UI_OPTIONS)]
     pub disable_bracketed_paste: bool,
 
     /// Disable colorized output.
-    #[clap(long = "disable-color", help_heading = HEADING_UI_OPTIONS)]
     pub disable_color: bool,
 
     /// Enable syntax highlighting in input.
-    #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS, default_value_t = crate::entry::DEFAULT_ENABLE_HIGHLIGHTING)]
     pub enable_highlighting: bool,
 
     /// Enable experimental parser (not ready for use).
-    #[cfg(feature = "experimental-parser")]
-    #[clap(long = "experimental-parser", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub experimental_parser: bool,
 
     /// Enable terminal integration (**experimental**).
-    #[clap(long = "enable-terminal-integration", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub terminal_shell_integration: bool,
 
     /// Enable zsh-style preexec/precmd hooks (**experimental**).
-    #[clap(long = "enable-zsh-hooks", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub zsh_style_hooks: bool,
 
     /// Input backend.
-    #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
     pub input_backend: Option<InputBackendType>,
 
     /// Load state from the given file; the saved state should be in JSON format
     /// and overrides any non-UI command-line options provided.
-    #[cfg(feature = "experimental-load")]
-    #[clap(long = "load", value_name = "FILE", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub load_file: Option<PathBuf>,
 
     /// Enable debug logging for classes of tracing events.
-    #[clap(long = "debug", alias = "log-enable", value_name = "EVENT", help_heading = HEADING_UI_OPTIONS)]
     pub enabled_debug_events: Vec<events::TraceEvent>,
 
     /// Disable logging for classes of tracing events (takes same event types as `--debug`).
-    #[clap(
-        long = "disable-event",
-        alias = "log-disable",
-        value_name = "EVENT",
-        hide_possible_values = true,
-        help_heading = HEADING_UI_OPTIONS
-    )]
     pub disabled_events: Vec<events::TraceEvent>,
 
     /// Path and arguments for script to execute (optional).
-    #[clap(
-        trailing_var_arg = true,
-        allow_hyphen_values = false,
-        value_name = "SCRIPT_PATH [SCRIPT_ARGS]..."
-    )]
     pub script_args: Vec<String>,
 }
 
+/// If the `-c` group's command string is itself `--`, attaches it to the flag
+/// (`-c=--`) so the parser does not mistake it for an option separator. Any
+/// leading boolean characters in a combined group are split out into their own
+/// flags first.
+fn merge_dash_dash_value(options: &mut Vec<String>, c_idx: usize, has_value: bool) {
+    if has_value && options.len() == c_idx + 2 && options.last().map(String::as_str) == Some("--") {
+        let _ = options.pop();
+        let flag = options.pop().unwrap_or_else(|| String::from("-c"));
+        if let Some(group) = flag.strip_prefix('-').filter(|g| !g.is_empty()) {
+            for c in group.chars().take(group.chars().count() - 1) {
+                options.push(format!("-{c}"));
+            }
+        }
+        options.push(String::from("-c=--"));
+    }
+}
+
+/// Short options that take a separate value token; used when deciding where
+/// the option section of the command line ends.
+const VALUE_TAKING_SHORT_OPTIONS: &str = "coO";
+
+/// Boolean short options; used to detect `-c` at the tail end of a combined
+/// group of options.
+const BOOLEAN_SHORT_OPTIONS: &str = "Cefilnstuvx";
+
+/// Long options that take a separate value token; used when deciding where
+/// the option section of the command line ends.
+const VALUE_TAKING_LONG_OPTIONS: &[&str] = &[
+    "--config",
+    "--inherit-fd",
+    "--rcfile",
+    "--init-file",
+    "--xtrace-file",
+    "--input-backend",
+    "--load",
+    "--debug",
+    "--log-enable",
+    "--disable-event",
+    "--log-disable",
+];
+
 impl CommandLineArgs {
-    /// Returns a `CommandLineArgs` with all clap-defined default values.
+    /// Returns a parser for the brush shell's command-line arguments.
+    ///
+    /// N.B. Only the leading option section is interpreted here; any script
+    /// path and arguments are captured verbatim by [`CommandLineArgs::try_parse_from`].
+    #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one block per command-line option")]
+    pub fn parser() -> impl Parser<Self> {
+        let config_file = long_config("config")
+            .help("Path to TOML-based `brush` config file (overrides default location).")
+            .optional();
+        let no_config = long_flag(
+            "no-config",
+            "Disable loading of TOML-based `brush` config file.",
+        );
+        let disallow_overwriting_regular_files_via_output_redirection = bpaf::short('C')
+            .help("Enable `noclobber` shell option.")
+            .switch();
+        let command = bpaf::short('c')
+            .help("Execute the provided command and then exit.")
+            .argument::<String>("COMMAND")
+            .optional();
+        let exit_on_nonzero_command_exit = bpaf::short('e')
+            .help("Enable error-on-exit behavior.")
+            .switch();
+        let disable_pathname_expansion = bpaf::short('f')
+            .help("Disable pathname expansion (also known as filename globbing).")
+            .switch();
+        let interactive = bpaf::short('i').help("Run in interactive mode.").switch();
+        let inherit_fd = long_option("inherit-fd")
+            .help("Inherit the specified file descriptors injected by the parent process.")
+            .argument::<i32>("FD");
+
+        let login_short = bpaf::short('l')
+            .help("Make shell act as if it had been invoked as a login shell.")
+            .req_flag(())
+            .map(|(): ()| Some(true));
+        let login_long = bpaf::long("login")
+            .help("Make shell act as if it had been invoked as a login shell.")
+            .req_flag(())
+            .map(|(): ()| Some(true));
+        let login = bpaf::construct!([login_short, login_long]).fallback(None);
+        let do_not_execute_commands = bpaf::short('n').help("Do not execute commands.").switch();
+        let no_editing = long_flag("noediting", "Don't use readline for input.");
+        let no_profile = long_flag(
+            "noprofile",
+            "Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`, `~/.profile`).",
+        );
+        let no_rc = long_flag(
+            "norc",
+            "Don't process \"rc\" files if the shell is interactive (e.g., `~/.bashrc`, `~/.brushrc`).",
+        );
+        let do_not_inherit_env = long_flag(
+            "noenv",
+            "Don't inherit environment variables from the calling process.",
+        );
+
+        let enabled_options = repeated_value(
+            bpaf::short('o'),
+            "OPTION",
+            "Enable option (`set -o` option)",
+        );
+        let enabled_shopt_options =
+            repeated_value(bpaf::short('O'), "SHOPT_OPTION", "Enable `shopt` option.");
+        let posix = long_flag("posix", "Disable non-POSIX extensions.");
+        let rcfile = long_config("rcfile")
+            .help("Path to the rc file to load in interactive shells.")
+            .optional();
+        let init_file = long_config("init-file").optional().hide();
+        let rc_file = bpaf::construct!([rcfile, init_file]).fallback(None);
+        let read_commands_from_stdin = bpaf::short('s')
+            .help("Read commands from standard input.")
+            .switch();
+
+        let sh_mode = bpaf::long("sh")
+            .help("Run in `sh` compatibility mode, as if run as `/bin/sh`.")
+            .switch();
+        let exit_after_one_command = bpaf::short('t')
+            .help("Run only one command and then exit.")
+            .switch();
+        let treat_unset_variables_as_error = bpaf::short('u')
+            .help("Treat expansion of an unset variable as an error.")
+            .switch();
+        let verbose_short = bpaf::short('v')
+            .help("Print input when it's processed.")
+            .req_flag(())
+            .map(|(): ()| Some(true));
+        let verbose_long = bpaf::long("verbose")
+            .help("Print input when it's processed.")
+            .req_flag(())
+            .map(|(): ()| Some(true));
+        let verbose = bpaf::construct!([verbose_short, verbose_long]).fallback(None);
+        let print_commands_and_arguments = bpaf::short('x')
+            .help("Print commands as they execute.")
+            .switch();
+
+        let xtrace_file_path = long_option("xtrace-file")
+            .help("Enable xtrace and configure for the given output file.")
+            .argument::<PathBuf>("FILE")
+            .optional();
+
+        let disable_bracketed_paste =
+            long_flag("disable-bracketed-paste", "Disable bracketed paste.");
+        let disable_color = long_flag("disable-color", "Disable colorized output.");
+        let enable_highlighting = bpaf::long("enable-highlighting")
+            .help("Enable syntax highlighting in input.")
+            .switch()
+            .fallback(crate::entry::DEFAULT_ENABLE_HIGHLIGHTING);
+
+        #[cfg(feature = "experimental-parser")]
+        let experimental_parser = bpaf::long("experimental-parser")
+            .help("Enable experimental parser (not ready for use).")
+            .switch();
+        #[cfg(not(feature = "experimental-parser"))]
+        let experimental_parser = pure_default(false);
+
+        let terminal_shell_integration = bpaf::long("enable-terminal-integration")
+            .help("Enable terminal integration (**experimental**).")
+            .switch();
+        let zsh_style_hooks = bpaf::long("enable-zsh-hooks")
+            .help("Enable zsh-style preexec/precmd hooks (**experimental**).")
+            .switch();
+
+        let input_backend = long_option("input-backend")
+            .argument::<InputBackendType>("BACKEND")
+            .help("Input backend.")
+            .optional();
+
+        #[cfg(feature = "experimental-load")]
+        let load_file = bpaf::long("load")
+            .help("Load state from the given file; the saved state should be in JSON format and overrides any non-UI command-line options provided.")
+            .argument::<PathBuf>("FILE")
+            .optional();
+        #[cfg(not(feature = "experimental-load"))]
+        let load_file = pure_default(None::<PathBuf>);
+
+        let debug_arg = long_option("debug")
+            .help("Enable debug logging for classes of tracing events.")
+            .argument::<events::TraceEvent>("EVENT");
+        let log_enable_arg = long_option("log-enable")
+            .argument::<events::TraceEvent>("EVENT")
+            .hide();
+        let enabled_debug_events = bpaf::construct!([debug_arg, log_enable_arg])
+            .many()
+            .fallback(Vec::new());
+        let disable_event_arg = long_option("disable-event")
+            .help("Disable logging for classes of tracing events.")
+            .argument::<events::TraceEvent>("EVENT");
+        let log_disable_arg = long_option("log-disable")
+            .argument::<events::TraceEvent>("EVENT")
+            .hide();
+        let disabled_events = bpaf::construct!([disable_event_arg, log_disable_arg])
+            .many()
+            .fallback(Vec::new());
+
+        let inherited_fds = inherit_fd.many().fallback(Vec::new());
+
+        // N.B. These use `any`/`literal`-based parsers, which bpaf requires to
+        // be positioned to the right of all other named options.
+        let disabled_options = plus_repeated_value("+o", "Disable option (`set -o` option).");
+        let disabled_shopt_options = plus_repeated_value("+O", "Disable `shopt` option.");
+
+        let script_args = pure_default(Vec::new());
+
+        bpaf::construct!(CommandLineArgs {
+            config_file,
+            no_config,
+            disallow_overwriting_regular_files_via_output_redirection,
+            command,
+            exit_on_nonzero_command_exit,
+            disable_pathname_expansion,
+            interactive,
+            inherited_fds,
+            login,
+            do_not_execute_commands,
+            no_editing,
+            no_profile,
+            no_rc,
+            do_not_inherit_env,
+            enabled_options,
+            enabled_shopt_options,
+            posix,
+            rc_file,
+            read_commands_from_stdin,
+            sh_mode,
+            exit_after_one_command,
+            treat_unset_variables_as_error,
+            verbose,
+            print_commands_and_arguments,
+            xtrace_file_path,
+            disable_bracketed_paste,
+            disable_color,
+            enable_highlighting,
+            experimental_parser,
+            terminal_shell_integration,
+            zsh_style_hooks,
+            input_backend,
+            load_file,
+            enabled_debug_events,
+            disabled_events,
+            disabled_options,
+            disabled_shopt_options,
+            script_args,
+        })
+    }
+
+    /// Returns a `CommandLineArgs` with all default values.
     ///
     /// This is useful for detecting which CLI arguments were explicitly provided
     /// vs. which retained their default values (e.g., for config file merging).
+    /// # Panics
+    ///
+    /// Panics if the default arguments fail to parse, which should be
+    /// impossible.
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "parsing defaults should not panic"
-    )]
     pub fn default_values() -> Self {
-        use clap::Parser;
-        // Parse with just the program name to get all defaults.
-        // This won't fail because all arguments have defaults or are optional.
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used, reason = "parsing defaults should not panic")]
         Self::try_parse_from(["brush"]).expect("parsing defaults should never fail")
     }
 
@@ -271,20 +450,160 @@ impl CommandLineArgs {
         // In all other cases, we assume interactive mode.
         true
     }
+
+    /// Returns the shell's argument parser wrapped with standard help/version
+    /// handling.
+    #[must_use]
+    pub fn option_parser() -> bpaf::OptionParser<Self> {
+        Self::parser()
+            .to_options()
+            .version(VERSION)
+            .descr(LONG_DESCRIPTION)
+    }
+
+    /// Parses the brush shell's command-line arguments from the given list.
+    ///
+    /// This is a bash-faithful interpretation of the command line:
+    ///
+    /// * Options are parsed up to the first operand or `--`; everything after
+    ///   that becomes `script_args` verbatim.
+    /// * A `--` immediately following `-c` (or a combined group ending in `-c`)
+    ///   acts as an option terminator, with the command string taken from the
+    ///   next argument.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The arguments, including the program name.
+    pub fn try_parse_from<S: Into<String>>(
+        args: impl IntoIterator<Item = S>,
+    ) -> Result<Self, bpaf::ParseFailure> {
+        let mut args: Vec<String> = args.into_iter().map(Into::into).collect();
+        if !args.is_empty() {
+            args.remove(0); // program name
+        }
+
+        // In bash, once `-c` consumes its command string, all remaining
+        // arguments become positional script arguments verbatim; notably a
+        // following `--` becomes `$0` rather than acting as an option
+        // terminator. Handle that by ending the option section right after
+        // the `-c` value when a pending `-c` is present.
+        // A `--` directly following the `-c` group is an option terminator:
+        // the command string is taken from the next argument.
+        if let Some(dd_idx) = args.iter().position(|a| a == "--") {
+            if dd_idx > 0 && pending_c_group(&args[dd_idx - 1]) {
+                args.remove(dd_idx);
+                let c_idx = dd_idx - 1;
+                let has_value = c_idx + 1 < args.len();
+
+                let mut options: Vec<String> = args[..=(c_idx + 1).min(args.len() - 1)].to_vec();
+                let trailing: Vec<String> = if has_value {
+                    args[c_idx + 2..].to_vec()
+                } else {
+                    Vec::new()
+                };
+
+                merge_dash_dash_value(&mut options, c_idx, has_value);
+                return finish_parsing(&options, trailing);
+            }
+        }
+
+        let first_dd = args.iter().position(|a| a == "--");
+        let c_candidate = args
+            .iter()
+            .take(first_dd.unwrap_or(args.len()))
+            .rposition(|a| pending_c_group(a));
+
+        if let Some(c_idx) = c_candidate {
+            let has_value = c_idx + 1 < args.len();
+
+            // Include the `-c` group and its value in the option section.
+            let mut options: Vec<String> = args[..=(c_idx + 1).min(args.len() - 1)].to_vec();
+            let trailing: Vec<String> = if has_value {
+                args[c_idx + 2..].to_vec()
+            } else {
+                Vec::new()
+            };
+
+            merge_dash_dash_value(&mut options, c_idx, has_value);
+
+            return finish_parsing(&options, trailing);
+        }
+
+        let (options, trailing) = brush_core::builtins::split_option_section(
+            &args,
+            VALUE_TAKING_SHORT_OPTIONS,
+            VALUE_TAKING_LONG_OPTIONS,
+        );
+
+        finish_parsing(&options, trailing)
+    }
 }
 
-/// Returns clap styling to be used for command-line help.
-#[doc(hidden)]
-fn brush_help_styles() -> clap::builder::Styles {
-    styling::Styles::styled()
-        .header(
-            styling::AnsiColor::Yellow.on_default()
-                | styling::Effects::BOLD
-                | styling::Effects::UNDERLINE,
-        )
-        .usage(styling::AnsiColor::Green.on_default() | styling::Effects::BOLD)
-        .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
-        .placeholder(styling::AnsiColor::Cyan.on_default())
+fn finish_parsing(
+    options: &[String],
+    trailing: Vec<String>,
+) -> Result<CommandLineArgs, bpaf::ParseFailure> {
+    let mut parsed = CommandLineArgs::option_parser().run_inner(options)?;
+
+    parsed.script_args = trailing;
+
+    Ok(parsed)
+}
+
+/// Returns whether `arg` is `-c` or a combined short-flag group ending in `c`
+/// (like `-ec`) where all preceding characters are boolean flags.
+fn pending_c_group(arg: &str) -> bool {
+    let Some(flags) = arg.strip_prefix('-') else {
+        return false;
+    };
+    let Some(preceding) = flags.strip_suffix('c') else {
+        return false;
+    };
+    preceding
+        .chars()
+        .all(|ch| BOOLEAN_SHORT_OPTIONS.contains(ch))
+}
+
+/// A hidden boolean flag with the given long name.
+fn long_flag(name: &'static str, help: &'static str) -> impl Parser<bool> {
+    bpaf::long(name).help(help).switch()
+}
+
+/// A long option with the given name.
+fn long_option(name: &'static str) -> bpaf::parsers::NamedArg {
+    bpaf::long(name)
+}
+
+/// Like [`long_option`] but named `--config`.
+fn long_config(name: &'static str) -> bpaf::parsers::ParseArgument<PathBuf> {
+    long_option(name).argument::<PathBuf>("FILE")
+}
+
+/// A repeatable value-taking option attached to the given named argument.
+fn repeated_value(
+    arg: bpaf::parsers::NamedArg,
+    meta: &'static str,
+    help: &'static str,
+) -> impl Parser<Vec<String>> {
+    arg.help(help)
+        .argument::<String>(meta)
+        .many()
+        .fallback(Vec::new())
+}
+
+/// A repeatable plus-style option (e.g., `+o OPTION`) that disables something.
+fn plus_repeated_value(plus_form: &'static str, help: &'static str) -> impl Parser<Vec<String>> {
+    let tag = bpaf::literal(plus_form).help(help);
+    let value = bpaf::any::<String, String, _>("OPTION", Some);
+    bpaf::construct!(tag, value)
+        .adjacent()
+        .many()
+        .map(|pairs| pairs.into_iter().map(|((), v)| v).collect())
+}
+
+/// A parser that always succeeds with the given value without consuming anything.
+fn pure_default<T: Clone + 'static>(value: T) -> impl Parser<T> {
+    bpaf::pure(value)
 }
 
 #[cfg(test)]
@@ -293,11 +612,68 @@ mod tests {
 
     #[test]
     fn test_default_values() {
-        let args = CommandLineArgs::default_values();
-        // Verify some basic defaults
+        let args = CommandLineArgs::try_parse_from(["brush"]).unwrap();
         assert!(!args.interactive);
-        assert!(!args.login);
+        assert_eq!(args.login, None);
         assert!(args.command.is_none());
         assert!(args.script_args.is_empty());
+    }
+
+    #[test]
+    fn parse_script_and_args() {
+        let parsed_args =
+            CommandLineArgs::try_parse_from(["brush", "some-script", "-x", "1", "--option"])
+                .unwrap();
+        assert_eq!(
+            parsed_args.script_args,
+            ["some-script", "-x", "1", "--option"]
+        );
+    }
+
+    #[test]
+    fn parse_unknown_args() {
+        let result = CommandLineArgs::try_parse_from(["brush", "--unknown-option"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_c_with_double_dash_separator() {
+        let parsed_args =
+            CommandLineArgs::try_parse_from(["brush", "-c", "--", "echo hello", "arg0"]).unwrap();
+        assert_eq!(parsed_args.command, Some("echo hello".to_string()));
+        assert_eq!(parsed_args.script_args, ["arg0"]);
+    }
+
+    #[test]
+    fn parse_c_with_double_dash_no_command() {
+        assert!(CommandLineArgs::try_parse_from(["brush", "-c", "--"]).is_err());
+    }
+
+    #[test]
+    fn parse_ec_with_double_dash_separator() {
+        let parsed_args =
+            CommandLineArgs::try_parse_from(["brush", "-ec", "--", "echo hello", "arg0"]).unwrap();
+        assert_eq!(parsed_args.command, Some("echo hello".to_string()));
+        assert!(parsed_args.exit_on_nonzero_command_exit);
+        assert_eq!(parsed_args.script_args, ["arg0"]);
+    }
+
+    #[test]
+    fn parse_o_with_double_dash_is_error() {
+        // bash's -o consumes -- as its literal value (invalid option name), so
+        // this must not be treated as a terminator for -o.
+        let result = CommandLineArgs::try_parse_from(["brush", "-o", "--"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_bool_flag_before_double_dash_not_transformed() {
+        // -e is a boolean flag, not -c. The -- terminates options; everything
+        // after becomes positional (including -c).
+        let parsed_args =
+            CommandLineArgs::try_parse_from(["brush", "-e", "--", "-c", "echo"]).unwrap();
+        assert!(parsed_args.command.is_none());
+        assert!(parsed_args.exit_on_nonzero_command_exit);
+        assert_eq!(parsed_args.script_args, ["--", "-c", "echo"]);
     }
 }

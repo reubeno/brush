@@ -1,29 +1,48 @@
+use bpaf::Parser;
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
 /// Display command help.
-#[derive(Parser)]
 pub(crate) struct HelpCommand {
-    /// Display a short description for the commands.
-    #[arg(short = 'd')]
     short_description: bool,
-
-    /// Display a man-style page of documentation for the commands.
-    #[arg(short = 'm')]
     man_page_style: bool,
-
-    /// Display a short usage summary for the commands.
-    #[arg(short = 's')]
     short_usage: bool,
-
-    /// Patterns of topics to display help for.
     topic_patterns: Vec<String>,
 }
 
 impl builtins::Command for HelpCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let short_description = bpaf::short('d')
+            .help("Display a short description for the commands.")
+            .switch();
+        let man_page_style = bpaf::short('m')
+            .help("Display a man-style page of documentation for the commands.")
+            .switch();
+        let short_usage = bpaf::short('s')
+            .help("Display a short usage summary for the commands.")
+            .switch();
+        let topic_patterns = bpaf::positional::<String>("PATTERNS")
+            .help("Patterns of topics to display help for.")
+            .many();
+
+        bpaf::construct!(HelpCommand {
+            short_description,
+            man_page_style,
+            short_usage,
+            topic_patterns,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Display command help."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-dms] [PATTERNS]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

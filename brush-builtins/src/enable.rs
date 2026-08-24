@@ -1,44 +1,56 @@
-use brush_core::ExecutionResult;
-use clap::Parser;
+use bpaf::Bpaf;
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::builtins;
-use brush_core::error;
+use brush_core::{ExecutionResult, builtins, error};
 
 /// Enable, disable, or display built-in commands.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct EnableCommand {
     /// Print a list of built-in commands.
-    #[arg(short = 'a')]
+    #[bpaf(short('a'))]
     print_list: bool,
 
     /// Disables the specified built-in commands.
-    #[arg(short = 'n')]
+    #[bpaf(short('n'))]
     disable: bool,
 
     /// Print a list of built-in commands with reusable output.
-    #[arg(short = 'p')]
+    #[bpaf(short('p'))]
+    #[expect(dead_code)]
     print_reusably: bool,
 
     /// Only operate on special built-in commands.
-    #[arg(short = 's')]
+    #[bpaf(short('s'))]
     special_only: bool,
 
     /// Path to a shared object from which built-in commands will be loaded.
-    #[arg(short = 'f', value_name = "PATH")]
+    #[bpaf(short('f'), argument("PATH"))]
     shared_object_path: Option<String>,
 
     /// Remove the built-in commands loaded from the indicated object path.
-    #[arg(short = 'd')]
+    #[bpaf(short('d'))]
     remove_loaded_builtin: bool,
 
     /// Names of built-in commands to operate on.
+    #[bpaf(positional("NAMES"))]
     names: Vec<String>,
 }
 
 impl builtins::Command for EnableCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        enable_command()
+    }
+
+    fn about() -> &'static str {
+        "Enable, disable, or display built-in commands."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-adnps] [-f PATH] [NAMES]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

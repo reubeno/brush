@@ -283,7 +283,6 @@ pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
 
     #[test]
     fn empty_config() {

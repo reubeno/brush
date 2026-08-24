@@ -7,7 +7,6 @@
 
 use anyhow::Result;
 use brush_test_harness::{RunnerConfig, TestMode, TestOptions, TestRunner};
-use clap::Parser;
 use std::path::{Path, PathBuf};
 
 async fn run_brush_tests(mut options: TestOptions) -> Result<bool> {

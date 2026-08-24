@@ -1,27 +1,41 @@
+use bpaf::Bpaf;
+
 use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
-use clap::Parser;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 use nix::sys::stat::Mode;
 use std::io::Write;
 
 /// Manage the process umask.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct UmaskCommand {
     /// If MODE is omitted, output in a form that may be reused as input.
-    #[arg(short = 'p')]
+    #[bpaf(short('p'))]
     print_roundtrippable: bool,
 
     /// Makes the output symbolic; otherwise an octal number is given.
-    #[arg(short = 'S')]
+    #[bpaf(short('S'))]
     symbolic_output: bool,
 
     /// Mode mask.
+    #[bpaf(positional("MODE"))]
     mode: Option<String>,
 }
 
 impl builtins::Command for UmaskCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        umask_command()
+    }
+
+    fn about() -> &'static str {
+        "Manage the process umask."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-pS] [MODE]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

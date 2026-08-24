@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
@@ -10,25 +9,22 @@ use brush_core::{
 };
 
 /// Add or update exported shell variables.
-#[derive(Parser)]
 pub(crate) struct ExportCommand {
     /// Names are treated as function names.
-    #[arg(short = 'f')]
     names_are_functions: bool,
 
     /// Un-export the names.
-    #[arg(short = 'n')]
     unexport: bool,
 
     /// Display all exported names.
-    #[arg(short = 'p')]
+    #[expect(dead_code)]
     display_exported_names: bool,
 
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
-    #[clap(skip)]
+    // N.B. These are skipped by the parser, but filled in by the
+    // BuiltinDeclarationCommand trait.
     declarations: Vec<brush_core::CommandArg>,
 }
 
@@ -40,6 +36,34 @@ impl builtins::DeclarationCommand for ExportCommand {
 
 impl builtins::Command for ExportCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let names_are_functions = bpaf::short('f')
+            .help("Names are treated as function names.")
+            .switch();
+        let unexport = bpaf::short('n').help("Un-export the names.").switch();
+        let display_exported_names = bpaf::short('p')
+            .help("Display all exported names.")
+            .switch();
+
+        // N.B. Declarations are captured separately from options.
+        let declarations = bpaf::pure(Vec::new());
+
+        bpaf::construct!(ExportCommand {
+            names_are_functions,
+            unexport,
+            display_exported_names,
+            declarations,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Add or update exported shell variables."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-fn] [NAME[=VALUE]]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

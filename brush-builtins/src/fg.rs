@@ -1,17 +1,31 @@
-use clap::Parser;
+use bpaf::Bpaf;
+
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, jobs, sys};
 
 /// Move a specified job to the foreground.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct FgCommand {
     /// Job spec for the job to move to the foreground; if not specified, the current job is moved.
+    #[bpaf(positional("JOB_SPEC"))]
     job_spec: Option<String>,
 }
 
 impl builtins::Command for FgCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        fg_command()
+    }
+
+    fn about() -> &'static str {
+        "Move a specified job to the foreground."
+    }
+
+    fn synopsis() -> &'static str {
+        "[JOB_SPEC]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

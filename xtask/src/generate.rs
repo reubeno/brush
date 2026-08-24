@@ -1,7 +1,8 @@
 //! Generation commands for documentation, completions, and schemas.
 //!
 //! This module provides commands for generating various artifacts:
-//! - **Documentation**: Man pages and markdown help text from clap definitions
+//! - **Documentation**: Man pages and markdown help text from the shell's
+//!   command-line parser (bpaf)
 //! - **Completions**: Shell completion scripts for bash, zsh, fish, etc.
 //! - **Schemas**: JSON schemas for configuration files
 //! - **Distribution archives**: Reproducible documentation bundles with checksums
@@ -9,7 +10,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use xshell::{Shell, cmd};
 
 /// Generate various artifacts.
@@ -38,7 +39,7 @@ pub enum DocsCommand {
 }
 
 /// Completion script generation commands.
-#[derive(Parser)]
+#[derive(Clone, Copy, Debug, Parser)]
 pub enum CompletionCommand {
     /// Generate completion script for `bash`.
     Bash,
@@ -107,24 +108,25 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
             DocsCommand::Markdown(args) => gen_markdown_docs(args, verbose),
             DocsCommand::Dist(args) => gen_docs_dist(args, verbose),
         },
-        GenCommand::Completion(completion_cmd) => {
-            let shell = match completion_cmd {
-                CompletionCommand::Bash => clap_complete::Shell::Bash,
-                CompletionCommand::Elvish => clap_complete::Shell::Elvish,
-                CompletionCommand::Fish => clap_complete::Shell::Fish,
-                CompletionCommand::PowerShell => clap_complete::Shell::PowerShell,
-                CompletionCommand::Zsh => clap_complete::Shell::Zsh,
-            };
-            gen_completion_script(shell, verbose);
-            Ok(())
-        }
+        GenCommand::Completion(completion_cmd) => gen_completion_script(*completion_cmd, verbose),
         GenCommand::Schema(schema_cmd) => match schema_cmd {
             SchemaCommand::Config(args) => gen_config_schema(args, verbose),
         },
     }
 }
 
+/// Renders the shell's help content using its bpaf-based parser.
+fn render_help_text() -> Result<String> {
+    let parser = brush_shell::args::CommandLineArgs::option_parser();
+    match parser.run_inner(&["--help"][..]) {
+        Err(failure) => Ok(failure.unwrap_stdout()),
+        Ok(_) => anyhow::bail!("unexpectedly parsed --help"),
+    }
+}
+
 fn gen_man(args: &GenerateManArgs, verbose: bool) -> Result<()> {
+    use std::fmt::Write as _;
+
     if verbose {
         eprintln!("Generating man pages to: {}", args.output_dir.display());
     }
@@ -135,9 +137,25 @@ fn gen_man(args: &GenerateManArgs, verbose: bool) -> Result<()> {
         std::fs::create_dir_all(&args.output_dir)?;
     }
 
-    // Generate!
-    let cmd = brush_shell::args::CommandLineArgs::command();
-    clap_mangen::generate_to(cmd, &args.output_dir)?;
+    // Generate a simple roff-formatted man page from the rendered help text.
+    let help = render_help_text()?;
+    let mut man = String::new();
+    writeln!(&mut man, ".TH BRUSH 1 \"brush\" \"\" \"User Commands\"")?;
+    writeln!(&mut man, ".SH NAME")?;
+    writeln!(&mut man, "brush \\- Bo[u]rn[e] RUsty SHell")?;
+    writeln!(&mut man, ".SH SYNOPSIS")?;
+    writeln!(&mut man, ".nf")?;
+    writeln!(&mut man, "{}", help.lines().next().unwrap_or_default())?;
+    writeln!(&mut man, ".fi")?;
+    writeln!(&mut man, ".SH OPTIONS")?;
+    writeln!(&mut man, ".nf")?;
+    for line in help.lines().skip(1) {
+        writeln!(&mut man, "{line}")?;
+    }
+    writeln!(&mut man, ".fi")?;
+
+    let output_path = args.output_dir.join("brush.1");
+    std::fs::write(output_path, man)?;
 
     Ok(())
 }
@@ -150,13 +168,13 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    let options = clap_markdown::MarkdownOptions::new()
-        .show_footer(false)
-        .show_table_of_contents(true);
+    // Generate markdown from the bpaf-rendered help text.
+    let help = render_help_text()?;
+    let markdown = format!("# brush\n\n```text\n{help}\n```\n");
 
-    // Generate!
-    let markdown =
-        clap_markdown::help_markdown_custom::<brush_shell::args::CommandLineArgs>(&options);
+    if let Some(parent) = args.output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(&args.output_path, markdown)?;
 
     Ok(())
@@ -164,14 +182,37 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
 
 /// Generate a shell completion script to stdout.
 ///
-/// The completion script is written directly to stdout so it can be piped
-/// to a file or sourced directly by the shell.
-fn gen_completion_script(shell: clap_complete::Shell, verbose: bool) {
+/// N.B. Completions are generated at runtime by the shell binary itself (via
+/// bpaf), so this shells out to a locally built binary.
+fn gen_completion_script(shell: CompletionCommand, verbose: bool) -> Result<()> {
     if verbose {
-        eprintln!("Generating {shell} completion script...");
+        eprintln!("Generating {shell:?} completion script...");
     }
-    let mut cmd = brush_shell::args::CommandLineArgs::command();
-    clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
+
+    let style_flag = match shell {
+        CompletionCommand::Bash => "--bpaf-complete-style-bash",
+        CompletionCommand::Elvish => "--bpaf-complete-style-elvish",
+        CompletionCommand::Fish => "--bpaf-complete-style-fish",
+        CompletionCommand::PowerShell => {
+            anyhow::bail!("PowerShell completions are not supported by bpaf")
+        }
+        CompletionCommand::Zsh => "--bpaf-complete-style-zsh",
+    };
+
+    // Locate or build the brush binary.
+    let sh = Shell::new()?;
+    let workspace_root = std::env::current_dir()?;
+    let binary = workspace_root.join("target/debug/brush");
+    if !binary.exists() {
+        cmd!(sh, "cargo build -p brush-shell").run()?;
+    }
+
+    let script = cmd!(sh, "{binary} {style_flag}")
+        .read()
+        .context("Failed to generate completion script")?;
+    print!("{script}");
+
+    Ok(())
 }
 
 fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {

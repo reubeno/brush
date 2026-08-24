@@ -1,16 +1,19 @@
+use bpaf::Parser;
 use brush_core::{ExecutionExitCode, builtins, trace_categories};
 
-use clap::Parser;
-
 /// (UNIMPLEMENTED COMMAND)
-#[derive(Parser)]
 pub(crate) struct UnimplementedCommand {
-    #[clap(allow_hyphen_values = true)]
     args: Vec<String>,
 }
 
 impl builtins::Command for UnimplementedCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        // Capture all arguments verbatim; no option parsing is performed.
+        let args = bpaf::any("ARGS", Some).many();
+        bpaf::construct!(UnimplementedCommand { args })
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

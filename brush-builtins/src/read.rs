@@ -1,6 +1,7 @@
-use clap::Parser;
+use bpaf::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
+use std::ffi::OsStr;
 use std::time::{Duration, Instant};
 
 use brush_core::{ErrorKind, builtins, env, error, variables};
@@ -23,53 +24,41 @@ const DEFAULT_DELIMITER: char = '\n';
 const NUL_DELIMITER: char = '\0';
 
 /// Parse standard input.
-#[derive(Parser)]
 pub(crate) struct ReadCommand {
     /// Optionally, name of an array variable to receive read words
     /// of input.
-    #[clap(short = 'a', value_name = "VAR_NAME")]
     array_variable: Option<String>,
 
     /// Optionally, a delimiter to use other than a newline character.
-    #[clap(short = 'd')]
     delimiter: Option<String>,
 
     /// Use readline-like input.
-    #[clap(short = 'e')]
     use_readline: bool,
 
     /// Provide text to use as initial input for readline.
-    #[clap(short = 'i', value_name = "STR")]
     initial_text: Option<String>,
 
     /// Read only the first N characters or until a specified
     /// delimiter is reached, whichever happens first.
-    #[clap(short = 'n', value_name = "COUNT")]
     return_after_n_chars: Option<usize>,
 
     /// Read exactly N characters, ignoring any specified delimiter.
-    #[clap(short = 'N', value_name = "COUNT")]
     return_after_n_chars_no_delimiter: Option<usize>,
 
     /// Prompt to display before reading.
-    #[clap(short = 'p')]
     prompt: Option<String>,
 
     /// Read input in raw mode; no escape sequences.
-    #[clap(short = 'r')]
     raw_mode: bool,
 
     /// Do not echo input.
-    #[clap(short = 's')]
     silent: bool,
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[clap(short = 't', value_name = "SECONDS", allow_hyphen_values = true)]
     timeout_in_seconds: Option<f64>,
 
     /// File descriptor to read from instead of stdin.
-    #[clap(short = 'u', name = "FD")]
     fd_num_to_read: Option<u8>,
 
     /// Optionally, names of variables to receive read input.
@@ -78,6 +67,96 @@ pub(crate) struct ReadCommand {
 
 impl builtins::Command for ReadCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let array_variable = bpaf::short('a')
+            .help("Optionally, name of an array variable to receive read words of input.")
+            .argument::<String>("VAR_NAME")
+            .optional();
+        let delimiter = bpaf::short('d')
+            .help("Optionally, a delimiter to use other than a newline character.")
+            .argument::<String>("DELIM")
+            .optional();
+        let use_readline = bpaf::short('e').help("Use readline-like input.").switch();
+        let initial_text = bpaf::short('i')
+            .help("Provide text to use as initial input for readline.")
+            .argument::<String>("STR")
+            .optional();
+        let return_after_n_chars = bpaf::short('n')
+            .help(
+                "Read only the first N characters or until a specified delimiter is \
+                 reached, whichever happens first.",
+            )
+            .argument::<usize>("COUNT")
+            .optional();
+        let return_after_n_chars_no_delimiter = bpaf::short('N')
+            .help("Read exactly N characters, ignoring any specified delimiter.")
+            .argument::<usize>("COUNT")
+            .optional();
+        let prompt = bpaf::short('p')
+            .help("Prompt to display before reading.")
+            .argument::<String>("PROMPT")
+            .optional();
+        let raw_mode = bpaf::short('r')
+            .help("Read input in raw mode; no escape sequences.")
+            .switch();
+        let silent = bpaf::short('s').help("Do not echo input.").switch();
+        let timeout_in_seconds = bpaf::short('t')
+            .help(
+                "Specify timeout in seconds; fail if the timeout elapses before \
+                 input is completed.",
+            )
+            .argument::<f64>("SECONDS")
+            .optional();
+        let fd_num_to_read = bpaf::short('u')
+            .help("File descriptor to read from instead of stdin.")
+            .argument::<u8>("FD")
+            .optional();
+        let variable_names = bpaf::positional::<String>("VAR_NAMES")
+            .help("Optionally, names of variables to receive read input.")
+            .many();
+
+        bpaf::construct!(ReadCommand {
+            array_variable,
+            delimiter,
+            use_readline,
+            initial_text,
+            return_after_n_chars,
+            return_after_n_chars_no_delimiter,
+            prompt,
+            raw_mode,
+            silent,
+            timeout_in_seconds,
+            fd_num_to_read,
+            variable_names,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Parse standard input."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-a VAR_NAME] [-d DELIM] [-e] [-i STR] [-n COUNT] [-N COUNT] [-p PROMPT] [-rs] [-t SECONDS] [-u FD] [VAR_NAMES]..."
+    }
+
+    // N.B. Overrides the default [`builtins::Command::new`] so that a flag-looking
+    // value for `-t` (e.g., `read -t -0.5`, a negative timeout) gets joined into
+    // `-t=-0.5`; bpaf otherwise rejects separate flag-shaped values.
+    fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut args: Vec<String> = args.into_iter().collect();
+
+        // N.B. The first argument is the command name itself.
+        if !args.is_empty() {
+            args.remove(0);
+        }
+        join_tokens_taking_values(&mut args, "t");
+
+        run_bpaf_parser::<Self>(&args)
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -685,11 +764,98 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
     fields
 }
 
+/// Merges `-X` tokens followed by a flag-looking value token into `-X=<value>`
+/// so that bpaf accepts values that would otherwise be rejected as flags;
+/// e.g., negative timeouts.
+fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].clone();
+
+        if arg == "--" {
+            break;
+        }
+
+        let takes_value = arg.len() == 2
+            && arg.starts_with('-')
+            && arg.chars().nth(1).is_some_and(|c| shorts.contains(c));
+
+        if takes_value {
+            if let Some(next) = args.get(i + 1) {
+                if next.starts_with('-') && next != "-" && next != "--" {
+                    args[i] = format!("{arg}={next}");
+                    args.remove(i + 1);
+                }
+            }
+        }
+
+        i += 1;
+    }
+}
+
+fn run_bpaf_parser<T: builtins::Command>(
+    args: &[String],
+) -> Result<T, builtins::BuiltinArgParseError> {
+    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+    T::parser()
+        .to_options()
+        .run_inner(os_args.as_slice())
+        .map_err(render_bpaf_failure)
+}
+
+fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
+    match failure {
+        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(full),
+            help_request: true,
+        },
+        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
+            message: s,
+            help_request: true,
+        },
+        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(true),
+            help_request: false,
+        },
+    }
+}
+
 #[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
+    use brush_core::builtins::Command as _;
     use itertools::assert_equal;
 
     use super::*;
+
+    #[test]
+    fn test_parse_negative_timeout() -> anyhow::Result<()> {
+        let cmd = ReadCommand::new(["read", "-t", "-0.5"].iter().map(|s| s.to_string()))?;
+        assert_eq!(cmd.timeout_in_seconds, Some(-0.5));
+
+        let cmd = ReadCommand::new(["read", "-t=-0.5"].iter().map(|s| s.to_string()))?;
+        assert_eq!(cmd.timeout_in_seconds, Some(-0.5));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_options_and_vars() -> anyhow::Result<()> {
+        let cmd = ReadCommand::new(
+            [
+                "read", "-a", "myarray", "-r", "-s", "-u", "3", "first", "rest",
+            ]
+            .iter()
+            .map(|s| s.to_string()),
+        )?;
+        assert_eq!(cmd.array_variable.as_deref(), Some("myarray"));
+        assert!(cmd.raw_mode);
+        assert!(cmd.silent);
+        assert_eq!(cmd.fd_num_to_read, Some(3));
+        assert_eq!(cmd.variable_names, ["first", "rest"]);
+
+        Ok(())
+    }
 
     // ==================== split_line_by_ifs tests ====================
 
