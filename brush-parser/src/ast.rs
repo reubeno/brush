@@ -2375,7 +2375,7 @@ echo there
             SourcePosition {
                 line: 1,
                 column: 1,
-                index: 0
+                offset: 0
             }
         );
         assert_eq!(
@@ -2383,7 +2383,7 @@ echo there
             SourcePosition {
                 line: 2,
                 column: 11,
-                index: 18
+                offset: 18
             }
         );
     }
@@ -2411,7 +2411,7 @@ my_func
             SourcePosition {
                 line: 1,
                 column: 1,
-                index: 0
+                offset: 0
             }
         );
         assert_eq!(
@@ -2419,7 +2419,7 @@ my_func
             SourcePosition {
                 line: 4,
                 column: 2,
-                index: 36
+                offset: 36
             }
         );
     }
@@ -2442,7 +2442,7 @@ my_func
             SourcePosition {
                 line: 1,
                 column: 1,
-                index: 0
+                offset: 0
             }
         );
         assert_eq!(
@@ -2450,8 +2450,76 @@ my_func
             SourcePosition {
                 line: 1,
                 column: 28,
-                index: 27
+                offset: 27
             }
         );
+    }
+
+    #[test]
+    fn simple_cmd_loc_after_multibyte_comment() {
+        // Line 1: "# café\n" — 'é' is 2 bytes (0xC3 0xA9), total 8 bytes
+        // Line 2: "ls\n" — 'l' is at byte offset 8, total 3 bytes
+        let input = "# café\nls\n";
+
+        let program = parse(input);
+
+        let Command::Simple(cmd) = &program.complete_commands[0].0[0].0.first.seq[0] else {
+            panic!("expected simple command");
+        };
+
+        let loc = cmd.location().unwrap();
+
+        assert_eq!(
+            *(loc.start),
+            SourcePosition {
+                line: 2,
+                column: 1,
+                offset: 8
+            }
+        );
+        assert_eq!(
+            *(loc.end),
+            SourcePosition {
+                line: 2,
+                column: 3,
+                offset: 10
+            }
+        );
+
+        assert_eq!(input.get(loc.start.offset..loc.end.offset), Some("ls"));
+    }
+
+    #[test]
+    fn simple_cmd_loc_after_multiple_multibyte_chars() {
+        // "# café 日本語\n" = 18 bytes (é=2, 日=3, 本=3, 語=3 + ASCII)
+        // "ls" starts at byte offset 18
+        let input = "# café 日本語\nls\n";
+
+        let program = parse(input);
+
+        let Command::Simple(cmd) = &program.complete_commands[0].0[0].0.first.seq[0] else {
+            panic!("expected simple command");
+        };
+
+        let loc = cmd.location().unwrap();
+
+        assert_eq!(
+            *(loc.start),
+            SourcePosition {
+                line: 2,
+                column: 1,
+                offset: 18
+            }
+        );
+        assert_eq!(
+            *(loc.end),
+            SourcePosition {
+                line: 2,
+                column: 3,
+                offset: 20
+            }
+        );
+
+        assert_eq!(input.get(loc.start.offset..loc.end.offset), Some("ls"));
     }
 }
