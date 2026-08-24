@@ -1,2 +1,3 @@
 target/
 mutants.out*/
+target-thin/
