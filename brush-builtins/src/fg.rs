@@ -1,10 +1,10 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, jobs, sys};
 
 /// Move a specified job to the foreground.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "fg", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct FgCommand {
     /// Job spec for the job to move to the foreground; if not specified, the current job is moved.
     job_spec: Option<String>,
@@ -71,3 +71,5 @@ impl builtins::Command for FgCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(FgCommand);

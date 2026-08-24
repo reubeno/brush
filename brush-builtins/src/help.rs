@@ -1,21 +1,21 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
 /// Display command help.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "help", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct HelpCommand {
     /// Display a short description for the commands.
-    #[arg(short = 'd')]
+    #[usage(short = 'd')]
     short_description: bool,
 
     /// Display a man-style page of documentation for the commands.
-    #[arg(short = 'm')]
+    #[usage(short = 'm')]
     man_page_style: bool,
 
     /// Display a short usage summary for the commands.
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     short_usage: bool,
 
     /// Patterns of topics to display help for.
@@ -50,6 +50,8 @@ impl builtins::Command for HelpCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(HelpCommand);
 
 impl HelpCommand {
     fn display_general_help(

@@ -1,32 +1,31 @@
 use std::borrow::Cow;
+use std::io::Write;
 
-use clap::Parser;
-
-use brush_core::{ExecutionResult, Shell, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, Shell, builtins};
 
 /// Unset a variable.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "unset", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct UnsetCommand {
-    #[clap(flatten)]
+    #[usage(flatten)]
     name_interpretation: UnsetNameInterpretation,
 
     /// Names of variables to unset.
     names: Vec<String>,
 }
 
-#[derive(Parser)]
-#[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
+#[derive(usage::Args)]
 pub(crate) struct UnsetNameInterpretation {
     /// Treat each name as a shell function.
-    #[arg(short = 'f', group = "name-interpretation")]
+    #[usage(short = 'f')]
     shell_functions: bool,
 
     /// Treat each name as a shell variable.
-    #[arg(short = 'v', group = "name-interpretation")]
+    #[usage(short = 'v')]
     shell_variables: bool,
 
     /// Treat each name as a name reference.
-    #[arg(short = 'n', group = "name-interpretation")]
+    #[usage(short = 'n')]
     name_references: bool,
 }
 
@@ -43,6 +42,19 @@ impl builtins::Command for UnsetCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        // NOTE: replaces clap ArgGroup
+        let interpretation_count = usize::from(self.name_interpretation.shell_functions)
+            + usize::from(self.name_interpretation.shell_variables)
+            + usize::from(self.name_interpretation.name_references);
+        if interpretation_count > 1 {
+            writeln!(
+                context.stderr(),
+                "{}: only one of -f, -n, and -v may be specified",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+
         //
         // TODO(nameref): implement nameref
         //
@@ -92,6 +104,8 @@ impl builtins::Command for UnsetCommand {
         Ok(ExecutionResult::success())
     }
 }
+
+brush_core::impl_usage_parse!(UnsetCommand);
 
 fn unset_array_index(
     shell: &mut Shell<impl brush_core::ShellExtensions>,

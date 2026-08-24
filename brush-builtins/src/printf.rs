@@ -1,15 +1,20 @@
-use clap::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(usage::Cli)]
+#[usage(
+    bin = "printf",
+    unknown_flags = "error",
+    args_override_self = false,
+    disable_help_flag,
+    disable_version_flag
+)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
+    #[usage(short = 'v')]
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
@@ -18,12 +23,37 @@ pub(crate) struct PrintfCommand {
     /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
     /// a positional argument. With it disabled, a format string that genuinely needs to
     /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
+    #[usage(trailing_var_arg, required)]
     format_and_args: Vec<String>,
 }
 
 impl builtins::Command for PrintfCommand {
     type Error = brush_core::Error;
+
+    /// Overrides the default [`builtins::Command::new`] to preserve bash's treatment
+    /// of a standalone `--` that appears after the format string: there it is an
+    /// ordinary operand, not an option terminator (which the parser would otherwise
+    /// silently consume).
+    fn new<I>(args: I) -> Result<Self, builtins::ParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut argv: Vec<String> = args.into_iter().collect();
+
+        // Look for a standalone `--` beyond the command name plus one token; anything
+        // earlier is left for the parser's normal option handling.
+        if argv.len() > 2 {
+            if let Some(dd_idx) = argv.iter().skip(2).position(|a| a == "--").map(|p| p + 2) {
+                let tail = argv.split_off(dd_idx);
+                let mut this = brush_core::builtins::parse_command_args::<Self>(argv)?;
+                this.format_and_args.extend(tail);
+                return Ok(this);
+            }
+        }
+
+        // Fall back to the default parsing path.
+        brush_core::builtins::parse_command_args::<Self>(argv)
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -55,6 +85,8 @@ impl builtins::Command for PrintfCommand {
         Ok(ExecutionResult::success())
     }
 }
+
+brush_core::impl_usage_parse!(PrintfCommand);
 
 fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {
     match format_and_args {

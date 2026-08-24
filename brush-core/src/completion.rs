@@ -1,12 +1,12 @@
 //! Implements programmable command completion support.
 
-use clap::ValueEnum;
 use std::{
     borrow::Cow,
     collections::HashMap,
     path::{Path, PathBuf},
 };
 use strum::IntoEnumIterator;
+use usage::ValueEnum;
 
 use crate::{
     Shell, commands, env, error, escape, expansion, extensions, interfaces, jobs, namedoptions,
@@ -22,76 +22,76 @@ use brush_parser::unquote_str;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteAction {
     /// Complete with valid aliases.
-    #[clap(name = "alias")]
+    #[usage(name = "alias")]
     Alias,
     /// Complete with names of array shell variables.
-    #[clap(name = "arrayvar")]
+    #[usage(name = "arrayvar")]
     ArrayVar,
     /// Complete with names of key bindings.
-    #[clap(name = "binding")]
+    #[usage(name = "binding")]
     Binding,
     /// Complete with names of shell builtins.
-    #[clap(name = "builtin")]
+    #[usage(name = "builtin")]
     Builtin,
     /// Complete with names of executable commands.
-    #[clap(name = "command")]
+    #[usage(name = "command")]
     Command,
     /// Complete with directory names.
-    #[clap(name = "directory")]
+    #[usage(name = "directory")]
     Directory,
     /// Complete with names of disabled shell builtins.
-    #[clap(name = "disabled")]
+    #[usage(name = "disabled")]
     Disabled,
     /// Complete with names of enabled shell builtins.
-    #[clap(name = "enabled")]
+    #[usage(name = "enabled")]
     Enabled,
     /// Complete with names of exported shell variables.
-    #[clap(name = "export")]
+    #[usage(name = "export")]
     Export,
     /// Complete with filenames.
-    #[clap(name = "file")]
+    #[usage(name = "file")]
     File,
     /// Complete with names of shell functions.
-    #[clap(name = "function")]
+    #[usage(name = "function")]
     Function,
     /// Complete with valid user groups.
-    #[clap(name = "group")]
+    #[usage(name = "group")]
     Group,
     /// Complete with names of valid shell help topics.
-    #[clap(name = "helptopic")]
+    #[usage(name = "helptopic")]
     HelpTopic,
     /// Complete with the system's hostname(s).
-    #[clap(name = "hostname")]
+    #[usage(name = "hostname")]
     HostName,
     /// Complete with the command names of shell-managed jobs.
-    #[clap(name = "job")]
+    #[usage(name = "job")]
     Job,
     /// Complete with valid shell keywords.
-    #[clap(name = "keyword")]
+    #[usage(name = "keyword")]
     Keyword,
     /// Complete with the command names of running shell-managed jobs.
-    #[clap(name = "running")]
+    #[usage(name = "running")]
     Running,
     /// Complete with names of system services.
-    #[clap(name = "service")]
+    #[usage(name = "service")]
     Service,
     /// Complete with the names of options settable via shopt.
-    #[clap(name = "setopt")]
+    #[usage(name = "setopt")]
     SetOpt,
     /// Complete with the names of options settable via set -o.
-    #[clap(name = "shopt")]
+    #[usage(name = "shopt")]
     ShOpt,
     /// Complete with the names of trappable signals.
-    #[clap(name = "signal")]
+    #[usage(name = "signal")]
     Signal,
     /// Complete with the command names of stopped shell-managed jobs.
-    #[clap(name = "stopped")]
+    #[usage(name = "stopped")]
     Stopped,
     /// Complete with valid usernames.
-    #[clap(name = "user")]
+    #[usage(name = "user")]
     User,
     /// Complete with names of shell variables.
-    #[clap(name = "variable")]
+    #[usage(name = "variable")]
     Variable,
 }
 
@@ -99,28 +99,28 @@ pub enum CompleteAction {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
-    #[clap(name = "bashdefault")]
+    #[usage(name = "bashdefault")]
     BashDefault,
     /// Use default filename completion if no completions are generated.
-    #[clap(name = "default")]
+    #[usage(name = "default")]
     Default,
     /// Treat completions as directory names.
-    #[clap(name = "dirnames")]
+    #[usage(name = "dirnames")]
     DirNames,
     /// Treat completions as filenames.
-    #[clap(name = "filenames")]
+    #[usage(name = "filenames")]
     FileNames,
     /// Suppress default auto-quotation of completions.
-    #[clap(name = "noquote")]
+    #[usage(name = "noquote")]
     NoQuote,
     /// Do not sort completions.
-    #[clap(name = "nosort")]
+    #[usage(name = "nosort")]
     NoSort,
     /// Do not append a trailing space to completions at the end of the input line.
-    #[clap(name = "nospace")]
+    #[usage(name = "nospace")]
     NoSpace,
     /// Also generate directory completions.
-    #[clap(name = "plusdirs")]
+    #[usage(name = "plusdirs")]
     PlusDirs,
 }
 

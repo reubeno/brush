@@ -1,5 +1,4 @@
 use brush_core::{ExecutionResult, sys};
-use clap::{Parser, Subcommand};
 use std::io::Write;
 
 use crate::events;
@@ -29,44 +28,65 @@ impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderSta
 }
 
 /// Configure the running brush shell.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "brushctl", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct BrushCtlCommand {
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     command_group: CommandGroup,
 }
 
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum CommandGroup {
-    #[clap(subcommand)]
-    Complete(CompleteCommand),
-    #[clap(subcommand)]
-    Call(CallCommand),
-    #[clap(subcommand)]
-    Events(EventsCommand),
-    #[clap(subcommand)]
-    Process(ProcessCommand),
+    Complete(CompleteCommandGroup),
+    Call(CallCommandGroup),
+    Events(EventsCommandGroup),
+    Process(ProcessCommandGroup),
+}
+
+#[derive(usage::Args)]
+struct CompleteCommandGroup {
+    #[usage(subcommand)]
+    command: CompleteCommand,
+}
+
+#[derive(usage::Args)]
+struct CallCommandGroup {
+    #[usage(subcommand)]
+    command: CallCommand,
+}
+
+#[derive(usage::Args)]
+struct EventsCommandGroup {
+    #[usage(subcommand)]
+    command: EventsCommand,
+}
+
+#[derive(usage::Args)]
+struct ProcessCommandGroup {
+    #[usage(subcommand)]
+    command: ProcessCommand,
 }
 
 /// Commands for inspecting call state.
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum CallCommand {
     /// Display the current call stack.
-    #[clap(name = "stack")]
+    #[usage(name = "stack")]
     ShowCallStack {
         /// Whether to show more details.
-        #[clap(short = 'd', long = "detailed")]
+        #[usage(short = 'd', long = "detailed")]
         detailed: bool,
     },
 }
 
 /// Commands for generating completions.
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum CompleteCommand {
     /// Generate completions for an input line.
-    #[clap(name = "line")]
+    #[usage(name = "line")]
     Line {
         /// The 0-indexed cursor position for generation.
-        #[arg(long = "cursor", short = 'c')]
+        #[usage(long = "cursor", short = 'c')]
         cursor_index: Option<usize>,
 
         /// The input line to generate completions for.
@@ -75,7 +95,7 @@ enum CompleteCommand {
 }
 
 /// Commands for configuring tracing events.
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum EventsCommand {
     /// Display status of enabled events.
     Status,
@@ -83,33 +103,37 @@ enum EventsCommand {
     /// Enable event.
     Enable {
         /// Event to enable.
+        #[usage(value_enum)]
         event: events::TraceEvent,
     },
 
     /// Disable event.
     Disable {
         /// Event to disable.
+        #[usage(value_enum)]
         event: events::TraceEvent,
     },
 }
 
 /// Commands for inspecting process state.
 #[expect(clippy::enum_variant_names)]
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum ProcessCommand {
     /// Display process ID.
-    #[clap(name = "pid")]
+    #[usage(name = "pid")]
     ShowProcessId,
     /// Display process group ID.
-    #[clap(name = "pgid")]
+    #[usage(name = "pgid")]
     ShowProcessGroupId,
     /// Display foreground process ID.
-    #[clap(name = "fgpid")]
+    #[usage(name = "fgpid")]
     ShowForegroundProcessId,
     /// Display parent process ID.
-    #[clap(name = "ppid")]
+    #[usage(name = "ppid")]
     ShowParentProcessId,
 }
+
+brush_core::impl_usage_parse!(BrushCtlCommand);
 
 impl brush_core::builtins::Command for BrushCtlCommand {
     type Error = brush_core::Error;
@@ -119,10 +143,10 @@ impl brush_core::builtins::Command for BrushCtlCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         match &self.command_group {
-            CommandGroup::Call(call) => call.execute(&context),
-            CommandGroup::Complete(complete) => complete.execute(&mut context).await,
-            CommandGroup::Events(events) => events.execute(&context),
-            CommandGroup::Process(process) => process.execute(&context),
+            CommandGroup::Call(call) => call.command.execute(&context),
+            CommandGroup::Complete(complete) => complete.command.execute(&mut context).await,
+            CommandGroup::Events(events) => events.command.execute(&context),
+            CommandGroup::Process(process) => process.command.execute(&context),
         }
     }
 }

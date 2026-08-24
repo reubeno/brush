@@ -1,28 +1,28 @@
-use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
 use brush_core::{ExecutionResult, builtins};
 
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "hash", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct HashCommand {
     /// Remove entries associated with the given names.
-    #[arg(short = 'd')]
+    #[usage(short = 'd')]
     remove: bool,
 
     /// Display paths in a format usable for input.
-    #[arg(short = 'l')]
+    #[usage(short = 'l')]
     display_as_usable_input: bool,
 
     /// The path to associate with the names.
-    #[arg(short = 'p', value_name = "PATH")]
+    #[usage(short = 'p', value_name = "PATH")]
     path_to_use: Option<PathBuf>,
 
     /// Remove all entries.
-    #[arg(short = 'r')]
+    #[usage(short = 'r')]
     remove_all: bool,
 
     /// Display the paths associated with the names.
-    #[arg(short = 't')]
+    #[usage(short = 't')]
     display_paths: bool,
 
     /// Names to process.
@@ -107,3 +107,5 @@ impl builtins::Command for HashCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(HashCommand);

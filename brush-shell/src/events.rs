@@ -8,40 +8,41 @@ use tracing_subscriber::{
 };
 
 /// Type of event to trace.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, usage::ValueEnum)]
 pub enum TraceEvent {
     /// Traces parsing and evaluation of arithmetic expressions.
-    #[clap(name = "arithmetic")]
+    #[usage(name = "arithmetic")]
     Arithmetic,
     /// Traces command execution.
-    #[clap(name = "commands")]
+    #[usage(name = "commands")]
     Commands,
     /// Traces command completion generation.
-    #[clap(name = "complete")]
+    #[usage(name = "complete")]
     Complete,
     /// Traces word expansion.
-    #[clap(name = "expand")]
+    #[usage(name = "expand")]
     Expand,
     /// Traces functions.
-    #[clap(name = "functions")]
+    #[usage(name = "functions")]
     Functions,
     /// Traces input controls.
-    #[clap(name = "input")]
+    #[usage(name = "input")]
     Input,
     /// Traces job management.
-    #[clap(name = "jobs")]
+    #[usage(name = "jobs")]
     Jobs,
     /// Traces the process of parsing tokens into an abstract syntax tree.
-    #[clap(name = "parse")]
+    #[usage(name = "parse")]
     Parse,
     /// Traces pattern matching.
-    #[clap(name = "pattern")]
+    #[usage(name = "pattern")]
     Pattern,
     /// Traces the process of tokenizing input text.
-    #[clap(name = "tokenize")]
+    #[usage(name = "tokenize")]
     Tokenize,
     /// Traces usage of unimplemented functionality.
-    #[clap(name = "unimplemented", alias = "unimp")]
+    #[usage(name = "unimplemented")]
+    #[usage(alias = "unimp")]
     Unimplemented,
 }
 

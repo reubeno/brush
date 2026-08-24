@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
@@ -7,27 +6,28 @@ use brush_core::{
 };
 
 /// Directly invokes an external command, without going through typical search order.
-#[derive(Default, Parser)]
+#[derive(Default, usage::Cli)]
+#[usage(bin = "command", unknown_flags = "value", args_override_self = false)]
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     pub use_default_path: bool,
 
     /// Display a short description of the command.
-    #[arg(short = 'v')]
+    #[usage(short = 'v')]
     pub print_description: bool,
 
     /// Display a more verbose description of the command.
-    #[arg(short = 'V')]
+    #[usage(short = 'V')]
     pub print_verbose_description: bool,
 
     /// Command and arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     pub command_and_args: Vec<String>,
 }
 
 impl CommandCommand {
-    fn command(&self) -> Option<&str> {
+    fn command_name(&self) -> Option<&str> {
         self.command_and_args.first().map(|s| s.as_str())
     }
 }
@@ -40,7 +40,7 @@ impl builtins::Command for CommandCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // Silently exit if no command was provided.
-        if let Some(command_name) = self.command() {
+        if let Some(command_name) = self.command_name() {
             if self.print_description || self.print_verbose_description {
                 if let Some(found_cmd) =
                     Self::try_find_command(context.shell, command_name, self.use_default_path)
@@ -73,6 +73,8 @@ impl builtins::Command for CommandCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(CommandCommand);
 
 enum FoundCommand {
     Builtin(String),

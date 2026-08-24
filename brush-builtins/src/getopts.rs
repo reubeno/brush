@@ -1,11 +1,10 @@
 use std::{collections::HashMap, io::Write};
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins, env, variables};
 
 /// Parse command options.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "getopts", unknown_flags = "value", args_override_self = false)]
 pub(crate) struct GetOptsCommand {
     /// Specification for options
     options_string: String,
@@ -14,7 +13,7 @@ pub(crate) struct GetOptsCommand {
     variable_name: String,
 
     /// Arguments to parse
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     args: Vec<String>,
 }
 
@@ -83,10 +82,10 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
 impl builtins::Command for GetOptsCommand {
     type Error = brush_core::Error;
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
+    /// Override the default [`builtins::Command::new`] function to handle the limitation related
     /// to `--`. See [`builtins::parse_known`] for more information
     /// TODO(command): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
+    fn new<I>(args: I) -> Result<Self, brush_core::builtins::ParseError>
     where
         I: IntoIterator<Item = String>,
     {
@@ -152,6 +151,8 @@ impl builtins::Command for GetOptsCommand {
         update_variables(&mut context, &self.variable_name, result)
     }
 }
+
+brush_core::impl_usage_parse!(GetOptsCommand);
 
 /// Extracts the next option from `args_to_parse` starting at 1-based position
 /// `next_index`. Handles combined flags (e.g., `-abc`), option arguments (both

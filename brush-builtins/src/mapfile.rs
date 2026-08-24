@@ -1,46 +1,45 @@
 use std::io::{Read, Write};
 
-use clap::Parser;
-
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
 
 /// Read lines from standard input into an indexed array variable.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "mapfile", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
-    #[arg(short = 'd')]
+    #[usage(short = 'd')]
     delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default_value_t = 0)]
+    #[usage(short = 'n', default = "0")]
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O', allow_hyphen_values = true)]
+    #[usage(short = 'O', allow_hyphen_values)]
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
+    #[usage(short = 's', default = "0")]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
-    #[arg(short = 't')]
+    #[usage(short = 't')]
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default_value_t = 0)]
+    #[usage(short = 'u', default = "0")]
     fd: brush_core::ShellFd,
 
     /// Name of function to call for each group of lines.
-    #[arg(short = 'C')]
+    #[usage(short = 'C')]
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000, value_parser = clap::value_parser!(i64).range(1..))]
+    #[usage(short = 'c', default = "5000")]
     callback_group_size: i64,
 
     /// Name of array to read into.
-    #[arg(default_value = "MAPFILE")]
+    #[usage(default = "MAPFILE")]
     array_var_name: String,
 }
 
@@ -51,6 +50,27 @@ impl builtins::Command for MapFileCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        // NOTE: replaces clap value_parser range.
+        if self.skip_count < 0 {
+            writeln!(
+                context.stderr(),
+                "{}: invalid number of initial entries to skip: {}",
+                context.command_name,
+                self.skip_count
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+        // NOTE: replaces clap value_parser range.
+        if self.callback_group_size < 1 {
+            writeln!(
+                context.stderr(),
+                "{}: invalid number of lines to pass the callback for each group: {}",
+                context.command_name,
+                self.callback_group_size
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+
         if self.callback_group_size != 5000 || self.callback.is_some() {
             return error::unimp("mapfile -C/-c is not yet implemented");
         }
@@ -114,6 +134,8 @@ impl builtins::Command for MapFileCommand {
         Ok(ExecutionResult::success())
     }
 }
+
+brush_core::impl_usage_parse!(MapFileCommand);
 
 impl MapFileCommand {
     fn read_entries(

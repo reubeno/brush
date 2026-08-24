@@ -1,4 +1,3 @@
-use clap::{Parser, ValueEnum};
 use itertools::Itertools as _;
 use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
 use strum::IntoEnumIterator;
@@ -11,17 +10,17 @@ use brush_core::{
 };
 
 /// Identifier for a keymap
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, usage::ValueEnum)]
 enum BindKeyMap {
-    #[clap(name = "emacs-standard", alias = "emacs")]
+    #[usage(name = "emacs-standard", alias = "emacs")]
     EmacsStandard,
-    #[clap(name = "emacs-meta")]
+    #[usage(name = "emacs-meta")]
     EmacsMeta,
-    #[clap(name = "emacs-ctlx")]
+    #[usage(name = "emacs-ctlx")]
     EmacsCtlx,
-    #[clap(name = "vi-command", aliases = &["vi", "vi-move"])]
+    #[usage(name = "vi-command", aliases = &["vi", "vi-move"])]
     ViCommand,
-    #[clap(name = "vi-insert")]
+    #[usage(name = "vi-insert")]
     ViInsert,
 }
 
@@ -40,49 +39,50 @@ impl BindKeyMap {
 }
 
 /// Inspect and modify key bindings and other input configuration.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "bind", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct BindCommand {
     /// Name of key map to use.
-    #[arg(short = 'm')]
+    #[usage(short = 'm', value_enum)]
     keymap: Option<BindKeyMap>,
     /// List functions.
-    #[arg(short = 'l')]
+    #[usage(short = 'l')]
     list_funcs: bool,
     /// List functions and bindings.
-    #[arg(short = 'P')]
+    #[usage(short = 'P')]
     list_funcs_and_bindings: bool,
     /// List functions and bindings in a format suitable for use as input.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     list_funcs_and_bindings_reusable: bool,
     /// List key sequences that invoke macros.
-    #[arg(short = 'S')]
+    #[usage(short = 'S')]
     list_key_seqs_that_invoke_macros: bool,
     /// List key sequences that invoke macros in a format suitable for use as input.
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     list_key_seqs_that_invoke_macros_reusable: bool,
     /// List variables.
-    #[arg(short = 'V')]
+    #[usage(short = 'V')]
     list_vars: bool,
     /// List variables in a format suitable for use as input.
-    #[arg(short = 'v')]
+    #[usage(short = 'v')]
     list_vars_reusable: bool,
     /// Find the keys bound to the given named function.
-    #[arg(short = 'q', value_name = "FUNC_NAME")]
+    #[usage(short = 'q', value_name = "FUNC_NAME")]
     query_func_bindings: Option<String>,
     /// Remove all bindings for the given named function.
-    #[arg(short = 'u', value_name = "FUNC_NAME")]
+    #[usage(short = 'u', value_name = "FUNC_NAME")]
     remove_func_bindings: Option<String>,
     /// Remove the binding for the given key sequence.
-    #[arg(short = 'r', value_name = "KEY_SEQ")]
+    #[usage(short = 'r', value_name = "KEY_SEQ")]
     remove_key_seq_binding: Option<String>,
     /// Import bindings from the given file.
-    #[arg(short = 'f', value_name = "PATH")]
+    #[usage(short = 'f', value_name = "PATH")]
     bindings_file: Option<String>,
     /// Bind key sequence to command.
-    #[arg(short = 'x', value_name = "BINDING")]
+    #[usage(short = 'x', value_name = "BINDING")]
     key_seq_bindings: Vec<String>,
     /// List key sequence bindings.
-    #[arg(short = 'X')]
+    #[usage(short = 'X')]
     list_key_seq_bindings: bool,
     /// Key sequence binding to readline function or command.
     key_sequence: Option<String>,
@@ -139,6 +139,8 @@ impl builtins::Command for BindCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(BindCommand);
 
 impl BindCommand {
     #[allow(clippy::too_many_lines)]

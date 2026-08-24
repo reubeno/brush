@@ -1,12 +1,11 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Push a path onto the current directory stack.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "pushd", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct PushdCommand {
     /// Push the path without changing the current working directory.
-    #[clap(short = 'n')]
+    #[usage(short = 'n')]
     no_directory_change: bool,
 
     /// Directory to push on the directory stack.
@@ -43,3 +42,5 @@ impl builtins::Command for PushdCommand {
         Ok(ExecutionResult::success())
     }
 }
+
+brush_core::impl_usage_parse!(PushdCommand);

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::io::Write;
 
-use clap::Parser;
 use itertools::Itertools;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
@@ -9,127 +8,169 @@ use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 crate::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
     'a',
+    "+a",
     "Export variables on modification"
 );
 crate::minus_or_plus_flag_arg!(
     NotifyJobTerminationImmediately,
     'b',
+    "+b",
     "Notify job termination immediately"
 );
 crate::minus_or_plus_flag_arg!(
     ExitOnNonzeroCommandExit,
     'e',
+    "+e",
     "Exit on nonzero command exit"
 );
-crate::minus_or_plus_flag_arg!(DisableFilenameGlobbing, 'f', "Disable filename globbing");
-crate::minus_or_plus_flag_arg!(RememberCommandLocations, 'h', "Remember command locations");
+crate::minus_or_plus_flag_arg!(
+    DisableFilenameGlobbing,
+    'f',
+    "+f",
+    "Disable filename globbing"
+);
+crate::minus_or_plus_flag_arg!(
+    RememberCommandLocations,
+    'h',
+    "+h",
+    "Remember command locations"
+);
 crate::minus_or_plus_flag_arg!(
     PlaceAllAssignmentArgsInCommandEnv,
     'k',
+    "+k",
     "Place all assignment args in command environment"
 );
-crate::minus_or_plus_flag_arg!(EnableJobControl, 'm', "Enable job control");
-crate::minus_or_plus_flag_arg!(DoNotExecuteCommands, 'n', "Do not execute commands");
-crate::minus_or_plus_flag_arg!(RealEffectiveUidMismatch, 'p', "Real effective UID mismatch");
-crate::minus_or_plus_flag_arg!(ExitAfterOneCommand, 't', "Exit after one command");
+crate::minus_or_plus_flag_arg!(EnableJobControl, 'm', "+m", "Enable job control");
+crate::minus_or_plus_flag_arg!(DoNotExecuteCommands, 'n', "+n", "Do not execute commands");
+crate::minus_or_plus_flag_arg!(
+    RealEffectiveUidMismatch,
+    'p',
+    "+p",
+    "Real effective UID mismatch"
+);
+crate::minus_or_plus_flag_arg!(ExitAfterOneCommand, 't', "+t", "Exit after one command");
 crate::minus_or_plus_flag_arg!(
     TreatUnsetVariablesAsError,
     'u',
+    "+u",
     "Treat unset variables as error"
 );
-crate::minus_or_plus_flag_arg!(PrintShellInputLines, 'v', "Print shell input lines");
+crate::minus_or_plus_flag_arg!(PrintShellInputLines, 'v', "+v", "Print shell input lines");
 crate::minus_or_plus_flag_arg!(
     PrintCommandsAndArguments,
     'x',
+    "+x",
     "Print commands and arguments"
 );
-crate::minus_or_plus_flag_arg!(PerformBraceExpansion, 'B', "Perform brace expansion");
+crate::minus_or_plus_flag_arg!(PerformBraceExpansion, 'B', "+B", "Perform brace expansion");
 crate::minus_or_plus_flag_arg!(
     DisallowOverwritingRegularFilesViaOutputRedirection,
     'C',
+    "+C",
     "Disallow overwriting regular files via output redirection"
 );
 crate::minus_or_plus_flag_arg!(
     ShellFunctionsInheritErrTrap,
     'E',
+    "+E",
     "Shell functions inherit ERR trap"
 );
 crate::minus_or_plus_flag_arg!(
     EnableBangStyleHistorySubstitution,
     'H',
+    "+H",
     "Enable bang style history substitution"
 );
 crate::minus_or_plus_flag_arg!(
     DoNotResolveSymlinksWhenChangingDir,
     'P',
+    "+P",
     "Do not resolve symlinks when changing dir"
 );
 crate::minus_or_plus_flag_arg!(
     ShellFunctionsInheritDebugAndReturnTraps,
     'T',
+    "+T",
     "Shell functions inherit DEBUG and RETURN traps"
 );
 
-#[derive(clap::Parser)]
+#[derive(usage::Args)]
 pub(crate) struct SetOption {
-    #[arg(short = 'o', name = "setopt_enable", num_args=0..=1, value_name = "OPT")]
-    enable: Option<Vec<String>>,
-    #[arg(long = concat!("+o"), name = "setopt_disable", hide = true, num_args=0..=1)]
-    disable: Option<Vec<String>>,
+    // N.B. unlike the previous clap-based parser, which accumulated repeated `-o`
+    // occurrences into a vector, this accepts a single (optional) value per parse.
+    #[usage(short = 'o', value_name = "OPT")]
+    #[allow(
+        clippy::option_option,
+        reason = "distinguishes bare `-o` from `-o <name>`"
+    )]
+    enable: Option<Option<String>>,
+    #[usage(long = "+o")]
+    #[usage(hide, value_name = "OPT")]
+    #[allow(
+        clippy::option_option,
+        reason = "distinguishes bare `+o` from `+o <name>`"
+    )]
+    disable: Option<Option<String>>,
 }
 
 /// Manage set-based shell options.
-#[derive(Parser)]
-#[clap(disable_help_flag = true)]
+#[derive(usage::Cli)]
+#[usage(
+    bin = "set",
+    unknown_flags = "error",
+    args_override_self = false,
+    disable_help_flag
+)]
 pub(crate) struct SetCommand {
     /// Display help for this command.
-    #[clap(long, action = clap::ArgAction::HelpLong)]
-    help: Option<bool>,
+    #[usage(long, action = usage::ArgAction::HelpLong)]
+    help: bool,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     export_variables_on_modification: ExportVariablesOnModification,
-    #[clap(flatten)]
+    #[usage(flatten)]
     notify_job_termination_immediately: NotifyJobTerminationImmediately,
-    #[clap(flatten)]
+    #[usage(flatten)]
     exit_on_nonzero_command_exit: ExitOnNonzeroCommandExit,
-    #[clap(flatten)]
+    #[usage(flatten)]
     disable_filename_globbing: DisableFilenameGlobbing,
-    #[clap(flatten)]
+    #[usage(flatten)]
     remember_command_locations: RememberCommandLocations,
-    #[clap(flatten)]
+    #[usage(flatten)]
     place_all_assignment_args_in_command_env: PlaceAllAssignmentArgsInCommandEnv,
-    #[clap(flatten)]
+    #[usage(flatten)]
     enable_job_control: EnableJobControl,
-    #[clap(flatten)]
+    #[usage(flatten)]
     do_not_execute_commands: DoNotExecuteCommands,
-    #[clap(flatten)]
+    #[usage(flatten)]
     real_effective_uid_mismatch: RealEffectiveUidMismatch,
-    #[clap(flatten)]
+    #[usage(flatten)]
     exit_after_one_command: ExitAfterOneCommand,
-    #[clap(flatten)]
+    #[usage(flatten)]
     treat_unset_variables_as_error: TreatUnsetVariablesAsError,
-    #[clap(flatten)]
+    #[usage(flatten)]
     print_shell_input_lines: PrintShellInputLines,
-    #[clap(flatten)]
+    #[usage(flatten)]
     print_commands_and_arguments: PrintCommandsAndArguments,
-    #[clap(flatten)]
+    #[usage(flatten)]
     perform_brace_expansion: PerformBraceExpansion,
-    #[clap(flatten)]
+    #[usage(flatten)]
     disallow_overwriting_regular_files_via_output_redirection:
         DisallowOverwritingRegularFilesViaOutputRedirection,
-    #[clap(flatten)]
+    #[usage(flatten)]
     shell_functions_inherit_err_trap: ShellFunctionsInheritErrTrap,
-    #[clap(flatten)]
+    #[usage(flatten)]
     enable_bang_style_history_substitution: EnableBangStyleHistorySubstitution,
-    #[clap(flatten)]
+    #[usage(flatten)]
     do_not_resolve_symlinks_when_changing_dir: DoNotResolveSymlinksWhenChangingDir,
-    #[clap(flatten)]
+    #[usage(flatten)]
     shell_functions_inherit_debug_and_return_traps: ShellFunctionsInheritDebugAndReturnTraps,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     set_option: SetOption,
 
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     positional_args: Vec<String>,
 }
 
@@ -138,10 +179,10 @@ impl builtins::Command for SetCommand {
         true
     }
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
+    /// Override the default [`builtins::Command::new`] function to handle usage's limitation related
     /// to `--`. See [`builtins::parse_known`] for more information
     /// TODO(set): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
+    fn new<I>(args: I) -> Result<Self, brush_core::builtins::ParseError>
     where
         I: IntoIterator<Item = String>,
     {
@@ -322,9 +363,11 @@ impl builtins::Command for SetCommand {
         }
 
         let mut named_options: HashMap<String, bool> = HashMap::new();
-        if let Some(option_names) = &self.set_option.disable {
+        if let Some(option_name) = &self.set_option.disable {
             saw_option = true;
-            if option_names.is_empty() {
+            if let Some(option_name) = option_name {
+                named_options.insert(option_name.to_owned(), false);
+            } else {
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
                 )
@@ -335,15 +378,13 @@ impl builtins::Command for SetCommand {
                     let option_value_str = if option_value { "-o" } else { "+o" };
                     writeln!(context.stdout(), "set {option_value_str} {}", option.name)?;
                 }
-            } else {
-                for option_name in option_names {
-                    named_options.insert(option_name.to_owned(), false);
-                }
             }
         }
-        if let Some(option_names) = &self.set_option.enable {
+        if let Some(option_name) = &self.set_option.enable {
             saw_option = true;
-            if option_names.is_empty() {
+            if let Some(option_name) = option_name {
+                named_options.insert(option_name.to_owned(), true);
+            } else {
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
                 )
@@ -353,10 +394,6 @@ impl builtins::Command for SetCommand {
                     let option_value = option.definition.get(context.shell.options());
                     let option_value_str = if option_value { "on" } else { "off" };
                     writeln!(context.stdout(), "{:15}\t{option_value_str}", option.name)?;
-                }
-            } else {
-                for option_name in option_names {
-                    named_options.insert(option_name.to_owned(), true);
                 }
             }
         }
@@ -407,6 +444,8 @@ impl builtins::Command for SetCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(SetCommand);
 
 fn display_all(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,

@@ -1,11 +1,10 @@
 use brush_core::{ExecutionExitCode, builtins, trace_categories};
 
-use clap::Parser;
-
 /// (UNIMPLEMENTED COMMAND)
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "unimp", unknown_flags = "value", args_override_self = false)]
 pub(crate) struct UnimplementedCommand {
-    #[clap(allow_hyphen_values = true)]
+    #[usage(arg, double_dash = "automatic")]
     args: Vec<String>,
 }
 
@@ -24,3 +23,5 @@ impl builtins::Command for UnimplementedCommand {
         Ok(ExecutionExitCode::Unimplemented.into())
     }
 }
+
+brush_core::impl_usage_parse!(UnimplementedCommand);

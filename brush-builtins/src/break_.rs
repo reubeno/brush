@@ -1,12 +1,11 @@
-use clap::Parser;
-
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Breaks out of a control-flow loop.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "break", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct BreakCommand {
     /// If specified, indicates which nested loop to break out of.
-    #[clap(default_value_t = 1)]
+    #[usage(default = "1")]
     which_loop: i8,
 }
 
@@ -32,3 +31,5 @@ impl builtins::Command for BreakCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(BreakCommand);

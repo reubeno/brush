@@ -80,7 +80,8 @@ brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
 brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
 brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
-clap = { version = "4.6.0", features = ["derive", "env"] }
+clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
+usage = { package = "usage-rs", version = "6", features = ["completions"] }
 color-print = "0.3.7"
 etcetera = "0.11.0"
 schemars = { version = "1.2.1", optional = true }

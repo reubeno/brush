@@ -1,25 +1,25 @@
-use clap::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
 
 /// Exec the provided command.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "exec", unknown_flags = "value", args_override_self = false)]
 pub(crate) struct ExecCommand {
     /// Pass given name as zeroth argument to command.
-    #[arg(short = 'a', value_name = "NAME")]
+    #[usage(short = 'a', value_name = "NAME")]
     name_for_argv0: Option<String>,
 
     /// Exec command with an empty environment.
-    #[arg(short = 'c')]
+    #[usage(short = 'c')]
     empty_environment: bool,
 
     /// Exec command as a login shell.
-    #[arg(short = 'l')]
+    #[usage(short = 'l')]
     exec_as_login: bool,
 
     /// Command and args.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     args: Vec<String>,
 }
 
@@ -81,3 +81,5 @@ impl builtins::Command for ExecCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(ExecCommand);

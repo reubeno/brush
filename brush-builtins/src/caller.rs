@@ -1,9 +1,9 @@
 use brush_core::{ExecutionResult, builtins, callstack};
-use clap::Parser;
 use std::io::Write;
 
 /// Return the context of the current subroutine call.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "caller", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct CallerCommand {
     /// The number of call frames to go back.
     expr: Option<usize>,
@@ -53,3 +53,5 @@ impl builtins::Command for CallerCommand {
         Ok(ExecutionResult::success())
     }
 }
+
+brush_core::impl_usage_parse!(CallerCommand);

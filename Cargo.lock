@@ -405,6 +405,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "usage-rs",
  "uucore",
 ]
 
@@ -444,6 +445,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "usage-rs",
  "uuid",
  "uzers",
  "whoami",
@@ -545,6 +547,7 @@ dependencies = [
  "brush-core",
  "clap",
  "serde_json",
+ "usage-rs",
 ]
 
 [[package]]
@@ -651,6 +654,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "usage-rs",
  "uuid",
  "version-compare",
  "walkdir",
@@ -865,15 +869,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clap-markdown"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2a2617956a06d4885b490697b5307ebb09fec10b088afc18c81762d848c2339"
-dependencies = [
- "clap",
-]
-
-[[package]]
 name = "clap_builder"
 version = "4.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -884,15 +879,6 @@ dependencies = [
  "clap_lex",
  "strsim",
  "terminal_size",
-]
-
-[[package]]
-name = "clap_complete"
-version = "4.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3be2ad0423bdbbb0e25bc89add796f3559706d4a95e1bc98e4d9662a957b6a19"
-dependencies = [
- "clap",
 ]
 
 [[package]]
@@ -912,16 +898,6 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
-
-[[package]]
-name = "clap_mangen"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "211d617eaa4b735c96c9e0228fcbdb5120ef623f2b8cb67ffb84c3e02dbc28a4"
-dependencies = [
- "clap",
- "roff",
-]
 
 [[package]]
 name = "color-print"
@@ -3684,12 +3660,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "roff"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323c417e1d9665a65b263ec744ba09030cfb277e9daa0b018a4ab62e57bc8189"
-
-[[package]]
 name = "ron"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4603,6 +4573,43 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
+name = "usage-argv"
+version = "6.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37a650954c59792f8836d1ff9c55e811d6a8a3cd6a3094ed518149f6603e0a6a"
+
+[[package]]
+name = "usage-derive"
+version = "6.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5a9c96fae9f55e0ed7cfcbe7feca43196ab49a3058430d12c937472585056c6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
+name = "usage-rs"
+version = "6.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fed5079f9b4481952bd0dde26bd7912863d7e5c72d1d50565cbd56c37e216d49"
+dependencies = [
+ "usage-argv",
+ "usage-derive",
+ "usage-test",
+]
+
+[[package]]
+name = "usage-test"
+version = "6.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06be18e6cab835b5fa16a6ac98ed7f9104c15f8d42020097f1c195d9848d243d"
+dependencies = [
+ "usage-argv",
+]
 
 [[package]]
 name = "utf16_iter"
@@ -6516,9 +6523,6 @@ dependencies = [
  "brush-shell",
  "cfg_aliases",
  "clap",
- "clap-markdown",
- "clap_complete",
- "clap_mangen",
  "libc",
  "num_cpus",
  "pty-process",
@@ -6526,6 +6530,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "usage-rs",
  "xshell",
 ]
 

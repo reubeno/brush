@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
@@ -10,25 +9,26 @@ use brush_core::{
 };
 
 /// Add or update exported shell variables.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "export", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct ExportCommand {
     /// Names are treated as function names.
-    #[arg(short = 'f')]
+    #[usage(short = 'f')]
     names_are_functions: bool,
 
     /// Un-export the names.
-    #[arg(short = 'n')]
+    #[usage(short = 'n')]
     unexport: bool,
 
     /// Display all exported names.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     display_exported_names: bool,
 
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
-    #[clap(skip)]
+    // N.B. These are skipped by usage, but filled in by the BuiltinDeclarationCommand trait.
+    #[usage(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
@@ -61,6 +61,8 @@ impl builtins::Command for ExportCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(ExportCommand);
 
 impl ExportCommand {
     fn process_decl(

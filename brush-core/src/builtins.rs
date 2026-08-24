@@ -1,10 +1,176 @@
 //! Facilities for implementing and managing builtins
 
-use clap::builder::styling;
 pub use futures::future::BoxFuture;
+use std::ffi::{OsStr, OsString};
 use std::io::Write;
 
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
+
+/// An owned error produced when a command line fails to parse.
+///
+/// Parse errors produced by `usage` borrow from the argv they were given, so they
+/// must be rendered before those buffers go away; this type carries the rendered
+/// text along with enough information for a caller to pick an output stream and
+/// an exit code.
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    /// Pre-rendered message ready to be written out.
+    text: String,
+    /// Classification of what went wrong (or was requested).
+    kind: ParseErrorKind,
+}
+
+/// Classifies the outcome of a parse that produced a [`ParseError`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseErrorKind {
+    /// Help was requested (`-h`/`--help`); the text is a help page.
+    Help,
+    /// Version information was requested; the text identifies the program.
+    Version,
+    /// The command line could not be parsed (or help was required but missing).
+    Failure,
+}
+
+impl ParseError {
+    const fn new(text: String, kind: ParseErrorKind) -> Self {
+        Self { text, kind }
+    }
+
+    /// Writes the rendered text to the stream appropriate for its kind:
+    /// stdout for help/version requests, stderr otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Propagates any I/O error encountered while writing.
+    pub fn print(&self) -> std::io::Result<()> {
+        match self.kind {
+            ParseErrorKind::Help | ParseErrorKind::Version => {
+                std::io::stdout().write_all(self.text.as_bytes())
+            }
+            ParseErrorKind::Failure => std::io::stderr().write_all(self.text.as_bytes()),
+        }
+    }
+
+    /// Returns the exit code a standalone program should exit with after
+    /// printing this error: 0 for help/version requests, 2 otherwise
+    /// (matching clap's convention).
+    #[must_use]
+    pub const fn exit_code(&self) -> i32 {
+        match self.kind {
+            ParseErrorKind::Help | ParseErrorKind::Version => 0,
+            ParseErrorKind::Failure => 2,
+        }
+    }
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+/// Bridge between types that derive [`usage::Cli`](https://docs.rs/usage-rs) and this
+/// module's generic machinery.
+///
+/// usage's derive generates *inherent* methods (`parse_from`, `spec`, ...) rather than
+/// trait implementations, so there is no usage-provided trait to bound on. Types parsed
+/// by this module forward to their generated inherent methods via this small trait,
+/// typically using the [`impl_usage_parse!`](crate::impl_usage_parse) macro.
+pub trait UsageParse: Sized {
+    /// Parses the given words (which should *not* include a program name) into `Self`.
+    ///
+    /// # Arguments
+    ///
+    /// * `argv` - The words to parse.
+    fn parse_argv<'v>(argv: &[&'v OsStr]) -> Result<Self, usage::argv::Error<'static, 'v>>;
+
+    /// Returns the static spec metadata generated for this type.
+    #[doc(hidden)]
+    fn usage_spec() -> &'static usage::spec::Spec<'static>;
+}
+
+/// Implements [`UsageParse`] for a type that derives `usage::Cli`.
+#[macro_export]
+macro_rules! impl_usage_parse {
+    ($ty:ty) => {
+        impl $crate::builtins::UsageParse for $ty {
+            fn parse_argv<'v>(
+                argv: &[&'v std::ffi::OsStr],
+            ) -> Result<Self, usage::argv::Error<'static, 'v>> {
+                <$ty>::parse_from(argv)
+            }
+
+            #[doc(hidden)]
+            fn usage_spec() -> &'static usage::spec::Spec<'static> {
+                <$ty>::spec()
+            }
+        }
+    };
+}
+
+/// Parses pre-converted words into `T`, rendering any failure into an owned error.
+///
+/// The first word is taken to be the command's name and is not parsed, mirroring
+/// the `argv[0]` convention of the previous clap-based implementation.
+fn parse_words<T: UsageParse>(mut words: Vec<String>) -> Result<T, ParseError> {
+    if !words.is_empty() {
+        words.remove(0);
+    }
+    let os_args: Vec<OsString> = words.into_iter().map(Into::into).collect();
+    let refs: Vec<&OsStr> = os_args.iter().map(OsString::as_os_str).collect();
+
+    match T::parse_argv(&refs) {
+        Ok(parsed) => Ok(parsed),
+        Err(err) => Err(render_parse_error(T::usage_spec(), &refs, &err)),
+    }
+}
+
+/// Renders a failed parse into an owned, printable error, handling help and version
+/// requests (which are not failures) along the way.
+fn render_parse_error(
+    spec: &usage::spec::Spec<'_>,
+    argv: &[&OsStr],
+    err: &usage::Error<'_, '_>,
+) -> ParseError {
+    use usage::Error;
+
+    let (text, kind) = match err {
+        Error::Help { cmd, long } => (
+            usage::help::render(spec, cmd, *long).unwrap_or_default(),
+            ParseErrorKind::Help,
+        ),
+        Error::HelpAll { cmd } => (
+            usage::help::render_all(spec, cmd).unwrap_or_default(),
+            ParseErrorKind::Help,
+        ),
+        // clap prints the *short* help page to stderr and exits non-zero in this case;
+        // preserve that contract.
+        Error::MissingArgsHelp { cmd } => (
+            usage::help::render(spec, cmd, false).unwrap_or_default(),
+            ParseErrorKind::Failure,
+        ),
+        Error::Version { .. } => {
+            let mut text = String::new();
+            if let Some(bin) = spec.bin.filter(|b| !b.is_empty()) {
+                text.push_str(bin);
+                text.push(' ');
+            }
+            if let Some(version) = spec.version.or(spec.long_version) {
+                text.push_str(version);
+            }
+            text.push('\n');
+            (text, ParseErrorKind::Version)
+        }
+        _ => (
+            usage::render_failure(spec, argv, err),
+            ParseErrorKind::Failure,
+        ),
+    };
+
+    ParseError::new(text, kind)
+}
 
 /// Type of a function implementing a built-in command.
 ///
@@ -30,7 +196,7 @@ pub type CommandContentFunc =
     fn(&str, ContentType, &ContentOptions) -> Result<String, error::Error>;
 
 /// Trait implemented by built-in shell commands.
-pub trait Command: clap::Parser {
+pub trait Command: UsageParse {
     /// The error type returned by the command.
     type Error: BuiltinError + 'static;
 
@@ -39,29 +205,28 @@ pub trait Command: clap::Parser {
     /// # Arguments
     ///
     /// * `args` - The arguments to the command.
-    fn new<I>(args: I) -> Result<Self, clap::Error>
+    fn new<I>(args: I) -> Result<Self, ParseError>
     where
         I: IntoIterator<Item = String>,
+        Self: Sized,
     {
+        let args: Vec<String> = args.into_iter().collect();
+
         if !Self::takes_plus_options() {
-            Self::try_parse_from(args)
+            parse_words::<Self>(args)
         } else {
-            let args = args.into_iter();
-
-            let (lower, _) = args.size_hint();
-
-            // N.B. clap doesn't support named options like '+x'. To work around this, we
+            // N.B. usage doesn't support named options like '+x'. To work around this, we
             // establish a pattern of renaming them.
-            let mut updated_args = Vec::with_capacity(lower);
-            for arg in args {
-                if let Some(plus_options) = arg.strip_prefix("+") {
-                    updated_args.extend(plus_options.chars().map(|c| format!("--+{c}")));
-                } else {
-                    updated_args.push(arg);
-                }
-            }
+            let updated_args = args
+                .into_iter()
+                .map(|arg| match arg.strip_prefix('+') {
+                    Some(plus_options) => plus_options.chars().map(|c| format!("--+{c}")).collect(),
+                    None => vec![arg],
+                })
+                .collect::<Vec<Vec<String>>>()
+                .concat();
 
-            Self::try_parse_from(updated_args)
+            parse_words::<Self>(updated_args)
         }
     }
 
@@ -94,23 +259,21 @@ pub trait Command: clap::Parser {
         content_type: ContentType,
         options: &ContentOptions,
     ) -> Result<String, error::Error> {
-        let mut clap_command = Self::command()
-            .styles(brush_help_styles())
-            .next_line_help(false);
-        clap_command.set_bin_name(name);
+        let spec = Self::usage_spec();
+        let cmd = spec.root.cmd;
+
+        let style = if options.colorized {
+            usage::help::Style::COLOURED
+        } else {
+            usage::help::Style::PLAIN
+        };
 
         let s = match content_type {
-            ContentType::DetailedHelp => {
-                let rendered = clap_command.render_help();
-                if options.colorized {
-                    rendered.ansi().to_string()
-                } else {
-                    rendered.to_string()
-                }
-            }
-            ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
-            ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
-            ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
+            ContentType::DetailedHelp => usage::help::render_styled(spec, cmd, true, style)
+                .unwrap_or_else(|| "no help available".to_string()),
+            ContentType::ShortUsage => get_builtin_short_usage::<Self>(name),
+            ContentType::ShortDescription => get_builtin_short_description(name, spec),
+            ContentType::ManPage => get_builtin_man_page(name)?,
         };
 
         Ok(s)
@@ -177,35 +340,39 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
     }
 }
 
-fn get_builtin_man_page(_name: &str, _command: &clap::Command) -> Result<String, error::Error> {
+fn get_builtin_man_page(_name: &str) -> Result<String, error::Error> {
     error::unimp("man page rendering is not yet implemented")
 }
 
-fn get_builtin_short_description(name: &str, command: &clap::Command) -> String {
-    let about = command
-        .get_about()
-        .map_or_else(String::new, |s| s.to_string());
+fn get_builtin_short_description(name: &str, spec: &usage::spec::Spec<'_>) -> String {
+    let about = spec
+        .about
+        .or(spec.root.about)
+        .map_or_else(String::new, std::string::ToString::to_string);
 
     std::format!("{name} - {about}\n")
 }
 
-fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
+fn get_builtin_short_usage<T: Command>(name: &str) -> String {
+    let spec = T::usage_spec();
+    let cmd = spec.root.cmd;
     let mut usage = String::new();
 
     let mut needs_space = false;
 
     let mut optional_short_opts = vec![];
     let mut required_short_opts = vec![];
-    for opt in command.get_opts() {
-        if opt.is_hide_set() {
+    for (flag, meta) in cmd.flags.iter().zip(spec.root.flags) {
+        if meta.hide {
             continue;
         }
 
-        if let Some(c) = opt.get_short() {
-            if !opt.is_required_set() {
-                optional_short_opts.push(c);
-            } else {
+        for &c in flag.shorts {
+            let c = char::from(c);
+            if flag.takes_value || meta.required {
                 required_short_opts.push(c);
+            } else {
+                optional_short_opts.push(c);
             }
         }
     }
@@ -238,12 +405,12 @@ fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
         needs_space = true;
     }
 
-    for pos in command.get_positionals() {
-        if pos.is_hide_set() {
+    for (pos, meta) in cmd.args.iter().zip(spec.root.args) {
+        if meta.hide {
             continue;
         }
 
-        if !pos.is_required_set() {
+        if !pos.required {
             if needs_space {
                 usage.push(' ');
             }
@@ -252,18 +419,16 @@ fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
             needs_space = false;
         }
 
-        if let Some(names) = pos.get_value_names() {
-            for name in names {
-                if needs_space {
-                    usage.push(' ');
-                }
-
-                usage.push_str(name);
-                needs_space = true;
+        for name in pos.name.split(' ') {
+            if needs_space {
+                usage.push(' ');
             }
+
+            usage.push_str(name);
+            needs_space = true;
         }
 
-        if !pos.is_required_set() {
+        if !pos.required {
             usage.push(']');
             needs_space = true;
         }
@@ -272,75 +437,29 @@ fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
     std::format!("{name}: {name} {usage}\n")
 }
 
-fn brush_help_styles() -> clap::builder::Styles {
-    styling::Styles::styled()
-        .header(
-            styling::AnsiColor::Yellow.on_default()
-                | styling::Effects::BOLD
-                | styling::Effects::UNDERLINE,
-        )
-        .usage(styling::AnsiColor::Green.on_default() | styling::Effects::BOLD)
-        .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
-        .placeholder(styling::AnsiColor::Cyan.on_default())
+/// Parses the given words into `T`, treating the first word as the command name.
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] if the words fail to parse.
+pub fn parse_command_args<T: UsageParse>(
+    words: impl IntoIterator<Item = String>,
+) -> Result<T, ParseError> {
+    parse_words(words.into_iter().collect())
 }
 
-/// This function and the [`try_parse_known`] exists to deal with
-/// the Clap's limitation of treating `--` like a regular value
-/// `https://github.com/clap-rs/clap/issues/5055`
+/// Splits the given arguments at the first standalone `--` and parses the words
+/// before it into `T`.
 ///
-/// # Arguments
+/// This function exists to preserve bash-like treatment of `--` by the shell's own
+/// command-line parsing, where everything from the first `--` onward is passed through
+/// verbatim to the script or builtin.
 ///
-/// * `args` - An Iterator from [`std::env::args`]
-///
-/// # Returns
-///
-/// * a parsed struct T from [`clap::Parser::parse_from`]
-/// * the remain iterator `args` with `--` and the rest arguments if they present otherwise None
-///
-/// # Examples
-/// ```
-///    use clap::{builder::styling, Parser};
-///    #[derive(Parser)]
-///    struct CommandLineArgs {
-///       #[clap(allow_hyphen_values = true, num_args=1..)]
-///       script_args: Vec<String>,
-///    }
-///
-///    let (mut parsed_args, raw_args) =
-///        brush_core::builtins::parse_known::<CommandLineArgs, _>(std::env::args());
-///    if raw_args.is_some() {
-///        parsed_args.script_args = raw_args.unwrap().collect();
-///    }
-/// ```
-pub fn parse_known<T: clap::Parser, S>(
-    args: impl IntoIterator<Item = S>,
-) -> (T, Option<impl Iterator<Item = S>>)
-where
-    S: Into<std::ffi::OsString> + Clone + PartialEq<&'static str>,
-{
-    let mut args = args.into_iter();
-    // the best way to save `--` is to get it out with a side effect while `clap` iterates over the
-    // args this way we can be 100% sure that we have '--' and the remaining args
-    // and we will iterate only once
-    let mut hyphen = None;
-    let args_before_hyphen = args.by_ref().take_while(|a| {
-        let is_hyphen = *a == "--";
-        if is_hyphen {
-            hyphen = Some(a.clone());
-        }
-        !is_hyphen
-    });
-    let parsed_args = T::parse_from(args_before_hyphen);
-    let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
-    (parsed_args, raw_args)
-}
-
-/// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
 /// This function is used to parse arguments in builtins such as
 /// `crate::echo::EchoCommand`
-pub fn try_parse_known<T: clap::Parser>(
+pub fn try_parse_known<T: UsageParse>(
     args: impl IntoIterator<Item = String>,
-) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {
+) -> Result<(T, Option<impl Iterator<Item = String>>), ParseError> {
     let mut args = args.into_iter();
     let mut hyphen = None;
     let args_before_hyphen = args.by_ref().take_while(|a| {
@@ -350,7 +469,8 @@ pub fn try_parse_known<T: clap::Parser>(
         }
         !is_hyphen
     });
-    let parsed_args = T::try_parse_from(args_before_hyphen)?;
+    let collected: Vec<String> = args_before_hyphen.collect();
+    let parsed_args = parse_words::<T>(collected)?;
 
     let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
     Ok((parsed_args, raw_args))
