@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Three-way shell benchmark: oracle (bash) vs two brush builds.
+"""Multi-shell benchmark: an oracle shell vs N candidate builds.
 
 Runs each workload under all three shells with interleaved, pinned sampling
 so machine drift affects every shell equally, verifies byte-for-byte output
@@ -7,7 +7,7 @@ parity before timing, and reports median +- MAD wall time plus pairwise
 speedup ratios. A separate pass reads peak RSS (VmHWM) per workload.
 
 Usage:
-  three-way.py -a bash=/usr/bin/bash -b clap=/path/brush -c bpaf=/path/brush
+  three-way.py -s bash=/usr/bin/bash -s clap=/path/brush -s bpaf=/path/brush ...
 """
 
 import argparse
@@ -97,9 +97,10 @@ def fmt_ms(seconds):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("-a", "--shell-a", required=True, help="name=path (oracle, e.g. bash)")
-    parser.add_argument("-b", "--shell-b", required=True, help="name=path")
-    parser.add_argument("-c", "--shell-c", required=True, help="name=path")
+    parser.add_argument(
+        "-s", "--shell", action="append", required=True,
+        help="name=path; first entry is the oracle (e.g. bash), repeatable",
+    )
     parser.add_argument("--samples", type=int, default=DEFAULT_SAMPLES)
     parser.add_argument("--core", type=int, default=None, help="pin all runs to this CPU")
     parser.add_argument("--skip-parity", action="store_true")
@@ -107,7 +108,7 @@ def main():
     args = parser.parse_args()
 
     shells = []
-    for spec in (args.shell_a, args.shell_b, args.shell_c):
+    for spec in args.shell:
         name, _, path = spec.partition("=")
         path = shutil.which(path) or path
         shells.append({"name": name, "path": path})
@@ -174,15 +175,22 @@ def main():
             meds[shell["name"]] = med
             print("   %10s: %s  (±%.2f ms)" % (shell["name"], fmt_ms(med), mad * 1e3))
 
-        oracle = meds[shells[0]["name"]]
+        oracle_name = shells[0]["name"]
+        oracle = meds[oracle_name]
         for shell in shells[1:]:
-            ratio = oracle / meds[shell["name"]]
+            sname = shell["name"]
+            ratio = oracle / meds[sname]
             pct = (1.0 / ratio - 1.0) * 100
-            print(f"   vs {shells[0]['name']}: {shell['name']} is {ratio:.2f}× ({pct:+.1f}%)")
-        b, c = shells[1]["name"], shells[2]["name"]
-        ratio = meds[c] / meds[b]
-        faster = "faster" if meds[b] < meds[c] else "slower"
-        print(f"   {b} vs {c}: {abs(1 - ratio) * 100:.1f}% ({faster})")
+            print(f"   vs {oracle_name}: {sname} is {ratio:.2f}× ({pct:+.1f}%)")
+
+        if len(shells) > 2:
+            print("   pairwise:")
+            for i in range(1, len(shells)):
+                for j in range(i + 1, len(shells)):
+                    n_i, n_j = shells[i]["name"], shells[j]["name"]
+                    r = meds[n_j] / meds[n_i]
+                    winner = n_i if meds[n_i] < meds[n_j] else n_j
+                    print(f"     {n_i} vs {n_j}: {r:.2f}× ({winner} faster)")
 
     print("\n📊 Peak RSS (VmHWM, KiB):")
     header = "   " + "".join(f"{s['name']:>16}" for s in shells)
