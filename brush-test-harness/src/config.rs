@@ -275,18 +275,11 @@ impl TestOptions {
             .argument::<OutputFormat>("FORMAT")
             .fallback(OutputFormat::Pretty);
         let display_known_failure_details = bpaf::long("known-failure-details").switch();
-        let verbose_cli = bpaf::short('v')
+        let verbose = bpaf::short('v')
             .long("verbose")
             .help("Display details regarding successful test cases.")
-            .req_flag(())
-            .map(|(): ()| Some(true));
-        let verbose_env = bpaf::long("BRUSH_VERBOSE")
-            .req_flag(())
-            .map(|(): ()| Some(true))
-            .hide();
-        let verbose = bpaf::construct!([verbose_cli, verbose_env])
-            .fallback(None)
-            .map(|v: Option<bool>| v.is_some());
+            .env("BRUSH_VERBOSE")
+            .switch();
         let enabled_configs = bpaf::long("enable-config")
             .argument::<String>("CONFIG")
             .many()
@@ -294,40 +287,51 @@ impl TestOptions {
         let list_tests_only = bpaf::long("list").switch();
         let exact_match = bpaf::long("exact").switch();
 
-        let bash_path_env = std::env::var("BASH_PATH").ok().unwrap_or_default();
-        let bash_path_cli = bpaf::long("bash-path")
+        let bash_path = bpaf::long("bash-path")
             .help("Optionally specify a non-default path for bash.")
-            .argument::<PathBuf>("PATH");
-        let bash_path = if bash_path_env.is_empty() {
-            bash_path_cli.fallback(PathBuf::from("bash"))
-        } else {
-            bash_path_cli.fallback(PathBuf::from(bash_path_env))
-        };
+            .env("BASH_PATH")
+            .argument::<PathBuf>("PATH")
+            .fallback(PathBuf::from("bash"));
 
-        let brush_path_cli = bpaf::long("brush-path")
+        let brush_path = bpaf::long("brush-path")
             .help("Optionally specify a non-default path for brush.")
-            .argument::<String>("PATH");
-        let brush_path_env: Option<String> =
-            std::env::var("BRUSH_PATH").ok().filter(|s| !s.is_empty());
-        let brush_path = match brush_path_env {
-            Some(env_value) => brush_path_cli.fallback(env_value),
-            None => brush_path_cli.fallback(String::new()),
-        };
+            .env("BRUSH_PATH")
+            .argument::<String>("PATH")
+            .fallback(String::new());
         let brush_args = bpaf::long("brush-args")
+            .help("Additional arguments for brush.")
             .env("BRUSH_ARGS")
             .argument::<String>("ARGS")
-            .fallback_with::<_, String>(|| Ok(std::env::var("BRUSH_ARGS").unwrap_or_default()));
+            .fallback(String::new());
         let brush_launcher = bpaf::long("brush-launcher")
+            .help("Launcher command to prepend when invoking brush.")
+            .env("BRUSH_LAUNCHER")
             .argument::<String>("CMD")
-            .fallback_with::<_, String>(|| Ok(std::env::var("BRUSH_LAUNCHER").unwrap_or_default()));
+            .fallback(String::new());
+        // N.B. The environment value is space-separated, matching clap's
+        // former `value_delimiter`. `.some()` (not `.many()`) is required so
+        // that absence on the CLI lets the environment fallback apply.
         let brush_platform_tags = bpaf::long("brush-platform-tags")
+            .help("Runtime platform tags describing the execution environment; test cases declaring any of these in `incompatible_platforms` will be skipped.")
+            .env("BRUSH_PLATFORM_TAGS")
             .argument::<String>("TAGS")
-            .many()
+            .some("TAGS")
+            .parse(|tags: Vec<String>| {
+                Ok::<Vec<String>, String>(
+                    tags.iter()
+                        .flat_map(|t| t.split_whitespace().map(str::to_owned))
+                        .collect(),
+                )
+            })
             .fallback(Vec::new());
         let test_cases_path = bpaf::long("test-cases-path")
+            .help("Optionally specify path to test cases.")
+            .env("BRUSH_TEST_CASES")
             .argument::<PathBuf>("PATH")
             .optional();
         let test_path_var = bpaf::long("test-path-var")
+            .help("Optionally specify PATH variable to use in shells.")
+            .env("BRUSH_TEST_PATH_VAR")
             .argument::<String>("VAR")
             .optional();
         let show_output = bpaf::long("show-output").switch();
