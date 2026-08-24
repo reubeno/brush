@@ -188,6 +188,35 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// leaks and can hold the shell's output pipe open past teardown.
     #[builder(default)]
     pub kill_external_commands_on_drop: bool,
+    /// Whether to keep the real OS-level process working directory (visible to
+    /// external tools via `/proc/<pid>/cwd` and platform equivalents) in sync
+    /// with the shell's own logical working directory after `cd`, `pushd`, and
+    /// `popd`.
+    ///
+    /// Brush tracks its working directory as internal state (mirrored into
+    /// `$PWD`) rather than by calling `chdir(2)` on itself; children are
+    /// spawned with the correct directory explicitly, so the shell's own
+    /// behavior is unaffected either way. But external tools that inspect the
+    /// process's real cwd out-of-band (terminal multiplexers, session
+    /// managers, debuggers, `ps`/`lsof`-style tooling) see the directory the
+    /// process was originally launched in instead, forever, unless this is
+    /// enabled.
+    ///
+    /// Only ever applied by the *root* shell instance that owns the OS
+    /// process (`depth() == 0`). Subshells, command substitutions,
+    /// background jobs, and function calls run as concurrent in-process
+    /// clones of the shell sharing one OS process; letting any of them touch
+    /// the process-global cwd would race with, and corrupt, every other
+    /// clone's own view of "its" directory.
+    ///
+    /// Defaults to `false`: brush-core may be embedded to run multiple
+    /// independent root shells within a single host process (for example, a
+    /// multi-threaded test binary), where each enabling this would race to
+    /// own the same process-global cwd. The standalone interactive/script
+    /// `brush` binary enables it explicitly, since it's always the sole
+    /// owner of its process.
+    #[builder(default)]
+    pub sync_process_cwd: bool,
     /// Initial working dir for the shell. If left unspecified, will be populated from
     /// the host environment.
     pub working_dir: Option<PathBuf>,

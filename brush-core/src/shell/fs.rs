@@ -54,6 +54,27 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             EnvironmentScope::Global,
         )?;
 
+        // Best-effort: keep the OS-level process working directory in sync
+        // with the shell's logical one, so external tools that inspect it
+        // out-of-band (terminal multiplexers, session managers, debuggers,
+        // `ps`/`lsof`-style tooling) see where the shell really is instead of
+        // wherever the process happened to be spawned.
+        //
+        // Only the root shell (depth 0) may do this: subshells, command
+        // substitutions, background jobs, and function calls run as
+        // concurrent in-process clones of the shell sharing one OS process
+        // (see `openfiles.rs`), so any of them mutating the process-global
+        // cwd would race with, and corrupt, every other clone's own view of
+        // "its" directory.
+        //
+        // Failure is ignored: e.g. under sandboxing that permits `stat` but
+        // not `chdir`, this is a purely cosmetic loss of external
+        // observability, and the shell's own PWD/working_dir tracking above
+        // remains authoritative for the shell's own behavior regardless.
+        if self.options().sync_process_cwd && !self.is_subshell() {
+            let _ = std::env::set_current_dir(self.working_dir());
+        }
+
         Ok(())
     }
 
