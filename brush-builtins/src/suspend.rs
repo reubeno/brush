@@ -1,13 +1,13 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Suspend the shell.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "suspend", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct SuspendCommand {
     /// Force suspend login shells.
-    #[arg(short = 'f')]
+    #[usage(short = 'f')]
     force: bool,
 }
 
@@ -32,3 +32,5 @@ impl builtins::Command for SuspendCommand {
         Ok(ExecutionResult::success())
     }
 }
+
+brush_core::impl_usage_parse!(SuspendCommand);

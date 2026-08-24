@@ -130,15 +130,21 @@ pub use factory::{BuiltinSet, default_builtins};
 ///
 /// - `$struct_name` - The identifier to be used for the struct to define.
 /// - `$flag_char` - The character to use as the flag.
+/// - `$plus_flag` - The '+'-prefixed spelling used to disable the flag.
 /// - `$desc` - The string description of the flag.
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
-    ($struct_name:ident, $flag_char:literal, $desc:literal) => {
-        #[derive(clap::Parser)]
+    ($struct_name:ident, $flag_char:literal, $plus_flag:literal, $desc:literal) => {
+        // N.B. each attribute is spelled separately; combining them into one
+        // `#[usage(...)]` breaks the derive's parsing of interpolated literals
+        // coming from macro expansions.
+        #[derive(usage::Args)]
         pub(crate) struct $struct_name {
-            #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue, help = $desc)]
+            #[usage(short = $flag_char)]
+            #[usage(help = $desc)]
             _enable: bool,
-            #[arg(long = concat!("+", $flag_char), name = concat!(stringify!($struct_name), "_disable"), action = clap::ArgAction::SetTrue, hide = true)]
+            #[usage(long = $plus_flag)]
+            #[usage(hide)]
             _disable: bool,
         }
 

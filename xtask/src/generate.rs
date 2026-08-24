@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use xshell::{Shell, cmd};
 
 /// Generate various artifacts.
@@ -42,8 +42,6 @@ pub enum DocsCommand {
 pub enum CompletionCommand {
     /// Generate completion script for `bash`.
     Bash,
-    /// Generate completion script for `elvish`.
-    Elvish,
     /// Generate completion script for `fish`.
     Fish,
     /// Generate completion script for `PowerShell`.
@@ -109,11 +107,10 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
         },
         GenCommand::Completion(completion_cmd) => {
             let shell = match completion_cmd {
-                CompletionCommand::Bash => clap_complete::Shell::Bash,
-                CompletionCommand::Elvish => clap_complete::Shell::Elvish,
-                CompletionCommand::Fish => clap_complete::Shell::Fish,
-                CompletionCommand::PowerShell => clap_complete::Shell::PowerShell,
-                CompletionCommand::Zsh => clap_complete::Shell::Zsh,
+                CompletionCommand::Bash => usage::complete::Shell::Bash,
+                CompletionCommand::Fish => usage::complete::Shell::Fish,
+                CompletionCommand::PowerShell => usage::complete::Shell::PowerShell,
+                CompletionCommand::Zsh => usage::complete::Shell::Zsh,
             };
             gen_completion_script(shell, verbose);
             Ok(())
@@ -126,18 +123,19 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
 
 fn gen_man(args: &GenerateManArgs, verbose: bool) -> Result<()> {
     if verbose {
-        eprintln!("Generating man pages to: {}", args.output_dir.display());
+        eprintln!(
+            "Generating spec for man pages to: {}",
+            args.output_dir.display()
+        );
     }
 
-    // Create the output dir if it doesn't exist. If it already does, we proceed
-    // onward and hope for the best.
+    // TODO(usage-migration): man pages are now rendered by the `usage` tool from
+    // the emitted KDL spec (`usage g manpage -f brush.usage.kdl`); here we only
+    // emit the spec.
     if !args.output_dir.exists() {
         std::fs::create_dir_all(&args.output_dir)?;
     }
-
-    // Generate!
-    let cmd = brush_shell::args::CommandLineArgs::command();
-    clap_mangen::generate_to(cmd, &args.output_dir)?;
+    write_usage_spec(&args.output_dir.join("brush.usage.kdl"))?;
 
     Ok(())
 }
@@ -150,15 +148,17 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    let options = clap_markdown::MarkdownOptions::new()
-        .show_footer(false)
-        .show_table_of_contents(true);
+    // TODO(usage-migration): markdown docs are now rendered by the `usage` tool
+    // (`usage g markdown -f <spec> --out-dir <dir>`); here we only emit the spec.
+    write_usage_spec(&args.output_path)?;
 
-    // Generate!
-    let markdown =
-        clap_markdown::help_markdown_custom::<brush_shell::args::CommandLineArgs>(&options);
-    std::fs::write(&args.output_path, markdown)?;
+    Ok(())
+}
 
+/// Emits the brush CLI's usage spec (KDL) to the given path.
+fn write_usage_spec(path: &std::path::Path) -> Result<()> {
+    let kdl = brush_shell::args::CommandLineArgs::to_kdl();
+    std::fs::write(path, kdl)?;
     Ok(())
 }
 
@@ -166,12 +166,14 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
 ///
 /// The completion script is written directly to stdout so it can be piped
 /// to a file or sourced directly by the shell.
-fn gen_completion_script(shell: clap_complete::Shell, verbose: bool) {
+fn gen_completion_script(shell: usage::complete::Shell, verbose: bool) {
     if verbose {
-        eprintln!("Generating {shell} completion script...");
+        eprintln!("Generating {} completion script...", shell.as_str());
     }
-    let mut cmd = brush_shell::args::CommandLineArgs::command();
-    clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
+    print!(
+        "{}",
+        brush_shell::args::CommandLineArgs::completion_script(shell)
+    );
 }
 
 fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {

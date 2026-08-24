@@ -1,13 +1,13 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "let", unknown_flags = "value", args_override_self = false)]
 pub(crate) struct LetCommand {
     /// Arithmetic expressions to evaluate.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     exprs: Vec<String>,
 }
 
@@ -39,3 +39,5 @@ impl builtins::Command for LetCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(LetCommand);

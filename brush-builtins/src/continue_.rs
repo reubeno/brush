@@ -1,12 +1,11 @@
-use clap::Parser;
-
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Continue to the next iteration of a control-flow loop.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "continue", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct ContinueCommand {
     /// If specified, indicates which nested loop to continue to the next iteration of.
-    #[clap(default_value_t = 1)]
+    #[usage(default = "1")]
     which_loop: i8,
 }
 
@@ -32,3 +31,5 @@ impl builtins::Command for ContinueCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(ContinueCommand);

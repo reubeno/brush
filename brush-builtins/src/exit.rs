@@ -1,12 +1,13 @@
-use clap::Parser;
-
 use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Exit the shell.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "exit", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct ExitCommand {
     /// The exit code to return.
-    #[arg(allow_hyphen_values = true)]
+    // TODO(usage-migration): usage rejects `allow_hyphen_values` on a positional;
+    // `allow_negative_numbers` covers the `-1`-style codes this builtin needs.
+    #[usage(allow_negative_numbers)]
     code: Option<i64>,
 }
 
@@ -30,3 +31,5 @@ impl builtins::Command for ExitCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(ExitCommand);

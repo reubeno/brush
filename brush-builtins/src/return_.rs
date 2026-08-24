@@ -1,10 +1,10 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Return from the current function.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "return", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct ReturnCommand {
     /// The exit code to return.
     code: Option<i32>,
@@ -38,3 +38,5 @@ impl builtins::Command for ReturnCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(ReturnCommand);

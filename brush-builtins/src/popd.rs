@@ -1,12 +1,11 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Pop a path from the current directory stack.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "popd", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct PopdCommand {
     /// Pop the path without changing the current working directory.
-    #[clap(short = 'n')]
+    #[usage(short = 'n')]
     no_directory_change: bool,
     //
     // TODO(popd): implement +N and -N
@@ -34,3 +33,5 @@ impl builtins::Command for PopdCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(PopdCommand);

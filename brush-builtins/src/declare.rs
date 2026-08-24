@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
 
@@ -16,91 +15,117 @@ use brush_core::{
 crate::minus_or_plus_flag_arg!(
     MakeIndexedArrayFlag,
     'a',
+    "+a",
     "Make the variable an indexed array."
 );
 crate::minus_or_plus_flag_arg!(
     MakeAssociativeArrayFlag,
     'A',
+    "+A",
     "Make the variable an associative array."
 );
 crate::minus_or_plus_flag_arg!(
     CapitalizeValueOnAssignmentFlag,
     'c',
+    "+c",
     "Enable capitalize-on-assignment for the variable."
 );
-crate::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
+crate::minus_or_plus_flag_arg!(
+    MakeIntegerFlag,
+    'i',
+    "+i",
+    "Mark the variable as integer-typed"
+);
 crate::minus_or_plus_flag_arg!(
     LowercaseValueOnAssignmentFlag,
     'l',
+    "+l",
     "Enable lowercase-on-assignment for the variable."
 );
 crate::minus_or_plus_flag_arg!(
     MakeNameRefFlag,
     'n',
+    "+n",
     "Mark the variable as a name reference"
 );
-crate::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "Mark the variable as read-only.");
-crate::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "Enable tracing for the variable.");
+crate::minus_or_plus_flag_arg!(
+    MakeReadonlyFlag,
+    'r',
+    "+r",
+    "Mark the variable as read-only."
+);
+crate::minus_or_plus_flag_arg!(
+    MakeTracedFlag,
+    't',
+    "+t",
+    "Enable tracing for the variable."
+);
 crate::minus_or_plus_flag_arg!(
     UppercaseValueOnAssignmentFlag,
     'u',
+    "+u",
     "Enable uppercase-on-assignment for the variable."
 );
-crate::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "Mark the variable for export.");
+crate::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "+x", "Mark the variable for export.");
 
 /// Display or update variables and their attributes.
-#[derive(Parser)]
-#[clap(override_usage = "declare [OPTIONS] [DECLARATIONS]...")]
+#[derive(usage::Cli)]
+#[usage(
+    bin = "declare",
+    unknown_flags = "error",
+    args_override_self = false,
+    usage = "declare [OPTIONS] [DECLARATIONS]..."
+)]
 pub(crate) struct DeclareCommand {
     /// Constrain to function names or definitions.
-    #[arg(short = 'f')]
+    #[usage(short = 'f')]
     function_names_or_defs_only: bool,
 
     /// Constrain to function names only.
-    #[arg(short = 'F')]
+    #[usage(short = 'F')]
     function_names_only: bool,
 
     /// Create global variable, if applicable.
-    #[arg(short = 'g')]
+    #[usage(short = 'g')]
     create_global: bool,
 
     /// When creating a local variable that shadows another variable of the same name,
     /// then initialize it with the contents and attributes of the variable being shadowed.
-    #[arg(short = 'I')]
+    #[usage(short = 'I')]
     locals_inherit_from_prev_scope: bool,
 
     /// Display each item's attributes and values.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print: bool,
 
     //
     // Attribute options
-    #[clap(flatten)] // -a
+    #[usage(flatten)] // -a
     make_indexed_array: MakeIndexedArrayFlag,
-    #[clap(flatten)] // -A
+    #[usage(flatten)] // -A
     make_associative_array: MakeAssociativeArrayFlag,
-    #[clap(flatten)] // -c
+    #[usage(flatten)] // -c
     capitalize_value_on_assignment: CapitalizeValueOnAssignmentFlag,
-    #[clap(flatten)] // -i
+    #[usage(flatten)] // -i
     make_integer: MakeIntegerFlag,
-    #[clap(flatten)] // -l
+    #[usage(flatten)] // -l
     lowercase_value_on_assignment: LowercaseValueOnAssignmentFlag,
-    #[clap(flatten)] // -n
+    #[usage(flatten)] // -n
     make_nameref: MakeNameRefFlag,
-    #[clap(flatten)] // -r
+    #[usage(flatten)] // -r
     make_readonly: MakeReadonlyFlag,
-    #[clap(flatten)] // -t
+    #[usage(flatten)] // -t
     make_traced: MakeTracedFlag,
-    #[clap(flatten)] // -u
+    #[usage(flatten)] // -u
     uppercase_value_on_assignment: UppercaseValueOnAssignmentFlag,
-    #[clap(flatten)] // -x
+    #[usage(flatten)] // -x
     make_exported: MakeExportedFlag,
 
     //
     // Declarations
     //
     // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
-    #[clap(skip)]
+    #[usage(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
@@ -173,6 +198,8 @@ impl builtins::Command for DeclareCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(DeclareCommand);
 
 impl DeclareCommand {
     fn try_display_declaration(

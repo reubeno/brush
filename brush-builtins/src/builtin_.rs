@@ -1,11 +1,10 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
-#[derive(Default, Parser)]
+#[derive(Default, usage::Cli)]
+#[usage(bin = "builtin", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct BuiltinCommand {
-    #[clap(skip)]
+    #[usage(skip)]
     args: Vec<brush_core::CommandArg>,
 }
 
@@ -43,3 +42,5 @@ impl builtins::Command for BuiltinCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(BuiltinCommand);

@@ -1,5 +1,4 @@
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, history};
-use clap::Parser;
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -7,44 +6,45 @@ use std::{
 
 /// Query or manipulate the shell's command history.
 // TODO(history): Evaluate which of the options conflict with each other.
-#[derive(Parser)]
+#[derive(usage::Cli)]
 #[expect(clippy::option_option)]
+#[usage(bin = "history", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct HistoryCommand {
     /// Clears all history.
-    #[arg(short = 'c')]
+    #[usage(short = 'c')]
     clear_history: bool,
 
     /// Deletes the history entry at the given offset. Positive offsets are relative to the
     /// beginning of the history, while negative offsets are relative to the end of the history.
-    #[arg(short = 'd', value_name = "OFFSET")]
+    #[usage(short = 'd', value_name = "OFFSET", allow_negative_numbers)]
     delete_offset: Option<i64>,
 
     /// Appends the history from the current session to the history file.
-    #[arg(short = 'a', group = "anrw", num_args = 0..=1, value_name = "HIST_FILE")]
+    #[usage(short = 'a', value_name = "HIST_FILE")]
     append_session_to_file: Option<Option<String>>,
 
     /// Appends any remaining history from the history file to the current session.
-    #[arg(short = 'n', group = "anrw", num_args = 0..=1, value_name = "HIST_FILE")]
+    #[usage(short = 'n', value_name = "HIST_FILE")]
     append_rest_of_file_to_session: Option<Option<String>>,
 
     /// Appends the history from the history file to the current session.
-    #[arg(short = 'r', group = "anrw", num_args = 0..=1, value_name = "HIST_FILE")]
+    #[usage(short = 'r', value_name = "HIST_FILE")]
     append_file_to_session: Option<Option<String>>,
 
     /// Replaces the history file with the current session history.
-    #[arg(short = 'w', group = "anrw", num_args = 0..=1, value_name = "HIST_FILE")]
+    #[usage(short = 'w', value_name = "HIST_FILE")]
     write_session_to_file: Option<Option<String>>,
 
     /// History-expands positional arguments and displays them.
-    #[arg(short = 'p', num_args = 0.., value_name = "ARG")]
+    #[usage(short = 'p', variadic, value_name = "ARG")]
     expand_args: Option<Vec<String>>,
 
     /// Appends positional arguments as an entry in the current session.
-    #[arg(short = 's', num_args = 0.., value_name = "ARG")]
+    #[usage(short = 's', variadic, value_name = "ARG")]
     append_args_to_session: Option<Vec<String>>,
 
     /// Arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     args: Vec<String>,
 }
 
@@ -52,6 +52,8 @@ struct HistoryConfig {
     default_history_file_path: Option<PathBuf>,
     time_format: Option<String>,
 }
+
+brush_core::impl_usage_parse!(HistoryCommand);
 
 impl builtins::Command for HistoryCommand {
     type Error = brush_core::Error;
@@ -67,7 +69,17 @@ impl builtins::Command for HistoryCommand {
         };
 
         let stdout = context.stdout();
-        let stderr = context.stderr();
+        let mut stderr = context.stderr();
+
+        // NOTE: replaces clap arg group `anrw`, whose members are mutually exclusive.
+        let selected_anrw = usize::from(self.append_session_to_file.is_some())
+            + usize::from(self.append_rest_of_file_to_session.is_some())
+            + usize::from(self.append_file_to_session.is_some())
+            + usize::from(self.write_session_to_file.is_some());
+        if selected_anrw > 1 {
+            writeln!(stderr, "options -a, -n, -r, and -w are mutually exclusive")?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
 
         if let Some(history) = context.shell.history_mut() {
             self.execute_with_history(history, &config, stdout, stderr)
@@ -224,18 +236,27 @@ fn get_effective_history_file_path<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Result;
+    use anyhow::{Result, anyhow};
+
     use pretty_assertions::{assert_eq, assert_matches};
+    use std::ffi::OsStr;
 
     #[test]
     fn test_parse_dash_a() -> Result<()> {
-        let cmd = HistoryCommand::try_parse_from(["history", "5"])?;
+        let cmd = HistoryCommand::parse_from_argv(&[OsStr::new("history"), OsStr::new("5")])
+            .map_err(|e| anyhow!("{e:?}"))?;
         assert_matches!(cmd.append_session_to_file, None);
 
-        let cmd = HistoryCommand::try_parse_from(["history", "-a"])?;
+        let cmd = HistoryCommand::parse_from_argv(&[OsStr::new("history"), OsStr::new("-a")])
+            .map_err(|e| anyhow!("{e:?}"))?;
         assert_matches!(cmd.append_session_to_file, Some(None));
 
-        let cmd = HistoryCommand::try_parse_from(["history", "-a", "token"])?;
+        let cmd = HistoryCommand::parse_from_argv(&[
+            OsStr::new("history"),
+            OsStr::new("-a"),
+            OsStr::new("token"),
+        ])
+        .map_err(|e| anyhow!("{e:?}"))?;
         assert_eq!(
             cmd.append_session_to_file,
             Some(Some(String::from("token")))

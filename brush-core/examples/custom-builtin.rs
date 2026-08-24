@@ -3,7 +3,7 @@
 //! This example demonstrates best practices for:
 //! - Creating a custom builtin command using the `Command` trait
 //! - Defining custom error types with `thiserror`
-//! - Parsing command-line arguments with `clap`
+//! - Parsing command-line arguments with `usage`
 //! - Implementing proper error handling and exit code conversion
 //! - Using the execution context to interact with shell state and I/O streams
 //!
@@ -13,7 +13,6 @@
 //! ```
 
 use anyhow::Result;
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -61,18 +60,21 @@ impl From<&GreetError> for brush_core::ExecutionExitCode {
 //
 // Step 2 (recommended): Define your builtin command arguments
 // ==============================================
-// We recommend using the `clap` crate and the derive-able `clap::Parser` to define
+// We recommend using the `usage` crate and its derive-able `usage::Cli` to define
 // command-line arguments and options. This will simplify the work you need to do
 // to provide helpful usage information and auto-generated argument validation.
 //
 
 /// Greet the user with a friendly message.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "greet", unknown_flags = "error", args_override_self = false)]
 struct GreetCommand {
     /// Number of times to repeat the greeting.
-    #[arg(short = 'n', long = "repeat", default_value_t = 1)]
+    #[usage(short = 'n', long = "repeat", default = "1")]
     repeat_count: usize,
 }
+
+brush_core::impl_usage_parse!(GreetCommand);
 
 //
 // Step 3: Implement the Command trait

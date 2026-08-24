@@ -1,10 +1,10 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "times", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct TimesCommand {}
 
 impl builtins::Command for TimesCommand {
@@ -34,3 +34,5 @@ impl builtins::Command for TimesCommand {
         Ok(ExecutionResult::success())
     }
 }
+
+brush_core::impl_usage_parse!(TimesCommand);

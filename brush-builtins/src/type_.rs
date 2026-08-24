@@ -1,33 +1,32 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use clap::Parser;
-
 use brush_core::sys::{self, fs::PathExt};
 use brush_core::{ExecutionResult, Shell, builtins, parser::ast};
 
 /// Inspect the type of a named shell item.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "type", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct TypeCommand {
     /// Display all locations of the specified name, not just the first.
-    #[arg(short = 'a')]
+    #[usage(short = 'a')]
     all_locations: bool,
 
     /// Don't consider functions when resolving the name.
-    #[arg(short = 'f')]
+    #[usage(short = 'f')]
     suppress_func_lookup: bool,
 
     /// Force searching by file path, even if the name is an alias, built-in
     /// command, or shell function.
-    #[arg(short = 'P')]
+    #[usage(short = 'P')]
     force_path_search: bool,
 
     /// Show file path only.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     show_path_only: bool,
 
     /// Only display the type of the specified name.
-    #[arg(short = 't')]
+    #[usage(short = 't')]
     type_only: bool,
 
     /// Names to search for.
@@ -138,6 +137,8 @@ impl builtins::Command for TypeCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(TypeCommand);
 
 impl TypeCommand {
     fn resolve_types<'a, SE: brush_core::ShellExtensions>(

@@ -1,13 +1,13 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Unset a shell alias.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "unalias", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct UnaliasCommand {
     /// Remove all aliases.
-    #[arg(short = 'a')]
+    #[usage(short = 'a')]
     remove_all: bool,
 
     /// Names of aliases to operate on.
@@ -42,3 +42,5 @@ impl builtins::Command for UnaliasCommand {
         Ok(exit_code)
     }
 }
+
+brush_core::impl_usage_parse!(UnaliasCommand);

@@ -1,11 +1,13 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 
 /// Evaluate the given string as script.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "eval", unknown_flags = "value", args_override_self = false)]
 pub(crate) struct EvalCommand {
     /// The script to evaluate.
-    #[clap(allow_hyphen_values = true)]
+    // TODO(usage-migration): usage rejects `allow_hyphen_values` on a positional; it is
+    // normalized into the `trailing_var_arg` boundary (`double_dash = "automatic"`).
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     args: Vec<String>,
 }
 
@@ -40,3 +42,5 @@ impl builtins::Command for EvalCommand {
         }
     }
 }
+
+brush_core::impl_usage_parse!(EvalCommand);

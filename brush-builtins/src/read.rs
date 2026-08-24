@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -23,53 +22,54 @@ const DEFAULT_DELIMITER: char = '\n';
 const NUL_DELIMITER: char = '\0';
 
 /// Parse standard input.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "read", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct ReadCommand {
     /// Optionally, name of an array variable to receive read words
     /// of input.
-    #[clap(short = 'a', value_name = "VAR_NAME")]
+    #[usage(short = 'a', value_name = "VAR_NAME")]
     array_variable: Option<String>,
 
     /// Optionally, a delimiter to use other than a newline character.
-    #[clap(short = 'd')]
+    #[usage(short = 'd')]
     delimiter: Option<String>,
 
     /// Use readline-like input.
-    #[clap(short = 'e')]
+    #[usage(short = 'e')]
     use_readline: bool,
 
     /// Provide text to use as initial input for readline.
-    #[clap(short = 'i', value_name = "STR")]
+    #[usage(short = 'i', value_name = "STR")]
     initial_text: Option<String>,
 
     /// Read only the first N characters or until a specified
     /// delimiter is reached, whichever happens first.
-    #[clap(short = 'n', value_name = "COUNT")]
+    #[usage(short = 'n', value_name = "COUNT")]
     return_after_n_chars: Option<usize>,
 
     /// Read exactly N characters, ignoring any specified delimiter.
-    #[clap(short = 'N', value_name = "COUNT")]
+    #[usage(short = 'N', value_name = "COUNT")]
     return_after_n_chars_no_delimiter: Option<usize>,
 
     /// Prompt to display before reading.
-    #[clap(short = 'p')]
+    #[usage(short = 'p')]
     prompt: Option<String>,
 
     /// Read input in raw mode; no escape sequences.
-    #[clap(short = 'r')]
+    #[usage(short = 'r')]
     raw_mode: bool,
 
     /// Do not echo input.
-    #[clap(short = 's')]
+    #[usage(short = 's')]
     silent: bool,
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[clap(short = 't', value_name = "SECONDS", allow_hyphen_values = true)]
+    #[usage(short = 't', value_name = "SECONDS", allow_hyphen_values)]
     timeout_in_seconds: Option<f64>,
 
     /// File descriptor to read from instead of stdin.
-    #[clap(short = 'u', name = "FD")]
+    #[usage(short = 'u', value_name = "FD")]
     fd_num_to_read: Option<u8>,
 
     /// Optionally, names of variables to receive read input.
@@ -150,6 +150,8 @@ impl builtins::Command for ReadCommand {
         Ok(result)
     }
 }
+
+brush_core::impl_usage_parse!(ReadCommand);
 
 /// Assigns read input to shell variables based on the specified options.
 ///
