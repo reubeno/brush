@@ -4,6 +4,7 @@ use clap::builder::styling;
 pub use futures::future::BoxFuture;
 use std::io::Write;
 
+use crate::args::{ArgsError, FromArgs};
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
 
 /// Type of a function implementing a built-in command.
@@ -30,7 +31,7 @@ pub type CommandContentFunc =
     fn(&str, ContentType, &ContentOptions) -> Result<String, error::Error>;
 
 /// Trait implemented by built-in shell commands.
-pub trait Command: clap::Parser {
+pub trait Command: FromArgs {
     /// The error type returned by the command.
     type Error: BuiltinError + 'static;
 
@@ -39,30 +40,29 @@ pub trait Command: clap::Parser {
     /// # Arguments
     ///
     /// * `args` - The arguments to the command.
-    fn new<I>(args: I) -> Result<Self, clap::Error>
+    fn new<I>(args: I) -> Result<Self, ArgsError>
     where
         I: IntoIterator<Item = String>,
     {
-        if !Self::takes_plus_options() {
-            Self::try_parse_from(args)
-        } else {
-            let args = args.into_iter();
+        let words: Vec<String> = args.into_iter().collect();
 
-            let (lower, _) = args.size_hint();
-
-            // N.B. clap doesn't support named options like '+x'. To work around this, we
-            // establish a pattern of renaming them.
-            let mut updated_args = Vec::with_capacity(lower);
-            for arg in args {
-                if let Some(plus_options) = arg.strip_prefix("+") {
-                    updated_args.extend(plus_options.chars().map(|c| format!("--+{c}")));
+        // N.B. Engines may not support named options like '+x'. To work around this,
+        // we establish a pattern of splitting them into per-character long options.
+        let words: Vec<String> = if Self::takes_plus_options() {
+            let mut renamed = Vec::with_capacity(words.len());
+            for word in words {
+                if let Some(plus_options) = word.strip_prefix('+') {
+                    renamed.extend(plus_options.chars().map(|c| format!("--+{c}")));
                 } else {
-                    updated_args.push(arg);
+                    renamed.push(word);
                 }
             }
+            renamed
+        } else {
+            words
+        };
 
-            Self::try_parse_from(updated_args)
-        }
+        Self::from_args(&words)
     }
 
     /// Returns whether or not the command takes options with a leading '+' or '-' character.
@@ -93,28 +93,39 @@ pub trait Command: clap::Parser {
         name: &str,
         content_type: ContentType,
         options: &ContentOptions,
-    ) -> Result<String, error::Error> {
-        let mut clap_command = Self::command()
-            .styles(brush_help_styles())
-            .next_line_help(false);
-        clap_command.set_bin_name(name);
+    ) -> Result<String, error::Error>;
+}
 
-        let s = match content_type {
-            ContentType::DetailedHelp => {
-                let rendered = clap_command.render_help();
-                if options.colorized {
-                    rendered.ansi().to_string()
-                } else {
-                    rendered.to_string()
-                }
+/// Transitional helper rendering a builtin's help content from its
+/// clap-derived argument metadata.
+///
+/// Used only while builtins migrate to engine-neutral argument handling;
+/// removed once no builtin relies on it.
+pub fn clap_content<T: clap::Parser>(
+    name: &str,
+    content_type: &ContentType,
+    options: &ContentOptions,
+) -> Result<String, error::Error> {
+    let mut clap_command = T::command()
+        .styles(brush_help_styles())
+        .next_line_help(false);
+    clap_command.set_bin_name(name);
+
+    let s = match content_type {
+        ContentType::DetailedHelp => {
+            let rendered = clap_command.render_help();
+            if options.colorized {
+                rendered.ansi().to_string()
+            } else {
+                rendered.to_string()
             }
-            ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
-            ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
-            ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
-        };
+        }
+        ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
+        ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
+        ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
+    };
 
-        Ok(s)
-    }
+    Ok(s)
 }
 
 /// Trait implemented by built-in shell commands that take specially handled declarations

@@ -106,4 +106,13 @@ impl builtins::Command for HashCommand {
 
         Ok(result)
     }
+
+    fn get_content(
+        name: &str,
+        content_type: builtins::ContentType,
+        options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::error::Error> {
+        // N.B. Transitional: help still rendered from clap-derived metadata.
+        builtins::clap_content::<Self>(name, &content_type, options)
+    }
 }
