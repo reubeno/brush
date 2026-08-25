@@ -8,7 +8,7 @@ mod model;
 
 pub use model::{ArgKind, ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
 
-#[cfg(feature = "parser-bpaf")]
+#[cfg(feature = "bpaf-linked")]
 mod bpaf_backend;
 #[cfg(feature = "parser-clap")]
 mod clap_backend;

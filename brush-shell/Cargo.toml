@@ -50,6 +50,9 @@ path = "benches/shell.rs"
 harness = false
 
 [features]
+parser-bpaf = ["brush-core/parser-bpaf"]
+parser-usage = ["brush-core/parser-usage"]
+parser-clap = ["brush-core/parser-clap"]
 default = ["basic", "reedline", "minimal"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]

@@ -147,7 +147,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
         spec_builtin::<declare::DeclareCommand, SE>(),
     );
     #[cfg(feature = "builtin.pwd")]
-    m.insert("pwd".into(), builtin::<pwd::PwdCommand, SE>());
+    m.insert("pwd".into(), spec_builtin::<pwd::PwdCommand, SE>());
     #[cfg(feature = "builtin.read")]
     m.insert("read".into(), spec_builtin::<read::ReadCommand, SE>());
     #[cfg(feature = "builtin.true")]

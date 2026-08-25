@@ -34,32 +34,27 @@ pub trait ArgParserBackend: Sync {
     ) -> Result<String, crate::error::Error>;
 }
 
-#[cfg(all(feature = "parser-bpaf", feature = "parser-usage"))]
-compile_error!("only one parser backend feature may be enabled at a time");
-#[cfg(all(feature = "parser-bpaf", feature = "parser-clap"))]
-compile_error!("only one parser backend feature may be enabled at a time");
-#[cfg(all(feature = "parser-usage", feature = "parser-clap"))]
-compile_error!("only one parser backend feature may be enabled at a time");
-#[cfg(not(any(
-    feature = "parser-bpaf",
-    feature = "parser-usage",
-    feature = "parser-clap"
-)))]
-compile_error!("one parser backend feature must be enabled");
-
 /// Returns the backend selected at compile time.
 #[must_use]
 pub fn active() -> &'static dyn ArgParserBackend {
-    #[cfg(feature = "parser-bpaf")]
-    {
-        &super::bpaf_backend::BpafBackend
-    }
+    // N.B. Priority when several backends are linked (cargo feature
+    // unification across the workspace can pull more than one): dedicated
+    // builtin backends win over bpaf, which is always linked anyway as the
+    // shell CLI's own parser.
     #[cfg(feature = "parser-usage")]
     {
         &super::usage_backend::UsageBackend
     }
-    #[cfg(feature = "parser-clap")]
+    #[cfg(all(not(feature = "parser-usage"), feature = "parser-clap"))]
     {
         &super::clap_backend::ClapBackend
+    }
+    #[cfg(all(
+        not(feature = "parser-usage"),
+        not(feature = "parser-clap"),
+        feature = "parser-bpaf"
+    ))]
+    {
+        &super::bpaf_backend::BpafBackend
     }
 }

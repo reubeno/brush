@@ -10,16 +10,19 @@ pub(crate) struct PwdCommand {
     mode: Option<bool>,
 }
 
-impl builtins::Command for PwdCommand {
+impl builtins::SpecCommand for PwdCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Options are interpreted manually in [`Self::new`] because their
-        // combined forms depend on ordering (`pwd -L -P` vs `pwd -P -L`).
-        let mode = bpaf::pure(None);
-        bpaf::construct!(PwdCommand { mode })
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        &SPEC
     }
 
+    fn from_matches(
+        _values: &mut builtins::argmodel::ParsedValues,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        // N.B. Parsing is fully handled by the overridden `new`.
+        unreachable!("pwd parses via overridden new()")
+    }
     fn about() -> &'static str {
         "Display the current working directory."
     }
@@ -32,6 +35,8 @@ impl builtins::Command for PwdCommand {
     where
         I: IntoIterator<Item = String>,
     {
+        // N.B. Options are interpreted manually because their combined forms
+        // depend on ordering (`pwd -L -P` vs `pwd -P -L`).
         let mut args: Vec<String> = args.into_iter().collect();
 
         // N.B. The first argument is the command name itself.
@@ -98,11 +103,12 @@ impl builtins::Command for PwdCommand {
     }
 }
 
+static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec::EMPTY;
+
 #[cfg(test)]
-#[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
-    use brush_core::builtins::Command as _;
+    use brush_core::builtins::SpecCommand as _;
 
     #[test]
     fn parse_modes() {

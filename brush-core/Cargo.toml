@@ -19,10 +19,11 @@ workspace = true
 [features]
 # Argument-parsing backend for the builtin contract (exactly one).
 parser-bpaf = ["dep:bpaf"]
+bpaf-linked = ["dep:bpaf"]
 parser-clap = ["dep:clap"]
 parser-usage = ["dep:usage"]
 
-default = ["parser-bpaf"]
+default = ["parser-bpaf", "bpaf-linked"]
 serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
 experimental-parser = ["brush-parser/winnow-parser"]
 

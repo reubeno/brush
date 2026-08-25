@@ -410,7 +410,6 @@ name = "brush-builtins"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "bpaf",
  "brush-core",
  "brush-parser",
  "cfg-if",
