@@ -54,6 +54,15 @@ impl builtins::Command for PrintfCommand {
 
         Ok(ExecutionResult::success())
     }
+
+    fn get_content(
+        name: &str,
+        content_type: builtins::ContentType,
+        options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::error::Error> {
+        // N.B. Transitional: help still rendered from clap-derived metadata.
+        builtins::clap_content::<Self>(name, &content_type, options)
+    }
 }
 
 fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {

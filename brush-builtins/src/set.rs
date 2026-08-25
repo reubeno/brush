@@ -141,7 +141,7 @@ impl builtins::Command for SetCommand {
     /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
     /// to `--`. See [`builtins::parse_known`] for more information
     /// TODO(set): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
+    fn new<I>(args: I) -> Result<Self, brush_core::args::ArgsError>
     where
         I: IntoIterator<Item = String>,
     {
@@ -178,7 +178,8 @@ impl builtins::Command for SetCommand {
             }
         }
 
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(updated_args)?;
+        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(updated_args)
+            .map_err(|err| brush_core::args::ArgsError::from_clap_error(&err))?;
         if let Some(args) = rest_args {
             this.positional_args.extend(args);
         }
@@ -405,6 +406,15 @@ impl builtins::Command for SetCommand {
         }
 
         Ok(result)
+    }
+
+    fn get_content(
+        name: &str,
+        content_type: builtins::ContentType,
+        options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::error::Error> {
+        // N.B. Transitional: help still rendered from clap-derived metadata.
+        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }
 
