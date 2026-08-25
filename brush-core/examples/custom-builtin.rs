@@ -1,9 +1,9 @@
 //! Example of implementing a custom builtin command for a brush-core based shell.
 //!
 //! This example demonstrates best practices for:
-//! - Creating a custom builtin command using the `Command` trait
+//! - Creating a custom builtin command using the `SpecCommand` trait
+//! - Declaring arguments as backend-neutral data (`argmodel`)
 //! - Defining custom error types with `thiserror`
-//! - Parsing command-line arguments with `bpaf`
 //! - Implementing proper error handling and exit code conversion
 //! - Using the execution context to interact with shell state and I/O streams
 //!
@@ -13,7 +13,6 @@
 //! ```
 
 use anyhow::Result;
-use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -59,36 +58,47 @@ impl From<&GreetError> for brush_core::ExecutionExitCode {
 }
 
 //
-// Step 2 (recommended): Define your builtin command arguments
+// Step 2 (recommended): Declare your builtin command arguments as data.
 // ==============================================
-// We recommend using the `bpaf` crate and its derive-able `Bpaf` (or
-// combinatoric) APIs to define command-line arguments and options. This will
-// simplify the work you need to do to provide helpful usage information and
-// argument validation.
-//
+// The `SpecCommand` trait takes a backend-neutral description (`CommandSpec`)
+// and hands back parsed values (`Matches`). Which crate parses them (bpaf,
+// usage, clap) is selected by cargo features of `brush-core`.
 
-/// Greet the user with a friendly message.
-#[derive(Clone, Bpaf, Debug)]
+const ID_REPEAT: &str = "repeat_count";
+
 struct GreetCommand {
-    /// Number of times to repeat the greeting.
-    #[bpaf(short('n'), long("repeat"), fallback(1))]
     repeat_count: usize,
 }
 
 //
-// Step 3: Implement the Command trait
-// ==============================================
-// The `Command` trait requires implementing the `parser` and `execute`
-// methods.
+// Step 3: Implement the SpecCommand trait.
 //
 
-impl builtins::Command for GreetCommand {
-    // Specify the error type you will use; this will either be your custom type or
-    // the default-provided `brush_core::Error` type.
+impl builtins::SpecCommand for GreetCommand {
     type Error = GreetError;
 
-    fn parser() -> impl builtins::Parser<Self> {
-        greet_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_REPEAT,
+            &['n'],
+            &["repeat"],
+            builtins::argmodel::ArgKind::Value,
+            Some("COUNT"),
+            "Number of times to repeat the greeting.",
+        )
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let value = matches.value(ID_REPEAT).unwrap_or("1");
+        let repeat_count: usize = value.parse().map_err(|_| builtins::BuiltinArgParseError {
+            message: format!("invalid repeat count: `{value}`"),
+            help_request: false,
+        })?;
+        Ok(Self { repeat_count })
     }
 
     fn about() -> &'static str {
@@ -96,7 +106,7 @@ impl builtins::Command for GreetCommand {
     }
 
     fn synopsis() -> &'static str {
-        "[-n REPEAT]"
+        "[-n COUNT]"
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -137,7 +147,10 @@ type SE = brush_core::extensions::DefaultShellExtensions;
 async fn run_example() -> Result<()> {
     // Create a shell instance with custom builtin registered.
     let mut shell = brush_core::Shell::builder()
-        .builtin("greet", brush_core::builtins::builtin::<GreetCommand, SE>())
+        .builtin(
+            "greet",
+            brush_core::builtins::spec_builtin::<GreetCommand, SE>(),
+        )
         .build()
         .await?;
 

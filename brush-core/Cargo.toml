@@ -17,7 +17,12 @@ bench = false
 workspace = true
 
 [features]
-default = []
+# Argument-parsing backend for the builtin contract (exactly one).
+parser-bpaf = ["dep:bpaf"]
+parser-clap = ["dep:clap"]
+parser-usage = ["dep:usage"]
+
+default = ["parser-bpaf"]
 serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
 experimental-parser = ["brush-parser/winnow-parser"]
 
@@ -29,7 +34,9 @@ bon = "3.9.1"
 cached = "2.0.2"
 cfg-if = "1.0.4"
 chrono = "0.4.44"
-bpaf = { version = "0.9.27", features = ["derive"] }
+bpaf = { version = "0.9.27", features = ["derive"], optional = true }
+clap = { version = "4.6.0", features = ["derive", "wrap_help"], optional = true }
+usage = { package = "usage-rs", version = "6.1.1", optional = true }
 color-print = "0.3.7"
 fancy-regex = "0.19.0"
 futures = "0.3.32"

@@ -1,12 +1,19 @@
 //! Facilities for implementing and managing builtins
 
+use crate::BuiltinError;
+pub use crate::argmodel;
+#[cfg(feature = "parser-bpaf")]
+#[cfg(feature = "parser-bpaf")]
 pub use bpaf::Parser;
+#[cfg(feature = "parser-bpaf")]
 use bpaf::{Args, ParseFailure};
 pub use futures::future::BoxFuture;
+#[cfg(feature = "parser-bpaf")]
+#[cfg(feature = "parser-bpaf")]
 use std::ffi::OsStr;
 use std::io::Write;
 
-use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
+use crate::{CommandArg, commands, error, extensions, results};
 
 /// Type of a function implementing a built-in command.
 ///
@@ -51,7 +58,8 @@ impl std::fmt::Display for BuiltinArgParseError {
 
 impl std::error::Error for BuiltinArgParseError {}
 
-fn render_parse_failure(failure: ParseFailure) -> BuiltinArgParseError {
+#[cfg(feature = "parser-bpaf")]
+pub(crate) fn render_parse_failure(failure: ParseFailure) -> BuiltinArgParseError {
     match failure {
         // Help/version requests are rendered to stdout with a success exit code.
         ParseFailure::Stdout(doc, full) => BuiltinArgParseError {
@@ -195,6 +203,7 @@ fn short_group_token_count(group: &str, value_shorts: &str) -> usize {
     1
 }
 
+#[cfg(feature = "parser-bpaf")]
 /// Trait implemented by built-in shell commands.
 pub trait Command: Sized {
     /// The error type returned by the command.
@@ -323,6 +332,7 @@ pub trait Command: Sized {
 }
 
 /// Renders the given command's detailed help text.
+#[cfg(feature = "parser-bpaf")]
 fn detailed_help<T: Command>(name: &str) -> Result<String, error::Error> {
     // N.B. We trigger bpaf's --help handling to render the help content since
     // rendered help text is not otherwise exposed via the public API.
@@ -362,6 +372,7 @@ fn expand_plus_option_groups(args: Vec<String>) -> Vec<String> {
 /// Parses only an option section (already stripped of the command name) for
 /// the given command; used by declaration-style builtins whose operands are
 /// handled separately from their options.
+#[cfg(feature = "parser-bpaf")]
 fn parse_options_only<T: Command>(mut options: Vec<String>) -> Result<T, BuiltinArgParseError> {
     if T::takes_plus_options() {
         options = expand_plus_option_groups(options);
@@ -371,6 +382,7 @@ fn parse_options_only<T: Command>(mut options: Vec<String>) -> Result<T, Builtin
 }
 
 /// Runs the given command's parser against the provided arguments.
+#[cfg(feature = "parser-bpaf")]
 fn run_parser<T: Command>(args: &[String]) -> Result<T, BuiltinArgParseError> {
     let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
     T::parser()
@@ -381,6 +393,7 @@ fn run_parser<T: Command>(args: &[String]) -> Result<T, BuiltinArgParseError> {
 
 /// Trait implemented by built-in shell commands that take specially handled declarations
 /// as arguments.
+#[cfg(feature = "parser-bpaf")]
 pub trait DeclarationCommand: Command {
     /// Stores the declarations within the command instance.
     ///
@@ -439,6 +452,7 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
     }
 }
 
+#[cfg(feature = "parser-bpaf")]
 fn get_builtin_man_page(_name: &str) -> Result<String, error::Error> {
     error::unimp("man page rendering is not yet implemented")
 }
@@ -474,6 +488,7 @@ pub fn simple_builtin<B: SimpleCommand + Send + Sync, SE: extensions::ShellExten
 
 /// Returns a built-in command registration, given an implementation of the
 /// `Command` trait.
+#[cfg(feature = "parser-bpaf")]
 pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> Registration<SE> {
     Registration {
         execute_func: exec_builtin::<B, SE>,
@@ -487,6 +502,7 @@ pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> R
 /// Returns a built-in command registration, given an implementation of the
 /// `DeclarationCommand` trait. Used for select commands that can take parsed
 /// declarations as arguments.
+#[cfg(feature = "parser-bpaf")]
 pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellExtensions>()
 -> Registration<SE> {
     Registration {
@@ -505,6 +521,7 @@ pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellEx
 /// Arguments are passed directly to the command via `set_declarations`. This
 /// is primarily only expected to be used with select builtin commands that
 /// wrap other builtins (e.g., "builtin").
+#[cfg(feature = "parser-bpaf")]
 pub fn raw_arg_builtin<
     B: DeclarationCommand + Default + Send + Sync,
     SE: extensions::ShellExtensions,
@@ -518,6 +535,7 @@ pub fn raw_arg_builtin<
     }
 }
 
+#[cfg(feature = "parser-bpaf")]
 fn get_builtin_content<T: Command + Send + Sync>(
     name: &str,
     content_type: ContentType,
@@ -549,6 +567,7 @@ async fn exec_simple_builtin_impl<
     T::execute(context, plain_args)
 }
 
+#[cfg(feature = "parser-bpaf")]
 fn exec_builtin<T: Command + Send + Sync, SE: extensions::ShellExtensions>(
     context: commands::ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
@@ -556,6 +575,7 @@ fn exec_builtin<T: Command + Send + Sync, SE: extensions::ShellExtensions>(
     Box::pin(async move { exec_builtin_impl::<T, SE>(context, args).await })
 }
 
+#[cfg(feature = "parser-bpaf")]
 async fn exec_builtin_impl<T: Command + Send + Sync, SE: extensions::ShellExtensions>(
     context: commands::ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
@@ -580,6 +600,7 @@ async fn exec_builtin_impl<T: Command + Send + Sync, SE: extensions::ShellExtens
 /// Help requests are reported to standard output and yield a successful exit
 /// code; usage errors are reported to standard error and yield an invalid
 /// usage exit code.
+#[cfg(feature = "parser-bpaf")]
 fn report_arg_parse_error(
     context: &commands::ExecutionContext<'_, impl extensions::ShellExtensions>,
     e: &BuiltinArgParseError,
@@ -593,6 +614,7 @@ fn report_arg_parse_error(
     }
 }
 
+#[cfg(feature = "parser-bpaf")]
 fn exec_declaration_builtin<
     T: DeclarationCommand + Send + Sync,
     SE: extensions::ShellExtensions,
@@ -603,6 +625,7 @@ fn exec_declaration_builtin<
     Box::pin(async move { exec_declaration_builtin_impl::<T, SE>(context, args).await })
 }
 
+#[cfg(feature = "parser-bpaf")]
 async fn exec_declaration_builtin_impl<
     T: DeclarationCommand + Send + Sync,
     SE: extensions::ShellExtensions,
@@ -634,6 +657,7 @@ async fn exec_declaration_builtin_impl<
     call_builtin(command, context).await
 }
 
+#[cfg(feature = "parser-bpaf")]
 fn exec_raw_arg_builtin<
     T: DeclarationCommand + Default + Send + Sync,
     SE: extensions::ShellExtensions,
@@ -644,6 +668,7 @@ fn exec_raw_arg_builtin<
     Box::pin(async move { exec_raw_arg_builtin_impl::<T, SE>(context, args).await })
 }
 
+#[cfg(feature = "parser-bpaf")]
 async fn exec_raw_arg_builtin_impl<
     T: DeclarationCommand + Default + Send + Sync,
     SE: extensions::ShellExtensions,
@@ -657,6 +682,7 @@ async fn exec_raw_arg_builtin_impl<
     call_builtin(command, context).await
 }
 
+#[cfg(feature = "parser-bpaf")]
 async fn call_builtin(
     command: impl Command,
     context: commands::ExecutionContext<'_, impl extensions::ShellExtensions>,
@@ -668,6 +694,168 @@ async fn call_builtin(
         .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e), builtin_name))?;
 
     Ok(result)
+}
+
+/// A built-in command whose argument surface is declared as backend-neutral
+/// data ([`crate::argmodel::CommandSpec`]) and materialized from parsed
+/// [`crate::argmodel::Matches`].
+///
+/// Which argument-parsing crate turns the spec into a real parser is an
+/// implementation detail selected at compile time via the `parser-*` features
+/// of this crate; nothing in an implementation of this trait references a
+/// specific parsing crate.
+pub trait SpecCommand: Sized {
+    /// The error type returned by the command.
+    type Error: BuiltinError + 'static;
+
+    /// Declares the command's argument surface.
+    fn declare(spec: crate::argmodel::CommandSpecBuilder) -> crate::argmodel::CommandSpecBuilder;
+
+    /// Materializes the command from parsed matches.
+    ///
+    /// # Arguments
+    ///
+    /// * `matches` - Parsed values keyed by declaration id, plus trailing
+    ///   verbatim operands.
+    fn from_matches(matches: &mut crate::argmodel::Matches) -> Result<Self, BuiltinArgParseError>;
+
+    /// One-line description used by the `help` builtin.
+    fn about() -> &'static str {
+        ""
+    }
+
+    /// Synopsis after the command name, used by the `help` builtin.
+    fn synopsis() -> &'static str {
+        ""
+    }
+
+    /// Whether `+`-style option groups should be expanded before parsing.
+    fn takes_plus_options() -> bool {
+        false
+    }
+
+    /// Whether all operands after the option section are captured verbatim.
+    fn takes_trailing_args() -> bool {
+        false
+    }
+
+    /// Short options that take a value (see [`split_option_section`]).
+    fn value_taking_short_options() -> &'static str {
+        ""
+    }
+
+    /// Parses `args` into the command using the selected backend.
+    fn new<I>(args: I) -> Result<Self, BuiltinArgParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut args: Vec<String> = args.into_iter().collect();
+
+        // N.B. The first argument is the command name itself.
+        if !args.is_empty() {
+            args.remove(0);
+        }
+
+        if Self::takes_plus_options() {
+            args = expand_plus_option_groups(args);
+        }
+
+        let trailing = if Self::takes_trailing_args() {
+            let (options, trailing) =
+                split_option_section(&args, Self::value_taking_short_options(), &[]);
+            args = options;
+            Some(trailing)
+        } else {
+            None
+        };
+
+        let spec = Self::declare(crate::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = crate::argmodel::backend().parse(&spec, "", &args)?;
+
+        if let Some(trailing) = trailing {
+            matches.set_trailing_args_placeholder(trailing);
+        }
+
+        Self::from_matches(&mut matches)
+    }
+
+    /// Executes the built-in command.
+    // NOTE: desugared async for Send marker, matching the legacy trait.
+    fn execute<SE: extensions::ShellExtensions>(
+        &self,
+        context: commands::ExecutionContext<'_, SE>,
+    ) -> impl std::future::Future<Output = Result<results::ExecutionResult, Self::Error>>
+    + std::marker::Send;
+
+    /// Returns help content, rendering detailed help through the backend.
+    fn get_content(
+        name: &str,
+        content_type: ContentType,
+        _options: &ContentOptions,
+    ) -> Result<String, error::Error> {
+        let spec = Self::declare(crate::argmodel::CommandSpecBuilder::new()).build();
+        match content_type {
+            ContentType::DetailedHelp => crate::argmodel::backend().detailed_help(&spec, name),
+            ContentType::ShortUsage => Ok(format!("{name}: {name} {}\n", Self::synopsis())),
+            ContentType::ShortDescription => Ok(format!("{name} - {}\n", Self::about())),
+            ContentType::ManPage => error::unimp("man page rendering is not yet implemented"),
+        }
+    }
+}
+
+/// Returns a registration for a [`SpecCommand`] implementation.
+pub fn spec_builtin<B: SpecCommand + Send + Sync, SE: extensions::ShellExtensions>()
+-> Registration<SE> {
+    Registration {
+        execute_func: exec_spec_builtin::<B, SE>,
+        content_func: get_spec_builtin_content::<B>,
+        disabled: false,
+        special_builtin: false,
+        declaration_builtin: false,
+    }
+}
+
+fn get_spec_builtin_content<B: SpecCommand>(
+    name: &str,
+    content_type: ContentType,
+    options: &ContentOptions,
+) -> Result<String, error::Error> {
+    B::get_content(name, content_type, options)
+}
+
+fn exec_spec_builtin<B, SE>(
+    context: commands::ExecutionContext<'_, SE>,
+    args: Vec<CommandArg>,
+) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>
+where
+    B: SpecCommand + Send + Sync,
+    SE: extensions::ShellExtensions,
+{
+    Box::pin(async move {
+        let plain_args: Vec<String> = args.into_iter().map(|a| a.to_string()).collect();
+        let command = match B::new(plain_args) {
+            Ok(c) => c,
+            Err(e) => return Ok(report_spec_parse_error(&context, &e)),
+        };
+
+        let builtin_name = context.command_name.clone();
+        command.execute(context).await.map_err(|e| {
+            crate::error::Error::from(error::ErrorKind::BuiltinError(Box::new(e), builtin_name))
+        })
+    })
+}
+
+fn report_spec_parse_error(
+    context: &commands::ExecutionContext<'_, impl extensions::ShellExtensions>,
+    e: &BuiltinArgParseError,
+) -> results::ExecutionResult {
+    if e.help_request {
+        let _ = writeln!(context.stdout(), "{}", e.message);
+        results::ExecutionResult::success()
+    } else {
+        let _ = writeln!(context.stderr(), "{}", e.message);
+        results::ExecutionExitCode::InvalidUsage.into()
+    }
 }
 
 #[cfg(test)]

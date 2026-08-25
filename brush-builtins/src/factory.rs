@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use super::*;
 
 #[allow(unused_imports, reason = "not all builtins are used in all configs")]
-use brush_core::builtins::{self, builtin, decl_builtin, raw_arg_builtin, simple_builtin};
+use brush_core::builtins::{
+    self, builtin, decl_builtin, raw_arg_builtin, simple_builtin, spec_builtin,
+};
 
 /// Identifies well-known sets of builtins.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -155,7 +157,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
             decl_builtin::<declare::DeclareCommand, SE>(),
         );
         #[cfg(feature = "builtin.echo")]
-        m.insert("echo".into(), builtin::<echo::EchoCommand, SE>());
+        m.insert("echo".into(), spec_builtin::<echo::EchoCommand, SE>());
         #[cfg(feature = "builtin.enable")]
         m.insert("enable".into(), builtin::<enable::EnableCommand, SE>());
         #[cfg(feature = "builtin.let")]

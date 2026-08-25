@@ -1,44 +1,59 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, escape};
+use brush_core::{ExecutionResult, builtins};
 
 /// Echo text to standard output.
 pub(crate) struct EchoCommand {
-    /// Suppress the trailing newline from the output.
     no_trailing_newline: bool,
-
-    /// Interpret backslash escapes in the provided text.
     interpret_backslash_escapes: bool,
-
-    /// Do not interpret backslash escapes in the provided text.
     no_interpret_backslash_escapes: bool,
-
-    /// Tokens to echo to standard output.
     args: Vec<String>,
 }
 
-impl builtins::Command for EchoCommand {
+const ID_NO_NEWLINE: &str = "no_trailing_newline";
+const ID_INTERPRET: &str = "interpret_backslash_escapes";
+const ID_NO_INTERPRET: &str = "no_interpret_backslash_escapes";
+
+impl builtins::SpecCommand for EchoCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let no_trailing_newline = bpaf::short('n')
-            .help("Suppress the trailing newline from the output.")
-            .switch();
-        let interpret_backslash_escapes = bpaf::short('e')
-            .help("Interpret backslash escapes in the provided text.")
-            .switch();
-        let no_interpret_backslash_escapes = bpaf::short('E')
-            .help("Do not interpret backslash escapes in the provided text.")
-            .switch();
-        let args = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_NO_NEWLINE,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Suppress the trailing newline from the output.",
+        )
+        .arg(
+            ID_INTERPRET,
+            &['e'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Interpret backslash escapes in the provided text.",
+        )
+        .arg(
+            ID_NO_INTERPRET,
+            &['E'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Do not interpret backslash escapes in the provided text.",
+        )
+    }
 
-        bpaf::construct!(EchoCommand {
-            no_trailing_newline,
-            interpret_backslash_escapes,
-            no_interpret_backslash_escapes,
-            args,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            no_trailing_newline: matches.flag(ID_NO_NEWLINE),
+            interpret_backslash_escapes: matches.flag(ID_INTERPRET),
+            no_interpret_backslash_escapes: matches.flag(ID_NO_INTERPRET),
+            args: matches.trailing().to_vec(),
         })
     }
 
@@ -54,10 +69,6 @@ impl builtins::Command for EchoCommand {
         true
     }
 
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.args = args;
-    }
-
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
@@ -71,9 +82,9 @@ impl builtins::Command for EchoCommand {
                     s.push(' ');
                 }
 
-                let (expanded_arg, keep_going) = escape::expand_backslash_escapes(
+                let (expanded_arg, keep_going) = brush_core::escape::expand_backslash_escapes(
                     arg.as_str(),
-                    escape::EscapeExpansionMode::EchoBuiltin,
+                    brush_core::escape::EscapeExpansionMode::EchoBuiltin,
                 )?;
                 s.push_str(&String::from_utf8_lossy(expanded_arg.as_slice()));
 
