@@ -5,7 +5,6 @@ use std::{io::Write, sync::LazyLock};
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope, VarNameExt},
-    error,
     parser::ast,
     variables::{
         self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
@@ -142,10 +141,6 @@ impl builtins::Command for DeclareCommand {
             context.stderr().write_all(&stderr_output)?;
             context.stderr().flush()?;
             return Ok(ExecutionResult::general_error());
-        }
-
-        if self.locals_inherit_from_prev_scope {
-            return error::unimp("declare -I");
         }
 
         let mut output = Vec::new();
@@ -419,6 +414,48 @@ impl DeclareCommand {
         // Look up the variable. Name is already resolved through
         // resolve_nameref_for_declaration above.
         let resolved_name = env::ResolvedName::already_resolved(name.as_str());
+
+        // `local -I x[=v]` / `declare -I` (bash 5.0+): the new local inherits
+        // value and attributes from the nearest same-name variable in an
+        // enclosing scope instead of starting unset; `+=` appends to the
+        // inherited value.
+        if self.locals_inherit_from_prev_scope && create_var_local {
+            let inherited = context
+                .shell
+                .env()
+                .lookup(name.as_str())
+                .in_scope(EnvironmentLookup::Anywhere)
+                .get_direct()
+                .map(|(_, var)| var.clone());
+
+            if let Some(mut var) = inherited {
+                self.apply_attributes_before_update(&mut var)?;
+
+                if let Some(initial_value) = initial_value {
+                    var.assign(initial_value, append || assigned_index.is_some())?;
+                }
+
+                if let Some(msg) = Self::validate_existing_nameref_value(&var) {
+                    writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                    return Ok(false);
+                }
+
+                if context.shell.options().export_variables_on_modification
+                    && !var.value().is_array()
+                {
+                    var.export();
+                }
+
+                self.apply_attributes_after_update(&mut var, verb)?;
+
+                context
+                    .shell
+                    .env_mut()
+                    .add(name, var, EnvironmentScope::Local)?;
+                return Ok(true);
+            }
+            // No same-name variable anywhere: fall through to ordinary creation.
+        }
 
         // If the variable currently holds a dynamic value, resolve its current
         // reading now, before taking a mutable borrow of the shell below. This

@@ -42,3 +42,39 @@ cases:
       arr2=(hello world)
       echo "${#arr2[5]}"
       echo "${#arr2[0]}"
+
+  - name: "local -I inherits from enclosing scope"
+    stdin: |
+      g=global-value
+      f() {
+          local -I g
+          echo "[$g]"
+      }
+      f
+      echo "[$g]"
+
+  - name: "local -I with append"
+    stdin: |
+      v=base
+      f() {
+          local -I v+=" +more"
+          echo "[$v]"
+      }
+      f
+      echo "[$v]"
+
+  - name: "local -I combined flags (-Ix)"
+    stdin: |
+      f() {
+          local -Ix e
+          declare -p e
+      }
+      f
+
+  - name: "local -I without an enclosing variable falls through to normal creation"
+    stdin: |
+      f() {
+          local -I nosuch="fresh"
+          echo "[$nosuch]"
+      }
+      f
