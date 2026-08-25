@@ -1,34 +1,64 @@
-use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
 
 /// Wait for jobs to terminate.
-#[derive(Bpaf)]
 pub(crate) struct WaitCommand {
-    /// Wait for specified job to terminate (instead of change status).
-    #[bpaf(short('f'))]
     wait_for_terminate: bool,
-
-    /// Wait for a single job to change status; if jobs are specified, waits for
-    /// the first to change status, and otherwise waits for the next change.
-    #[bpaf(short('n'))]
     wait_for_first_or_next: bool,
-
-    /// Name of variable to receive the job ID of the job whose status is indicated.
-    #[bpaf(short('p'), argument("VAR_NAME"))]
     variable_to_receive_id: Option<String>,
-
-    /// Process IDs or job specs to wait for.
-    #[bpaf(positional("IDS"))]
     ids: Vec<String>,
 }
 
-impl builtins::Command for WaitCommand {
+const ID_WAIT_FOR_TERMINATE: &str = "wait_for_terminate";
+const ID_WAIT_FOR_FIRST_OR_NEXT: &str = "wait_for_first_or_next";
+const ID_VARIABLE_TO_RECEIVE_ID: &str = "variable_to_receive_id";
+const ID_IDS: &str = "ids";
+
+impl builtins::SpecCommand for WaitCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        wait_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_WAIT_FOR_TERMINATE,
+            &['f'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Wait for specified job to terminate (instead of change status).",
+        )
+        .arg(
+            ID_WAIT_FOR_FIRST_OR_NEXT,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Wait for a single job to change status; if jobs are specified, waits for the first to change status, and otherwise waits for the next change.",
+        )
+        .arg(
+            ID_VARIABLE_TO_RECEIVE_ID,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("VAR_NAME"),
+            "Name of variable to receive the job ID of the job whose status is indicated.",
+        )
+        .positional_many(ID_IDS, "IDS")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            wait_for_terminate: matches.flag(ID_WAIT_FOR_TERMINATE),
+            wait_for_first_or_next: matches.flag(ID_WAIT_FOR_FIRST_OR_NEXT),
+            variable_to_receive_id: matches
+                .value(ID_VARIABLE_TO_RECEIVE_ID)
+                .map(ToOwned::to_owned),
+            ids: matches.values(ID_IDS).to_vec(),
+        })
     }
 
     fn about() -> &'static str {

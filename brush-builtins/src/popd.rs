@@ -1,22 +1,35 @@
-use bpaf::Bpaf;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Pop a path from the current directory stack.
-#[derive(Bpaf)]
 pub(crate) struct PopdCommand {
-    /// Pop the path without changing the current working directory.
-    #[bpaf(short('n'))]
     no_directory_change: bool,
-    //
-    // TODO(popd): implement +N and -N
 }
 
-impl builtins::Command for PopdCommand {
+const ID_NO_DIRECTORY_CHANGE: &str = "no_directory_change";
+
+impl builtins::SpecCommand for PopdCommand {
     type Error = crate::dirs::DirError;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        popd_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_NO_DIRECTORY_CHANGE,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Pop the path without changing the current working directory.",
+        )
+        // TODO(popd): implement +N and -N
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            no_directory_change: matches.flag(ID_NO_DIRECTORY_CHANGE),
+        })
     }
 
     fn about() -> &'static str {

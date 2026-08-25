@@ -1,5 +1,3 @@
-use bpaf::Bpaf;
-
 use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
@@ -7,26 +5,49 @@ use nix::sys::stat::Mode;
 use std::io::Write;
 
 /// Manage the process umask.
-#[derive(Bpaf)]
 pub(crate) struct UmaskCommand {
-    /// If MODE is omitted, output in a form that may be reused as input.
-    #[bpaf(short('p'))]
     print_roundtrippable: bool,
-
-    /// Makes the output symbolic; otherwise an octal number is given.
-    #[bpaf(short('S'))]
     symbolic_output: bool,
-
-    /// Mode mask.
-    #[bpaf(positional("MODE"))]
     mode: Option<String>,
 }
 
-impl builtins::Command for UmaskCommand {
+const ID_PRINT_ROUNDTRIPPABLE: &str = "print_roundtrippable";
+const ID_SYMBOLIC_OUTPUT: &str = "symbolic_output";
+const ID_MODE: &str = "mode";
+
+impl builtins::SpecCommand for UmaskCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        umask_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_PRINT_ROUNDTRIPPABLE,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "If MODE is omitted, output in a form that may be reused as input.",
+        )
+        .arg(
+            ID_SYMBOLIC_OUTPUT,
+            &['S'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Makes the output symbolic; otherwise an octal number is given.",
+        )
+        .positional(ID_MODE, "MODE")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            print_roundtrippable: matches.flag(ID_PRINT_ROUNDTRIPPABLE),
+            symbolic_output: matches.flag(ID_SYMBOLIC_OUTPUT),
+            mode: matches.value(ID_MODE).map(ToOwned::to_owned),
+        })
     }
 
     fn about() -> &'static str {

@@ -6,15 +6,21 @@ pub(crate) struct EvalCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for EvalCommand {
+impl builtins::SpecCommand for EvalCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let args = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
+    }
 
-        bpaf::construct!(EvalCommand { args })
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            args: matches.trailing().to_vec(),
+        })
     }
 
     fn about() -> &'static str {
@@ -27,10 +33,6 @@ impl builtins::Command for EvalCommand {
 
     fn takes_trailing_args() -> bool {
         true
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.args = args;
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

@@ -1,22 +1,29 @@
-use bpaf::Bpaf;
-
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, jobs, sys};
 
 /// Move a specified job to the foreground.
-#[derive(Bpaf)]
 pub(crate) struct FgCommand {
-    /// Job spec for the job to move to the foreground; if not specified, the current job is moved.
-    #[bpaf(positional("JOB_SPEC"))]
     job_spec: Option<String>,
 }
 
-impl builtins::Command for FgCommand {
+const ID_JOB_SPEC: &str = "job_spec";
+
+impl builtins::SpecCommand for FgCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        fg_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.positional(ID_JOB_SPEC, "JOB_SPEC")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            job_spec: matches.value(ID_JOB_SPEC).map(ToOwned::to_owned),
+        })
     }
 
     fn about() -> &'static str {

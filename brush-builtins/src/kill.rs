@@ -1,5 +1,4 @@
-use bpaf::Parser;
-use std::{ffi::OsStr, io::Write};
+use std::io::Write;
 
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
@@ -20,35 +19,62 @@ pub(crate) struct KillCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for KillCommand {
+const ID_SIGNAL_NAME: &str = "signal_name";
+const ID_SIGNAL_NUMBER: &str = "signal_number";
+const ID_LIST_SIGNALS: &str = "list_signals";
+
+impl builtins::SpecCommand for KillCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let signal_name = bpaf::short('s')
-            .help("Name of the signal to send.")
-            .argument::<String>("SIG_NAME")
-            .optional();
-        let signal_number = bpaf::short('n')
-            .help("Number of the signal to send.")
-            .argument::<usize>("SIG_NUM")
-            .optional();
-        // N.B. `-L` is a hidden alias for `-l`, matching clap's short_alias.
-        let list_signals = bpaf::short('l')
-            .short('L')
-            .help("List known signal names.")
-            .req_flag(())
-            .map(|(): ()| Some(true))
-            .fallback(None)
-            .map(|v: Option<bool>| v.is_some());
-        let args = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        // N.B. `-L` is a hidden alias for `-l`.
+        spec.arg(
+            ID_SIGNAL_NAME,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("SIG_NAME"),
+            "Name of the signal to send.",
+        )
+        .arg(
+            ID_SIGNAL_NUMBER,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("SIG_NUM"),
+            "Number of the signal to send.",
+        )
+        .arg(
+            ID_LIST_SIGNALS,
+            &['l', 'L'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List known signal names.",
+        )
+    }
 
-        bpaf::construct!(KillCommand {
-            signal_name,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let signal_number = match matches.value(ID_SIGNAL_NUMBER) {
+            Some(v) => Some(
+                v.parse::<usize>()
+                    .map_err(|_| builtins::BuiltinArgParseError {
+                        message: format!("invalid signal number: {v}"),
+                        help_request: false,
+                    })?,
+            ),
+            None => None,
+        };
+
+        Ok(Self {
+            signal_name: matches.value(ID_SIGNAL_NAME).map(str::to_string),
             signal_number,
-            list_signals,
-            args,
+            list_signals: matches.flag(ID_LIST_SIGNALS),
+            args: matches.trailing().to_vec(),
         })
     }
 
@@ -68,7 +94,7 @@ impl builtins::Command for KillCommand {
         "sn"
     }
 
-    /// N.B. Overrides the default [`builtins::Command::new`] because `-sigspec`
+    /// N.B. Overrides the default [`builtins::SpecCommand::new`] because `-sigspec`
     /// style options (e.g., `kill -9` or `kill -TERM`) look like flags but must
     /// be captured verbatim alongside pids and job specs so that `execute` can
     /// interpret them.
@@ -128,14 +154,11 @@ impl builtins::Command for KillCommand {
             options.push(arg);
         }
 
-        let mut command = run_bpaf_parser::<Self>(&options)?;
-        command.set_trailing_args(trailing);
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = builtins::argmodel::backend().parse(&spec, "", &options)?;
+        matches.set_trailing(trailing);
 
-        Ok(command)
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.args = args;
+        Self::from_matches(&mut matches)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -287,38 +310,11 @@ fn print_signals(
     Ok(exit_code)
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, builtins::BuiltinArgParseError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
-}
-
-fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
-    match failure {
-        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(full),
-            help_request: true,
-        },
-        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
-            message: s,
-            help_request: true,
-        },
-        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(true),
-            help_request: false,
-        },
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
-    use brush_core::builtins::Command as _;
+    use brush_core::builtins::SpecCommand as _;
 
     #[test]
     fn parse_s_with_name() -> anyhow::Result<()> {

@@ -1,5 +1,3 @@
-use bpaf::Parser;
-use std::ffi::OsStr;
 use std::io::{Read, Write};
 
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
@@ -34,48 +32,140 @@ pub(crate) struct MapFileCommand {
     array_var_name: String,
 }
 
-impl builtins::Command for MapFileCommand {
+const ID_DELIMITER: &str = "delimiter";
+const ID_MAX_COUNT: &str = "max_count";
+const ID_ORIGIN: &str = "origin";
+const ID_SKIP_COUNT: &str = "skip_count";
+const ID_REMOVE_DELIMITER: &str = "remove_delimiter";
+const ID_FD: &str = "fd";
+const ID_CALLBACK: &str = "callback";
+const ID_CALLBACK_GROUP_SIZE: &str = "callback_group_size";
+const ID_ARRAY_VAR_NAME: &str = "array_var_name";
+
+impl builtins::SpecCommand for MapFileCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let delimiter = bpaf::short('d')
-            .help("Delimiter to use (defaults to newline).")
-            .argument::<String>("DELIM")
-            .optional();
-        let max_count = bpaf::short('n')
-            .help("Maximum number of entries to read (0 means no limit).")
-            .argument::<i64>("COUNT")
-            .fallback(0);
-        let origin = bpaf::short('O')
-            .help("Index into array at which to start assignment.")
-            .argument::<i64>("ORIGIN")
-            .optional();
-        let skip_count = bpaf::short('s')
-            .help("Number of initial entries to skip.")
-            .argument::<i64>("COUNT")
-            .guard(|v| *v >= 0, "must be >= 0")
-            .fallback(0);
-        let remove_delimiter = bpaf::short('t')
-            .help("Whether or not to remove the delimiter from each read line.")
-            .switch();
-        let fd = bpaf::short('u')
-            .help("File descriptor to read from (defaults to stdin).")
-            .argument::<brush_core::ShellFd>("FD")
-            .fallback(0);
-        let callback = bpaf::short('C')
-            .help("Name of function to call for each group of lines.")
-            .argument::<String>("CALLBACK")
-            .optional();
-        let callback_group_size = bpaf::short('c')
-            .help("Number of lines to pass the callback for each group.")
-            .argument::<i64>("COUNT")
-            .guard(|v| *v >= 1, "must be >= 1")
-            .fallback(5000);
-        let array_var_name = bpaf::positional::<String>("ARRAY_VAR_NAME")
-            .help("Name of array to read into.")
-            .fallback(String::from("MAPFILE"));
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_DELIMITER,
+            &['d'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("DELIM"),
+            "Delimiter to use (defaults to newline).",
+        )
+        .arg(
+            ID_MAX_COUNT,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("COUNT"),
+            "Maximum number of entries to read (0 means no limit).",
+        )
+        .arg(
+            ID_ORIGIN,
+            &['O'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("ORIGIN"),
+            "Index into array at which to start assignment.",
+        )
+        .arg(
+            ID_SKIP_COUNT,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("COUNT"),
+            "Number of initial entries to skip.",
+        )
+        .arg(
+            ID_REMOVE_DELIMITER,
+            &['t'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Whether or not to remove the delimiter from each read line.",
+        )
+        .arg(
+            ID_FD,
+            &['u'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("FD"),
+            "File descriptor to read from (defaults to stdin).",
+        )
+        .arg(
+            ID_CALLBACK,
+            &['C'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("CALLBACK"),
+            "Name of function to call for each group of lines.",
+        )
+        .arg(
+            ID_CALLBACK_GROUP_SIZE,
+            &['c'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("COUNT"),
+            "Number of lines to pass the callback for each group.",
+        )
+        .positional(ID_ARRAY_VAR_NAME, "ARRAY_VAR_NAME")
+    }
 
-        bpaf::construct!(MapFileCommand {
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let delimiter = matches.value(ID_DELIMITER).map(str::to_string);
+        let max_count = match matches.value(ID_MAX_COUNT) {
+            Some(v) => parse_i64(v)?,
+            None => 0,
+        };
+        let origin = match matches.value(ID_ORIGIN) {
+            Some(v) => Some(parse_i64(v)?),
+            None => None,
+        };
+        let skip_count = match matches.value(ID_SKIP_COUNT) {
+            Some(v) => {
+                let parsed = parse_i64(v)?;
+                if parsed < 0 {
+                    return Err(builtins::BuiltinArgParseError {
+                        message: format!("-s: must be >= 0: {v}"),
+                        help_request: false,
+                    });
+                }
+                parsed
+            }
+            None => 0,
+        };
+        let remove_delimiter = matches.flag(ID_REMOVE_DELIMITER);
+        let fd = match matches.value(ID_FD) {
+            Some(v) => v
+                .parse::<brush_core::ShellFd>()
+                .map_err(|_| invalid_number(v))?,
+            None => 0,
+        };
+        let callback = matches.value(ID_CALLBACK).map(str::to_string);
+        let callback_group_size = match matches.value(ID_CALLBACK_GROUP_SIZE) {
+            Some(v) => {
+                let parsed = parse_i64(v)?;
+                if parsed < 1 {
+                    return Err(builtins::BuiltinArgParseError {
+                        message: format!("-c: must be >= 1: {v}"),
+                        help_request: false,
+                    });
+                }
+                parsed
+            }
+            None => 5000,
+        };
+        let array_var_name = matches
+            .value(ID_ARRAY_VAR_NAME)
+            .map_or_else(|| String::from("MAPFILE"), str::to_string);
+
+        Ok(Self {
             delimiter,
             max_count,
             origin,
@@ -96,9 +186,13 @@ impl builtins::Command for MapFileCommand {
         "[-d DELIM] [-n COUNT] [-O ORIGIN] [-s COUNT] [-t] [-u FD] [-C CALLBACK] [-c COUNT] [ARRAY_VAR_NAME]"
     }
 
-    // N.B. Overrides the default [`builtins::Command::new`] so that a flag-looking
+    fn value_taking_short_options() -> &'static str {
+        "dnOsuCc"
+    }
+
+    // N.B. Overrides the default [`builtins::SpecCommand::new`] so that a flag-looking
     // value for `-O` (e.g., `mapfile -O -3`, a negative array origin) gets joined
-    // into `-O=-3`; bpaf otherwise rejects separate flag-shaped values.
+    // into `-O=-3`; the backend otherwise rejects separate flag-shaped values.
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
     where
         I: IntoIterator<Item = String>,
@@ -111,7 +205,10 @@ impl builtins::Command for MapFileCommand {
         }
         join_tokens_taking_values(&mut args, "O");
 
-        run_bpaf_parser::<Self>(&args)
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = builtins::argmodel::backend().parse(&spec, "", &args)?;
+
+        Self::from_matches(&mut matches)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -261,7 +358,8 @@ fn setup_terminal_settings(
 }
 
 /// Merges `-X` tokens followed by a flag-looking value token into `-X=<value>`
-/// so that bpaf accepts values that would otherwise be rejected as flags;
+/// so that the argument backend accepts values that would otherwise be
+/// rejected as flags;
 /// e.g., negative numbers.
 fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     let mut i = 0;
@@ -289,30 +387,15 @@ fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     }
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, builtins::BuiltinArgParseError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
+/// Parses an `i64` option value, reporting a parse failure on invalid input.
+fn parse_i64(value: &str) -> Result<i64, builtins::BuiltinArgParseError> {
+    value.parse::<i64>().map_err(|_| invalid_number(value))
 }
 
-fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
-    match failure {
-        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(full),
-            help_request: true,
-        },
-        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
-            message: s,
-            help_request: true,
-        },
-        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(true),
-            help_request: false,
-        },
+fn invalid_number(value: &str) -> builtins::BuiltinArgParseError {
+    builtins::BuiltinArgParseError {
+        message: format!("invalid number: {value}"),
+        help_request: false,
     }
 }
 
@@ -320,7 +403,7 @@ fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParse
 #[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
-    use brush_core::builtins::Command as _;
+    use brush_core::builtins::SpecCommand as _;
 
     fn new_from(args: &[&str]) -> Result<MapFileCommand, builtins::BuiltinArgParseError> {
         MapFileCommand::new(

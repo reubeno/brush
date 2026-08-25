@@ -1,22 +1,29 @@
-use bpaf::Bpaf;
-
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Moves a job to run in the background.
-#[derive(Bpaf)]
 pub(crate) struct BgCommand {
-    /// List of job specs to move to background.
-    #[bpaf(positional("JOB_SPECS"))]
     job_specs: Vec<String>,
 }
 
-impl builtins::Command for BgCommand {
+const ID_JOB_SPECS: &str = "job_specs";
+
+impl builtins::SpecCommand for BgCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        bg_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.positional_many(ID_JOB_SPECS, "JOB_SPECS")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            job_specs: matches.values(ID_JOB_SPECS).to_vec(),
+        })
     }
 
     fn about() -> &'static str {

@@ -78,23 +78,31 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
     }
 }
 
-impl builtins::Command for GetOptsCommand {
+impl builtins::SpecCommand for GetOptsCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`. The two required
-        // operands are validated in `execute`.
-        let options_string = bpaf::pure(String::new());
-        let variable_name = bpaf::pure(String::new());
-        let args = bpaf::pure(Vec::new());
-        let missing_operands = bpaf::pure(false);
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
+    }
 
-        bpaf::construct!(GetOptsCommand {
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        // N.B. The two required operands are validated in `execute`.
+        let trailing = matches.trailing();
+        let missing_operands = trailing.len() < 2;
+
+        let mut iter = trailing.iter();
+        let options_string = iter.next().cloned().unwrap_or_default();
+        let variable_name = iter.next().cloned().unwrap_or_default();
+
+        Ok(Self {
+            missing_operands,
             options_string,
             variable_name,
-            args,
-            missing_operands,
+            args: iter.cloned().collect(),
         })
     }
 
@@ -108,19 +116,6 @@ impl builtins::Command for GetOptsCommand {
 
     fn takes_trailing_args() -> bool {
         true
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.missing_operands = args.len() < 2;
-
-        let mut iter = args.into_iter();
-        if let Some(options_string) = iter.next() {
-            self.options_string = options_string;
-        }
-        if let Some(variable_name) = iter.next() {
-            self.variable_name = variable_name;
-        }
-        self.args = iter.collect();
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

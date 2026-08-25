@@ -1,43 +1,85 @@
-use bpaf::Bpaf;
-
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, error, jobs};
 
 /// Manage jobs.
-#[derive(Bpaf)]
 pub(crate) struct JobsCommand {
-    /// Also show process IDs.
-    #[bpaf(short('l'))]
     also_show_pids: bool,
-
-    /// List only jobs that have changed status since the last notification.
-    #[bpaf(short('n'))]
     list_changed_only: bool,
-
-    /// Show only process IDs.
-    #[bpaf(short('p'))]
     show_pids_only: bool,
-
-    /// Show only running jobs.
-    #[bpaf(short('r'))]
     running_jobs_only: bool,
-
-    /// Show only stopped jobs.
-    #[bpaf(short('s'))]
     stopped_jobs_only: bool,
-
-    /// Job specs to list.
-    // TODO(jobs): Add -x option
-    #[bpaf(positional("JOB_SPECS"))]
     job_specs: Vec<String>,
 }
 
-impl builtins::Command for JobsCommand {
+const ID_ALSO_SHOW_PIDS: &str = "also_show_pids";
+const ID_LIST_CHANGED_ONLY: &str = "list_changed_only";
+const ID_SHOW_PIDS_ONLY: &str = "show_pids_only";
+const ID_RUNNING_JOBS_ONLY: &str = "running_jobs_only";
+const ID_STOPPED_JOBS_ONLY: &str = "stopped_jobs_only";
+const ID_JOB_SPECS: &str = "job_specs";
+
+impl builtins::SpecCommand for JobsCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        jobs_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_ALSO_SHOW_PIDS,
+            &['l'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Also show process IDs.",
+        )
+        .arg(
+            ID_LIST_CHANGED_ONLY,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List only jobs that have changed status since the last notification.",
+        )
+        .arg(
+            ID_SHOW_PIDS_ONLY,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Show only process IDs.",
+        )
+        .arg(
+            ID_RUNNING_JOBS_ONLY,
+            &['r'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Show only running jobs.",
+        )
+        .arg(
+            ID_STOPPED_JOBS_ONLY,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Show only stopped jobs.",
+        )
+        // TODO(jobs): Add -x option
+        .positional_many(ID_JOB_SPECS, "JOB_SPECS")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            also_show_pids: matches.flag(ID_ALSO_SHOW_PIDS),
+            list_changed_only: matches.flag(ID_LIST_CHANGED_ONLY),
+            show_pids_only: matches.flag(ID_SHOW_PIDS_ONLY),
+            running_jobs_only: matches.flag(ID_RUNNING_JOBS_ONLY),
+            stopped_jobs_only: matches.flag(ID_STOPPED_JOBS_ONLY),
+            job_specs: matches.values(ID_JOB_SPECS).to_vec(),
+        })
     }
 
     fn about() -> &'static str {

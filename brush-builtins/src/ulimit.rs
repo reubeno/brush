@@ -1,6 +1,5 @@
-use bpaf::Parser;
 use std::{
-    ffi::OsStr,
+    collections::HashMap,
     io::{self, ErrorKind, Write},
     str::FromStr,
 };
@@ -307,23 +306,106 @@ impl FromStr for LimitValue {
     }
 }
 
-/// Returns a parser for a resource-limit switch that may be specified either
-/// with a value (`-c 5`) or without one (`-c`, meaning "report this limit").
-fn limit_switch(short: char, desc: &'static str) -> impl bpaf::Parser<Option<LimitValue>> {
-    let with_value = bpaf::short(short)
-        .help(desc)
-        .argument::<LimitValue>("LIMIT");
-    let without_value = bpaf::short(short)
-        .req_flag(())
-        .map(|(): ()| LimitValue::Unset);
+/// Removes bare resource-limit switches (e.g., `-c` with no value, meaning
+/// "report this limit") from the token stream, recording them as
+/// [`LimitValue::Unset`]. Value-taking forms (`-c=5`, `-c 5`) are left in the
+/// stream for the argument backend to bind.
+///
+/// This mirrors the historical parser's dual switch/value semantics, which
+/// the backend's required-value options cannot express on their own.
+fn extract_report_switches(
+    args: Vec<String>,
+    limits: &mut HashMap<char, LimitValue>,
+) -> Vec<String> {
+    let mut rest = Vec::with_capacity(args.len());
+    let mut iter = args.into_iter().peekable();
 
-    bpaf::construct!([with_value, without_value]).optional()
+    while let Some(arg) = iter.next() {
+        match arg.strip_prefix('-').and_then(|body| {
+            let mut chars = body.chars();
+            let c = chars.next()?;
+            (chars.next().is_none() && VALUE_SHORTS.contains(&c)).then_some(c)
+        }) {
+            // N.B. When a plausible value word follows, treat the option as
+            // value-taking and defer to the backend; otherwise the switch is
+            // a request to report the limit.
+            Some(c) => match iter.peek() {
+                Some(next) if !next.starts_with('-') && next.parse::<LimitValue>().is_ok() => {
+                    rest.push(arg);
+                }
+                _ => {
+                    limits.insert(c, LimitValue::Unset);
+                }
+            },
+            None => rest.push(arg),
+        }
+    }
+
+    rest
 }
 
 const SWITCH_SHORTS: &[char] = &['S', 'H', 'a'];
 const VALUE_SHORTS: &[char] = &[
     'b', 'c', 'd', 'e', 'f', 'i', 'k', 'l', 'm', 'n', 'p', 'q', 'r', 's', 't', 'u', 'v', 'x', 'P',
     'R', 'T',
+];
+
+/// Identifies the resource-limit options by declaration id, short option
+/// character, and description, in declaration order.
+const RESOURCES: &[(&str, &[char], &str)] = &[
+    ("sbsize", &['b'], "The maximum socket buffer size."),
+    ("core", &['c'], "The maximum size of core files created."),
+    (
+        "data",
+        &['d'],
+        "The maximum size of a process's data segment.",
+    ),
+    ("nice", &['e'], "The maximum scheduling priority (`nice`)."),
+    (
+        "file_size",
+        &['f'],
+        "The maximum size of files written by the shell and its children.",
+    ),
+    (
+        "sigpending",
+        &['i'],
+        "The maximum number of pending signals.",
+    ),
+    (
+        "memlock",
+        &['l'],
+        "The maximum size a process may lock into memory.",
+    ),
+    (
+        "kqueues",
+        &['k'],
+        "The maximum number of kqueues allocated for this process.",
+    ),
+    ("rss", &['m'], "The maximum resident set size."),
+    (
+        "file_open",
+        &['n'],
+        "The maximum number of open file descriptors.",
+    ),
+    ("pipe", &['p'], "The pipe buffer size."),
+    (
+        "msgqueue",
+        &['q'],
+        "The maximum number of bytes in POSIX message queues.",
+    ),
+    (
+        "rtprio",
+        &['r'],
+        "The maximum real-time scheduling priority.",
+    ),
+    ("rttime", &['R'], "Real-time non-blocking time."),
+    ("stack", &['s'], "The maximum stack size."),
+    ("cpu", &['t'], "The maximum amount of cpu time in seconds."),
+    ("nproc", &['u'], "The maximum number of user processes."),
+    ("vmem", &['v'], "The size of virtual memory."),
+    ("file_lock", &['x'], "The maximum number of file locks."),
+    ("npts", &['P'], "The maximum number of pseudoterminals."),
+    ("threads", &['T'], "The maximum number of threads."),
 ];
 
 /// Splits attached values off of resource-limit option groups (e.g., `-c5`
@@ -393,20 +475,20 @@ fn split_group_at_value_short<'a>(
     None
 }
 
-fn render_parse_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
-    match failure {
-        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(full),
-            help_request: true,
-        },
-        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
-            message: s,
-            help_request: true,
-        },
-        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(true),
-            help_request: false,
-        },
+/// Parses an optional resource-limit value that the backend bound to the
+/// option with the given declaration id.
+fn parse_resource_value(
+    matches: &builtins::argmodel::Matches,
+    id: &str,
+) -> Result<Option<LimitValue>, builtins::BuiltinArgParseError> {
+    match matches.value(id) {
+        Some(s) => LimitValue::from_str(s)
+            .map(Some)
+            .map_err(|_| builtins::BuiltinArgParseError {
+                message: format!("invalid value for limit: {s}"),
+                help_request: false,
+            }),
+        None => Ok(None),
     }
 }
 
@@ -443,12 +525,59 @@ pub(crate) struct ULimitCommand {
     limit: Option<LimitValue>,
 }
 
-impl builtins::Command for ULimitCommand {
+impl builtins::SpecCommand for ULimitCommand {
     type Error = brush_core::Error;
 
-    /// Overrides the default [`builtins::Command::new`] flow to split attached
-    /// values out of grouped resource options first; see
-    /// [`expand_limit_option_groups`].
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        let spec = spec
+            .arg(
+                "soft",
+                &['S'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
+                "Use the `soft` resource limit.",
+            )
+            .arg(
+                "hard",
+                &['H'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
+                "Use the `hard` resource limit.",
+            )
+            .arg(
+                "all",
+                &['a'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
+                "All current limits are reported.",
+            );
+
+        let mut spec = spec;
+        for (id, short, help) in RESOURCES {
+            // N.B. Value-taking forms are bound by the backend parser; bare
+            // occurrences never reach it (see `extract_report_switches`).
+            spec = spec.arg(
+                id,
+                short,
+                &[],
+                builtins::argmodel::ArgKind::Value,
+                Some("LIMIT"),
+                help,
+            );
+        }
+
+        spec.positional("limit", "LIMIT")
+    }
+
+    /// Overrides the default [`builtins::SpecCommand::new`] flow to split
+    /// attached values out of grouped resource options first and to capture
+    /// bare value-less switches; see [`expand_limit_option_groups`] and
+    /// [`extract_report_switches`].
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
     where
         I: IntoIterator<Item = String>,
@@ -456,82 +585,62 @@ impl builtins::Command for ULimitCommand {
         // N.B. The first argument is the command name itself.
         let args: Vec<String> = args.into_iter().skip(1).collect();
         let expanded = expand_limit_option_groups(args);
-        let os_args: Vec<&OsStr> = expanded.iter().map(OsStr::new).collect();
 
-        Self::parser()
-            .to_options()
-            .run_inner(os_args.as_slice())
-            .map_err(render_parse_failure)
+        let mut report_switches = HashMap::new();
+        let remaining = extract_report_switches(expanded, &mut report_switches);
+
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = brush_core::builtins::argmodel::backend().parse(&spec, "", &remaining)?;
+
+        let mut command = Self::from_matches(&mut matches)?;
+
+        if !report_switches.is_empty() {
+            command.apply_report_switches(&report_switches);
+        }
+
+        Ok(command)
     }
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let soft = bpaf::short('S')
-            .help("Use the `soft` resource limit.")
-            .switch();
-        let hard = bpaf::short('H')
-            .help("Use the `hard` resource limit.")
-            .switch();
-        let all = bpaf::short('a')
-            .help("All current limits are reported.")
-            .switch();
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let limit = match matches.value("limit") {
+            Some(s) => {
+                Some(
+                    LimitValue::from_str(s).map_err(|_| builtins::BuiltinArgParseError {
+                        message: format!("invalid limit value: {s}"),
+                        help_request: false,
+                    })?,
+                )
+            }
+            None => None,
+        };
 
-        let sbsize = limit_switch('b', "The maximum socket buffer size.");
-        let core = limit_switch('c', "The maximum size of core files created.");
-        let data = limit_switch('d', "The maximum size of a process's data segment.");
-        let nice = limit_switch('e', "The maximum scheduling priority (`nice`).");
-        let file_size = limit_switch(
-            'f',
-            "The maximum size of files written by the shell and its children.",
-        );
-        let sigpending = limit_switch('i', "The maximum number of pending signals.");
-        let memlock = limit_switch('l', "The maximum size a process may lock into memory.");
-        let kqueues = limit_switch(
-            'k',
-            "The maximum number of kqueues allocated for this process.",
-        );
-        let rss = limit_switch('m', "The maximum resident set size.");
-        let file_open = limit_switch('n', "The maximum number of open file descriptors.");
-        let pipe = limit_switch('p', "The pipe buffer size.");
-        let msgqueue = limit_switch('q', "The maximum number of bytes in POSIX message queues.");
-        let rtprio = limit_switch('r', "The maximum real-time scheduling priority.");
-        let rttime = limit_switch('R', "Real-time non-blocking time.");
-        let stack = limit_switch('s', "The maximum stack size.");
-        let cpu = limit_switch('t', "The maximum amount of cpu time in seconds.");
-        let nproc = limit_switch('u', "The maximum number of user processes.");
-        let vmem = limit_switch('v', "The size of virtual memory.");
-        let file_lock = limit_switch('x', "The maximum number of file locks.");
-        let npts = limit_switch('P', "The maximum number of pseudoterminals.");
-        let threads = limit_switch('T', "The maximum number of threads.");
-
-        let limit = bpaf::positional::<LimitValue>("LIMIT")
-            .help("Argument for the implicit limit (`-f`).")
-            .optional();
-
-        bpaf::construct!(ULimitCommand {
-            soft,
-            hard,
-            all,
-            sbsize,
-            core,
-            data,
-            nice,
-            file_size,
-            sigpending,
-            memlock,
-            kqueues,
-            rss,
-            file_open,
-            pipe,
-            msgqueue,
-            rtprio,
-            rttime,
-            stack,
-            cpu,
-            nproc,
-            vmem,
-            file_lock,
-            npts,
-            threads,
+        Ok(Self {
+            soft: matches.flag("soft"),
+            hard: matches.flag("hard"),
+            all: matches.flag("all"),
+            sbsize: parse_resource_value(matches, "sbsize")?,
+            core: parse_resource_value(matches, "core")?,
+            data: parse_resource_value(matches, "data")?,
+            nice: parse_resource_value(matches, "nice")?,
+            file_size: parse_resource_value(matches, "file_size")?,
+            sigpending: parse_resource_value(matches, "sigpending")?,
+            memlock: parse_resource_value(matches, "memlock")?,
+            kqueues: parse_resource_value(matches, "kqueues")?,
+            rss: parse_resource_value(matches, "rss")?,
+            file_open: parse_resource_value(matches, "file_open")?,
+            pipe: parse_resource_value(matches, "pipe")?,
+            msgqueue: parse_resource_value(matches, "msgqueue")?,
+            rtprio: parse_resource_value(matches, "rtprio")?,
+            rttime: parse_resource_value(matches, "rttime")?,
+            stack: parse_resource_value(matches, "stack")?,
+            cpu: parse_resource_value(matches, "cpu")?,
+            nproc: parse_resource_value(matches, "nproc")?,
+            vmem: parse_resource_value(matches, "vmem")?,
+            file_lock: parse_resource_value(matches, "file_lock")?,
+            npts: parse_resource_value(matches, "npts")?,
+            threads: parse_resource_value(matches, "threads")?,
             limit,
         })
     }
@@ -608,5 +717,33 @@ impl builtins::Command for ULimitCommand {
         }
 
         Ok(exit_code)
+    }
+}
+
+impl ULimitCommand {
+    /// Applies bare value-less switches captured by
+    /// [`extract_report_switches`] onto the parsed command.
+    fn apply_report_switches(&mut self, switches: &HashMap<char, LimitValue>) {
+        self.sbsize = switches.get(&'b').copied();
+        self.core = switches.get(&'c').copied();
+        self.data = switches.get(&'d').copied();
+        self.nice = switches.get(&'e').copied();
+        self.file_size = switches.get(&'f').copied();
+        self.sigpending = switches.get(&'i').copied();
+        self.memlock = switches.get(&'l').copied();
+        self.kqueues = switches.get(&'k').copied();
+        self.rss = switches.get(&'m').copied();
+        self.file_open = switches.get(&'n').copied();
+        self.pipe = switches.get(&'p').copied();
+        self.msgqueue = switches.get(&'q').copied();
+        self.rtprio = switches.get(&'r').copied();
+        self.rttime = switches.get(&'R').copied();
+        self.stack = switches.get(&'s').copied();
+        self.cpu = switches.get(&'t').copied();
+        self.nproc = switches.get(&'u').copied();
+        self.vmem = switches.get(&'v').copied();
+        self.file_lock = switches.get(&'x').copied();
+        self.npts = switches.get(&'P').copied();
+        self.threads = switches.get(&'T').copied();
     }
 }

@@ -12,6 +12,12 @@ use brush_core::{
     },
 };
 
+const ID_FUNCTION_NAMES_OR_DEFS_ONLY: &str = "function_names_or_defs_only";
+const ID_FUNCTION_NAMES_ONLY: &str = "function_names_only";
+const ID_CREATE_GLOBAL: &str = "create_global";
+const ID_LOCALS_INHERIT_FROM_PREV_SCOPE: &str = "locals_inherit_from_prev_scope";
+const ID_PRINT: &str = "print";
+
 /// Display or update variables and their attributes.
 pub(crate) struct DeclareCommand {
     function_names_or_defs_only: bool,
@@ -33,84 +39,199 @@ pub(crate) struct DeclareCommand {
     make_exported: Option<bool>,
 
     // N.B. These are skipped during parsing, but filled in by the
-    // DeclarationCommand trait.
+    // SpecCommand trait.
     declarations: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::Command for DeclareCommand {
+/// Expands groups of `+`-style options (e.g., `+ax`) into individual hidden
+/// long spellings (e.g., `--+a --+x`) that the argument backend can match
+/// against the disable-side arguments declared by [`crate::declare_plus_minus`].
+fn expand_plus_options(args: Vec<String>) -> Vec<String> {
+    args.into_iter()
+        .flat_map(|arg| {
+            if let Some(group) = arg.strip_prefix('+').filter(|g| !g.is_empty()) {
+                if group.starts_with('+') || group.contains('=') {
+                    // Not an option group (e.g., `++x` or `+foo=bar`);
+                    // pass it through unchanged.
+                    vec![arg]
+                } else {
+                    group.chars().map(|c| format!("--+{c}")).collect::<Vec<_>>()
+                }
+            } else {
+                vec![arg]
+            }
+        })
+        .collect()
+}
+
+impl builtins::SpecCommand for DeclareCommand {
+    type Error = brush_core::Error;
+
     fn takes_plus_options() -> bool {
         true
     }
 
-    type Error = brush_core::Error;
+    fn uses_declarations() -> bool {
+        true
+    }
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let function_names_or_defs_only = bpaf::short('f')
-            .help("Constrain to function names or definitions.")
-            .switch();
-        let function_names_only = bpaf::short('F')
-            .help("Constrain to function names only.")
-            .switch();
-        let create_global = bpaf::short('g')
-            .help("Create global variable, if applicable.")
-            .switch();
-        let locals_inherit_from_prev_scope = bpaf::short('I')
-            .help(
+    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
+        self.declarations = declarations;
+    }
+
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        let spec = spec
+            .arg(
+                ID_FUNCTION_NAMES_OR_DEFS_ONLY,
+                &['f'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
+                "Constrain to function names or definitions.",
+            )
+            .arg(
+                ID_FUNCTION_NAMES_ONLY,
+                &['F'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
+                "Constrain to function names only.",
+            )
+            .arg(
+                ID_CREATE_GLOBAL,
+                &['g'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
+                "Create global variable, if applicable.",
+            )
+            .arg(
+                ID_LOCALS_INHERIT_FROM_PREV_SCOPE,
+                &['I'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
                 "When creating a local variable that shadows another variable of the same name, \
                  then initialize it with the contents and attributes of the variable being \
                  shadowed.",
             )
-            .switch();
-        let print = bpaf::short('p')
-            .help("Display each item's attributes and values.")
-            .switch();
+            .arg(
+                ID_PRINT,
+                &['p'],
+                &[],
+                builtins::argmodel::ArgKind::Flag,
+                None,
+                "Display each item's attributes and values.",
+            );
 
-        let make_indexed_array =
-            crate::minus_or_plus_flag('a', "+a", "Make the variable an indexed array.");
-        let make_associative_array =
-            crate::minus_or_plus_flag('A', "+A", "Make the variable an associative array.");
-        let capitalize_value_on_assignment = crate::minus_or_plus_flag(
+        let spec = crate::declare_plus_minus(
+            spec,
+            'a',
+            "make_indexed_array",
+            "Make the variable an indexed array.",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'A',
+            "make_associative_array",
+            "Make the variable an associative array.",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
             'c',
-            "+c",
+            "capitalize_value_on_assignment",
             "Enable capitalize-on-assignment for the variable.",
         );
-        let make_integer =
-            crate::minus_or_plus_flag('i', "+i", "Mark the variable as integer-typed");
-        let lowercase_value_on_assignment = crate::minus_or_plus_flag(
+        let spec = crate::declare_plus_minus(
+            spec,
+            'i',
+            "make_integer",
+            "Mark the variable as integer-typed",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
             'l',
-            "+l",
+            "lowercase_value_on_assignment",
             "Enable lowercase-on-assignment for the variable.",
         );
-        let make_nameref =
-            crate::minus_or_plus_flag('n', "+n", "Mark the variable as a name reference");
-        let make_readonly = crate::minus_or_plus_flag('r', "+r", "Mark the variable as read-only.");
-        let make_traced = crate::minus_or_plus_flag('t', "+t", "Enable tracing for the variable.");
-        let uppercase_value_on_assignment = crate::minus_or_plus_flag(
+        let spec = crate::declare_plus_minus(
+            spec,
+            'n',
+            "make_nameref",
+            "Mark the variable as a name reference",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'r',
+            "make_readonly",
+            "Mark the variable as read-only.",
+        );
+        let spec =
+            crate::declare_plus_minus(spec, 't', "make_traced", "Enable tracing for the variable.");
+        let spec = crate::declare_plus_minus(
+            spec,
             'u',
-            "+u",
+            "uppercase_value_on_assignment",
             "Enable uppercase-on-assignment for the variable.",
         );
-        let make_exported = crate::minus_or_plus_flag('x', "+x", "Mark the variable for export.");
 
-        let declarations = bpaf::pure(Vec::new());
+        crate::declare_plus_minus(spec, 'x', "make_exported", "Mark the variable for export.")
+    }
 
-        bpaf::construct!(DeclareCommand {
-            function_names_or_defs_only,
-            function_names_only,
-            create_global,
-            locals_inherit_from_prev_scope,
-            print,
-            make_indexed_array,
-            make_associative_array,
-            capitalize_value_on_assignment,
-            make_integer,
-            lowercase_value_on_assignment,
-            make_nameref,
-            make_readonly,
-            make_traced,
-            uppercase_value_on_assignment,
-            make_exported,
-            declarations,
+    /// Overrides the default [`builtins::SpecCommand::new`] flow so that
+    /// `+`-style option spellings are rewritten into forms the argument
+    /// backend can match; see [`expand_plus_options`].
+    fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut args: Vec<String> = args.into_iter().collect();
+
+        // N.B. The first argument is the command name itself.
+        if !args.is_empty() {
+            args.remove(0);
+        }
+
+        let expanded = expand_plus_options(args);
+
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = builtins::argmodel::backend().parse(&spec, "", &expanded)?;
+
+        Self::from_matches(&mut matches)
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            function_names_or_defs_only: matches.flag(ID_FUNCTION_NAMES_OR_DEFS_ONLY),
+            function_names_only: matches.flag(ID_FUNCTION_NAMES_ONLY),
+            create_global: matches.flag(ID_CREATE_GLOBAL),
+            locals_inherit_from_prev_scope: matches.flag(ID_LOCALS_INHERIT_FROM_PREV_SCOPE),
+            print: matches.flag(ID_PRINT),
+            make_indexed_array: crate::read_plus_minus(matches, "make_indexed_array"),
+            make_associative_array: crate::read_plus_minus(matches, "make_associative_array"),
+            capitalize_value_on_assignment: crate::read_plus_minus(
+                matches,
+                "capitalize_value_on_assignment",
+            ),
+            make_integer: crate::read_plus_minus(matches, "make_integer"),
+            lowercase_value_on_assignment: crate::read_plus_minus(
+                matches,
+                "lowercase_value_on_assignment",
+            ),
+            make_nameref: crate::read_plus_minus(matches, "make_nameref"),
+            make_readonly: crate::read_plus_minus(matches, "make_readonly"),
+            make_traced: crate::read_plus_minus(matches, "make_traced"),
+            uppercase_value_on_assignment: crate::read_plus_minus(
+                matches,
+                "uppercase_value_on_assignment",
+            ),
+            make_exported: crate::read_plus_minus(matches, "make_exported"),
+
+            declarations: Vec::new(),
         })
     }
 
@@ -177,12 +298,6 @@ enum DeclareVerb {
     Declare,
     Local,
     Readonly,
-}
-
-impl builtins::DeclarationCommand for DeclareCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
 }
 
 impl DeclareCommand {

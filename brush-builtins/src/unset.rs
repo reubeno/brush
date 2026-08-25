@@ -1,4 +1,3 @@
-use bpaf::Parser;
 use std::borrow::Cow;
 
 use brush_core::{ExecutionResult, Shell, builtins};
@@ -11,35 +10,82 @@ enum NameInterpretation {
     NameRefs,
 }
 
+const ID_FUNCTIONS: &str = "functions";
+const ID_VARIABLES: &str = "variables";
+const ID_NAME_REFS: &str = "name_refs";
+const ID_NAMES: &str = "names";
+
 /// Unset a variable.
 pub(crate) struct UnsetCommand {
     name_interpretation: Option<NameInterpretation>,
     names: Vec<String>,
 }
 
-impl builtins::Command for UnsetCommand {
+impl builtins::SpecCommand for UnsetCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let functions = bpaf::short('f')
-            .help("Treat each name as a shell function.")
-            .req_flag(NameInterpretation::Functions);
-        let variables = bpaf::short('v')
-            .help("Treat each name as a shell variable.")
-            .req_flag(NameInterpretation::Variables);
-        let name_refs = bpaf::short('n')
-            .help("Treat each name as a name reference.")
-            .req_flag(NameInterpretation::NameRefs);
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_FUNCTIONS,
+            &['f'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Treat each name as a shell function.",
+        )
+        .arg(
+            ID_VARIABLES,
+            &['v'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Treat each name as a shell variable.",
+        )
+        .arg(
+            ID_NAME_REFS,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Treat each name as a name reference.",
+        )
+        .positional_many(ID_NAMES, "NAMES")
+    }
 
-        let name_interpretation = bpaf::construct!([functions, variables, name_refs]).optional();
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let selected = [
+            matches.flag(ID_FUNCTIONS),
+            matches.flag(ID_VARIABLES),
+            matches.flag(ID_NAME_REFS),
+        ]
+        .into_iter()
+        .filter(|selected| *selected)
+        .count();
 
-        let names = bpaf::positional::<String>("NAMES")
-            .help("Names of variables to unset.")
-            .many();
+        if selected > 1 {
+            return Err(builtins::BuiltinArgParseError {
+                message: String::from("cannot use -f, -v and -n together"),
+                help_request: false,
+            });
+        }
 
-        bpaf::construct!(UnsetCommand {
+        let name_interpretation = if matches.flag(ID_FUNCTIONS) {
+            Some(NameInterpretation::Functions)
+        } else if matches.flag(ID_VARIABLES) {
+            Some(NameInterpretation::Variables)
+        } else if matches.flag(ID_NAME_REFS) {
+            Some(NameInterpretation::NameRefs)
+        } else {
+            None
+        };
+
+        Ok(Self {
             name_interpretation,
-            names,
+            names: matches.values(ID_NAMES).to_vec(),
         })
     }
 

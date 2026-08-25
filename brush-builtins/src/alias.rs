@@ -1,25 +1,40 @@
-use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Manage aliases within the shell.
-#[derive(Bpaf)]
 pub(crate) struct AliasCommand {
-    /// Print all defined aliases in a reusable format.
-    #[bpaf(short('p'))]
     print: bool,
-
-    /// List of aliases to display or update.
-    #[bpaf(positional("name[=value]"))]
     aliases: Vec<String>,
 }
 
-impl builtins::Command for AliasCommand {
+const ID_PRINT: &str = "print";
+const ID_ALIASES: &str = "aliases";
+
+impl builtins::SpecCommand for AliasCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        alias_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_PRINT,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Print all defined aliases in a reusable format.",
+        )
+        .positional_many(ID_ALIASES, "name[=value]")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            print: matches.flag(ID_PRINT),
+            aliases: matches.values(ID_ALIASES).to_vec(),
+        })
     }
 
     fn about() -> &'static str {

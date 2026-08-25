@@ -1,5 +1,3 @@
-use bpaf::Parser;
-
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Breaks out of a control-flow loop.
@@ -7,14 +5,29 @@ pub(crate) struct BreakCommand {
     which_loop: i8,
 }
 
-impl builtins::Command for BreakCommand {
+const ID_WHICH_LOOP: &str = "which_loop";
+
+impl builtins::SpecCommand for BreakCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let which_loop = bpaf::positional::<i8>("WHICH_LOOP")
-            .help("If specified, indicates which nested loop to break out of.")
-            .fallback(1);
-        bpaf::construct!(BreakCommand { which_loop })
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.positional(ID_WHICH_LOOP, "WHICH_LOOP")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let which_loop = match matches.value(ID_WHICH_LOOP) {
+            Some(value) => value.parse().map_err(|_| builtins::BuiltinArgParseError {
+                message: format!("invalid numeric value: {value}"),
+                help_request: false,
+            })?,
+            None => 1,
+        };
+
+        Ok(Self { which_loop })
     }
 
     fn about() -> &'static str {

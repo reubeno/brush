@@ -32,26 +32,50 @@ impl CommandCommand {
     }
 }
 
-impl builtins::Command for CommandCommand {
+const ID_USE_DEFAULT_PATH: &str = "use_default_path";
+const ID_PRINT_DESCRIPTION: &str = "print_description";
+const ID_PRINT_VERBOSE_DESCRIPTION: &str = "print_verbose_description";
+
+impl builtins::SpecCommand for CommandCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let use_default_path = bpaf::short('p').help("Use default PATH value.").switch();
-        let print_description = bpaf::short('v')
-            .help("Display a short description of the command.")
-            .switch();
-        let print_verbose_description = bpaf::short('V')
-            .help("Display a more verbose description of the command.")
-            .switch();
-        let command_and_args = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_USE_DEFAULT_PATH,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Use default PATH value.",
+        )
+        .arg(
+            ID_PRINT_DESCRIPTION,
+            &['v'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Display a short description of the command.",
+        )
+        .arg(
+            ID_PRINT_VERBOSE_DESCRIPTION,
+            &['V'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Display a more verbose description of the command.",
+        )
+    }
 
-        bpaf::construct!(CommandCommand {
-            use_default_path,
-            print_description,
-            print_verbose_description,
-            command_and_args,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            use_default_path: matches.flag(ID_USE_DEFAULT_PATH),
+            print_description: matches.flag(ID_PRINT_DESCRIPTION),
+            print_verbose_description: matches.flag(ID_PRINT_VERBOSE_DESCRIPTION),
+            command_and_args: matches.trailing().to_vec(),
         })
     }
 
@@ -65,10 +89,6 @@ impl builtins::Command for CommandCommand {
 
     fn takes_trailing_args() -> bool {
         true
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.command_and_args = args;
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

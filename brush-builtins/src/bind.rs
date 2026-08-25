@@ -1,4 +1,3 @@
-use bpaf::Parser;
 use itertools::Itertools as _;
 use std::{collections::HashMap, io::Write, str::FromStr, sync::Arc};
 use strum::IntoEnumIterator;
@@ -49,6 +48,22 @@ impl BindKeyMap {
     }
 }
 
+const ID_KEYMAP: &str = "keymap";
+const ID_LIST_FUNCS: &str = "list_funcs";
+const ID_LIST_FUNCS_AND_BINDINGS: &str = "list_funcs_and_bindings";
+const ID_LIST_FUNCS_AND_BINDINGS_REUSABLE: &str = "list_funcs_and_bindings_reusable";
+const ID_LIST_KEY_SEQS_MACROS: &str = "list_key_seqs_that_invoke_macros";
+const ID_LIST_KEY_SEQS_MACROS_REUSABLE: &str = "list_key_seqs_that_invoke_macros_reusable";
+const ID_LIST_VARS: &str = "list_vars";
+const ID_LIST_VARS_REUSABLE: &str = "list_vars_reusable";
+const ID_QUERY_FUNC_BINDINGS: &str = "query_func_bindings";
+const ID_REMOVE_FUNC_BINDINGS: &str = "remove_func_bindings";
+const ID_REMOVE_KEY_SEQ_BINDING: &str = "remove_key_seq_binding";
+const ID_BINDINGS_FILE: &str = "bindings_file";
+const ID_KEY_SEQ_BINDINGS: &str = "key_seq_bindings";
+const ID_LIST_KEY_SEQ_BINDINGS: &str = "list_key_seq_bindings";
+const ID_KEY_SEQUENCE: &str = "key_sequence";
+
 /// Inspect and modify key bindings and other input configuration.
 pub(crate) struct BindCommand {
     keymap: Option<BindKeyMap>,
@@ -68,74 +83,159 @@ pub(crate) struct BindCommand {
     key_sequence: Option<String>,
 }
 
-impl builtins::Command for BindCommand {
+impl builtins::SpecCommand for BindCommand {
     type Error = BindError;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let keymap = bpaf::short('m')
-            .help("Name of key map to use.")
-            .argument::<BindKeyMap>("KEYMAP")
-            .optional();
-        let list_funcs = bpaf::short('l').help("List functions.").switch();
-        let list_funcs_and_bindings = bpaf::short('P')
-            .help("List functions and bindings.")
-            .switch();
-        let list_funcs_and_bindings_reusable = bpaf::short('p')
-            .help("List functions and bindings in a format suitable for use as input.")
-            .switch();
-        let list_key_seqs_that_invoke_macros = bpaf::short('S')
-            .help("List key sequences that invoke macros.")
-            .switch();
-        let list_key_seqs_that_invoke_macros_reusable = bpaf::short('s')
-            .help("List key sequences that invoke macros in a format suitable for use as input.")
-            .switch();
-        let list_vars = bpaf::short('V').help("List variables.").switch();
-        let list_vars_reusable = bpaf::short('v')
-            .help("List variables in a format suitable for use as input.")
-            .switch();
-        let query_func_bindings = bpaf::short('q')
-            .help("Find the keys bound to the given named function.")
-            .argument::<String>("FUNC_NAME")
-            .optional();
-        let remove_func_bindings = bpaf::short('u')
-            .help("Remove all bindings for the given named function.")
-            .argument::<String>("FUNC_NAME")
-            .optional();
-        let remove_key_seq_binding = bpaf::short('r')
-            .help("Remove the binding for the given key sequence.")
-            .argument::<String>("KEY_SEQ")
-            .optional();
-        let bindings_file = bpaf::short('f')
-            .help("Import bindings from the given file.")
-            .argument::<String>("PATH")
-            .optional();
-        let key_seq_bindings = bpaf::short('x')
-            .help("Bind key sequence to command.")
-            .argument::<String>("BINDING")
-            .many();
-        let list_key_seq_bindings = bpaf::short('X')
-            .help("List key sequence bindings.")
-            .switch();
-        let key_sequence = bpaf::positional::<String>("KEY_SEQUENCE")
-            .help("Key sequence binding to readline function or command.")
-            .optional();
+    #[expect(clippy::too_many_lines)]
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_KEYMAP,
+            &['m'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("KEYMAP"),
+            "Name of key map to use.",
+        )
+        .arg(
+            ID_LIST_FUNCS,
+            &['l'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List functions.",
+        )
+        .arg(
+            ID_LIST_FUNCS_AND_BINDINGS,
+            &['P'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List functions and bindings.",
+        )
+        .arg(
+            ID_LIST_FUNCS_AND_BINDINGS_REUSABLE,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List functions and bindings in a format suitable for use as input.",
+        )
+        .arg(
+            ID_LIST_KEY_SEQS_MACROS,
+            &['S'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List key sequences that invoke macros.",
+        )
+        .arg(
+            ID_LIST_KEY_SEQS_MACROS_REUSABLE,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List key sequences that invoke macros in a format suitable for use as input.",
+        )
+        .arg(
+            ID_LIST_VARS,
+            &['V'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List variables.",
+        )
+        .arg(
+            ID_LIST_VARS_REUSABLE,
+            &['v'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List variables in a format suitable for use as input.",
+        )
+        .arg(
+            ID_QUERY_FUNC_BINDINGS,
+            &['q'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("FUNC_NAME"),
+            "Find the keys bound to the given named function.",
+        )
+        .arg(
+            ID_REMOVE_FUNC_BINDINGS,
+            &['u'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("FUNC_NAME"),
+            "Remove all bindings for the given named function.",
+        )
+        .arg(
+            ID_REMOVE_KEY_SEQ_BINDING,
+            &['r'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("KEY_SEQ"),
+            "Remove the binding for the given key sequence.",
+        )
+        .arg(
+            ID_BINDINGS_FILE,
+            &['f'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("PATH"),
+            "Import bindings from the given file.",
+        )
+        .arg(
+            ID_KEY_SEQ_BINDINGS,
+            &['x'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("BINDING"),
+            "Bind key sequence to command.",
+        )
+        .arg(
+            ID_LIST_KEY_SEQ_BINDINGS,
+            &['X'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List key sequence bindings.",
+        )
+        .positional(ID_KEY_SEQUENCE, "KEY_SEQUENCE")
+    }
 
-        bpaf::construct!(BindCommand {
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let keymap =
+            match matches.value(ID_KEYMAP) {
+                Some(s) => Some(BindKeyMap::from_str(s).map_err(|message| {
+                    builtins::BuiltinArgParseError {
+                        message,
+                        help_request: false,
+                    }
+                })?),
+                None => None,
+            };
+
+        Ok(Self {
             keymap,
-            list_funcs,
-            list_funcs_and_bindings,
-            list_funcs_and_bindings_reusable,
-            list_key_seqs_that_invoke_macros,
-            list_key_seqs_that_invoke_macros_reusable,
-            list_vars,
-            list_vars_reusable,
-            query_func_bindings,
-            remove_func_bindings,
-            remove_key_seq_binding,
-            bindings_file,
-            key_seq_bindings,
-            list_key_seq_bindings,
-            key_sequence,
+            list_funcs: matches.flag(ID_LIST_FUNCS),
+            list_funcs_and_bindings: matches.flag(ID_LIST_FUNCS_AND_BINDINGS),
+            list_funcs_and_bindings_reusable: matches.flag(ID_LIST_FUNCS_AND_BINDINGS_REUSABLE),
+            list_key_seqs_that_invoke_macros: matches.flag(ID_LIST_KEY_SEQS_MACROS),
+            list_key_seqs_that_invoke_macros_reusable: matches
+                .flag(ID_LIST_KEY_SEQS_MACROS_REUSABLE),
+            list_vars: matches.flag(ID_LIST_VARS),
+            list_vars_reusable: matches.flag(ID_LIST_VARS_REUSABLE),
+            query_func_bindings: matches.value(ID_QUERY_FUNC_BINDINGS).map(str::to_owned),
+            remove_func_bindings: matches.value(ID_REMOVE_FUNC_BINDINGS).map(str::to_owned),
+            remove_key_seq_binding: matches.value(ID_REMOVE_KEY_SEQ_BINDING).map(str::to_owned),
+            bindings_file: matches.value(ID_BINDINGS_FILE).map(str::to_owned),
+            key_seq_bindings: matches.values(ID_KEY_SEQ_BINDINGS).to_vec(),
+            list_key_seq_bindings: matches.flag(ID_LIST_KEY_SEQ_BINDINGS),
+            key_sequence: matches.value(ID_KEY_SEQUENCE).map(str::to_owned),
         })
     }
 

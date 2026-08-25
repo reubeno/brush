@@ -1,7 +1,5 @@
-use bpaf::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
-use std::ffi::OsStr;
 use std::time::{Duration, Instant};
 
 use brush_core::{ErrorKind, builtins, env, error, variables};
@@ -65,58 +63,148 @@ pub(crate) struct ReadCommand {
     variable_names: Vec<String>,
 }
 
-impl builtins::Command for ReadCommand {
+const ID_ARRAY_VARIABLE: &str = "array_variable";
+const ID_DELIMITER: &str = "delimiter";
+const ID_USE_READLINE: &str = "use_readline";
+const ID_INITIAL_TEXT: &str = "initial_text";
+const ID_RETURN_AFTER_N_CHARS: &str = "return_after_n_chars";
+const ID_RETURN_AFTER_N_CHARS_NO_DELIMITER: &str = "return_after_n_chars_no_delimiter";
+const ID_PROMPT: &str = "prompt";
+const ID_RAW_MODE: &str = "raw_mode";
+const ID_SILENT: &str = "silent";
+const ID_TIMEOUT_IN_SECONDS: &str = "timeout_in_seconds";
+const ID_FD_NUM_TO_READ: &str = "fd_num_to_read";
+const ID_VARIABLE_NAMES: &str = "variable_names";
+
+impl builtins::SpecCommand for ReadCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let array_variable = bpaf::short('a')
-            .help("Optionally, name of an array variable to receive read words of input.")
-            .argument::<String>("VAR_NAME")
-            .optional();
-        let delimiter = bpaf::short('d')
-            .help("Optionally, a delimiter to use other than a newline character.")
-            .argument::<String>("DELIM")
-            .optional();
-        let use_readline = bpaf::short('e').help("Use readline-like input.").switch();
-        let initial_text = bpaf::short('i')
-            .help("Provide text to use as initial input for readline.")
-            .argument::<String>("STR")
-            .optional();
-        let return_after_n_chars = bpaf::short('n')
-            .help(
-                "Read only the first N characters or until a specified delimiter is \
-                 reached, whichever happens first.",
-            )
-            .argument::<usize>("COUNT")
-            .optional();
-        let return_after_n_chars_no_delimiter = bpaf::short('N')
-            .help("Read exactly N characters, ignoring any specified delimiter.")
-            .argument::<usize>("COUNT")
-            .optional();
-        let prompt = bpaf::short('p')
-            .help("Prompt to display before reading.")
-            .argument::<String>("PROMPT")
-            .optional();
-        let raw_mode = bpaf::short('r')
-            .help("Read input in raw mode; no escape sequences.")
-            .switch();
-        let silent = bpaf::short('s').help("Do not echo input.").switch();
-        let timeout_in_seconds = bpaf::short('t')
-            .help(
-                "Specify timeout in seconds; fail if the timeout elapses before \
-                 input is completed.",
-            )
-            .argument::<f64>("SECONDS")
-            .optional();
-        let fd_num_to_read = bpaf::short('u')
-            .help("File descriptor to read from instead of stdin.")
-            .argument::<u8>("FD")
-            .optional();
-        let variable_names = bpaf::positional::<String>("VAR_NAMES")
-            .help("Optionally, names of variables to receive read input.")
-            .many();
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_ARRAY_VARIABLE,
+            &['a'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("VAR_NAME"),
+            "Optionally, name of an array variable to receive read words of input.",
+        )
+        .arg(
+            ID_DELIMITER,
+            &['d'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("DELIM"),
+            "Optionally, a delimiter to use other than a newline character.",
+        )
+        .arg(
+            ID_USE_READLINE,
+            &['e'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Use readline-like input.",
+        )
+        .arg(
+            ID_INITIAL_TEXT,
+            &['i'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("STR"),
+            "Provide text to use as initial input for readline.",
+        )
+        .arg(
+            ID_RETURN_AFTER_N_CHARS,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("COUNT"),
+            "Read only the first N characters or until a specified delimiter is \
+             reached, whichever happens first.",
+        )
+        .arg(
+            ID_RETURN_AFTER_N_CHARS_NO_DELIMITER,
+            &['N'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("COUNT"),
+            "Read exactly N characters, ignoring any specified delimiter.",
+        )
+        .arg(
+            ID_PROMPT,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("PROMPT"),
+            "Prompt to display before reading.",
+        )
+        .arg(
+            ID_RAW_MODE,
+            &['r'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Read input in raw mode; no escape sequences.",
+        )
+        .arg(
+            ID_SILENT,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Do not echo input.",
+        )
+        .arg(
+            ID_TIMEOUT_IN_SECONDS,
+            &['t'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("SECONDS"),
+            "Specify timeout in seconds; fail if the timeout elapses before \
+             input is completed.",
+        )
+        .arg(
+            ID_FD_NUM_TO_READ,
+            &['u'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("FD"),
+            "File descriptor to read from instead of stdin.",
+        )
+        .positional_many(ID_VARIABLE_NAMES, "VAR_NAMES")
+    }
 
-        bpaf::construct!(ReadCommand {
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let array_variable = matches.value(ID_ARRAY_VARIABLE).map(str::to_string);
+        let delimiter = matches.value(ID_DELIMITER).map(str::to_string);
+        let use_readline = matches.flag(ID_USE_READLINE);
+        let initial_text = matches.value(ID_INITIAL_TEXT).map(str::to_string);
+        let return_after_n_chars = match matches.value(ID_RETURN_AFTER_N_CHARS) {
+            Some(v) => Some(parse_usize(v)?),
+            None => None,
+        };
+        let return_after_n_chars_no_delimiter =
+            match matches.value(ID_RETURN_AFTER_N_CHARS_NO_DELIMITER) {
+                Some(v) => Some(parse_usize(v)?),
+                None => None,
+            };
+        let prompt = matches.value(ID_PROMPT).map(str::to_string);
+        let raw_mode = matches.flag(ID_RAW_MODE);
+        let silent = matches.flag(ID_SILENT);
+        let timeout_in_seconds = match matches.value(ID_TIMEOUT_IN_SECONDS) {
+            Some(v) => Some(parse_f64(v)?),
+            None => None,
+        };
+        let fd_num_to_read = match matches.value(ID_FD_NUM_TO_READ) {
+            Some(v) => Some(parse_u8(v)?),
+            None => None,
+        };
+        let variable_names = matches.values(ID_VARIABLE_NAMES).to_vec();
+
+        Ok(Self {
             array_variable,
             delimiter,
             use_readline,
@@ -140,9 +228,13 @@ impl builtins::Command for ReadCommand {
         "[-a VAR_NAME] [-d DELIM] [-e] [-i STR] [-n COUNT] [-N COUNT] [-p PROMPT] [-rs] [-t SECONDS] [-u FD] [VAR_NAMES]..."
     }
 
-    // N.B. Overrides the default [`builtins::Command::new`] so that a flag-looking
+    fn value_taking_short_options() -> &'static str {
+        "adinNptu"
+    }
+
+    // N.B. Overrides the default [`builtins::SpecCommand::new`] so that a flag-looking
     // value for `-t` (e.g., `read -t -0.5`, a negative timeout) gets joined into
-    // `-t=-0.5`; bpaf otherwise rejects separate flag-shaped values.
+    // `-t=-0.5`; the backend otherwise rejects separate flag-shaped values.
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
     where
         I: IntoIterator<Item = String>,
@@ -155,7 +247,10 @@ impl builtins::Command for ReadCommand {
         }
         join_tokens_taking_values(&mut args, "t");
 
-        run_bpaf_parser::<Self>(&args)
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = builtins::argmodel::backend().parse(&spec, "", &args)?;
+
+        Self::from_matches(&mut matches)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -765,7 +860,8 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
 }
 
 /// Merges `-X` tokens followed by a flag-looking value token into `-X=<value>`
-/// so that bpaf accepts values that would otherwise be rejected as flags;
+/// so that the argument backend accepts values that would otherwise be
+/// rejected as flags;
 /// e.g., negative timeouts.
 fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     let mut i = 0;
@@ -793,37 +889,32 @@ fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     }
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, builtins::BuiltinArgParseError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
+/// Parses a `usize` option value, reporting a parse failure on invalid input.
+fn parse_usize(value: &str) -> Result<usize, builtins::BuiltinArgParseError> {
+    value.parse::<usize>().map_err(|_| invalid_number(value))
 }
 
-fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
-    match failure {
-        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(full),
-            help_request: true,
-        },
-        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
-            message: s,
-            help_request: true,
-        },
-        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(true),
-            help_request: false,
-        },
+/// Parses an `f64` option value, reporting a parse failure on invalid input.
+fn parse_f64(value: &str) -> Result<f64, builtins::BuiltinArgParseError> {
+    value.parse::<f64>().map_err(|_| invalid_number(value))
+}
+
+/// Parses a `u8` option value, reporting a parse failure on invalid input.
+fn parse_u8(value: &str) -> Result<u8, builtins::BuiltinArgParseError> {
+    value.parse::<u8>().map_err(|_| invalid_number(value))
+}
+
+fn invalid_number(value: &str) -> builtins::BuiltinArgParseError {
+    builtins::BuiltinArgParseError {
+        message: format!("invalid number: {value}"),
+        help_request: false,
     }
 }
 
 #[cfg(test)]
 #[expect(clippy::panic_in_result_fn)]
 mod tests {
-    use brush_core::builtins::Command as _;
+    use brush_core::builtins::SpecCommand as _;
     use itertools::assert_equal;
 
     use super::*;

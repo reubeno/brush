@@ -1,4 +1,3 @@
-use bpaf::Parser;
 use brush_core::{ExecutionResult, builtins};
 use itertools::Itertools;
 use std::io::Write;
@@ -11,28 +10,52 @@ pub(crate) struct HelpCommand {
     topic_patterns: Vec<String>,
 }
 
-impl builtins::Command for HelpCommand {
+const ID_SHORT_DESCRIPTION: &str = "short_description";
+const ID_MAN_PAGE_STYLE: &str = "man_page_style";
+const ID_SHORT_USAGE: &str = "short_usage";
+const ID_TOPIC_PATTERNS: &str = "topic_patterns";
+
+impl builtins::SpecCommand for HelpCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let short_description = bpaf::short('d')
-            .help("Display a short description for the commands.")
-            .switch();
-        let man_page_style = bpaf::short('m')
-            .help("Display a man-style page of documentation for the commands.")
-            .switch();
-        let short_usage = bpaf::short('s')
-            .help("Display a short usage summary for the commands.")
-            .switch();
-        let topic_patterns = bpaf::positional::<String>("PATTERNS")
-            .help("Patterns of topics to display help for.")
-            .many();
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_SHORT_DESCRIPTION,
+            &['d'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Display a short description for the commands.",
+        )
+        .arg(
+            ID_MAN_PAGE_STYLE,
+            &['m'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Display a man-style page of documentation for the commands.",
+        )
+        .arg(
+            ID_SHORT_USAGE,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Display a short usage summary for the commands.",
+        )
+        .positional_many(ID_TOPIC_PATTERNS, "PATTERNS")
+    }
 
-        bpaf::construct!(HelpCommand {
-            short_description,
-            man_page_style,
-            short_usage,
-            topic_patterns,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            short_description: matches.flag(ID_SHORT_DESCRIPTION),
+            man_page_style: matches.flag(ID_MAN_PAGE_STYLE),
+            short_usage: matches.flag(ID_SHORT_USAGE),
+            topic_patterns: matches.values(ID_TOPIC_PATTERNS).to_vec(),
         })
     }
 

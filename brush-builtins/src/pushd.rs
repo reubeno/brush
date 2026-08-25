@@ -1,26 +1,46 @@
-use bpaf::Bpaf;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Push a path onto the current directory stack.
-#[derive(Bpaf)]
 pub(crate) struct PushdCommand {
-    /// Push the path without changing the current working directory.
-    #[bpaf(short('n'))]
     no_directory_change: bool,
-
-    /// Directory to push on the directory stack.
-    #[bpaf(positional("DIR"))]
     dir: String,
-    //
-    // TODO(pushd): implement +N and -N
 }
 
-impl builtins::Command for PushdCommand {
+const ID_NO_DIRECTORY_CHANGE: &str = "no_directory_change";
+const ID_DIR: &str = "dir";
+
+impl builtins::SpecCommand for PushdCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        pushd_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_NO_DIRECTORY_CHANGE,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Push the path without changing the current working directory.",
+        )
+        .positional(ID_DIR, "DIR")
+        // TODO(pushd): implement +N and -N
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let dir = matches
+            .value(ID_DIR)
+            .ok_or_else(|| builtins::BuiltinArgParseError {
+                message: "missing required argument: DIR".to_string(),
+                help_request: false,
+            })?;
+
+        Ok(Self {
+            no_directory_change: matches.flag(ID_NO_DIRECTORY_CHANGE),
+            dir: dir.to_owned(),
+        })
     }
 
     fn about() -> &'static str {

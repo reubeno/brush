@@ -744,6 +744,18 @@ pub trait SpecCommand: Sized {
         ""
     }
 
+    /// Whether operands (assignments and names) should be handed to the
+    /// command raw instead of being flattened into words. Declaration-style
+    /// builtins (`export`, `declare`, `builtin`) need the distinction between
+    /// [`CommandArg::Assignment`] and plain words.
+    fn uses_declarations() -> bool {
+        false
+    }
+
+    /// Receives the raw declaration operands when
+    /// [`SpecCommand::uses_declarations`] is set.
+    fn set_declarations(&mut self, _declarations: Vec<CommandArg>) {}
+
     /// Parses `args` into the command using the selected backend.
     fn new<I>(args: I) -> Result<Self, BuiltinArgParseError>
     where
@@ -811,7 +823,7 @@ pub fn spec_builtin<B: SpecCommand + Send + Sync, SE: extensions::ShellExtension
         content_func: get_spec_builtin_content::<B>,
         disabled: false,
         special_builtin: false,
-        declaration_builtin: false,
+        declaration_builtin: B::uses_declarations(),
     }
 }
 
@@ -832,6 +844,10 @@ where
     SE: extensions::ShellExtensions,
 {
     Box::pin(async move {
+        if B::uses_declarations() {
+            return exec_spec_builtin_declarations::<B, SE>(context, args).await;
+        }
+
         let plain_args: Vec<String> = args.into_iter().map(|a| a.to_string()).collect();
         let command = match B::new(plain_args) {
             Ok(c) => c,
@@ -843,6 +859,57 @@ where
             crate::error::Error::from(error::ErrorKind::BuiltinError(Box::new(e), builtin_name))
         })
     })
+}
+
+async fn exec_spec_builtin_declarations<B, SE>(
+    context: commands::ExecutionContext<'_, SE>,
+    args: Vec<CommandArg>,
+) -> Result<results::ExecutionResult, error::Error>
+where
+    B: SpecCommand + Send + Sync,
+    SE: extensions::ShellExtensions,
+{
+    // N.B. Commands that declare no option surface (e.g., `builtin`) receive
+    // their operands raw, mirroring the legacy raw-argument builtins.
+    let declares_options = !B::declare(crate::argmodel::CommandSpecBuilder::new())
+        .build()
+        .args
+        .is_empty();
+
+    let (options, declarations) = if declares_options {
+        let mut options: Vec<String> = vec![context.command_name.clone()];
+        let mut declarations: Vec<CommandArg> = Vec::new();
+
+        // N.B. argv[0] is dropped; option-looking words go to the parser, the
+        // rest stay raw for `set_declarations`.
+        for arg in args.into_iter().skip(1) {
+            match &arg {
+                CommandArg::String(s)
+                    if s.len() > 1 && (s.starts_with('-') || s.starts_with('+')) =>
+                {
+                    options.push(s.clone());
+                }
+                _ => declarations.push(arg),
+            }
+        }
+
+        (options, declarations)
+    } else {
+        (vec![context.command_name.clone()], args)
+    };
+
+    let mut command = match B::new(options) {
+        Ok(c) => c,
+        Err(e) => return Ok(report_spec_parse_error(&context, &e)),
+    };
+
+    command.set_declarations(declarations);
+
+    let builtin_name = context.command_name.clone();
+    match command.execute(context).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(error::ErrorKind::BuiltinError(Box::new(e), builtin_name).into()),
+    }
 }
 
 fn report_spec_parse_error(

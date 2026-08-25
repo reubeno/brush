@@ -123,33 +123,41 @@ mod unimp;
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
 
-/// Returns a parser for a shell built-in flag argument that can be enabled or
-/// disabled by specifying an option with a leading '-' or '+' character,
-/// respectively (e.g., `-x` and `+x`).
+/// Declares the enable/disable pair for a shell built-in flag argument that
+/// can be toggled with a leading '-' or '+' option (e.g., `-x` / `+x`).
 ///
-/// The parser produces `None` when neither form is provided, `Some(true)` when
-/// the `-x` form is provided, and `Some(false)` when the `+x` form is provided.
-///
-/// # Arguments
-///
-/// - `$flag_char` - The character to use as the flag.
-/// - `plus_form` - The literal plus-style form of the flag; e.g., `"+x"`.
-/// - `$desc` - The string description of the flag.
-pub(crate) fn minus_or_plus_flag(
+/// Pairs with [`read_plus_minus`], which yields `None` when neither form is
+/// present, `Some(true)` for `-x`, and `Some(false)` for `+x`.
+pub(crate) fn declare_plus_minus(
+    spec: brush_core::argmodel::CommandSpecBuilder,
     flag_char: char,
-    plus_form: &'static str,
+    base_id: &'static str,
     desc: &'static str,
-) -> impl bpaf::Parser<Option<bool>> {
-    use bpaf::Parser;
+) -> brush_core::argmodel::CommandSpecBuilder {
+    use brush_core::argmodel::{ArgKind, Matches};
 
-    let enable = bpaf::short(flag_char)
-        .help(desc)
-        .switch()
-        .map(|enabled| enabled.then_some(true));
-    let disable = bpaf::literal(plus_form)
-        .help("Disables the flag.")
-        .hide()
-        .map(|(): ()| Some(false));
+    let _ = Matches::new;
+    let enable_id: &'static str = Box::leak(format!("{base_id}_enable").into_boxed_str());
+    let disable_id: &'static str = Box::leak(format!("{base_id}_disable").into_boxed_str());
+    let shorts: &'static [char] = Box::leak(vec![flag_char].into_boxed_slice());
+    let plus_form: &'static str = Box::leak(format!("+{flag_char}").into_boxed_str());
+    let longs: &'static [&'static str] = Box::leak(vec![plus_form].into_boxed_slice());
 
-    bpaf::construct!([enable, disable]).fallback(None)
+    spec.arg(enable_id, shorts, &[], ArgKind::Flag, None, desc)
+        .hidden_arg(disable_id, &[], longs, ArgKind::Flag, None, "")
+}
+
+/// Reads back an optional enable/disable toggle declared by
+/// [`declare_plus_minus`].
+pub(crate) fn read_plus_minus(
+    matches: &brush_core::argmodel::Matches,
+    base_id: &str,
+) -> Option<bool> {
+    let enable = matches.flag(&format!("{base_id}_enable"));
+    let disable = matches.flag(&format!("{base_id}_disable"));
+    match (enable, disable) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
+    }
 }

@@ -1,4 +1,3 @@
-use bpaf::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
@@ -18,29 +17,50 @@ pub(crate) struct ExecCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for ExecCommand {
+const ID_NAME_FOR_ARGV0: &str = "name_for_argv0";
+const ID_EMPTY_ENVIRONMENT: &str = "empty_environment";
+const ID_EXEC_AS_LOGIN: &str = "exec_as_login";
+
+impl builtins::SpecCommand for ExecCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let name_for_argv0 = bpaf::short('a')
-            .help("Pass given name as zeroth argument to command.")
-            .argument::<String>("NAME")
-            .optional();
-        let empty_environment = bpaf::short('c')
-            .help("Exec command with an empty environment.")
-            .switch();
-        let exec_as_login = bpaf::short('l')
-            .help("Exec command as a login shell.")
-            .switch();
-        let args = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_NAME_FOR_ARGV0,
+            &['a'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("NAME"),
+            "Pass given name as zeroth argument to command.",
+        )
+        .arg(
+            ID_EMPTY_ENVIRONMENT,
+            &['c'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Exec command with an empty environment.",
+        )
+        .arg(
+            ID_EXEC_AS_LOGIN,
+            &['l'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Exec command as a login shell.",
+        )
+    }
 
-        bpaf::construct!(ExecCommand {
-            name_for_argv0,
-            empty_environment,
-            exec_as_login,
-            args,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            name_for_argv0: matches.value(ID_NAME_FOR_ARGV0).map(str::to_string),
+            empty_environment: matches.flag(ID_EMPTY_ENVIRONMENT),
+            exec_as_login: matches.flag(ID_EXEC_AS_LOGIN),
+            args: matches.trailing().to_vec(),
         })
     }
 
@@ -58,10 +78,6 @@ impl builtins::Command for ExecCommand {
 
     fn value_taking_short_options() -> &'static str {
         "a"
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.args = args;
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

@@ -1,22 +1,28 @@
-use std::io::Write;
-
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
+use std::io::Write;
 
 /// Exit the shell.
 pub(crate) struct ExitCommand {
-    /// The exit code to return.
     code: Option<String>,
 }
 
-impl builtins::Command for ExitCommand {
+impl builtins::SpecCommand for ExitCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let code = bpaf::pure(None);
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
+    }
 
-        bpaf::construct!(ExitCommand { code })
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        // N.B. Only the leading options are parsed; the remaining tokens are
+        // captured verbatim via `takes_trailing_args`.
+        let code = matches.trailing().first().cloned();
+
+        Ok(Self { code })
     }
 
     fn about() -> &'static str {
@@ -29,14 +35,6 @@ impl builtins::Command for ExitCommand {
 
     fn takes_trailing_args() -> bool {
         true
-    }
-
-    fn set_trailing_args(&mut self, mut args: Vec<String>) {
-        self.code = if args.is_empty() {
-            None
-        } else {
-            Some(args.remove(0))
-        };
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

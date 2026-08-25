@@ -1,5 +1,3 @@
-use bpaf::Parser;
-use std::ffi::OsStr;
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -45,58 +43,128 @@ struct HistoryConfig {
     time_format: Option<String>,
 }
 
-impl builtins::Command for HistoryCommand {
+const ID_CLEAR_HISTORY: &str = "clear_history";
+const ID_DELETE_OFFSET: &str = "delete_offset";
+const ID_APPEND_SESSION_TO_FILE: &str = "append_session_to_file";
+const ID_APPEND_REST_OF_FILE_TO_SESSION: &str = "append_rest_of_file_to_session";
+const ID_APPEND_FILE_TO_SESSION: &str = "append_file_to_session";
+const ID_WRITE_SESSION_TO_FILE: &str = "write_session_to_file";
+const ID_EXPAND_ARGS: &str = "expand_args";
+const ID_APPEND_ARGS_TO_SESSION: &str = "append_args_to_session";
+
+impl builtins::SpecCommand for HistoryCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let clear_history = bpaf::short('c').help("Clears all history.").switch();
-        let delete_offset = bpaf::short('d')
-            .help(
-                "Deletes the history entry at the given offset. Positive offsets are \
-                 relative to the beginning of the history, while negative offsets are \
-                 relative to the end of the history.",
-            )
-            .argument::<i64>("OFFSET")
-            .optional();
-
-        let append_session_to_file = hist_file_option(
-            'a',
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_CLEAR_HISTORY,
+            &['c'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Clears all history.",
+        )
+        .arg(
+            ID_DELETE_OFFSET,
+            &['d'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("OFFSET"),
+            "Deletes the history entry at the given offset. Positive offsets are \
+             relative to the beginning of the history, while negative offsets are \
+             relative to the end of the history.",
+        )
+        .arg(
+            ID_APPEND_SESSION_TO_FILE,
+            &['a'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("HIST_FILE"),
             "Appends the history from the current session to the history file.",
-        );
-        let append_rest_of_file_to_session = hist_file_option(
-            'n',
+        )
+        .arg(
+            ID_APPEND_REST_OF_FILE_TO_SESSION,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("HIST_FILE"),
             "Appends any remaining history from the history file to the current session.",
-        );
-        let append_file_to_session = hist_file_option(
-            'r',
+        )
+        .arg(
+            ID_APPEND_FILE_TO_SESSION,
+            &['r'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("HIST_FILE"),
             "Appends the history from the history file to the current session.",
-        );
-        let write_session_to_file = hist_file_option(
-            'w',
+        )
+        .arg(
+            ID_WRITE_SESSION_TO_FILE,
+            &['w'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("HIST_FILE"),
             "Replaces the history file with the current session history.",
-        );
-        let expand_args = bpaf::short('p')
-            .help("History-expands positional arguments and displays them.")
-            .switch()
-            .map(|present| present.then(Vec::new));
-        let append_args_to_session = bpaf::short('s')
-            .help("Appends positional arguments as an entry in the current session.")
-            .switch()
-            .map(|present| present.then(Vec::new));
-        let args = bpaf::pure(Vec::new());
+        )
+        .arg(
+            ID_EXPAND_ARGS,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "History-expands positional arguments and displays them.",
+        )
+        .arg(
+            ID_APPEND_ARGS_TO_SESSION,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Appends positional arguments as an entry in the current session.",
+        )
+    }
 
-        bpaf::construct!(HistoryCommand {
-            clear_history,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let delete_offset = match matches.value(ID_DELETE_OFFSET) {
+            Some(v) => Some(
+                v.parse::<i64>()
+                    .map_err(|_| builtins::BuiltinArgParseError {
+                        message: format!("invalid offset: {v}"),
+                        help_request: false,
+                    })?,
+            ),
+            None => None,
+        };
+
+        let append_args_to_session: Option<Vec<String>> =
+            matches.flag(ID_APPEND_ARGS_TO_SESSION).then(Vec::new);
+        let trailing = matches.trailing().to_vec();
+
+        Ok(Self {
+            clear_history: matches.flag(ID_CLEAR_HISTORY),
             delete_offset,
-            append_session_to_file,
-            append_rest_of_file_to_session,
-            append_file_to_session,
-            write_session_to_file,
-            expand_args,
-            append_args_to_session,
-            args,
+            append_session_to_file: hist_file_state(matches, ID_APPEND_SESSION_TO_FILE),
+            append_rest_of_file_to_session: hist_file_state(
+                matches,
+                ID_APPEND_REST_OF_FILE_TO_SESSION,
+            ),
+            append_file_to_session: hist_file_state(matches, ID_APPEND_FILE_TO_SESSION),
+            write_session_to_file: hist_file_state(matches, ID_WRITE_SESSION_TO_FILE),
+            expand_args: matches.flag(ID_EXPAND_ARGS).then(Vec::new),
+            append_args_to_session: if append_args_to_session.is_some() {
+                Some(trailing.clone())
+            } else {
+                None
+            },
+            args: if append_args_to_session.is_some() {
+                Vec::new()
+            } else {
+                trailing
+            },
         })
     }
 
@@ -116,9 +184,11 @@ impl builtins::Command for HistoryCommand {
         "danrw"
     }
 
-    // N.B. Overrides the default [`builtins::Command::new`] so that flag-looking
+    // N.B. Overrides the default [`builtins::SpecCommand::new`] so that flag-looking
     // values for `-d` and `-anrw` (e.g., `history -d -3`, a negative offset) get
-    // joined into `-d=-3`; bpaf otherwise rejects separate flag-shaped values.
+    // joined into `-d=-3`, and so that the bare forms of `-a`/`-n`/`-r`/`-w`
+    // (whose HIST_FILE values are optional) are accepted alongside their
+    // value-taking forms.
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
     where
         I: IntoIterator<Item = String>,
@@ -131,21 +201,58 @@ impl builtins::Command for HistoryCommand {
         }
         join_tokens_taking_values(&mut args, Self::value_taking_short_options());
 
-        let (options, trailing) =
+        let (mut options, trailing) =
             builtins::split_option_section(&args, Self::value_taking_short_options(), &[]);
 
-        let mut command = run_bpaf_parser::<Self>(&options)?;
-        command.set_trailing_args(trailing);
+        // N.B. `-a`/`-n`/`-r`/`-w` take an *optional* HIST_FILE value. Lift the
+        // bare form (and any separately supplied value) out of the option section
+        // before parsing, since declared value-taking options require a value.
+        let mut lifted_file_options: Vec<(&'static str, Option<String>)> = Vec::new();
+        let mut i = 0;
+        while i < options.len() {
+            let tok = &options[i];
+            if tok.len() != 2 || !tok.starts_with('-') {
+                i += 1;
+                continue;
+            }
 
-        Ok(command)
-    }
+            // N.B. Only single-letter bare tokens are lifted here; grouped
+            // forms (e.g., `-an`) keep their attached-value semantics.
+            let Some(short_char) = tok.chars().nth(1) else {
+                i += 1;
+                continue;
+            };
 
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        if self.append_args_to_session.is_some() {
-            self.append_args_to_session = Some(args);
-        } else {
-            self.args = args;
+            let Some(id) = hist_file_option_id(short_char) else {
+                i += 1;
+                continue;
+            };
+
+            let takes_separate_value = options
+                .get(i + 1)
+                .is_some_and(|next| !next.starts_with('-') || next == "-");
+
+            if takes_separate_value {
+                let value = options.remove(i + 1);
+                lifted_file_options.push((id, Some(value)));
+            } else {
+                lifted_file_options.push((id, None));
+            }
+            options.remove(i);
         }
+
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = builtins::argmodel::backend().parse(&spec, "", &options)?;
+
+        for (id, value) in lifted_file_options {
+            match value {
+                Some(v) => matches.push_value(id, v),
+                None => matches.set_flag(id),
+            }
+        }
+        matches.set_trailing(trailing);
+
+        Self::from_matches(&mut matches)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -314,7 +421,8 @@ fn get_effective_history_file_path<'a>(
 }
 
 /// Merges `-X` tokens followed by a flag-looking value token into `-X=<value>`
-/// so that bpaf accepts values that would otherwise be rejected as flags;
+/// so that the argument backend accepts values that would otherwise be
+/// rejected as flags;
 /// e.g., negative offsets.
 fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     let mut i = 0;
@@ -342,57 +450,34 @@ fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     }
 }
 
-/// Builds a parser for one of the `-a`/`-n`/`-r`/`-w` options, each of which
-/// takes an optional `HIST_FILE` value.
-///
-// N.B. Alternation of "with value" and "bare" forms wrapped in a final
-// `optional` distinguishes between the option being absent and
-// present-without-a-value.
-fn hist_file_option(
-    short_char: char,
-    help: &'static str,
-) -> impl bpaf::Parser<Option<Option<String>>> {
-    let with_value = bpaf::short(short_char)
-        .help(help)
-        .argument::<String>("HIST_FILE")
-        .map(Some);
-    let bare = bpaf::short(short_char).req_flag(()).map(|()| None);
-
-    bpaf::construct!([with_value, bare]).optional()
-}
-
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, builtins::BuiltinArgParseError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
-}
-
-fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
-    match failure {
-        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(full),
-            help_request: true,
-        },
-        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
-            message: s,
-            help_request: true,
-        },
-        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(true),
-            help_request: false,
-        },
+/// Returns the declaration id for one of the optional-value `-a`/`-n`/`-r`/`-w`
+/// history-file options.
+const fn hist_file_option_id(short_char: char) -> Option<&'static str> {
+    match short_char {
+        'a' => Some(ID_APPEND_SESSION_TO_FILE),
+        'n' => Some(ID_APPEND_REST_OF_FILE_TO_SESSION),
+        'r' => Some(ID_APPEND_FILE_TO_SESSION),
+        'w' => Some(ID_WRITE_SESSION_TO_FILE),
+        _ => None,
     }
+}
+
+/// Reads back the tri-state state of one of the `-a`/`-n`/`-r`/`-w` options:
+/// absent, present-without-a-value, or present-with-a-value.
+#[expect(clippy::option_option)]
+fn hist_file_state(matches: &builtins::argmodel::Matches, id: &str) -> Option<Option<String>> {
+    if let Some(value) = matches.value(id) {
+        return Some(Some(value.to_string()));
+    }
+
+    matches.flag(id).then_some(None)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::Result;
-    use brush_core::builtins::Command as _;
+    use brush_core::builtins::SpecCommand as _;
     use pretty_assertions::{assert_eq, assert_matches};
 
     fn new_from(args: &[&str]) -> Result<HistoryCommand, builtins::BuiltinArgParseError> {

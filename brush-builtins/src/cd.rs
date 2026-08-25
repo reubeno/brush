@@ -1,8 +1,6 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use bpaf::Parser;
-
 use brush_core::{ExecutionResult, builtins, error};
 
 /// Change the current shell working directory.
@@ -22,38 +20,71 @@ pub(crate) struct CdCommand {
     target_dir: Option<PathBuf>,
 }
 
-impl builtins::Command for CdCommand {
+const ID_EXIT_ON_FAILED_CWD_RESOLUTION: &str = "exit_on_failed_cwd_resolution";
+const ID_FILE_WITH_XATTR_AS_DIR: &str = "file_with_xattr_as_dir";
+const ID_PHYSICAL: &str = "physical";
+const ID_LOGICAL: &str = "logical";
+const ID_TARGET_DIR: &str = "target_dir";
+
+impl builtins::SpecCommand for CdCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let exit_on_failed_cwd_resolution = bpaf::short('e')
-            .help("Exit with non zero exit status if current working directory resolution fails.")
-            .switch();
-        let file_with_xattr_as_dir = bpaf::short('@')
-            .help("Show file with extended attributes as a dir with extended attributes.")
-            .switch();
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_EXIT_ON_FAILED_CWD_RESOLUTION,
+            &['e'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Exit with non zero exit status if current working directory resolution fails.",
+        )
+        .arg(
+            ID_FILE_WITH_XATTR_AS_DIR,
+            &['@'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Show file with extended attributes as a dir with extended attributes.",
+        )
+        .arg(
+            ID_PHYSICAL,
+            &['P'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Use physical dir structure without following symlinks.",
+        )
+        .arg(
+            ID_LOGICAL,
+            &['L'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Force following symlinks.",
+        )
+        .positional(ID_TARGET_DIR, "TARGET_DIR")
+    }
 
-        let physical = bpaf::short('P')
-            .help("Use physical dir structure without following symlinks.")
-            .req_flag(Some(true));
-        let logical = bpaf::short('L')
-            .help("Force following symlinks.")
-            .req_flag(Some(false));
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        // N.B. When both are supplied, physical wins; this preserves the old
+        // parser's alternation order (`-P` listed before `-L`).
+        let mode = if matches.flag(ID_PHYSICAL) {
+            Some(true)
+        } else if matches.flag(ID_LOGICAL) {
+            Some(false)
+        } else {
+            None
+        };
 
-        let mode = bpaf::construct!([physical, logical]).fallback(None);
-
-        let target_dir = bpaf::positional::<PathBuf>("TARGET_DIR")
-            .help(
-                "By default it is the value of the HOME shell variable. If `TARGET_DIR` is \"-\", \
-                it is converted to $OLDPWD.",
-            )
-            .optional();
-
-        bpaf::construct!(CdCommand {
-            exit_on_failed_cwd_resolution,
-            file_with_xattr_as_dir,
+        Ok(Self {
+            exit_on_failed_cwd_resolution: matches.flag(ID_EXIT_ON_FAILED_CWD_RESOLUTION),
+            file_with_xattr_as_dir: matches.flag(ID_FILE_WITH_XATTR_AS_DIR),
             mode,
-            target_dir,
+            target_dir: matches.value(ID_TARGET_DIR).map(PathBuf::from),
         })
     }
 

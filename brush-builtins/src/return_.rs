@@ -1,21 +1,35 @@
-use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Return from the current function.
-#[derive(Bpaf)]
 pub(crate) struct ReturnCommand {
-    /// The exit code to return.
-    #[bpaf(positional("CODE"))]
     code: Option<i32>,
 }
 
-impl builtins::Command for ReturnCommand {
+const ID_CODE: &str = "code";
+
+impl builtins::SpecCommand for ReturnCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        return_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.positional(ID_CODE, "CODE")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let code = match matches.value(ID_CODE) {
+            Some(value) => Some(value.parse().map_err(|_| builtins::BuiltinArgParseError {
+                message: format!("invalid numeric value: {value}"),
+                help_request: false,
+            })?),
+            None => None,
+        };
+
+        Ok(Self { code })
     }
 
     fn about() -> &'static str {

@@ -12,18 +12,24 @@ pub(crate) struct DotCommand {
     script_args: Vec<String>,
 }
 
-impl builtins::Command for DotCommand {
+impl builtins::SpecCommand for DotCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let script_path = bpaf::pure(String::new());
-        let script_args = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
+    }
 
-        bpaf::construct!(DotCommand {
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let mut trailing = matches.trailing().iter();
+        let script_path = trailing.next().cloned().unwrap_or_default();
+
+        Ok(Self {
             script_path,
-            script_args,
+            script_args: trailing.cloned().collect(),
         })
     }
 
@@ -37,14 +43,6 @@ impl builtins::Command for DotCommand {
 
     fn takes_trailing_args() -> bool {
         true
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        let mut iter = args.into_iter();
-        if let Some(script_path) = iter.next() {
-            self.script_path = script_path;
-        }
-        self.script_args = iter.collect();
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

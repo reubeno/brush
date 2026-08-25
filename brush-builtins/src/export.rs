@@ -8,6 +8,10 @@ use brush_core::{
     variables,
 };
 
+const ID_NAMES_ARE_FUNCTIONS: &str = "names_are_functions";
+const ID_UNEXPORT: &str = "unexport";
+const ID_DISPLAY_EXPORTED_NAMES: &str = "display_exported_names";
+
 /// Add or update exported shell variables.
 pub(crate) struct ExportCommand {
     /// Names are treated as function names.
@@ -24,37 +28,61 @@ pub(crate) struct ExportCommand {
     // Declarations
     //
     // N.B. These are skipped by the parser, but filled in by the
-    // BuiltinDeclarationCommand trait.
+    // SpecCommand trait.
     declarations: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for ExportCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
-}
-
-impl builtins::Command for ExportCommand {
+impl builtins::SpecCommand for ExportCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let names_are_functions = bpaf::short('f')
-            .help("Names are treated as function names.")
-            .switch();
-        let unexport = bpaf::short('n').help("Un-export the names.").switch();
-        let display_exported_names = bpaf::short('p')
-            .help("Display all exported names.")
-            .switch();
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_NAMES_ARE_FUNCTIONS,
+            &['f'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Names are treated as function names.",
+        )
+        .arg(
+            ID_UNEXPORT,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Un-export the names.",
+        )
+        .arg(
+            ID_DISPLAY_EXPORTED_NAMES,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Display all exported names.",
+        )
+    }
 
-        // N.B. Declarations are captured separately from options.
-        let declarations = bpaf::pure(Vec::new());
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            names_are_functions: matches.flag(ID_NAMES_ARE_FUNCTIONS),
+            unexport: matches.flag(ID_UNEXPORT),
+            display_exported_names: matches.flag(ID_DISPLAY_EXPORTED_NAMES),
 
-        bpaf::construct!(ExportCommand {
-            names_are_functions,
-            unexport,
-            display_exported_names,
-            declarations,
+            // N.B. Declarations are captured separately from options.
+            declarations: Vec::new(),
         })
+    }
+
+    fn uses_declarations() -> bool {
+        true
+    }
+
+    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
+        self.declarations = declarations;
     }
 
     fn about() -> &'static str {

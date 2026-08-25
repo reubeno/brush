@@ -1,4 +1,3 @@
-use bpaf::Bpaf;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -6,33 +5,21 @@ use brush_core::sys::{self, fs::PathExt};
 use brush_core::{ExecutionResult, Shell, builtins, parser::ast};
 
 /// Inspect the type of a named shell item.
-#[derive(Bpaf)]
 pub(crate) struct TypeCommand {
-    /// Display all locations of the specified name, not just the first.
-    #[bpaf(short('a'))]
     all_locations: bool,
-
-    /// Don't consider functions when resolving the name.
-    #[bpaf(short('f'))]
     suppress_func_lookup: bool,
-
-    /// Force searching by file path, even if the name is an alias, built-in
-    /// command, or shell function.
-    #[bpaf(short('P'))]
     force_path_search: bool,
-
-    /// Show file path only.
-    #[bpaf(short('p'))]
     show_path_only: bool,
-
-    /// Only display the type of the specified name.
-    #[bpaf(short('t'))]
     type_only: bool,
-
-    /// Names to search for.
-    #[bpaf(positional("NAMES"))]
     names: Vec<String>,
 }
+
+const ID_ALL_LOCATIONS: &str = "all_locations";
+const ID_SUPPRESS_FUNC_LOOKUP: &str = "suppress_func_lookup";
+const ID_FORCE_PATH_SEARCH: &str = "force_path_search";
+const ID_SHOW_PATH_ONLY: &str = "show_path_only";
+const ID_TYPE_ONLY: &str = "type_only";
+const ID_NAMES: &str = "names";
 
 enum ResolvedType<'a> {
     Alias(String),
@@ -42,11 +29,66 @@ enum ResolvedType<'a> {
     File { path: PathBuf, hashed: bool },
 }
 
-impl builtins::Command for TypeCommand {
+impl builtins::SpecCommand for TypeCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        type_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_ALL_LOCATIONS,
+            &['a'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Display all locations of the specified name, not just the first.",
+        )
+        .arg(
+            ID_SUPPRESS_FUNC_LOOKUP,
+            &['f'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Don't consider functions when resolving the name.",
+        )
+        .arg(
+            ID_FORCE_PATH_SEARCH,
+            &['P'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Force searching by file path, even if the name is an alias, built-in command, or shell function.",
+        )
+        .arg(
+            ID_SHOW_PATH_ONLY,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Show file path only.",
+        )
+        .arg(
+            ID_TYPE_ONLY,
+            &['t'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Only display the type of the specified name.",
+        )
+        .positional_many(ID_NAMES, "NAMES")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            all_locations: matches.flag(ID_ALL_LOCATIONS),
+            suppress_func_lookup: matches.flag(ID_SUPPRESS_FUNC_LOOKUP),
+            force_path_search: matches.flag(ID_FORCE_PATH_SEARCH),
+            show_path_only: matches.flag(ID_SHOW_PATH_ONLY),
+            type_only: matches.flag(ID_TYPE_ONLY),
+            names: matches.values(ID_NAMES).to_vec(),
+        })
     }
 
     fn about() -> &'static str {

@@ -1,30 +1,52 @@
-use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionResult, builtins};
 
 /// Manage signal traps.
-#[derive(Bpaf)]
 pub(crate) struct TrapCommand {
-    /// List all signal names.
-    #[bpaf(short('l'))]
     list_signals: bool,
-
-    /// Print registered trap commands.
-    #[bpaf(short('p'))]
     print_trap_commands: bool,
-
-    /// Handler command and signals to operate on.
-    #[bpaf(positional("ARGS"))]
     args: Vec<String>,
 }
 
-impl builtins::Command for TrapCommand {
+const ID_LIST_SIGNALS: &str = "list_signals";
+const ID_PRINT_TRAP_COMMANDS: &str = "print_trap_commands";
+const ID_ARGS: &str = "args";
+
+impl builtins::SpecCommand for TrapCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        trap_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_LIST_SIGNALS,
+            &['l'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List all signal names.",
+        )
+        .arg(
+            ID_PRINT_TRAP_COMMANDS,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Print registered trap commands.",
+        )
+        .positional_many(ID_ARGS, "ARGS")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            list_signals: matches.flag(ID_LIST_SIGNALS),
+            print_trap_commands: matches.flag(ID_PRINT_TRAP_COMMANDS),
+            args: matches.values(ID_ARGS).to_vec(),
+        })
     }
 
     fn about() -> &'static str {

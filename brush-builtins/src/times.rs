@@ -6,11 +6,19 @@ use brush_core::{ExecutionResult, builtins, timing};
 #[derive(Clone)]
 pub(crate) struct TimesCommand {}
 
-impl builtins::Command for TimesCommand {
+impl builtins::SpecCommand for TimesCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        bpaf::construct!(TimesCommand {})
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
+    }
+
+    fn from_matches(
+        _matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {})
     }
 
     fn about() -> &'static str {

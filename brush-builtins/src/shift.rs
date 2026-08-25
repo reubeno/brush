@@ -1,5 +1,3 @@
-use bpaf::Parser;
-
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Shift positional arguments.
@@ -7,14 +5,29 @@ pub(crate) struct ShiftCommand {
     n: Option<i32>,
 }
 
-impl builtins::Command for ShiftCommand {
+const ID_N: &str = "n";
+
+impl builtins::SpecCommand for ShiftCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let n = bpaf::positional::<i32>("N")
-            .help("Number of positions to shift the arguments by (defaults to 1).")
-            .optional();
-        bpaf::construct!(ShiftCommand { n })
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.positional(ID_N, "N")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let n = match matches.value(ID_N) {
+            Some(value) => Some(value.parse().map_err(|_| builtins::BuiltinArgParseError {
+                message: format!("invalid numeric value: {value}"),
+                help_request: false,
+            })?),
+            None => None,
+        };
+
+        Ok(Self { n })
     }
 
     fn about() -> &'static str {

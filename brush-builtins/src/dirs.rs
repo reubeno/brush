@@ -1,4 +1,3 @@
-use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -26,32 +25,69 @@ impl From<&DirError> for brush_core::ExecutionExitCode {
 impl brush_core::BuiltinError for DirError {}
 
 /// Manage the current directory stack.
-#[derive(Default, Bpaf)]
+#[derive(Default)]
 pub(crate) struct DirsCommand {
-    /// Clear the directory stack.
-    #[bpaf(short('c'))]
     clear: bool,
-
-    /// Don't tilde-shorten paths.
-    #[bpaf(short('l'))]
     tilde_long: bool,
-
-    /// Print one directory per line instead of all on one line.
-    #[bpaf(short('p'))]
     print_one_per_line: bool,
-
-    /// Print one directory per line with its index.
-    #[bpaf(short('v'))]
     print_one_per_line_with_index: bool,
-    //
-    // TODO(dirs): implement +N and -N
 }
 
-impl builtins::Command for DirsCommand {
+const ID_CLEAR: &str = "clear";
+const ID_TILDE_LONG: &str = "tilde_long";
+const ID_PRINT_ONE_PER_LINE: &str = "print_one_per_line";
+const ID_PRINT_ONE_PER_LINE_WITH_INDEX: &str = "print_one_per_line_with_index";
+
+impl builtins::SpecCommand for DirsCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        dirs_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_CLEAR,
+            &['c'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Clear the directory stack.",
+        )
+        .arg(
+            ID_TILDE_LONG,
+            &['l'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Don't tilde-shorten paths.",
+        )
+        .arg(
+            ID_PRINT_ONE_PER_LINE,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Print one directory per line instead of all on one line.",
+        )
+        .arg(
+            ID_PRINT_ONE_PER_LINE_WITH_INDEX,
+            &['v'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Print one directory per line with its index.",
+        )
+        // TODO(dirs): implement +N and -N
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            clear: matches.flag(ID_CLEAR),
+            tilde_long: matches.flag(ID_TILDE_LONG),
+            print_one_per_line: matches.flag(ID_PRINT_ONE_PER_LINE),
+            print_one_per_line_with_index: matches.flag(ID_PRINT_ONE_PER_LINE_WITH_INDEX),
+        })
     }
 
     fn about() -> &'static str {

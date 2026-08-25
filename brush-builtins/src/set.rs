@@ -1,6 +1,4 @@
-use bpaf::Parser;
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::io::Write;
 
 use itertools::Itertools;
@@ -9,37 +7,35 @@ use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 
 /// Tri-state capture of a `set -o`/`+o` style option: absent, present with no
 /// value (list all), or present with a value.
+#[derive(Default)]
 pub(crate) struct SetOption {
     enable: Option<Vec<String>>,
     disable: Option<Vec<String>>,
 }
 
-/// Returns a parser capturing repeated occurrences of a named-option flag
-/// (e.g., `-o OPT`) into the same tri-state shape used by [`SetOption`].
-fn named_option_section<P>(flag: P) -> impl bpaf::Parser<Option<Vec<String>>>
-where
-    P: bpaf::Parser<()> + 'static,
-{
-    let value = bpaf::any("OPT", |s: String| {
-        if s.starts_with('-') || s.starts_with('+') {
-            None
-        } else {
-            Some(s)
-        }
-    })
-    .optional();
-
-    let occurrences = bpaf::construct!(flag, value).adjacent().many();
-
-    occurrences.map(|occurrences: Vec<((), Option<String>)>| {
-        (!occurrences.is_empty()).then(|| {
-            occurrences
-                .into_iter()
-                .filter_map(|((), opt)| opt)
-                .collect::<Vec<_>>()
-        })
-    })
-}
+const ID_EXPORT_VARIABLES_ON_MODIFICATION: &str = "export_variables_on_modification";
+const ID_NOTIFY_JOB_TERMINATION_IMMEDIATELY: &str = "notify_job_termination_immediately";
+const ID_EXIT_ON_NONZERO_COMMAND_EXIT: &str = "exit_on_nonzero_command_exit";
+const ID_DISABLE_FILENAME_GLOBBING: &str = "disable_filename_globbing";
+const ID_REMEMBER_COMMAND_LOCATIONS: &str = "remember_command_locations";
+const ID_PLACE_ALL_ASSIGNMENT_ARGS_IN_COMMAND_ENV: &str =
+    "place_all_assignment_args_in_command_env";
+const ID_ENABLE_JOB_CONTROL: &str = "enable_job_control";
+const ID_DO_NOT_EXECUTE_COMMANDS: &str = "do_not_execute_commands";
+const ID_REAL_EFFECTIVE_UID_MISMATCH: &str = "real_effective_uid_mismatch";
+const ID_EXIT_AFTER_ONE_COMMAND: &str = "exit_after_one_command";
+const ID_TREAT_UNSET_VARIABLES_AS_ERROR: &str = "treat_unset_variables_as_error";
+const ID_PRINT_SHELL_INPUT_LINES: &str = "print_shell_input_lines";
+const ID_PRINT_COMMANDS_AND_ARGUMENTS: &str = "print_commands_and_arguments";
+const ID_PERFORM_BRACE_EXPANSION: &str = "perform_brace_expansion";
+const ID_DISALLOW_OVERWRITING_REGULAR_FILES_VIA_OUTPUT_REDIRECTION: &str =
+    "disallow_overwriting_regular_files_via_output_redirection";
+const ID_SHELL_FUNCTIONS_INHERIT_ERR_TRAP: &str = "shell_functions_inherit_err_trap";
+const ID_ENABLE_BANG_STYLE_HISTORY_SUBSTITUTION: &str = "enable_bang_style_history_substitution";
+const ID_DO_NOT_RESOLVE_SYMLINKS_WHEN_CHANGING_DIR: &str =
+    "do_not_resolve_symlinks_when_changing_dir";
+const ID_SHELL_FUNCTIONS_INHERIT_DEBUG_AND_RETURN_TRAPS: &str =
+    "shell_functions_inherit_debug_and_return_traps";
 
 /// Manage set-based shell options.
 pub(crate) struct SetCommand {
@@ -68,91 +64,214 @@ pub(crate) struct SetCommand {
     double_dash_seen: bool,
 }
 
-impl builtins::Command for SetCommand {
+impl builtins::SpecCommand for SetCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let export_variables_on_modification =
-            crate::minus_or_plus_flag('a', "+a", "Export variables on modification");
-        let notify_job_termination_immediately =
-            crate::minus_or_plus_flag('b', "+b", "Notify job termination immediately");
-        let exit_on_nonzero_command_exit =
-            crate::minus_or_plus_flag('e', "+e", "Exit on nonzero command exit");
-        let disable_filename_globbing =
-            crate::minus_or_plus_flag('f', "+f", "Disable filename globbing");
-        let remember_command_locations =
-            crate::minus_or_plus_flag('h', "+h", "Remember command locations");
-        let place_all_assignment_args_in_command_env = crate::minus_or_plus_flag(
+    #[expect(clippy::too_many_lines)]
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        let spec = crate::declare_plus_minus(
+            spec,
+            'a',
+            ID_EXPORT_VARIABLES_ON_MODIFICATION,
+            "Export variables on modification",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'b',
+            ID_NOTIFY_JOB_TERMINATION_IMMEDIATELY,
+            "Notify job termination immediately",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'e',
+            ID_EXIT_ON_NONZERO_COMMAND_EXIT,
+            "Exit on nonzero command exit",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'f',
+            ID_DISABLE_FILENAME_GLOBBING,
+            "Disable filename globbing",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'h',
+            ID_REMEMBER_COMMAND_LOCATIONS,
+            "Remember command locations",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
             'k',
-            "+k",
+            ID_PLACE_ALL_ASSIGNMENT_ARGS_IN_COMMAND_ENV,
             "Place all assignment args in command environment",
         );
-        let enable_job_control = crate::minus_or_plus_flag('m', "+m", "Enable job control");
-        let do_not_execute_commands =
-            crate::minus_or_plus_flag('n', "+n", "Do not execute commands");
-        let real_effective_uid_mismatch =
-            crate::minus_or_plus_flag('p', "+p", "Real effective UID mismatch");
-        let exit_after_one_command = crate::minus_or_plus_flag('t', "+t", "Exit after one command");
-        let treat_unset_variables_as_error =
-            crate::minus_or_plus_flag('u', "+u", "Treat unset variables as error");
-        let print_shell_input_lines =
-            crate::minus_or_plus_flag('v', "+v", "Print shell input lines");
-        let print_commands_and_arguments =
-            crate::minus_or_plus_flag('x', "+x", "Print commands and arguments");
-        let perform_brace_expansion =
-            crate::minus_or_plus_flag('B', "+B", "Perform brace expansion");
-        let disallow_overwriting_regular_files_via_output_redirection = crate::minus_or_plus_flag(
+        let spec =
+            crate::declare_plus_minus(spec, 'm', ID_ENABLE_JOB_CONTROL, "Enable job control");
+        let spec = crate::declare_plus_minus(
+            spec,
+            'n',
+            ID_DO_NOT_EXECUTE_COMMANDS,
+            "Do not execute commands",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'p',
+            ID_REAL_EFFECTIVE_UID_MISMATCH,
+            "Real effective UID mismatch",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            't',
+            ID_EXIT_AFTER_ONE_COMMAND,
+            "Exit after one command",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'u',
+            ID_TREAT_UNSET_VARIABLES_AS_ERROR,
+            "Treat unset variables as error",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'v',
+            ID_PRINT_SHELL_INPUT_LINES,
+            "Print shell input lines",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'x',
+            ID_PRINT_COMMANDS_AND_ARGUMENTS,
+            "Print commands and arguments",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'B',
+            ID_PERFORM_BRACE_EXPANSION,
+            "Perform brace expansion",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
             'C',
-            "+C",
+            ID_DISALLOW_OVERWRITING_REGULAR_FILES_VIA_OUTPUT_REDIRECTION,
             "Disallow overwriting regular files via output redirection",
         );
-        let shell_functions_inherit_err_trap =
-            crate::minus_or_plus_flag('E', "+E", "Shell functions inherit ERR trap");
-        let enable_bang_style_history_substitution =
-            crate::minus_or_plus_flag('H', "+H", "Enable bang style history substitution");
-        let do_not_resolve_symlinks_when_changing_dir =
-            crate::minus_or_plus_flag('P', "+P", "Do not resolve symlinks when changing dir");
-        let shell_functions_inherit_debug_and_return_traps =
-            crate::minus_or_plus_flag('T', "+T", "Shell functions inherit DEBUG and RETURN traps");
+        let spec = crate::declare_plus_minus(
+            spec,
+            'E',
+            ID_SHELL_FUNCTIONS_INHERIT_ERR_TRAP,
+            "Shell functions inherit ERR trap",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'H',
+            ID_ENABLE_BANG_STYLE_HISTORY_SUBSTITUTION,
+            "Enable bang style history substitution",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'P',
+            ID_DO_NOT_RESOLVE_SYMLINKS_WHEN_CHANGING_DIR,
+            "Do not resolve symlinks when changing dir",
+        );
+        let spec = crate::declare_plus_minus(
+            spec,
+            'T',
+            ID_SHELL_FUNCTIONS_INHERIT_DEBUG_AND_RETURN_TRAPS,
+            "Shell functions inherit DEBUG and RETURN traps",
+        );
 
-        let set_option = {
-            let enable = named_option_section(
-                bpaf::short('o')
-                    .help("Specify a named option; without OPT, lists all named options.")
-                    .req_flag(()),
-            );
-            let disable = named_option_section(bpaf::literal("+o"));
+        // N.B. Declared for help rendering; `-o`/`+o` occurrences are
+        // extracted from the token stream before the backend parses (see
+        // `extract_named_options`).
+        spec.hidden_arg(
+            "setopt_enable",
+            &['o'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("OPT"),
+            "Specify a named option; without OPT, lists all named options.",
+        )
+        .hidden_arg(
+            "setopt_disable",
+            &[],
+            &["+o"],
+            builtins::argmodel::ArgKind::Value,
+            Some("OPT"),
+            "",
+        )
+    }
 
-            bpaf::construct!(SetOption { enable, disable })
-        };
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            export_variables_on_modification: crate::read_plus_minus(
+                matches,
+                ID_EXPORT_VARIABLES_ON_MODIFICATION,
+            ),
+            notify_job_termination_immediately: crate::read_plus_minus(
+                matches,
+                ID_NOTIFY_JOB_TERMINATION_IMMEDIATELY,
+            ),
+            exit_on_nonzero_command_exit: crate::read_plus_minus(
+                matches,
+                ID_EXIT_ON_NONZERO_COMMAND_EXIT,
+            ),
+            disable_filename_globbing: crate::read_plus_minus(
+                matches,
+                ID_DISABLE_FILENAME_GLOBBING,
+            ),
+            remember_command_locations: crate::read_plus_minus(
+                matches,
+                ID_REMEMBER_COMMAND_LOCATIONS,
+            ),
+            place_all_assignment_args_in_command_env: crate::read_plus_minus(
+                matches,
+                ID_PLACE_ALL_ASSIGNMENT_ARGS_IN_COMMAND_ENV,
+            ),
+            enable_job_control: crate::read_plus_minus(matches, ID_ENABLE_JOB_CONTROL),
+            do_not_execute_commands: crate::read_plus_minus(matches, ID_DO_NOT_EXECUTE_COMMANDS),
+            real_effective_uid_mismatch: crate::read_plus_minus(
+                matches,
+                ID_REAL_EFFECTIVE_UID_MISMATCH,
+            ),
+            exit_after_one_command: crate::read_plus_minus(matches, ID_EXIT_AFTER_ONE_COMMAND),
+            treat_unset_variables_as_error: crate::read_plus_minus(
+                matches,
+                ID_TREAT_UNSET_VARIABLES_AS_ERROR,
+            ),
+            print_shell_input_lines: crate::read_plus_minus(matches, ID_PRINT_SHELL_INPUT_LINES),
+            print_commands_and_arguments: crate::read_plus_minus(
+                matches,
+                ID_PRINT_COMMANDS_AND_ARGUMENTS,
+            ),
+            perform_brace_expansion: crate::read_plus_minus(matches, ID_PERFORM_BRACE_EXPANSION),
+            disallow_overwriting_regular_files_via_output_redirection: crate::read_plus_minus(
+                matches,
+                ID_DISALLOW_OVERWRITING_REGULAR_FILES_VIA_OUTPUT_REDIRECTION,
+            ),
+            shell_functions_inherit_err_trap: crate::read_plus_minus(
+                matches,
+                ID_SHELL_FUNCTIONS_INHERIT_ERR_TRAP,
+            ),
+            enable_bang_style_history_substitution: crate::read_plus_minus(
+                matches,
+                ID_ENABLE_BANG_STYLE_HISTORY_SUBSTITUTION,
+            ),
+            do_not_resolve_symlinks_when_changing_dir: crate::read_plus_minus(
+                matches,
+                ID_DO_NOT_RESOLVE_SYMLINKS_WHEN_CHANGING_DIR,
+            ),
+            shell_functions_inherit_debug_and_return_traps: crate::read_plus_minus(
+                matches,
+                ID_SHELL_FUNCTIONS_INHERIT_DEBUG_AND_RETURN_TRAPS,
+            ),
 
-        // N.B. Trailing arguments are captured verbatim via `takes_trailing_args`.
-        let positional_args = bpaf::pure(Vec::new());
-        let double_dash_seen = bpaf::pure(false);
-
-        bpaf::construct!(SetCommand {
-            export_variables_on_modification,
-            notify_job_termination_immediately,
-            exit_on_nonzero_command_exit,
-            disable_filename_globbing,
-            remember_command_locations,
-            place_all_assignment_args_in_command_env,
-            enable_job_control,
-            do_not_execute_commands,
-            real_effective_uid_mismatch,
-            exit_after_one_command,
-            treat_unset_variables_as_error,
-            print_shell_input_lines,
-            print_commands_and_arguments,
-            perform_brace_expansion,
-            disallow_overwriting_regular_files_via_output_redirection,
-            shell_functions_inherit_err_trap,
-            enable_bang_style_history_substitution,
-            do_not_resolve_symlinks_when_changing_dir,
-            shell_functions_inherit_debug_and_return_traps,
-            set_option,
-            positional_args,
-            double_dash_seen,
+            set_option: SetOption::default(),
+            positional_args: matches.trailing().to_vec(),
+            double_dash_seen: false,
         })
     }
 
@@ -176,10 +295,14 @@ impl builtins::Command for SetCommand {
         "o"
     }
 
-    /// Overrides the default [`builtins::Command::new`] flow so that the presence
+    /// Overrides the default [`builtins::SpecCommand::new`] flow so that the presence
     /// of a bare `--` terminator can be recorded: the central option-section
-    /// splitter drops `--` before bpaf ever sees it, yet `set --` must still
-    /// clear the shell's positional parameters.
+    /// splitter drops `--` before the backend ever sees it, yet `set --` must
+    /// still clear the shell's positional parameters.
+    ///
+    /// It additionally expands `+`-style option groups and `-o` short-option
+    /// groups, extracts the `-o`/`+o` tri-state occurrences, and rewrites
+    /// remaining `+x` spellings into forms the argument backend can match.
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
     where
         I: IntoIterator<Item = String>,
@@ -208,20 +331,22 @@ impl builtins::Command for SetCommand {
         let (options, trailing) =
             builtins::split_option_section(&expanded, Self::value_taking_short_options(), &[]);
 
-        let os_args: Vec<&OsStr> = options.iter().map(OsStr::new).collect();
-        let mut command = Self::parser()
-            .to_options()
-            .run_inner(os_args.as_slice())
-            .map_err(render_parse_failure)?;
+        let (mut options, enable, disable) = extract_named_options(options);
 
-        command.set_trailing_args(trailing);
+        // N.B. Rewrite `+x`-style spellings into the corresponding hidden long
+        // forms that the argument backend can match; this happens *after*
+        // splitting because the splitter classifies `--+x` as an operand.
+        rewrite_plus_flags(&mut options);
+
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = brush_core::builtins::argmodel::backend().parse(&spec, "", &options)?;
+
+        let mut command = Self::from_matches(&mut matches)?;
+        command.set_option = SetOption { enable, disable };
+        command.positional_args = trailing;
         command.double_dash_seen = double_dash_seen;
 
         Ok(command)
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.positional_args = args;
     }
 
     #[expect(clippy::too_many_lines)]
@@ -450,27 +575,64 @@ impl builtins::Command for SetCommand {
     }
 }
 
-fn render_parse_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
-    match failure {
-        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(full),
-            help_request: true,
-        },
-        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
-            message: s,
-            help_request: true,
-        },
-        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(true),
-            help_request: false,
-        },
+/// Extracts `-o`/`+o` occurrences from the option section, returning the
+/// remaining tokens along with the enable/disable values.
+///
+/// Mirrors the historical parser's tri-state semantics: an option absent
+/// entirely maps to `None`; present occurrences accumulate any provided
+/// values; a present occurrence with no value yields an empty vector, which
+/// means "list all named options".
+fn extract_named_options(
+    options: Vec<String>,
+) -> (Vec<String>, Option<Vec<String>>, Option<Vec<String>>) {
+    let mut rest = Vec::with_capacity(options.len());
+    let mut enable: Option<Vec<String>> = None;
+    let mut disable: Option<Vec<String>> = None;
+    let mut iter = options.into_iter().peekable();
+
+    while let Some(arg) = iter.next() {
+        if arg == "-o" || arg == "+o" {
+            // Consume a following word as the named option value unless it
+            // looks like another option itself.
+            let value = match iter.peek() {
+                Some(next) if !next.starts_with('-') && !next.starts_with('+') => iter.next(),
+                _ => None,
+            };
+
+            let slot = if arg == "-o" {
+                &mut enable
+            } else {
+                &mut disable
+            };
+            let slot = slot.get_or_insert_with(Vec::new);
+            if let Some(value) = value {
+                slot.push(value);
+            }
+        } else if let Some(value) = arg.strip_prefix("-o=") {
+            enable.get_or_insert_with(Vec::new).push(value.to_owned());
+        } else {
+            rest.push(arg);
+        }
+    }
+
+    (rest, enable, disable)
+}
+
+/// Rewrites `+x`-style tokens into the corresponding hidden long spellings
+/// (e.g., `+x` becomes `--+x`) that the argument backend can match against
+/// the disable-side arguments declared by [`crate::declare_plus_minus`].
+fn rewrite_plus_flags(options: &mut [String]) {
+    for arg in options.iter_mut() {
+        if let Some(group) = arg.strip_prefix('+').filter(|g| !g.is_empty()) {
+            if !group.starts_with('+') && !group.contains('=') {
+                *arg = format!("--+{group}");
+            }
+        }
     }
 }
 
 /// Splits the value-taking `-o` out of a short-option group so that its
 /// attached value parses (e.g., `-ov` becomes `-o=v`, `-eo` becomes `-e -o`).
-/// bpaf otherwise cannot recognize an attached value on `o` because it is
-/// also registered as a plain flag.
 fn expand_dash_o_group(arg: &str) -> Vec<String> {
     let Some(group) = arg
         .strip_prefix('-')

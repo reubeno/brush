@@ -1,21 +1,35 @@
-use bpaf::Bpaf;
-
-use brush_core::{ExecutionResult, builtins, callstack};
 use std::io::Write;
 
+use brush_core::{ExecutionResult, builtins, callstack};
+
 /// Return the context of the current subroutine call.
-#[derive(Bpaf)]
 pub(crate) struct CallerCommand {
-    /// The number of call frames to go back.
-    #[bpaf(positional("EXPR"))]
     expr: Option<usize>,
 }
 
-impl builtins::Command for CallerCommand {
+const ID_EXPR: &str = "expr";
+
+impl builtins::SpecCommand for CallerCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        caller_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.positional(ID_EXPR, "EXPR")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let expr = match matches.value(ID_EXPR) {
+            Some(value) => Some(value.parse().map_err(|_| builtins::BuiltinArgParseError {
+                message: format!("invalid numeric value: {value}"),
+                help_request: false,
+            })?),
+            None => None,
+        };
+
+        Ok(Self { expr })
     }
 
     fn about() -> &'static str {

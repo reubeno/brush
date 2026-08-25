@@ -8,15 +8,21 @@ pub(crate) struct LetCommand {
     exprs: Vec<String>,
 }
 
-impl builtins::Command for LetCommand {
+impl builtins::SpecCommand for LetCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let exprs = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
+    }
 
-        bpaf::construct!(LetCommand { exprs })
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            exprs: matches.trailing().to_vec(),
+        })
     }
 
     fn about() -> &'static str {
@@ -29,10 +35,6 @@ impl builtins::Command for LetCommand {
 
     fn takes_trailing_args() -> bool {
         true
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.exprs = args;
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

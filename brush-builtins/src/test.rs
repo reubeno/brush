@@ -10,18 +10,24 @@ pub(crate) struct TestCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for TestCommand {
+impl builtins::SpecCommand for TestCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Arguments are captured verbatim in [`Self::new`] because test
-        // expressions are interpreted entirely by `execute`; the parser exists
-        // only for help rendering.
-        let args = bpaf::pure(Vec::new());
-
-        bpaf::construct!(TestCommand { args })
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
     }
 
+    fn from_matches(
+        _matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        unreachable!("new() captures all arguments verbatim")
+    }
+
+    // N.B. Arguments are captured verbatim because test expressions are
+    // interpreted entirely by `execute`; the declaration exists only for help
+    // rendering.
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
     where
         I: IntoIterator<Item = String>,
@@ -95,7 +101,7 @@ fn execute_test(
 #[allow(clippy::panic_in_result_fn)]
 mod double_dash_tests {
     use super::*;
-    use brush_core::builtins::Command as _;
+    use brush_core::builtins::SpecCommand as _;
 
     #[test]
     fn captures_lone_double_dash() -> anyhow::Result<()> {

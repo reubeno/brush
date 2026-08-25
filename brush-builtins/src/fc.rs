@@ -1,5 +1,3 @@
-use bpaf::Parser;
-use std::ffi::OsStr;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, error, history};
@@ -31,39 +29,73 @@ pub(crate) struct FcCommand {
     last: Option<String>,
 }
 
-impl builtins::Command for FcCommand {
+const ID_LIST: &str = "list";
+const ID_NO_LINE_NUMBERS: &str = "no_line_numbers";
+const ID_REVERSE: &str = "reverse";
+const ID_SUBSTITUTE: &str = "substitute";
+const ID_EDITOR: &str = "editor";
+
+impl builtins::SpecCommand for FcCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`.
-        let list = bpaf::short('l')
-            .help("List commands instead of editing them.")
-            .switch();
-        let no_line_numbers = bpaf::short('n')
-            .help("Suppress line numbers when listing.")
-            .switch();
-        let reverse = bpaf::short('r')
-            .help("Reverse the order of commands.")
-            .switch();
-        let substitute = bpaf::short('s')
-            .help("Re-execute command after substitution (old=new format).")
-            .switch();
-        let editor = bpaf::short('e')
-            .help("Editor to use (only relevant when not listing or substituting).")
-            .argument::<String>("ENAME")
-            .optional();
-        let first = bpaf::pure(None);
-        let last = bpaf::pure(None);
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_LIST,
+            &['l'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "List commands instead of editing them.",
+        )
+        .arg(
+            ID_NO_LINE_NUMBERS,
+            &['n'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Suppress line numbers when listing.",
+        )
+        .arg(
+            ID_REVERSE,
+            &['r'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Reverse the order of commands.",
+        )
+        .arg(
+            ID_SUBSTITUTE,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Re-execute command after substitution (old=new format).",
+        )
+        .arg(
+            ID_EDITOR,
+            &['e'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("ENAME"),
+            "Editor to use (only relevant when not listing or substituting).",
+        )
+    }
 
-        bpaf::construct!(FcCommand {
-            list,
-            no_line_numbers,
-            reverse,
-            substitute,
-            editor,
-            first,
-            last,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        let mut trailing = matches.trailing().iter();
+
+        Ok(Self {
+            list: matches.flag(ID_LIST),
+            no_line_numbers: matches.flag(ID_NO_LINE_NUMBERS),
+            reverse: matches.flag(ID_REVERSE),
+            substitute: matches.flag(ID_SUBSTITUTE),
+            editor: matches.value(ID_EDITOR).map(str::to_string),
+            first: trailing.next().cloned(),
+            last: trailing.next().cloned(),
         })
     }
 
@@ -83,7 +115,7 @@ impl builtins::Command for FcCommand {
         "e"
     }
 
-    // N.B. Overrides the default [`builtins::Command::new`] so that negative
+    // N.B. Overrides the default [`builtins::SpecCommand::new`] so that negative
     // history indices (e.g., `fc -l -3`) are captured as operands rather than
     // being rejected as unknown flags.
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
@@ -139,20 +171,11 @@ impl builtins::Command for FcCommand {
             options.push(arg);
         }
 
-        let mut command = run_bpaf_parser::<Self>(&options)?;
-        command.set_trailing_args(trailing);
+        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
+        let mut matches = builtins::argmodel::backend().parse(&spec, "", &options)?;
+        matches.set_trailing(trailing);
 
-        Ok(command)
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        let mut iter = args.into_iter();
-        if let Some(first) = iter.next() {
-            self.first = Some(first);
-        }
-        if let Some(last) = iter.next() {
-            self.last = Some(last);
-        }
+        Self::from_matches(&mut matches)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -426,38 +449,11 @@ fn effective_history_count(history: &history::History) -> usize {
     history.count().saturating_sub(1)
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, builtins::BuiltinArgParseError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
-}
-
-fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
-    match failure {
-        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(full),
-            help_request: true,
-        },
-        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
-            message: s,
-            help_request: true,
-        },
-        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
-            message: doc.monochrome(true),
-            help_request: false,
-        },
-    }
-}
-
 #[cfg(test)]
 #[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
-    use brush_core::builtins::Command as _;
+    use brush_core::builtins::SpecCommand as _;
 
     fn new_from(args: &[&str]) -> Result<FcCommand, builtins::BuiltinArgParseError> {
         FcCommand::new(std::iter::once("fc".to_string()).chain(args.iter().map(|s| s.to_string())))

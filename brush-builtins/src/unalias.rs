@@ -1,25 +1,40 @@
-use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Unset a shell alias.
-#[derive(Bpaf)]
 pub(crate) struct UnaliasCommand {
-    /// Remove all aliases.
-    #[bpaf(short('a'))]
     remove_all: bool,
-
-    /// Names of aliases to operate on.
-    #[bpaf(positional("ALIASES"))]
     aliases: Vec<String>,
 }
 
-impl builtins::Command for UnaliasCommand {
+const ID_REMOVE_ALL: &str = "remove_all";
+const ID_ALIASES: &str = "aliases";
+
+impl builtins::SpecCommand for UnaliasCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        unalias_command()
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_REMOVE_ALL,
+            &['a'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Remove all aliases.",
+        )
+        .positional_many(ID_ALIASES, "ALIASES")
+    }
+
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            remove_all: matches.flag(ID_REMOVE_ALL),
+            aliases: matches.values(ID_ALIASES).to_vec(),
+        })
     }
 
     fn about() -> &'static str {

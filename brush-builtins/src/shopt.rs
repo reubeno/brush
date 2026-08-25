@@ -1,8 +1,14 @@
-use bpaf::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
+
+const ID_SET_O_NAMES_ONLY: &str = "set_o_names_only";
+const ID_PRINT: &str = "print";
+const ID_QUIET: &str = "quiet";
+const ID_SET: &str = "set";
+const ID_UNSET: &str = "unset";
+const ID_OPTIONS: &str = "options";
 
 /// Manage shopt-style options.
 pub(crate) struct ShoptCommand {
@@ -14,30 +20,65 @@ pub(crate) struct ShoptCommand {
     options: Vec<String>,
 }
 
-impl builtins::Command for ShoptCommand {
+impl builtins::SpecCommand for ShoptCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        let set_o_names_only = bpaf::short('o').help("Manage set -o options.").switch();
-        let print = bpaf::short('p')
-            .help("Print options' current values.")
-            .switch();
-        let quiet = bpaf::short('q').help("Suppress typical output.").switch();
-        let set = bpaf::short('s').help("Set the specified options.").switch();
-        let unset = bpaf::short('u')
-            .help("Unset the specified options.")
-            .switch();
-        let options = bpaf::positional::<String>("OPTIONS")
-            .help("Names of options to operate on.")
-            .many();
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_SET_O_NAMES_ONLY,
+            &['o'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Manage set -o options.",
+        )
+        .arg(
+            ID_PRINT,
+            &['p'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Print options' current values.",
+        )
+        .arg(
+            ID_QUIET,
+            &['q'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Suppress typical output.",
+        )
+        .arg(
+            ID_SET,
+            &['s'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Set the specified options.",
+        )
+        .arg(
+            ID_UNSET,
+            &['u'],
+            &[],
+            builtins::argmodel::ArgKind::Flag,
+            None,
+            "Unset the specified options.",
+        )
+        .positional_many(ID_OPTIONS, "OPTIONS")
+    }
 
-        bpaf::construct!(ShoptCommand {
-            set_o_names_only,
-            print,
-            quiet,
-            set,
-            unset,
-            options,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            set_o_names_only: matches.flag(ID_SET_O_NAMES_ONLY),
+            print: matches.flag(ID_PRINT),
+            quiet: matches.flag(ID_QUIET),
+            set: matches.flag(ID_SET),
+            unset: matches.flag(ID_UNSET),
+            options: matches.values(ID_OPTIONS).to_vec(),
         })
     }
 

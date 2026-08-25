@@ -1,4 +1,3 @@
-use bpaf::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
@@ -15,23 +14,30 @@ pub(crate) struct PrintfCommand {
     format_and_args: Vec<String>,
 }
 
-impl builtins::Command for PrintfCommand {
+const ID_OUTPUT_VARIABLE: &str = "output_variable";
+
+impl builtins::SpecCommand for PrintfCommand {
     type Error = brush_core::Error;
 
-    fn parser() -> impl bpaf::Parser<Self> {
-        // N.B. Only the leading options are parsed here; all remaining tokens
-        // are captured verbatim via `takes_trailing_args`. A format string that
-        // genuinely needs to start with a hyphen must be preceded by `--`,
-        // matching other shells' behavior.
-        let output_variable = bpaf::short('v')
-            .help("If specified, the output of the command is assigned to this variable.")
-            .argument::<String>("VAR")
-            .optional();
-        let format_and_args = bpaf::pure(Vec::new());
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec.arg(
+            ID_OUTPUT_VARIABLE,
+            &['v'],
+            &[],
+            builtins::argmodel::ArgKind::Value,
+            Some("VAR"),
+            "If specified, the output of the command is assigned to this variable.",
+        )
+    }
 
-        bpaf::construct!(PrintfCommand {
-            output_variable,
-            format_and_args,
+    fn from_matches(
+        matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self {
+            output_variable: matches.value(ID_OUTPUT_VARIABLE).map(str::to_string),
+            format_and_args: matches.trailing().to_vec(),
         })
     }
 
@@ -49,10 +55,6 @@ impl builtins::Command for PrintfCommand {
 
     fn value_taking_short_options() -> &'static str {
         "v"
-    }
-
-    fn set_trailing_args(&mut self, args: Vec<String>) {
-        self.format_and_args = args;
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

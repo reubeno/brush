@@ -6,20 +6,29 @@ pub(crate) struct BuiltinCommand {
     args: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for BuiltinCommand {
-    fn set_declarations(&mut self, args: Vec<brush_core::CommandArg>) {
-        self.args = args;
-    }
-}
-
-impl builtins::Command for BuiltinCommand {
+impl builtins::SpecCommand for BuiltinCommand {
     type Error = brush_core::Error;
 
-    // N.B. Arguments are passed directly via `set_declarations`; the parser is
+    // N.B. Arguments are passed directly via `set_declarations`; declare() is
     // used only for help rendering.
-    fn parser() -> impl bpaf::Parser<Self> {
-        let args = bpaf::pure(Vec::new());
-        bpaf::construct!(BuiltinCommand { args })
+    fn declare(
+        spec: builtins::argmodel::CommandSpecBuilder,
+    ) -> builtins::argmodel::CommandSpecBuilder {
+        spec
+    }
+
+    fn from_matches(
+        _matches: &mut builtins::argmodel::Matches,
+    ) -> Result<Self, builtins::BuiltinArgParseError> {
+        Ok(Self::default())
+    }
+
+    fn uses_declarations() -> bool {
+        true
+    }
+
+    fn set_declarations(&mut self, args: Vec<brush_core::CommandArg>) {
+        self.args = args;
     }
 
     fn about() -> &'static str {
