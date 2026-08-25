@@ -23,6 +23,67 @@ compile_error!("select at most one builtin argument-parsing engine feature");
 )))]
 compile_error!("select one builtin argument-parsing engine feature");
 
+/// Tri-state bpaf parser for a `-x` / `+x` option pair: `None` when absent,
+/// `Some(true)` for `-x`, `Some(false)` for `+x`.
+pub(crate) fn minus_or_plus_flag(
+    flag_char: char,
+    plus_form: &'static str,
+    desc: &'static str,
+) -> impl bpaf::Parser<Option<bool>> {
+    use bpaf::Parser;
+
+    let enable = bpaf::short(flag_char)
+        .help(desc)
+        .switch()
+        .map(|enabled| enabled.then_some(true));
+    let disable = bpaf::literal(plus_form)
+        .help("Disables the flag.")
+        .hide()
+        .map(|(): ()| Some(false));
+
+    bpaf::construct!([enable, disable]).fallback(None)
+}
+
+/// Declares a bpaf-engine tri-state flag struct mirroring
+/// `minus_or_plus_flag_arg`'s clap-side shape.
+macro_rules! minus_or_plus_flag_bpaf {
+    ($struct_name:ident) => {
+        #[derive(Default)]
+        pub(crate) struct $struct_name {
+            pub(super) enable: bool,
+            pub(super) disable: bool,
+        }
+
+        impl $struct_name {
+            #[allow(dead_code, reason = "engine-side constructor")]
+            pub(crate) fn from_bool(value: Option<bool>) -> Self {
+                let mut this = Self {
+                    enable: false,
+                    disable: false,
+                };
+
+                match value {
+                    Some(true) => this.enable = true,
+                    Some(false) => this.disable = true,
+                    None => {}
+                }
+
+                this
+            }
+
+            pub const fn to_bool(&self) -> Option<bool> {
+                match (self.enable, self.disable) {
+                    (true, false) => Some(true),
+                    (false, true) => Some(false),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+pub(crate) use minus_or_plus_flag_bpaf;
+
 /// Selects a builtin's argument implementation according to the active
 /// argument-parsing engine feature (`parser-clap` / `parser-bpaf` /
 /// `parser-usage`; exactly one must be enabled).
@@ -51,6 +112,9 @@ macro_rules! arg_impl {
         pub(crate) use imp::$t;
     };
 }
+
+#[cfg(feature = "parser-bpaf")]
+pub(crate) mod args;
 
 #[cfg(feature = "builtin.alias")]
 mod alias;
@@ -195,6 +259,23 @@ macro_rules! minus_or_plus_flag_arg {
             #[allow(dead_code, reason = "may not be used in all macro instantiations")]
             pub const fn is_some(&self) -> bool {
                 self._enable || self._disable
+            }
+
+            /// Constructs the tri-state flag from an engine-parsed value.
+            #[allow(dead_code, reason = "used by non-clap engine modules")]
+            pub(crate) fn from_bool(value: Option<bool>) -> Self {
+                let mut this = Self {
+                    _enable: false,
+                    _disable: false,
+                };
+
+                match value {
+                    Some(true) => this._enable = true,
+                    Some(false) => this._disable = true,
+                    None => {}
+                }
+
+                this
             }
 
             pub const fn to_bool(&self) -> Option<bool> {
