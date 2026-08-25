@@ -2,12 +2,15 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use bpaf::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
-use brush_core::{ErrorKind, error, escape};
+use brush_core::{ErrorKind, escape};
 
 fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {
     match format_and_args {

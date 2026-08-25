@@ -2,7 +2,9 @@
 
 #![cfg(feature = "parser-bpaf")]
 
-use std::{fmt::Display, io::Write, path::Path};
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -15,16 +17,16 @@ enum FoundCommand {
 #[derive(Default)]
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
-    pub(super) use_default_path: bool,
+    pub(crate) use_default_path: bool,
 
     /// Display a short description of the command.
-    pub(super) print_description: bool,
+    pub(crate) print_description: bool,
 
     /// Display a more verbose description of the command.
-    pub(super) print_verbose_description: bool,
+    pub(crate) print_verbose_description: bool,
 
     /// Command and arguments.
-    pub(super) command_and_args: Vec<String>,
+    pub(crate) command_and_args: Vec<String>,
 }
 
 impl crate::args::BpafArgs for CommandCommand {

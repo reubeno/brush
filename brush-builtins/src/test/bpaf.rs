@@ -2,7 +2,9 @@
 
 #![cfg(feature = "parser-bpaf")]
 
-use std::io::Write;
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -13,7 +15,7 @@ fn execute_test(
 ) -> Result<bool, brush_core::Error> {
     let test_command =
         brush_parser::test_command::parse(args).map_err(brush_core::ErrorKind::TestCommandParseError)?;
-    tests::eval_expr(&test_command, shell, params)
+    brush_core::tests::eval_expr(&test_command, shell, params)
 }
 
 #[cfg(test)]

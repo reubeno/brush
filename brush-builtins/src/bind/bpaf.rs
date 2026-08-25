@@ -1,16 +1,19 @@
 //! `bind` builtin: `BindCommand` instrumented for bpaf.
 
 #![cfg(feature = "parser-bpaf")]
+#![allow(dead_code, reason = "transplanted helpers awaiting wiring")]
 
 use bpaf::Parser;
 use itertools::Itertools as _;
-use std::{collections::HashMap, io::Write, str::FromStr, sync::Arc};
+use std::{collections::HashMap, io::Write, str::FromStr};
 use strum::IntoEnumIterator;
-use tokio::sync::Mutex;
+use super::BindError;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 use brush_core::interfaces;
 use brush_core::sys;
+use brush_core::interfaces::KeyAction;
+use brush_core::trace_categories;
 
 /// Identifier for a keymap
 #[derive(Clone)]
@@ -34,29 +37,6 @@ impl std::str::FromStr for BindKeyMap {
             _ => Err(format!("invalid keymap: {s}")),
         }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum BindError {
-    /// Unknown function specified.
-    #[error("unknown function: {0}")]
-    UnknownFunction(String),
-
-    /// Unknown key binding function.
-    #[error("unknown key binding function: {0}")]
-    UnknownKeyBindingFunction(String),
-
-    /// Unimplemented functionality.
-    #[error("unimplemented: {0}")]
-    Unimplemented(&'static str),
-
-    /// An I/O error occurred.
-    #[error("I/O error occurred")]
-    IoError(#[from] std::io::Error),
-
-    /// A binding parse error occurred.
-    #[error(transparent)]
-    BindingParseError(#[from] brush_parser::BindingParseError),
 }
 
 fn parse_key_sequence(input: &str) -> Result<brush_core::interfaces::KeySequence, BindError> {

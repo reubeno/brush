@@ -2,7 +2,9 @@
 
 #![cfg(feature = "parser-bpaf")]
 
-use std::io::Write;
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -13,39 +15,25 @@ pub(crate) struct ExitCommand {
 }
 
 impl crate::args::BpafArgs for ExitCommand {
-fn parser() -> impl bpaf::Parser<Self> {
+    fn parser() -> impl bpaf::Parser<Self> + 'static {
         // N.B. Only the leading options are parsed here; all remaining tokens
         // are captured verbatim via `takes_trailing_args`.
         let code = bpaf::pure(None);
 
         bpaf::construct!(ExitCommand { code })
     }
-fn about() -> &'static str {
-        "Exit the shell."
-    }
-fn synopsis() -> &'static str {
-        "[N]"
-    }
-fn takes_trailing_args() -> bool {
+
+    fn takes_trailing_args() -> bool {
         true
-    }
-fn set_trailing_args(&mut self, mut args: Vec<String>) {
-        self.code = if args.is_empty() {
-            None
-        } else {
-            Some(args.remove(0))
-        };
     }
 
     fn set_trailing_args(&mut self, mut args: Vec<String>) {
         self.code = if args.is_empty() {
             None
         } else {
-            let first = args.remove(0);
-            Some(first.parse::<i64>().unwrap_or(0))
+            Some(args.remove(0).parse::<i64>().unwrap_or(0))
         };
     }
-
 }
 
 impl FromArgs for ExitCommand {
@@ -71,5 +59,4 @@ impl builtins::Command for ExitCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         super::execute(self, context).await
     }
-
 }

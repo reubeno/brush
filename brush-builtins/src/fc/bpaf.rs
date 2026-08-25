@@ -2,9 +2,10 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use bpaf::Parser;
-use std::ffi::OsStr;
-use std::io::Write;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -17,18 +18,12 @@ fn is_negative_number(arg: &str) -> bool {
 }
 
 /// Returns the effective history count (excluding the fc command itself).
-fn effective_history_count(history: &history::History) -> usize {
+fn effective_history_count(history: &brush_core::history::History) -> usize {
     history.count().saturating_sub(1)
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, ArgsError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
+fn run_bpaf_parser<T: crate::args::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
+    crate::args::run_parser::<T>(args)
 }
 
 fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {
