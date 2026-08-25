@@ -48,7 +48,7 @@ pub(crate) struct ExportCommand {
     pub(super) declarations: Vec<brush_core::CommandArg>,
 }
 
-impl crate::args::BpafArgs for ExportCommand {
+impl crate::args::bpaf_support::BpafArgs for ExportCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         let names_are_functions = bpaf::short('f')
             .help("Names are treated as function names.")
@@ -78,7 +78,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for ExportCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -90,7 +90,7 @@ impl builtins::Command for ExportCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

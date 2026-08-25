@@ -14,7 +14,7 @@ pub(crate) struct ExitCommand {
     pub(super) code: Option<i64>,
 }
 
-impl crate::args::BpafArgs for ExitCommand {
+impl crate::args::bpaf_support::BpafArgs for ExitCommand {
     fn parser() -> impl bpaf::Parser<Self> + 'static {
         // N.B. Only the leading options are parsed here; all remaining tokens
         // are captured verbatim via `takes_trailing_args`.
@@ -38,7 +38,7 @@ impl crate::args::BpafArgs for ExitCommand {
 
 impl FromArgs for ExitCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -50,7 +50,7 @@ impl builtins::Command for ExitCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

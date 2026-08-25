@@ -439,7 +439,7 @@ fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     }
 }
 
-fn run_bpaf_parser<T: crate::args::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
+fn run_bpaf_parser<T: crate::args::bpaf_support::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
     crate::args::run_parser::<T>(args)
 }
 
@@ -739,7 +739,7 @@ impl InputReader {
     }
 }
 
-impl crate::args::BpafArgs for ReadCommand {
+impl crate::args::bpaf_support::BpafArgs for ReadCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         let array_variable = bpaf::short('a')
             .help("Optionally, name of an array variable to receive read words of input.")
@@ -827,7 +827,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for ReadCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -839,7 +839,7 @@ impl builtins::Command for ReadCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

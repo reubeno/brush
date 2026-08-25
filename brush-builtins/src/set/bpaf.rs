@@ -109,7 +109,7 @@ pub(crate) struct SetOption {
     pub(super) disable: Option<Vec<String>>,
 }
 
-impl crate::args::BpafArgs for SetCommand {
+impl crate::args::bpaf_support::BpafArgs for SetCommand {
     fn parser() -> impl bpaf::Parser<Self> + 'static {
         let export_variables_on_modification =
             minus_or_plus_flag('a', "+a", "Export variables on modification")
@@ -253,7 +253,7 @@ impl crate::args::BpafArgs for SetCommand {
         let mut command = Self::parser()
             .to_options()
             .run_inner(os_args.as_slice())
-            .map_err(crate::args::render_parse_failure)?;
+            .map_err(crate::args::bpaf_support::render_parse_failure)?;
 
         command.set_trailing_args(trailing);
 
@@ -268,7 +268,7 @@ impl crate::args::BpafArgs for SetCommand {
 }
 impl FromArgs for SetCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -280,7 +280,7 @@ impl builtins::Command for SetCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

@@ -29,7 +29,7 @@ pub(crate) struct HelpCommand {
     pub(super) topic_patterns: Vec<String>,
 }
 
-impl crate::args::BpafArgs for HelpCommand {
+impl crate::args::bpaf_support::BpafArgs for HelpCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         let short_description = bpaf::short('d')
             .help("Display a short description for the commands.")
@@ -61,7 +61,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for HelpCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -73,7 +73,7 @@ impl builtins::Command for HelpCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

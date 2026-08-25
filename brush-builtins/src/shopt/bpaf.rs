@@ -19,7 +19,7 @@ pub(crate) struct ShoptCommand {
     pub(super) options: Vec<String>,
 }
 
-impl crate::args::BpafArgs for ShoptCommand {
+impl crate::args::bpaf_support::BpafArgs for ShoptCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         let set_o_names_only = bpaf::short('o').help("Manage set -o options.").switch();
         let print = bpaf::short('p')
@@ -53,7 +53,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for ShoptCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -65,7 +65,7 @@ impl builtins::Command for ShoptCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

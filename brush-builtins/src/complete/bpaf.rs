@@ -69,7 +69,7 @@ fn join_flag_looking_values(args: Vec<String>) -> Vec<String> {
     joined
 }
 
-fn run_parser<T: crate::args::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
+fn run_parser<T: crate::args::bpaf_support::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
     crate::args::run_parser::<T>(args)
 }
 
@@ -219,7 +219,7 @@ impl CommonCompleteCommandArgs {
 
 }
 
-impl crate::args::BpafArgs for CompleteCommand {
+impl crate::args::bpaf_support::BpafArgs for CompleteCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         let print = bpaf::short('p')
             .help("Display registered completion settings.")
@@ -262,19 +262,19 @@ fn synopsis() -> &'static str {
 
         // N.B. The first argument is the command name itself.
         let args: Vec<String> = args.into_iter().skip(1).collect();
-        crate::args::run_parser::<Self>(&join_flag_looking_values(args))
+        crate::args::bpaf_support::run_parser::<Self>(&join_flag_looking_values(args))
     
     }
 }
 
 impl FromArgs for CompleteCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
 
-impl crate::args::BpafArgs for CompGenCommand {
+impl crate::args::bpaf_support::BpafArgs for CompGenCommand {
     fn parser() -> impl bpaf::Parser<Self> {
         let common_args = CommonCompleteCommandArgs::parser();
         let word = bpaf::positional::<String>("WORD").optional();
@@ -295,11 +295,11 @@ impl crate::args::BpafArgs for CompGenCommand {
 
 impl FromArgs for CompGenCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
-impl crate::args::BpafArgs for CompOptCommand {
+impl crate::args::bpaf_support::BpafArgs for CompOptCommand {
     fn parser() -> impl bpaf::Parser<Self> {
         let update_default = bpaf::short('D')
             .help("Update the default completion settings.")
@@ -354,7 +354,7 @@ impl crate::args::BpafArgs for CompOptCommand {
 
 impl FromArgs for CompOptCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -366,7 +366,7 @@ impl builtins::Command for CompleteCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -437,7 +437,7 @@ impl builtins::Command for CompGenCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 }
 
@@ -514,6 +514,6 @@ impl builtins::Command for CompOptCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 }

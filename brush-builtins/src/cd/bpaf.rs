@@ -31,7 +31,7 @@ pub(crate) struct CdCommand {
     pub(super) target_dir: Option<PathBuf>,
 }
 
-impl crate::args::BpafArgs for CdCommand {
+impl crate::args::bpaf_support::BpafArgs for CdCommand {
     fn parser() -> impl bpaf::Parser<Self> + 'static {
         let exit_on_failed_cwd_resolution = bpaf::short('e')
             .help("Exit with non zero exit status if current working directory resolution fails.")
@@ -74,7 +74,7 @@ impl crate::args::BpafArgs for CdCommand {
 
 impl FromArgs for CdCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -86,7 +86,7 @@ impl builtins::Command for CdCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

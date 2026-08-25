@@ -118,7 +118,7 @@ macro_rules! arg_impl {
     };
 }
 
-#[cfg(feature = "parser-bpaf")]
+#[cfg(any(feature = "parser-bpaf", feature = "parser-usage"))]
 pub(crate) mod args;
 
 #[cfg(feature = "builtin.alias")]
