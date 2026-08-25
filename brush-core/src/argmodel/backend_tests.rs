@@ -2,15 +2,16 @@
 
 #[cfg_attr(not(feature = "parser-bpaf"), allow(unused_imports))]
 use super::ParsedValues;
+#[cfg(any(feature = "parser-usage", feature = "parser-clap"))]
+use super::PositionalSpec;
 #[cfg_attr(not(feature = "parser-usage"), allow(unused_imports))]
+#[cfg_attr(not(feature = "parser-clap"), allow(unused_imports))]
 #[cfg_attr(not(feature = "parser-bpaf"), allow(unused_imports))]
 use super::{ArgKind, ArgSpec, CommandSpec};
 #[cfg(feature = "parser-usage")]
-use super::{CommandSpec as UsageCommandSpec, PositionalSpec};
+use super::{CommandSpec as UsageCommandSpec, PositionalSpec as UsagePositionalSpec};
 
-#[cfg(feature = "parser-bpaf")]
-use super::PositionalSpec;
-#[cfg(feature = "parser-bpaf")]
+#[cfg(any(feature = "parser-bpaf", feature = "parser-clap"))]
 const ECHO_SPEC: CommandSpec = CommandSpec {
     args: &[
         ArgSpec::flag("no_newline", &['n'], &[], ""),
@@ -69,12 +70,12 @@ mod bpaf_impl {
 #[cfg(feature = "parser-clap")]
 mod clap_impl {
     use super::*;
+    use crate::argmodel::backend::ArgParserBackend as _;
 
     #[allow(clippy::panic)]
     fn run(argv: &[String]) -> ParsedValues {
-        let spec = echo_spec();
         super::super::clap_backend::ClapBackend
-            .parse(&spec, "echo", argv)
+            .parse(&ECHO_SPEC, "echo", argv)
             .unwrap_or_else(|e| panic!("clap parse failed: {e}"))
     }
 
@@ -83,6 +84,31 @@ mod clap_impl {
         let m = run(&["-d".to_string(), ":".to_string(), "-n".to_string()]);
         assert!(m.flag("no_newline"));
         assert_eq!(m.value("delimiter"), Some(":"));
+    }
+
+    #[test]
+    fn plain_operands_bind_to_positionals() {
+        let m = run(&["a", "b"].iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(m.positional_values("operands"), ["a", "b"]);
+    }
+
+    #[test]
+    fn strict_positionals_reject_flag_like_words() {
+        assert!(
+            super::super::clap_backend::ClapBackend
+                .parse(&ECHO_SPEC, "echo", &["-x".to_string()])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn unknown_flag_errors() {
+        let err = super::super::clap_backend::ClapBackend.parse(
+            &ECHO_SPEC,
+            "echo",
+            &["--frobnicate".to_string()],
+        );
+        assert!(err.is_err());
     }
 }
 

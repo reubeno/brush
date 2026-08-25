@@ -47,7 +47,7 @@ impl super::ArgParserBackend for ClapBackend {
                 continue;
             }
             if let Some(values) = matches.get_many::<String>(arg.id) {
-                for value in values.cloned().collect::<Vec<_>>() {
+                for value in values.cloned() {
                     out.push_value(arg.id, value);
                 }
             } else if let Some(value) = matches.get_one::<String>(arg.id) {
@@ -55,14 +55,14 @@ impl super::ArgParserBackend for ClapBackend {
             }
         }
 
-        // Trailing verbatim operands are captured by the core splitter before
-        // this backend runs; nothing positional reaches clap here unless a
-        // workload declared one explicitly.
+        // N.B. Positional values must land in the positional slots; named
+        // values and positionals have separate storage.
         for pos in spec.positionals {
             if let Some(values) = matches.get_many::<String>(pos.id) {
-                out.set_values(pos.id, values.cloned().collect());
+                let values: Vec<String> = values.cloned().collect();
+                out.set_positional_at(pos_slot(spec, pos.id), values);
             } else if let Some(value) = matches.get_one::<String>(pos.id) {
-                out.push_value(pos.id, value.clone());
+                out.push_positional_by_id(pos.id, value.clone());
             }
         }
 
@@ -72,6 +72,13 @@ impl super::ArgParserBackend for ClapBackend {
     fn detailed_help(&self, spec: &CommandSpec, name: &str) -> Result<String, crate::error::Error> {
         Ok(build_command(spec, name).render_help().to_string())
     }
+}
+
+fn pos_slot(spec: &CommandSpec, id: &str) -> usize {
+    spec.positionals
+        .iter()
+        .position(|p| p.id == id)
+        .unwrap_or_else(|| unreachable!("declared positional `{id}` missing from spec"))
 }
 
 fn build_command(spec: &CommandSpec, name: &str) -> clap::Command {
@@ -92,7 +99,7 @@ fn build_command(spec: &CommandSpec, name: &str) -> clap::Command {
         let first_long = longs.next().copied();
 
         let mut cmd_arg = match arg.shorts.first() {
-            Some(short) => clap::Arg::new(arg.id).short(char::from(*short)),
+            Some(short) => clap::Arg::new(arg.id).short(*short),
             None => clap::Arg::new(arg.id),
         };
         if let Some(long) = first_long {
@@ -125,10 +132,10 @@ fn build_command(spec: &CommandSpec, name: &str) -> clap::Command {
             .value_name(pos.name)
             .action(clap::ArgAction::Append);
         cmd_arg = if pos.many {
-            cmd_arg
-                .num_args(1..)
-                .trailing_var_arg(true)
-                .allow_hyphen_values(true)
+            // N.B. `trailing_var_arg` stops option parsing at the first
+            // captured value (so `echo a -x b` keeps `-x` verbatim) while a
+            // leading flag-like word still errors, like bash.
+            cmd_arg.num_args(1..).trailing_var_arg(true)
         } else {
             cmd_arg.num_args(1)
         };
