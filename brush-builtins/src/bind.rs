@@ -1,10 +1,10 @@
 //! The `bind` builtin.
 
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
-#[cfg(feature = "parser-clap")]
-use self::clap::BindKeyMap;
 #[cfg(feature = "parser-bpaf")]
 use self::bpaf::BindKeyMap;
+#[cfg(feature = "parser-clap")]
+use self::clap::BindKeyMap;
 arg_impl!(BindCommand);
 
 use brush_core::{

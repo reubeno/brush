@@ -2,8 +2,10 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use bpaf::Parser;
-use std::ffi::OsStr;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 use std::path::{Path, PathBuf};
@@ -15,7 +17,7 @@ struct HistoryConfig {
 }
 
 fn display_history(
-    history: &history::History,
+    history: &brush_core::history::History,
     config: &HistoryConfig,
     max_entries: Option<usize>,
     mut stdout: impl Write,
@@ -97,14 +99,8 @@ fn hist_file_option(
     bpaf::construct!([with_value, bare]).optional()
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, ArgsError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
+fn run_bpaf_parser<T: crate::args::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
+    crate::args::run_parser::<T>(args)
 }
 
 fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {

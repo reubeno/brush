@@ -2,6 +2,9 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 
 use bpaf::Parser;
 use brush_core::args::{ArgsError, FromArgs};
@@ -37,15 +40,12 @@ impl crate::args::BpafArgs for CdCommand {
             .help("Show file with extended attributes as a dir with extended attributes.")
             .switch();
 
-        let physical = bpaf::short('P')
-            .help("Use physical dir structure without following symlinks.")
-            .req_flag(Some(true));
-        let logical = bpaf::short('L')
+        let force_follow_symlinks = bpaf::short('L')
             .help("Force following symlinks.")
-            .req_flag(Some(false));
-
-        // N.B. Last of `-L`/`-P` wins, mirroring the clap side.
-        let mode = bpaf::construct!([physical, logical]).fallback(None);
+            .switch();
+        let use_physical_dir = bpaf::short('P')
+            .help("Use physical dir structure without following symlinks.")
+            .switch();
 
         let target_dir = bpaf::positional::<PathBuf>("TARGET_DIR")
             .help(
@@ -53,9 +53,6 @@ impl crate::args::BpafArgs for CdCommand {
                 it is converted to $OLDPWD.",
             )
             .optional();
-
-        let force_follow_symlinks = mode.map(|m| m == Some(false));
-        let use_physical_dir = mode.map(|m| m == Some(true));
 
         bpaf::construct!(CdCommand {
             force_follow_symlinks,

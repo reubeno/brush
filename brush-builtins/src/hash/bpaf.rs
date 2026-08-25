@@ -2,8 +2,11 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use bpaf::Bpaf;
-use std::{io::Write, path::PathBuf};
+use std::path::PathBuf;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 

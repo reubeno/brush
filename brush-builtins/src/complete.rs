@@ -1,18 +1,18 @@
 //! The `complete` builtin.
 
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
-#[cfg(feature = "parser-clap")]
-use self::clap::CommonCompleteCommandArgs;
 #[cfg(feature = "parser-bpaf")]
 use self::bpaf::CommonCompleteCommandArgs;
-#[cfg(feature = "parser-clap")]
-pub(crate) use self::clap::{CompGenCommand, CompOptCommand};
 #[cfg(feature = "parser-bpaf")]
 pub(crate) use self::bpaf::{CompGenCommand, CompOptCommand};
+#[cfg(feature = "parser-clap")]
+use self::clap::CommonCompleteCommandArgs;
+#[cfg(feature = "parser-clap")]
+pub(crate) use self::clap::{CompGenCommand, CompOptCommand};
 arg_impl!(CompleteCommand);
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
-use brush_core::{ExecutionResult,error,escape};
+use brush_core::{ExecutionResult, error, escape};
 use std::fmt::Write as _;
 use std::io::Write;
 
@@ -324,10 +324,6 @@ impl CompleteCommand {
         Ok(true)
     }
 }
-
-
-
-
 
 impl CompOptCommand {
     fn set_options_for_spec<'a, I>(spec: &mut Spec, options: I)

@@ -1689,3 +1689,53 @@ mod tests {
         );
     }
 }
+
+impl std::str::FromStr for CompleteOption {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "default" => Ok(Self::Default),
+            "dir-names" | "dirnames" => Ok(Self::DirNames),
+            "file-names" | "filenames" => Ok(Self::FileNames),
+            "no-quote" | "noquote" => Ok(Self::NoQuote),
+            "no-sort" | "nosort" => Ok(Self::NoSort),
+            "plus-dirs" | "plusdirs" => Ok(Self::PlusDirs),
+            _ => Err(format!("invalid completion option: {s}")),
+        }
+    }
+}
+
+impl std::str::FromStr for CompleteAction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "alias" => Ok(Self::Alias),
+            "arrayvar" => Ok(Self::ArrayVar),
+            "binding" => Ok(Self::Binding),
+            "builtin" => Ok(Self::Builtin),
+            "command" => Ok(Self::Command),
+            "directory" => Ok(Self::Directory),
+            "disabled" => Ok(Self::Disabled),
+            "enabled" => Ok(Self::Enabled),
+            "export" => Ok(Self::Export),
+            "file" => Ok(Self::File),
+            "function" => Ok(Self::Function),
+            "group" => Ok(Self::Group),
+            "helptopic" => Ok(Self::HelpTopic),
+            "hostname" => Ok(Self::HostName),
+            "job" => Ok(Self::Job),
+            "keyword" => Ok(Self::Keyword),
+            "running" => Ok(Self::Running),
+            "service" => Ok(Self::Service),
+            "setopt" => Ok(Self::SetOpt),
+            "shopt" => Ok(Self::ShOpt),
+            "signal" => Ok(Self::Signal),
+            "stopped" => Ok(Self::Stopped),
+            "user" => Ok(Self::User),
+            "variable" => Ok(Self::Variable),
+            _ => Err(format!("invalid completion action: {s}")),
+        }
+    }
+}

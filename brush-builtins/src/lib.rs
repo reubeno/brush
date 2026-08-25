@@ -25,6 +25,9 @@ compile_error!("select one builtin argument-parsing engine feature");
 
 /// Tri-state bpaf parser for a `-x` / `+x` option pair: `None` when absent,
 /// `Some(true)` for `-x`, `Some(false)` for `+x`.
+
+/// Tri-state bpaf parser for a `-x` / `+x` option pair.
+#[cfg(feature = "parser-bpaf")]
 pub(crate) fn minus_or_plus_flag(
     flag_char: char,
     plus_form: &'static str,
@@ -46,6 +49,7 @@ pub(crate) fn minus_or_plus_flag(
 
 /// Declares a bpaf-engine tri-state flag struct mirroring
 /// `minus_or_plus_flag_arg`'s clap-side shape.
+#[cfg(feature = "parser-bpaf")]
 macro_rules! minus_or_plus_flag_bpaf {
     ($struct_name:ident) => {
         #[derive(Default)]
@@ -82,6 +86,7 @@ macro_rules! minus_or_plus_flag_bpaf {
     };
 }
 
+#[cfg(feature = "parser-bpaf")]
 pub(crate) use minus_or_plus_flag_bpaf;
 
 /// Selects a builtin's argument implementation according to the active
@@ -117,115 +122,115 @@ macro_rules! arg_impl {
 pub(crate) mod args;
 
 #[cfg(feature = "builtin.alias")]
-mod alias;
+pub(crate) mod alias;
 #[cfg(feature = "builtin.bg")]
-mod bg;
+pub(crate) mod bg;
 #[cfg(feature = "builtin.bind")]
-mod bind;
+pub(crate) mod bind;
 #[cfg(feature = "builtin.break")]
-mod break_;
+pub(crate) mod break_;
 #[cfg(feature = "builtin.builtin")]
-mod builtin_;
+pub(crate) mod builtin_;
 #[cfg(feature = "builtin.caller")]
-mod caller;
+pub(crate) mod caller;
 #[cfg(feature = "builtin.cd")]
-mod cd;
+pub(crate) mod cd;
 #[cfg(feature = "builtin.colon")]
-mod colon;
+pub(crate) mod colon;
 #[cfg(feature = "builtin.command")]
-mod command;
+pub(crate) mod command;
 #[cfg(any(
     feature = "builtin.complete",
     feature = "builtin.compgen",
     feature = "builtin.compopt"
 ))]
-mod complete;
+pub(crate) mod complete;
 #[cfg(feature = "builtin.continue")]
-mod continue_;
+pub(crate) mod continue_;
 #[cfg(feature = "builtin.declare")]
-mod declare;
+pub(crate) mod declare;
 #[cfg(feature = "builtin.dirs")]
-mod dirs;
+pub(crate) mod dirs;
 #[cfg(feature = "builtin.dot")]
-mod dot;
+pub(crate) mod dot;
 #[cfg(feature = "builtin.echo")]
-mod echo;
+pub(crate) mod echo;
 #[cfg(feature = "builtin.enable")]
-mod enable;
+pub(crate) mod enable;
 #[cfg(feature = "builtin.eval")]
-mod eval;
+pub(crate) mod eval;
 #[cfg(all(feature = "builtin.exec", unix))]
-mod exec;
+pub(crate) mod exec;
 #[cfg(feature = "builtin.exit")]
-mod exit;
+pub(crate) mod exit;
 #[cfg(feature = "builtin.export")]
-mod export;
+pub(crate) mod export;
 #[cfg(feature = "builtin.false")]
-mod false_;
+pub(crate) mod false_;
 #[cfg(feature = "builtin.fc")]
-mod fc;
+pub(crate) mod fc;
 #[cfg(feature = "builtin.fg")]
-mod fg;
+pub(crate) mod fg;
 #[cfg(feature = "builtin.getopts")]
-mod getopts;
+pub(crate) mod getopts;
 #[cfg(feature = "builtin.hash")]
-mod hash;
+pub(crate) mod hash;
 #[cfg(feature = "builtin.help")]
-mod help;
+pub(crate) mod help;
 #[cfg(feature = "builtin.history")]
-mod history;
+pub(crate) mod history;
 #[cfg(feature = "builtin.jobs")]
-mod jobs;
+pub(crate) mod jobs;
 #[cfg(all(feature = "builtin.kill", unix))]
-mod kill;
+pub(crate) mod kill;
 #[cfg(feature = "builtin.let")]
-mod let_;
+pub(crate) mod let_;
 #[cfg(feature = "builtin.mapfile")]
-mod mapfile;
+pub(crate) mod mapfile;
 #[cfg(feature = "builtin.popd")]
-mod popd;
+pub(crate) mod popd;
 #[cfg(all(feature = "builtin.printf", any(unix, windows)))]
-mod printf;
+pub(crate) mod printf;
 #[cfg(feature = "builtin.pushd")]
-mod pushd;
+pub(crate) mod pushd;
 #[cfg(feature = "builtin.pwd")]
-mod pwd;
+pub(crate) mod pwd;
 #[cfg(feature = "builtin.read")]
-mod read;
+pub(crate) mod read;
 #[cfg(feature = "builtin.return")]
-mod return_;
+pub(crate) mod return_;
 #[cfg(feature = "builtin.set")]
-mod set;
+pub(crate) mod set;
 #[cfg(feature = "builtin.shift")]
-mod shift;
+pub(crate) mod shift;
 #[cfg(feature = "builtin.shopt")]
-mod shopt;
+pub(crate) mod shopt;
 #[cfg(all(feature = "builtin.suspend", unix))]
-mod suspend;
+pub(crate) mod suspend;
 #[cfg(feature = "builtin.test")]
-mod test;
+pub(crate) mod test;
 #[cfg(feature = "builtin.times")]
-mod times;
+pub(crate) mod times;
 #[cfg(feature = "builtin.trap")]
-mod trap;
+pub(crate) mod trap;
 #[cfg(feature = "builtin.true")]
-mod true_;
+pub(crate) mod true_;
 #[cfg(feature = "builtin.type")]
-mod type_;
+pub(crate) mod type_;
 #[cfg(all(feature = "builtin.ulimit", unix))]
-mod ulimit;
+pub(crate) mod ulimit;
 #[cfg(all(feature = "builtin.umask", unix))]
-mod umask;
+pub(crate) mod umask;
 #[cfg(feature = "builtin.unalias")]
-mod unalias;
+pub(crate) mod unalias;
 #[cfg(feature = "builtin.unset")]
-mod unset;
+pub(crate) mod unset;
 #[cfg(feature = "builtin.wait")]
-mod wait;
+pub(crate) mod wait;
 
-mod builder;
-mod factory;
-mod unimp;
+pub(crate) mod builder;
+pub(crate) mod factory;
+pub(crate) mod unimp;
 
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
@@ -287,4 +292,20 @@ macro_rules! minus_or_plus_flag_arg {
             }
         }
     };
+}
+
+/// Transitional extension used by the bpaf engine, whose parsers yield
+/// `Option<bool>` directly where the clap side yields generated flag structs.
+#[cfg(not(feature = "parser-clap"))]
+pub(crate) trait OptionBoolExt {
+    /// Returns the inner value, mirroring the clap-side `to_bool`.
+    fn to_bool(&self) -> Option<bool>;
+}
+
+#[cfg(not(feature = "parser-clap"))]
+impl OptionBoolExt for Option<bool> {
+    #[inline]
+    fn to_bool(&self) -> Option<bool> {
+        *self
+    }
 }

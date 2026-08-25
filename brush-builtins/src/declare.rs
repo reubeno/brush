@@ -3,6 +3,8 @@
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
 arg_impl!(DeclareCommand);
 
+#[cfg(not(feature = "parser-clap"))]
+use crate::OptionBoolExt;
 use brush_core::{
     ErrorKind, ExecutionResult,
     env::{self, EnvironmentLookup, EnvironmentScope},
@@ -407,7 +409,7 @@ impl DeclareCommand {
     }
 
     #[expect(clippy::unnecessary_wraps)]
-    const fn apply_attributes_before_update(
+    fn apply_attributes_before_update(
         &self,
         var: &mut ShellVariable,
     ) -> Result<(), brush_core::Error> {

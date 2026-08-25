@@ -2,9 +2,13 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use std::ffi::OsStr;
 
 use bpaf::Parser;
+use super::LimitValue;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -39,14 +43,6 @@ struct ResourceDescription {
     unit: Unit,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum LimitValue {
-    Unset,
-    Unlimited,
-    Soft,
-    Hard,
-    Value(u64),
-}
 
 /// Returns a parser for a resource-limit switch that may be specified either
 /// with a value (`-c 5`) or without one (`-c`, meaning "report this limit").

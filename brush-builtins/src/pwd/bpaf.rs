@@ -2,6 +2,9 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -15,6 +18,17 @@ pub(crate) struct PwdCommand {
 }
 
 impl crate::args::BpafArgs for PwdCommand {
+    fn parser() -> impl bpaf::Parser<Self> + 'static {
+        let physical = bpaf::short('P')
+            .help("Print the physical directory without any symlinks.")
+            .switch();
+        let allow_symlinks = bpaf::short('L')
+            .help("Print $PWD if it names the current working directory.")
+            .switch();
+
+        bpaf::construct!(PwdCommand { physical, allow_symlinks })
+    }
+
     fn about() -> &'static str {
         "Display the current working directory."
     }

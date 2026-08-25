@@ -5,6 +5,7 @@
 //! parsers against invocation words and render help, mirroring the semantics
 //! of the clap-side engine.
 
+use bpaf::Parser;
 use std::ffi::OsStr;
 
 use brush_core::args::ArgsError;
@@ -97,6 +98,7 @@ pub(crate) fn render_parse_failure(failure: bpaf::ParseFailure) -> ArgsError {
 
 /// Parses only an option section (already stripped of the command name);
 /// used by declaration-style builtins whose operands are handled separately.
+#[expect(dead_code, reason = "reserved for declaration-style builtins")]
 pub(crate) fn parse_options_only<T: BpafArgs>(mut options: Vec<String>) -> Result<T, ArgsError> {
     if T::takes_plus_options() {
         options = expand_plus_option_groups(options);
@@ -143,9 +145,14 @@ fn is_long_option(arg: &str) -> bool {
 
     let name = long.split('=').next().unwrap_or("");
     let mut chars = name.chars();
-    let first_ok = chars.next().is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let first_ok = chars
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
-    first_ok && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    first_ok
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
 /// Returns whether the given token looks like a group of short (or
@@ -253,6 +260,8 @@ pub fn get_content<T: BpafArgs>(
         }
         ContentType::ShortUsage => Ok(format!("{name}: {name} {}\n", T::synopsis())),
         ContentType::ShortDescription => Ok(format!("{name} - {}\n", T::about())),
-        ContentType::ManPage => brush_core::error::unimp("man page rendering is not yet implemented"),
+        ContentType::ManPage => {
+            brush_core::error::unimp("man page rendering is not yet implemented")
+        }
     }
 }

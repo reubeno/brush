@@ -2,8 +2,12 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use bpaf::Parser;
-use std::{ffi::OsStr, io::Write};
+use std::io::Write;
+use brush_core::traps::TrapSignal;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::{ExecutionResult, builtins};
 
@@ -56,14 +60,8 @@ fn print_signals(
     Ok(exit_code)
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, ArgsError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
+fn run_bpaf_parser<T: crate::args::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
+    crate::args::run_parser::<T>(args)
 }
 
 fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {

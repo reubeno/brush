@@ -2,8 +2,9 @@
 
 #![cfg(feature = "parser-bpaf")]
 
-use itertools::Itertools;
-use std::{io::Write, sync::LazyLock};
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -143,4 +144,11 @@ impl builtins::Command for DeclareCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         super::execute(self, context).await
     }
+}
+
+impl builtins::DeclarationCommand for DeclareCommand {
+    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
+        self.declarations = declarations;
+    }
+
 }

@@ -2,10 +2,13 @@
 
 #![cfg(feature = "parser-bpaf")]
 
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use bpaf::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
-use std::ffi::OsStr;
+use std::io::Read;
 use std::time::{Duration, Instant};
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
@@ -436,14 +439,8 @@ fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
     }
 }
 
-fn run_bpaf_parser<T: builtins::Command>(
-    args: &[String],
-) -> Result<T, ArgsError> {
-    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-    T::parser()
-        .to_options()
-        .run_inner(os_args.as_slice())
-        .map_err(render_bpaf_failure)
+fn run_bpaf_parser<T: crate::args::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
+    crate::args::run_parser::<T>(args)
 }
 
 fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {
@@ -686,6 +683,60 @@ pub(crate) struct ReadCommand {
 
     /// Optionally, names of variables to receive read input.
     pub(super) variable_names: Vec<String>,
+}
+
+impl InputReader {
+    /// Creates a new input reader with optional timeout.
+    fn new(
+        input: brush_core::openfiles::OpenFile,
+        timeout: Option<Duration>,
+        term_mode: Option<brush_core::terminal::AutoModeGuard>,
+    ) -> Self {
+        Self {
+            input,
+            deadline: timeout.map(|t| Instant::now() + t),
+            buffer: [0; 1],
+            _term_mode: term_mode,
+        }
+    }
+
+    /// Checks if input is immediately available (for `-t 0`). Returns `false` if an error
+    /// occurs while checking for available input.
+    fn check_input_available(&self) -> bool {
+        brush_core::sys::poll::poll_for_input(&self.input, Duration::ZERO).unwrap_or(false)
+    }
+
+    /// Reads the next input event, handling timeout and control characters.
+    fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
+        // Check timeout before attempting read.
+        if let Some(deadline) = self.deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(InputEvent::Timeout);
+            }
+
+            // Poll for input with remaining timeout.
+            match brush_core::sys::poll::poll_for_input(&self.input, remaining) {
+                Ok(true) => { /* Data available, proceed. */ }
+                Ok(false) => return Ok(InputEvent::Timeout),
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        let n = self.input.read(&mut self.buffer)?;
+        if n == 0 {
+            return Ok(InputEvent::Eof);
+        }
+
+        let ch = self.buffer[0] as char;
+
+        // Map control characters to events.
+        Ok(match ch {
+            CTRL_C => InputEvent::CtrlC,
+            CTRL_D => InputEvent::CtrlD,
+            _ => InputEvent::Char(ch),
+        })
+    }
 }
 
 impl crate::args::BpafArgs for ReadCommand {

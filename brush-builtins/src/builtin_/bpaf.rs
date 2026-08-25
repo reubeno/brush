@@ -2,7 +2,9 @@
 
 #![cfg(feature = "parser-bpaf")]
 
-use brush_core::{ExecutionResult, };
+// N.B. Some transplanted helpers await wiring during migration.
+#![allow(dead_code, reason = "transitional engine scaffolding")]
+
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -49,3 +51,8 @@ impl builtins::Command for BuiltinCommand {
         super::execute(self, context).await
     }
 }
+
+impl builtins::DeclarationCommand for BuiltinCommand {
+    fn set_declarations(&mut self, args: Vec<brush_core::CommandArg>) {
+        self.args = args;
+    }}
