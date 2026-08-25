@@ -1,1 +1,0 @@
-const DEFAULT_PRECISION: u64 = 100;
