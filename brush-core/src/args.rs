@@ -76,12 +76,13 @@ impl ArgsError {
     // N.B. Transitional: clap remains an unconditional dependency of
     // brush-core until the migration completes.
     pub fn from_clap_error(err: &clap::Error) -> Self {
+        let help_request = matches!(
+            err.kind(),
+            clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+        );
         Self {
             message: err.to_string(),
-            help_request: matches!(
-                err.kind(),
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
-            ),
+            help_request,
         }
     }
 }
@@ -104,12 +105,12 @@ pub trait FromArgs: Sized {
 // N.B. Transitional blanket implementation: while builtins migrate off of
 // direct engine coupling, any clap-derived type satisfies the contract
 // automatically. It is removed once no builtin relies on it.
+//
+// N.B. Until dispatch stops passing the invocation verbatim, `words` includes
+// the builtin's own name at index 0, occupying clap's bin-name slot.
 impl<T: clap::Parser> FromArgs for T {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        // N.B. clap consumes the first item as the program name; our words
-        // exclude any such placeholder, so prepend an empty one.
-        let clap_argv = std::iter::once("").chain(words.iter().map(String::as_str));
-        <T as clap::Parser>::try_parse_from(clap_argv)
+        <T as clap::Parser>::try_parse_from(words.iter().map(String::as_str))
             .map_err(|err| ArgsError::from_clap_error(&err))
     }
 }
@@ -134,7 +135,9 @@ mod tests {
     #[test]
     #[allow(clippy::panic)]
     fn blanket_impl_parses_flags_and_values() {
+        // N.B. Transitional contract: invocation includes the builtin name.
         let parsed = TestArgs::from_args(&[
+            "echo".to_string(),
             "-n".to_string(),
             "-d".to_string(),
             ":".to_string(),
@@ -150,7 +153,8 @@ mod tests {
     #[test]
     #[allow(clippy::panic)]
     fn blanket_impl_reports_usage_errors() {
-        let Err(err) = TestArgs::from_args(&["--frobnicate".to_string()]) else {
+        let Err(err) = TestArgs::from_args(&["echo".to_string(), "--frobnicate".to_string()])
+        else {
             panic!("unknown flag should fail");
         };
 

@@ -112,6 +112,14 @@ enum ProcessCommand {
 }
 
 impl brush_core::builtins::Command for BrushCtlCommand {
+    fn get_content(
+        name: &str,
+        content_type: brush_core::builtins::ContentType,
+        options: &brush_core::builtins::ContentOptions,
+    ) -> Result<String, brush_core::error::Error> {
+        // N.B. Transitional: help still rendered from clap-derived metadata.
+        brush_core::builtins::clap_content::<Self>(name, &content_type, options)
+    }
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
