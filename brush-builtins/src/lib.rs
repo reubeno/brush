@@ -23,6 +23,35 @@ compile_error!("select at most one builtin argument-parsing engine feature");
 )))]
 compile_error!("select one builtin argument-parsing engine feature");
 
+/// Selects a builtin's argument implementation according to the active
+/// argument-parsing engine feature (`parser-clap` / `parser-bpaf` /
+/// `parser-usage`; exactly one must be enabled).
+///
+/// Expands to declarations of the per-engine sibling modules plus a re-export
+/// of `$t` from whichever engine module is compiled, so the rest of the
+/// builtin's file can refer to the type engine-independently.
+macro_rules! arg_impl {
+    ($t:ident) => {
+        #[cfg(feature = "parser-bpaf")]
+        pub mod bpaf;
+        #[cfg(feature = "parser-clap")]
+        pub mod clap;
+        #[cfg(feature = "parser-usage")]
+        pub mod usage;
+
+        mod imp {
+            #[cfg(feature = "parser-bpaf")]
+            pub(crate) use super::bpaf::*;
+            #[cfg(feature = "parser-clap")]
+            pub(crate) use super::clap::*;
+            #[cfg(feature = "parser-usage")]
+            pub(crate) use super::usage::*;
+        }
+
+        pub(crate) use imp::$t;
+    };
+}
+
 #[cfg(feature = "builtin.alias")]
 mod alias;
 #[cfg(feature = "builtin.bg")]
