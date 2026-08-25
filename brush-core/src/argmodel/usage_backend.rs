@@ -156,7 +156,43 @@ impl super::ArgParserBackend for UsageBackend {
 /// (bounded by the number of distinct builtin invocations).
 #[must_use]
 #[expect(clippy::too_many_lines, reason = "explicit engine structure")]
+/// Returns the engine's command graph for the given spec and name.
+///
+/// Graphs are built once and interned in a process-wide cache keyed by the
+/// spec's address plus the command name, so repeated invocations of the same
+/// builtin reuse one allocation set instead of leaking per parse. (The
+/// usage-argv engine requires `&'static Command<'static>`; interning bounds
+/// total leakage to one graph per registered builtin.)
 pub fn build_command(spec: &'static CommandSpec, name: &str) -> &'static Command<'static> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    // N.B. Outer key: the spec's address ('static, stable). Inner key: the
+    // invocation name, since one spec can serve several registered names
+    // (declare/readonly/local). Graphs are built once and leaked; total
+    // leakage is bounded to one graph per (builtin spec, name) pair.
+    type Cache = Mutex<HashMap<usize, HashMap<String, &'static Command<'static>>>>;
+    static GRAPH_CACHE: std::sync::LazyLock<Cache> =
+        std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    let spec_addr = std::ptr::from_ref(spec).addr();
+    let mut cache = GRAPH_CACHE.lock().expect("command graph cache poisoned");
+
+    if let Some(cmd) = cache.get(&spec_addr).and_then(|inner| inner.get(name)) {
+        return cmd;
+    }
+
+    let cmd = Box::leak(Box::new(build_graph(spec, name)));
+    cache
+        .entry(spec_addr)
+        .or_default()
+        .insert(name.to_owned(), cmd);
+    cmd
+}
+
+/// Builds the engine's command graph from the neutral spec.
+#[expect(clippy::too_many_lines, reason = "explicit engine structure")]
+fn build_graph(spec: &CommandSpec, name: &str) -> Command<'static> {
     let mut flags: Vec<Flag<'static>> = Vec::new();
     for (ix, arg) in spec.args.iter().enumerate() {
         let shorts: Vec<u8> = arg.shorts.iter().map(|c| *c as u8).collect();
@@ -250,7 +286,7 @@ pub fn build_command(spec: &'static CommandSpec, name: &str) -> &'static Command
             .into_boxed_slice(),
     );
 
-    Box::leak(Box::new(Command {
+    Command {
         name: leak_str(name),
         aliases: &[],
         flags: flag_refs,
@@ -270,7 +306,7 @@ pub fn build_command(spec: &'static CommandSpec, name: &str) -> &'static Command
         disable_help_subcommand: true,
         disable_version_flag: true,
         key: 0,
-    }))
+    }
 }
 
 fn help_trigger(command: &Command<'_>) -> &'static str {

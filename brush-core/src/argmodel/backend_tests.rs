@@ -105,3 +105,33 @@ mod usage_impl {
         assert_eq!(values.value_of_positional("n"), Some("2"));
     }
 }
+
+#[cfg(feature = "parser-usage")]
+mod usage_cache {
+    use super::*;
+    use crate::argmodel::backend::ArgParserBackend as _;
+
+    const SHIFT_SPEC: CommandSpec = CommandSpec {
+        args: &[],
+        positionals: &[PositionalSpec::one("n", "N")],
+    };
+
+    #[test]
+    fn repeated_parses_reuse_interned_graph() {
+        // N.B. First parse interns the graph; later parses must reuse it.
+        // Assert via address stability of the engine command graph.
+        let a = super::super::usage_backend::build_command(&SHIFT_SPEC, "shift");
+        let b = super::super::usage_backend::build_command(&SHIFT_SPEC, "shift");
+        assert!(std::ptr::eq(a, b));
+
+        let first = super::super::usage_backend::UsageBackend
+            .parse(&SHIFT_SPEC, "shift", &["2".to_string()])
+            .unwrap();
+        assert_eq!(first.value_of_positional("n"), Some("2"));
+
+        let second = super::super::usage_backend::UsageBackend
+            .parse(&SHIFT_SPEC, "shift", &["3".to_string()])
+            .unwrap();
+        assert_eq!(second.value_of_positional("n"), Some("3"));
+    }
+}
