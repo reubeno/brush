@@ -308,6 +308,13 @@ impl ParsedValues {
         }
     }
 
+    /// Records one value for the positional with the given id.
+    pub fn push_positional_by_id(&mut self, id: &str, value: String) {
+        if let Some(ix) = self.spec.positionals.iter().position(|p| p.id == id) {
+            self.push_positional_at(ix, value);
+        }
+    }
+
     /// Records one value for the positional at `slot` (backend-internal).
     pub fn push_positional_at(&mut self, slot: usize, value: String) {
         if let Some(target) = self.positionals.get_mut(slot) {

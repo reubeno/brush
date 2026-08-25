@@ -1,7 +1,16 @@
 //! Backend-parity tests: every backend must interpret a spec identically.
 
-use super::{ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
+#[cfg_attr(not(feature = "parser-bpaf"), allow(unused_imports))]
+use super::ParsedValues;
+#[cfg_attr(not(feature = "parser-usage"), allow(unused_imports))]
+#[cfg_attr(not(feature = "parser-bpaf"), allow(unused_imports))]
+use super::{ArgKind, ArgSpec, CommandSpec};
+#[cfg(feature = "parser-usage")]
+use super::{CommandSpec as UsageCommandSpec, PositionalSpec};
 
+#[cfg(feature = "parser-bpaf")]
+use super::PositionalSpec;
+#[cfg(feature = "parser-bpaf")]
 const ECHO_SPEC: CommandSpec = CommandSpec {
     args: &[
         ArgSpec::flag("no_newline", &['n'], &[], ""),
@@ -11,8 +20,10 @@ const ECHO_SPEC: CommandSpec = CommandSpec {
 };
 
 #[cfg(feature = "parser-bpaf")]
+#[cfg(feature = "parser-bpaf")]
 mod bpaf_impl {
     use super::*;
+    #[cfg_attr(not(feature = "parser-usage"), allow(unused_imports))]
     use crate::argmodel::backend::ArgParserBackend as _;
 
     #[allow(clippy::panic)]
@@ -72,5 +83,25 @@ mod clap_impl {
         let m = run(&["-d".to_string(), ":".to_string(), "-n".to_string()]);
         assert!(m.flag("no_newline"));
         assert_eq!(m.value("delimiter"), Some(":"));
+    }
+}
+
+#[cfg(feature = "parser-usage")]
+mod usage_impl {
+    use super::UsageCommandSpec as CommandSpec;
+    use super::*;
+    use crate::argmodel::backend::ArgParserBackend as _;
+
+    const SHIFT_SPEC: CommandSpec = CommandSpec {
+        args: &[],
+        positionals: &[PositionalSpec::one("n", "N")],
+    };
+
+    #[test]
+    fn single_positional_binds_value() {
+        let values = super::super::usage_backend::UsageBackend
+            .parse(&SHIFT_SPEC, "shift", &["2".to_string()])
+            .unwrap_or_else(|e| panic!("usage parse failed: {e}"));
+        assert_eq!(values.value_of_positional("n"), Some("2"));
     }
 }

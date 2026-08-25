@@ -66,6 +66,15 @@ impl super::ArgParserBackend for UsageBackend {
         let mut parser = Parser::new(command, &argv_refs);
         let mut values = ParsedValues::new(spec);
 
+        if std::env::var_os("BRUSH_DBG").is_some() {
+            std::eprintln!(
+                "DBG usage parse: {} args in spec, {} pos",
+                spec.args.len(),
+                spec.positionals.len()
+            );
+        }
+
+        let dbg = std::env::var_os("BRUSH_DBG").is_some();
         loop {
             match parser.next_event() {
                 None => break,
@@ -73,6 +82,9 @@ impl super::ArgParserBackend for UsageBackend {
                     return Err(render_parse_error(&file_spec, &argv_refs, &err));
                 }
                 Some(Ok(Event::Flag { flag, value, .. })) => {
+                    if dbg {
+                        std::eprintln!("DBG flag event: {flag:?} value={value:?}");
+                    }
                     let id = flag.name;
                     match value {
                         None => values.set_flag(id),
@@ -88,14 +100,21 @@ impl super::ArgParserBackend for UsageBackend {
                     }
                 }
                 Some(Ok(Event::Arg { arg, value, .. })) => {
-                    let id = arg.name;
+                    if dbg {
+                        std::eprintln!("DBG arg event: name={} value={value:?}", arg.name);
+                    }
+                    // N.B. Positional events carry the positional's id; their
+                    // values live in the positional slots.
                     let value = usage::argv::as_str(value)
-                        .map_err(|err| BuiltinArgParseError {
-                            message: format!("invalid UTF-8 for `{id}`: {err}"),
-                            help_request: false,
+                        .map_err(|err| {
+                            let id = arg.name;
+                            BuiltinArgParseError {
+                                message: format!("invalid UTF-8 for `{id}`: {err}"),
+                                help_request: false,
+                            }
                         })?
                         .to_owned();
-                    values.push_value(id, value);
+                    values.push_positional_by_id(arg.name, value);
                 }
                 Some(Ok(Event::Command(_))) => {}
                 Some(Ok(Event::External { .. })) => {}
