@@ -38,7 +38,7 @@ pub(crate) struct TestCommand {
     pub(super) args: Vec<String>,
 }
 
-impl crate::args::BpafArgs for TestCommand {
+impl crate::args::bpaf_support::BpafArgs for TestCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         // N.B. Arguments are captured verbatim in [`Self::new`] because test
         // expressions are interpreted entirely by `execute`; the parser exists
@@ -70,7 +70,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for TestCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -82,7 +82,7 @@ impl builtins::Command for TestCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

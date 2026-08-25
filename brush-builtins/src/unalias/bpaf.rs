@@ -21,7 +21,7 @@ pub(crate) struct UnaliasCommand {
     pub(super) aliases: Vec<String>,
 }
 
-impl crate::args::BpafArgs for UnaliasCommand {
+impl crate::args::bpaf_support::BpafArgs for UnaliasCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         unalias_command()
     }
@@ -35,7 +35,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for UnaliasCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -47,7 +47,7 @@ impl builtins::Command for UnaliasCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

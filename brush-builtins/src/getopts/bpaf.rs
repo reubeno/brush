@@ -20,10 +20,10 @@ pub(crate) struct GetOptsCommand {
     pub(super) args: Vec<String>,
 }
 
-impl crate::args::BpafArgs for GetOptsCommand {
+impl crate::args::bpaf_support::BpafArgs for GetOptsCommand {
     fn parser() -> impl bpaf::Parser<Self> + 'static {
         // N.B. All operands arrive via the trailing-args flow; they are
-        // unpacked in [`crate::args::BpafArgs::set_trailing_args`] below.
+        // unpacked in [`crate::args::bpaf_support::BpafArgs::set_trailing_args`] below.
         let options_string = bpaf::pure(String::new());
         let variable_name = bpaf::pure(String::new());
         let args = bpaf::pure(Vec::new());
@@ -61,7 +61,7 @@ impl crate::args::BpafArgs for GetOptsCommand {
 
 impl FromArgs for GetOptsCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -73,7 +73,7 @@ impl builtins::Command for GetOptsCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

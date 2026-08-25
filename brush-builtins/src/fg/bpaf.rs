@@ -17,7 +17,7 @@ pub(crate) struct FgCommand {
     pub(super) job_spec: Option<String>,
 }
 
-impl crate::args::BpafArgs for FgCommand {
+impl crate::args::bpaf_support::BpafArgs for FgCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         fg_command()
     }
@@ -31,7 +31,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for FgCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -43,7 +43,7 @@ impl builtins::Command for FgCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

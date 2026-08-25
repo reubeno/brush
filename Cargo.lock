@@ -428,6 +428,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "usage-rs",
  "uucore",
 ]
 
@@ -4626,6 +4627,33 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
+name = "usage-argv"
+version = "6.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "832f849be4b8046c843219bc92d067a6689530df53f56e3c0a52ff5ebbd2f89b"
+
+[[package]]
+name = "usage-derive"
+version = "6.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5634bb965ae075c5cedfc27942f7e6110bf5e7e169cba04de86346f4aeee41e7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
+name = "usage-rs"
+version = "6.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12a8c2b63902582429527f21cd91d2da0065fb9222b8a2a5b87d8f77c7daf71e"
+dependencies = [
+ "usage-argv",
+ "usage-derive",
+]
 
 [[package]]
 name = "utf16_iter"

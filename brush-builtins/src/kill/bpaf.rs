@@ -60,7 +60,7 @@ fn print_signals(
     Ok(exit_code)
 }
 
-fn run_bpaf_parser<T: crate::args::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
+fn run_bpaf_parser<T: crate::args::bpaf_support::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
     crate::args::run_parser::<T>(args)
 }
 
@@ -120,7 +120,7 @@ pub(crate) struct KillCommand {
     pub(super) args: Vec<String>,
 }
 
-impl crate::args::BpafArgs for KillCommand {
+impl crate::args::bpaf_support::BpafArgs for KillCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         // N.B. Only the leading options are parsed here; all remaining tokens
         // are captured verbatim via `takes_trailing_args`.
@@ -229,7 +229,7 @@ fn set_trailing_args(&mut self, args: Vec<String>) {
 
 impl FromArgs for KillCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -241,7 +241,7 @@ impl builtins::Command for KillCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

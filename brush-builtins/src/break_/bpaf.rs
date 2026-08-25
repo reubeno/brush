@@ -14,7 +14,7 @@ pub(crate) struct BreakCommand {
     pub(super) which_loop: i8,
 }
 
-impl crate::args::BpafArgs for BreakCommand {
+impl crate::args::bpaf_support::BpafArgs for BreakCommand {
 fn parser() -> impl bpaf::Parser<Self> {
         let which_loop = bpaf::positional::<i8>("WHICH_LOOP")
             .help("If specified, indicates which nested loop to break out of.")
@@ -31,7 +31,7 @@ fn synopsis() -> &'static str {
 
 impl FromArgs for BreakCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::BpafArgs::from_words(words)
+        crate::args::bpaf_support::BpafArgs::from_words(words)
     }
 }
 
@@ -43,7 +43,7 @@ impl builtins::Command for BreakCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        crate::args::get_content::<Self>(name, &content_type, options)
+        crate::args::bpaf_support::get_content::<Self>(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
