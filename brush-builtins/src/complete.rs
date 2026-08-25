@@ -1,13 +1,18 @@
 //! The `complete` builtin.
 
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+#[cfg(feature = "parser-clap")]
 use self::clap::CommonCompleteCommandArgs;
+#[cfg(feature = "parser-bpaf")]
+use self::bpaf::CommonCompleteCommandArgs;
+#[cfg(feature = "parser-clap")]
 pub(crate) use self::clap::{CompGenCommand, CompOptCommand};
+#[cfg(feature = "parser-bpaf")]
+pub(crate) use self::bpaf::{CompGenCommand, CompOptCommand};
 arg_impl!(CompleteCommand);
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
-use std::collections::HashMap;
+use brush_core::{ExecutionResult,error,escape};
 use std::fmt::Write as _;
 use std::io::Write;
 
@@ -320,148 +325,9 @@ impl CompleteCommand {
     }
 }
 
-impl builtins::Command for CompGenCommand {
-    type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut spec = self
-            .common_args
-            .create_spec(context.shell.options().extended_globbing);
-        spec.options.no_sort = true;
 
-        let token_to_complete = self.word.as_deref().unwrap_or_default();
 
-        // We unquote the token-to-be-completed before passing it to the completion system.
-        let unquoted_token = brush_parser::unquote_str(token_to_complete);
-
-        let completion_context = completion::Context {
-            token_to_complete: unquoted_token.as_str(),
-            preceding_token: None,
-            command_name: None,
-            token_index: 0,
-            tokens: &[&completion::CompletionToken {
-                text: token_to_complete,
-                start: 0,
-            }],
-            input_line: token_to_complete,
-            cursor_index: token_to_complete.len(),
-            trigger: completion::CompletionTrigger::Programmatic,
-        };
-
-        let result = spec
-            .get_completions(context.shell, &completion_context)
-            .await?;
-
-        match result {
-            completion::Answer::Candidates(candidates, _options) => {
-                // We are expected to return 1 if there are no candidates, even if no errors
-                // occurred along the way.
-                if candidates.is_empty() {
-                    return Ok(ExecutionResult::general_error());
-                }
-
-                for candidate in candidates {
-                    writeln!(context.stdout(), "{candidate}")?;
-                }
-            }
-            completion::Answer::RestartCompletionProcess => {
-                return error::unimp("restart completion");
-            }
-        }
-
-        Ok(ExecutionResult::success())
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
-}
-
-impl builtins::Command for CompOptCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut options =
-            HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
-        for option in &self.disabled_options {
-            options.insert(option.clone(), false);
-        }
-        for option in &self.enabled_options {
-            options.insert(option.clone(), true);
-        }
-
-        if !self.names.is_empty() {
-            if self.update_default || self.update_empty || self.update_initial_word {
-                writeln!(
-                    context.stderr(),
-                    "compopt: cannot specify names with -D, -E, or -I"
-                )?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
-            }
-
-            for name in &self.names {
-                let spec = context.shell.completion_config_mut().get_or_add_mut(name);
-                Self::set_options_for_spec(spec, &options);
-            }
-        } else if self.update_default {
-            if let Some(spec) = &mut context.shell.completion_config_mut().default {
-                Self::set_options_for_spec(spec, &options);
-            } else {
-                let mut spec = Spec::default();
-                Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config_mut().default = Some(spec);
-            }
-        } else if self.update_empty {
-            if let Some(spec) = &mut context.shell.completion_config_mut().empty_line {
-                Self::set_options_for_spec(spec, &options);
-            } else {
-                let mut spec = Spec::default();
-                Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config_mut().empty_line = Some(spec);
-            }
-        } else if self.update_initial_word {
-            if let Some(spec) = &mut context.shell.completion_config_mut().initial_word {
-                Self::set_options_for_spec(spec, &options);
-            } else {
-                let mut spec = Spec::default();
-                Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config_mut().initial_word = Some(spec);
-            }
-        } else {
-            // If we got here, then we need to apply to any completion actively in-flight.
-            if let Some(in_flight_options) = context
-                .shell
-                .completion_config_mut()
-                .current_completion_options
-                .as_mut()
-            {
-                Self::set_options(in_flight_options, &options);
-            }
-        }
-
-        Ok(ExecutionResult::success())
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
-}
 
 impl CompOptCommand {
     fn set_options_for_spec<'a, I>(spec: &mut Spec, options: I)

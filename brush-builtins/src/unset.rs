@@ -1,7 +1,10 @@
 //! The `unset` builtin.
 
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+#[cfg(feature = "parser-clap")]
 use self::clap::UnsetNameInterpretation;
+#[cfg(feature = "parser-bpaf")]
+use self::bpaf::UnsetNameInterpretation;
 arg_impl!(UnsetCommand);
 
 use brush_core::{ExecutionResult, Shell};
