@@ -1,106 +1,71 @@
+//! The `cd` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(CdCommand);
+
+use brush_core::{ExecutionResult, error};
 use std::io::Write;
 use std::path::PathBuf;
 
-use clap::Parser;
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &CdCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    // TODO(cd): implement 'cd -@'
+    if command.file_with_xattr_as_dir {
+        return error::unimp("cd -@");
+    }
 
-use brush_core::{ExecutionResult, builtins, error};
-
-/// Change the current shell working directory.
-#[derive(Parser)]
-pub(crate) struct CdCommand {
-    /// Force following symlinks.
-    #[arg(short = 'L', overrides_with = "use_physical_dir")]
-    force_follow_symlinks: bool,
-
-    /// Use physical dir structure without following symlinks.
-    #[arg(short = 'P', overrides_with = "force_follow_symlinks")]
-    use_physical_dir: bool,
-
-    /// Exit with non zero exit status if current working directory resolution fails.
-    #[arg(short = 'e')]
-    exit_on_failed_cwd_resolution: bool,
-
-    /// Show file with extended attributes as a dir with extended
-    /// attributes.
-    #[arg(short = '@')]
-    file_with_xattr_as_dir: bool,
-
-    /// By default it is the value of the HOME shell variable. If `TARGET_DIR` is "-", it is
-    /// converted to $OLDPWD.
-    target_dir: Option<PathBuf>,
-}
-
-impl builtins::Command for CdCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        // TODO(cd): implement 'cd -@'
-        if self.file_with_xattr_as_dir {
-            return error::unimp("cd -@");
-        }
-
-        let mut should_print = false;
-        let mut target_dir = if let Some(target_dir) = &self.target_dir {
-            // `cd -', equivalent to `cd $OLDPWD'
-            if target_dir.as_os_str() == "-" {
-                should_print = true;
-                if let Some(oldpwd) = context.shell.env_str("OLDPWD") {
-                    PathBuf::from(oldpwd.to_string())
-                } else {
-                    writeln!(context.stderr(), "OLDPWD not set")?;
-                    return Ok(ExecutionResult::general_error());
-                }
+    let mut should_print = false;
+    let mut target_dir = if let Some(target_dir) = &command.target_dir {
+        // `cd -', equivalent to `cd $OLDPWD'
+        if target_dir.as_os_str() == "-" {
+            should_print = true;
+            if let Some(oldpwd) = context.shell.env_str("OLDPWD") {
+                PathBuf::from(oldpwd.to_string())
             } else {
-                // TODO(cd): remove clone, and use temporary lifetime extension after rust 1.75
-                target_dir.clone()
-            }
-        // `cd' without arguments is equivalent to `cd $HOME'
-        } else {
-            if let Some(home_var) = context.shell.env_str("HOME") {
-                PathBuf::from(home_var.to_string())
-            } else {
-                writeln!(context.stderr(), "HOME not set")?;
+                writeln!(context.stderr(), "OLDPWD not set")?;
                 return Ok(ExecutionResult::general_error());
             }
-        };
+        } else {
+            // TODO(cd): remove clone, and use temporary lifetime extension after rust 1.75
+            target_dir.clone()
+        }
+    // `cd' without arguments is equivalent to `cd $HOME'
+    } else {
+        if let Some(home_var) = context.shell.env_str("HOME") {
+            PathBuf::from(home_var.to_string())
+        } else {
+            writeln!(context.stderr(), "HOME not set")?;
+            return Ok(ExecutionResult::general_error());
+        }
+    };
 
-        if self.use_physical_dir
-            || context
-                .shell
-                .options()
-                .do_not_resolve_symlinks_when_changing_dir
-        {
-            // -e is only relevant in physical mode.
-            if self.exit_on_failed_cwd_resolution {
-                return error::unimp("cd -e");
-            }
-
-            target_dir = context.shell.absolute_path(target_dir).canonicalize()?;
+    if command.use_physical_dir
+        || context
+            .shell
+            .options()
+            .do_not_resolve_symlinks_when_changing_dir
+    {
+        // -e is only relevant in physical mode.
+        if command.exit_on_failed_cwd_resolution {
+            return error::unimp("cd -e");
         }
 
-        context.shell.set_working_dir(&target_dir)?;
-
-        // Bash compatibility
-        // https://www.gnu.org/software/bash/manual/bash.html#index-cd
-        // If a non-empty directory name from CDPATH is used, or if '-' is the first argument, and
-        // the directory change is successful, the absolute pathname of the new working
-        // directory is written to the standard output.
-        if should_print {
-            writeln!(context.stdout(), "{}", target_dir.display())?;
-        }
-
-        Ok(ExecutionResult::success())
+        target_dir = context.shell.absolute_path(target_dir).canonicalize()?;
     }
 
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
+    context.shell.set_working_dir(&target_dir)?;
+
+    // Bash compatibility
+    // https://www.gnu.org/software/bash/manual/bash.html#index-cd
+    // If a non-empty directory name from CDPATH is used, or if '-' is the first argument, and
+    // the directory change is successful, the absolute pathname of the new working
+    // directory is written to the standard output.
+    if should_print {
+        writeln!(context.stdout(), "{}", target_dir.display())?;
     }
+
+    Ok(ExecutionResult::success())
 }

@@ -1,49 +1,29 @@
-use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
+//! The `pwd` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(PwdCommand);
+
+use brush_core::ExecutionResult;
 use std::{borrow::Cow, io::Write, path::Path};
 
-/// Display the current working directory.
-#[derive(Parser)]
-pub(crate) struct PwdCommand {
-    /// Print the physical directory without any symlinks.
-    #[arg(short = 'P', overrides_with = "allow_symlinks")]
-    physical: bool,
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &PwdCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();
 
-    /// Print $PWD if it names the current working directory.
-    #[arg(short = 'L', overrides_with = "physical")]
-    allow_symlinks: bool,
-}
+    let should_canonicalize = command.physical
+        || context
+            .shell
+            .options()
+            .do_not_resolve_symlinks_when_changing_dir;
 
-impl builtins::Command for PwdCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();
-
-        let should_canonicalize = self.physical
-            || context
-                .shell
-                .options()
-                .do_not_resolve_symlinks_when_changing_dir;
-
-        if should_canonicalize {
-            cwd = cwd.canonicalize()?.into();
-        }
-
-        writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
-
-        Ok(ExecutionResult::success())
+    if should_canonicalize {
+        cwd = cwd.canonicalize()?.into();
     }
 
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
+    writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
+
+    Ok(ExecutionResult::success())
 }

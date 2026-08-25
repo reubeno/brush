@@ -1,31 +1,19 @@
+//! The `getopts` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(GetOptsCommand);
+
+use brush_core::{ExecutionResult, env, variables};
 use std::{collections::HashMap, io::Write};
 
-use clap::Parser;
+pub(super) const VAR_GETOPTS_NEXT_CHAR_INDEX: &str = "__GETOPTS_NEXT_CHAR";
 
-use brush_core::{ExecutionResult, builtins, env, variables};
+pub(super) const VAR_GETOPTS_LAST_OPTIND: &str = "__GETOPTS_LAST_OPTIND";
 
-/// Parse command options.
-#[derive(Parser)]
-pub(crate) struct GetOptsCommand {
-    /// Specification for options
-    options_string: String,
-
-    /// Name of variable to receive next option
-    variable_name: String,
-
-    /// Arguments to parse
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
-}
-
-// We track cross-call state in special variables. They are hidden from enumeration
-// (e.g. `set`, `declare`) so they don't leak into scripts' environments.
-const VAR_GETOPTS_NEXT_CHAR_INDEX: &str = "__GETOPTS_NEXT_CHAR";
-const VAR_GETOPTS_LAST_OPTIND: &str = "__GETOPTS_LAST_OPTIND";
-const DEFAULT_NEXT_CHAR_INDEX: usize = 1;
+pub(super) const DEFAULT_NEXT_CHAR_INDEX: usize = 1;
 
 /// The result of processing one option from the argument list.
-struct GetOptsResult {
+pub(super) struct GetOptsResult {
     /// The value to assign to the target variable (the option char, `?`, or `:`).
     variable_value: String,
     /// The value for OPTARG, if any (option's argument or, on error, the offending char).
@@ -37,7 +25,7 @@ struct GetOptsResult {
 }
 
 /// Parsed representation of the optstring (e.g., `":a:bc"`).
-struct OptionSpec {
+pub(super) struct OptionSpec {
     /// Maps each option character to whether it requires an argument.
     defs: HashMap<char, bool>,
     /// True when the optstring has a leading `:`, suppressing error messages
@@ -48,7 +36,7 @@ struct OptionSpec {
 /// Parses the optstring into an [`OptionSpec`]. A leading `:` enables silent error
 /// mode. Each letter defines an option; a `:` immediately after a letter means it
 /// takes an argument. Duplicate letters are ignored (first definition wins).
-fn parse_option_spec(spec: &str) -> OptionSpec {
+pub(super) fn parse_option_spec(spec: &str) -> OptionSpec {
     let mut defs = HashMap::<char, bool>::new();
     let mut silent_errors = false;
 
@@ -80,95 +68,12 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
     }
 }
 
-impl builtins::Command for GetOptsCommand {
-    type Error = brush_core::Error;
-
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(command): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, brush_core::args::ArgsError>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)
-            .map_err(|err| brush_core::args::ArgsError::from_clap_error(&err))?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
-    }
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        // Validate the target variable name.
-        if !env::valid_variable_name(&self.variable_name) {
-            writeln!(
-                context.stderr(),
-                "{}: `{}': not a valid identifier",
-                context.command_name,
-                self.variable_name
-            )?;
-            return Ok(ExecutionResult::new(1));
-        }
-
-        let spec = parse_option_spec(&self.options_string);
-
-        // If unset or non-numeric, assume OPTIND is 1.
-        let next_index_signed = context
-            .shell
-            .env_str("OPTIND")
-            .and_then(|s| brush_core::int_utils::parse::<i32>(s.as_ref(), 10).ok())
-            .unwrap_or(1);
-
-        // Detect external OPTIND modifications (e.g., `OPTIND=1` to restart
-        // parsing). If the current OPTIND differs from what we last set, clear
-        // the internal char index so we don't resume mid-arg.
-        let last_optind = context
-            .shell
-            .env_str(VAR_GETOPTS_LAST_OPTIND)
-            .and_then(|s| s.parse::<i32>().ok());
-        if last_optind != Some(next_index_signed) {
-            context.shell.env_mut().unset(VAR_GETOPTS_NEXT_CHAR_INDEX)?;
-        }
-
-        #[allow(clippy::cast_sign_loss)] // .max(1) guarantees positive
-        let next_index = next_index_signed.max(1) as usize;
-
-        // Select the arguments to parse. If none were explicitly provided, we
-        // default to using the shell's current positional parameters.
-        // Clone positional params to avoid borrowing context immutably while we
-        // also need it mutably in parse_next_option.
-        let owned_args;
-        let args_to_parse = if !self.args.is_empty() {
-            &self.args
-        } else {
-            owned_args = context.shell.current_shell_args().to_vec();
-            &owned_args
-        };
-
-        let result = parse_next_option(&mut context, &spec, args_to_parse, next_index)?;
-
-        update_variables(&mut context, &self.variable_name, result)
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
-}
-
 /// Extracts the next option from `args_to_parse` starting at 1-based position
 /// `next_index`. Handles combined flags (e.g., `-abc`), option arguments (both
 /// `-pVALUE` and `-p VALUE` forms), and error reporting for unknown options or
 /// missing arguments. Tracks position within combined flags via the
 /// `__GETOPTS_NEXT_CHAR` shell variable.
-fn parse_next_option<SE: brush_core::ShellExtensions>(
+pub(super) fn parse_next_option<SE: brush_core::ShellExtensions>(
     context: &mut brush_core::ExecutionContext<'_, SE>,
     spec: &OptionSpec,
     args_to_parse: &[String],
@@ -287,7 +192,7 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
 /// Resolves the argument for an option that takes a value. Returns the updated
 /// `(variable_value, optarg, is_last_char, next_index)` tuple.
 #[allow(clippy::too_many_arguments)]
-fn resolve_option_argument<SE: brush_core::ShellExtensions>(
+pub(super) fn resolve_option_argument<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
     spec: &OptionSpec,
     c: char,
@@ -330,7 +235,7 @@ fn resolve_option_argument<SE: brush_core::ShellExtensions>(
 }
 
 /// Handles an unknown option character, reporting an error if appropriate.
-fn report_unknown_option<SE: brush_core::ShellExtensions>(
+pub(super) fn report_unknown_option<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
     spec: &OptionSpec,
     c: char,
@@ -350,7 +255,7 @@ fn report_unknown_option<SE: brush_core::ShellExtensions>(
 
 /// Writes the parsing result back into shell variables: the target variable,
 /// OPTARG, OPTIND, and the internal `__GETOPTS_LAST_OPTIND` tracker.
-fn update_variables<SE: brush_core::ShellExtensions>(
+pub(super) fn update_variables<SE: brush_core::ShellExtensions>(
     context: &mut brush_core::ExecutionContext<'_, SE>,
     variable_name: &str,
     result: GetOptsResult,
@@ -402,11 +307,67 @@ fn update_variables<SE: brush_core::ShellExtensions>(
 
 /// Returns whether OPTERR is enabled (i.e., getopts should print error messages).
 /// OPTERR defaults to 1; any nonzero value means errors are enabled.
-fn is_opterr_enabled<SE: brush_core::ShellExtensions>(
+pub(super) fn is_opterr_enabled<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
 ) -> bool {
     context
         .shell
         .env_str("OPTERR")
         .is_none_or(|s| s.parse::<i64>().unwrap_or(1) != 0)
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &GetOptsCommand,
+    mut context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    // Validate the target variable name.
+    if !env::valid_variable_name(&command.variable_name) {
+        writeln!(
+            context.stderr(),
+            "{}: `{}': not a valid identifier",
+            context.command_name,
+            command.variable_name
+        )?;
+        return Ok(ExecutionResult::new(1));
+    }
+
+    let spec = parse_option_spec(&command.options_string);
+
+    // If unset or non-numeric, assume OPTIND is 1.
+    let next_index_signed = context
+        .shell
+        .env_str("OPTIND")
+        .and_then(|s| brush_core::int_utils::parse::<i32>(s.as_ref(), 10).ok())
+        .unwrap_or(1);
+
+    // Detect external OPTIND modifications (e.g., `OPTIND=1` to restart
+    // parsing). If the current OPTIND differs from what we last set, clear
+    // the internal char index so we don't resume mid-arg.
+    let last_optind = context
+        .shell
+        .env_str(VAR_GETOPTS_LAST_OPTIND)
+        .and_then(|s| s.parse::<i32>().ok());
+    if last_optind != Some(next_index_signed) {
+        context.shell.env_mut().unset(VAR_GETOPTS_NEXT_CHAR_INDEX)?;
+    }
+
+    #[allow(clippy::cast_sign_loss)] // .max(1) guarantees positive
+    let next_index = next_index_signed.max(1) as usize;
+
+    // Select the arguments to parse. If none were explicitly provided, we
+    // default to using the shell's current positional parameters.
+    // Clone positional params to avoid borrowing context immutably while we
+    // also need it mutably in parse_next_option.
+    let owned_args;
+    let args_to_parse = if !command.args.is_empty() {
+        &command.args
+    } else {
+        owned_args = context.shell.current_shell_args().to_vec();
+        &owned_args
+    };
+
+    let result = parse_next_option(&mut context, &spec, args_to_parse, next_index)?;
+
+    update_variables(&mut context, &command.variable_name, result)
 }

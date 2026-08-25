@@ -1,56 +1,40 @@
-use clap::Parser;
+//! The `bg` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(BgCommand);
+
+use brush_core::ExecutionResult;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &BgCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    let mut exit_code = ExecutionResult::success();
 
-/// Moves a job to run in the background.
-#[derive(Parser)]
-pub(crate) struct BgCommand {
-    /// List of job specs to move to background.
-    job_specs: Vec<String>,
-}
-
-impl builtins::Command for BgCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut exit_code = ExecutionResult::success();
-
-        if !self.job_specs.is_empty() {
-            for job_spec in &self.job_specs {
-                if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
-                    job.move_to_background()?;
-                } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {}: no such job",
-                        context.command_name,
-                        job_spec
-                    )?;
-                    exit_code = ExecutionResult::general_error();
-                }
-            }
-        } else {
-            if let Some(job) = context.shell.jobs_mut().current_job_mut() {
+    if !command.job_specs.is_empty() {
+        for job_spec in &command.job_specs {
+            if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
                 job.move_to_background()?;
             } else {
-                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
+                writeln!(
+                    context.stderr(),
+                    "{}: {}: no such job",
+                    context.command_name,
+                    job_spec
+                )?;
                 exit_code = ExecutionResult::general_error();
             }
         }
-
-        Ok(exit_code)
+    } else {
+        if let Some(job) = context.shell.jobs_mut().current_job_mut() {
+            job.move_to_background()?;
+        } else {
+            writeln!(context.stderr(), "{}: no current job", context.command_name)?;
+            exit_code = ExecutionResult::general_error();
+        }
     }
 
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
+    Ok(exit_code)
 }

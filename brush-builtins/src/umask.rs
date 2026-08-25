@@ -1,70 +1,13 @@
-use brush_core::{ErrorKind, ExecutionResult, builtins};
+//! The `umask` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(UmaskCommand);
+
+use brush_core::{ErrorKind, ExecutionResult};
 use cfg_if::cfg_if;
-use clap::Parser;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 use nix::sys::stat::Mode;
 use std::io::Write;
-
-/// Manage the process umask.
-#[derive(Parser)]
-pub(crate) struct UmaskCommand {
-    /// If MODE is omitted, output in a form that may be reused as input.
-    #[arg(short = 'p')]
-    print_roundtrippable: bool,
-
-    /// Makes the output symbolic; otherwise an octal number is given.
-    #[arg(short = 'S')]
-    symbolic_output: bool,
-
-    /// Mode mask.
-    mode: Option<String>,
-}
-
-impl builtins::Command for UmaskCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if let Some(mode) = &self.mode {
-            if mode.starts_with(|c: char| c.is_digit(8)) {
-                let parsed = brush_core::int_utils::parse(mode.as_str(), 8)?;
-                set_umask(parsed)?;
-            } else {
-                return brush_core::error::unimp("umask setting mode from symbolic value");
-            }
-        } else {
-            let umask = get_umask()?;
-
-            let formatted = if self.symbolic_output {
-                let u = symbolic_mask_from_bits((!umask & 0o700) >> 6);
-                let g = symbolic_mask_from_bits((!umask & 0o070) >> 3);
-                let o = symbolic_mask_from_bits(!umask & 0o007);
-                std::format!("u={u},g={g},o={o}")
-            } else {
-                std::format!("{umask:04o}")
-            };
-
-            if self.print_roundtrippable {
-                writeln!(context.stdout(), "umask {formatted}")?;
-            } else {
-                writeln!(context.stdout(), "{formatted}")?;
-            }
-        }
-
-        Ok(ExecutionResult::success())
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
-}
 
 cfg_if! {
     if #[cfg(any(target_os = "linux", target_os = "android"))] {
@@ -82,14 +25,14 @@ cfg_if! {
     }
 }
 
-fn set_umask(value: nix::sys::stat::mode_t) -> Result<(), brush_core::Error> {
+pub(super) fn set_umask(value: nix::sys::stat::mode_t) -> Result<(), brush_core::Error> {
     // value of mode_t can be platform dependent
     let mode = nix::sys::stat::Mode::from_bits(value).ok_or_else(|| ErrorKind::InvalidUmask)?;
     nix::sys::stat::umask(mode);
     Ok(())
 }
 
-fn symbolic_mask_from_bits(bits: u32) -> String {
+pub(super) fn symbolic_mask_from_bits(bits: u32) -> String {
     let mut result = String::new();
 
     if (bits & 0b100) != 0 {
@@ -103,4 +46,38 @@ fn symbolic_mask_from_bits(bits: u32) -> String {
     }
 
     result
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &UmaskCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if let Some(mode) = &command.mode {
+        if mode.starts_with(|c: char| c.is_digit(8)) {
+            let parsed = brush_core::int_utils::parse(mode.as_str(), 8)?;
+            set_umask(parsed)?;
+        } else {
+            return brush_core::error::unimp("umask setting mode from symbolic value");
+        }
+    } else {
+        let umask = get_umask()?;
+
+        let formatted = if command.symbolic_output {
+            let u = symbolic_mask_from_bits((!umask & 0o700) >> 6);
+            let g = symbolic_mask_from_bits((!umask & 0o070) >> 3);
+            let o = symbolic_mask_from_bits(!umask & 0o007);
+            std::format!("u={u},g={g},o={o}")
+        } else {
+            std::format!("{umask:04o}")
+        };
+
+        if command.print_roundtrippable {
+            writeln!(context.stdout(), "umask {formatted}")?;
+        } else {
+            writeln!(context.stdout(), "{formatted}")?;
+        }
+    }
+
+    Ok(ExecutionResult::success())
 }

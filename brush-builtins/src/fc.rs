@@ -1,66 +1,10 @@
-use brush_core::{ExecutionResult, builtins, error, history};
-use clap::Parser;
+//! The `fc` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(FcCommand);
+
+use brush_core::{ExecutionResult, error, history};
 use std::io::Write;
-
-/// Process command history list.
-#[derive(Parser)]
-pub(crate) struct FcCommand {
-    /// List commands instead of editing them.
-    #[arg(short = 'l')]
-    list: bool,
-
-    /// Suppress line numbers when listing.
-    #[arg(short = 'n', requires = "list")]
-    no_line_numbers: bool,
-
-    /// Reverse the order of commands.
-    #[arg(short = 'r')]
-    reverse: bool,
-
-    /// Re-execute command after substitution (old=new format).
-    #[arg(short = 's')]
-    substitute: bool,
-
-    /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
-    editor: Option<String>,
-
-    /// First command in range (number or string prefix).
-    #[arg(value_name = "FIRST", allow_hyphen_values = true)]
-    first: Option<String>,
-
-    /// Last command in range (number or string prefix).
-    #[arg(value_name = "LAST", allow_hyphen_values = true)]
-    last: Option<String>,
-}
-
-impl builtins::Command for FcCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        if self.substitute {
-            return self.do_execute(context).await;
-        }
-
-        if self.list {
-            return self.do_list(&context);
-        }
-
-        error::unimp("fc editor mode is not yet implemented")
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
-}
 
 impl FcCommand {
     fn do_list(
@@ -305,6 +249,21 @@ impl FcCommand {
 }
 
 /// Returns the effective history count (excluding the fc command itself).
-fn effective_history_count(history: &history::History) -> usize {
+pub(super) fn effective_history_count(history: &history::History) -> usize {
     history.count().saturating_sub(1)
+}
+
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &FcCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.substitute {
+        return command.do_execute(context).await;
+    }
+
+    if command.list {
+        return command.do_list(&context);
+    }
+
+    error::unimp("fc editor mode is not yet implemented")
 }
