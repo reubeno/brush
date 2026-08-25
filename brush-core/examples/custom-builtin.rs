@@ -2,10 +2,8 @@
 //!
 //! This example demonstrates best practices for:
 //! - Creating a custom builtin command using the `SpecCommand` trait
-//! - Declaring arguments as backend-neutral data (`argmodel`)
+//! - Declaring arguments as compile-time data (`argmodel`)
 //! - Defining custom error types with `thiserror`
-//! - Implementing proper error handling and exit code conversion
-//! - Using the execution context to interact with shell state and I/O streams
 //!
 //! Run this example with:
 //! ```bash
@@ -13,16 +11,12 @@
 //! ```
 
 use anyhow::Result;
+use brush_core::builtins;
 use std::io::Write;
-
-use brush_core::{ExecutionResult, builtins};
 
 //
 // Step 1 (optional): Define a custom error type for your builtin
 // ==============================================
-// We recommend using `thiserror` to create descriptive error types that can be converted
-// to appropriate exit codes.
-//
 
 #[derive(Debug, thiserror::Error)]
 enum GreetError {
@@ -40,13 +34,8 @@ enum GreetError {
     IoError(#[from] std::io::Error),
 }
 
-// Mark your error type as a builtin error. This is required to use this error
-// type in your command implementation.
 impl brush_core::BuiltinError for GreetError {}
 
-// If you define a custom error type, you must map each error variant to an appropriate
-// exit code. This ensures the shell interpreter will translate a returned error to
-// the appropriate code during execution.
 impl From<&GreetError> for brush_core::ExecutionExitCode {
     fn from(value: &GreetError) -> Self {
         match value {
@@ -57,18 +46,28 @@ impl From<&GreetError> for brush_core::ExecutionExitCode {
     }
 }
 
-//
-// Step 2 (recommended): Declare your builtin command arguments as data.
+// Step 2: Declare your builtin's arguments as compile-time data.
 // ==============================================
-// The `SpecCommand` trait takes a backend-neutral description (`CommandSpec`)
-// and hands back parsed values (`Matches`). Which crate parses them (bpaf,
-// usage, clap) is selected by cargo features of `brush-core`.
+// `SpecCommand::spec()` returns a static `CommandSpec`; whichever argument-
+// parsing crate brush-core was built with (bpaf, usage, clap) turns it into
+// an actual parser.
 
 const ID_REPEAT: &str = "repeat_count";
 
 struct GreetCommand {
     repeat_count: usize,
 }
+
+static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+    args: &[builtins::argmodel::ArgSpec::value(
+        ID_REPEAT,
+        &['n'],
+        &["repeat"],
+        "COUNT",
+        "Number of times to repeat the greeting.",
+    )],
+    positionals: &[],
+};
 
 //
 // Step 3: Implement the SpecCommand trait.
@@ -77,23 +76,14 @@ struct GreetCommand {
 impl builtins::SpecCommand for GreetCommand {
     type Error = GreetError;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_REPEAT,
-            &['n'],
-            &["repeat"],
-            builtins::argmodel::ArgKind::Value,
-            Some("COUNT"),
-            "Number of times to repeat the greeting.",
-        )
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let value = matches.value(ID_REPEAT).unwrap_or("1");
+        let value = values.value(ID_REPEAT).unwrap_or("1");
         let repeat_count: usize = value.parse().map_err(|_| builtins::BuiltinArgParseError {
             message: format!("invalid repeat count: `{value}`"),
             help_request: false,
@@ -112,40 +102,28 @@ impl builtins::SpecCommand for GreetCommand {
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Additional validation.
         if self.repeat_count == 0 || self.repeat_count > 10 {
             return Err(GreetError::RepeatCountOutOfRange);
         }
 
-        // For demonstration, we expand a greeting string using shell variable expansion.
-        // This is a bit contrived, but it shows how to wrap errors coming back from
-        // `brush_core`.
         let greeting = context
             .shell
             .basic_expand_string(&context.params, "Hello, ${USER}!")
             .await?;
 
-        // Execute the greeting.
         for _ in 0..self.repeat_count {
             writeln!(context.stdout(), "{greeting}")?;
         }
 
-        // Return success
-        Ok(ExecutionResult::success())
+        Ok(brush_core::ExecutionResult::success())
     }
 }
-
-//
-// Step 4: Integrate your builtin into a shell
-// ==============================================
-// This example shows how to register and use your custom builtin.
-//
 
 type SE = brush_core::extensions::DefaultShellExtensions;
 
 async fn run_example() -> Result<()> {
-    // Create a shell instance with custom builtin registered.
     let mut shell = brush_core::Shell::builder()
         .builtin(
             "greet",
@@ -154,7 +132,6 @@ async fn run_example() -> Result<()> {
         .build()
         .await?;
 
-    // Demonstrate basic usage.
     let result = shell
         .run_string(
             "greet -n 4",
@@ -168,7 +145,6 @@ async fn run_example() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    // Construct a `tokio` runtime for async execution
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;

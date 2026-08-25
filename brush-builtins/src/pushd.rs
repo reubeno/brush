@@ -1,4 +1,8 @@
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+};
 
 /// Push a path onto the current directory stack.
 pub(crate) struct PushdCommand {
@@ -12,33 +16,34 @@ const ID_DIR: &str = "dir";
 impl builtins::SpecCommand for PushdCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_NO_DIRECTORY_CHANGE,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Push the path without changing the current working directory.",
-        )
-        .positional(ID_DIR, "DIR")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
         // TODO(pushd): implement +N and -N
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[ArgSpec::flag(
+                ID_NO_DIRECTORY_CHANGE,
+                &['n'],
+                &[],
+                "Push the path without changing the current working directory.",
+            )],
+            positionals: &[PositionalSpec::one(ID_DIR, "DIR")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let dir = matches
-            .value(ID_DIR)
-            .ok_or_else(|| builtins::BuiltinArgParseError {
-                message: "missing required argument: DIR".to_string(),
-                help_request: false,
-            })?;
+        let dir =
+            values
+                .value_of_positional(ID_DIR)
+                .ok_or_else(|| builtins::BuiltinArgParseError {
+                    message: "missing required argument: DIR".to_string(),
+                    help_request: false,
+                })?;
 
         Ok(Self {
-            no_directory_change: matches.flag(ID_NO_DIRECTORY_CHANGE),
+            no_directory_change: values.flag(ID_NO_DIRECTORY_CHANGE),
             dir: dir.to_owned(),
         })
     }

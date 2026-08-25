@@ -1,6 +1,10 @@
 use std::{io::Write, path::PathBuf};
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+};
 
 pub(crate) struct HashCommand {
     remove: bool,
@@ -21,62 +25,52 @@ const ID_NAMES: &str = "names";
 impl builtins::SpecCommand for HashCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_REMOVE,
-            &['d'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Remove entries associated with the given names.",
-        )
-        .arg(
-            ID_DISPLAY_AS_USABLE_INPUT,
-            &['l'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display paths in a format usable for input.",
-        )
-        .arg(
-            ID_PATH_TO_USE,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("PATH"),
-            "The path to associate with the names.",
-        )
-        .arg(
-            ID_REMOVE_ALL,
-            &['r'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Remove all entries.",
-        )
-        .arg(
-            ID_DISPLAY_PATHS,
-            &['t'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display the paths associated with the names.",
-        )
-        .positional_many(ID_NAMES, "NAMES")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_REMOVE,
+                    &['d'],
+                    &[],
+                    "Remove entries associated with the given names.",
+                ),
+                ArgSpec::flag(
+                    ID_DISPLAY_AS_USABLE_INPUT,
+                    &['l'],
+                    &[],
+                    "Display paths in a format usable for input.",
+                ),
+                ArgSpec::value(
+                    ID_PATH_TO_USE,
+                    &['p'],
+                    &[],
+                    "PATH",
+                    "The path to associate with the names.",
+                ),
+                ArgSpec::flag(ID_REMOVE_ALL, &['r'], &[], "Remove all entries."),
+                ArgSpec::flag(
+                    ID_DISPLAY_PATHS,
+                    &['t'],
+                    &[],
+                    "Display the paths associated with the names.",
+                ),
+            ],
+            positionals: &[PositionalSpec::many(ID_NAMES, "NAMES")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            remove: matches.flag(ID_REMOVE),
-            display_as_usable_input: matches.flag(ID_DISPLAY_AS_USABLE_INPUT),
-            path_to_use: matches.value(ID_PATH_TO_USE).map(PathBuf::from),
-            remove_all: matches.flag(ID_REMOVE_ALL),
-            display_paths: matches.flag(ID_DISPLAY_PATHS),
-            names: matches.values(ID_NAMES).to_vec(),
+            remove: values.flag(ID_REMOVE),
+            display_as_usable_input: values.flag(ID_DISPLAY_AS_USABLE_INPUT),
+            path_to_use: values.value(ID_PATH_TO_USE).map(PathBuf::from),
+            remove_all: values.flag(ID_REMOVE_ALL),
+            display_paths: values.flag(ID_DISPLAY_PATHS),
+            names: values.positional_values(ID_NAMES).to_vec(),
         })
     }
 

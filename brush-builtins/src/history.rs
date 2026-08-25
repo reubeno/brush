@@ -3,7 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, history};
+use brush_core::{
+    ExecutionExitCode, ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec, ParsedValues},
+    builtins, error, history,
+};
 
 /// Query or manipulate the shell's command history.
 // TODO(history): Evaluate which of the options conflict with each other.
@@ -55,81 +59,69 @@ const ID_APPEND_ARGS_TO_SESSION: &str = "append_args_to_session";
 impl builtins::SpecCommand for HistoryCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_CLEAR_HISTORY,
-            &['c'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Clears all history.",
-        )
-        .arg(
-            ID_DELETE_OFFSET,
-            &['d'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("OFFSET"),
-            "Deletes the history entry at the given offset. Positive offsets are \
-             relative to the beginning of the history, while negative offsets are \
-             relative to the end of the history.",
-        )
-        .arg(
-            ID_APPEND_SESSION_TO_FILE,
-            &['a'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("HIST_FILE"),
-            "Appends the history from the current session to the history file.",
-        )
-        .arg(
-            ID_APPEND_REST_OF_FILE_TO_SESSION,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("HIST_FILE"),
-            "Appends any remaining history from the history file to the current session.",
-        )
-        .arg(
-            ID_APPEND_FILE_TO_SESSION,
-            &['r'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("HIST_FILE"),
-            "Appends the history from the history file to the current session.",
-        )
-        .arg(
-            ID_WRITE_SESSION_TO_FILE,
-            &['w'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("HIST_FILE"),
-            "Replaces the history file with the current session history.",
-        )
-        .arg(
-            ID_EXPAND_ARGS,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "History-expands positional arguments and displays them.",
-        )
-        .arg(
-            ID_APPEND_ARGS_TO_SESSION,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Appends positional arguments as an entry in the current session.",
-        )
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::flag(ID_CLEAR_HISTORY, &['c'], &[], "Clears all history."),
+                ArgSpec::value(
+                    ID_DELETE_OFFSET,
+                    &['d'],
+                    &[],
+                    "OFFSET",
+                    "Deletes the history entry at the given offset. Positive offsets are \
+                     relative to the beginning of the history, while negative offsets are \
+                     relative to the end of the history.",
+                ),
+                ArgSpec::value(
+                    ID_APPEND_SESSION_TO_FILE,
+                    &['a'],
+                    &[],
+                    "HIST_FILE",
+                    "Appends the history from the current session to the history file.",
+                ),
+                ArgSpec::value(
+                    ID_APPEND_REST_OF_FILE_TO_SESSION,
+                    &['n'],
+                    &[],
+                    "HIST_FILE",
+                    "Appends any remaining history from the history file to the current session.",
+                ),
+                ArgSpec::value(
+                    ID_APPEND_FILE_TO_SESSION,
+                    &['r'],
+                    &[],
+                    "HIST_FILE",
+                    "Appends the history from the history file to the current session.",
+                ),
+                ArgSpec::value(
+                    ID_WRITE_SESSION_TO_FILE,
+                    &['w'],
+                    &[],
+                    "HIST_FILE",
+                    "Replaces the history file with the current session history.",
+                ),
+                ArgSpec::flag(
+                    ID_EXPAND_ARGS,
+                    &['p'],
+                    &[],
+                    "History-expands positional arguments and displays them.",
+                ),
+                ArgSpec::flag(
+                    ID_APPEND_ARGS_TO_SESSION,
+                    &['s'],
+                    &[],
+                    "Appends positional arguments as an entry in the current session.",
+                ),
+            ],
+            positionals: &[],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let delete_offset = match matches.value(ID_DELETE_OFFSET) {
+        let delete_offset = match values.value(ID_DELETE_OFFSET) {
             Some(v) => Some(
                 v.parse::<i64>()
                     .map_err(|_| builtins::BuiltinArgParseError {
@@ -141,20 +133,20 @@ impl builtins::SpecCommand for HistoryCommand {
         };
 
         let append_args_to_session: Option<Vec<String>> =
-            matches.flag(ID_APPEND_ARGS_TO_SESSION).then(Vec::new);
-        let trailing = matches.trailing().to_vec();
+            values.flag(ID_APPEND_ARGS_TO_SESSION).then(Vec::new);
+        let trailing = values.trailing().to_vec();
 
         Ok(Self {
-            clear_history: matches.flag(ID_CLEAR_HISTORY),
+            clear_history: values.flag(ID_CLEAR_HISTORY),
             delete_offset,
-            append_session_to_file: hist_file_state(matches, ID_APPEND_SESSION_TO_FILE),
+            append_session_to_file: hist_file_state(values, ID_APPEND_SESSION_TO_FILE),
             append_rest_of_file_to_session: hist_file_state(
-                matches,
+                values,
                 ID_APPEND_REST_OF_FILE_TO_SESSION,
             ),
-            append_file_to_session: hist_file_state(matches, ID_APPEND_FILE_TO_SESSION),
-            write_session_to_file: hist_file_state(matches, ID_WRITE_SESSION_TO_FILE),
-            expand_args: matches.flag(ID_EXPAND_ARGS).then(Vec::new),
+            append_file_to_session: hist_file_state(values, ID_APPEND_FILE_TO_SESSION),
+            write_session_to_file: hist_file_state(values, ID_WRITE_SESSION_TO_FILE),
+            expand_args: values.flag(ID_EXPAND_ARGS).then(Vec::new),
             append_args_to_session: if append_args_to_session.is_some() {
                 Some(trailing.clone())
             } else {
@@ -241,18 +233,17 @@ impl builtins::SpecCommand for HistoryCommand {
             options.remove(i);
         }
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = builtins::argmodel::backend().parse(&spec, "", &options)?;
+        let mut values = builtins::argmodel::backend().parse(Self::spec(), "", &options)?;
 
         for (id, value) in lifted_file_options {
             match value {
-                Some(v) => matches.push_value(id, v),
-                None => matches.set_flag(id),
+                Some(v) => values.push_value(id, v),
+                None => values.set_flag(id),
             }
         }
-        matches.set_trailing(trailing);
+        values.set_trailing(trailing);
 
-        Self::from_matches(&mut matches)
+        Self::from_matches(&mut values)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -465,12 +456,12 @@ const fn hist_file_option_id(short_char: char) -> Option<&'static str> {
 /// Reads back the tri-state state of one of the `-a`/`-n`/`-r`/`-w` options:
 /// absent, present-without-a-value, or present-with-a-value.
 #[expect(clippy::option_option)]
-fn hist_file_state(matches: &builtins::argmodel::Matches, id: &str) -> Option<Option<String>> {
-    if let Some(value) = matches.value(id) {
+fn hist_file_state(values: &ParsedValues, id: &str) -> Option<Option<String>> {
+    if let Some(value) = values.value(id) {
         return Some(Some(value.to_string()));
     }
 
-    matches.flag(id).then_some(None)
+    values.flag(id).then_some(None)
 }
 
 #[cfg(test)]

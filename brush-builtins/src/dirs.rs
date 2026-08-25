@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, argmodel::ArgSpec, builtins};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DirError {
@@ -41,52 +41,39 @@ const ID_PRINT_ONE_PER_LINE_WITH_INDEX: &str = "print_one_per_line_with_index";
 impl builtins::SpecCommand for DirsCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_CLEAR,
-            &['c'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Clear the directory stack.",
-        )
-        .arg(
-            ID_TILDE_LONG,
-            &['l'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Don't tilde-shorten paths.",
-        )
-        .arg(
-            ID_PRINT_ONE_PER_LINE,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Print one directory per line instead of all on one line.",
-        )
-        .arg(
-            ID_PRINT_ONE_PER_LINE_WITH_INDEX,
-            &['v'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Print one directory per line with its index.",
-        )
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
         // TODO(dirs): implement +N and -N
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(ID_CLEAR, &['c'], &[], "Clear the directory stack."),
+                ArgSpec::flag(ID_TILDE_LONG, &['l'], &[], "Don't tilde-shorten paths."),
+                ArgSpec::flag(
+                    ID_PRINT_ONE_PER_LINE,
+                    &['p'],
+                    &[],
+                    "Print one directory per line instead of all on one line.",
+                ),
+                ArgSpec::flag(
+                    ID_PRINT_ONE_PER_LINE_WITH_INDEX,
+                    &['v'],
+                    &[],
+                    "Print one directory per line with its index.",
+                ),
+            ],
+            positionals: &[],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            clear: matches.flag(ID_CLEAR),
-            tilde_long: matches.flag(ID_TILDE_LONG),
-            print_one_per_line: matches.flag(ID_PRINT_ONE_PER_LINE),
-            print_one_per_line_with_index: matches.flag(ID_PRINT_ONE_PER_LINE_WITH_INDEX),
+            clear: values.flag(ID_CLEAR),
+            tilde_long: values.flag(ID_TILDE_LONG),
+            print_one_per_line: values.flag(ID_PRINT_ONE_PER_LINE),
+            print_one_per_line_with_index: values.flag(ID_PRINT_ONE_PER_LINE_WITH_INDEX),
         })
     }
 

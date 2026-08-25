@@ -1,6 +1,10 @@
 use std::io::{Read, Write};
 
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
+use brush_core::{
+    ErrorKind, ExecutionExitCode, ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec, PositionalSpec},
+    builtins, env, error, variables,
+};
 
 /// Read lines from standard input into an indexed array variable.
 pub(crate) struct MapFileCommand {
@@ -45,89 +49,83 @@ const ID_ARRAY_VAR_NAME: &str = "array_var_name";
 impl builtins::SpecCommand for MapFileCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_DELIMITER,
-            &['d'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("DELIM"),
-            "Delimiter to use (defaults to newline).",
-        )
-        .arg(
-            ID_MAX_COUNT,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("COUNT"),
-            "Maximum number of entries to read (0 means no limit).",
-        )
-        .arg(
-            ID_ORIGIN,
-            &['O'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("ORIGIN"),
-            "Index into array at which to start assignment.",
-        )
-        .arg(
-            ID_SKIP_COUNT,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("COUNT"),
-            "Number of initial entries to skip.",
-        )
-        .arg(
-            ID_REMOVE_DELIMITER,
-            &['t'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Whether or not to remove the delimiter from each read line.",
-        )
-        .arg(
-            ID_FD,
-            &['u'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("FD"),
-            "File descriptor to read from (defaults to stdin).",
-        )
-        .arg(
-            ID_CALLBACK,
-            &['C'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("CALLBACK"),
-            "Name of function to call for each group of lines.",
-        )
-        .arg(
-            ID_CALLBACK_GROUP_SIZE,
-            &['c'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("COUNT"),
-            "Number of lines to pass the callback for each group.",
-        )
-        .positional(ID_ARRAY_VAR_NAME, "ARRAY_VAR_NAME")
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::value(
+                    ID_DELIMITER,
+                    &['d'],
+                    &[],
+                    "DELIM",
+                    "Delimiter to use (defaults to newline).",
+                ),
+                ArgSpec::value(
+                    ID_MAX_COUNT,
+                    &['n'],
+                    &[],
+                    "COUNT",
+                    "Maximum number of entries to read (0 means no limit).",
+                ),
+                ArgSpec::value(
+                    ID_ORIGIN,
+                    &['O'],
+                    &[],
+                    "ORIGIN",
+                    "Index into array at which to start assignment.",
+                ),
+                ArgSpec::value(
+                    ID_SKIP_COUNT,
+                    &['s'],
+                    &[],
+                    "COUNT",
+                    "Number of initial entries to skip.",
+                ),
+                ArgSpec::flag(
+                    ID_REMOVE_DELIMITER,
+                    &['t'],
+                    &[],
+                    "Whether or not to remove the delimiter from each read line.",
+                ),
+                ArgSpec::value(
+                    ID_FD,
+                    &['u'],
+                    &[],
+                    "FD",
+                    "File descriptor to read from (defaults to stdin).",
+                ),
+                ArgSpec::value(
+                    ID_CALLBACK,
+                    &['C'],
+                    &[],
+                    "CALLBACK",
+                    "Name of function to call for each group of lines.",
+                ),
+                ArgSpec::value(
+                    ID_CALLBACK_GROUP_SIZE,
+                    &['c'],
+                    &[],
+                    "COUNT",
+                    "Number of lines to pass the callback for each group.",
+                ),
+            ],
+            positionals: &[PositionalSpec::one(ID_ARRAY_VAR_NAME, "ARRAY_VAR_NAME")],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let delimiter = matches.value(ID_DELIMITER).map(str::to_string);
-        let max_count = match matches.value(ID_MAX_COUNT) {
+        let delimiter = values.value(ID_DELIMITER).map(str::to_string);
+        let max_count = match values.value(ID_MAX_COUNT) {
             Some(v) => parse_i64(v)?,
             None => 0,
         };
-        let origin = match matches.value(ID_ORIGIN) {
+        let origin = match values.value(ID_ORIGIN) {
             Some(v) => Some(parse_i64(v)?),
             None => None,
         };
-        let skip_count = match matches.value(ID_SKIP_COUNT) {
+        let skip_count = match values.value(ID_SKIP_COUNT) {
             Some(v) => {
                 let parsed = parse_i64(v)?;
                 if parsed < 0 {
@@ -140,15 +138,15 @@ impl builtins::SpecCommand for MapFileCommand {
             }
             None => 0,
         };
-        let remove_delimiter = matches.flag(ID_REMOVE_DELIMITER);
-        let fd = match matches.value(ID_FD) {
+        let remove_delimiter = values.flag(ID_REMOVE_DELIMITER);
+        let fd = match values.value(ID_FD) {
             Some(v) => v
                 .parse::<brush_core::ShellFd>()
                 .map_err(|_| invalid_number(v))?,
             None => 0,
         };
-        let callback = matches.value(ID_CALLBACK).map(str::to_string);
-        let callback_group_size = match matches.value(ID_CALLBACK_GROUP_SIZE) {
+        let callback = values.value(ID_CALLBACK).map(str::to_string);
+        let callback_group_size = match values.value(ID_CALLBACK_GROUP_SIZE) {
             Some(v) => {
                 let parsed = parse_i64(v)?;
                 if parsed < 1 {
@@ -161,9 +159,10 @@ impl builtins::SpecCommand for MapFileCommand {
             }
             None => 5000,
         };
-        let array_var_name = matches
-            .value(ID_ARRAY_VAR_NAME)
-            .map_or_else(|| String::from("MAPFILE"), str::to_string);
+        let array_var_name = values
+            .positional_values(ID_ARRAY_VAR_NAME)
+            .last()
+            .map_or_else(|| String::from("MAPFILE"), |value| value.clone());
 
         Ok(Self {
             delimiter,
@@ -205,10 +204,9 @@ impl builtins::SpecCommand for MapFileCommand {
         }
         join_tokens_taking_values(&mut args, "O");
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = builtins::argmodel::backend().parse(&spec, "", &args)?;
+        let mut values = builtins::argmodel::backend().parse(Self::spec(), "", &args)?;
 
-        Self::from_matches(&mut matches)
+        Self::from_matches(&mut values)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

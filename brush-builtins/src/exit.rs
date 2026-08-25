@@ -9,18 +9,16 @@ pub(crate) struct ExitCommand {
 impl builtins::SpecCommand for ExitCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        &builtins::argmodel::CommandSpec::EMPTY
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         // N.B. Only the leading options are parsed; the remaining tokens are
         // captured verbatim via `takes_trailing_args`.
-        let code = matches.trailing().first().cloned();
+        let code = values.trailing().first().cloned();
 
         Ok(Self { code })
     }

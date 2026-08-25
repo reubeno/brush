@@ -2,7 +2,11 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use brush_core::{ErrorKind, builtins, env, error, variables};
+use brush_core::{
+    ErrorKind,
+    argmodel::{ArgSpec, CommandSpec, PositionalSpec},
+    builtins, env, error, variables,
+};
 
 use std::io::{Read, Write};
 
@@ -79,130 +83,109 @@ const ID_VARIABLE_NAMES: &str = "variable_names";
 impl builtins::SpecCommand for ReadCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_ARRAY_VARIABLE,
-            &['a'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("VAR_NAME"),
-            "Optionally, name of an array variable to receive read words of input.",
-        )
-        .arg(
-            ID_DELIMITER,
-            &['d'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("DELIM"),
-            "Optionally, a delimiter to use other than a newline character.",
-        )
-        .arg(
-            ID_USE_READLINE,
-            &['e'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Use readline-like input.",
-        )
-        .arg(
-            ID_INITIAL_TEXT,
-            &['i'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("STR"),
-            "Provide text to use as initial input for readline.",
-        )
-        .arg(
-            ID_RETURN_AFTER_N_CHARS,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("COUNT"),
-            "Read only the first N characters or until a specified delimiter is \
-             reached, whichever happens first.",
-        )
-        .arg(
-            ID_RETURN_AFTER_N_CHARS_NO_DELIMITER,
-            &['N'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("COUNT"),
-            "Read exactly N characters, ignoring any specified delimiter.",
-        )
-        .arg(
-            ID_PROMPT,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("PROMPT"),
-            "Prompt to display before reading.",
-        )
-        .arg(
-            ID_RAW_MODE,
-            &['r'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Read input in raw mode; no escape sequences.",
-        )
-        .arg(
-            ID_SILENT,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Do not echo input.",
-        )
-        .arg(
-            ID_TIMEOUT_IN_SECONDS,
-            &['t'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("SECONDS"),
-            "Specify timeout in seconds; fail if the timeout elapses before \
-             input is completed.",
-        )
-        .arg(
-            ID_FD_NUM_TO_READ,
-            &['u'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("FD"),
-            "File descriptor to read from instead of stdin.",
-        )
-        .positional_many(ID_VARIABLE_NAMES, "VAR_NAMES")
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::value(
+                    ID_ARRAY_VARIABLE,
+                    &['a'],
+                    &[],
+                    "VAR_NAME",
+                    "Optionally, name of an array variable to receive read words of input.",
+                ),
+                ArgSpec::value(
+                    ID_DELIMITER,
+                    &['d'],
+                    &[],
+                    "DELIM",
+                    "Optionally, a delimiter to use other than a newline character.",
+                ),
+                ArgSpec::flag(ID_USE_READLINE, &['e'], &[], "Use readline-like input."),
+                ArgSpec::value(
+                    ID_INITIAL_TEXT,
+                    &['i'],
+                    &[],
+                    "STR",
+                    "Provide text to use as initial input for readline.",
+                ),
+                ArgSpec::value(
+                    ID_RETURN_AFTER_N_CHARS,
+                    &['n'],
+                    &[],
+                    "COUNT",
+                    "Read only the first N characters or until a specified delimiter is \
+                     reached, whichever happens first.",
+                ),
+                ArgSpec::value(
+                    ID_RETURN_AFTER_N_CHARS_NO_DELIMITER,
+                    &['N'],
+                    &[],
+                    "COUNT",
+                    "Read exactly N characters, ignoring any specified delimiter.",
+                ),
+                ArgSpec::value(
+                    ID_PROMPT,
+                    &['p'],
+                    &[],
+                    "PROMPT",
+                    "Prompt to display before reading.",
+                ),
+                ArgSpec::flag(
+                    ID_RAW_MODE,
+                    &['r'],
+                    &[],
+                    "Read input in raw mode; no escape sequences.",
+                ),
+                ArgSpec::flag(ID_SILENT, &['s'], &[], "Do not echo input."),
+                ArgSpec::value(
+                    ID_TIMEOUT_IN_SECONDS,
+                    &['t'],
+                    &[],
+                    "SECONDS",
+                    "Specify timeout in seconds; fail if the timeout elapses before \
+                     input is completed.",
+                ),
+                ArgSpec::value(
+                    ID_FD_NUM_TO_READ,
+                    &['u'],
+                    &[],
+                    "FD",
+                    "File descriptor to read from instead of stdin.",
+                ),
+            ],
+            positionals: &[PositionalSpec::many(ID_VARIABLE_NAMES, "VAR_NAMES")],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let array_variable = matches.value(ID_ARRAY_VARIABLE).map(str::to_string);
-        let delimiter = matches.value(ID_DELIMITER).map(str::to_string);
-        let use_readline = matches.flag(ID_USE_READLINE);
-        let initial_text = matches.value(ID_INITIAL_TEXT).map(str::to_string);
-        let return_after_n_chars = match matches.value(ID_RETURN_AFTER_N_CHARS) {
+        let array_variable = values.value(ID_ARRAY_VARIABLE).map(str::to_string);
+        let delimiter = values.value(ID_DELIMITER).map(str::to_string);
+        let use_readline = values.flag(ID_USE_READLINE);
+        let initial_text = values.value(ID_INITIAL_TEXT).map(str::to_string);
+        let return_after_n_chars = match values.value(ID_RETURN_AFTER_N_CHARS) {
             Some(v) => Some(parse_usize(v)?),
             None => None,
         };
         let return_after_n_chars_no_delimiter =
-            match matches.value(ID_RETURN_AFTER_N_CHARS_NO_DELIMITER) {
+            match values.value(ID_RETURN_AFTER_N_CHARS_NO_DELIMITER) {
                 Some(v) => Some(parse_usize(v)?),
                 None => None,
             };
-        let prompt = matches.value(ID_PROMPT).map(str::to_string);
-        let raw_mode = matches.flag(ID_RAW_MODE);
-        let silent = matches.flag(ID_SILENT);
-        let timeout_in_seconds = match matches.value(ID_TIMEOUT_IN_SECONDS) {
+        let prompt = values.value(ID_PROMPT).map(str::to_string);
+        let raw_mode = values.flag(ID_RAW_MODE);
+        let silent = values.flag(ID_SILENT);
+        let timeout_in_seconds = match values.value(ID_TIMEOUT_IN_SECONDS) {
             Some(v) => Some(parse_f64(v)?),
             None => None,
         };
-        let fd_num_to_read = match matches.value(ID_FD_NUM_TO_READ) {
+        let fd_num_to_read = match values.value(ID_FD_NUM_TO_READ) {
             Some(v) => Some(parse_u8(v)?),
             None => None,
         };
-        let variable_names = matches.values(ID_VARIABLE_NAMES).to_vec();
+        let variable_names = values.positional_values(ID_VARIABLE_NAMES).to_vec();
 
         Ok(Self {
             array_variable,
@@ -247,10 +230,9 @@ impl builtins::SpecCommand for ReadCommand {
         }
         join_tokens_taking_values(&mut args, "t");
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = builtins::argmodel::backend().parse(&spec, "", &args)?;
+        let mut values = builtins::argmodel::backend().parse(Self::spec(), "", &args)?;
 
-        Self::from_matches(&mut matches)
+        Self::from_matches(&mut values)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

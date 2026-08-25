@@ -6,7 +6,7 @@
 //! results back into [`Matches`](super::Matches); nothing else in brush knows
 //! which crate is in play.
 
-use super::{CommandSpec, Matches};
+use super::{CommandSpec, ParsedValues};
 use crate::builtins::BuiltinArgParseError;
 
 /// A parser backend for the built-in argument model.
@@ -21,13 +21,17 @@ pub trait ArgParserBackend: Sync {
     /// * `argv` - The words to parse.
     fn parse(
         &self,
-        spec: &CommandSpec,
+        spec: &'static CommandSpec,
         name: &str,
         argv: &[String],
-    ) -> Result<Matches, BuiltinArgParseError>;
+    ) -> Result<ParsedValues, BuiltinArgParseError>;
 
     /// Renders the detailed help page for `spec`.
-    fn detailed_help(&self, spec: &CommandSpec, name: &str) -> Result<String, crate::error::Error>;
+    fn detailed_help(
+        &self,
+        spec: &'static CommandSpec,
+        name: &str,
+    ) -> Result<String, crate::error::Error>;
 }
 
 #[cfg(all(feature = "parser-bpaf", feature = "parser-usage"))]

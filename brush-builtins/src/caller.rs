@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, callstack};
+use brush_core::{ExecutionResult, argmodel::PositionalSpec, builtins, callstack};
 
 /// Return the context of the current subroutine call.
 pub(crate) struct CallerCommand {
@@ -12,16 +12,19 @@ const ID_EXPR: &str = "expr";
 impl builtins::SpecCommand for CallerCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.positional(ID_EXPR, "EXPR")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[],
+            positionals: &[PositionalSpec::one(ID_EXPR, "EXPR")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let expr = match matches.value(ID_EXPR) {
+        let expr = match values.value_of_positional(ID_EXPR) {
             Some(value) => Some(value.parse().map_err(|_| builtins::BuiltinArgParseError {
                 message: format!("invalid numeric value: {value}"),
                 help_request: false,

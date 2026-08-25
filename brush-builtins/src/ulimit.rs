@@ -4,6 +4,7 @@ use std::{
     str::FromStr,
 };
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
 use brush_core::{ExecutionResult, builtins};
 
 #[derive(Clone, Copy)]
@@ -350,64 +351,6 @@ const VALUE_SHORTS: &[char] = &[
     'R', 'T',
 ];
 
-/// Identifies the resource-limit options by declaration id, short option
-/// character, and description, in declaration order.
-const RESOURCES: &[(&str, &[char], &str)] = &[
-    ("sbsize", &['b'], "The maximum socket buffer size."),
-    ("core", &['c'], "The maximum size of core files created."),
-    (
-        "data",
-        &['d'],
-        "The maximum size of a process's data segment.",
-    ),
-    ("nice", &['e'], "The maximum scheduling priority (`nice`)."),
-    (
-        "file_size",
-        &['f'],
-        "The maximum size of files written by the shell and its children.",
-    ),
-    (
-        "sigpending",
-        &['i'],
-        "The maximum number of pending signals.",
-    ),
-    (
-        "memlock",
-        &['l'],
-        "The maximum size a process may lock into memory.",
-    ),
-    (
-        "kqueues",
-        &['k'],
-        "The maximum number of kqueues allocated for this process.",
-    ),
-    ("rss", &['m'], "The maximum resident set size."),
-    (
-        "file_open",
-        &['n'],
-        "The maximum number of open file descriptors.",
-    ),
-    ("pipe", &['p'], "The pipe buffer size."),
-    (
-        "msgqueue",
-        &['q'],
-        "The maximum number of bytes in POSIX message queues.",
-    ),
-    (
-        "rtprio",
-        &['r'],
-        "The maximum real-time scheduling priority.",
-    ),
-    ("rttime", &['R'], "Real-time non-blocking time."),
-    ("stack", &['s'], "The maximum stack size."),
-    ("cpu", &['t'], "The maximum amount of cpu time in seconds."),
-    ("nproc", &['u'], "The maximum number of user processes."),
-    ("vmem", &['v'], "The size of virtual memory."),
-    ("file_lock", &['x'], "The maximum number of file locks."),
-    ("npts", &['P'], "The maximum number of pseudoterminals."),
-    ("threads", &['T'], "The maximum number of threads."),
-];
-
 /// Splits attached values off of resource-limit option groups (e.g., `-c5`
 /// becomes `-c=5` and `-Sc` becomes `-S -c`) so that grouped forms parse;
 /// bpaf cannot disambiguate shorts that are registered as both flags and
@@ -478,10 +421,10 @@ fn split_group_at_value_short<'a>(
 /// Parses an optional resource-limit value that the backend bound to the
 /// option with the given declaration id.
 fn parse_resource_value(
-    matches: &builtins::argmodel::Matches,
+    values: &ParsedValues,
     id: &str,
 ) -> Result<Option<LimitValue>, builtins::BuiltinArgParseError> {
-    match matches.value(id) {
+    match values.value(id) {
         Some(s) => LimitValue::from_str(s)
             .map(Some)
             .map_err(|_| builtins::BuiltinArgParseError {
@@ -525,53 +468,151 @@ pub(crate) struct ULimitCommand {
     limit: Option<LimitValue>,
 }
 
+static ULIMIT_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag("soft", &['S'], &[], "Use the `soft` resource limit."),
+        ArgSpec::flag("hard", &['H'], &[], "Use the `hard` resource limit."),
+        ArgSpec::flag("all", &['a'], &[], "All current limits are reported."),
+        // N.B. Value-taking forms are bound by the backend parser; bare
+        // occurrences never reach it (see `extract_report_switches`).
+        ArgSpec::value(
+            "sbsize",
+            &['b'],
+            &[],
+            "LIMIT",
+            "The maximum socket buffer size.",
+        ),
+        ArgSpec::value(
+            "core",
+            &['c'],
+            &[],
+            "LIMIT",
+            "The maximum size of core files created.",
+        ),
+        ArgSpec::value(
+            "data",
+            &['d'],
+            &[],
+            "LIMIT",
+            "The maximum size of a process's data segment.",
+        ),
+        ArgSpec::value(
+            "nice",
+            &['e'],
+            &[],
+            "LIMIT",
+            "The maximum scheduling priority (`nice`).",
+        ),
+        ArgSpec::value(
+            "file_size",
+            &['f'],
+            &[],
+            "LIMIT",
+            "The maximum size of files written by the shell and its children.",
+        ),
+        ArgSpec::value(
+            "sigpending",
+            &['i'],
+            &[],
+            "LIMIT",
+            "The maximum number of pending signals.",
+        ),
+        ArgSpec::value(
+            "memlock",
+            &['l'],
+            &[],
+            "LIMIT",
+            "The maximum size a process may lock into memory.",
+        ),
+        ArgSpec::value(
+            "kqueues",
+            &['k'],
+            &[],
+            "LIMIT",
+            "The maximum number of kqueues allocated for this process.",
+        ),
+        ArgSpec::value(
+            "rss",
+            &['m'],
+            &[],
+            "LIMIT",
+            "The maximum resident set size.",
+        ),
+        ArgSpec::value(
+            "file_open",
+            &['n'],
+            &[],
+            "LIMIT",
+            "The maximum number of open file descriptors.",
+        ),
+        ArgSpec::value("pipe", &['p'], &[], "LIMIT", "The pipe buffer size."),
+        ArgSpec::value(
+            "msgqueue",
+            &['q'],
+            &[],
+            "LIMIT",
+            "The maximum number of bytes in POSIX message queues.",
+        ),
+        ArgSpec::value(
+            "rtprio",
+            &['r'],
+            &[],
+            "LIMIT",
+            "The maximum real-time scheduling priority.",
+        ),
+        ArgSpec::value(
+            "rttime",
+            &['R'],
+            &[],
+            "LIMIT",
+            "Real-time non-blocking time.",
+        ),
+        ArgSpec::value("stack", &['s'], &[], "LIMIT", "The maximum stack size."),
+        ArgSpec::value(
+            "cpu",
+            &['t'],
+            &[],
+            "LIMIT",
+            "The maximum amount of cpu time in seconds.",
+        ),
+        ArgSpec::value(
+            "nproc",
+            &['u'],
+            &[],
+            "LIMIT",
+            "The maximum number of user processes.",
+        ),
+        ArgSpec::value("vmem", &['v'], &[], "LIMIT", "The size of virtual memory."),
+        ArgSpec::value(
+            "file_lock",
+            &['x'],
+            &[],
+            "LIMIT",
+            "The maximum number of file locks.",
+        ),
+        ArgSpec::value(
+            "npts",
+            &['P'],
+            &[],
+            "LIMIT",
+            "The maximum number of pseudoterminals.",
+        ),
+        ArgSpec::value(
+            "threads",
+            &['T'],
+            &[],
+            "LIMIT",
+            "The maximum number of threads.",
+        ),
+    ],
+    positionals: &[PositionalSpec::one("limit", "LIMIT")],
+};
+
 impl builtins::SpecCommand for ULimitCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        let spec = spec
-            .arg(
-                "soft",
-                &['S'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "Use the `soft` resource limit.",
-            )
-            .arg(
-                "hard",
-                &['H'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "Use the `hard` resource limit.",
-            )
-            .arg(
-                "all",
-                &['a'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "All current limits are reported.",
-            );
-
-        let mut spec = spec;
-        for (id, short, help) in RESOURCES {
-            // N.B. Value-taking forms are bound by the backend parser; bare
-            // occurrences never reach it (see `extract_report_switches`).
-            spec = spec.arg(
-                id,
-                short,
-                &[],
-                builtins::argmodel::ArgKind::Value,
-                Some("LIMIT"),
-                help,
-            );
-        }
-
-        spec.positional("limit", "LIMIT")
+    fn spec() -> &'static CommandSpec {
+        &ULIMIT_SPEC
     }
 
     /// Overrides the default [`builtins::SpecCommand::new`] flow to split
@@ -589,10 +630,10 @@ impl builtins::SpecCommand for ULimitCommand {
         let mut report_switches = HashMap::new();
         let remaining = extract_report_switches(expanded, &mut report_switches);
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = brush_core::builtins::argmodel::backend().parse(&spec, "", &remaining)?;
+        let mut values =
+            brush_core::builtins::argmodel::backend().parse(Self::spec(), "", &remaining)?;
 
-        let mut command = Self::from_matches(&mut matches)?;
+        let mut command = Self::from_matches(&mut values)?;
 
         if !report_switches.is_empty() {
             command.apply_report_switches(&report_switches);
@@ -601,10 +642,8 @@ impl builtins::SpecCommand for ULimitCommand {
         Ok(command)
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let limit = match matches.value("limit") {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
+        let limit = match values.value("limit") {
             Some(s) => {
                 Some(
                     LimitValue::from_str(s).map_err(|_| builtins::BuiltinArgParseError {
@@ -617,30 +656,30 @@ impl builtins::SpecCommand for ULimitCommand {
         };
 
         Ok(Self {
-            soft: matches.flag("soft"),
-            hard: matches.flag("hard"),
-            all: matches.flag("all"),
-            sbsize: parse_resource_value(matches, "sbsize")?,
-            core: parse_resource_value(matches, "core")?,
-            data: parse_resource_value(matches, "data")?,
-            nice: parse_resource_value(matches, "nice")?,
-            file_size: parse_resource_value(matches, "file_size")?,
-            sigpending: parse_resource_value(matches, "sigpending")?,
-            memlock: parse_resource_value(matches, "memlock")?,
-            kqueues: parse_resource_value(matches, "kqueues")?,
-            rss: parse_resource_value(matches, "rss")?,
-            file_open: parse_resource_value(matches, "file_open")?,
-            pipe: parse_resource_value(matches, "pipe")?,
-            msgqueue: parse_resource_value(matches, "msgqueue")?,
-            rtprio: parse_resource_value(matches, "rtprio")?,
-            rttime: parse_resource_value(matches, "rttime")?,
-            stack: parse_resource_value(matches, "stack")?,
-            cpu: parse_resource_value(matches, "cpu")?,
-            nproc: parse_resource_value(matches, "nproc")?,
-            vmem: parse_resource_value(matches, "vmem")?,
-            file_lock: parse_resource_value(matches, "file_lock")?,
-            npts: parse_resource_value(matches, "npts")?,
-            threads: parse_resource_value(matches, "threads")?,
+            soft: values.flag("soft"),
+            hard: values.flag("hard"),
+            all: values.flag("all"),
+            sbsize: parse_resource_value(values, "sbsize")?,
+            core: parse_resource_value(values, "core")?,
+            data: parse_resource_value(values, "data")?,
+            nice: parse_resource_value(values, "nice")?,
+            file_size: parse_resource_value(values, "file_size")?,
+            sigpending: parse_resource_value(values, "sigpending")?,
+            memlock: parse_resource_value(values, "memlock")?,
+            kqueues: parse_resource_value(values, "kqueues")?,
+            rss: parse_resource_value(values, "rss")?,
+            file_open: parse_resource_value(values, "file_open")?,
+            pipe: parse_resource_value(values, "pipe")?,
+            msgqueue: parse_resource_value(values, "msgqueue")?,
+            rtprio: parse_resource_value(values, "rtprio")?,
+            rttime: parse_resource_value(values, "rttime")?,
+            stack: parse_resource_value(values, "stack")?,
+            cpu: parse_resource_value(values, "cpu")?,
+            nproc: parse_resource_value(values, "nproc")?,
+            vmem: parse_resource_value(values, "vmem")?,
+            file_lock: parse_resource_value(values, "file_lock")?,
+            npts: parse_resource_value(values, "npts")?,
+            threads: parse_resource_value(values, "threads")?,
             limit,
         })
     }

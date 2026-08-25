@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, argmodel::ArgSpec, builtins};
 
 /// Pop a path from the current directory stack.
 pub(crate) struct PopdCommand {
@@ -10,25 +10,26 @@ const ID_NO_DIRECTORY_CHANGE: &str = "no_directory_change";
 impl builtins::SpecCommand for PopdCommand {
     type Error = crate::dirs::DirError;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_NO_DIRECTORY_CHANGE,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Pop the path without changing the current working directory.",
-        )
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
         // TODO(popd): implement +N and -N
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[ArgSpec::flag(
+                ID_NO_DIRECTORY_CHANGE,
+                &['n'],
+                &[],
+                "Pop the path without changing the current working directory.",
+            )],
+            positionals: &[],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            no_directory_change: matches.flag(ID_NO_DIRECTORY_CHANGE),
+            no_directory_change: values.flag(ID_NO_DIRECTORY_CHANGE),
         })
     }
 

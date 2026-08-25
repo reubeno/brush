@@ -1,7 +1,8 @@
 use std::io::Write;
 
 use brush_core::{
-    ErrorKind, ExecutionExitCode, ExecutionParameters, ExecutionResult, Shell, builtins, tests,
+    ErrorKind, ExecutionExitCode, ExecutionParameters, ExecutionResult, Shell,
+    argmodel::CommandSpec, builtins, tests,
 };
 
 /// Evaluate test expression.
@@ -13,20 +14,18 @@ pub(crate) struct TestCommand {
 impl builtins::SpecCommand for TestCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static CommandSpec {
+        &CommandSpec::EMPTY
     }
 
     fn from_matches(
-        _matches: &mut builtins::argmodel::Matches,
+        _values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         unreachable!("new() captures all arguments verbatim")
     }
 
     // N.B. Arguments are captured verbatim because test expressions are
-    // interpreted entirely by `execute`; the declaration exists only for help
+    // interpreted entirely by `execute`; the spec exists only for help
     // rendering.
     fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
     where

@@ -1,7 +1,11 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use brush_core::{ExecutionResult, builtins, error};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec, PositionalSpec},
+    builtins, error,
+};
 
 /// Change the current shell working directory.
 pub(crate) struct CdCommand {
@@ -29,62 +33,52 @@ const ID_TARGET_DIR: &str = "target_dir";
 impl builtins::SpecCommand for CdCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_EXIT_ON_FAILED_CWD_RESOLUTION,
-            &['e'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Exit with non zero exit status if current working directory resolution fails.",
-        )
-        .arg(
-            ID_FILE_WITH_XATTR_AS_DIR,
-            &['@'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Show file with extended attributes as a dir with extended attributes.",
-        )
-        .arg(
-            ID_PHYSICAL,
-            &['P'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Use physical dir structure without following symlinks.",
-        )
-        .arg(
-            ID_LOGICAL,
-            &['L'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Force following symlinks.",
-        )
-        .positional(ID_TARGET_DIR, "TARGET_DIR")
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_EXIT_ON_FAILED_CWD_RESOLUTION,
+                    &['e'],
+                    &[],
+                    "Exit with non zero exit status if current working directory resolution fails.",
+                ),
+                ArgSpec::flag(
+                    ID_FILE_WITH_XATTR_AS_DIR,
+                    &['@'],
+                    &[],
+                    "Show file with extended attributes as a dir with extended attributes.",
+                ),
+                ArgSpec::flag(
+                    ID_PHYSICAL,
+                    &['P'],
+                    &[],
+                    "Use physical dir structure without following symlinks.",
+                ),
+                ArgSpec::flag(ID_LOGICAL, &['L'], &[], "Force following symlinks."),
+            ],
+            positionals: &[PositionalSpec::one(ID_TARGET_DIR, "TARGET_DIR")],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         // N.B. When both are supplied, physical wins; this preserves the old
         // parser's alternation order (`-P` listed before `-L`).
-        let mode = if matches.flag(ID_PHYSICAL) {
+        let mode = if values.flag(ID_PHYSICAL) {
             Some(true)
-        } else if matches.flag(ID_LOGICAL) {
+        } else if values.flag(ID_LOGICAL) {
             Some(false)
         } else {
             None
         };
 
         Ok(Self {
-            exit_on_failed_cwd_resolution: matches.flag(ID_EXIT_ON_FAILED_CWD_RESOLUTION),
-            file_with_xattr_as_dir: matches.flag(ID_FILE_WITH_XATTR_AS_DIR),
+            exit_on_failed_cwd_resolution: values.flag(ID_EXIT_ON_FAILED_CWD_RESOLUTION),
+            file_with_xattr_as_dir: values.flag(ID_FILE_WITH_XATTR_AS_DIR),
             mode,
-            target_dir: matches.value(ID_TARGET_DIR).map(PathBuf::from),
+            target_dir: values.value_of_positional(ID_TARGET_DIR).map(PathBuf::from),
         })
     }
 

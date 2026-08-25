@@ -1,4 +1,8 @@
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+};
 use itertools::Itertools;
 use std::io::Write;
 
@@ -18,44 +22,42 @@ const ID_TOPIC_PATTERNS: &str = "topic_patterns";
 impl builtins::SpecCommand for HelpCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_SHORT_DESCRIPTION,
-            &['d'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display a short description for the commands.",
-        )
-        .arg(
-            ID_MAN_PAGE_STYLE,
-            &['m'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display a man-style page of documentation for the commands.",
-        )
-        .arg(
-            ID_SHORT_USAGE,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display a short usage summary for the commands.",
-        )
-        .positional_many(ID_TOPIC_PATTERNS, "PATTERNS")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_SHORT_DESCRIPTION,
+                    &['d'],
+                    &[],
+                    "Display a short description for the commands.",
+                ),
+                ArgSpec::flag(
+                    ID_MAN_PAGE_STYLE,
+                    &['m'],
+                    &[],
+                    "Display a man-style page of documentation for the commands.",
+                ),
+                ArgSpec::flag(
+                    ID_SHORT_USAGE,
+                    &['s'],
+                    &[],
+                    "Display a short usage summary for the commands.",
+                ),
+            ],
+            positionals: &[PositionalSpec::many(ID_TOPIC_PATTERNS, "PATTERNS")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            short_description: matches.flag(ID_SHORT_DESCRIPTION),
-            man_page_style: matches.flag(ID_MAN_PAGE_STYLE),
-            short_usage: matches.flag(ID_SHORT_USAGE),
-            topic_patterns: matches.values(ID_TOPIC_PATTERNS).to_vec(),
+            short_description: values.flag(ID_SHORT_DESCRIPTION),
+            man_page_style: values.flag(ID_MAN_PAGE_STYLE),
+            short_usage: values.flag(ID_SHORT_USAGE),
+            topic_patterns: values.positional_values(ID_TOPIC_PATTERNS).to_vec(),
         })
     }
 

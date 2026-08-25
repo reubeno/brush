@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, jobs, sys};
+use brush_core::{ExecutionResult, argmodel::PositionalSpec, builtins, jobs, sys};
 
 /// Move a specified job to the foreground.
 pub(crate) struct FgCommand {
@@ -12,17 +12,22 @@ const ID_JOB_SPEC: &str = "job_spec";
 impl builtins::SpecCommand for FgCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.positional(ID_JOB_SPEC, "JOB_SPEC")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[],
+            positionals: &[PositionalSpec::one(ID_JOB_SPEC, "JOB_SPEC")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            job_spec: matches.value(ID_JOB_SPEC).map(ToOwned::to_owned),
+            job_spec: values
+                .value_of_positional(ID_JOB_SPEC)
+                .map(ToOwned::to_owned),
         })
     }
 

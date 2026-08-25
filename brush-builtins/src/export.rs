@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use std::io::Write;
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues};
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
@@ -32,45 +33,37 @@ pub(crate) struct ExportCommand {
     declarations: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::SpecCommand for ExportCommand {
-    type Error = brush_core::Error;
-
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
+static EXPORT_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag(
             ID_NAMES_ARE_FUNCTIONS,
             &['f'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Names are treated as function names.",
-        )
-        .arg(
-            ID_UNEXPORT,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Un-export the names.",
-        )
-        .arg(
+        ),
+        ArgSpec::flag(ID_UNEXPORT, &['n'], &[], "Un-export the names."),
+        ArgSpec::flag(
             ID_DISPLAY_EXPORTED_NAMES,
             &['p'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Display all exported names.",
-        )
+        ),
+    ],
+    positionals: &[],
+};
+
+impl builtins::SpecCommand for ExportCommand {
+    type Error = brush_core::Error;
+
+    fn spec() -> &'static CommandSpec {
+        &EXPORT_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            names_are_functions: matches.flag(ID_NAMES_ARE_FUNCTIONS),
-            unexport: matches.flag(ID_UNEXPORT),
-            display_exported_names: matches.flag(ID_DISPLAY_EXPORTED_NAMES),
+            names_are_functions: values.flag(ID_NAMES_ARE_FUNCTIONS),
+            unexport: values.flag(ID_UNEXPORT),
+            display_exported_names: values.flag(ID_DISPLAY_EXPORTED_NAMES),
 
             // N.B. Declarations are captured separately from options.
             declarations: Vec::new(),

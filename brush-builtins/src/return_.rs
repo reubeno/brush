@@ -1,6 +1,8 @@
 use std::io::Write;
 
-use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, argmodel::PositionalSpec, builtins,
+};
 
 /// Return from the current function.
 pub(crate) struct ReturnCommand {
@@ -12,16 +14,19 @@ const ID_CODE: &str = "code";
 impl builtins::SpecCommand for ReturnCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.positional(ID_CODE, "CODE")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[],
+            positionals: &[PositionalSpec::one(ID_CODE, "CODE")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let code = match matches.value(ID_CODE) {
+        let code = match values.value_of_positional(ID_CODE) {
             Some(value) => Some(value.parse().map_err(|_| builtins::BuiltinArgParseError {
                 message: format!("invalid numeric value: {value}"),
                 help_request: false,

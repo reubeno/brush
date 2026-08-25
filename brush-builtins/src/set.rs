@@ -3,6 +3,7 @@ use std::io::Write;
 
 use itertools::Itertools;
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 
 /// Tri-state capture of a `set -o`/`+o` style option: absent, present with no
@@ -12,30 +13,6 @@ pub(crate) struct SetOption {
     enable: Option<Vec<String>>,
     disable: Option<Vec<String>>,
 }
-
-const ID_EXPORT_VARIABLES_ON_MODIFICATION: &str = "export_variables_on_modification";
-const ID_NOTIFY_JOB_TERMINATION_IMMEDIATELY: &str = "notify_job_termination_immediately";
-const ID_EXIT_ON_NONZERO_COMMAND_EXIT: &str = "exit_on_nonzero_command_exit";
-const ID_DISABLE_FILENAME_GLOBBING: &str = "disable_filename_globbing";
-const ID_REMEMBER_COMMAND_LOCATIONS: &str = "remember_command_locations";
-const ID_PLACE_ALL_ASSIGNMENT_ARGS_IN_COMMAND_ENV: &str =
-    "place_all_assignment_args_in_command_env";
-const ID_ENABLE_JOB_CONTROL: &str = "enable_job_control";
-const ID_DO_NOT_EXECUTE_COMMANDS: &str = "do_not_execute_commands";
-const ID_REAL_EFFECTIVE_UID_MISMATCH: &str = "real_effective_uid_mismatch";
-const ID_EXIT_AFTER_ONE_COMMAND: &str = "exit_after_one_command";
-const ID_TREAT_UNSET_VARIABLES_AS_ERROR: &str = "treat_unset_variables_as_error";
-const ID_PRINT_SHELL_INPUT_LINES: &str = "print_shell_input_lines";
-const ID_PRINT_COMMANDS_AND_ARGUMENTS: &str = "print_commands_and_arguments";
-const ID_PERFORM_BRACE_EXPANSION: &str = "perform_brace_expansion";
-const ID_DISALLOW_OVERWRITING_REGULAR_FILES_VIA_OUTPUT_REDIRECTION: &str =
-    "disallow_overwriting_regular_files_via_output_redirection";
-const ID_SHELL_FUNCTIONS_INHERIT_ERR_TRAP: &str = "shell_functions_inherit_err_trap";
-const ID_ENABLE_BANG_STYLE_HISTORY_SUBSTITUTION: &str = "enable_bang_style_history_substitution";
-const ID_DO_NOT_RESOLVE_SYMLINKS_WHEN_CHANGING_DIR: &str =
-    "do_not_resolve_symlinks_when_changing_dir";
-const ID_SHELL_FUNCTIONS_INHERIT_DEBUG_AND_RETURN_TRAPS: &str =
-    "shell_functions_inherit_debug_and_return_traps";
 
 /// Manage set-based shell options.
 pub(crate) struct SetCommand {
@@ -64,213 +41,205 @@ pub(crate) struct SetCommand {
     double_dash_seen: bool,
 }
 
-impl builtins::SpecCommand for SetCommand {
-    type Error = brush_core::Error;
-
-    #[expect(clippy::too_many_lines)]
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        let spec = crate::declare_plus_minus(
-            spec,
-            'a',
-            ID_EXPORT_VARIABLES_ON_MODIFICATION,
+static SET_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag(
+            "set_a_enable",
+            &['a'],
+            &[],
             "Export variables on modification",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'b',
-            ID_NOTIFY_JOB_TERMINATION_IMMEDIATELY,
+        ),
+        ArgSpec::hidden_flag("set_a_disable", &[], &["+a"], ""),
+        ArgSpec::flag(
+            "set_b_enable",
+            &['b'],
+            &[],
             "Notify job termination immediately",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'e',
-            ID_EXIT_ON_NONZERO_COMMAND_EXIT,
-            "Exit on nonzero command exit",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'f',
-            ID_DISABLE_FILENAME_GLOBBING,
-            "Disable filename globbing",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'h',
-            ID_REMEMBER_COMMAND_LOCATIONS,
-            "Remember command locations",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'k',
-            ID_PLACE_ALL_ASSIGNMENT_ARGS_IN_COMMAND_ENV,
+        ),
+        ArgSpec::hidden_flag("set_b_disable", &[], &["+b"], ""),
+        ArgSpec::flag("set_e_enable", &['e'], &[], "Exit on nonzero command exit"),
+        ArgSpec::hidden_flag("set_e_disable", &[], &["+e"], ""),
+        ArgSpec::flag("set_f_enable", &['f'], &[], "Disable filename globbing"),
+        ArgSpec::hidden_flag("set_f_disable", &[], &["+f"], ""),
+        ArgSpec::flag("set_h_enable", &['h'], &[], "Remember command locations"),
+        ArgSpec::hidden_flag("set_h_disable", &[], &["+h"], ""),
+        ArgSpec::flag(
+            "set_k_enable",
+            &['k'],
+            &[],
             "Place all assignment args in command environment",
-        );
-        let spec =
-            crate::declare_plus_minus(spec, 'm', ID_ENABLE_JOB_CONTROL, "Enable job control");
-        let spec = crate::declare_plus_minus(
-            spec,
-            'n',
-            ID_DO_NOT_EXECUTE_COMMANDS,
-            "Do not execute commands",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'p',
-            ID_REAL_EFFECTIVE_UID_MISMATCH,
-            "Real effective UID mismatch",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            't',
-            ID_EXIT_AFTER_ONE_COMMAND,
-            "Exit after one command",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'u',
-            ID_TREAT_UNSET_VARIABLES_AS_ERROR,
+        ),
+        ArgSpec::hidden_flag("set_k_disable", &[], &["+k"], ""),
+        ArgSpec::flag("set_m_enable", &['m'], &[], "Enable job control"),
+        ArgSpec::hidden_flag("set_m_disable", &[], &["+m"], ""),
+        ArgSpec::flag("set_n_enable", &['n'], &[], "Do not execute commands"),
+        ArgSpec::hidden_flag("set_n_disable", &[], &["+n"], ""),
+        ArgSpec::flag("set_p_enable", &['p'], &[], "Real effective UID mismatch"),
+        ArgSpec::hidden_flag("set_p_disable", &[], &["+p"], ""),
+        ArgSpec::flag("set_t_enable", &['t'], &[], "Exit after one command"),
+        ArgSpec::hidden_flag("set_t_disable", &[], &["+t"], ""),
+        ArgSpec::flag(
+            "set_u_enable",
+            &['u'],
+            &[],
             "Treat unset variables as error",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'v',
-            ID_PRINT_SHELL_INPUT_LINES,
-            "Print shell input lines",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'x',
-            ID_PRINT_COMMANDS_AND_ARGUMENTS,
-            "Print commands and arguments",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'B',
-            ID_PERFORM_BRACE_EXPANSION,
-            "Perform brace expansion",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'C',
-            ID_DISALLOW_OVERWRITING_REGULAR_FILES_VIA_OUTPUT_REDIRECTION,
+        ),
+        ArgSpec::hidden_flag("set_u_disable", &[], &["+u"], ""),
+        ArgSpec::flag("set_v_enable", &['v'], &[], "Print shell input lines"),
+        ArgSpec::hidden_flag("set_v_disable", &[], &["+v"], ""),
+        ArgSpec::flag("set_x_enable", &['x'], &[], "Print commands and arguments"),
+        ArgSpec::hidden_flag("set_x_disable", &[], &["+x"], ""),
+        ArgSpec::flag("set_B_enable", &['B'], &[], "Perform brace expansion"),
+        ArgSpec::hidden_flag("set_B_disable", &[], &["+B"], ""),
+        ArgSpec::flag(
+            "set_C_enable",
+            &['C'],
+            &[],
             "Disallow overwriting regular files via output redirection",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'E',
-            ID_SHELL_FUNCTIONS_INHERIT_ERR_TRAP,
+        ),
+        ArgSpec::hidden_flag("set_C_disable", &[], &["+C"], ""),
+        ArgSpec::flag(
+            "set_E_enable",
+            &['E'],
+            &[],
             "Shell functions inherit ERR trap",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'H',
-            ID_ENABLE_BANG_STYLE_HISTORY_SUBSTITUTION,
+        ),
+        ArgSpec::hidden_flag("set_E_disable", &[], &["+E"], ""),
+        ArgSpec::flag(
+            "set_H_enable",
+            &['H'],
+            &[],
             "Enable bang style history substitution",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'P',
-            ID_DO_NOT_RESOLVE_SYMLINKS_WHEN_CHANGING_DIR,
+        ),
+        ArgSpec::hidden_flag("set_H_disable", &[], &["+H"], ""),
+        ArgSpec::flag(
+            "set_P_enable",
+            &['P'],
+            &[],
             "Do not resolve symlinks when changing dir",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'T',
-            ID_SHELL_FUNCTIONS_INHERIT_DEBUG_AND_RETURN_TRAPS,
+        ),
+        ArgSpec::hidden_flag("set_P_disable", &[], &["+P"], ""),
+        ArgSpec::flag(
+            "set_T_enable",
+            &['T'],
+            &[],
             "Shell functions inherit DEBUG and RETURN traps",
-        );
-
+        ),
+        ArgSpec::hidden_flag("set_T_disable", &[], &["+T"], ""),
         // N.B. Declared for help rendering; `-o`/`+o` occurrences are
         // extracted from the token stream before the backend parses (see
         // `extract_named_options`).
-        spec.hidden_arg(
+        ArgSpec::hidden_value(
             "setopt_enable",
             &['o'],
             &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("OPT"),
+            "OPT",
             "Specify a named option; without OPT, lists all named options.",
-        )
-        .hidden_arg(
-            "setopt_disable",
-            &[],
-            &["+o"],
-            builtins::argmodel::ArgKind::Value,
-            Some("OPT"),
-            "",
-        )
+        ),
+        ArgSpec::hidden_value("setopt_disable", &[], &["+o"], "OPT", ""),
+    ],
+    positionals: &[],
+};
+
+impl builtins::SpecCommand for SetCommand {
+    type Error = brush_core::Error;
+
+    fn spec() -> &'static CommandSpec {
+        &SET_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
             export_variables_on_modification: crate::read_plus_minus(
-                matches,
-                ID_EXPORT_VARIABLES_ON_MODIFICATION,
+                values,
+                "set_a_enable",
+                "set_a_disable",
             ),
             notify_job_termination_immediately: crate::read_plus_minus(
-                matches,
-                ID_NOTIFY_JOB_TERMINATION_IMMEDIATELY,
+                values,
+                "set_b_enable",
+                "set_b_disable",
             ),
             exit_on_nonzero_command_exit: crate::read_plus_minus(
-                matches,
-                ID_EXIT_ON_NONZERO_COMMAND_EXIT,
+                values,
+                "set_e_enable",
+                "set_e_disable",
             ),
             disable_filename_globbing: crate::read_plus_minus(
-                matches,
-                ID_DISABLE_FILENAME_GLOBBING,
+                values,
+                "set_f_enable",
+                "set_f_disable",
             ),
             remember_command_locations: crate::read_plus_minus(
-                matches,
-                ID_REMEMBER_COMMAND_LOCATIONS,
+                values,
+                "set_h_enable",
+                "set_h_disable",
             ),
             place_all_assignment_args_in_command_env: crate::read_plus_minus(
-                matches,
-                ID_PLACE_ALL_ASSIGNMENT_ARGS_IN_COMMAND_ENV,
+                values,
+                "set_k_enable",
+                "set_k_disable",
             ),
-            enable_job_control: crate::read_plus_minus(matches, ID_ENABLE_JOB_CONTROL),
-            do_not_execute_commands: crate::read_plus_minus(matches, ID_DO_NOT_EXECUTE_COMMANDS),
+            enable_job_control: crate::read_plus_minus(values, "set_m_enable", "set_m_disable"),
+            do_not_execute_commands: crate::read_plus_minus(
+                values,
+                "set_n_enable",
+                "set_n_disable",
+            ),
             real_effective_uid_mismatch: crate::read_plus_minus(
-                matches,
-                ID_REAL_EFFECTIVE_UID_MISMATCH,
+                values,
+                "set_p_enable",
+                "set_p_disable",
             ),
-            exit_after_one_command: crate::read_plus_minus(matches, ID_EXIT_AFTER_ONE_COMMAND),
+            exit_after_one_command: crate::read_plus_minus(values, "set_t_enable", "set_t_disable"),
             treat_unset_variables_as_error: crate::read_plus_minus(
-                matches,
-                ID_TREAT_UNSET_VARIABLES_AS_ERROR,
+                values,
+                "set_u_enable",
+                "set_u_disable",
             ),
-            print_shell_input_lines: crate::read_plus_minus(matches, ID_PRINT_SHELL_INPUT_LINES),
+            print_shell_input_lines: crate::read_plus_minus(
+                values,
+                "set_v_enable",
+                "set_v_disable",
+            ),
             print_commands_and_arguments: crate::read_plus_minus(
-                matches,
-                ID_PRINT_COMMANDS_AND_ARGUMENTS,
+                values,
+                "set_x_enable",
+                "set_x_disable",
             ),
-            perform_brace_expansion: crate::read_plus_minus(matches, ID_PERFORM_BRACE_EXPANSION),
+            perform_brace_expansion: crate::read_plus_minus(
+                values,
+                "set_B_enable",
+                "set_B_disable",
+            ),
             disallow_overwriting_regular_files_via_output_redirection: crate::read_plus_minus(
-                matches,
-                ID_DISALLOW_OVERWRITING_REGULAR_FILES_VIA_OUTPUT_REDIRECTION,
+                values,
+                "set_C_enable",
+                "set_C_disable",
             ),
             shell_functions_inherit_err_trap: crate::read_plus_minus(
-                matches,
-                ID_SHELL_FUNCTIONS_INHERIT_ERR_TRAP,
+                values,
+                "set_E_enable",
+                "set_E_disable",
             ),
             enable_bang_style_history_substitution: crate::read_plus_minus(
-                matches,
-                ID_ENABLE_BANG_STYLE_HISTORY_SUBSTITUTION,
+                values,
+                "set_H_enable",
+                "set_H_disable",
             ),
             do_not_resolve_symlinks_when_changing_dir: crate::read_plus_minus(
-                matches,
-                ID_DO_NOT_RESOLVE_SYMLINKS_WHEN_CHANGING_DIR,
+                values,
+                "set_P_enable",
+                "set_P_disable",
             ),
             shell_functions_inherit_debug_and_return_traps: crate::read_plus_minus(
-                matches,
-                ID_SHELL_FUNCTIONS_INHERIT_DEBUG_AND_RETURN_TRAPS,
+                values,
+                "set_T_enable",
+                "set_T_disable",
             ),
 
             set_option: SetOption::default(),
-            positional_args: matches.trailing().to_vec(),
+            positional_args: values.trailing().to_vec(),
             double_dash_seen: false,
         })
     }
@@ -338,10 +307,10 @@ impl builtins::SpecCommand for SetCommand {
         // splitting because the splitter classifies `--+x` as an operand.
         rewrite_plus_flags(&mut options);
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = brush_core::builtins::argmodel::backend().parse(&spec, "", &options)?;
+        let mut values =
+            brush_core::builtins::argmodel::backend().parse(Self::spec(), "", &options)?;
 
-        let mut command = Self::from_matches(&mut matches)?;
+        let mut command = Self::from_matches(&mut values)?;
         command.set_option = SetOption { enable, disable };
         command.positional_args = trailing;
         command.double_dash_seen = double_dash_seen;
@@ -620,7 +589,7 @@ fn extract_named_options(
 
 /// Rewrites `+x`-style tokens into the corresponding hidden long spellings
 /// (e.g., `+x` becomes `--+x`) that the argument backend can match against
-/// the disable-side arguments declared by [`crate::declare_plus_minus`].
+/// the disable-side arguments in this command's spec.
 fn rewrite_plus_flags(options: &mut [String]) {
     for arg in options.iter_mut() {
         if let Some(group) = arg.strip_prefix('+').filter(|g| !g.is_empty()) {

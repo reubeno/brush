@@ -1,6 +1,10 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+};
 
 /// Manage aliases within the shell.
 pub(crate) struct AliasCommand {
@@ -14,26 +18,26 @@ const ID_ALIASES: &str = "aliases";
 impl builtins::SpecCommand for AliasCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_PRINT,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Print all defined aliases in a reusable format.",
-        )
-        .positional_many(ID_ALIASES, "name[=value]")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[ArgSpec::flag(
+                ID_PRINT,
+                &['p'],
+                &[],
+                "Print all defined aliases in a reusable format.",
+            )],
+            positionals: &[PositionalSpec::many(ID_ALIASES, "name[=value]")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            print: matches.flag(ID_PRINT),
-            aliases: matches.values(ID_ALIASES).to_vec(),
+            print: values.flag(ID_PRINT),
+            aliases: values.positional_values(ID_ALIASES).to_vec(),
         })
     }
 

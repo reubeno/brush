@@ -3,6 +3,7 @@ use std::fmt::Write as _;
 use std::io::Write;
 use std::str::FromStr;
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
 
@@ -53,220 +54,39 @@ struct CommonCompleteCommandArgs {
 }
 
 impl CommonCompleteCommandArgs {
-    /// Declares the shared portion of the complete/compgen/compopt argument
-    /// surface. Model builders do not compose, so each command's `declare`
-    /// chains this helper to flatten the full surface into its own spec.
-    #[expect(clippy::too_many_lines)]
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        use brush_core::builtins::argmodel::ArgKind;
-
-        spec.arg(
-            ID_OPTIONS,
-            &['o'],
-            &[],
-            ArgKind::Value,
-            Some("OPT"),
-            "Options governing the behavior of completions.",
-        )
-        .arg(
-            ID_ACTIONS,
-            &['A'],
-            &[],
-            ArgKind::Value,
-            Some("ACTION"),
-            "Actions to apply to generate completions.",
-        )
-        .arg(
-            ID_GLOB_PATTERN,
-            &['G'],
-            &[],
-            ArgKind::Value,
-            Some("GLOB"),
-            "File glob pattern to be expanded to generate completions.",
-        )
-        .arg(
-            ID_WORD_LIST,
-            &['W'],
-            &[],
-            ArgKind::Value,
-            Some("WORD_LIST"),
-            "List of words that will be considered as completions.",
-        )
-        .arg(
-            ID_FUNCTION_NAME,
-            &['F'],
-            &[],
-            ArgKind::Value,
-            Some("FUNC_NAME"),
-            "Name of a shell function to invoke to generate completions.",
-        )
-        .arg(
-            ID_COMMAND,
-            &['C'],
-            &[],
-            ArgKind::Value,
-            Some("COMMAND"),
-            "Command to execute to generate completions.",
-        )
-        .arg(
-            ID_FILTER_PATTERN,
-            &['X'],
-            &[],
-            ArgKind::Value,
-            Some("PATTERN"),
-            "Pattern used as filter for completions.",
-        )
-        .arg(
-            ID_PREFIX,
-            &['P'],
-            &[],
-            ArgKind::Value,
-            Some("PREFIX"),
-            "Prefix pattern used as filter for completions.",
-        )
-        .arg(
-            ID_SUFFIX,
-            &['S'],
-            &[],
-            ArgKind::Value,
-            Some("SUFFIX"),
-            "Suffix pattern used as filter for completions.",
-        )
-        .arg(
-            ID_ACTION_ALIAS,
-            &['a'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with valid aliases.",
-        )
-        .arg(
-            ID_ACTION_BUILTIN,
-            &['b'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with names of shell builtins.",
-        )
-        .arg(
-            ID_ACTION_COMMAND,
-            &['c'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with names of executable commands.",
-        )
-        .arg(
-            ID_ACTION_DIRECTORY,
-            &['d'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with directory names.",
-        )
-        .arg(
-            ID_ACTION_EXPORTED,
-            &['e'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with names of exported shell variables.",
-        )
-        .arg(
-            ID_ACTION_FILE,
-            &['f'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with filenames.",
-        )
-        .arg(
-            ID_ACTION_GROUP,
-            &['g'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with valid user groups.",
-        )
-        .arg(
-            ID_ACTION_JOB,
-            &['j'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with job specs.",
-        )
-        .arg(
-            ID_ACTION_KEYWORD,
-            &['k'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with keywords.",
-        )
-        .arg(
-            ID_ACTION_SERVICE,
-            &['s'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with names of system services.",
-        )
-        .arg(
-            ID_ACTION_USER,
-            &['u'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with valid usernames.",
-        )
-        .arg(
-            ID_ACTION_VARIABLE,
-            &['v'],
-            &[],
-            ArgKind::Flag,
-            None,
-            "Complete with names of shell variables.",
-        )
-    }
-
-    fn from_matches(
-        matches: &builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         let mut options = Vec::new();
-        for value in matches.values(ID_OPTIONS) {
+        for value in values.values(ID_OPTIONS) {
             options.push(value.parse().map_err(|_| invalid_value("-o", value))?);
         }
 
         let mut actions = Vec::new();
-        for value in matches.values(ID_ACTIONS) {
+        for value in values.values(ID_ACTIONS) {
             actions.push(value.parse().map_err(|_| invalid_value("-A", value))?);
         }
 
         Ok(Self {
             options,
             actions,
-            glob_pattern: matches.value(ID_GLOB_PATTERN).map(str::to_owned),
-            word_list: matches.value(ID_WORD_LIST).map(str::to_owned),
-            function_name: matches.value(ID_FUNCTION_NAME).map(str::to_owned),
-            command: matches.value(ID_COMMAND).map(str::to_owned),
-            filter_pattern: matches.value(ID_FILTER_PATTERN).map(str::to_owned),
-            prefix: matches.value(ID_PREFIX).map(str::to_owned),
-            suffix: matches.value(ID_SUFFIX).map(str::to_owned),
-            action_alias: matches.flag(ID_ACTION_ALIAS),
-            action_builtin: matches.flag(ID_ACTION_BUILTIN),
-            action_command: matches.flag(ID_ACTION_COMMAND),
-            action_directory: matches.flag(ID_ACTION_DIRECTORY),
-            action_exported: matches.flag(ID_ACTION_EXPORTED),
-            action_file: matches.flag(ID_ACTION_FILE),
-            action_group: matches.flag(ID_ACTION_GROUP),
-            action_job: matches.flag(ID_ACTION_JOB),
-            action_keyword: matches.flag(ID_ACTION_KEYWORD),
-            action_service: matches.flag(ID_ACTION_SERVICE),
-            action_user: matches.flag(ID_ACTION_USER),
-            action_variable: matches.flag(ID_ACTION_VARIABLE),
+            glob_pattern: values.value(ID_GLOB_PATTERN).map(str::to_owned),
+            word_list: values.value(ID_WORD_LIST).map(str::to_owned),
+            function_name: values.value(ID_FUNCTION_NAME).map(str::to_owned),
+            command: values.value(ID_COMMAND).map(str::to_owned),
+            filter_pattern: values.value(ID_FILTER_PATTERN).map(str::to_owned),
+            prefix: values.value(ID_PREFIX).map(str::to_owned),
+            suffix: values.value(ID_SUFFIX).map(str::to_owned),
+            action_alias: values.flag(ID_ACTION_ALIAS),
+            action_builtin: values.flag(ID_ACTION_BUILTIN),
+            action_command: values.flag(ID_ACTION_COMMAND),
+            action_directory: values.flag(ID_ACTION_DIRECTORY),
+            action_exported: values.flag(ID_ACTION_EXPORTED),
+            action_file: values.flag(ID_ACTION_FILE),
+            action_group: values.flag(ID_ACTION_GROUP),
+            action_job: values.flag(ID_ACTION_JOB),
+            action_keyword: values.flag(ID_ACTION_KEYWORD),
+            action_service: values.flag(ID_ACTION_SERVICE),
+            action_user: values.flag(ID_ACTION_USER),
+            action_variable: values.flag(ID_ACTION_VARIABLE),
         })
     }
 
@@ -390,10 +210,9 @@ fn parse_joined<T: builtins::SpecCommand>(
 ) -> Result<T, builtins::BuiltinArgParseError> {
     let joined = join_flag_looking_values(args);
 
-    let spec = T::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-    let mut matches = brush_core::builtins::argmodel::backend().parse(&spec, "", &joined)?;
+    let mut values = brush_core::builtins::argmodel::backend().parse(T::spec(), "", &joined)?;
 
-    T::from_matches(&mut matches)
+    T::from_matches(&mut values)
 }
 
 /// Configure programmable command completion.
@@ -406,6 +225,157 @@ pub(crate) struct CompleteCommand {
     common_args: CommonCompleteCommandArgs,
     names: Vec<String>,
 }
+
+static COMPLETE_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::value(
+            ID_OPTIONS,
+            &['o'],
+            &[],
+            "OPT",
+            "Options governing the behavior of completions.",
+        ),
+        ArgSpec::value(
+            ID_ACTIONS,
+            &['A'],
+            &[],
+            "ACTION",
+            "Actions to apply to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_GLOB_PATTERN,
+            &['G'],
+            &[],
+            "GLOB",
+            "File glob pattern to be expanded to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_WORD_LIST,
+            &['W'],
+            &[],
+            "WORD_LIST",
+            "List of words that will be considered as completions.",
+        ),
+        ArgSpec::value(
+            ID_FUNCTION_NAME,
+            &['F'],
+            &[],
+            "FUNC_NAME",
+            "Name of a shell function to invoke to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_COMMAND,
+            &['C'],
+            &[],
+            "COMMAND",
+            "Command to execute to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_FILTER_PATTERN,
+            &['X'],
+            &[],
+            "PATTERN",
+            "Pattern used as filter for completions.",
+        ),
+        ArgSpec::value(
+            ID_PREFIX,
+            &['P'],
+            &[],
+            "PREFIX",
+            "Prefix pattern used as filter for completions.",
+        ),
+        ArgSpec::value(
+            ID_SUFFIX,
+            &['S'],
+            &[],
+            "SUFFIX",
+            "Suffix pattern used as filter for completions.",
+        ),
+        ArgSpec::flag(ID_ACTION_ALIAS, &['a'], &[], "Complete with valid aliases."),
+        ArgSpec::flag(
+            ID_ACTION_BUILTIN,
+            &['b'],
+            &[],
+            "Complete with names of shell builtins.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_COMMAND,
+            &['c'],
+            &[],
+            "Complete with names of executable commands.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_DIRECTORY,
+            &['d'],
+            &[],
+            "Complete with directory names.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_EXPORTED,
+            &['e'],
+            &[],
+            "Complete with names of exported shell variables.",
+        ),
+        ArgSpec::flag(ID_ACTION_FILE, &['f'], &[], "Complete with filenames."),
+        ArgSpec::flag(
+            ID_ACTION_GROUP,
+            &['g'],
+            &[],
+            "Complete with valid user groups.",
+        ),
+        ArgSpec::flag(ID_ACTION_JOB, &['j'], &[], "Complete with job specs."),
+        ArgSpec::flag(ID_ACTION_KEYWORD, &['k'], &[], "Complete with keywords."),
+        ArgSpec::flag(
+            ID_ACTION_SERVICE,
+            &['s'],
+            &[],
+            "Complete with names of system services.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_USER,
+            &['u'],
+            &[],
+            "Complete with valid usernames.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_VARIABLE,
+            &['v'],
+            &[],
+            "Complete with names of shell variables.",
+        ),
+        ArgSpec::flag(
+            "print",
+            &['p'],
+            &[],
+            "Display registered completion settings.",
+        ),
+        ArgSpec::flag(
+            "remove",
+            &['r'],
+            &[],
+            "Remove the completion settings associated with the given command.",
+        ),
+        ArgSpec::flag(
+            "use_as_default",
+            &['D'],
+            &[],
+            "Apply these settings to the default completion scenario.",
+        ),
+        ArgSpec::flag(
+            "use_for_empty_line",
+            &['E'],
+            &[],
+            "Apply these settings to completion of empty lines.",
+        ),
+        ArgSpec::flag(
+            "use_for_initial_word",
+            &['I'],
+            &[],
+            "Apply these settings to completion of the initial word of the input line.",
+        ),
+    ],
+    positionals: &[PositionalSpec::many("names", "NAMES")],
+};
 
 impl builtins::SpecCommand for CompleteCommand {
     type Error = brush_core::Error;
@@ -422,65 +392,19 @@ impl builtins::SpecCommand for CompleteCommand {
         parse_joined(args)
     }
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        let spec = CommonCompleteCommandArgs::declare(spec);
-
-        spec.arg(
-            "print",
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display registered completion settings.",
-        )
-        .arg(
-            "remove",
-            &['r'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Remove the completion settings associated with the given command.",
-        )
-        .arg(
-            "use_as_default",
-            &['D'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Apply these settings to the default completion scenario.",
-        )
-        .arg(
-            "use_for_empty_line",
-            &['E'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Apply these settings to completion of empty lines.",
-        )
-        .arg(
-            "use_for_initial_word",
-            &['I'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Apply these settings to completion of the initial word of the input line.",
-        )
-        .positional_many("names", "NAMES")
+    fn spec() -> &'static CommandSpec {
+        &COMPLETE_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            print: matches.flag("print"),
-            remove: matches.flag("remove"),
-            use_as_default: matches.flag("use_as_default"),
-            use_for_empty_line: matches.flag("use_for_empty_line"),
-            use_for_initial_word: matches.flag("use_for_initial_word"),
-            common_args: CommonCompleteCommandArgs::from_matches(matches)?,
-            names: matches.values("names").to_vec(),
+            print: values.flag("print"),
+            remove: values.flag("remove"),
+            use_as_default: values.flag("use_as_default"),
+            use_for_empty_line: values.flag("use_for_empty_line"),
+            use_for_initial_word: values.flag("use_for_initial_word"),
+            common_args: CommonCompleteCommandArgs::from_matches(values)?,
+            names: values.positional_values("names").to_vec(),
         })
     }
 
@@ -767,6 +691,127 @@ pub(crate) struct CompGenCommand {
     word: Option<String>,
 }
 
+static COMPGEN_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::value(
+            ID_OPTIONS,
+            &['o'],
+            &[],
+            "OPT",
+            "Options governing the behavior of completions.",
+        ),
+        ArgSpec::value(
+            ID_ACTIONS,
+            &['A'],
+            &[],
+            "ACTION",
+            "Actions to apply to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_GLOB_PATTERN,
+            &['G'],
+            &[],
+            "GLOB",
+            "File glob pattern to be expanded to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_WORD_LIST,
+            &['W'],
+            &[],
+            "WORD_LIST",
+            "List of words that will be considered as completions.",
+        ),
+        ArgSpec::value(
+            ID_FUNCTION_NAME,
+            &['F'],
+            &[],
+            "FUNC_NAME",
+            "Name of a shell function to invoke to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_COMMAND,
+            &['C'],
+            &[],
+            "COMMAND",
+            "Command to execute to generate completions.",
+        ),
+        ArgSpec::value(
+            ID_FILTER_PATTERN,
+            &['X'],
+            &[],
+            "PATTERN",
+            "Pattern used as filter for completions.",
+        ),
+        ArgSpec::value(
+            ID_PREFIX,
+            &['P'],
+            &[],
+            "PREFIX",
+            "Prefix pattern used as filter for completions.",
+        ),
+        ArgSpec::value(
+            ID_SUFFIX,
+            &['S'],
+            &[],
+            "SUFFIX",
+            "Suffix pattern used as filter for completions.",
+        ),
+        ArgSpec::flag(ID_ACTION_ALIAS, &['a'], &[], "Complete with valid aliases."),
+        ArgSpec::flag(
+            ID_ACTION_BUILTIN,
+            &['b'],
+            &[],
+            "Complete with names of shell builtins.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_COMMAND,
+            &['c'],
+            &[],
+            "Complete with names of executable commands.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_DIRECTORY,
+            &['d'],
+            &[],
+            "Complete with directory names.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_EXPORTED,
+            &['e'],
+            &[],
+            "Complete with names of exported shell variables.",
+        ),
+        ArgSpec::flag(ID_ACTION_FILE, &['f'], &[], "Complete with filenames."),
+        ArgSpec::flag(
+            ID_ACTION_GROUP,
+            &['g'],
+            &[],
+            "Complete with valid user groups.",
+        ),
+        ArgSpec::flag(ID_ACTION_JOB, &['j'], &[], "Complete with job specs."),
+        ArgSpec::flag(ID_ACTION_KEYWORD, &['k'], &[], "Complete with keywords."),
+        ArgSpec::flag(
+            ID_ACTION_SERVICE,
+            &['s'],
+            &[],
+            "Complete with names of system services.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_USER,
+            &['u'],
+            &[],
+            "Complete with valid usernames.",
+        ),
+        ArgSpec::flag(
+            ID_ACTION_VARIABLE,
+            &['v'],
+            &[],
+            "Complete with names of shell variables.",
+        ),
+    ],
+    positionals: &[PositionalSpec::one("word", "WORD")],
+};
+
 impl builtins::SpecCommand for CompGenCommand {
     type Error = brush_core::Error;
 
@@ -782,20 +827,16 @@ impl builtins::SpecCommand for CompGenCommand {
         parse_joined(args)
     }
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        CommonCompleteCommandArgs::declare(spec).positional("word", "WORD")
+    fn spec() -> &'static CommandSpec {
+        &COMPGEN_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            common_args: CommonCompleteCommandArgs::from_matches(matches)?,
+            common_args: CommonCompleteCommandArgs::from_matches(values)?,
 
             // N.B. The word can only start with a hyphen if it's after a --.
-            word: matches.value("word").map(str::to_owned),
+            word: values.value_of_positional("word").map(str::to_owned),
         })
     }
 
@@ -870,6 +911,40 @@ pub(crate) struct CompOptCommand {
     names: Vec<String>,
 }
 
+static COMPOPT_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag(
+            "update_default",
+            &['D'],
+            &[],
+            "Update the default completion settings.",
+        ),
+        ArgSpec::flag(
+            "update_empty",
+            &['E'],
+            &[],
+            "Update the completion settings for empty lines.",
+        ),
+        ArgSpec::flag(
+            "update_initial_word",
+            &['I'],
+            &[],
+            "Update the completion settings for the initial word of the input line.",
+        ),
+        ArgSpec::value(
+            ID_OPTIONS,
+            &['o'],
+            &[],
+            "OPT",
+            "Enable the specified option for selected completion scenarios.",
+        ),
+        // N.B. Declared for help rendering; `+o` occurrences are extracted
+        // from the token stream before the backend parses.
+        ArgSpec::hidden_value("disabled_options", &[], &["+o"], "OPT", ""),
+    ],
+    positionals: &[PositionalSpec::many("names", "NAMES")],
+};
+
 impl builtins::SpecCommand for CompOptCommand {
     type Error = brush_core::Error;
 
@@ -904,78 +979,32 @@ impl builtins::SpecCommand for CompOptCommand {
             }
         }
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = brush_core::builtins::argmodel::backend().parse(&spec, "", &remaining)?;
+        let mut values =
+            brush_core::builtins::argmodel::backend().parse(Self::spec(), "", &remaining)?;
 
-        let mut command = Self::from_matches(&mut matches)?;
+        let mut command = Self::from_matches(&mut values)?;
         command.disabled_options = disabled_options;
 
         Ok(command)
     }
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            "update_default",
-            &['D'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Update the default completion settings.",
-        )
-        .arg(
-            "update_empty",
-            &['E'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Update the completion settings for empty lines.",
-        )
-        .arg(
-            "update_initial_word",
-            &['I'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Update the completion settings for the initial word of the input line.",
-        )
-        .arg(
-            ID_OPTIONS,
-            &['o'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("OPT"),
-            "Enable the specified option for selected completion scenarios.",
-        )
-        // N.B. Declared for help rendering; `+o` occurrences are extracted
-        // from the token stream before the backend parses.
-        .hidden_arg(
-            "disabled_options",
-            &[],
-            &["+o"],
-            builtins::argmodel::ArgKind::Value,
-            Some("OPT"),
-            "",
-        )
-        .positional_many("names", "NAMES")
+    fn spec() -> &'static CommandSpec {
+        &COMPOPT_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         let mut enabled_options = Vec::new();
-        for value in matches.values(ID_OPTIONS) {
+        for value in values.values(ID_OPTIONS) {
             enabled_options.push(value.parse().map_err(|_| invalid_value("-o", value))?);
         }
 
         Ok(Self {
-            update_default: matches.flag("update_default"),
-            update_empty: matches.flag("update_empty"),
-            update_initial_word: matches.flag("update_initial_word"),
+            update_default: values.flag("update_default"),
+            update_empty: values.flag("update_empty"),
+            update_initial_word: values.flag("update_initial_word"),
             enabled_options,
             disabled_options: Vec::new(),
-            names: matches.values("names").to_vec(),
+            names: values.positional_values("names").to_vec(),
         })
     }
 

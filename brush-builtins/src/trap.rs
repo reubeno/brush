@@ -1,7 +1,11 @@
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+};
 
 /// Manage signal traps.
 pub(crate) struct TrapCommand {
@@ -17,35 +21,30 @@ const ID_ARGS: &str = "args";
 impl builtins::SpecCommand for TrapCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_LIST_SIGNALS,
-            &['l'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List all signal names.",
-        )
-        .arg(
-            ID_PRINT_TRAP_COMMANDS,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Print registered trap commands.",
-        )
-        .positional_many(ID_ARGS, "ARGS")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(ID_LIST_SIGNALS, &['l'], &[], "List all signal names."),
+                ArgSpec::flag(
+                    ID_PRINT_TRAP_COMMANDS,
+                    &['p'],
+                    &[],
+                    "Print registered trap commands.",
+                ),
+            ],
+            positionals: &[PositionalSpec::many(ID_ARGS, "ARGS")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            list_signals: matches.flag(ID_LIST_SIGNALS),
-            print_trap_commands: matches.flag(ID_PRINT_TRAP_COMMANDS),
-            args: matches.values(ID_ARGS).to_vec(),
+            list_signals: values.flag(ID_LIST_SIGNALS),
+            print_trap_commands: values.flag(ID_PRINT_TRAP_COMMANDS),
+            args: values.positional_values(ID_ARGS).to_vec(),
         })
     }
 

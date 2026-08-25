@@ -708,16 +708,18 @@ pub trait SpecCommand: Sized {
     /// The error type returned by the command.
     type Error: BuiltinError + 'static;
 
-    /// Declares the command's argument surface.
-    fn declare(spec: crate::argmodel::CommandSpecBuilder) -> crate::argmodel::CommandSpecBuilder;
+    /// Returns the command's argument surface as compile-time data.
+    fn spec() -> &'static crate::argmodel::CommandSpec;
 
-    /// Materializes the command from parsed matches.
+    /// Materializes the command from parsed values.
     ///
     /// # Arguments
     ///
-    /// * `matches` - Parsed values keyed by declaration id, plus trailing
+    /// * `values` - Parsed values keyed by declaration id, plus trailing
     ///   verbatim operands.
-    fn from_matches(matches: &mut crate::argmodel::Matches) -> Result<Self, BuiltinArgParseError>;
+    fn from_matches(
+        values: &mut crate::argmodel::ParsedValues,
+    ) -> Result<Self, BuiltinArgParseError>;
 
     /// One-line description used by the `help` builtin.
     fn about() -> &'static str {
@@ -781,14 +783,13 @@ pub trait SpecCommand: Sized {
             None
         };
 
-        let spec = Self::declare(crate::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = crate::argmodel::backend().parse(&spec, "", &args)?;
+        let mut values = crate::argmodel::backend().parse(Self::spec(), "", &args)?;
 
         if let Some(trailing) = trailing {
-            matches.set_trailing_args_placeholder(trailing);
+            values.set_trailing_args_placeholder(trailing);
         }
 
-        Self::from_matches(&mut matches)
+        Self::from_matches(&mut values)
     }
 
     /// Executes the built-in command.
@@ -805,9 +806,10 @@ pub trait SpecCommand: Sized {
         content_type: ContentType,
         _options: &ContentOptions,
     ) -> Result<String, error::Error> {
-        let spec = Self::declare(crate::argmodel::CommandSpecBuilder::new()).build();
         match content_type {
-            ContentType::DetailedHelp => crate::argmodel::backend().detailed_help(&spec, name),
+            ContentType::DetailedHelp => {
+                crate::argmodel::backend().detailed_help(Self::spec(), name)
+            }
             ContentType::ShortUsage => Ok(format!("{name}: {name} {}\n", Self::synopsis())),
             ContentType::ShortDescription => Ok(format!("{name} - {}\n", Self::about())),
             ContentType::ManPage => error::unimp("man page rendering is not yet implemented"),
@@ -871,10 +873,7 @@ where
 {
     // N.B. Commands that declare no option surface (e.g., `builtin`) receive
     // their operands raw, mirroring the legacy raw-argument builtins.
-    let declares_options = !B::declare(crate::argmodel::CommandSpecBuilder::new())
-        .build()
-        .args
-        .is_empty();
+    let declares_options = !B::spec().args.is_empty();
 
     let (options, declarations) = if declares_options {
         let mut options: Vec<String> = vec![context.command_name.clone()];

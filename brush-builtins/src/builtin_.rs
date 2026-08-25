@@ -1,3 +1,4 @@
+use brush_core::argmodel::{CommandSpec, ParsedValues};
 use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
@@ -6,20 +7,18 @@ pub(crate) struct BuiltinCommand {
     args: Vec<brush_core::CommandArg>,
 }
 
+static BUILTIN_SPEC: CommandSpec = CommandSpec::EMPTY;
+
 impl builtins::SpecCommand for BuiltinCommand {
     type Error = brush_core::Error;
 
-    // N.B. Arguments are passed directly via `set_declarations`; declare() is
+    // N.B. Arguments are passed directly via `set_declarations`; spec() is
     // used only for help rendering.
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static CommandSpec {
+        &BUILTIN_SPEC
     }
 
-    fn from_matches(
-        _matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(_values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self::default())
     }
 

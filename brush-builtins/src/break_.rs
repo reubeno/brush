@@ -1,4 +1,6 @@
-use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, argmodel::PositionalSpec, builtins,
+};
 
 /// Breaks out of a control-flow loop.
 pub(crate) struct BreakCommand {
@@ -10,16 +12,19 @@ const ID_WHICH_LOOP: &str = "which_loop";
 impl builtins::SpecCommand for BreakCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.positional(ID_WHICH_LOOP, "WHICH_LOOP")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[],
+            positionals: &[PositionalSpec::one(ID_WHICH_LOOP, "WHICH_LOOP")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let which_loop = match matches.value(ID_WHICH_LOOP) {
+        let which_loop = match values.value_of_positional(ID_WHICH_LOOP) {
             Some(value) => value.parse().map_err(|_| builtins::BuiltinArgParseError {
                 message: format!("invalid numeric value: {value}"),
                 help_request: false,

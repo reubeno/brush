@@ -8,17 +8,15 @@ pub(crate) struct UnimplementedCommand {
 impl builtins::SpecCommand for UnimplementedCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        &builtins::argmodel::CommandSpec::EMPTY
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            args: matches.trailing().to_vec(),
+            args: values.trailing().to_vec(),
         })
     }
 

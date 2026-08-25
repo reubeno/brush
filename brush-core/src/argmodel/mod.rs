@@ -6,7 +6,7 @@
 mod backend;
 mod model;
 
-pub use model::{ArgKind, ArgSpec, CommandSpec, CommandSpecBuilder, Matches, PositionalSpec};
+pub use model::{ArgKind, ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
 
 #[cfg(feature = "parser-bpaf")]
 mod bpaf_backend;

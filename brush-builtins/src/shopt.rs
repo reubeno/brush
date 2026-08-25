@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use std::io::Write;
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 const ID_SET_O_NAMES_ONLY: &str = "set_o_names_only";
@@ -20,65 +21,32 @@ pub(crate) struct ShoptCommand {
     options: Vec<String>,
 }
 
+static SHOPT_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag(ID_SET_O_NAMES_ONLY, &['o'], &[], "Manage set -o options."),
+        ArgSpec::flag(ID_PRINT, &['p'], &[], "Print options' current values."),
+        ArgSpec::flag(ID_QUIET, &['q'], &[], "Suppress typical output."),
+        ArgSpec::flag(ID_SET, &['s'], &[], "Set the specified options."),
+        ArgSpec::flag(ID_UNSET, &['u'], &[], "Unset the specified options."),
+    ],
+    positionals: &[PositionalSpec::many(ID_OPTIONS, "OPTIONS")],
+};
+
 impl builtins::SpecCommand for ShoptCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_SET_O_NAMES_ONLY,
-            &['o'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Manage set -o options.",
-        )
-        .arg(
-            ID_PRINT,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Print options' current values.",
-        )
-        .arg(
-            ID_QUIET,
-            &['q'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Suppress typical output.",
-        )
-        .arg(
-            ID_SET,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Set the specified options.",
-        )
-        .arg(
-            ID_UNSET,
-            &['u'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Unset the specified options.",
-        )
-        .positional_many(ID_OPTIONS, "OPTIONS")
+    fn spec() -> &'static CommandSpec {
+        &SHOPT_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            set_o_names_only: matches.flag(ID_SET_O_NAMES_ONLY),
-            print: matches.flag(ID_PRINT),
-            quiet: matches.flag(ID_QUIET),
-            set: matches.flag(ID_SET),
-            unset: matches.flag(ID_UNSET),
-            options: matches.values(ID_OPTIONS).to_vec(),
+            set_o_names_only: values.flag(ID_SET_O_NAMES_ONLY),
+            print: values.flag(ID_PRINT),
+            quiet: values.flag(ID_QUIET),
+            set: values.flag(ID_SET),
+            unset: values.flag(ID_UNSET),
+            options: values.positional_values(ID_OPTIONS).to_vec(),
         })
     }
 

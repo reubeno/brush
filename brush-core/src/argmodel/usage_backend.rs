@@ -9,7 +9,7 @@ use std::ffi::OsStr;
 
 use usage::argv::{Arg, ArgAction, Command, DoubleDash, Error as UsageError, Event, Flag, Parser};
 
-use super::model::{ArgKind, CommandSpec, Matches};
+use super::model::{ArgKind, CommandSpec, ParsedValues};
 use crate::builtins::BuiltinArgParseError;
 
 /// The usage backend.
@@ -55,16 +55,16 @@ fn render_parse_error(
 impl super::ArgParserBackend for UsageBackend {
     fn parse(
         &self,
-        spec: &CommandSpec,
+        spec: &'static CommandSpec,
         name: &str,
         argv: &[String],
-    ) -> Result<Matches, BuiltinArgParseError> {
+    ) -> Result<ParsedValues, BuiltinArgParseError> {
         let command = build_command(spec, name);
         let argv_refs: Vec<&OsStr> = argv.iter().map(|arg| OsStr::new(arg)).collect();
 
-        let file_spec = borrowed_spec(name);
+        let file_spec = borrowed_spec(spec, Box::leak(name.to_owned().into_boxed_str()));
         let mut parser = Parser::new(command, &argv_refs);
-        let mut matches = Matches::new();
+        let mut values = ParsedValues::new(spec);
 
         loop {
             match parser.next_event() {
@@ -75,7 +75,7 @@ impl super::ArgParserBackend for UsageBackend {
                 Some(Ok(Event::Flag { flag, value, .. })) => {
                     let id = flag.name;
                     match value {
-                        None => matches.set_flag(id),
+                        None => values.set_flag(id),
                         Some(bytes) => {
                             let value = usage::argv::as_str(bytes)
                                 .map_err(|err| BuiltinArgParseError {
@@ -83,7 +83,7 @@ impl super::ArgParserBackend for UsageBackend {
                                     help_request: false,
                                 })?
                                 .to_owned();
-                            matches.push_value(id, value);
+                            values.push_value(id, value);
                         }
                     }
                 }
@@ -95,20 +95,24 @@ impl super::ArgParserBackend for UsageBackend {
                             help_request: false,
                         })?
                         .to_owned();
-                    matches.push_value(id, value);
+                    values.push_value(id, value);
                 }
                 Some(Ok(Event::Command(_))) => {}
                 Some(Ok(Event::External { .. })) => {}
             }
         }
 
-        Ok(matches)
+        Ok(values)
     }
 
-    fn detailed_help(&self, spec: &CommandSpec, name: &str) -> Result<String, crate::error::Error> {
+    fn detailed_help(
+        &self,
+        spec: &'static CommandSpec,
+        name: &str,
+    ) -> Result<String, crate::error::Error> {
         let command = build_command(spec, name);
         let help_flag = help_trigger(command);
-        let file_spec = borrowed_spec(name);
+        let file_spec = borrowed_spec(spec, Box::leak(name.to_owned().into_boxed_str()));
         let argv: [&OsStr; 1] = [OsStr::new(help_flag)];
 
         let mut parser = Parser::new(command, &argv);
@@ -133,7 +137,7 @@ impl super::ArgParserBackend for UsageBackend {
 /// (bounded by the number of distinct builtin invocations).
 #[must_use]
 #[expect(clippy::too_many_lines, reason = "explicit engine structure")]
-pub fn build_command(spec: &CommandSpec, name: &str) -> &'static Command<'static> {
+pub fn build_command(spec: &'static CommandSpec, name: &str) -> &'static Command<'static> {
     let mut flags: Vec<Flag<'static>> = Vec::new();
     for (ix, arg) in spec.args.iter().enumerate() {
         let shorts: Vec<u8> = arg.shorts.iter().map(|c| *c as u8).collect();
@@ -264,9 +268,11 @@ fn leak_str(s: &str) -> &'static str {
 
 /// Builds the borrowed help-time spec view.
 #[must_use]
-pub fn borrowed_spec(name: &str) -> usage::argv::spec::Spec<'static> {
-    let empty_spec = CommandSpec::default();
-    let cmd = build_command(&empty_spec, name);
+pub fn borrowed_spec(
+    spec: &'static CommandSpec,
+    name: &'static str,
+) -> usage::argv::spec::Spec<'static> {
+    let cmd = build_command(spec, name);
     usage::argv::spec::Spec {
         name: leak_str(name),
         bin: Some(leak_str(name)),

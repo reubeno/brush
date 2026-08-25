@@ -1,4 +1,4 @@
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, argmodel::CommandSpec, builtins};
 
 /// Evaluate the given string as script.
 pub(crate) struct EvalCommand {
@@ -9,17 +9,15 @@ pub(crate) struct EvalCommand {
 impl builtins::SpecCommand for EvalCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static CommandSpec {
+        &CommandSpec::EMPTY
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            args: matches.trailing().to_vec(),
+            args: values.trailing().to_vec(),
         })
     }
 

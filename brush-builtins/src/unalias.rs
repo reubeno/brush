@@ -1,6 +1,10 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+};
 
 /// Unset a shell alias.
 pub(crate) struct UnaliasCommand {
@@ -14,26 +18,26 @@ const ID_ALIASES: &str = "aliases";
 impl builtins::SpecCommand for UnaliasCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_REMOVE_ALL,
-            &['a'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Remove all aliases.",
-        )
-        .positional_many(ID_ALIASES, "ALIASES")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[ArgSpec::flag(
+                ID_REMOVE_ALL,
+                &['a'],
+                &[],
+                "Remove all aliases.",
+            )],
+            positionals: &[PositionalSpec::many(ID_ALIASES, "ALIASES")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            remove_all: matches.flag(ID_REMOVE_ALL),
-            aliases: matches.values(ID_ALIASES).to_vec(),
+            remove_all: values.flag(ID_REMOVE_ALL),
+            aliases: values.positional_values(ID_ALIASES).to_vec(),
         })
     }
 

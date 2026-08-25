@@ -1,7 +1,11 @@
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, error};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins, error,
+};
 
 /// Enable, disable, or display built-in commands.
 pub(crate) struct EnableCommand {
@@ -26,71 +30,64 @@ const ID_NAMES: &str = "names";
 impl builtins::SpecCommand for EnableCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_PRINT_LIST,
-            &['a'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Print a list of built-in commands.",
-        )
-        .arg(
-            ID_DISABLE,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Disables the specified built-in commands.",
-        )
-        .arg(
-            ID_PRINT_REUSABLY,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Print a list of built-in commands with reusable output.",
-        )
-        .arg(
-            ID_SPECIAL_ONLY,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Only operate on special built-in commands.",
-        )
-        .arg(
-            ID_SHARED_OBJECT_PATH,
-            &['f'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("PATH"),
-            "Path to a shared object from which built-in commands will be loaded.",
-        )
-        .arg(
-            ID_REMOVE_LOADED_BUILTIN,
-            &['d'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Remove the built-in commands loaded from the indicated object path.",
-        )
-        .positional_many(ID_NAMES, "NAMES")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_PRINT_LIST,
+                    &['a'],
+                    &[],
+                    "Print a list of built-in commands.",
+                ),
+                ArgSpec::flag(
+                    ID_DISABLE,
+                    &['n'],
+                    &[],
+                    "Disables the specified built-in commands.",
+                ),
+                ArgSpec::flag(
+                    ID_PRINT_REUSABLY,
+                    &['p'],
+                    &[],
+                    "Print a list of built-in commands with reusable output.",
+                ),
+                ArgSpec::flag(
+                    ID_SPECIAL_ONLY,
+                    &['s'],
+                    &[],
+                    "Only operate on special built-in commands.",
+                ),
+                ArgSpec::value(
+                    ID_SHARED_OBJECT_PATH,
+                    &['f'],
+                    &[],
+                    "PATH",
+                    "Path to a shared object from which built-in commands will be loaded.",
+                ),
+                ArgSpec::flag(
+                    ID_REMOVE_LOADED_BUILTIN,
+                    &['d'],
+                    &[],
+                    "Remove the built-in commands loaded from the indicated object path.",
+                ),
+            ],
+            positionals: &[PositionalSpec::many(ID_NAMES, "NAMES")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            print_list: matches.flag(ID_PRINT_LIST),
-            disable: matches.flag(ID_DISABLE),
-            print_reusably: matches.flag(ID_PRINT_REUSABLY),
-            special_only: matches.flag(ID_SPECIAL_ONLY),
-            shared_object_path: matches.value(ID_SHARED_OBJECT_PATH).map(ToOwned::to_owned),
-            remove_loaded_builtin: matches.flag(ID_REMOVE_LOADED_BUILTIN),
-            names: matches.values(ID_NAMES).to_vec(),
+            print_list: values.flag(ID_PRINT_LIST),
+            disable: values.flag(ID_DISABLE),
+            print_reusably: values.flag(ID_PRINT_REUSABLY),
+            special_only: values.flag(ID_SPECIAL_ONLY),
+            shared_object_path: values.value(ID_SHARED_OBJECT_PATH).map(ToOwned::to_owned),
+            remove_loaded_builtin: values.flag(ID_REMOVE_LOADED_BUILTIN),
+            names: values.positional_values(ID_NAMES).to_vec(),
         })
     }
 

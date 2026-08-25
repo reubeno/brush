@@ -2,7 +2,12 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use brush_core::sys::{self, fs::PathExt};
-use brush_core::{ExecutionResult, Shell, builtins, parser::ast};
+use brush_core::{
+    ExecutionResult, Shell,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+    parser::ast,
+};
 
 /// Inspect the type of a named shell item.
 pub(crate) struct TypeCommand {
@@ -32,62 +37,51 @@ enum ResolvedType<'a> {
 impl builtins::SpecCommand for TypeCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_ALL_LOCATIONS,
-            &['a'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display all locations of the specified name, not just the first.",
-        )
-        .arg(
-            ID_SUPPRESS_FUNC_LOOKUP,
-            &['f'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Don't consider functions when resolving the name.",
-        )
-        .arg(
-            ID_FORCE_PATH_SEARCH,
-            &['P'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Force searching by file path, even if the name is an alias, built-in command, or shell function.",
-        )
-        .arg(
-            ID_SHOW_PATH_ONLY,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Show file path only.",
-        )
-        .arg(
-            ID_TYPE_ONLY,
-            &['t'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Only display the type of the specified name.",
-        )
-        .positional_many(ID_NAMES, "NAMES")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_ALL_LOCATIONS,
+                    &['a'],
+                    &[],
+                    "Display all locations of the specified name, not just the first.",
+                ),
+                ArgSpec::flag(
+                    ID_SUPPRESS_FUNC_LOOKUP,
+                    &['f'],
+                    &[],
+                    "Don't consider functions when resolving the name.",
+                ),
+                ArgSpec::flag(
+                    ID_FORCE_PATH_SEARCH,
+                    &['P'],
+                    &[],
+                    "Force searching by file path, even if the name is an alias, built-in command, or shell function.",
+                ),
+                ArgSpec::flag(ID_SHOW_PATH_ONLY, &['p'], &[], "Show file path only."),
+                ArgSpec::flag(
+                    ID_TYPE_ONLY,
+                    &['t'],
+                    &[],
+                    "Only display the type of the specified name.",
+                ),
+            ],
+            positionals: &[PositionalSpec::many(ID_NAMES, "NAMES")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            all_locations: matches.flag(ID_ALL_LOCATIONS),
-            suppress_func_lookup: matches.flag(ID_SUPPRESS_FUNC_LOOKUP),
-            force_path_search: matches.flag(ID_FORCE_PATH_SEARCH),
-            show_path_only: matches.flag(ID_SHOW_PATH_ONLY),
-            type_only: matches.flag(ID_TYPE_ONLY),
-            names: matches.values(ID_NAMES).to_vec(),
+            all_locations: values.flag(ID_ALL_LOCATIONS),
+            suppress_func_lookup: values.flag(ID_SUPPRESS_FUNC_LOOKUP),
+            force_path_search: values.flag(ID_FORCE_PATH_SEARCH),
+            show_path_only: values.flag(ID_SHOW_PATH_ONLY),
+            type_only: values.flag(ID_TYPE_ONLY),
+            names: values.positional_values(ID_NAMES).to_vec(),
         })
     }
 

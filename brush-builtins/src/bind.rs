@@ -4,7 +4,9 @@ use strum::IntoEnumIterator;
 use tokio::sync::Mutex;
 
 use brush_core::{
-    ExecutionExitCode, ExecutionResult, builtins,
+    ExecutionExitCode, ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec, PositionalSpec},
+    builtins,
     interfaces::{self, InputFunction, KeyAction, KeySequence},
     sys, trace_categories,
 };
@@ -86,130 +88,94 @@ pub(crate) struct BindCommand {
 impl builtins::SpecCommand for BindCommand {
     type Error = BindError;
 
-    #[expect(clippy::too_many_lines)]
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_KEYMAP,
-            &['m'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("KEYMAP"),
-            "Name of key map to use.",
-        )
-        .arg(
-            ID_LIST_FUNCS,
-            &['l'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List functions.",
-        )
-        .arg(
-            ID_LIST_FUNCS_AND_BINDINGS,
-            &['P'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List functions and bindings.",
-        )
-        .arg(
-            ID_LIST_FUNCS_AND_BINDINGS_REUSABLE,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List functions and bindings in a format suitable for use as input.",
-        )
-        .arg(
-            ID_LIST_KEY_SEQS_MACROS,
-            &['S'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List key sequences that invoke macros.",
-        )
-        .arg(
-            ID_LIST_KEY_SEQS_MACROS_REUSABLE,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List key sequences that invoke macros in a format suitable for use as input.",
-        )
-        .arg(
-            ID_LIST_VARS,
-            &['V'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List variables.",
-        )
-        .arg(
-            ID_LIST_VARS_REUSABLE,
-            &['v'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List variables in a format suitable for use as input.",
-        )
-        .arg(
-            ID_QUERY_FUNC_BINDINGS,
-            &['q'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("FUNC_NAME"),
-            "Find the keys bound to the given named function.",
-        )
-        .arg(
-            ID_REMOVE_FUNC_BINDINGS,
-            &['u'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("FUNC_NAME"),
-            "Remove all bindings for the given named function.",
-        )
-        .arg(
-            ID_REMOVE_KEY_SEQ_BINDING,
-            &['r'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("KEY_SEQ"),
-            "Remove the binding for the given key sequence.",
-        )
-        .arg(
-            ID_BINDINGS_FILE,
-            &['f'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("PATH"),
-            "Import bindings from the given file.",
-        )
-        .arg(
-            ID_KEY_SEQ_BINDINGS,
-            &['x'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("BINDING"),
-            "Bind key sequence to command.",
-        )
-        .arg(
-            ID_LIST_KEY_SEQ_BINDINGS,
-            &['X'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List key sequence bindings.",
-        )
-        .positional(ID_KEY_SEQUENCE, "KEY_SEQUENCE")
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::value(ID_KEYMAP, &['m'], &[], "KEYMAP", "Name of key map to use."),
+                ArgSpec::flag(ID_LIST_FUNCS, &['l'], &[], "List functions."),
+                ArgSpec::flag(
+                    ID_LIST_FUNCS_AND_BINDINGS,
+                    &['P'],
+                    &[],
+                    "List functions and bindings.",
+                ),
+                ArgSpec::flag(
+                    ID_LIST_FUNCS_AND_BINDINGS_REUSABLE,
+                    &['p'],
+                    &[],
+                    "List functions and bindings in a format suitable for use as input.",
+                ),
+                ArgSpec::flag(
+                    ID_LIST_KEY_SEQS_MACROS,
+                    &['S'],
+                    &[],
+                    "List key sequences that invoke macros.",
+                ),
+                ArgSpec::flag(
+                    ID_LIST_KEY_SEQS_MACROS_REUSABLE,
+                    &['s'],
+                    &[],
+                    "List key sequences that invoke macros in a format suitable for use as input.",
+                ),
+                ArgSpec::flag(ID_LIST_VARS, &['V'], &[], "List variables."),
+                ArgSpec::flag(
+                    ID_LIST_VARS_REUSABLE,
+                    &['v'],
+                    &[],
+                    "List variables in a format suitable for use as input.",
+                ),
+                ArgSpec::value(
+                    ID_QUERY_FUNC_BINDINGS,
+                    &['q'],
+                    &[],
+                    "FUNC_NAME",
+                    "Find the keys bound to the given named function.",
+                ),
+                ArgSpec::value(
+                    ID_REMOVE_FUNC_BINDINGS,
+                    &['u'],
+                    &[],
+                    "FUNC_NAME",
+                    "Remove all bindings for the given named function.",
+                ),
+                ArgSpec::value(
+                    ID_REMOVE_KEY_SEQ_BINDING,
+                    &['r'],
+                    &[],
+                    "KEY_SEQ",
+                    "Remove the binding for the given key sequence.",
+                ),
+                ArgSpec::value(
+                    ID_BINDINGS_FILE,
+                    &['f'],
+                    &[],
+                    "PATH",
+                    "Import bindings from the given file.",
+                ),
+                ArgSpec::value(
+                    ID_KEY_SEQ_BINDINGS,
+                    &['x'],
+                    &[],
+                    "BINDING",
+                    "Bind key sequence to command.",
+                ),
+                ArgSpec::flag(
+                    ID_LIST_KEY_SEQ_BINDINGS,
+                    &['X'],
+                    &[],
+                    "List key sequence bindings.",
+                ),
+            ],
+            positionals: &[PositionalSpec::one(ID_KEY_SEQUENCE, "KEY_SEQUENCE")],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         let keymap =
-            match matches.value(ID_KEYMAP) {
+            match values.value(ID_KEYMAP) {
                 Some(s) => Some(BindKeyMap::from_str(s).map_err(|message| {
                     builtins::BuiltinArgParseError {
                         message,
@@ -221,21 +187,23 @@ impl builtins::SpecCommand for BindCommand {
 
         Ok(Self {
             keymap,
-            list_funcs: matches.flag(ID_LIST_FUNCS),
-            list_funcs_and_bindings: matches.flag(ID_LIST_FUNCS_AND_BINDINGS),
-            list_funcs_and_bindings_reusable: matches.flag(ID_LIST_FUNCS_AND_BINDINGS_REUSABLE),
-            list_key_seqs_that_invoke_macros: matches.flag(ID_LIST_KEY_SEQS_MACROS),
-            list_key_seqs_that_invoke_macros_reusable: matches
+            list_funcs: values.flag(ID_LIST_FUNCS),
+            list_funcs_and_bindings: values.flag(ID_LIST_FUNCS_AND_BINDINGS),
+            list_funcs_and_bindings_reusable: values.flag(ID_LIST_FUNCS_AND_BINDINGS_REUSABLE),
+            list_key_seqs_that_invoke_macros: values.flag(ID_LIST_KEY_SEQS_MACROS),
+            list_key_seqs_that_invoke_macros_reusable: values
                 .flag(ID_LIST_KEY_SEQS_MACROS_REUSABLE),
-            list_vars: matches.flag(ID_LIST_VARS),
-            list_vars_reusable: matches.flag(ID_LIST_VARS_REUSABLE),
-            query_func_bindings: matches.value(ID_QUERY_FUNC_BINDINGS).map(str::to_owned),
-            remove_func_bindings: matches.value(ID_REMOVE_FUNC_BINDINGS).map(str::to_owned),
-            remove_key_seq_binding: matches.value(ID_REMOVE_KEY_SEQ_BINDING).map(str::to_owned),
-            bindings_file: matches.value(ID_BINDINGS_FILE).map(str::to_owned),
-            key_seq_bindings: matches.values(ID_KEY_SEQ_BINDINGS).to_vec(),
-            list_key_seq_bindings: matches.flag(ID_LIST_KEY_SEQ_BINDINGS),
-            key_sequence: matches.value(ID_KEY_SEQUENCE).map(str::to_owned),
+            list_vars: values.flag(ID_LIST_VARS),
+            list_vars_reusable: values.flag(ID_LIST_VARS_REUSABLE),
+            query_func_bindings: values.value(ID_QUERY_FUNC_BINDINGS).map(str::to_owned),
+            remove_func_bindings: values.value(ID_REMOVE_FUNC_BINDINGS).map(str::to_owned),
+            remove_key_seq_binding: values.value(ID_REMOVE_KEY_SEQ_BINDING).map(str::to_owned),
+            bindings_file: values.value(ID_BINDINGS_FILE).map(str::to_owned),
+            key_seq_bindings: values.values(ID_KEY_SEQ_BINDINGS).to_vec(),
+            list_key_seq_bindings: values.flag(ID_LIST_KEY_SEQ_BINDINGS),
+            key_sequence: values
+                .value_of_positional(ID_KEY_SEQUENCE)
+                .map(str::to_owned),
         })
     }
 

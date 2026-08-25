@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
 use brush_core::{ExecutionResult, Shell, builtins};
 
 /// How the names passed to `unset` should be interpreted.
@@ -21,46 +22,42 @@ pub(crate) struct UnsetCommand {
     names: Vec<String>,
 }
 
-impl builtins::SpecCommand for UnsetCommand {
-    type Error = brush_core::Error;
-
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
+static UNSET_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag(
             ID_FUNCTIONS,
             &['f'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Treat each name as a shell function.",
-        )
-        .arg(
+        ),
+        ArgSpec::flag(
             ID_VARIABLES,
             &['v'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Treat each name as a shell variable.",
-        )
-        .arg(
+        ),
+        ArgSpec::flag(
             ID_NAME_REFS,
             &['n'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Treat each name as a name reference.",
-        )
-        .positional_many(ID_NAMES, "NAMES")
+        ),
+    ],
+    positionals: &[PositionalSpec::many(ID_NAMES, "NAMES")],
+};
+
+impl builtins::SpecCommand for UnsetCommand {
+    type Error = brush_core::Error;
+
+    fn spec() -> &'static CommandSpec {
+        &UNSET_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         let selected = [
-            matches.flag(ID_FUNCTIONS),
-            matches.flag(ID_VARIABLES),
-            matches.flag(ID_NAME_REFS),
+            values.flag(ID_FUNCTIONS),
+            values.flag(ID_VARIABLES),
+            values.flag(ID_NAME_REFS),
         ]
         .into_iter()
         .filter(|selected| *selected)
@@ -73,11 +70,11 @@ impl builtins::SpecCommand for UnsetCommand {
             });
         }
 
-        let name_interpretation = if matches.flag(ID_FUNCTIONS) {
+        let name_interpretation = if values.flag(ID_FUNCTIONS) {
             Some(NameInterpretation::Functions)
-        } else if matches.flag(ID_VARIABLES) {
+        } else if values.flag(ID_VARIABLES) {
             Some(NameInterpretation::Variables)
-        } else if matches.flag(ID_NAME_REFS) {
+        } else if values.flag(ID_NAME_REFS) {
             Some(NameInterpretation::NameRefs)
         } else {
             None
@@ -85,7 +82,7 @@ impl builtins::SpecCommand for UnsetCommand {
 
         Ok(Self {
             name_interpretation,
-            names: matches.values(ID_NAMES).to_vec(),
+            names: values.positional_values(ID_NAMES).to_vec(),
         })
     }
 

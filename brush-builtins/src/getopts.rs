@@ -1,6 +1,8 @@
 use std::{collections::HashMap, io::Write};
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, env, variables};
+use brush_core::{
+    ExecutionExitCode, ExecutionResult, argmodel::CommandSpec, builtins, env, variables,
+};
 
 /// Parse command options.
 pub(crate) struct GetOptsCommand {
@@ -81,17 +83,15 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
 impl builtins::SpecCommand for GetOptsCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static CommandSpec {
+        &CommandSpec::EMPTY
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         // N.B. The two required operands are validated in `execute`.
-        let trailing = matches.trailing();
+        let trailing = values.trailing();
         let missing_operands = trailing.len() < 2;
 
         let mut iter = trailing.iter();

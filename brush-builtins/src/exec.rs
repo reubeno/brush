@@ -1,6 +1,10 @@
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
+use brush_core::{
+    ErrorKind, ExecutionExitCode, ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec},
+    builtins, commands,
+};
 
 /// Exec the provided command.
 pub(crate) struct ExecCommand {
@@ -24,43 +28,42 @@ const ID_EXEC_AS_LOGIN: &str = "exec_as_login";
 impl builtins::SpecCommand for ExecCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_NAME_FOR_ARGV0,
-            &['a'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("NAME"),
-            "Pass given name as zeroth argument to command.",
-        )
-        .arg(
-            ID_EMPTY_ENVIRONMENT,
-            &['c'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Exec command with an empty environment.",
-        )
-        .arg(
-            ID_EXEC_AS_LOGIN,
-            &['l'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Exec command as a login shell.",
-        )
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::value(
+                    ID_NAME_FOR_ARGV0,
+                    &['a'],
+                    &[],
+                    "NAME",
+                    "Pass given name as zeroth argument to command.",
+                ),
+                ArgSpec::flag(
+                    ID_EMPTY_ENVIRONMENT,
+                    &['c'],
+                    &[],
+                    "Exec command with an empty environment.",
+                ),
+                ArgSpec::flag(
+                    ID_EXEC_AS_LOGIN,
+                    &['l'],
+                    &[],
+                    "Exec command as a login shell.",
+                ),
+            ],
+            positionals: &[],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            name_for_argv0: matches.value(ID_NAME_FOR_ARGV0).map(str::to_string),
-            empty_environment: matches.flag(ID_EMPTY_ENVIRONMENT),
-            exec_as_login: matches.flag(ID_EXEC_AS_LOGIN),
-            args: matches.trailing().to_vec(),
+            name_for_argv0: values.value(ID_NAME_FOR_ARGV0).map(str::to_string),
+            empty_environment: values.flag(ID_EMPTY_ENVIRONMENT),
+            exec_as_login: values.flag(ID_EXEC_AS_LOGIN),
+            args: values.trailing().to_vec(),
         })
     }
 

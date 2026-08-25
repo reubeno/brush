@@ -123,38 +123,16 @@ mod unimp;
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
 
-/// Declares the enable/disable pair for a shell built-in flag argument that
-/// can be toggled with a leading '-' or '+' option (e.g., `-x` / `+x`).
-///
-/// Pairs with [`read_plus_minus`], which yields `None` when neither form is
-/// present, `Some(true)` for `-x`, and `Some(false)` for `+x`.
-pub(crate) fn declare_plus_minus(
-    spec: brush_core::argmodel::CommandSpecBuilder,
-    flag_char: char,
-    base_id: &'static str,
-    desc: &'static str,
-) -> brush_core::argmodel::CommandSpecBuilder {
-    use brush_core::argmodel::{ArgKind, Matches};
-
-    let _ = Matches::new;
-    let enable_id: &'static str = Box::leak(format!("{base_id}_enable").into_boxed_str());
-    let disable_id: &'static str = Box::leak(format!("{base_id}_disable").into_boxed_str());
-    let shorts: &'static [char] = Box::leak(vec![flag_char].into_boxed_slice());
-    let plus_form: &'static str = Box::leak(format!("+{flag_char}").into_boxed_str());
-    let longs: &'static [&'static str] = Box::leak(vec![plus_form].into_boxed_slice());
-
-    spec.arg(enable_id, shorts, &[], ArgKind::Flag, None, desc)
-        .hidden_arg(disable_id, &[], longs, ArgKind::Flag, None, "")
-}
-
-/// Reads back an optional enable/disable toggle declared by
-/// [`declare_plus_minus`].
+/// Reads back an optional enable/disable toggle declared as a flag and hidden
+/// flag pair (see `SpecCommand::spec` implementations): `None` when neither is
+/// present, `Some(true)` for the enable form, `Some(false)` for `+x`.
 pub(crate) fn read_plus_minus(
-    matches: &brush_core::argmodel::Matches,
-    base_id: &str,
+    values: &brush_core::argmodel::ParsedValues,
+    enable_id: &str,
+    disable_id: &str,
 ) -> Option<bool> {
-    let enable = matches.flag(&format!("{base_id}_enable"));
-    let disable = matches.flag(&format!("{base_id}_disable"));
+    let enable = values.flag(enable_id);
+    let disable = values.flag(disable_id);
     match (enable, disable) {
         (true, _) => Some(true),
         (_, true) => Some(false),

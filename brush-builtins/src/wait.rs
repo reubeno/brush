@@ -1,6 +1,10 @@
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
+use brush_core::{
+    ExecutionExitCode, ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins, error,
+};
 
 /// Wait for jobs to terminate.
 pub(crate) struct WaitCommand {
@@ -18,46 +22,45 @@ const ID_IDS: &str = "ids";
 impl builtins::SpecCommand for WaitCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_WAIT_FOR_TERMINATE,
-            &['f'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Wait for specified job to terminate (instead of change status).",
-        )
-        .arg(
-            ID_WAIT_FOR_FIRST_OR_NEXT,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Wait for a single job to change status; if jobs are specified, waits for the first to change status, and otherwise waits for the next change.",
-        )
-        .arg(
-            ID_VARIABLE_TO_RECEIVE_ID,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("VAR_NAME"),
-            "Name of variable to receive the job ID of the job whose status is indicated.",
-        )
-        .positional_many(ID_IDS, "IDS")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_WAIT_FOR_TERMINATE,
+                    &['f'],
+                    &[],
+                    "Wait for specified job to terminate (instead of change status).",
+                ),
+                ArgSpec::flag(
+                    ID_WAIT_FOR_FIRST_OR_NEXT,
+                    &['n'],
+                    &[],
+                    "Wait for a single job to change status; if jobs are specified, waits for the first to change status, and otherwise waits for the next change.",
+                ),
+                ArgSpec::value(
+                    ID_VARIABLE_TO_RECEIVE_ID,
+                    &['p'],
+                    &[],
+                    "VAR_NAME",
+                    "Name of variable to receive the job ID of the job whose status is indicated.",
+                ),
+            ],
+            positionals: &[PositionalSpec::many(ID_IDS, "IDS")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            wait_for_terminate: matches.flag(ID_WAIT_FOR_TERMINATE),
-            wait_for_first_or_next: matches.flag(ID_WAIT_FOR_FIRST_OR_NEXT),
-            variable_to_receive_id: matches
+            wait_for_terminate: values.flag(ID_WAIT_FOR_TERMINATE),
+            wait_for_first_or_next: values.flag(ID_WAIT_FOR_FIRST_OR_NEXT),
+            variable_to_receive_id: values
                 .value(ID_VARIABLE_TO_RECEIVE_ID)
                 .map(ToOwned::to_owned),
-            ids: matches.values(ID_IDS).to_vec(),
+            ids: values.positional_values(ID_IDS).to_vec(),
         })
     }
 

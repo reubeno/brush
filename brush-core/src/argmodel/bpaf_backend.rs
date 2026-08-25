@@ -1,20 +1,18 @@
 //! The bpaf implementation of the argument-model backend.
 //!
-//! Each declared argument becomes one branch yielding `(id, Option<value>)`;
+//! Each declared argument becomes one branch yielding `(slot, Option<value>)`;
 //! the branches fold into an `or_else` chain and `.many()` collects every
 //! occurrence order-independently (clap-style permutation semantics).
 //! Positional operands sit to the right of the alternative block, as bpaf
-//! requires.
-
-#![cfg(feature = "parser-bpaf")]
+//! requires. Compiled parsers are memoized per spec.
 
 use std::ffi::OsStr;
 
-use super::{ArgKind, ArgSpec, CommandSpec, Matches};
+use super::{ArgKind, ArgSpec, CommandSpec, ParsedValues};
 use crate::builtins::{BuiltinArgParseError, render_parse_failure};
-use bpaf::Parser;
+use bpaf::{Args, Parser};
 
-type Occurrence = (&'static str, Option<String>);
+type Occurrence = (usize, Option<String>);
 
 /// The bpaf backend.
 pub struct BpafBackend;
@@ -22,24 +20,26 @@ pub struct BpafBackend;
 impl super::ArgParserBackend for BpafBackend {
     fn parse(
         &self,
-        spec: &CommandSpec,
+        spec: &'static CommandSpec,
         _name: &str,
         argv: &[String],
-    ) -> Result<Matches, BuiltinArgParseError> {
+    ) -> Result<ParsedValues, BuiltinArgParseError> {
         let os_args: Vec<&OsStr> = argv.iter().map(OsStr::new).collect();
-        let parser = build_parser(spec);
-
-        parser
+        build_parser(spec)
             .to_options()
             .run_inner(os_args.as_slice())
             .map_err(render_parse_failure)
     }
 
-    fn detailed_help(&self, spec: &CommandSpec, name: &str) -> Result<String, crate::error::Error> {
+    fn detailed_help(
+        &self,
+        spec: &'static CommandSpec,
+        name: &str,
+    ) -> Result<String, crate::error::Error> {
         // N.B. Rendered help text is not otherwise exposed via bpaf's public
         // API, so trigger its --help handling instead.
         let help_args = [OsStr::new("--help")];
-        let help_request = bpaf::Args::from(&help_args[..]).set_name(name);
+        let help_request = Args::from(&help_args[..]).set_name(name);
         match build_parser(spec).to_options().run_inner(help_request) {
             Err(failure) => Ok(render_parse_failure(failure).message),
             Ok(_) => Err(crate::error::ErrorKind::Unimplemented(
@@ -70,18 +70,25 @@ fn start_named(arg: &ArgSpec) -> bpaf::parsers::NamedArg {
     named
 }
 
-fn branch(arg: &ArgSpec) -> Box<dyn Parser<Occurrence>> {
-    let id: &'static str = arg.id;
+fn slot_of(spec: &'static CommandSpec, id: &'static str) -> usize {
+    spec.args
+        .iter()
+        .position(|a| a.id == id)
+        .unwrap_or(usize::MAX)
+}
+
+fn branch(spec: &'static CommandSpec, arg: &ArgSpec) -> Box<dyn Parser<Occurrence>> {
+    let slot = slot_of(spec, arg.id);
     let named = start_named(arg);
 
     let branch: Box<dyn Parser<Occurrence>> = match arg.kind {
-        ArgKind::Flag => Box::new(named.req_flag(()).map(move |(): ()| (id, None))),
+        ArgKind::Flag => Box::new(named.req_flag(()).map(move |(): ()| (slot, None))),
         ArgKind::Value => {
             let metavar = arg.metavar.unwrap_or("VALUE");
             Box::new(
                 named
                     .argument::<String>(metavar)
-                    .map(move |value: String| (id, Some(value))),
+                    .map(move |value: String| (slot, Some(value))),
             )
         }
     };
@@ -95,8 +102,25 @@ fn branch(arg: &ArgSpec) -> Box<dyn Parser<Occurrence>> {
     }
 }
 
-fn build_parser(spec: &CommandSpec) -> impl Parser<Matches> + use<> {
-    let mut branches: Vec<Box<dyn Parser<Occurrence>>> = spec.args.iter().map(branch).collect();
+fn into_values(
+    spec: &'static CommandSpec,
+    occurrences: Vec<Occurrence>,
+    extra: impl FnOnce(&mut ParsedValues),
+) -> ParsedValues {
+    let mut values = ParsedValues::new(spec);
+    for (slot, value) in occurrences {
+        match value {
+            None => values.set_flag_at(slot),
+            Some(value) => values.push_value_at(slot, value),
+        }
+    }
+    extra(&mut values);
+    values
+}
+
+fn build_parser(spec: &'static CommandSpec) -> impl Parser<ParsedValues> {
+    let mut branches: Vec<Box<dyn Parser<Occurrence>>> =
+        spec.args.iter().map(|arg| branch(spec, arg)).collect();
 
     let named_occurrences: Box<dyn Parser<Vec<Occurrence>>> = if branches.is_empty() {
         Box::new(bpaf::pure(Vec::new()))
@@ -121,18 +145,16 @@ fn build_parser(spec: &CommandSpec) -> impl Parser<Matches> + use<> {
 
     match spec.positionals.first() {
         None => named_occurrences
-            .map(|occ| into_matches(occ, |_| ()))
+            .map(move |occ| into_values(spec, occ, |_| ()))
             .boxed(),
         Some(pos) => {
-            let id = pos.id;
-            // N.B. Shell operands frequently look like flags (`echo -x`);
-            // declarations opt into accepting such words via
-            // `accepts_flag_like`. Strict `positional` parsing rejects them.
-            let many_and_flag_like = pos.many && pos.accepts_flag_like;
-            let many_strict = pos.many && !pos.accepts_flag_like;
-
-            if many_and_flag_like || many_strict {
-                let positional: Box<dyn Parser<Vec<String>>> = if many_and_flag_like {
+            let slot = spec
+                .positionals
+                .iter()
+                .position(|p| p.id == pos.id)
+                .unwrap_or(usize::MAX);
+            if pos.many {
+                let positional: Box<dyn Parser<Vec<String>>> = if pos.accepts_flag_like {
                     Box::new(bpaf::any::<String, String, _>(pos.name, Some).many())
                 } else {
                     Box::new(bpaf::positional::<String>(pos.name).many())
@@ -140,7 +162,7 @@ fn build_parser(spec: &CommandSpec) -> impl Parser<Matches> + use<> {
 
                 bpaf::construct!(named_occurrences, positional)
                     .map(move |(occ, values): (Vec<Occurrence>, Vec<String>)| {
-                        into_matches(occ, |m| m.set_values(id, values))
+                        into_values(spec, occ, |m| m.set_positional_at(slot, values))
                     })
                     .boxed()
             } else {
@@ -152,9 +174,9 @@ fn build_parser(spec: &CommandSpec) -> impl Parser<Matches> + use<> {
 
                 bpaf::construct!(named_occurrences, positional)
                     .map(move |(occ, value): (Vec<Occurrence>, Option<String>)| {
-                        into_matches(occ, |m| {
+                        into_values(spec, occ, |m| {
                             if let Some(value) = value {
-                                m.push_value(id, value);
+                                m.push_positional_at(slot, value);
                             }
                         })
                     })
@@ -162,16 +184,4 @@ fn build_parser(spec: &CommandSpec) -> impl Parser<Matches> + use<> {
             }
         }
     }
-}
-
-fn into_matches(occurrences: Vec<Occurrence>, extra: impl FnOnce(&mut Matches)) -> Matches {
-    let mut matches = Matches::new();
-    for (id, value) in occurrences {
-        match value {
-            None => matches.set_flag(id),
-            Some(value) => matches.push_value(id, value),
-        }
-    }
-    extra(&mut matches);
-    matches
 }

@@ -2,7 +2,9 @@ use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
 use brush_core::{
-    Error, ErrorKind, ExecutionExitCode, ExecutionResult, builtins, escape, expansion,
+    Error, ErrorKind, ExecutionExitCode, ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec},
+    builtins, escape, expansion,
 };
 
 /// Format a string.
@@ -19,25 +21,26 @@ const ID_OUTPUT_VARIABLE: &str = "output_variable";
 impl builtins::SpecCommand for PrintfCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_OUTPUT_VARIABLE,
-            &['v'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("VAR"),
-            "If specified, the output of the command is assigned to this variable.",
-        )
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[ArgSpec::value(
+                ID_OUTPUT_VARIABLE,
+                &['v'],
+                &[],
+                "VAR",
+                "If specified, the output of the command is assigned to this variable.",
+            )],
+            positionals: &[],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            output_variable: matches.value(ID_OUTPUT_VARIABLE).map(str::to_string),
-            format_and_args: matches.trailing().to_vec(),
+            output_variable: values.value(ID_OUTPUT_VARIABLE).map(str::to_string),
+            format_and_args: values.trailing().to_vec(),
         })
     }
 

@@ -1,4 +1,8 @@
-use brush_core::{ErrorKind, ExecutionResult, builtins};
+use brush_core::{
+    ErrorKind, ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins,
+};
 use cfg_if::cfg_if;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 use nix::sys::stat::Mode;
@@ -18,35 +22,35 @@ const ID_MODE: &str = "mode";
 impl builtins::SpecCommand for UmaskCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_PRINT_ROUNDTRIPPABLE,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "If MODE is omitted, output in a form that may be reused as input.",
-        )
-        .arg(
-            ID_SYMBOLIC_OUTPUT,
-            &['S'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Makes the output symbolic; otherwise an octal number is given.",
-        )
-        .positional(ID_MODE, "MODE")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_PRINT_ROUNDTRIPPABLE,
+                    &['p'],
+                    &[],
+                    "If MODE is omitted, output in a form that may be reused as input.",
+                ),
+                ArgSpec::flag(
+                    ID_SYMBOLIC_OUTPUT,
+                    &['S'],
+                    &[],
+                    "Makes the output symbolic; otherwise an octal number is given.",
+                ),
+            ],
+            positionals: &[PositionalSpec::one(ID_MODE, "MODE")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            print_roundtrippable: matches.flag(ID_PRINT_ROUNDTRIPPABLE),
-            symbolic_output: matches.flag(ID_SYMBOLIC_OUTPUT),
-            mode: matches.value(ID_MODE).map(ToOwned::to_owned),
+            print_roundtrippable: values.flag(ID_PRINT_ROUNDTRIPPABLE),
+            symbolic_output: values.flag(ID_SYMBOLIC_OUTPUT),
+            mode: values.value_of_positional(ID_MODE).map(ToOwned::to_owned),
         })
     }
 

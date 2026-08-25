@@ -1,7 +1,9 @@
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
-    ExecutionResult, builtins, commands, pathsearch,
+    ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec},
+    builtins, commands, pathsearch,
     sys::{self, fs::PathExt},
 };
 
@@ -39,43 +41,36 @@ const ID_PRINT_VERBOSE_DESCRIPTION: &str = "print_verbose_description";
 impl builtins::SpecCommand for CommandCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_USE_DEFAULT_PATH,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Use default PATH value.",
-        )
-        .arg(
-            ID_PRINT_DESCRIPTION,
-            &['v'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display a short description of the command.",
-        )
-        .arg(
-            ID_PRINT_VERBOSE_DESCRIPTION,
-            &['V'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Display a more verbose description of the command.",
-        )
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::flag(ID_USE_DEFAULT_PATH, &['p'], &[], "Use default PATH value."),
+                ArgSpec::flag(
+                    ID_PRINT_DESCRIPTION,
+                    &['v'],
+                    &[],
+                    "Display a short description of the command.",
+                ),
+                ArgSpec::flag(
+                    ID_PRINT_VERBOSE_DESCRIPTION,
+                    &['V'],
+                    &[],
+                    "Display a more verbose description of the command.",
+                ),
+            ],
+            positionals: &[],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            use_default_path: matches.flag(ID_USE_DEFAULT_PATH),
-            print_description: matches.flag(ID_PRINT_DESCRIPTION),
-            print_verbose_description: matches.flag(ID_PRINT_VERBOSE_DESCRIPTION),
-            command_and_args: matches.trailing().to_vec(),
+            use_default_path: values.flag(ID_USE_DEFAULT_PATH),
+            print_description: values.flag(ID_PRINT_DESCRIPTION),
+            print_verbose_description: values.flag(ID_PRINT_VERBOSE_DESCRIPTION),
+            command_and_args: values.trailing().to_vec(),
         })
     }
 

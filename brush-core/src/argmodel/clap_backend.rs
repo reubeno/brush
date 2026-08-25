@@ -5,7 +5,7 @@
 
 #![cfg(feature = "parser-clap")]
 
-use super::model::{ArgKind, CommandSpec, Matches};
+use super::model::{ArgKind, CommandSpec, ParsedValues};
 use crate::builtins::BuiltinArgParseError;
 
 /// The clap backend.
@@ -14,10 +14,10 @@ pub struct ClapBackend;
 impl super::ArgParserBackend for ClapBackend {
     fn parse(
         &self,
-        spec: &CommandSpec,
+        spec: &'static CommandSpec,
         name: &str,
         argv: &[String],
-    ) -> Result<Matches, BuiltinArgParseError> {
+    ) -> Result<ParsedValues, BuiltinArgParseError> {
         let mut command = build_command(spec, name);
 
         // N.B. clap treats argv[0] as the program name; our callers hand us
@@ -38,8 +38,8 @@ impl super::ArgParserBackend for ClapBackend {
             }
         };
 
-        let mut out = Matches::new();
-        for arg in &spec.args {
+        let mut out = ParsedValues::new(spec);
+        for arg in spec.args {
             if arg.kind == ArgKind::Flag {
                 if matches.get_flag(arg.id) {
                     out.set_flag(arg.id);
@@ -58,7 +58,7 @@ impl super::ArgParserBackend for ClapBackend {
         // Trailing verbatim operands are captured by the core splitter before
         // this backend runs; nothing positional reaches clap here unless a
         // workload declared one explicitly.
-        for pos in &spec.positionals {
+        for pos in spec.positionals {
             if let Some(values) = matches.get_many::<String>(pos.id) {
                 out.set_values(pos.id, values.cloned().collect());
             } else if let Some(value) = matches.get_one::<String>(pos.id) {
@@ -87,7 +87,7 @@ fn build_command(spec: &CommandSpec, name: &str) -> clap::Command {
             std::format!("{name} [OPTIONS]")
         });
 
-    for arg in &spec.args {
+    for arg in spec.args {
         let mut longs = arg.longs.iter();
         let first_long = longs.next().copied();
 
@@ -120,7 +120,7 @@ fn build_command(spec: &CommandSpec, name: &str) -> clap::Command {
         command = command.arg(cmd_arg);
     }
 
-    for pos in &spec.positionals {
+    for pos in spec.positionals {
         let mut cmd_arg = clap::Arg::new(pos.id)
             .value_name(pos.name)
             .action(clap::ArgAction::Append);

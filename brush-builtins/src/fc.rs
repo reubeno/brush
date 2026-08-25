@@ -1,6 +1,10 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, error, history};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec},
+    builtins, error, history,
+};
 
 /// Process command history list.
 pub(crate) struct FcCommand {
@@ -38,62 +42,52 @@ const ID_EDITOR: &str = "editor";
 impl builtins::SpecCommand for FcCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_LIST,
-            &['l'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List commands instead of editing them.",
-        )
-        .arg(
-            ID_NO_LINE_NUMBERS,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Suppress line numbers when listing.",
-        )
-        .arg(
-            ID_REVERSE,
-            &['r'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Reverse the order of commands.",
-        )
-        .arg(
-            ID_SUBSTITUTE,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Re-execute command after substitution (old=new format).",
-        )
-        .arg(
-            ID_EDITOR,
-            &['e'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("ENAME"),
-            "Editor to use (only relevant when not listing or substituting).",
-        )
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            args: &[
+                ArgSpec::flag(
+                    ID_LIST,
+                    &['l'],
+                    &[],
+                    "List commands instead of editing them.",
+                ),
+                ArgSpec::flag(
+                    ID_NO_LINE_NUMBERS,
+                    &['n'],
+                    &[],
+                    "Suppress line numbers when listing.",
+                ),
+                ArgSpec::flag(ID_REVERSE, &['r'], &[], "Reverse the order of commands."),
+                ArgSpec::flag(
+                    ID_SUBSTITUTE,
+                    &['s'],
+                    &[],
+                    "Re-execute command after substitution (old=new format).",
+                ),
+                ArgSpec::value(
+                    ID_EDITOR,
+                    &['e'],
+                    &[],
+                    "ENAME",
+                    "Editor to use (only relevant when not listing or substituting).",
+                ),
+            ],
+            positionals: &[],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let mut trailing = matches.trailing().iter();
+        let mut trailing = values.trailing().iter();
 
         Ok(Self {
-            list: matches.flag(ID_LIST),
-            no_line_numbers: matches.flag(ID_NO_LINE_NUMBERS),
-            reverse: matches.flag(ID_REVERSE),
-            substitute: matches.flag(ID_SUBSTITUTE),
-            editor: matches.value(ID_EDITOR).map(str::to_string),
+            list: values.flag(ID_LIST),
+            no_line_numbers: values.flag(ID_NO_LINE_NUMBERS),
+            reverse: values.flag(ID_REVERSE),
+            substitute: values.flag(ID_SUBSTITUTE),
+            editor: values.value(ID_EDITOR).map(str::to_string),
             first: trailing.next().cloned(),
             last: trailing.next().cloned(),
         })
@@ -171,11 +165,10 @@ impl builtins::SpecCommand for FcCommand {
             options.push(arg);
         }
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = builtins::argmodel::backend().parse(&spec, "", &options)?;
-        matches.set_trailing(trailing);
+        let mut values = builtins::argmodel::backend().parse(Self::spec(), "", &options)?;
+        values.set_trailing(trailing);
 
-        Self::from_matches(&mut matches)
+        Self::from_matches(&mut values)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

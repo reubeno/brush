@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, argmodel::PositionalSpec, builtins};
 
 /// Moves a job to run in the background.
 pub(crate) struct BgCommand {
@@ -12,17 +12,20 @@ const ID_JOB_SPECS: &str = "job_specs";
 impl builtins::SpecCommand for BgCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.positional_many(ID_JOB_SPECS, "JOB_SPECS")
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[],
+            positionals: &[PositionalSpec::many(ID_JOB_SPECS, "JOB_SPECS")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            job_specs: matches.values(ID_JOB_SPECS).to_vec(),
+            job_specs: values.positional_values(ID_JOB_SPECS).to_vec(),
         })
     }
 

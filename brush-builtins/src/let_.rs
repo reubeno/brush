@@ -1,6 +1,8 @@
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
+use brush_core::{
+    ExecutionExitCode, ExecutionResult, argmodel::CommandSpec, arithmetic::Evaluatable, builtins,
+};
 
 /// Evaluate arithmetic expressions.
 pub(crate) struct LetCommand {
@@ -11,17 +13,15 @@ pub(crate) struct LetCommand {
 impl builtins::SpecCommand for LetCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static CommandSpec {
+        &CommandSpec::EMPTY
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            exprs: matches.trailing().to_vec(),
+            exprs: values.trailing().to_vec(),
         })
     }
 

@@ -1,7 +1,11 @@
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
+use brush_core::{
+    ExecutionExitCode, ExecutionResult,
+    argmodel::{ArgSpec, CommandSpec},
+    builtins, sys,
+};
 
 /// Signal a job or process.
 pub(crate) struct KillCommand {
@@ -26,40 +30,40 @@ const ID_LIST_SIGNALS: &str = "list_signals";
 impl builtins::SpecCommand for KillCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        // N.B. `-L` is a hidden alias for `-l`.
-        spec.arg(
-            ID_SIGNAL_NAME,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("SIG_NAME"),
-            "Name of the signal to send.",
-        )
-        .arg(
-            ID_SIGNAL_NUMBER,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Value,
-            Some("SIG_NUM"),
-            "Number of the signal to send.",
-        )
-        .arg(
-            ID_LIST_SIGNALS,
-            &['l', 'L'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List known signal names.",
-        )
+    fn spec() -> &'static CommandSpec {
+        static SPEC: CommandSpec = CommandSpec {
+            // N.B. `-L` is a hidden alias for `-l`.
+            args: &[
+                ArgSpec::value(
+                    ID_SIGNAL_NAME,
+                    &['s'],
+                    &[],
+                    "SIG_NAME",
+                    "Name of the signal to send.",
+                ),
+                ArgSpec::value(
+                    ID_SIGNAL_NUMBER,
+                    &['n'],
+                    &[],
+                    "SIG_NUM",
+                    "Number of the signal to send.",
+                ),
+                ArgSpec::flag(
+                    ID_LIST_SIGNALS,
+                    &['l', 'L'],
+                    &[],
+                    "List known signal names.",
+                ),
+            ],
+            positionals: &[],
+        };
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let signal_number = match matches.value(ID_SIGNAL_NUMBER) {
+        let signal_number = match values.value(ID_SIGNAL_NUMBER) {
             Some(v) => Some(
                 v.parse::<usize>()
                     .map_err(|_| builtins::BuiltinArgParseError {
@@ -71,10 +75,10 @@ impl builtins::SpecCommand for KillCommand {
         };
 
         Ok(Self {
-            signal_name: matches.value(ID_SIGNAL_NAME).map(str::to_string),
+            signal_name: values.value(ID_SIGNAL_NAME).map(str::to_string),
             signal_number,
-            list_signals: matches.flag(ID_LIST_SIGNALS),
-            args: matches.trailing().to_vec(),
+            list_signals: values.flag(ID_LIST_SIGNALS),
+            args: values.trailing().to_vec(),
         })
     }
 
@@ -154,11 +158,10 @@ impl builtins::SpecCommand for KillCommand {
             options.push(arg);
         }
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = builtins::argmodel::backend().parse(&spec, "", &options)?;
-        matches.set_trailing(trailing);
+        let mut values = builtins::argmodel::backend().parse(Self::spec(), "", &options)?;
+        values.set_trailing(trailing);
 
-        Self::from_matches(&mut matches)
+        Self::from_matches(&mut values)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(

@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues};
 use brush_core::{ExecutionResult, builtins};
 
 /// Echo text to standard output.
@@ -14,46 +15,43 @@ const ID_NO_NEWLINE: &str = "no_trailing_newline";
 const ID_INTERPRET: &str = "interpret_backslash_escapes";
 const ID_NO_INTERPRET: &str = "no_interpret_backslash_escapes";
 
-impl builtins::SpecCommand for EchoCommand {
-    type Error = brush_core::Error;
-
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
+static ECHO_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag(
             ID_NO_NEWLINE,
             &['n'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Suppress the trailing newline from the output.",
-        )
-        .arg(
+        ),
+        ArgSpec::flag(
             ID_INTERPRET,
             &['e'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Interpret backslash escapes in the provided text.",
-        )
-        .arg(
+        ),
+        ArgSpec::flag(
             ID_NO_INTERPRET,
             &['E'],
             &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
             "Do not interpret backslash escapes in the provided text.",
-        )
+        ),
+    ],
+    positionals: &[],
+};
+
+impl builtins::SpecCommand for EchoCommand {
+    type Error = brush_core::Error;
+
+    fn spec() -> &'static CommandSpec {
+        &ECHO_SPEC
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            no_trailing_newline: matches.flag(ID_NO_NEWLINE),
-            interpret_backslash_escapes: matches.flag(ID_INTERPRET),
-            no_interpret_backslash_escapes: matches.flag(ID_NO_INTERPRET),
-            args: matches.trailing().to_vec(),
+            no_trailing_newline: values.flag(ID_NO_NEWLINE),
+            interpret_backslash_escapes: values.flag(ID_INTERPRET),
+            no_interpret_backslash_escapes: values.flag(ID_NO_INTERPRET),
+            args: values.trailing().to_vec(),
         })
     }
 

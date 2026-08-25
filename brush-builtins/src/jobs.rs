@@ -1,6 +1,10 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, error, jobs};
+use brush_core::{
+    ExecutionResult,
+    argmodel::{ArgSpec, PositionalSpec},
+    builtins, error, jobs,
+};
 
 /// Manage jobs.
 pub(crate) struct JobsCommand {
@@ -22,63 +26,37 @@ const ID_JOB_SPECS: &str = "job_specs";
 impl builtins::SpecCommand for JobsCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_ALSO_SHOW_PIDS,
-            &['l'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Also show process IDs.",
-        )
-        .arg(
-            ID_LIST_CHANGED_ONLY,
-            &['n'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "List only jobs that have changed status since the last notification.",
-        )
-        .arg(
-            ID_SHOW_PIDS_ONLY,
-            &['p'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Show only process IDs.",
-        )
-        .arg(
-            ID_RUNNING_JOBS_ONLY,
-            &['r'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Show only running jobs.",
-        )
-        .arg(
-            ID_STOPPED_JOBS_ONLY,
-            &['s'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Show only stopped jobs.",
-        )
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
         // TODO(jobs): Add -x option
-        .positional_many(ID_JOB_SPECS, "JOB_SPECS")
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[
+                ArgSpec::flag(ID_ALSO_SHOW_PIDS, &['l'], &[], "Also show process IDs."),
+                ArgSpec::flag(
+                    ID_LIST_CHANGED_ONLY,
+                    &['n'],
+                    &[],
+                    "List only jobs that have changed status since the last notification.",
+                ),
+                ArgSpec::flag(ID_SHOW_PIDS_ONLY, &['p'], &[], "Show only process IDs."),
+                ArgSpec::flag(ID_RUNNING_JOBS_ONLY, &['r'], &[], "Show only running jobs."),
+                ArgSpec::flag(ID_STOPPED_JOBS_ONLY, &['s'], &[], "Show only stopped jobs."),
+            ],
+            positionals: &[PositionalSpec::many(ID_JOB_SPECS, "JOB_SPECS")],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            also_show_pids: matches.flag(ID_ALSO_SHOW_PIDS),
-            list_changed_only: matches.flag(ID_LIST_CHANGED_ONLY),
-            show_pids_only: matches.flag(ID_SHOW_PIDS_ONLY),
-            running_jobs_only: matches.flag(ID_RUNNING_JOBS_ONLY),
-            stopped_jobs_only: matches.flag(ID_STOPPED_JOBS_ONLY),
-            job_specs: matches.values(ID_JOB_SPECS).to_vec(),
+            also_show_pids: values.flag(ID_ALSO_SHOW_PIDS),
+            list_changed_only: values.flag(ID_LIST_CHANGED_ONLY),
+            show_pids_only: values.flag(ID_SHOW_PIDS_ONLY),
+            running_jobs_only: values.flag(ID_RUNNING_JOBS_ONLY),
+            stopped_jobs_only: values.flag(ID_STOPPED_JOBS_ONLY),
+            job_specs: values.positional_values(ID_JOB_SPECS).to_vec(),
         })
     }
 

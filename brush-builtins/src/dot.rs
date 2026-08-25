@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use brush_core::{ExecutionExitCode, builtins};
+use brush_core::{ExecutionExitCode, argmodel::CommandSpec, builtins};
 use std::io::Write;
 
 /// Evaluate the provided script in the current shell environment.
@@ -15,16 +15,14 @@ pub(crate) struct DotCommand {
 impl builtins::SpecCommand for DotCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec
+    fn spec() -> &'static CommandSpec {
+        &CommandSpec::EMPTY
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
-        let mut trailing = matches.trailing().iter();
+        let mut trailing = values.trailing().iter();
         let script_path = trailing.next().cloned().unwrap_or_default();
 
         Ok(Self {

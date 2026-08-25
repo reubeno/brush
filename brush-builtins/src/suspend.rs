@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, argmodel::ArgSpec, builtins};
 
 /// Suspend the shell.
 pub(crate) struct SuspendCommand {
@@ -12,24 +12,25 @@ const ID_FORCE: &str = "force";
 impl builtins::SpecCommand for SuspendCommand {
     type Error = brush_core::Error;
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        spec.arg(
-            ID_FORCE,
-            &['f'],
-            &[],
-            builtins::argmodel::ArgKind::Flag,
-            None,
-            "Force suspend login shells.",
-        )
+    fn spec() -> &'static builtins::argmodel::CommandSpec {
+        static SPEC: builtins::argmodel::CommandSpec = builtins::argmodel::CommandSpec {
+            args: &[ArgSpec::flag(
+                ID_FORCE,
+                &['f'],
+                &[],
+                "Force suspend login shells.",
+            )],
+            positionals: &[],
+        };
+
+        &SPEC
     }
 
     fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
+        values: &mut builtins::argmodel::ParsedValues,
     ) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            force: matches.flag(ID_FORCE),
+            force: values.flag(ID_FORCE),
         })
     }
 

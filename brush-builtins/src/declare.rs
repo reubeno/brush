@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
 
+use brush_core::argmodel::{ArgSpec, CommandSpec, ParsedValues};
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
@@ -45,7 +46,7 @@ pub(crate) struct DeclareCommand {
 
 /// Expands groups of `+`-style options (e.g., `+ax`) into individual hidden
 /// long spellings (e.g., `--+a --+x`) that the argument backend can match
-/// against the disable-side arguments declared by [`crate::declare_plus_minus`].
+/// against the disable-side arguments in this command's spec.
 fn expand_plus_options(args: Vec<String>) -> Vec<String> {
     args.into_iter()
         .flat_map(|arg| {
@@ -64,6 +65,114 @@ fn expand_plus_options(args: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+static DECLARE_SPEC: CommandSpec = CommandSpec {
+    args: &[
+        ArgSpec::flag(
+            ID_FUNCTION_NAMES_OR_DEFS_ONLY,
+            &['f'],
+            &[],
+            "Constrain to function names or definitions.",
+        ),
+        ArgSpec::flag(
+            ID_FUNCTION_NAMES_ONLY,
+            &['F'],
+            &[],
+            "Constrain to function names only.",
+        ),
+        ArgSpec::flag(
+            ID_CREATE_GLOBAL,
+            &['g'],
+            &[],
+            "Create global variable, if applicable.",
+        ),
+        ArgSpec::flag(
+            ID_LOCALS_INHERIT_FROM_PREV_SCOPE,
+            &['I'],
+            &[],
+            "When creating a local variable that shadows another variable of the same name, \
+                     then initialize it with the contents and attributes of the variable being \
+                     shadowed.",
+        ),
+        ArgSpec::flag(
+            ID_PRINT,
+            &['p'],
+            &[],
+            "Display each item's attributes and values.",
+        ),
+        ArgSpec::flag(
+            "make_indexed_array_enable",
+            &['a'],
+            &[],
+            "Make the variable an indexed array.",
+        ),
+        ArgSpec::hidden_flag("make_indexed_array_disable", &[], &["+a"], ""),
+        ArgSpec::flag(
+            "make_associative_array_enable",
+            &['A'],
+            &[],
+            "Make the variable an associative array.",
+        ),
+        ArgSpec::hidden_flag("make_associative_array_disable", &[], &["+A"], ""),
+        ArgSpec::flag(
+            "capitalize_value_on_assignment_enable",
+            &['c'],
+            &[],
+            "Enable capitalize-on-assignment for the variable.",
+        ),
+        ArgSpec::hidden_flag("capitalize_value_on_assignment_disable", &[], &["+c"], ""),
+        ArgSpec::flag(
+            "make_integer_enable",
+            &['i'],
+            &[],
+            "Mark the variable as integer-typed",
+        ),
+        ArgSpec::hidden_flag("make_integer_disable", &[], &["+i"], ""),
+        ArgSpec::flag(
+            "lowercase_value_on_assignment_enable",
+            &['l'],
+            &[],
+            "Enable lowercase-on-assignment for the variable.",
+        ),
+        ArgSpec::hidden_flag("lowercase_value_on_assignment_disable", &[], &["+l"], ""),
+        ArgSpec::flag(
+            "make_nameref_enable",
+            &['n'],
+            &[],
+            "Mark the variable as a name reference",
+        ),
+        ArgSpec::hidden_flag("make_nameref_disable", &[], &["+n"], ""),
+        ArgSpec::flag(
+            "make_readonly_enable",
+            &['r'],
+            &[],
+            "Mark the variable as read-only.",
+        ),
+        ArgSpec::hidden_flag("make_readonly_disable", &[], &["+r"], ""),
+        ArgSpec::flag(
+            "make_traced_enable",
+            &['t'],
+            &[],
+            "Enable tracing for the variable.",
+        ),
+        ArgSpec::hidden_flag("make_traced_disable", &[], &["+t"], ""),
+        ArgSpec::flag(
+            "uppercase_value_on_assignment_enable",
+            &['u'],
+            &[],
+            "Enable uppercase-on-assignment for the variable.",
+        ),
+        ArgSpec::hidden_flag("uppercase_value_on_assignment_disable", &[], &["+u"], ""),
+        ArgSpec::flag(
+            "make_exported_enable",
+            &['x'],
+            &[],
+            "Mark the variable for export.",
+        ),
+        ArgSpec::hidden_flag("make_exported_disable", &[], &["+x"], ""),
+    ],
+    positionals: &[],
+};
+
 impl builtins::SpecCommand for DeclareCommand {
     type Error = brush_core::Error;
 
@@ -79,105 +188,8 @@ impl builtins::SpecCommand for DeclareCommand {
         self.declarations = declarations;
     }
 
-    fn declare(
-        spec: builtins::argmodel::CommandSpecBuilder,
-    ) -> builtins::argmodel::CommandSpecBuilder {
-        let spec = spec
-            .arg(
-                ID_FUNCTION_NAMES_OR_DEFS_ONLY,
-                &['f'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "Constrain to function names or definitions.",
-            )
-            .arg(
-                ID_FUNCTION_NAMES_ONLY,
-                &['F'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "Constrain to function names only.",
-            )
-            .arg(
-                ID_CREATE_GLOBAL,
-                &['g'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "Create global variable, if applicable.",
-            )
-            .arg(
-                ID_LOCALS_INHERIT_FROM_PREV_SCOPE,
-                &['I'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "When creating a local variable that shadows another variable of the same name, \
-                 then initialize it with the contents and attributes of the variable being \
-                 shadowed.",
-            )
-            .arg(
-                ID_PRINT,
-                &['p'],
-                &[],
-                builtins::argmodel::ArgKind::Flag,
-                None,
-                "Display each item's attributes and values.",
-            );
-
-        let spec = crate::declare_plus_minus(
-            spec,
-            'a',
-            "make_indexed_array",
-            "Make the variable an indexed array.",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'A',
-            "make_associative_array",
-            "Make the variable an associative array.",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'c',
-            "capitalize_value_on_assignment",
-            "Enable capitalize-on-assignment for the variable.",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'i',
-            "make_integer",
-            "Mark the variable as integer-typed",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'l',
-            "lowercase_value_on_assignment",
-            "Enable lowercase-on-assignment for the variable.",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'n',
-            "make_nameref",
-            "Mark the variable as a name reference",
-        );
-        let spec = crate::declare_plus_minus(
-            spec,
-            'r',
-            "make_readonly",
-            "Mark the variable as read-only.",
-        );
-        let spec =
-            crate::declare_plus_minus(spec, 't', "make_traced", "Enable tracing for the variable.");
-        let spec = crate::declare_plus_minus(
-            spec,
-            'u',
-            "uppercase_value_on_assignment",
-            "Enable uppercase-on-assignment for the variable.",
-        );
-
-        crate::declare_plus_minus(spec, 'x', "make_exported", "Mark the variable for export.")
+    fn spec() -> &'static CommandSpec {
+        &DECLARE_SPEC
     }
 
     /// Overrides the default [`builtins::SpecCommand::new`] flow so that
@@ -196,40 +208,68 @@ impl builtins::SpecCommand for DeclareCommand {
 
         let expanded = expand_plus_options(args);
 
-        let spec = Self::declare(builtins::argmodel::CommandSpecBuilder::new()).build();
-        let mut matches = builtins::argmodel::backend().parse(&spec, "", &expanded)?;
+        let mut values = builtins::argmodel::backend().parse(Self::spec(), "", &expanded)?;
 
-        Self::from_matches(&mut matches)
+        Self::from_matches(&mut values)
     }
 
-    fn from_matches(
-        matches: &mut builtins::argmodel::Matches,
-    ) -> Result<Self, builtins::BuiltinArgParseError> {
+    fn from_matches(values: &mut ParsedValues) -> Result<Self, builtins::BuiltinArgParseError> {
         Ok(Self {
-            function_names_or_defs_only: matches.flag(ID_FUNCTION_NAMES_OR_DEFS_ONLY),
-            function_names_only: matches.flag(ID_FUNCTION_NAMES_ONLY),
-            create_global: matches.flag(ID_CREATE_GLOBAL),
-            locals_inherit_from_prev_scope: matches.flag(ID_LOCALS_INHERIT_FROM_PREV_SCOPE),
-            print: matches.flag(ID_PRINT),
-            make_indexed_array: crate::read_plus_minus(matches, "make_indexed_array"),
-            make_associative_array: crate::read_plus_minus(matches, "make_associative_array"),
+            function_names_or_defs_only: values.flag(ID_FUNCTION_NAMES_OR_DEFS_ONLY),
+            function_names_only: values.flag(ID_FUNCTION_NAMES_ONLY),
+            create_global: values.flag(ID_CREATE_GLOBAL),
+            locals_inherit_from_prev_scope: values.flag(ID_LOCALS_INHERIT_FROM_PREV_SCOPE),
+            print: values.flag(ID_PRINT),
+            make_indexed_array: crate::read_plus_minus(
+                values,
+                "make_indexed_array_enable",
+                "make_indexed_array_disable",
+            ),
+            make_associative_array: crate::read_plus_minus(
+                values,
+                "make_associative_array_enable",
+                "make_associative_array_disable",
+            ),
             capitalize_value_on_assignment: crate::read_plus_minus(
-                matches,
-                "capitalize_value_on_assignment",
+                values,
+                "capitalize_value_on_assignment_enable",
+                "capitalize_value_on_assignment_disable",
             ),
-            make_integer: crate::read_plus_minus(matches, "make_integer"),
+            make_integer: crate::read_plus_minus(
+                values,
+                "make_integer_enable",
+                "make_integer_disable",
+            ),
             lowercase_value_on_assignment: crate::read_plus_minus(
-                matches,
-                "lowercase_value_on_assignment",
+                values,
+                "lowercase_value_on_assignment_enable",
+                "lowercase_value_on_assignment_disable",
             ),
-            make_nameref: crate::read_plus_minus(matches, "make_nameref"),
-            make_readonly: crate::read_plus_minus(matches, "make_readonly"),
-            make_traced: crate::read_plus_minus(matches, "make_traced"),
+            make_nameref: crate::read_plus_minus(
+                values,
+                "make_nameref_enable",
+                "make_nameref_disable",
+            ),
+            make_readonly: crate::read_plus_minus(
+                values,
+                "make_readonly_enable",
+                "make_readonly_disable",
+            ),
+            make_traced: crate::read_plus_minus(
+                values,
+                "make_traced_enable",
+                "make_traced_disable",
+            ),
             uppercase_value_on_assignment: crate::read_plus_minus(
-                matches,
-                "uppercase_value_on_assignment",
+                values,
+                "uppercase_value_on_assignment_enable",
+                "uppercase_value_on_assignment_disable",
             ),
-            make_exported: crate::read_plus_minus(matches, "make_exported"),
+            make_exported: crate::read_plus_minus(
+                values,
+                "make_exported_enable",
+                "make_exported_disable",
+            ),
 
             declarations: Vec::new(),
         })
