@@ -2,3 +2,4 @@ target/
 mutants.out*/
 target-thin/
 target-usage/
+target-clap/
