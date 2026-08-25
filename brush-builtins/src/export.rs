@@ -1,75 +1,16 @@
-use clap::Parser;
-use itertools::Itertools;
-use std::io::Write;
+//! The `export` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(ExportCommand);
 
 use brush_core::{
-    ExecutionExitCode, ExecutionResult, builtins,
+    ExecutionExitCode, ExecutionResult,
     env::{EnvironmentLookup, EnvironmentScope},
     parser::ast,
     variables,
 };
-
-/// Add or update exported shell variables.
-#[derive(Parser)]
-pub(crate) struct ExportCommand {
-    /// Names are treated as function names.
-    #[arg(short = 'f')]
-    names_are_functions: bool,
-
-    /// Un-export the names.
-    #[arg(short = 'n')]
-    unexport: bool,
-
-    /// Display all exported names.
-    #[arg(short = 'p')]
-    display_exported_names: bool,
-
-    //
-    // Declarations
-    //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
-    #[clap(skip)]
-    declarations: Vec<brush_core::CommandArg>,
-}
-
-impl builtins::DeclarationCommand for ExportCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
-}
-
-impl builtins::Command for ExportCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.declarations.is_empty() {
-            display_all_exported_vars(&context)?;
-            return Ok(ExecutionResult::success());
-        }
-
-        let mut result = ExecutionResult::success();
-        for decl in &self.declarations {
-            let current_result = self.process_decl(&mut context, decl)?;
-            if !current_result.is_success() {
-                result = current_result;
-            }
-        }
-
-        Ok(result)
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
-}
+use itertools::Itertools;
+use std::io::Write;
 
 impl ExportCommand {
     fn process_decl(
@@ -164,7 +105,7 @@ impl ExportCommand {
     }
 }
 
-fn display_all_exported_vars(
+pub(super) fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
 ) -> Result<(), brush_core::Error> {
     // Enumerate variables, sorted by key.
@@ -180,4 +121,25 @@ fn display_all_exported_vars(
     }
 
     Ok(())
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &ExportCommand,
+    mut context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.declarations.is_empty() {
+        display_all_exported_vars(&context)?;
+        return Ok(ExecutionResult::success());
+    }
+
+    let mut result = ExecutionResult::success();
+    for decl in &command.declarations {
+        let current_result = command.process_decl(&mut context, decl)?;
+        if !current_result.is_success() {
+            result = current_result;
+        }
+    }
+
+    Ok(result)
 }

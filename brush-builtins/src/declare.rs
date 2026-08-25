@@ -1,9 +1,10 @@
-use clap::Parser;
-use itertools::Itertools;
-use std::{io::Write, sync::LazyLock};
+//! The `declare` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(DeclareCommand);
 
 use brush_core::{
-    ErrorKind, ExecutionResult, builtins,
+    ErrorKind, ExecutionResult,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
     parser::ast,
@@ -12,175 +13,14 @@ use brush_core::{
         ShellVariableUpdateTransform,
     },
 };
-
-crate::minus_or_plus_flag_arg!(
-    MakeIndexedArrayFlag,
-    'a',
-    "Make the variable an indexed array."
-);
-crate::minus_or_plus_flag_arg!(
-    MakeAssociativeArrayFlag,
-    'A',
-    "Make the variable an associative array."
-);
-crate::minus_or_plus_flag_arg!(
-    CapitalizeValueOnAssignmentFlag,
-    'c',
-    "Enable capitalize-on-assignment for the variable."
-);
-crate::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
-crate::minus_or_plus_flag_arg!(
-    LowercaseValueOnAssignmentFlag,
-    'l',
-    "Enable lowercase-on-assignment for the variable."
-);
-crate::minus_or_plus_flag_arg!(
-    MakeNameRefFlag,
-    'n',
-    "Mark the variable as a name reference"
-);
-crate::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "Mark the variable as read-only.");
-crate::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "Enable tracing for the variable.");
-crate::minus_or_plus_flag_arg!(
-    UppercaseValueOnAssignmentFlag,
-    'u',
-    "Enable uppercase-on-assignment for the variable."
-);
-crate::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "Mark the variable for export.");
-
-/// Display or update variables and their attributes.
-#[derive(Parser)]
-#[clap(override_usage = "declare [OPTIONS] [DECLARATIONS]...")]
-pub(crate) struct DeclareCommand {
-    /// Constrain to function names or definitions.
-    #[arg(short = 'f')]
-    function_names_or_defs_only: bool,
-
-    /// Constrain to function names only.
-    #[arg(short = 'F')]
-    function_names_only: bool,
-
-    /// Create global variable, if applicable.
-    #[arg(short = 'g')]
-    create_global: bool,
-
-    /// When creating a local variable that shadows another variable of the same name,
-    /// then initialize it with the contents and attributes of the variable being shadowed.
-    #[arg(short = 'I')]
-    locals_inherit_from_prev_scope: bool,
-
-    /// Display each item's attributes and values.
-    #[arg(short = 'p')]
-    print: bool,
-
-    //
-    // Attribute options
-    #[clap(flatten)] // -a
-    make_indexed_array: MakeIndexedArrayFlag,
-    #[clap(flatten)] // -A
-    make_associative_array: MakeAssociativeArrayFlag,
-    #[clap(flatten)] // -c
-    capitalize_value_on_assignment: CapitalizeValueOnAssignmentFlag,
-    #[clap(flatten)] // -i
-    make_integer: MakeIntegerFlag,
-    #[clap(flatten)] // -l
-    lowercase_value_on_assignment: LowercaseValueOnAssignmentFlag,
-    #[clap(flatten)] // -n
-    make_nameref: MakeNameRefFlag,
-    #[clap(flatten)] // -r
-    make_readonly: MakeReadonlyFlag,
-    #[clap(flatten)] // -t
-    make_traced: MakeTracedFlag,
-    #[clap(flatten)] // -u
-    uppercase_value_on_assignment: UppercaseValueOnAssignmentFlag,
-    #[clap(flatten)] // -x
-    make_exported: MakeExportedFlag,
-
-    //
-    // Declarations
-    //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
-    #[clap(skip)]
-    declarations: Vec<brush_core::CommandArg>,
-}
+use itertools::Itertools;
+use std::{io::Write, sync::LazyLock};
 
 #[derive(Clone, Copy)]
-enum DeclareVerb {
+pub(super) enum DeclareVerb {
     Declare,
     Local,
     Readonly,
-}
-
-impl builtins::DeclarationCommand for DeclareCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
-}
-
-impl builtins::Command for DeclareCommand {
-    fn takes_plus_options() -> bool {
-        true
-    }
-
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let verb = match context.command_name.as_str() {
-            "local" => DeclareVerb::Local,
-            "readonly" => DeclareVerb::Readonly,
-            _ => DeclareVerb::Declare,
-        };
-
-        if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
-            writeln!(context.stderr(), "can only be used in a function")?;
-            return Ok(ExecutionResult::general_error());
-        }
-
-        if self.locals_inherit_from_prev_scope {
-            return error::unimp("declare -I");
-        }
-
-        let mut result = ExecutionResult::success();
-        if !self.declarations.is_empty() {
-            for declaration in &self.declarations {
-                if self.print && !matches!(verb, DeclareVerb::Readonly) {
-                    if !self.try_display_declaration(&context, declaration, verb)? {
-                        result = ExecutionResult::general_error();
-                    }
-                } else {
-                    if !self.process_declaration(&mut context, declaration, verb)? {
-                        result = ExecutionResult::general_error();
-                    }
-                }
-            }
-        } else {
-            // Display matching declarations from the variable environment.
-            if !self.function_names_only && !self.function_names_or_defs_only {
-                self.display_matching_env_declarations(&context, verb)?;
-            }
-
-            // Do the same for functions.
-            if !matches!(verb, DeclareVerb::Local | DeclareVerb::Readonly)
-                && (!self.print || self.function_names_only || self.function_names_or_defs_only)
-            {
-                self.display_matching_functions(&context)?;
-            }
-        }
-
-        Ok(result)
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
 }
 
 impl DeclareCommand {
@@ -650,4 +490,56 @@ impl DeclareCommand {
 
         Ok(())
     }
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &DeclareCommand,
+    mut context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    let verb = match context.command_name.as_str() {
+        "local" => DeclareVerb::Local,
+        "readonly" => DeclareVerb::Readonly,
+        _ => DeclareVerb::Declare,
+    };
+
+    if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
+        writeln!(context.stderr(), "can only be used in a function")?;
+        return Ok(ExecutionResult::general_error());
+    }
+
+    if command.locals_inherit_from_prev_scope {
+        return error::unimp("declare -I");
+    }
+
+    let mut result = ExecutionResult::success();
+    if !command.declarations.is_empty() {
+        for declaration in &command.declarations {
+            if command.print && !matches!(verb, DeclareVerb::Readonly) {
+                if !command.try_display_declaration(&context, declaration, verb)? {
+                    result = ExecutionResult::general_error();
+                }
+            } else {
+                if !command.process_declaration(&mut context, declaration, verb)? {
+                    result = ExecutionResult::general_error();
+                }
+            }
+        }
+    } else {
+        // Display matching declarations from the variable environment.
+        if !command.function_names_only && !command.function_names_or_defs_only {
+            command.display_matching_env_declarations(&context, verb)?;
+        }
+
+        // Do the same for functions.
+        if !matches!(verb, DeclareVerb::Local | DeclareVerb::Readonly)
+            && (!command.print
+                || command.function_names_only
+                || command.function_names_or_defs_only)
+        {
+            command.display_matching_functions(&context)?;
+        }
+    }
+
+    Ok(result)
 }

@@ -1,16 +1,17 @@
-use clap::{
-    Parser,
-    builder::{IntoResettable, StyledStr},
-};
+//! The `ulimit` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(ULimitCommand);
+
+use ::clap::builder::{IntoResettable, StyledStr};
+use brush_core::ExecutionResult;
 use std::{
     io::{self, ErrorKind, Write},
     str::FromStr,
 };
 
-use brush_core::{ExecutionResult, builtins};
-
 #[derive(Clone, Copy)]
-enum Unit {
+pub(super) enum Unit {
     Block,
     Bytes,
     HalfKBytes,
@@ -31,7 +32,7 @@ impl Unit {
 }
 
 #[derive(Clone, Copy)]
-enum Virtual {
+pub(super) enum Virtual {
     Pipe,
     VMem,
 }
@@ -67,7 +68,7 @@ impl Virtual {
 }
 
 #[derive(Clone, Copy)]
-enum Resource {
+pub(super) enum Resource {
     Phy(rlimit::Resource),
     Virt(Virtual),
 }
@@ -94,7 +95,7 @@ impl Resource {
 }
 
 #[derive(Clone, Copy)]
-struct ResourceDescription {
+pub(super) struct ResourceDescription {
     resource: Resource,
     help: &'static str,
     description: &'static str,
@@ -322,13 +323,13 @@ impl ResourceDescription {
 }
 
 impl IntoResettable<StyledStr> for ResourceDescription {
-    fn into_resettable(self) -> clap::builder::Resettable<StyledStr> {
-        clap::builder::Resettable::Value(self.help().into())
+    fn into_resettable(self) -> ::clap::builder::Resettable<StyledStr> {
+        ::clap::builder::Resettable::Value(self.help().into())
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-enum LimitValue {
+pub(super) enum LimitValue {
     Unset,
     Unlimited,
     Soft,
@@ -350,164 +351,73 @@ impl FromStr for LimitValue {
     }
 }
 
-/// Modify shell resource limits.
-///
-/// Provides control over the resources available to the shell and processes
-/// it creates, on systems that allow such control.
-#[derive(Parser, Debug)]
-pub(crate) struct ULimitCommand {
-    /// use the `soft` resource limit
-    #[arg(short = 'S')]
-    soft: bool,
-    /// use the `hard` resource limit
-    #[arg(short = 'H')]
-    hard: bool,
-    /// all current limits are reported
-    #[arg(short = 'a')]
-    all: bool,
-    /// the maximum socket buffer size
-    #[arg(short = 'b', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SBSIZE)]
-    sbsize: Option<LimitValue>,
-    /// the maximum size of core files created
-    #[arg(short = 'c', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CORE)]
-    core: Option<LimitValue>,
-    /// the maximum size of a process's data segment
-    #[arg(short = 'd', default_missing_value = "", num_args(0..=1), help = ResourceDescription::DATA)]
-    data: Option<LimitValue>,
-    /// the maximum scheduling priority (`nice`)
-    #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
-    nice: Option<LimitValue>,
-    /// the maximum size of files written by the shell and its children
-    #[arg(short = 'f', default_missing_value = "", num_args(0..=1), help = ResourceDescription::FSIZE)]
-    file_size: Option<LimitValue>,
-    /// the maximum number of pending signals
-    #[arg(short = 'i', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SIGPENDING)]
-    sigpending: Option<LimitValue>,
-    /// the maximum size a process may lock into memory
-    #[arg(short = 'l', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MEMLOCK)]
-    memlock: Option<LimitValue>,
-    /// the maximum number of kqueues allocated for this process
-    #[arg(short = 'k', default_missing_value = "", num_args(0..=1), help = ResourceDescription::KQUEUES)]
-    kqueues: Option<LimitValue>,
-    /// the maximum resident set size
-    #[arg(short = 'm', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RSS)]
-    rss: Option<LimitValue>,
-    /// the maximum number of open file descriptors
-    #[arg(short = 'n', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NOFILE)]
-    file_open: Option<LimitValue>,
-    /// the pipe buffer size
-    #[arg(short = 'p', default_missing_value = "", num_args(0..=1), help = ResourceDescription::PIPE)]
-    pipe: Option<LimitValue>,
-    /// the maximum number of bytes in POSIX message queues
-    #[arg(short = 'q', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MSGQUEUE)]
-    msgqueue: Option<LimitValue>,
-    /// the maximum real-time scheduling priority
-    #[arg(short = 'r', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTPRIO)]
-    rtprio: Option<LimitValue>,
-    /// the maximum stack size
-    #[arg(short = 's', default_missing_value = "", num_args(0..=1), help = ResourceDescription::STACK)]
-    stack: Option<LimitValue>,
-    /// the maximum amount of cpu time in seconds
-    #[arg(short = 't', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CPU)]
-    cpu: Option<LimitValue>,
-    /// the size of virtual memory
-    #[arg(short = 'u', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPROC)]
-    nproc: Option<LimitValue>,
-    /// the size of virtual memory
-    #[arg(short = 'v', default_missing_value = "", num_args(0..=1), help = ResourceDescription::VMEM)]
-    vmem: Option<LimitValue>,
-    /// the maximum number of file locks
-    #[arg(short = 'x', default_missing_value = "", num_args(0..=1), help = ResourceDescription::LOCKS)]
-    file_lock: Option<LimitValue>,
-    /// the maximum number of pseudoterminals
-    #[arg(short = 'P', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPTS)]
-    npts: Option<LimitValue>,
-    /// real-time non-blocking time
-    #[arg(short = 'R', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTTIME)]
-    rttime: Option<LimitValue>,
-    /// the maximum number of threads
-    #[arg(short = 'T', default_missing_value = "", num_args(0..=1), help = ResourceDescription::THREADS)]
-    threads: Option<LimitValue>,
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &ULimitCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    let exit_code = ExecutionResult::success();
+    let mut resources_to_set = Vec::new();
+    let mut resources_to_get = Vec::new();
 
-    /// argument for the implicit limit (`-f`)
-    limit: Option<LimitValue>,
-}
+    let mut set_or_get = |val, descr| {
+        match val {
+            Some(LimitValue::Unset) => resources_to_get.push(descr),
+            Some(v) => resources_to_set.push((descr, v)),
+            None => {}
+        }
+        if command.all {
+            resources_to_get.push(descr);
+        }
+    };
 
-impl builtins::Command for ULimitCommand {
-    type Error = brush_core::Error;
+    set_or_get(command.sbsize, ResourceDescription::SBSIZE);
+    set_or_get(command.core, ResourceDescription::CORE);
+    set_or_get(command.data, ResourceDescription::DATA);
+    set_or_get(command.file_size, ResourceDescription::FSIZE);
+    set_or_get(command.sigpending, ResourceDescription::SIGPENDING);
+    set_or_get(command.kqueues, ResourceDescription::KQUEUES);
+    set_or_get(command.memlock, ResourceDescription::MEMLOCK);
+    set_or_get(command.rss, ResourceDescription::RSS);
+    set_or_get(command.file_lock, ResourceDescription::LOCKS);
+    set_or_get(command.file_open, ResourceDescription::NOFILE);
+    set_or_get(command.pipe, ResourceDescription::PIPE);
+    set_or_get(command.npts, ResourceDescription::NPTS);
+    set_or_get(command.nice, ResourceDescription::NICE);
+    set_or_get(command.msgqueue, ResourceDescription::MSGQUEUE);
+    set_or_get(command.rtprio, ResourceDescription::RTPRIO);
+    set_or_get(command.rttime, ResourceDescription::RTTIME);
+    set_or_get(command.stack, ResourceDescription::STACK);
+    set_or_get(command.threads, ResourceDescription::THREADS);
+    set_or_get(command.cpu, ResourceDescription::CPU);
+    set_or_get(command.nproc, ResourceDescription::NPROC);
+    set_or_get(command.vmem, ResourceDescription::VMEM);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let exit_code = ExecutionResult::success();
-        let mut resources_to_set = Vec::new();
-        let mut resources_to_get = Vec::new();
-
-        let mut set_or_get = |val, descr| {
-            match val {
-                Some(LimitValue::Unset) => resources_to_get.push(descr),
-                Some(v) => resources_to_set.push((descr, v)),
-                None => {}
-            }
-            if self.all {
-                resources_to_get.push(descr);
-            }
-        };
-
-        set_or_get(self.sbsize, ResourceDescription::SBSIZE);
-        set_or_get(self.core, ResourceDescription::CORE);
-        set_or_get(self.data, ResourceDescription::DATA);
-        set_or_get(self.file_size, ResourceDescription::FSIZE);
-        set_or_get(self.sigpending, ResourceDescription::SIGPENDING);
-        set_or_get(self.kqueues, ResourceDescription::KQUEUES);
-        set_or_get(self.memlock, ResourceDescription::MEMLOCK);
-        set_or_get(self.rss, ResourceDescription::RSS);
-        set_or_get(self.file_lock, ResourceDescription::LOCKS);
-        set_or_get(self.file_open, ResourceDescription::NOFILE);
-        set_or_get(self.pipe, ResourceDescription::PIPE);
-        set_or_get(self.npts, ResourceDescription::NPTS);
-        set_or_get(self.nice, ResourceDescription::NICE);
-        set_or_get(self.msgqueue, ResourceDescription::MSGQUEUE);
-        set_or_get(self.rtprio, ResourceDescription::RTPRIO);
-        set_or_get(self.rttime, ResourceDescription::RTTIME);
-        set_or_get(self.stack, ResourceDescription::STACK);
-        set_or_get(self.threads, ResourceDescription::THREADS);
-        set_or_get(self.cpu, ResourceDescription::CPU);
-        set_or_get(self.nproc, ResourceDescription::NPROC);
-        set_or_get(self.vmem, ResourceDescription::VMEM);
-
-        if resources_to_set.is_empty() {
-            if resources_to_get.is_empty() {
-                if let Some(fsize) = self.limit {
-                    resources_to_set.push((ResourceDescription::FSIZE, fsize));
-                } else {
-                    resources_to_get.push(ResourceDescription::FSIZE);
-                }
+    if resources_to_set.is_empty() {
+        if resources_to_get.is_empty() {
+            if let Some(fsize) = command.limit {
+                resources_to_set.push((ResourceDescription::FSIZE, fsize));
+            } else {
+                resources_to_get.push(ResourceDescription::FSIZE);
             }
         }
-
-        for (resource, value) in resources_to_set {
-            resource.set(self.hard, value)?;
-        }
-
-        if resources_to_get.len() == 1 {
-            writeln!(context.stdout(), "{}", resources_to_get[0].get(self.hard)?)?;
-        } else {
-            for resource in resources_to_get {
-                resource.print(&context, self.hard)?;
-            }
-        }
-
-        Ok(exit_code)
     }
 
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
+    for (resource, value) in resources_to_set {
+        resource.set(command.hard, value)?;
     }
+
+    if resources_to_get.len() == 1 {
+        writeln!(
+            context.stdout(),
+            "{}",
+            resources_to_get[0].get(command.hard)?
+        )?;
+    } else {
+        for resource in resources_to_get {
+            resource.print(&context, command.hard)?;
+        }
+    }
+
+    Ok(exit_code)
 }

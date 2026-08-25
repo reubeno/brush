@@ -1,88 +1,58 @@
-use clap::Parser;
+//! The `wait` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(WaitCommand);
+
+use brush_core::{ExecutionExitCode, ExecutionResult, error};
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &WaitCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.wait_for_terminate {
+        return error::unimp("wait -f");
+    }
+    if command.wait_for_first_or_next {
+        return error::unimp("wait -n");
+    }
+    if command.variable_to_receive_id.is_some() {
+        return error::unimp("wait -p");
+    }
 
-/// Wait for jobs to terminate.
-#[derive(Parser)]
-pub(crate) struct WaitCommand {
-    /// Wait for specified job to terminate (instead of change status).
-    #[arg(short = 'f')]
-    wait_for_terminate: bool,
+    let mut result = ExecutionResult::success();
 
-    /// Wait for a single job to change status; if jobs are specified, waits for
-    /// the first to change status, and otherwise waits for the next change.
-    #[arg(short = 'n')]
-    wait_for_first_or_next: bool,
-
-    /// Name of variable to receive the job ID of the job whose status is indicated.
-    #[arg(short = 'p', value_name = "VAR_NAME")]
-    variable_to_receive_id: Option<String>,
-
-    /// Process IDs or job specs to wait for.
-    ids: Vec<String>,
-}
-
-impl builtins::Command for WaitCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        if self.wait_for_terminate {
-            return error::unimp("wait -f");
-        }
-        if self.wait_for_first_or_next {
-            return error::unimp("wait -n");
-        }
-        if self.variable_to_receive_id.is_some() {
-            return error::unimp("wait -p");
-        }
-
-        let mut result = ExecutionResult::success();
-
-        if !self.ids.is_empty() {
-            for id in &self.ids {
-                if id.starts_with('%') {
-                    // It's a job spec.
-                    if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
-                        job.wait().await?;
-                    } else {
-                        writeln!(
-                            context.stderr(),
-                            "{}: no such job: {}",
-                            context.command_name,
-                            id
-                        )?;
-
-                        result = ExecutionExitCode::GeneralError.into();
-                    }
+    if !command.ids.is_empty() {
+        for id in &command.ids {
+            if id.starts_with('%') {
+                // It's a job spec.
+                if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
+                    job.wait().await?;
                 } else {
-                    // It's a process ID.
-                    return error::unimp("wait with process IDs");
-                }
-            }
-        } else {
-            // Wait for all jobs.
-            let jobs = context.shell.jobs_mut().wait_all().await?;
+                    writeln!(
+                        context.stderr(),
+                        "{}: no such job: {}",
+                        context.command_name,
+                        id
+                    )?;
 
-            if context.shell.options().enable_job_control {
-                for job in jobs {
-                    writeln!(context.stdout(), "{job}")?;
+                    result = ExecutionExitCode::GeneralError.into();
                 }
+            } else {
+                // It's a process ID.
+                return error::unimp("wait with process IDs");
             }
         }
+    } else {
+        // Wait for all jobs.
+        let jobs = context.shell.jobs_mut().wait_all().await?;
 
-        Ok(result)
+        if context.shell.options().enable_job_control {
+            for job in jobs {
+                writeln!(context.stdout(), "{job}")?;
+            }
+        }
     }
 
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
+    Ok(result)
 }

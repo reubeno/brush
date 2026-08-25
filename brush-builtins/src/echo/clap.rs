@@ -27,6 +27,8 @@ pub(crate) struct EchoCommand {
     pub(super) args: Vec<String>,
 }
 
+
+
 impl builtins::Command for EchoCommand {
     type Error = brush_core::Error;
 

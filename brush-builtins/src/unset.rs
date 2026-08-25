@@ -1,34 +1,11 @@
+//! The `unset` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+use self::clap::UnsetNameInterpretation;
+arg_impl!(UnsetCommand);
+
+use brush_core::{ExecutionResult, Shell};
 use std::borrow::Cow;
-
-use clap::Parser;
-
-use brush_core::{ExecutionResult, Shell, builtins};
-
-/// Unset a variable.
-#[derive(Parser)]
-pub(crate) struct UnsetCommand {
-    #[clap(flatten)]
-    name_interpretation: UnsetNameInterpretation,
-
-    /// Names of variables to unset.
-    names: Vec<String>,
-}
-
-#[derive(Parser)]
-#[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
-pub(crate) struct UnsetNameInterpretation {
-    /// Treat each name as a shell function.
-    #[arg(short = 'f', group = "name-interpretation")]
-    shell_functions: bool,
-
-    /// Treat each name as a shell variable.
-    #[arg(short = 'v', group = "name-interpretation")]
-    shell_variables: bool,
-
-    /// Treat each name as a name reference.
-    #[arg(short = 'n', group = "name-interpretation")]
-    name_references: bool,
-}
 
 impl UnsetNameInterpretation {
     pub const fn unspecified(&self) -> bool {
@@ -36,73 +13,7 @@ impl UnsetNameInterpretation {
     }
 }
 
-impl builtins::Command for UnsetCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        //
-        // TODO(nameref): implement nameref
-        //
-        if self.name_interpretation.name_references {
-            return brush_core::error::unimp("unset: name references are not yet implemented");
-        }
-
-        let unspecified = self.name_interpretation.unspecified();
-
-        #[expect(clippy::needless_continue)]
-        for name in &self.names {
-            if unspecified || self.name_interpretation.shell_variables {
-                // Try to parse the name as a parameter. If we can't, don't bail; it may not be a
-                // valid variable name/parameter but could still be a function name.
-                if let Ok(parameter) =
-                    brush_parser::word::parse_parameter(name, &context.shell.parser_options())
-                {
-                    let result = match parameter {
-                        brush_parser::word::Parameter::Positional(_) => continue,
-                        brush_parser::word::Parameter::Special(_) => continue,
-                        brush_parser::word::Parameter::Named(name) => {
-                            context.shell.env_mut().unset(name.as_str())?.is_some()
-                        }
-                        brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                            unset_array_index(context.shell, name.as_str(), index.as_str())?
-                        }
-                        brush_parser::word::Parameter::NamedWithAllIndices {
-                            name: _,
-                            concatenate: _,
-                        } => continue,
-                    };
-
-                    if result {
-                        continue;
-                    }
-                }
-            }
-
-            // TODO(unset): Deal with readonly functions
-            if unspecified || self.name_interpretation.shell_functions {
-                if context.shell.undefine_func(name) {
-                    continue;
-                }
-            }
-        }
-
-        Ok(ExecutionResult::success())
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
-}
-
-fn unset_array_index(
+pub(super) fn unset_array_index(
     shell: &mut Shell<impl brush_core::ShellExtensions>,
     name: &str,
     index: &str,
@@ -126,4 +37,58 @@ fn unset_array_index(
 
     // Now we can try to unset, and return the result.
     shell.env_mut().unset_index(name, index_to_use.as_ref())
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &UnsetCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    //
+    // TODO(nameref): implement nameref
+    //
+    if command.name_interpretation.name_references {
+        return brush_core::error::unimp("unset: name references are not yet implemented");
+    }
+
+    let unspecified = command.name_interpretation.unspecified();
+
+    #[expect(clippy::needless_continue)]
+    for name in &command.names {
+        if unspecified || command.name_interpretation.shell_variables {
+            // Try to parse the name as a parameter. If we can't, don't bail; it may not be a
+            // valid variable name/parameter but could still be a function name.
+            if let Ok(parameter) =
+                brush_parser::word::parse_parameter(name, &context.shell.parser_options())
+            {
+                let result = match parameter {
+                    brush_parser::word::Parameter::Positional(_) => continue,
+                    brush_parser::word::Parameter::Special(_) => continue,
+                    brush_parser::word::Parameter::Named(name) => {
+                        context.shell.env_mut().unset(name.as_str())?.is_some()
+                    }
+                    brush_parser::word::Parameter::NamedWithIndex { name, index } => {
+                        unset_array_index(context.shell, name.as_str(), index.as_str())?
+                    }
+                    brush_parser::word::Parameter::NamedWithAllIndices {
+                        name: _,
+                        concatenate: _,
+                    } => continue,
+                };
+
+                if result {
+                    continue;
+                }
+            }
+        }
+
+        // TODO(unset): Deal with readonly functions
+        if unspecified || command.name_interpretation.shell_functions {
+            if context.shell.undefine_func(name) {
+                continue;
+            }
+        }
+    }
+
+    Ok(ExecutionResult::success())
 }

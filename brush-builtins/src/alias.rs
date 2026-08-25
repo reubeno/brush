@@ -1,64 +1,43 @@
-use clap::Parser;
+//! The `alias` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(AliasCommand);
+
+use brush_core::ExecutionResult;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &AliasCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    let mut exit_code = ExecutionResult::success();
 
-/// Manage aliases within the shell.
-#[derive(Parser)]
-pub(crate) struct AliasCommand {
-    /// Print all defined aliases in a reusable format.
-    #[arg(short = 'p')]
-    print: bool,
-
-    /// List of aliases to display or update.
-    #[arg(name = "name[=value]")]
-    aliases: Vec<String>,
-}
-
-impl builtins::Command for AliasCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut exit_code = ExecutionResult::success();
-
-        if self.print || self.aliases.is_empty() {
-            for (name, value) in context.shell.aliases() {
-                writeln!(context.stdout(), "alias {name}='{value}'")?;
-            }
-        } else {
-            for alias in &self.aliases {
-                if let Some((name, unexpanded_value)) = alias.split_once('=')
-                    && !name.is_empty()
-                {
-                    context
-                        .shell
-                        .aliases_mut()
-                        .insert(name.to_owned(), unexpanded_value.to_owned());
-                } else if let Some(value) = context.shell.aliases().get(alias) {
-                    writeln!(context.stdout(), "alias {alias}='{value}'")?;
-                } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {alias}: not found",
-                        context.command_name
-                    )?;
-                    exit_code = ExecutionResult::general_error();
-                }
+    if command.print || command.aliases.is_empty() {
+        for (name, value) in context.shell.aliases() {
+            writeln!(context.stdout(), "alias {name}='{value}'")?;
+        }
+    } else {
+        for alias in &command.aliases {
+            if let Some((name, unexpanded_value)) = alias.split_once('=')
+                && !name.is_empty()
+            {
+                context
+                    .shell
+                    .aliases_mut()
+                    .insert(name.to_owned(), unexpanded_value.to_owned());
+            } else if let Some(value) = context.shell.aliases().get(alias) {
+                writeln!(context.stdout(), "alias {alias}='{value}'")?;
+            } else {
+                writeln!(
+                    context.stderr(),
+                    "{}: {alias}: not found",
+                    context.command_name
+                )?;
+                exit_code = ExecutionResult::general_error();
             }
         }
-
-        Ok(exit_code)
     }
 
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
+    Ok(exit_code)
 }

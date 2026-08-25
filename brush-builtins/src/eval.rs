@@ -1,51 +1,34 @@
-use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
+//! The `eval` builtin.
 
-/// Evaluate the given string as script.
-#[derive(Parser)]
-pub(crate) struct EvalCommand {
-    /// The script to evaluate.
-    #[clap(allow_hyphen_values = true)]
-    args: Vec<String>,
-}
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(EvalCommand);
 
-impl builtins::Command for EvalCommand {
-    type Error = brush_core::Error;
+use brush_core::ExecutionResult;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if !self.args.is_empty() {
-            let args_concatenated = self.args.join(" ");
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &EvalCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if !command.args.is_empty() {
+        let args_concatenated = command.args.join(" ");
 
-            tracing::debug!("Applying eval to: {:?}", args_concatenated);
+        tracing::debug!("Applying eval to: {:?}", args_concatenated);
 
-            // Our new source context is relative to the current position because we are only
-            // providing the raw string being eval'd.
-            // TODO(source-info): Provide the location of the specific tokens that make up
-            // `self.args`.
-            let source_info = context.shell.call_stack().current_pos_as_source_info();
+        // Our new source context is relative to the current position because we are only
+        // providing the raw string being eval'd.
+        // TODO(source-info): Provide the location of the specific tokens that make up
+        // `command.args`.
+        let source_info = context.shell.call_stack().current_pos_as_source_info();
 
-            // Return the direct result of running the string; we intentionally
-            // pass through the result and honor its requested control flow. eval
-            // executes in the current environment, so all control flow (return,
-            // exit, break, continue) should propagate.
-            context
-                .shell
-                .run_string(args_concatenated, &source_info, &context.params)
-                .await
-        } else {
-            Ok(ExecutionResult::success())
-        }
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
+        // Return the direct result of running the string; we intentionally
+        // pass through the result and honor its requested control flow. eval
+        // executes in the current environment, so all control flow (return,
+        // exit, break, continue) should propagate.
+        context
+            .shell
+            .run_string(args_concatenated, &source_info, &context.params)
+            .await
+    } else {
+        Ok(ExecutionResult::success())
     }
 }
