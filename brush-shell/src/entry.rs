@@ -24,6 +24,35 @@ static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceE
 type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<error_formatter::Formatter>;
 type BrushShell = brush_core::Shell<BrushShellExtensions>;
 
+/// Maximum width used when rendering help and usage messages; mirrors the
+/// default width used by `bpaf`.
+const PARSE_FAILURE_MAX_WIDTH: usize = 100;
+
+/// Displays output associated with a failed parse of the shell's command-line
+/// arguments.
+///
+/// Rendering is delegated to `bpaf`, which colorizes messages using its bright
+/// palette when the terminal supports it (respecting environment variables
+/// such as `NO_COLOR`). If colorized output was disabled via `--disable-color`,
+/// then falls back to monochrome rendering instead.
+///
+/// # Arguments
+///
+/// * `args` - The raw command-line arguments, including the program name.
+/// * `failure` - The parse failure to report.
+fn display_parse_failure(args: &[String], failure: bpaf::ParseFailure) {
+    if !args.iter().any(|arg| arg == "--disable-color") {
+        failure.print_message(PARSE_FAILURE_MAX_WIDTH);
+    } else if matches!(
+        &failure,
+        bpaf::ParseFailure::Stdout(..) | bpaf::ParseFailure::Completion(..)
+    ) {
+        print!("{}", failure.unwrap_stdout());
+    } else {
+        eprintln!("{}", failure.unwrap_stderr());
+    }
+}
+
 /// Main entry point for the `brush` shell.
 pub fn run() {
     //
@@ -58,15 +87,17 @@ pub fn run() {
         Err(failure) => {
             // Help and version requests go to stdout with a successful exit
             // code; everything else goes to stderr with an invalid usage code.
-            match &failure {
-                bpaf::ParseFailure::Stdout(..) | bpaf::ParseFailure::Completion(..) => {
-                    print!("{}", failure.unwrap_stdout());
-                    std::process::exit(0);
-                }
-                bpaf::ParseFailure::Stderr(_) => {
-                    eprintln!("{}", failure.unwrap_stderr());
-                    std::process::exit(2);
-                }
+            let is_success_output = matches!(
+                failure,
+                bpaf::ParseFailure::Stdout(..) | bpaf::ParseFailure::Completion(..)
+            );
+
+            display_parse_failure(&args, failure);
+
+            if is_success_output {
+                std::process::exit(0);
+            } else {
+                std::process::exit(2);
             }
         }
     };

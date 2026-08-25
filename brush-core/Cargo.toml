@@ -29,7 +29,7 @@ bon = "3.9.1"
 cached = "2.0.2"
 cfg-if = "1.0.4"
 chrono = "0.4.44"
-bpaf = { version = "0.9.27", features = ["derive"] }
+bpaf = { version = "0.9.27", features = ["derive", "bright-color"] }
 color-print = "0.3.7"
 fancy-regex = "0.19.0"
 futures = "0.3.32"

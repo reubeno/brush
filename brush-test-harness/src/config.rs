@@ -4,6 +4,10 @@ use bpaf::Parser;
 use std::str::FromStr;
 use std::{collections::HashSet, ffi::OsString, path::PathBuf};
 
+/// Maximum width used when rendering help and usage messages; mirrors the
+/// default width used by `bpaf`.
+const MAX_MESSAGE_WIDTH: usize = 100;
+
 /// Which shell to use for a test.
 #[derive(Clone, Debug)]
 pub enum WhichShell {
@@ -392,11 +396,13 @@ impl TestOptions {
         match Self::parser().to_options().run_inner(rest.as_slice()) {
             Ok(options) => options,
             Err(failure @ bpaf::ParseFailure::Stdout(..)) => {
-                println!("{}", failure.unwrap_stdout());
+                // N.B. Rendering is delegated to bpaf so messages get colorized
+                // when the terminal supports it.
+                failure.print_message(MAX_MESSAGE_WIDTH);
                 std::process::exit(0);
             }
             Err(failure) => {
-                eprintln!("{}", failure.unwrap_stderr());
+                failure.print_message(MAX_MESSAGE_WIDTH);
                 std::process::exit(2);
             }
         }
