@@ -14,7 +14,15 @@ rust-version.workspace = true
 bench = false
 
 [features]
+# N.B. Exactly one builtin argument-parsing engine is selected per build.
+# clap remains an unconditional dependency until the migration completes;
+# bpaf/usage deps attach to their features as their bindings land.
+parser-clap = []
+parser-bpaf = []
+parser-usage = []
+
 default = [
+    'parser-clap',
     'builtin.alias',
     'builtin.bg',
     'builtin.bind',
