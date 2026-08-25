@@ -1,45 +1,38 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, escape};
 
 /// Echo text to standard output.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+///
+/// N.B. Engine-free: argument definitions and help rendering live in the
+/// per-engine argument modules (e.g., `args::clap`).
+#[derive(Default)]
 pub(crate) struct EchoCommand {
     /// Suppress the trailing newline from the output.
-    #[arg(short = 'n')]
-    no_trailing_newline: bool,
+    pub(crate) no_trailing_newline: bool,
 
     /// Interpret backslash escapes in the provided text.
-    #[arg(short = 'e')]
-    interpret_backslash_escapes: bool,
+    pub(crate) interpret_backslash_escapes: bool,
 
     /// Do not interpret backslash escapes in the provided text.
-    #[arg(short = 'E')]
-    no_interpret_backslash_escapes: bool,
+    // N.B. Parsed for parity with bash's `-E`; consumed by clap's generated
+    // binding code during migration.
+    #[expect(dead_code)]
+    pub(crate) no_interpret_backslash_escapes: bool,
 
     /// Tokens to echo to standard output.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
+    pub(crate) args: Vec<String>,
 }
 
 impl builtins::Command for EchoCommand {
     type Error = brush_core::Error;
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(echo): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, brush_core::args::ArgsError>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)
-            .map_err(|err| brush_core::args::ArgsError::from_clap_error(&err))?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
+    fn get_content(
+        name: &str,
+        content_type: builtins::ContentType,
+        options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::error::Error> {
+        crate::args::clap::echo_help(name, &content_type, options)
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -78,14 +71,5 @@ impl builtins::Command for EchoCommand {
         context.stdout().flush()?;
 
         Ok(ExecutionResult::success())
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }

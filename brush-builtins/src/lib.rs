@@ -9,6 +9,8 @@
     reason = "builtins implement a trait whose `execute` is async by contract"
 )]
 
+pub mod args;
+
 #[cfg(feature = "builtin.alias")]
 mod alias;
 #[cfg(feature = "builtin.bg")]
