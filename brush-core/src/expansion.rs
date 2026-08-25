@@ -218,6 +218,12 @@ impl Expansion {
                                 .take(len_from_this_piece)
                                 .collect(),
                         ),
+                        ExpansionPiece::SourceText(s) => ExpansionPiece::SourceText(
+                            s.chars()
+                                .skip(desired_offset_into_this_piece)
+                                .take(len_from_this_piece)
+                                .collect(),
+                        ),
                         ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
                             s.chars()
                                 .skip(desired_offset_into_this_piece)
@@ -293,6 +299,10 @@ impl From<String> for WordField {
 #[derive(Clone, Debug, PartialEq)]
 enum ExpansionPiece {
     Unsplittable(String),
+    /// Unquoted literal text from the source word: subject to pathname
+    /// expansion like `Splittable`, but never to `$IFS` field splitting —
+    /// per POSIX, splitting applies only to expansion results.
+    SourceText(String),
     Splittable(String),
 }
 
@@ -300,6 +310,7 @@ impl From<ExpansionPiece> for String {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => s,
+            ExpansionPiece::SourceText(s) => s,
             ExpansionPiece::Splittable(s) => s,
         }
     }
@@ -309,6 +320,7 @@ impl From<ExpansionPiece> for patterns::PatternPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
+            ExpansionPiece::SourceText(s) => Self::Pattern(s),
             ExpansionPiece::Splittable(s) => Self::Pattern(s),
         }
     }
@@ -318,6 +330,7 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
+            ExpansionPiece::SourceText(s) => Self::Pattern(s),
             ExpansionPiece::Splittable(s) => Self::Pattern(s),
         }
     }
@@ -327,6 +340,7 @@ impl ExpansionPiece {
     const fn as_str(&self) -> &str {
         match self {
             Self::Unsplittable(s) => s.as_str(),
+            Self::SourceText(s) => s.as_str(),
             Self::Splittable(s) => s.as_str(),
         }
     }
@@ -334,14 +348,15 @@ impl ExpansionPiece {
     const fn len(&self) -> usize {
         match self {
             Self::Unsplittable(s) => s.len(),
+            Self::SourceText(s) => s.len(),
             Self::Splittable(s) => s.len(),
         }
     }
 
     fn make_unsplittable(self) -> Self {
         match self {
+            Self::Splittable(s) | Self::SourceText(s) => Self::Unsplittable(s),
             Self::Unsplittable(_) => self,
-            Self::Splittable(s) => Self::Unsplittable(s),
         }
     }
 }
@@ -470,24 +485,6 @@ pub(crate) async fn full_expand_and_split_word(
 }
 
 /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
-/// then perform field splitting and pathname expansion on the result.
-///
-/// # Arguments
-///
-/// * `shell` - The shell in which to perform expansion.
-/// * `params` - The execution parameters to use during expansion.
-/// * `word_str` - The word to expand, as a string.
-/// * `options` - Options to customize the behavior of the expander.
-pub(crate) async fn full_expand_and_split_word_with_options(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    params: &ExecutionParameters,
-    word_str: impl AsRef<str>,
-    options: &ExpanderOptions,
-) -> Result<Vec<String>, error::Error> {
-    let mut expander = WordExpander::new_from_options(shell, params, options);
-    expander.full_expand_with_splitting(word_str.as_ref()).await
-}
-
 /// Expands a word in assignment context (enables tilde-after-colon expansion).
 ///
 /// # Arguments
@@ -526,7 +523,7 @@ pub async fn assign_to_named_parameter(
     expander.assign_to_parameter(&parameter, value).await
 }
 
-struct WordExpander<'a, SE: extensions::ShellExtensions> {
+pub(crate) struct WordExpander<'a, SE: extensions::ShellExtensions> {
     /// The shell in which to perform expansion.
     shell: &'a mut Shell<SE>,
     /// The execution parameters to use during expansion.
@@ -546,6 +543,11 @@ struct WordExpander<'a, SE: extensions::ShellExtensions> {
     in_double_quotes: bool,
     /// Whether to use heredoc expansion semantics (literal quotes, no brace expansion).
     heredoc_mode: bool,
+    /// Set while expanding text that constitutes an *expansion result* (a
+    /// parameter-expansion default value and friends): its literal portions
+    /// are subject to `$IFS` field splitting like any other expansion
+    /// output, unlike literal text in the original source word.
+    in_expansion_result: bool,
 }
 
 impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
@@ -561,6 +563,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             unquoted_backslash_handling: UnquotedBackslashHandling::Strip,
             in_double_quotes: false,
             heredoc_mode: false,
+            in_expansion_result: false,
         }
     }
 
@@ -586,6 +589,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             unquoted_backslash_handling: options.unquoted_backslash_handling,
             in_double_quotes: false,
             heredoc_mode: false,
+            in_expansion_result: false,
         }
     }
 
@@ -719,7 +723,12 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             &['$', '`', '\\', '\'', '\"', '~', '{']
         };
         if !word.contains(expansion_chars) {
-            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
+            let piece = if self.in_expansion_result {
+                ExpansionPiece::Splittable(word.to_owned())
+            } else {
+                ExpansionPiece::SourceText(word.to_owned())
+            };
+            return Ok(Expansion::from(piece));
         }
 
         // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
@@ -780,6 +789,16 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// (except those escaped in ways valid in double-quotes) but still expand parameters,
     /// command substitutions, and arithmetic.
     async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
+        // The fallback word is expansion output: its literal text is subject
+        // to field splitting (`IFS=:; ${u:-a:b:c}` yields three fields).
+        let previously_in_expansion_result = self.in_expansion_result;
+        self.in_expansion_result = true;
+        let result = self.expand_parameter_word_inner(word).await;
+        self.in_expansion_result = previously_in_expansion_result;
+        result
+    }
+
+    async fn expand_parameter_word_inner(&mut self, word: &str) -> Result<Expansion, error::Error> {
         if self.in_double_quotes {
             // When inside double-quotes, we need to parse the word with double-quote semantics.
             // If the word already starts with a double-quote, we need to remove those quotes
@@ -884,6 +903,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             for piece in existing_field.0 {
                 match piece {
                     ExpansionPiece::Unsplittable(_) => current_field.0.push(piece),
+                    // An entirely-empty unquoted word produces no fields at
+                    // all.
+                    ExpansionPiece::SourceText(s) if s.is_empty() => {}
+                    ExpansionPiece::SourceText(_) => current_field.0.push(piece),
                     ExpansionPiece::Splittable(s) => {
                         for c in s.chars() {
                             if ifs.contains(c) {
@@ -893,7 +916,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             } else {
                                 match current_field.0.last_mut() {
                                     Some(ExpansionPiece::Splittable(last)) => last.push(c),
-                                    Some(ExpansionPiece::Unsplittable(_)) | None => {
+                                    Some(
+                                        ExpansionPiece::Unsplittable(_)
+                                        | ExpansionPiece::SourceText(_),
+                                    )
+                                    | None => {
                                         current_field
                                             .0
                                             .push(ExpansionPiece::Splittable(c.to_string()));
@@ -957,9 +984,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         word_piece: brush_parser::word::WordPiece,
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
-            brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
-            }
+            brush_parser::word::WordPiece::Text(s) => Expansion::from(if self.in_expansion_result {
+                ExpansionPiece::Splittable(s)
+            } else {
+                ExpansionPiece::SourceText(s)
+            }),
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
                 Expansion::from(ExpansionPiece::Unsplittable(s))
             }
@@ -2398,8 +2427,11 @@ mod tests {
             vec![""]
         );
         assert_eq!(
+            // Literal source text is never field-split (matches bash: an
+            // escaped-space word stays one field); only expansion results
+            // split on $IFS.
             full_expand_and_split_word(&mut shell, &params, "a b").await?,
-            vec!["a", "b"]
+            vec!["a b"]
         );
         assert_eq!(
             full_expand_and_split_word(&mut shell, &params, "ab").await?,

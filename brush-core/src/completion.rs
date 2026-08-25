@@ -304,19 +304,28 @@ impl Spec {
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
             let params = shell.default_exec_params();
-            // Per POSIX / bash docs, -W word list is subject to shell expansion
-            // and field splitting but NOT pathname expansion (globbing).
-            let options = crate::expansion::ExpanderOptions {
-                pathname_expand: false,
-                ..Default::default()
-            };
-            let words = crate::expansion::full_expand_and_split_word_with_options(
-                shell, &params, word_list, &options,
-            )
-            .await?;
-            for word in words {
+            // Per bash, the -W word list is subject to shell expansion and
+            // then IFS field splitting (but not pathname expansion). The
+            // whole value splits regardless of quoting provenance in the
+            // original compspec — this is builtin-level behavior, not word
+            // expansion, so it must not route through field splitting that
+            // now correctly skips literal source text.
+            let mut expander = crate::expansion::WordExpander::new_from_options(
+                shell,
+                &params,
+                &crate::expansion::ExpanderOptions {
+                    pathname_expand: false,
+                    ..Default::default()
+                },
+            );
+            let expanded = expander.basic_expand_to_str(word_list).await?;
+            let ifs = shell.ifs().into_owned();
+            for word in expanded
+                .split(|c: char| ifs.contains(c))
+                .filter(|w| !w.is_empty())
+            {
                 if word.starts_with(context.token_to_complete) {
-                    candidates.push(word);
+                    candidates.push(word.to_string());
                 }
             }
         }
@@ -1123,12 +1132,14 @@ impl Config {
         }
 
         match result {
-            Answer::Candidates(candidates, options) => Ok(Completions {
-                insertion_index,
-                delete_count: completion_prefix.len(),
-                candidates,
-                options,
-            }),
+            Answer::Candidates(candidates, options) => {
+                Ok(Completions {
+                    insertion_index,
+                    delete_count: completion_prefix.len(),
+                    candidates,
+                    options,
+                })
+            }
             Answer::RestartCompletionProcess => Ok(Completions {
                 insertion_index,
                 delete_count: 0,
