@@ -8,7 +8,14 @@ mod model;
 
 pub use model::{ArgKind, ArgSpec, CommandSpec, ParsedValues, PositionalSpec};
 
-#[cfg(feature = "bpaf-linked")]
+// N.B. Compiled only when bpaf is the *selected* backend; workspace feature
+// unification can still link bpaf (the CLI uses it) without selecting it.
+#[cfg(all(
+    feature = "bpaf-linked",
+    feature = "parser-bpaf",
+    not(feature = "parser-usage"),
+    not(feature = "parser-clap")
+))]
 mod bpaf_backend;
 #[cfg(feature = "parser-clap")]
 mod clap_backend;
