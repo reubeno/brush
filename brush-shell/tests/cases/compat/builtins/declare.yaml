@@ -162,7 +162,6 @@ cases:
       echo "var: ${var}"
 
   - name: "Appending via declare"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare var="value"
       declare -p var
