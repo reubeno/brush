@@ -1,6 +1,6 @@
-use clap::{Parser, ValueEnum};
+use bpaf::Parser;
 use itertools::Itertools as _;
-use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
+use std::{collections::HashMap, io::Write, str::FromStr, sync::Arc};
 use strum::IntoEnumIterator;
 use tokio::sync::Mutex;
 
@@ -11,18 +11,28 @@ use brush_core::{
 };
 
 /// Identifier for a keymap
-#[derive(Clone, ValueEnum)]
+#[derive(Clone)]
 enum BindKeyMap {
-    #[clap(name = "emacs-standard", alias = "emacs")]
     EmacsStandard,
-    #[clap(name = "emacs-meta")]
     EmacsMeta,
-    #[clap(name = "emacs-ctlx")]
     EmacsCtlx,
-    #[clap(name = "vi-command", aliases = &["vi", "vi-move"])]
     ViCommand,
-    #[clap(name = "vi-insert")]
     ViInsert,
+}
+
+impl FromStr for BindKeyMap {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "emacs-standard" | "emacs" => Ok(Self::EmacsStandard),
+            "emacs-meta" => Ok(Self::EmacsMeta),
+            "emacs-ctlx" => Ok(Self::EmacsCtlx),
+            "vi-command" | "vi" | "vi-move" => Ok(Self::ViCommand),
+            "vi-insert" => Ok(Self::ViInsert),
+            _ => Err(format!("invalid keymap: {s}")),
+        }
+    }
 }
 
 impl BindKeyMap {
@@ -40,87 +50,102 @@ impl BindKeyMap {
 }
 
 /// Inspect and modify key bindings and other input configuration.
-#[derive(Parser)]
 pub(crate) struct BindCommand {
-    /// Name of key map to use.
-    #[arg(short = 'm')]
     keymap: Option<BindKeyMap>,
-    /// List functions.
-    #[arg(short = 'l')]
     list_funcs: bool,
-    /// List functions and bindings.
-    #[arg(short = 'P')]
     list_funcs_and_bindings: bool,
-    /// List functions and bindings in a format suitable for use as input.
-    #[arg(short = 'p')]
     list_funcs_and_bindings_reusable: bool,
-    /// List key sequences that invoke macros.
-    #[arg(short = 'S')]
     list_key_seqs_that_invoke_macros: bool,
-    /// List key sequences that invoke macros in a format suitable for use as input.
-    #[arg(short = 's')]
     list_key_seqs_that_invoke_macros_reusable: bool,
-    /// List variables.
-    #[arg(short = 'V')]
     list_vars: bool,
-    /// List variables in a format suitable for use as input.
-    #[arg(short = 'v')]
     list_vars_reusable: bool,
-    /// Find the keys bound to the given named function.
-    #[arg(short = 'q', value_name = "FUNC_NAME")]
     query_func_bindings: Option<String>,
-    /// Remove all bindings for the given named function.
-    #[arg(short = 'u', value_name = "FUNC_NAME")]
     remove_func_bindings: Option<String>,
-    /// Remove the binding for the given key sequence.
-    #[arg(short = 'r', value_name = "KEY_SEQ")]
     remove_key_seq_binding: Option<String>,
-    /// Import bindings from the given file.
-    #[arg(short = 'f', value_name = "PATH")]
     bindings_file: Option<String>,
-    /// Bind key sequence to command.
-    #[arg(short = 'x', value_name = "BINDING")]
     key_seq_bindings: Vec<String>,
-    /// List key sequence bindings.
-    #[arg(short = 'X')]
     list_key_seq_bindings: bool,
-    /// Key sequence binding to readline function or command.
     key_sequence: Option<String>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum BindError {
-    /// Unknown function specified.
-    #[error("unknown function: {0}")]
-    UnknownFunction(String),
-
-    /// Unknown key binding function.
-    #[error("unknown key binding function: {0}")]
-    UnknownKeyBindingFunction(String),
-
-    /// Unimplemented functionality.
-    #[error("unimplemented: {0}")]
-    Unimplemented(&'static str),
-
-    /// An I/O error occurred.
-    #[error("I/O error occurred")]
-    IoError(#[from] std::io::Error),
-
-    /// A binding parse error occurred.
-    #[error(transparent)]
-    BindingParseError(#[from] brush_parser::BindingParseError),
-}
-
-impl brush_core::BuiltinError for BindError {}
-
-impl From<&BindError> for brush_core::ExecutionExitCode {
-    fn from(_err: &BindError) -> Self {
-        Self::GeneralError
-    }
 }
 
 impl builtins::Command for BindCommand {
     type Error = BindError;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let keymap = bpaf::short('m')
+            .help("Name of key map to use.")
+            .argument::<BindKeyMap>("KEYMAP")
+            .optional();
+        let list_funcs = bpaf::short('l').help("List functions.").switch();
+        let list_funcs_and_bindings = bpaf::short('P')
+            .help("List functions and bindings.")
+            .switch();
+        let list_funcs_and_bindings_reusable = bpaf::short('p')
+            .help("List functions and bindings in a format suitable for use as input.")
+            .switch();
+        let list_key_seqs_that_invoke_macros = bpaf::short('S')
+            .help("List key sequences that invoke macros.")
+            .switch();
+        let list_key_seqs_that_invoke_macros_reusable = bpaf::short('s')
+            .help("List key sequences that invoke macros in a format suitable for use as input.")
+            .switch();
+        let list_vars = bpaf::short('V').help("List variables.").switch();
+        let list_vars_reusable = bpaf::short('v')
+            .help("List variables in a format suitable for use as input.")
+            .switch();
+        let query_func_bindings = bpaf::short('q')
+            .help("Find the keys bound to the given named function.")
+            .argument::<String>("FUNC_NAME")
+            .optional();
+        let remove_func_bindings = bpaf::short('u')
+            .help("Remove all bindings for the given named function.")
+            .argument::<String>("FUNC_NAME")
+            .optional();
+        let remove_key_seq_binding = bpaf::short('r')
+            .help("Remove the binding for the given key sequence.")
+            .argument::<String>("KEY_SEQ")
+            .optional();
+        let bindings_file = bpaf::short('f')
+            .help("Import bindings from the given file.")
+            .argument::<String>("PATH")
+            .optional();
+        let key_seq_bindings = bpaf::short('x')
+            .help("Bind key sequence to command.")
+            .argument::<String>("BINDING")
+            .many();
+        let list_key_seq_bindings = bpaf::short('X')
+            .help("List key sequence bindings.")
+            .switch();
+        let key_sequence = bpaf::positional::<String>("KEY_SEQUENCE")
+            .help("Key sequence binding to readline function or command.")
+            .optional();
+
+        bpaf::construct!(BindCommand {
+            keymap,
+            list_funcs,
+            list_funcs_and_bindings,
+            list_funcs_and_bindings_reusable,
+            list_key_seqs_that_invoke_macros,
+            list_key_seqs_that_invoke_macros_reusable,
+            list_vars,
+            list_vars_reusable,
+            query_func_bindings,
+            remove_func_bindings,
+            remove_key_seq_binding,
+            bindings_file,
+            key_seq_bindings,
+            list_key_seq_bindings,
+            key_sequence,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Inspect and modify key bindings and other input configuration."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-lpsPSVX] [-m KEYMAP] [-q|-u|-r ARG] [-f PATH] [-x BINDING]... [KEY_SEQUENCE]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -270,6 +295,37 @@ impl BindCommand {
         drop(bindings);
 
         Ok(ExecutionResult::success())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BindError {
+    /// Unknown function specified.
+    #[error("unknown function: {0}")]
+    UnknownFunction(String),
+
+    /// Unknown key binding function.
+    #[error("unknown key binding function: {0}")]
+    UnknownKeyBindingFunction(String),
+
+    /// Unimplemented functionality.
+    #[error("unimplemented: {0}")]
+    Unimplemented(&'static str),
+
+    /// An I/O error occurred.
+    #[error("I/O error occurred")]
+    IoError(#[from] std::io::Error),
+
+    /// A binding parse error occurred.
+    #[error(transparent)]
+    BindingParseError(#[from] brush_parser::BindingParseError),
+}
+
+impl brush_core::BuiltinError for BindError {}
+
+impl From<&BindError> for brush_core::ExecutionExitCode {
+    fn from(_err: &BindError) -> Self {
+        Self::GeneralError
     }
 }
 

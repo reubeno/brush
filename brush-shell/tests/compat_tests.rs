@@ -9,7 +9,6 @@ use anyhow::Result;
 use brush_test_harness::{
     OracleConfig, RunnerConfig, ShellConfig, TestMode, TestOptions, TestRunner, WhichShell,
 };
-use clap::Parser;
 use std::path::{Path, PathBuf};
 
 const BASH_CONFIG_NAME: &str = "bash";

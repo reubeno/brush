@@ -1,17 +1,29 @@
-use clap::Parser;
+use bpaf::Parser;
 
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Continue to the next iteration of a control-flow loop.
-#[derive(Parser)]
 pub(crate) struct ContinueCommand {
-    /// If specified, indicates which nested loop to continue to the next iteration of.
-    #[clap(default_value_t = 1)]
     which_loop: i8,
 }
 
 impl builtins::Command for ContinueCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let which_loop = bpaf::positional::<i8>("WHICH_LOOP")
+            .help("If specified, indicates which nested loop to continue to the next iteration of.")
+            .fallback(1);
+        bpaf::construct!(ContinueCommand { which_loop })
+    }
+
+    fn about() -> &'static str {
+        "Continue to the next iteration of a control-flow loop."
+    }
+
+    fn synopsis() -> &'static str {
+        "[N]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

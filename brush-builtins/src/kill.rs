@@ -1,33 +1,142 @@
-use clap::Parser;
-use std::io::Write;
+use bpaf::Parser;
+use std::{ffi::OsStr, io::Write};
 
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
 
 /// Signal a job or process.
-#[derive(Parser)]
 pub(crate) struct KillCommand {
     /// Name of the signal to send.
-    #[arg(short = 's', value_name = "SIG_NAME")]
     signal_name: Option<String>,
 
     /// Number of the signal to send.
-    #[arg(short = 'n', value_name = "SIG_NUM")]
     signal_number: Option<usize>,
 
-    //
-    // TODO(kill): implement -sigspec syntax
     /// List known signal names.
-    #[arg(short = 'l', short_alias = 'L')]
     list_signals: bool,
 
-    // Interpretation of these depends on whether -l is present.
-    #[arg(allow_hyphen_values = true)]
+    /// Remaining arguments; may contain pids/job specs as well as `-sigspec`
+    /// style options, whose interpretation depends on whether `-l` is present.
     args: Vec<String>,
 }
 
 impl builtins::Command for KillCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        // N.B. Only the leading options are parsed here; all remaining tokens
+        // are captured verbatim via `takes_trailing_args`.
+        let signal_name = bpaf::short('s')
+            .help("Name of the signal to send.")
+            .argument::<String>("SIG_NAME")
+            .optional();
+        let signal_number = bpaf::short('n')
+            .help("Number of the signal to send.")
+            .argument::<usize>("SIG_NUM")
+            .optional();
+        // N.B. `-L` is a hidden alias for `-l`, matching clap's short_alias.
+        let list_signals = bpaf::short('l')
+            .short('L')
+            .help("List known signal names.")
+            .req_flag(())
+            .map(|(): ()| Some(true))
+            .fallback(None)
+            .map(|v: Option<bool>| v.is_some());
+        let args = bpaf::pure(Vec::new());
+
+        bpaf::construct!(KillCommand {
+            signal_name,
+            signal_number,
+            list_signals,
+            args,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Signal a job or process."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-s SIG_NAME | -n SIG_NUM | -lL] [PID_OR_JOB_SPEC]..."
+    }
+
+    fn takes_trailing_args() -> bool {
+        true
+    }
+
+    fn value_taking_short_options() -> &'static str {
+        "sn"
+    }
+
+    /// N.B. Overrides the default [`builtins::Command::new`] because `-sigspec`
+    /// style options (e.g., `kill -9` or `kill -TERM`) look like flags but must
+    /// be captured verbatim alongside pids and job specs so that `execute` can
+    /// interpret them.
+    fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut options = Vec::new();
+        let mut trailing = Vec::new();
+
+        // N.B. The first argument is the command name itself.
+        let mut iter = args.into_iter().skip(1);
+        let mut pending_value = false;
+        while let Some(arg) = iter.next() {
+            if pending_value {
+                // This token is the value of a preceding value-taking option.
+                options.push(arg);
+                pending_value = false;
+                continue;
+            }
+
+            if arg == "--" {
+                trailing.extend(iter);
+                break;
+            }
+
+            if !arg.starts_with('-') || arg == "-" {
+                // An operand; everything from here on is captured verbatim.
+                trailing.push(arg);
+                trailing.extend(iter);
+                break;
+            }
+
+            if arg.starts_with('-')
+                && !arg.starts_with("--")
+                && arg.chars().nth(1).is_none_or(|c| !"snlL".contains(c))
+            {
+                // A `-sigspec` style token (e.g., `-9` or `-TERM`).
+                trailing.push(arg);
+                continue;
+            }
+
+            if let Some(group) = arg.strip_prefix('-').filter(|g| !g.starts_with('-')) {
+                let chars: Vec<char> = group.chars().collect();
+                for (j, c) in chars.iter().enumerate() {
+                    match c {
+                        's' | 'n' => {
+                            pending_value = j == chars.len() - 1;
+                            break;
+                        }
+                        'l' | 'L' => {}
+                        _ => break,
+                    }
+                }
+            }
+
+            options.push(arg);
+        }
+
+        let mut command = run_bpaf_parser::<Self>(&options)?;
+        command.set_trailing_args(trailing);
+
+        Ok(command)
+    }
+
+    fn set_trailing_args(&mut self, args: Vec<String>) {
+        self.args = args;
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -176,4 +285,54 @@ fn print_signals(
     }
 
     Ok(exit_code)
+}
+
+fn run_bpaf_parser<T: builtins::Command>(
+    args: &[String],
+) -> Result<T, builtins::BuiltinArgParseError> {
+    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+    T::parser()
+        .to_options()
+        .run_inner(os_args.as_slice())
+        .map_err(render_bpaf_failure)
+}
+
+fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
+    match failure {
+        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(full),
+            help_request: true,
+        },
+        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
+            message: s,
+            help_request: true,
+        },
+        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(true),
+            help_request: false,
+        },
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use brush_core::builtins::Command as _;
+
+    #[test]
+    fn parse_s_with_name() -> anyhow::Result<()> {
+        let cmd = KillCommand::new(["kill", "-s", "TERM", "123"].iter().map(|s| s.to_string()))?;
+        assert_eq!(cmd.signal_name.as_deref(), Some("TERM"));
+        assert_eq!(cmd.args, ["123"]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_dash_sigspec() -> anyhow::Result<()> {
+        let cmd = KillCommand::new(["kill", "-USR1", "123"].iter().map(|s| s.to_string()))?;
+        assert!(cmd.signal_name.is_none());
+        assert_eq!(cmd.args, ["-USR1", "123"]);
+        Ok(())
+    }
 }

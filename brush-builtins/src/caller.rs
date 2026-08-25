@@ -1,16 +1,30 @@
+use bpaf::Bpaf;
+
 use brush_core::{ExecutionResult, builtins, callstack};
-use clap::Parser;
 use std::io::Write;
 
 /// Return the context of the current subroutine call.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct CallerCommand {
     /// The number of call frames to go back.
+    #[bpaf(positional("EXPR"))]
     expr: Option<usize>,
 }
 
 impl builtins::Command for CallerCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        caller_command()
+    }
+
+    fn about() -> &'static str {
+        "Return the context of the current subroutine call."
+    }
+
+    fn synopsis() -> &'static str {
+        "[EXPR]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

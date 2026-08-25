@@ -1,14 +1,25 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
-#[derive(Parser)]
+#[derive(Clone)]
 pub(crate) struct TimesCommand {}
 
 impl builtins::Command for TimesCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        bpaf::construct!(TimesCommand {})
+    }
+
+    fn about() -> &'static str {
+        "Report on usage time."
+    }
+
+    fn synopsis() -> &'static str {
+        ""
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

@@ -1,12 +1,11 @@
 use std::{collections::HashMap, io::Write};
 
-use clap::Parser;
-
-use brush_core::{ExecutionResult, builtins, env, variables};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, env, variables};
 
 /// Parse command options.
-#[derive(Parser)]
 pub(crate) struct GetOptsCommand {
+    /// Whether fewer than the two required operands were provided.
+    missing_operands: bool,
     /// Specification for options
     options_string: String,
 
@@ -14,7 +13,6 @@ pub(crate) struct GetOptsCommand {
     variable_name: String,
 
     /// Arguments to parse
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }
 
@@ -83,24 +81,61 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
 impl builtins::Command for GetOptsCommand {
     type Error = brush_core::Error;
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(command): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
+    fn parser() -> impl bpaf::Parser<Self> {
+        // N.B. Only the leading options are parsed here; all remaining tokens
+        // are captured verbatim via `takes_trailing_args`. The two required
+        // operands are validated in `execute`.
+        let options_string = bpaf::pure(String::new());
+        let variable_name = bpaf::pure(String::new());
+        let args = bpaf::pure(Vec::new());
+        let missing_operands = bpaf::pure(false);
+
+        bpaf::construct!(GetOptsCommand {
+            options_string,
+            variable_name,
+            args,
+            missing_operands,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Parse command options."
+    }
+
+    fn synopsis() -> &'static str {
+        "OPTSTRING NAME [ARGS]..."
+    }
+
+    fn takes_trailing_args() -> bool {
+        true
+    }
+
+    fn set_trailing_args(&mut self, args: Vec<String>) {
+        self.missing_operands = args.len() < 2;
+
+        let mut iter = args.into_iter();
+        if let Some(options_string) = iter.next() {
+            self.options_string = options_string;
         }
-        Ok(this)
+        if let Some(variable_name) = iter.next() {
+            self.variable_name = variable_name;
+        }
+        self.args = iter.collect();
     }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        if self.missing_operands {
+            writeln!(
+                context.stderr(),
+                "{}: two arguments required",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+
         // Validate the target variable name.
         if !env::valid_variable_name(&self.variable_name) {
             writeln!(

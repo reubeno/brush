@@ -1,38 +1,52 @@
-use clap::Parser;
+use bpaf::Bpaf;
+
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, error, jobs};
 
 /// Manage jobs.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct JobsCommand {
     /// Also show process IDs.
-    #[arg(short = 'l')]
+    #[bpaf(short('l'))]
     also_show_pids: bool,
 
     /// List only jobs that have changed status since the last notification.
-    #[arg(short = 'n')]
+    #[bpaf(short('n'))]
     list_changed_only: bool,
 
     /// Show only process IDs.
-    #[arg(short = 'p')]
+    #[bpaf(short('p'))]
     show_pids_only: bool,
 
     /// Show only running jobs.
-    #[arg(short = 'r')]
+    #[bpaf(short('r'))]
     running_jobs_only: bool,
 
     /// Show only stopped jobs.
-    #[arg(short = 's')]
+    #[bpaf(short('s'))]
     stopped_jobs_only: bool,
 
     /// Job specs to list.
     // TODO(jobs): Add -x option
+    #[bpaf(positional("JOB_SPECS"))]
     job_specs: Vec<String>,
 }
 
 impl builtins::Command for JobsCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        jobs_command()
+    }
+
+    fn about() -> &'static str {
+        "Manage jobs."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-lnprs] [JOB_SPECS]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

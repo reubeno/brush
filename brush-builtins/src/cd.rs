@@ -1,29 +1,21 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use clap::Parser;
+use bpaf::Parser;
 
 use brush_core::{ExecutionResult, builtins, error};
 
 /// Change the current shell working directory.
-#[derive(Parser)]
 pub(crate) struct CdCommand {
-    /// Force following symlinks.
-    #[arg(short = 'L', overrides_with = "use_physical_dir")]
-    force_follow_symlinks: bool,
-
-    /// Use physical dir structure without following symlinks.
-    #[arg(short = 'P', overrides_with = "force_follow_symlinks")]
-    use_physical_dir: bool,
-
     /// Exit with non zero exit status if current working directory resolution fails.
-    #[arg(short = 'e')]
     exit_on_failed_cwd_resolution: bool,
 
-    /// Show file with extended attributes as a dir with extended
-    /// attributes.
-    #[arg(short = '@')]
+    /// Show file with extended attributes as a dir with extended attributes.
     file_with_xattr_as_dir: bool,
+
+    /// Whether an explicit physical/logical mode was requested; `Some(true)`
+    /// means physical (`-P`) and `Some(false)` means logical (`-L`).
+    mode: Option<bool>,
 
     /// By default it is the value of the HOME shell variable. If `TARGET_DIR` is "-", it is
     /// converted to $OLDPWD.
@@ -32,6 +24,46 @@ pub(crate) struct CdCommand {
 
 impl builtins::Command for CdCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let exit_on_failed_cwd_resolution = bpaf::short('e')
+            .help("Exit with non zero exit status if current working directory resolution fails.")
+            .switch();
+        let file_with_xattr_as_dir = bpaf::short('@')
+            .help("Show file with extended attributes as a dir with extended attributes.")
+            .switch();
+
+        let physical = bpaf::short('P')
+            .help("Use physical dir structure without following symlinks.")
+            .req_flag(Some(true));
+        let logical = bpaf::short('L')
+            .help("Force following symlinks.")
+            .req_flag(Some(false));
+
+        let mode = bpaf::construct!([physical, logical]).fallback(None);
+
+        let target_dir = bpaf::positional::<PathBuf>("TARGET_DIR")
+            .help(
+                "By default it is the value of the HOME shell variable. If `TARGET_DIR` is \"-\", \
+                it is converted to $OLDPWD.",
+            )
+            .optional();
+
+        bpaf::construct!(CdCommand {
+            exit_on_failed_cwd_resolution,
+            file_with_xattr_as_dir,
+            mode,
+            target_dir,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Change the current shell working directory."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-LPe@] [TARGET_DIR]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -67,7 +99,7 @@ impl builtins::Command for CdCommand {
             }
         };
 
-        if self.use_physical_dir
+        if self.mode == Some(true)
             || context
                 .shell
                 .options()

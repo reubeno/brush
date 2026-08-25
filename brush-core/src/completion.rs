@@ -1,6 +1,6 @@
 //! Implements programmable command completion support.
 
-use clap::ValueEnum;
+use std::str::FromStr;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -18,109 +18,77 @@ use crate::{
 use brush_parser::unquote_str;
 
 /// Type of action to take to generate completion candidates.
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteAction {
     /// Complete with valid aliases.
-    #[clap(name = "alias")]
     Alias,
     /// Complete with names of array shell variables.
-    #[clap(name = "arrayvar")]
     ArrayVar,
     /// Complete with names of key bindings.
-    #[clap(name = "binding")]
     Binding,
     /// Complete with names of shell builtins.
-    #[clap(name = "builtin")]
     Builtin,
     /// Complete with names of executable commands.
-    #[clap(name = "command")]
     Command,
     /// Complete with directory names.
-    #[clap(name = "directory")]
     Directory,
     /// Complete with names of disabled shell builtins.
-    #[clap(name = "disabled")]
     Disabled,
     /// Complete with names of enabled shell builtins.
-    #[clap(name = "enabled")]
     Enabled,
     /// Complete with names of exported shell variables.
-    #[clap(name = "export")]
     Export,
     /// Complete with filenames.
-    #[clap(name = "file")]
     File,
     /// Complete with names of shell functions.
-    #[clap(name = "function")]
     Function,
     /// Complete with valid user groups.
-    #[clap(name = "group")]
     Group,
     /// Complete with names of valid shell help topics.
-    #[clap(name = "helptopic")]
     HelpTopic,
     /// Complete with the system's hostname(s).
-    #[clap(name = "hostname")]
     HostName,
     /// Complete with the command names of shell-managed jobs.
-    #[clap(name = "job")]
     Job,
     /// Complete with valid shell keywords.
-    #[clap(name = "keyword")]
     Keyword,
     /// Complete with the command names of running shell-managed jobs.
-    #[clap(name = "running")]
     Running,
     /// Complete with names of system services.
-    #[clap(name = "service")]
     Service,
     /// Complete with the names of options settable via shopt.
-    #[clap(name = "setopt")]
     SetOpt,
     /// Complete with the names of options settable via set -o.
-    #[clap(name = "shopt")]
     ShOpt,
     /// Complete with the names of trappable signals.
-    #[clap(name = "signal")]
     Signal,
     /// Complete with the command names of stopped shell-managed jobs.
-    #[clap(name = "stopped")]
     Stopped,
     /// Complete with valid usernames.
-    #[clap(name = "user")]
     User,
     /// Complete with names of shell variables.
-    #[clap(name = "variable")]
     Variable,
 }
 
 /// Options influencing how command completions are generated.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
-    #[clap(name = "bashdefault")]
     BashDefault,
     /// Use default filename completion if no completions are generated.
-    #[clap(name = "default")]
     Default,
     /// Treat completions as directory names.
-    #[clap(name = "dirnames")]
     DirNames,
     /// Treat completions as filenames.
-    #[clap(name = "filenames")]
     FileNames,
     /// Suppress default auto-quotation of completions.
-    #[clap(name = "noquote")]
     NoQuote,
     /// Do not sort completions.
-    #[clap(name = "nosort")]
     NoSort,
     /// Do not append a trailing space to completions at the end of the input line.
-    #[clap(name = "nospace")]
     NoSpace,
     /// Also generate directory completions.
-    #[clap(name = "plusdirs")]
     PlusDirs,
 }
 
@@ -1524,6 +1492,72 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
     }
 
     result.into()
+}
+
+impl CompleteAction {
+    /// Parses an action name (as used by `complete -A`).
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "alias" => Self::Alias,
+            "arrayvar" => Self::ArrayVar,
+            "binding" => Self::Binding,
+            "builtin" => Self::Builtin,
+            "command" => Self::Command,
+            "directory" => Self::Directory,
+            "disabled" => Self::Disabled,
+            "enabled" => Self::Enabled,
+            "export" => Self::Export,
+            "file" => Self::File,
+            "function" => Self::Function,
+            "group" => Self::Group,
+            "helptopic" => Self::HelpTopic,
+            "hostname" => Self::HostName,
+            "job" => Self::Job,
+            "keyword" => Self::Keyword,
+            "running" => Self::Running,
+            "service" => Self::Service,
+            "setopt" => Self::SetOpt,
+            "shopt" => Self::ShOpt,
+            "signal" => Self::Signal,
+            "stopped" => Self::Stopped,
+            "user" => Self::User,
+            "variable" => Self::Variable,
+            _ => return None,
+        })
+    }
+}
+
+impl FromStr for CompleteAction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or_else(|| format!("invalid completion action: `{s}`"))
+    }
+}
+
+impl CompleteOption {
+    /// Parses a completion option name (as used by `complete -o`).
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "bashdefault" => Self::BashDefault,
+            "default" => Self::Default,
+            "dirnames" => Self::DirNames,
+            "filenames" => Self::FileNames,
+            "noquote" => Self::NoQuote,
+            "nosort" => Self::NoSort,
+            "nospace" => Self::NoSpace,
+            "plusdirs" => Self::PlusDirs,
+            _ => return None,
+        })
+    }
+}
+
+impl FromStr for CompleteOption {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or_else(|| format!("invalid completion option: `{s}`"))
+    }
 }
 
 #[cfg(test)]

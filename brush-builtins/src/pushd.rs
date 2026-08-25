@@ -1,15 +1,16 @@
-use clap::Parser;
+use bpaf::Bpaf;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Push a path onto the current directory stack.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct PushdCommand {
     /// Push the path without changing the current working directory.
-    #[clap(short = 'n')]
+    #[bpaf(short('n'))]
     no_directory_change: bool,
 
     /// Directory to push on the directory stack.
+    #[bpaf(positional("DIR"))]
     dir: String,
     //
     // TODO(pushd): implement +N and -N
@@ -17,6 +18,18 @@ pub(crate) struct PushdCommand {
 
 impl builtins::Command for PushdCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        pushd_command()
+    }
+
+    fn about() -> &'static str {
+        "Push a path onto the current directory stack."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-n] [DIR]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

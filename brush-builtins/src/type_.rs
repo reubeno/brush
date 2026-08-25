@@ -1,36 +1,36 @@
+use bpaf::Bpaf;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-
-use clap::Parser;
 
 use brush_core::sys::{self, fs::PathExt};
 use brush_core::{ExecutionResult, Shell, builtins, parser::ast};
 
 /// Inspect the type of a named shell item.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct TypeCommand {
     /// Display all locations of the specified name, not just the first.
-    #[arg(short = 'a')]
+    #[bpaf(short('a'))]
     all_locations: bool,
 
     /// Don't consider functions when resolving the name.
-    #[arg(short = 'f')]
+    #[bpaf(short('f'))]
     suppress_func_lookup: bool,
 
     /// Force searching by file path, even if the name is an alias, built-in
     /// command, or shell function.
-    #[arg(short = 'P')]
+    #[bpaf(short('P'))]
     force_path_search: bool,
 
     /// Show file path only.
-    #[arg(short = 'p')]
+    #[bpaf(short('p'))]
     show_path_only: bool,
 
     /// Only display the type of the specified name.
-    #[arg(short = 't')]
+    #[bpaf(short('t'))]
     type_only: bool,
 
     /// Names to search for.
+    #[bpaf(positional("NAMES"))]
     names: Vec<String>,
 }
 
@@ -44,6 +44,18 @@ enum ResolvedType<'a> {
 
 impl builtins::Command for TypeCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        type_command()
+    }
+
+    fn about() -> &'static str {
+        "Inspect the type of a named shell item."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-aPptf] [NAMES]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

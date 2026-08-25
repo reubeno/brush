@@ -1,5 +1,5 @@
+use bpaf::Bpaf;
 use brush_core::{ExecutionResult, sys};
-use clap::{Parser, Subcommand};
 use std::io::Write;
 
 use crate::events;
@@ -29,146 +29,161 @@ impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderSta
 }
 
 /// Configure the running brush shell.
-#[derive(Parser)]
-pub(crate) struct BrushCtlCommand {
-    #[clap(subcommand)]
-    command_group: CommandGroup,
-}
-
-#[derive(Subcommand)]
-enum CommandGroup {
-    #[clap(subcommand)]
-    Complete(CompleteCommand),
-    #[clap(subcommand)]
-    Call(CallCommand),
-    #[clap(subcommand)]
-    Events(EventsCommand),
-    #[clap(subcommand)]
-    Process(ProcessCommand),
-}
-
-/// Commands for inspecting call state.
-#[derive(Subcommand)]
-enum CallCommand {
-    /// Display the current call stack.
-    #[clap(name = "stack")]
-    ShowCallStack {
-        /// Whether to show more details.
-        #[clap(short = 'd', long = "detailed")]
-        detailed: bool,
-    },
-}
-
-/// Commands for generating completions.
-#[derive(Subcommand)]
-enum CompleteCommand {
+#[derive(Clone, Bpaf, Debug)]
+pub(crate) enum CommandGroup {
     /// Generate completions for an input line.
-    #[clap(name = "line")]
-    Line {
+    #[bpaf(command("complete"))]
+    Complete {
         /// The 0-indexed cursor position for generation.
-        #[arg(long = "cursor", short = 'c')]
+        #[bpaf(short('c'), long("cursor"))]
         cursor_index: Option<usize>,
-
         /// The input line to generate completions for.
+        #[bpaf(positional("LINE"))]
         line: String,
     },
+    /// Display the current call stack.
+    #[bpaf(command("call"))]
+    Call {
+        #[bpaf(external(show_call_stack), hide)]
+        show_call_stack: ShowCallStack,
+    },
+    /// Configure tracing events.
+    #[bpaf(command("events"))]
+    Events {
+        #[bpaf(external(events_action))]
+        events_action: EventsAction,
+    },
+    /// Inspect process state.
+    #[bpaf(command("process"))]
+    Process {
+        #[bpaf(external(process_info), hide)]
+        process_info: ProcessInfo,
+    },
+}
+
+/// Commands for displaying the current call stack.
+#[derive(Clone, Bpaf, Debug)]
+pub(crate) struct ShowCallStack {
+    /// Whether to show more details.
+    #[bpaf(short('d'), long("detailed"))]
+    detailed: bool,
 }
 
 /// Commands for configuring tracing events.
-#[derive(Subcommand)]
-enum EventsCommand {
+#[derive(Clone, Bpaf, Debug)]
+pub(crate) enum EventsAction {
     /// Display status of enabled events.
+    #[bpaf(command("status"))]
     Status,
-
     /// Enable event.
+    #[bpaf(command("enable"))]
     Enable {
         /// Event to enable.
+        #[bpaf(positional("EVENT"))]
         event: events::TraceEvent,
     },
-
     /// Disable event.
+    #[bpaf(command("disable"))]
     Disable {
         /// Event to disable.
+        #[bpaf(positional("EVENT"))]
         event: events::TraceEvent,
     },
 }
 
 /// Commands for inspecting process state.
-#[expect(clippy::enum_variant_names)]
-#[derive(Subcommand)]
-enum ProcessCommand {
+#[derive(Clone, Bpaf, Debug)]
+pub(crate) enum ProcessInfo {
     /// Display process ID.
-    #[clap(name = "pid")]
-    ShowProcessId,
+    #[bpaf(command("pid"))]
+    Pid,
     /// Display process group ID.
-    #[clap(name = "pgid")]
-    ShowProcessGroupId,
+    #[bpaf(command("pgid"))]
+    Pgid,
     /// Display foreground process ID.
-    #[clap(name = "fgpid")]
-    ShowForegroundProcessId,
+    #[bpaf(command("fgpid"))]
+    Fgpid,
     /// Display parent process ID.
-    #[clap(name = "ppid")]
-    ShowParentProcessId,
+    #[bpaf(command("ppid"))]
+    Ppid,
+}
+
+pub(crate) struct BrushCtlCommand {
+    command_group: CommandGroup,
+}
+
+impl BrushCtlCommand {
+    pub(crate) const fn new(group: CommandGroup) -> Self {
+        Self {
+            command_group: group,
+        }
+    }
 }
 
 impl brush_core::builtins::Command for BrushCtlCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let command_group = command_group();
+        bpaf::construct!(BrushCtlCommand { command_group })
+    }
+
+    fn about() -> &'static str {
+        "Configure the running brush shell."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         match &self.command_group {
-            CommandGroup::Call(call) => call.execute(&context),
-            CommandGroup::Complete(complete) => complete.execute(&mut context).await,
-            CommandGroup::Events(events) => events.execute(&context),
-            CommandGroup::Process(process) => process.execute(&context),
+            CommandGroup::Call { show_call_stack } => show_call_stack.execute(&context),
+            CommandGroup::Complete { cursor_index, line } => {
+                execute_complete_line(&mut context, *cursor_index, line).await
+            }
+            CommandGroup::Events { events_action } => events_action.execute(&context),
+            CommandGroup::Process { process_info } => process_info.execute(&context),
         }
     }
 }
 
-impl CallCommand {
+impl ShowCallStack {
     fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
-        match self {
-            Self::ShowCallStack { detailed } => {
-                let stack = context.shell.call_stack();
-                let format_options = brush_core::callstack::FormatOptions {
-                    show_args: *detailed,
-                    show_entry_points: *detailed,
-                };
+        let Self { detailed } = self;
+        {
+            let stack = context.shell.call_stack();
+            let format_options = brush_core::callstack::FormatOptions {
+                show_args: *detailed,
+                show_entry_points: *detailed,
+            };
 
-                write!(context.stdout(), "{}", stack.format(&format_options))?;
+            write!(context.stdout(), "{}", stack.format(&format_options))?;
 
-                Ok(ExecutionResult::success())
-            }
+            Ok(ExecutionResult::success())
         }
     }
 }
 
-impl CompleteCommand {
-    async fn execute(
-        &self,
-        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
-        match self {
-            Self::Line { cursor_index, line } => {
-                let completions = context
-                    .shell
-                    .complete(line, cursor_index.unwrap_or(line.len()))
-                    .await?;
-                for candidate in completions.candidates {
-                    writeln!(context.stdout(), "{candidate}")?;
-                }
-                Ok(ExecutionResult::success())
-            }
-        }
+async fn execute_complete_line(
+    context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    cursor_index: Option<usize>,
+    line: &str,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    let completions = context
+        .shell
+        .complete(line, cursor_index.unwrap_or(line.len()))
+        .await?;
+    for candidate in completions.candidates {
+        writeln!(context.stdout(), "{candidate}")?;
     }
+
+    Ok(ExecutionResult::success())
 }
 
-impl EventsCommand {
+impl EventsAction {
     fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -200,17 +215,17 @@ impl EventsCommand {
     }
 }
 
-impl ProcessCommand {
+impl ProcessInfo {
     fn execute(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
-            Self::ShowProcessId => {
+            Self::Pid => {
                 writeln!(context.stdout(), "{}", std::process::id())?;
                 Ok(ExecutionResult::success())
             }
-            Self::ShowProcessGroupId => {
+            Self::Pgid => {
                 if let Some(pgid) = sys::terminal::get_process_group_id() {
                     writeln!(context.stdout(), "{pgid}")?;
                     Ok(ExecutionResult::success())
@@ -219,7 +234,7 @@ impl ProcessCommand {
                     Ok(ExecutionResult::general_error())
                 }
             }
-            Self::ShowForegroundProcessId => {
+            Self::Fgpid => {
                 if let Some(pid) = sys::terminal::get_foreground_pid() {
                     writeln!(context.stdout(), "{pid}")?;
                     Ok(ExecutionResult::success())
@@ -228,7 +243,7 @@ impl ProcessCommand {
                     Ok(ExecutionResult::general_error())
                 }
             }
-            Self::ShowParentProcessId => {
+            Self::Ppid => {
                 if let Some(pid) = sys::terminal::get_parent_process_id() {
                     writeln!(context.stdout(), "{pid}")?;
                     Ok(ExecutionResult::success())

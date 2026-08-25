@@ -1,36 +1,49 @@
-use clap::Parser;
+use bpaf::Bpaf;
 use std::{io::Write, path::PathBuf};
 
 use brush_core::{ExecutionResult, builtins};
 
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct HashCommand {
     /// Remove entries associated with the given names.
-    #[arg(short = 'd')]
+    #[bpaf(short('d'))]
     remove: bool,
 
     /// Display paths in a format usable for input.
-    #[arg(short = 'l')]
+    #[bpaf(short('l'))]
     display_as_usable_input: bool,
 
     /// The path to associate with the names.
-    #[arg(short = 'p', value_name = "PATH")]
+    #[bpaf(short('p'), argument("PATH"))]
     path_to_use: Option<PathBuf>,
 
     /// Remove all entries.
-    #[arg(short = 'r')]
+    #[bpaf(short('r'))]
     remove_all: bool,
 
     /// Display the paths associated with the names.
-    #[arg(short = 't')]
+    #[bpaf(short('t'))]
     display_paths: bool,
 
     /// Names to process.
+    #[bpaf(positional("NAMES"))]
     names: Vec<String>,
 }
 
 impl builtins::Command for HashCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        hash_command()
+    }
+
+    fn about() -> &'static str {
+        "Remember or display program locations."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-dlrt] [-p PATH] [NAMES]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

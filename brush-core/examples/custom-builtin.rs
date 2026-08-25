@@ -3,7 +3,7 @@
 //! This example demonstrates best practices for:
 //! - Creating a custom builtin command using the `Command` trait
 //! - Defining custom error types with `thiserror`
-//! - Parsing command-line arguments with `clap`
+//! - Parsing command-line arguments with `bpaf`
 //! - Implementing proper error handling and exit code conversion
 //! - Using the execution context to interact with shell state and I/O streams
 //!
@@ -13,7 +13,7 @@
 //! ```
 
 use anyhow::Result;
-use clap::Parser;
+use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -61,29 +61,43 @@ impl From<&GreetError> for brush_core::ExecutionExitCode {
 //
 // Step 2 (recommended): Define your builtin command arguments
 // ==============================================
-// We recommend using the `clap` crate and the derive-able `clap::Parser` to define
-// command-line arguments and options. This will simplify the work you need to do
-// to provide helpful usage information and auto-generated argument validation.
+// We recommend using the `bpaf` crate and its derive-able `Bpaf` (or
+// combinatoric) APIs to define command-line arguments and options. This will
+// simplify the work you need to do to provide helpful usage information and
+// argument validation.
 //
 
 /// Greet the user with a friendly message.
-#[derive(Parser)]
+#[derive(Clone, Bpaf, Debug)]
 struct GreetCommand {
     /// Number of times to repeat the greeting.
-    #[arg(short = 'n', long = "repeat", default_value_t = 1)]
+    #[bpaf(short('n'), long("repeat"), fallback(1))]
     repeat_count: usize,
 }
 
 //
 // Step 3: Implement the Command trait
 // ==============================================
-// The `Command` trait requires implementing the `execute` method.
+// The `Command` trait requires implementing the `parser` and `execute`
+// methods.
 //
 
 impl builtins::Command for GreetCommand {
     // Specify the error type you will use; this will either be your custom type or
     // the default-provided `brush_core::Error` type.
     type Error = GreetError;
+
+    fn parser() -> impl builtins::Parser<Self> {
+        greet_command()
+    }
+
+    fn about() -> &'static str {
+        "Greet the user with a friendly message."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-n REPEAT]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

@@ -1,17 +1,30 @@
-use clap::Parser;
+use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Return from the current function.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct ReturnCommand {
     /// The exit code to return.
+    #[bpaf(positional("CODE"))]
     code: Option<i32>,
 }
 
 impl builtins::Command for ReturnCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        return_command()
+    }
+
+    fn about() -> &'static str {
+        "Return from the current function."
+    }
+
+    fn synopsis() -> &'static str {
+        "[CODE]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

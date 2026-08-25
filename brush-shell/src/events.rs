@@ -8,41 +8,77 @@ use tracing_subscriber::{
 };
 
 /// Type of event to trace.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TraceEvent {
     /// Traces parsing and evaluation of arithmetic expressions.
-    #[clap(name = "arithmetic")]
     Arithmetic,
     /// Traces command execution.
-    #[clap(name = "commands")]
     Commands,
     /// Traces command completion generation.
-    #[clap(name = "complete")]
     Complete,
     /// Traces word expansion.
-    #[clap(name = "expand")]
     Expand,
     /// Traces functions.
-    #[clap(name = "functions")]
     Functions,
     /// Traces input controls.
-    #[clap(name = "input")]
     Input,
     /// Traces job management.
-    #[clap(name = "jobs")]
     Jobs,
     /// Traces the process of parsing tokens into an abstract syntax tree.
-    #[clap(name = "parse")]
     Parse,
     /// Traces pattern matching.
-    #[clap(name = "pattern")]
     Pattern,
     /// Traces the process of tokenizing input text.
-    #[clap(name = "tokenize")]
     Tokenize,
     /// Traces usage of unimplemented functionality.
-    #[clap(name = "unimplemented", alias = "unimp")]
     Unimplemented,
+}
+
+impl TraceEvent {
+    /// Parses a trace event name (as accepted by `--debug`).
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "arithmetic" => Self::Arithmetic,
+            "commands" => Self::Commands,
+            "complete" => Self::Complete,
+            "expand" => Self::Expand,
+            "functions" => Self::Functions,
+            "input" => Self::Input,
+            "jobs" => Self::Jobs,
+            "parse" => Self::Parse,
+            "pattern" => Self::Pattern,
+            "tokenize" => Self::Tokenize,
+            "unimplemented" | "unimp" => Self::Unimplemented,
+            _ => return None,
+        })
+    }
+
+    /// Returns all trace event names, in declaration order.
+    #[must_use]
+    pub const fn names() -> &'static [&'static str] {
+        &[
+            "arithmetic",
+            "commands",
+            "complete",
+            "expand",
+            "functions",
+            "input",
+            "jobs",
+            "parse",
+            "pattern",
+            "tokenize",
+            "unimplemented",
+        ]
+    }
+}
+
+impl std::str::FromStr for TraceEvent {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or_else(|| format!("invalid trace event: `{s}`"))
+    }
 }
 
 impl Display for TraceEvent {

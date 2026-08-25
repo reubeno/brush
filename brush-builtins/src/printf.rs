@@ -1,38 +1,86 @@
-use clap::Parser;
+use bpaf::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
-use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
+use brush_core::{
+    Error, ErrorKind, ExecutionExitCode, ExecutionResult, builtins, escape, expansion,
+};
 
 /// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
-    ///
-    /// N.B. We intentionally do *not* enable `allow_hyphen_values` here. Doing so would
-    /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
-    /// a positional argument. With it disabled, a format string that genuinely needs to
-    /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
     format_and_args: Vec<String>,
 }
 
 impl builtins::Command for PrintfCommand {
     type Error = brush_core::Error;
 
+    fn parser() -> impl bpaf::Parser<Self> {
+        // N.B. Only the leading options are parsed here; all remaining tokens
+        // are captured verbatim via `takes_trailing_args`. A format string that
+        // genuinely needs to start with a hyphen must be preceded by `--`,
+        // matching other shells' behavior.
+        let output_variable = bpaf::short('v')
+            .help("If specified, the output of the command is assigned to this variable.")
+            .argument::<String>("VAR")
+            .optional();
+        let format_and_args = bpaf::pure(Vec::new());
+
+        bpaf::construct!(PrintfCommand {
+            output_variable,
+            format_and_args,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Format a string."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-v VAR] FORMAT [ARGUMENT]..."
+    }
+
+    fn takes_trailing_args() -> bool {
+        true
+    }
+
+    fn value_taking_short_options() -> &'static str {
+        "v"
+    }
+
+    fn set_trailing_args(&mut self, args: Vec<String>) {
+        self.format_and_args = args;
+    }
+
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
+        // N.B. A leading `--` ends printf's (empty) option section; the format
+        // starts after it, even if that format begins with a hyphen.
+        let format_and_args: &[String] =
+            if self.format_and_args.first().map(String::as_str) == Some("--") {
+                &self.format_and_args[1..]
+            } else {
+                &self.format_and_args
+            };
+
+        if format_and_args.is_empty() {
+            writeln!(
+                context.stderr(),
+                "{}: format string required",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+
         if let Some(variable_name) = &self.output_variable {
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];
-            format(self.format_and_args.as_slice(), &mut result)?;
+            format(format_and_args, &mut result)?;
 
             // Convert to a string.
             let result_str = String::from_utf8(result).map_err(|_| {
@@ -48,7 +96,7 @@ impl builtins::Command for PrintfCommand {
             )
             .await?;
         } else {
-            format(self.format_and_args.as_slice(), context.stdout())?;
+            format(format_and_args, context.stdout())?;
             context.stdout().flush()?;
         }
 
@@ -64,8 +112,8 @@ fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_co
         [fmt, arg] if fmt == "~%q" => format_special_case_for_percent_q(Some("~"), arg, writer),
         // Handle format string with arguments using uucore
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
-        // Handle case with no format string (we shouldn't be able to get here since clap will
-        // fail parsing when the format string is missing)
+        // Handle case with no format string (we shouldn't be able to get here since parsing
+        // fails when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }

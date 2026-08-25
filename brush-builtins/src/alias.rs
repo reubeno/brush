@@ -1,22 +1,34 @@
-use clap::Parser;
+use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Manage aliases within the shell.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct AliasCommand {
     /// Print all defined aliases in a reusable format.
-    #[arg(short = 'p')]
+    #[bpaf(short('p'))]
     print: bool,
 
     /// List of aliases to display or update.
-    #[arg(name = "name[=value]")]
+    #[bpaf(positional("name[=value]"))]
     aliases: Vec<String>,
 }
 
 impl builtins::Command for AliasCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        alias_command()
+    }
+
+    fn about() -> &'static str {
+        "Manage aliases within the shell."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-p] [name[=value]]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

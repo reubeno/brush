@@ -1,11 +1,8 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
-#[derive(Default, Parser)]
+#[derive(Default)]
 pub(crate) struct BuiltinCommand {
-    #[clap(skip)]
     args: Vec<brush_core::CommandArg>,
 }
 
@@ -17,6 +14,21 @@ impl builtins::DeclarationCommand for BuiltinCommand {
 
 impl builtins::Command for BuiltinCommand {
     type Error = brush_core::Error;
+
+    // N.B. Arguments are passed directly via `set_declarations`; the parser is
+    // used only for help rendering.
+    fn parser() -> impl bpaf::Parser<Self> {
+        let args = bpaf::pure(Vec::new());
+        bpaf::construct!(BuiltinCommand { args })
+    }
+
+    fn about() -> &'static str {
+        "Directly invokes a built-in, without going through typical search order."
+    }
+
+    fn synopsis() -> &'static str {
+        "SHELL_BUILTIN [ARGS]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

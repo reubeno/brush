@@ -1,21 +1,80 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use std::{borrow::Cow, io::Write, path::Path};
 
 /// Display the current working directory.
-#[derive(Parser)]
+#[derive(Clone)]
 pub(crate) struct PwdCommand {
-    /// Print the physical directory without any symlinks.
-    #[arg(short = 'P', overrides_with = "allow_symlinks")]
-    physical: bool,
-
-    /// Print $PWD if it names the current working directory.
-    #[arg(short = 'L', overrides_with = "physical")]
-    allow_symlinks: bool,
+    /// Whether an explicit physical/logical mode was requested; `Some(true)`
+    /// means physical (`-P`) and `Some(false)` means logical (`-L`). When both
+    /// are provided, the last one on the command line wins.
+    mode: Option<bool>,
 }
 
 impl builtins::Command for PwdCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        // N.B. Options are interpreted manually in [`Self::new`] because their
+        // combined forms depend on ordering (`pwd -L -P` vs `pwd -P -L`).
+        let mode = bpaf::pure(None);
+        bpaf::construct!(PwdCommand { mode })
+    }
+
+    fn about() -> &'static str {
+        "Display the current working directory."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-LP]"
+    }
+
+    fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut args: Vec<String> = args.into_iter().collect();
+
+        // N.B. The first argument is the command name itself.
+        if !args.is_empty() {
+            args.remove(0);
+        }
+
+        let mut mode: Option<bool> = None;
+        let mut terminated = false;
+
+        for arg in args {
+            if !terminated && arg == "--" {
+                terminated = true;
+                continue;
+            }
+
+            if !terminated {
+                if let Some(group) = arg
+                    .strip_prefix('-')
+                    .filter(|g| !g.is_empty() && g.chars().all(|c| c == 'L' || c == 'P'))
+                {
+                    if let Some(c) = group.chars().last() {
+                        mode = Some(c == 'P');
+                    }
+                    continue;
+                }
+
+                if arg.starts_with('-') && arg != "-" {
+                    return Err(builtins::BuiltinArgParseError {
+                        message: String::from("pwd: invalid option\nUsage: pwd [-LP]"),
+                        help_request: false,
+                    });
+                }
+            }
+
+            return Err(builtins::BuiltinArgParseError {
+                message: String::from("pwd: too many arguments"),
+                help_request: false,
+            });
+        }
+
+        Ok(Self { mode })
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -23,7 +82,7 @@ impl builtins::Command for PwdCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();
 
-        let should_canonicalize = self.physical
+        let should_canonicalize = self.mode == Some(true)
             || context
                 .shell
                 .options()
@@ -36,5 +95,60 @@ impl builtins::Command for PwdCommand {
         writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
 
         Ok(ExecutionResult::success())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use brush_core::builtins::Command as _;
+
+    #[test]
+    fn parse_modes() {
+        assert_eq!(
+            PwdCommand::new(std::iter::once("pwd".to_string()))
+                .unwrap()
+                .mode,
+            None
+        );
+        assert_eq!(
+            PwdCommand::new(["pwd", "-L"].iter().map(|s| s.to_string()))
+                .unwrap()
+                .mode,
+            Some(false)
+        );
+        assert_eq!(
+            PwdCommand::new(["pwd", "-P"].iter().map(|s| s.to_string()))
+                .unwrap()
+                .mode,
+            Some(true)
+        );
+
+        // Last one wins.
+        assert_eq!(
+            PwdCommand::new(["pwd", "-L", "-P"].iter().map(|s| s.to_string()))
+                .unwrap()
+                .mode,
+            Some(true)
+        );
+        assert_eq!(
+            PwdCommand::new(["pwd", "-P", "-L"].iter().map(|s| s.to_string()))
+                .unwrap()
+                .mode,
+            Some(false)
+        );
+        assert_eq!(
+            PwdCommand::new(["pwd", "-LP"].iter().map(|s| s.to_string()))
+                .unwrap()
+                .mode,
+            Some(true)
+        );
+        assert_eq!(
+            PwdCommand::new(["pwd", "-PL"].iter().map(|s| s.to_string()))
+                .unwrap()
+                .mode,
+            Some(false)
+        );
     }
 }

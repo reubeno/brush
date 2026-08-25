@@ -1,8 +1,6 @@
-use clap::{
-    Parser,
-    builder::{IntoResettable, StyledStr},
-};
+use bpaf::Parser;
 use std::{
+    ffi::OsStr,
     io::{self, ErrorKind, Write},
     str::FromStr,
 };
@@ -96,7 +94,6 @@ impl Resource {
 #[derive(Clone, Copy)]
 struct ResourceDescription {
     resource: Resource,
-    help: &'static str,
     description: &'static str,
     short: char,
     unit: Unit,
@@ -105,147 +102,126 @@ struct ResourceDescription {
 impl ResourceDescription {
     const SBSIZE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::SBSIZE),
-        help: "the socket buffer size",
         description: "socket buffer size",
         short: 'b',
         unit: Unit::Bytes,
     };
     const CORE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::CORE),
-        help: "the maximum size of core files created",
         description: "core file size",
         short: 'c',
         unit: Unit::Block,
     };
     const DATA: Self = Self {
         resource: Resource::Phy(rlimit::Resource::DATA),
-        help: "the maximum size of a process's data segment",
         description: "data seg size",
         short: 'd',
         unit: Unit::KBytes,
     };
     const NICE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NICE),
-        help: "the maximum scheduling priority (`nice`)",
         description: "scheduling priority",
         short: 'e',
         unit: Unit::Number,
     };
     const FSIZE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::FSIZE),
-        help: "the maximum size of files written by the shell and its children",
         description: "file size",
         short: 'f',
         unit: Unit::Block,
     };
     const SIGPENDING: Self = Self {
         resource: Resource::Phy(rlimit::Resource::SIGPENDING),
-        help: "the maximum number of pending signals",
         description: "pending signals",
         short: 'i',
         unit: Unit::Number,
     };
     const MEMLOCK: Self = Self {
         resource: Resource::Phy(rlimit::Resource::MEMLOCK),
-        help: "the maximum size a process may lock into memory",
         description: "max locked memory",
         short: 'l',
         unit: Unit::KBytes,
     };
     const KQUEUES: Self = Self {
         resource: Resource::Phy(rlimit::Resource::KQUEUES),
-        help: "the maximum number of kqueues allocated for this process",
         description: "max kqueues",
         short: 'k',
         unit: Unit::Number,
     };
     const RSS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RSS),
-        help: "the maximum resident set size",
         description: "max memory size",
         short: 'm',
         unit: Unit::KBytes,
     };
     const LOCKS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::LOCKS),
-        help: "the maximum number of file locks",
         description: "file locks",
         short: 'x',
         unit: Unit::Number,
     };
     const NOFILE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NOFILE),
-        help: "the maximum number of open file descriptors",
         description: "open files",
         short: 'n',
         unit: Unit::Number,
     };
     const MSGQUEUE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::MSGQUEUE),
-        help: "the maximum number of bytes in POSIX message queues",
         description: "POSIX message queues",
         short: 'q',
         unit: Unit::Bytes,
     };
     const PIPE: Self = Self {
         resource: Resource::Virt(Virtual::Pipe),
-        help: "the pipe buffer size",
         description: "pipe size",
         short: 'p',
         unit: Unit::HalfKBytes,
     };
     const RTPRIO: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RTPRIO),
-        help: "the maximum real-time scheduling priority",
         description: "real-time priority",
         short: 'r',
         unit: Unit::Number,
     };
     const RTTIME: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RTTIME),
-        help: "the maximum real-time scheduling priority",
         description: "real-time non-blocking time",
         short: 'R',
         unit: Unit::Micros,
     };
     const STACK: Self = Self {
         resource: Resource::Phy(rlimit::Resource::STACK),
-        help: "the maximum stack size",
         description: "stack size",
         short: 's',
         unit: Unit::KBytes,
     };
     const CPU: Self = Self {
         resource: Resource::Phy(rlimit::Resource::CPU),
-        help: "the maximum amount of cpu time in seconds",
         description: "cpu time",
         short: 't',
         unit: Unit::Seconds,
     };
     const NPROC: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NPROC),
-        help: "the maximum number of user processes",
         description: "max user processes",
         short: 'u',
         unit: Unit::Number,
     };
     const VMEM: Self = Self {
         resource: Resource::Virt(Virtual::VMem),
-        help: "the size of virtual memory",
         description: "virtual memory",
         short: 'v',
         unit: Unit::KBytes,
     };
     const THREADS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::THREADS),
-        help: "the maximum number of threads",
         description: "number of threads",
         short: 'T',
         unit: Unit::Number,
     };
     const NPTS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NPTS),
-        help: "the maximum number of pseudoterminals",
         description: "number of pseudoterminals",
         short: 'P',
         unit: Unit::Number,
@@ -306,25 +282,6 @@ impl ResourceDescription {
             resource
         )
     }
-
-    /// Provide the matching help String
-    fn help(&self) -> String {
-        format!(
-            "{} {}",
-            self.help,
-            if self.resource.is_supported() {
-                "(supported)"
-            } else {
-                "(unsupported)"
-            }
-        )
-    }
-}
-
-impl IntoResettable<StyledStr> for ResourceDescription {
-    fn into_resettable(self) -> clap::builder::Resettable<StyledStr> {
-        clap::builder::Resettable::Value(self.help().into())
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -350,91 +307,242 @@ impl FromStr for LimitValue {
     }
 }
 
+/// Returns a parser for a resource-limit switch that may be specified either
+/// with a value (`-c 5`) or without one (`-c`, meaning "report this limit").
+fn limit_switch(short: char, desc: &'static str) -> impl bpaf::Parser<Option<LimitValue>> {
+    let with_value = bpaf::short(short)
+        .help(desc)
+        .argument::<LimitValue>("LIMIT");
+    let without_value = bpaf::short(short)
+        .req_flag(())
+        .map(|(): ()| LimitValue::Unset);
+
+    bpaf::construct!([with_value, without_value]).optional()
+}
+
+const SWITCH_SHORTS: &[char] = &['S', 'H', 'a'];
+const VALUE_SHORTS: &[char] = &[
+    'b', 'c', 'd', 'e', 'f', 'i', 'k', 'l', 'm', 'n', 'p', 'q', 'r', 's', 't', 'u', 'v', 'x', 'P',
+    'R', 'T',
+];
+
+/// Splits attached values off of resource-limit option groups (e.g., `-c5`
+/// becomes `-c=5` and `-Sc` becomes `-S -c`) so that grouped forms parse;
+/// bpaf cannot disambiguate shorts that are registered as both flags and
+/// value-taking arguments.
+fn expand_limit_option_groups(args: Vec<String>) -> Vec<String> {
+    let mut expanded = Vec::with_capacity(args.len());
+
+    for arg in args {
+        let Some(group) = arg
+            .strip_prefix('-')
+            .filter(|group| !group.is_empty() && !group.starts_with('-') && !group.contains('='))
+        else {
+            expanded.push(arg);
+            continue;
+        };
+
+        let Some((head, value_short, tail)) =
+            split_group_at_value_short(group, &VALUE_SHORTS.iter().collect::<String>())
+        else {
+            expanded.push(arg);
+            continue;
+        };
+
+        if !head.chars().all(|c| SWITCH_SHORTS.contains(&c)) {
+            expanded.push(arg);
+            continue;
+        }
+
+        if !head.is_empty() {
+            expanded.push(format!("-{head}"));
+        }
+
+        if tail.is_empty() {
+            expanded.push(format!("-{value_short}"));
+        } else {
+            expanded.push(format!("-{value_short}={tail}"));
+        }
+    }
+
+    expanded
+}
+
+/// Splits the given short-option group at its first value-taking option
+/// character, returning the leading switch characters, the value-taking
+/// character itself, and any attached value.
+fn split_group_at_value_short<'a>(
+    group: &'a str,
+    value_shorts: &str,
+) -> Option<(&'a str, char, &'a str)> {
+    for (head, rest) in group
+        .char_indices()
+        .map(|(ix, _)| group.split_at(ix))
+        .skip(1)
+    {
+        let mut chars = rest.chars();
+        let Some(c) = chars.next() else {
+            continue;
+        };
+
+        if value_shorts.contains(c) {
+            return Some((head, c, chars.as_str()));
+        }
+    }
+
+    None
+}
+
+fn render_parse_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
+    match failure {
+        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(full),
+            help_request: true,
+        },
+        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
+            message: s,
+            help_request: true,
+        },
+        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(true),
+            help_request: false,
+        },
+    }
+}
+
 /// Modify shell resource limits.
 ///
 /// Provides control over the resources available to the shell and processes
 /// it creates, on systems that allow such control.
-#[derive(Parser, Debug)]
 pub(crate) struct ULimitCommand {
-    /// use the `soft` resource limit
-    #[arg(short = 'S')]
+    #[expect(dead_code)]
     soft: bool,
-    /// use the `hard` resource limit
-    #[arg(short = 'H')]
     hard: bool,
-    /// all current limits are reported
-    #[arg(short = 'a')]
     all: bool,
-    /// the maximum socket buffer size
-    #[arg(short = 'b', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SBSIZE)]
     sbsize: Option<LimitValue>,
-    /// the maximum size of core files created
-    #[arg(short = 'c', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CORE)]
     core: Option<LimitValue>,
-    /// the maximum size of a process's data segment
-    #[arg(short = 'd', default_missing_value = "", num_args(0..=1), help = ResourceDescription::DATA)]
     data: Option<LimitValue>,
-    /// the maximum scheduling priority (`nice`)
-    #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
     nice: Option<LimitValue>,
-    /// the maximum size of files written by the shell and its children
-    #[arg(short = 'f', default_missing_value = "", num_args(0..=1), help = ResourceDescription::FSIZE)]
     file_size: Option<LimitValue>,
-    /// the maximum number of pending signals
-    #[arg(short = 'i', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SIGPENDING)]
     sigpending: Option<LimitValue>,
-    /// the maximum size a process may lock into memory
-    #[arg(short = 'l', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MEMLOCK)]
     memlock: Option<LimitValue>,
-    /// the maximum number of kqueues allocated for this process
-    #[arg(short = 'k', default_missing_value = "", num_args(0..=1), help = ResourceDescription::KQUEUES)]
     kqueues: Option<LimitValue>,
-    /// the maximum resident set size
-    #[arg(short = 'm', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RSS)]
     rss: Option<LimitValue>,
-    /// the maximum number of open file descriptors
-    #[arg(short = 'n', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NOFILE)]
     file_open: Option<LimitValue>,
-    /// the pipe buffer size
-    #[arg(short = 'p', default_missing_value = "", num_args(0..=1), help = ResourceDescription::PIPE)]
     pipe: Option<LimitValue>,
-    /// the maximum number of bytes in POSIX message queues
-    #[arg(short = 'q', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MSGQUEUE)]
     msgqueue: Option<LimitValue>,
-    /// the maximum real-time scheduling priority
-    #[arg(short = 'r', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTPRIO)]
     rtprio: Option<LimitValue>,
-    /// the maximum stack size
-    #[arg(short = 's', default_missing_value = "", num_args(0..=1), help = ResourceDescription::STACK)]
-    stack: Option<LimitValue>,
-    /// the maximum amount of cpu time in seconds
-    #[arg(short = 't', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CPU)]
-    cpu: Option<LimitValue>,
-    /// the size of virtual memory
-    #[arg(short = 'u', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPROC)]
-    nproc: Option<LimitValue>,
-    /// the size of virtual memory
-    #[arg(short = 'v', default_missing_value = "", num_args(0..=1), help = ResourceDescription::VMEM)]
-    vmem: Option<LimitValue>,
-    /// the maximum number of file locks
-    #[arg(short = 'x', default_missing_value = "", num_args(0..=1), help = ResourceDescription::LOCKS)]
-    file_lock: Option<LimitValue>,
-    /// the maximum number of pseudoterminals
-    #[arg(short = 'P', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPTS)]
-    npts: Option<LimitValue>,
-    /// real-time non-blocking time
-    #[arg(short = 'R', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTTIME)]
     rttime: Option<LimitValue>,
-    /// the maximum number of threads
-    #[arg(short = 'T', default_missing_value = "", num_args(0..=1), help = ResourceDescription::THREADS)]
+    stack: Option<LimitValue>,
+    cpu: Option<LimitValue>,
+    nproc: Option<LimitValue>,
+    vmem: Option<LimitValue>,
+    file_lock: Option<LimitValue>,
+    npts: Option<LimitValue>,
     threads: Option<LimitValue>,
-
-    /// argument for the implicit limit (`-f`)
     limit: Option<LimitValue>,
 }
 
 impl builtins::Command for ULimitCommand {
     type Error = brush_core::Error;
+
+    /// Overrides the default [`builtins::Command::new`] flow to split attached
+    /// values out of grouped resource options first; see
+    /// [`expand_limit_option_groups`].
+    fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        // N.B. The first argument is the command name itself.
+        let args: Vec<String> = args.into_iter().skip(1).collect();
+        let expanded = expand_limit_option_groups(args);
+        let os_args: Vec<&OsStr> = expanded.iter().map(OsStr::new).collect();
+
+        Self::parser()
+            .to_options()
+            .run_inner(os_args.as_slice())
+            .map_err(render_parse_failure)
+    }
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let soft = bpaf::short('S')
+            .help("Use the `soft` resource limit.")
+            .switch();
+        let hard = bpaf::short('H')
+            .help("Use the `hard` resource limit.")
+            .switch();
+        let all = bpaf::short('a')
+            .help("All current limits are reported.")
+            .switch();
+
+        let sbsize = limit_switch('b', "The maximum socket buffer size.");
+        let core = limit_switch('c', "The maximum size of core files created.");
+        let data = limit_switch('d', "The maximum size of a process's data segment.");
+        let nice = limit_switch('e', "The maximum scheduling priority (`nice`).");
+        let file_size = limit_switch(
+            'f',
+            "The maximum size of files written by the shell and its children.",
+        );
+        let sigpending = limit_switch('i', "The maximum number of pending signals.");
+        let memlock = limit_switch('l', "The maximum size a process may lock into memory.");
+        let kqueues = limit_switch(
+            'k',
+            "The maximum number of kqueues allocated for this process.",
+        );
+        let rss = limit_switch('m', "The maximum resident set size.");
+        let file_open = limit_switch('n', "The maximum number of open file descriptors.");
+        let pipe = limit_switch('p', "The pipe buffer size.");
+        let msgqueue = limit_switch('q', "The maximum number of bytes in POSIX message queues.");
+        let rtprio = limit_switch('r', "The maximum real-time scheduling priority.");
+        let rttime = limit_switch('R', "Real-time non-blocking time.");
+        let stack = limit_switch('s', "The maximum stack size.");
+        let cpu = limit_switch('t', "The maximum amount of cpu time in seconds.");
+        let nproc = limit_switch('u', "The maximum number of user processes.");
+        let vmem = limit_switch('v', "The size of virtual memory.");
+        let file_lock = limit_switch('x', "The maximum number of file locks.");
+        let npts = limit_switch('P', "The maximum number of pseudoterminals.");
+        let threads = limit_switch('T', "The maximum number of threads.");
+
+        let limit = bpaf::positional::<LimitValue>("LIMIT")
+            .help("Argument for the implicit limit (`-f`).")
+            .optional();
+
+        bpaf::construct!(ULimitCommand {
+            soft,
+            hard,
+            all,
+            sbsize,
+            core,
+            data,
+            nice,
+            file_size,
+            sigpending,
+            memlock,
+            kqueues,
+            rss,
+            file_open,
+            pipe,
+            msgqueue,
+            rtprio,
+            rttime,
+            stack,
+            cpu,
+            nproc,
+            vmem,
+            file_lock,
+            npts,
+            threads,
+            limit,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Modify shell resource limits."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-SHa] [LIMIT]"
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

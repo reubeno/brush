@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::{fmt::Display, io::Write, path::Path};
 
 use brush_core::{
@@ -7,33 +6,70 @@ use brush_core::{
 };
 
 /// Directly invokes an external command, without going through typical search order.
-#[derive(Default, Parser)]
+#[derive(Default)]
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
-    #[arg(short = 'p')]
     pub use_default_path: bool,
 
     /// Display a short description of the command.
-    #[arg(short = 'v')]
     pub print_description: bool,
 
     /// Display a more verbose description of the command.
-    #[arg(short = 'V')]
     pub print_verbose_description: bool,
 
     /// Command and arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command_and_args: Vec<String>,
 }
 
 impl CommandCommand {
     fn command(&self) -> Option<&str> {
-        self.command_and_args.first().map(|s| s.as_str())
+        // N.B. A leading `--` ends the builtin's option section; the command
+        // name starts after it.
+        self.command_and_args
+            .iter()
+            .position(|s| s != "--")
+            .map(|ix| self.command_and_args[ix].as_str())
     }
 }
 
 impl builtins::Command for CommandCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        // N.B. Only the leading options are parsed here; all remaining tokens
+        // are captured verbatim via `takes_trailing_args`.
+        let use_default_path = bpaf::short('p').help("Use default PATH value.").switch();
+        let print_description = bpaf::short('v')
+            .help("Display a short description of the command.")
+            .switch();
+        let print_verbose_description = bpaf::short('V')
+            .help("Display a more verbose description of the command.")
+            .switch();
+        let command_and_args = bpaf::pure(Vec::new());
+
+        bpaf::construct!(CommandCommand {
+            use_default_path,
+            print_description,
+            print_verbose_description,
+            command_and_args,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Directly invokes an external command, without going through typical search order."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-pvV] [COMMAND [ARG]...]"
+    }
+
+    fn takes_trailing_args() -> bool {
+        true
+    }
+
+    fn set_trailing_args(&mut self, args: Vec<String>) {
+        self.command_and_args = args;
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -132,8 +168,16 @@ impl CommandCommand {
         use_default_path: bool,
     ) -> Result<ExecutionResult, brush_core::Error> {
         command_name.clone_into(&mut context.command_name);
-        let command_and_args = self
+
+        // N.B. The spawned-command machinery expects the command name itself
+        // as the first element; leading `--` markers are skipped so it lands
+        // there.
+        let name_ix = self
             .command_and_args
+            .iter()
+            .position(|s| s.as_str() == command_name)
+            .unwrap_or(0);
+        let command_and_args = self.command_and_args[name_ix.min(self.command_and_args.len())..]
             .iter()
             .map(brush_core::CommandArg::from);
 

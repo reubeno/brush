@@ -1,7 +1,12 @@
 //! Configuration types for the test harness.
 
-use clap::Parser;
+use bpaf::Parser;
+use std::str::FromStr;
 use std::{collections::HashSet, ffi::OsString, path::PathBuf};
+
+/// Maximum width used when rendering help and usage messages; mirrors the
+/// default width used by `bpaf`.
+const MAX_MESSAGE_WIDTH: usize = 100;
 
 /// Which shell to use for a test.
 #[derive(Clone, Debug)]
@@ -171,7 +176,7 @@ impl RunnerConfig {
 }
 
 /// Output format for test results.
-#[derive(Clone, Copy, Default, clap::ValueEnum, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum OutputFormat {
     /// Human-readable colored output.
     #[default]
@@ -182,100 +187,83 @@ pub enum OutputFormat {
     Terse,
 }
 
-/// Command-line options for the test harness.
-#[derive(Clone, Parser, Debug)]
-#[clap(version, about, disable_help_flag = true, disable_version_flag = true)]
-pub struct TestOptions {
-    /// Display usage information.
-    #[clap(long = "help", action = clap::ArgAction::HelpLong)]
-    pub help: Option<bool>,
+impl FromStr for OutputFormat {
+    type Err = String;
 
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pretty" => Ok(Self::Pretty),
+            "junit" => Ok(Self::Junit),
+            "terse" => Ok(Self::Terse),
+            _ => Err(format!("invalid output format: `{s}`")),
+        }
+    }
+}
+
+/// Command-line options for the test harness.
+#[derive(Clone, Debug)]
+pub struct TestOptions {
     /// Output format for test results.
-    #[clap(long = "format", default_value = "pretty")]
     pub format: OutputFormat,
 
     /// Display full details on known failures.
-    #[clap(long = "known-failure-details")]
     pub display_known_failure_details: bool,
 
     /// Display details regarding successful test cases.
-    #[clap(short = 'v', long = "verbose", env = "BRUSH_VERBOSE")]
     pub verbose: bool,
 
     /// Enable a specific configuration.
-    #[clap(long = "enable-config")]
     pub enabled_configs: Vec<String>,
 
     /// List available tests without running them.
-    #[clap(long = "list")]
     pub list_tests_only: bool,
 
     /// Exactly match filters (not just substring match).
-    #[clap(long = "exact")]
     pub exact_match: bool,
 
     /// Optionally specify a non-default path for bash.
-    #[clap(long = "bash-path", default_value = "bash", env = "BASH_PATH")]
     pub bash_path: PathBuf,
 
     /// Optionally specify a non-default path for brush.
-    #[clap(long = "brush-path", default_value = "", env = "BRUSH_PATH")]
     pub brush_path: String,
 
     /// Optionally specify additional arguments for brush.
-    #[clap(long = "brush-args", default_value = "", env = "BRUSH_ARGS")]
     pub brush_args: String,
 
     /// Optionally specify a launcher command to prepend when invoking brush
     /// (e.g., "wasmtime run --" to execute a wasm build under wasmtime).
-    /// The string is split on whitespace; the first token becomes the program
-    /// to execute and the remainder are passed as leading arguments before
-    /// the brush binary path.
-    #[clap(long = "brush-launcher", default_value = "", env = "BRUSH_LAUNCHER")]
     pub brush_launcher: String,
 
     /// Runtime platform tags (e.g., "wasi", "wasm") describing the
-    /// environment in which brush is being executed. Test cases that
-    /// declare any of these tags in `incompatible_platforms` will be
-    /// skipped. May be specified multiple times on the CLI or as a
-    /// space-separated value in the environment variable.
-    #[clap(
-        long = "brush-platform-tags",
-        value_delimiter = ' ',
-        env = "BRUSH_PLATFORM_TAGS"
-    )]
+    /// environment in which brush is being executed.
     pub brush_platform_tags: Vec<String>,
 
     /// Optionally specify path to test cases.
-    #[clap(long = "test-cases-path", env = "BRUSH_TEST_CASES")]
     pub test_cases_path: Option<PathBuf>,
 
     /// Optionally specify PATH variable to use in shells.
-    #[clap(long = "test-path-var", env = "BRUSH_TEST_PATH_VAR")]
     pub test_path_var: Option<String>,
 
     /// Show output from test cases (for compatibility only, has no effect).
-    #[clap(long = "show-output")]
+    #[allow(dead_code, reason = "accepted for compatibility only")]
     pub show_output: bool,
 
     /// Capture output? (for compatibility only, has no effect).
-    #[clap(long = "nocapture")]
+    #[allow(dead_code, reason = "accepted for compatibility only")]
     pub no_capture: bool,
 
     /// Colorize output? (for compatibility only, has no effect).
-    #[clap(long = "color", default_value_t = clap::ColorChoice::Auto)]
-    pub color: clap::ColorChoice,
+    #[allow(dead_code, reason = "accepted for compatibility only")]
+    pub color: Option<String>,
 
     /// Run skipped tests only.
-    #[clap(long = "ignored")]
     pub skipped_tests_only: bool,
 
     /// Unstable flags (for compatibility only, has no effect).
-    #[clap(short = 'Z')]
+    #[allow(dead_code, reason = "accepted for compatibility only")]
     pub unstable_flag: Vec<String>,
 
     /// Patterns for tests to be excluded.
-    #[clap(long = "skip")]
     pub exclude_filters: Vec<String>,
 
     /// Patterns for tests to be included.
@@ -283,6 +271,143 @@ pub struct TestOptions {
 }
 
 impl TestOptions {
+    /// Returns a parser for the test harness options.
+    #[must_use]
+    pub fn parser() -> impl Parser<Self> {
+        let format = bpaf::long("format")
+            .help("Output format for test results.")
+            .argument::<OutputFormat>("FORMAT")
+            .fallback(OutputFormat::Pretty);
+        let display_known_failure_details = bpaf::long("known-failure-details").switch();
+        let verbose = bpaf::short('v')
+            .long("verbose")
+            .help("Display details regarding successful test cases.")
+            .env("BRUSH_VERBOSE")
+            .switch();
+        let enabled_configs = bpaf::long("enable-config")
+            .argument::<String>("CONFIG")
+            .many()
+            .fallback(Vec::new());
+        let list_tests_only = bpaf::long("list").switch();
+        let exact_match = bpaf::long("exact").switch();
+
+        let bash_path = bpaf::long("bash-path")
+            .help("Optionally specify a non-default path for bash.")
+            .env("BASH_PATH")
+            .argument::<PathBuf>("PATH")
+            .fallback(PathBuf::from("bash"));
+
+        let brush_path = bpaf::long("brush-path")
+            .help("Optionally specify a non-default path for brush.")
+            .env("BRUSH_PATH")
+            .argument::<String>("PATH")
+            .fallback(String::new());
+        let brush_args = bpaf::long("brush-args")
+            .help("Additional arguments for brush.")
+            .env("BRUSH_ARGS")
+            .argument::<String>("ARGS")
+            .fallback(String::new());
+        let brush_launcher = bpaf::long("brush-launcher")
+            .help("Launcher command to prepend when invoking brush.")
+            .env("BRUSH_LAUNCHER")
+            .argument::<String>("CMD")
+            .fallback(String::new());
+        // N.B. The environment value is space-separated, matching clap's
+        // former `value_delimiter`. `.some()` (not `.many()`) is required so
+        // that absence on the CLI lets the environment fallback apply.
+        let brush_platform_tags = bpaf::long("brush-platform-tags")
+            .help("Runtime platform tags describing the execution environment; test cases declaring any of these in `incompatible_platforms` will be skipped.")
+            .env("BRUSH_PLATFORM_TAGS")
+            .argument::<String>("TAGS")
+            .some("TAGS")
+            .parse(|tags: Vec<String>| {
+                Ok::<Vec<String>, String>(
+                    tags.iter()
+                        .flat_map(|t| t.split_whitespace().map(str::to_owned))
+                        .collect(),
+                )
+            })
+            .fallback(Vec::new());
+        let test_cases_path = bpaf::long("test-cases-path")
+            .help("Optionally specify path to test cases.")
+            .env("BRUSH_TEST_CASES")
+            .argument::<PathBuf>("PATH")
+            .optional();
+        let test_path_var = bpaf::long("test-path-var")
+            .help("Optionally specify PATH variable to use in shells.")
+            .env("BRUSH_TEST_PATH_VAR")
+            .argument::<String>("VAR")
+            .optional();
+        let show_output = bpaf::long("show-output").switch();
+        let no_capture = bpaf::long("nocapture").switch();
+        let color = bpaf::long("color").argument::<String>("WHEN").optional();
+        let skipped_tests_only = bpaf::long("ignored").switch();
+        let unstable_flag = bpaf::short('Z')
+            .argument::<String>("FLAG")
+            .many()
+            .fallback(Vec::new());
+        let exclude_filters = bpaf::long("skip")
+            .argument::<String>("PATTERN")
+            .many()
+            .fallback(Vec::new());
+        let include_filters = bpaf::positional::<String>("FILTERS")
+            .many()
+            .fallback(Vec::new());
+
+        bpaf::construct!(TestOptions {
+            format,
+            display_known_failure_details,
+            verbose,
+            enabled_configs,
+            list_tests_only,
+            exact_match,
+            bash_path,
+            brush_path,
+            brush_args,
+            brush_launcher,
+            brush_platform_tags,
+            test_cases_path,
+            test_path_var,
+            show_output,
+            no_capture,
+            color,
+            skipped_tests_only,
+            unstable_flag,
+            exclude_filters,
+            include_filters,
+        })
+    }
+
+    /// Parses the test harness options from the given arguments.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The arguments, including the program name.
+    ///
+    /// # Panics
+    ///
+    /// Panics on invalid usage, printing the relevant message first. Help and
+    /// version requests print to stdout and exit successfully.
+    pub fn parse_from<S: AsRef<str>>(args: impl IntoIterator<Item = S>) -> Self {
+        let args: Vec<String> = args.into_iter().map(|s| s.as_ref().to_string()).collect();
+        // N.B. The first argument is the program name.
+        let rest = args.get(1..).unwrap_or(&[]).to_vec();
+
+        match Self::parser().to_options().run_inner(rest.as_slice()) {
+            Ok(options) => options,
+            Err(failure @ bpaf::ParseFailure::Stdout(..)) => {
+                // N.B. Rendering is delegated to bpaf so messages get colorized
+                // when the terminal supports it.
+                failure.print_message(MAX_MESSAGE_WIDTH);
+                std::process::exit(0);
+            }
+            Err(failure) => {
+                failure.print_message(MAX_MESSAGE_WIDTH);
+                std::process::exit(2);
+            }
+        }
+    }
+
     /// Returns the configured platform tags as a set.
     pub fn platform_tags(&self) -> HashSet<String> {
         self.brush_platform_tags.iter().cloned().collect()

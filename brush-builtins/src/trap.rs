@@ -1,25 +1,39 @@
-use clap::Parser;
+use bpaf::Bpaf;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionResult, builtins};
 
 /// Manage signal traps.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct TrapCommand {
     /// List all signal names.
-    #[arg(short = 'l')]
+    #[bpaf(short('l'))]
     list_signals: bool,
 
     /// Print registered trap commands.
-    #[arg(short = 'p')]
+    #[bpaf(short('p'))]
     print_trap_commands: bool,
 
+    /// Handler command and signals to operate on.
+    #[bpaf(positional("ARGS"))]
     args: Vec<String>,
 }
 
 impl builtins::Command for TrapCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        trap_command()
+    }
+
+    fn about() -> &'static str {
+        "Manage signal traps."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-lp] [ARGS]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

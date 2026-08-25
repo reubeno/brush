@@ -1,17 +1,31 @@
-use clap::Parser;
+use bpaf::Bpaf;
+
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Moves a job to run in the background.
-#[derive(Parser)]
+#[derive(Bpaf)]
 pub(crate) struct BgCommand {
     /// List of job specs to move to background.
+    #[bpaf(positional("JOB_SPECS"))]
     job_specs: Vec<String>,
 }
 
 impl builtins::Command for BgCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        bg_command()
+    }
+
+    fn about() -> &'static str {
+        "Moves a job to run in the background."
+    }
+
+    fn synopsis() -> &'static str {
+        "[JOB_SPECS]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

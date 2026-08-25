@@ -1,41 +1,159 @@
-use brush_core::{ExecutionResult, builtins, error, history};
-use clap::Parser;
+use bpaf::Parser;
+use std::ffi::OsStr;
 use std::io::Write;
 
+use brush_core::{ExecutionResult, builtins, error, history};
+
 /// Process command history list.
-#[derive(Parser)]
 pub(crate) struct FcCommand {
     /// List commands instead of editing them.
-    #[arg(short = 'l')]
     list: bool,
 
     /// Suppress line numbers when listing.
-    #[arg(short = 'n', requires = "list")]
     no_line_numbers: bool,
 
     /// Reverse the order of commands.
-    #[arg(short = 'r')]
     reverse: bool,
 
     /// Re-execute command after substitution (old=new format).
-    #[arg(short = 's')]
     substitute: bool,
 
     /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
+    // N.B. Editor mode is not yet implemented, so this is only surfaced
+    // through the option parser and help text.
+    #[cfg_attr(not(test), expect(dead_code))]
     editor: Option<String>,
 
     /// First command in range (number or string prefix).
-    #[arg(value_name = "FIRST", allow_hyphen_values = true)]
     first: Option<String>,
 
     /// Last command in range (number or string prefix).
-    #[arg(value_name = "LAST", allow_hyphen_values = true)]
     last: Option<String>,
 }
 
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        // N.B. Only the leading options are parsed here; all remaining tokens
+        // are captured verbatim via `takes_trailing_args`.
+        let list = bpaf::short('l')
+            .help("List commands instead of editing them.")
+            .switch();
+        let no_line_numbers = bpaf::short('n')
+            .help("Suppress line numbers when listing.")
+            .switch();
+        let reverse = bpaf::short('r')
+            .help("Reverse the order of commands.")
+            .switch();
+        let substitute = bpaf::short('s')
+            .help("Re-execute command after substitution (old=new format).")
+            .switch();
+        let editor = bpaf::short('e')
+            .help("Editor to use (only relevant when not listing or substituting).")
+            .argument::<String>("ENAME")
+            .optional();
+        let first = bpaf::pure(None);
+        let last = bpaf::pure(None);
+
+        bpaf::construct!(FcCommand {
+            list,
+            no_line_numbers,
+            reverse,
+            substitute,
+            editor,
+            first,
+            last,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Process command history list."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-lnrs] [-e ENAME] [FIRST [LAST]]"
+    }
+
+    fn takes_trailing_args() -> bool {
+        true
+    }
+
+    fn value_taking_short_options() -> &'static str {
+        "e"
+    }
+
+    // N.B. Overrides the default [`builtins::Command::new`] so that negative
+    // history indices (e.g., `fc -l -3`) are captured as operands rather than
+    // being rejected as unknown flags.
+    fn new<I>(args: I) -> Result<Self, builtins::BuiltinArgParseError>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut options = Vec::new();
+        let mut trailing = Vec::new();
+
+        // N.B. The first argument is the command name itself.
+        let mut iter = args.into_iter().skip(1);
+        let mut pending_value = false;
+        while let Some(arg) = iter.next() {
+            if pending_value {
+                // This token is the value of a preceding value-taking option.
+                options.push(arg);
+                pending_value = false;
+                continue;
+            }
+
+            if arg == "--" {
+                trailing.extend(iter);
+                break;
+            }
+
+            if !arg.starts_with('-') || arg == "-" {
+                // An operand; everything from here on is captured verbatim.
+                trailing.push(arg);
+                trailing.extend(iter);
+                break;
+            }
+
+            if is_negative_number(&arg) {
+                // A negative history index (an operand).
+                trailing.push(arg);
+                continue;
+            }
+
+            if let Some(group) = arg.strip_prefix('-').filter(|g| !g.starts_with('-')) {
+                let chars: Vec<char> = group.chars().collect();
+                for (j, c) in chars.iter().enumerate() {
+                    match c {
+                        'e' => {
+                            pending_value = j == chars.len() - 1;
+                            break;
+                        }
+                        'l' | 'n' | 'r' | 's' => {}
+                        _ => break,
+                    }
+                }
+            }
+
+            options.push(arg);
+        }
+
+        let mut command = run_bpaf_parser::<Self>(&options)?;
+        command.set_trailing_args(trailing);
+
+        Ok(command)
+    }
+
+    fn set_trailing_args(&mut self, args: Vec<String>) {
+        let mut iter = args.into_iter();
+        if let Some(first) = iter.next() {
+            self.first = Some(first);
+        }
+        if let Some(last) = iter.next() {
+            self.last = Some(last);
+        }
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -51,6 +169,14 @@ impl builtins::Command for FcCommand {
 
         error::unimp("fc editor mode is not yet implemented")
     }
+}
+
+/// Returns whether the given argument looks like a negative number; these are
+/// treated as operands since they specify offsets relative to the end of
+/// history rather than options.
+fn is_negative_number(arg: &str) -> bool {
+    arg.strip_prefix('-')
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
 }
 
 impl FcCommand {
@@ -298,4 +424,72 @@ impl FcCommand {
 /// Returns the effective history count (excluding the fc command itself).
 fn effective_history_count(history: &history::History) -> usize {
     history.count().saturating_sub(1)
+}
+
+fn run_bpaf_parser<T: builtins::Command>(
+    args: &[String],
+) -> Result<T, builtins::BuiltinArgParseError> {
+    let os_args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+    T::parser()
+        .to_options()
+        .run_inner(os_args.as_slice())
+        .map_err(render_bpaf_failure)
+}
+
+fn render_bpaf_failure(failure: bpaf::ParseFailure) -> builtins::BuiltinArgParseError {
+    match failure {
+        bpaf::ParseFailure::Stdout(doc, full) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(full),
+            help_request: true,
+        },
+        bpaf::ParseFailure::Completion(s) => builtins::BuiltinArgParseError {
+            message: s,
+            help_request: true,
+        },
+        bpaf::ParseFailure::Stderr(doc) => builtins::BuiltinArgParseError {
+            message: doc.monochrome(true),
+            help_request: false,
+        },
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use brush_core::builtins::Command as _;
+
+    fn new_from(args: &[&str]) -> Result<FcCommand, builtins::BuiltinArgParseError> {
+        FcCommand::new(std::iter::once("fc".to_string()).chain(args.iter().map(|s| s.to_string())))
+    }
+
+    #[test]
+    fn test_negative_indices_as_operands() -> anyhow::Result<()> {
+        let cmd = new_from(&["-l", "-3", "-1"])?;
+        assert!(cmd.list);
+        assert_eq!(cmd.first.as_deref(), Some("-3"));
+        assert_eq!(cmd.last.as_deref(), Some("-1"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_options_and_operands() -> anyhow::Result<()> {
+        let cmd = new_from(&["-e", "vim", "10", "20"])?;
+        assert_eq!(cmd.editor.as_deref(), Some("vim"));
+        assert_eq!(cmd.first.as_deref(), Some("10"));
+        assert_eq!(cmd.last.as_deref(), Some("20"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_substitution_spec() -> anyhow::Result<()> {
+        let cmd = new_from(&["-s", "ech=echo"])?;
+        assert!(cmd.substitute);
+        assert_eq!(cmd.first.as_deref(), Some("ech=echo"));
+        assert_eq!(cmd.last, None);
+
+        Ok(())
+    }
 }

@@ -1,43 +1,55 @@
+use bpaf::Parser;
 use std::borrow::Cow;
-
-use clap::Parser;
 
 use brush_core::{ExecutionResult, Shell, builtins};
 
+/// How the names passed to `unset` should be interpreted.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NameInterpretation {
+    Functions,
+    Variables,
+    NameRefs,
+}
+
 /// Unset a variable.
-#[derive(Parser)]
 pub(crate) struct UnsetCommand {
-    #[clap(flatten)]
-    name_interpretation: UnsetNameInterpretation,
-
-    /// Names of variables to unset.
+    name_interpretation: Option<NameInterpretation>,
     names: Vec<String>,
-}
-
-#[derive(Parser)]
-#[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
-pub(crate) struct UnsetNameInterpretation {
-    /// Treat each name as a shell function.
-    #[arg(short = 'f', group = "name-interpretation")]
-    shell_functions: bool,
-
-    /// Treat each name as a shell variable.
-    #[arg(short = 'v', group = "name-interpretation")]
-    shell_variables: bool,
-
-    /// Treat each name as a name reference.
-    #[arg(short = 'n', group = "name-interpretation")]
-    name_references: bool,
-}
-
-impl UnsetNameInterpretation {
-    pub const fn unspecified(&self) -> bool {
-        !self.shell_functions && !self.shell_variables && !self.name_references
-    }
 }
 
 impl builtins::Command for UnsetCommand {
     type Error = brush_core::Error;
+
+    fn parser() -> impl bpaf::Parser<Self> {
+        let functions = bpaf::short('f')
+            .help("Treat each name as a shell function.")
+            .req_flag(NameInterpretation::Functions);
+        let variables = bpaf::short('v')
+            .help("Treat each name as a shell variable.")
+            .req_flag(NameInterpretation::Variables);
+        let name_refs = bpaf::short('n')
+            .help("Treat each name as a name reference.")
+            .req_flag(NameInterpretation::NameRefs);
+
+        let name_interpretation = bpaf::construct!([functions, variables, name_refs]).optional();
+
+        let names = bpaf::positional::<String>("NAMES")
+            .help("Names of variables to unset.")
+            .many();
+
+        bpaf::construct!(UnsetCommand {
+            name_interpretation,
+            names,
+        })
+    }
+
+    fn about() -> &'static str {
+        "Unset values and attributes of variables and functions."
+    }
+
+    fn synopsis() -> &'static str {
+        "[-fvn] [NAMES]..."
+    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
@@ -46,15 +58,15 @@ impl builtins::Command for UnsetCommand {
         //
         // TODO(nameref): implement nameref
         //
-        if self.name_interpretation.name_references {
+        if self.name_interpretation == Some(NameInterpretation::NameRefs) {
             return brush_core::error::unimp("unset: name references are not yet implemented");
         }
 
-        let unspecified = self.name_interpretation.unspecified();
+        let unspecified = self.name_interpretation.is_none();
 
         #[expect(clippy::needless_continue)]
         for name in &self.names {
-            if unspecified || self.name_interpretation.shell_variables {
+            if unspecified || self.name_interpretation == Some(NameInterpretation::Variables) {
                 // Try to parse the name as a parameter. If we can't, don't bail; it may not be a
                 // valid variable name/parameter but could still be a function name.
                 if let Ok(parameter) =
@@ -82,7 +94,7 @@ impl builtins::Command for UnsetCommand {
             }
 
             // TODO(unset): Deal with readonly functions
-            if unspecified || self.name_interpretation.shell_functions {
+            if unspecified || self.name_interpretation == Some(NameInterpretation::Functions) {
                 if context.shell.undefine_func(name) {
                     continue;
                 }
