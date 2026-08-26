@@ -76,6 +76,14 @@ pub trait UsageArgs: Sized {
 }
 
 /// Implements [`UsageArgs`] for a type deriving `usage::Cli`.
+///
+/// Accepts an optional `plus_options` marker enabling clustered plus-option
+/// expansion (e.g. `set +euo pipefail`) for types whose builtin accepts
+/// plus-style flags:
+///
+/// ```ignore
+/// crate::impl_usage_parse!(MyCommand, plus_options);
+/// ```
 #[macro_export]
 macro_rules! impl_usage_parse {
     ($ty:ty) => {
@@ -89,6 +97,24 @@ macro_rules! impl_usage_parse {
             #[doc(hidden)]
             fn usage_spec() -> &'static usage::spec::Spec<'static> {
                 <$ty>::spec()
+            }
+        }
+    };
+    ($ty:ty, plus_options) => {
+        impl $crate::args::UsageArgs for $ty {
+            fn parse_argv<'v>(
+                argv: &[&'v std::ffi::OsStr],
+            ) -> Result<Self, usage::argv::Error<'static, 'v>> {
+                <$ty>::parse_from(argv)
+            }
+
+            #[doc(hidden)]
+            fn usage_spec() -> &'static usage::spec::Spec<'static> {
+                <$ty>::spec()
+            }
+
+            fn takes_plus_options() -> bool {
+                true
             }
         }
     };
@@ -137,20 +163,39 @@ fn parse_words<T: UsageArgs>(words: Vec<String>) -> Result<T, ArgsError> {
 }
 
 /// Expands groups of plus-style options (e.g., `+vx`) into individual tokens.
+/// Stops expanding once a non-option word, `-`, or `--` is seen (mirroring
+/// bash's boundary semantics), so later plus-prefixed words stay verbatim.
 pub(crate) fn expand_plus_option_groups(args: Vec<String>) -> Vec<String> {
-    args.into_iter()
-        .flat_map(|arg| {
-            if let Some(plus_options) = arg.strip_prefix('+').filter(|g| !g.is_empty()) {
-                if plus_options.starts_with('+') || plus_options.contains('=') {
-                    vec![arg]
-                } else {
-                    plus_options.chars().map(|c| format!("+{c}")).collect()
-                }
+    let mut expanded = Vec::with_capacity(args.len());
+    let mut boundary_reached = false;
+
+    for arg in args {
+        if boundary_reached {
+            expanded.push(arg);
+            continue;
+        }
+
+        if arg == "-" || arg == "--" || !arg.starts_with(['-', '+']) {
+            boundary_reached = true;
+            expanded.push(arg);
+            continue;
+        }
+
+        if let Some(plus_options) = arg.strip_prefix('+').filter(|g| !g.is_empty()) {
+            if plus_options.starts_with('+') || plus_options.contains('=') {
+                expanded.push(arg);
             } else {
-                vec![arg]
+                // N.B. Each character becomes a *long* option spelled `--+{c}`;
+                // usage's argv parser recognizes these spellings for the
+                // `#[usage(long = "+c")]` fields but not lone `+c` tokens.
+                expanded.extend(plus_options.chars().map(|c| format!("--+{c}")));
             }
-        })
-        .collect()
+        } else {
+            expanded.push(arg);
+        }
+    }
+
+    expanded
 }
 
 #[expect(dead_code, reason = "used only when value_longs is non-empty")]
@@ -196,6 +241,22 @@ pub(crate) fn split_option_section(
             return (args[..i].to_vec(), args[i..].to_vec());
         }
 
+        // A bare `-` is a boundary like `--` (e.g. bash's `set -`), but unlike
+        // `--` it is *kept* in the trailing stream so consumers can apply its
+        // disable-verbose/xtrace semantics.
+        if arg == "-" {
+            return (args[..i].to_vec(), args[i..].to_vec());
+        }
+
+        if let Some(shorts) = arg.strip_prefix("--+").filter(|s| !s.is_empty()) {
+            // Long-spelled plus option emitted by plus-cluster expansion. If
+            // its character takes a value (e.g. `--o NAME`), that value is the
+            // following token and must not become a trailing operand.
+            let needs_value = shorts.chars().any(|c| value_shorts.contains(c));
+            i += if needs_value { 2 } else { 1 };
+            continue;
+        }
+
         if arg.starts_with("--") {
             i += 1;
         } else if let Some(shorts) = arg.strip_prefix('-').filter(|s| !s.starts_with('-')) {
@@ -223,13 +284,18 @@ pub fn get_content<T: UsageArgs>(
             let help_args = [OsStr::new("--help")];
             match T::parse_argv(&help_args) {
                 Err(err) => {
-                    let argv: Vec<&OsStr> = help_args.iter().copied().collect();
+                    let argv: Vec<&OsStr> = help_args.to_vec();
                     Ok(render_parse_failure(T::usage_spec(), &argv, &err).message)
                 }
-                Ok(_) => Err(brush_core::error::ErrorKind::Unimplemented(
-                    "unexpectedly parsed help request",
-                )
-                .into()),
+                // N.B. Commands with `unknown_flags = "value"` swallow `--help`
+                // as a positional, so parsing *succeeding* is not an error.
+                // The static spec's root command isn't reachable by identity
+                // here, so fall back to a concise summary rather than failing.
+                Ok(_) => Ok(format!(
+                    "{name}: {name} {}\n{}\n",
+                    T::synopsis(),
+                    T::about()
+                )),
             }
         }
         ContentType::ShortUsage => Ok(format!("{name}: {name} {}\n", T::synopsis())),

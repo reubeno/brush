@@ -4,6 +4,10 @@
 
 #![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
+#![expect(
+    clippy::option_option,
+    reason = "the usage derive models absent/bare/valued flags via Option<Option<T>>"
+)]
 
 use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};

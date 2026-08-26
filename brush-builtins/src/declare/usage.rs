@@ -10,7 +10,7 @@ use std::io::Write;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
-crate::usage_minus_or_plus_flag_arg!(MakeIndexedArrayFlag, 'i', "+i", "Make the variable an indexed array.");
+crate::usage_minus_or_plus_flag_arg!(MakeIndexedArrayFlag, 'a', "+a", "Make the variable an indexed array.");
 crate::usage_minus_or_plus_flag_arg!(MakeAssociativeArrayFlag, 'A', "+A", "Make the variable an associative array.");
 crate::usage_minus_or_plus_flag_arg!(CapitalizeValueOnAssignmentFlag, 'c', "+c", "Enable capitalize-on-assignment for the variable.");
 crate::usage_minus_or_plus_flag_arg!(LowercaseValueOnAssignmentFlag, 'l', "+l", "Assign values in lowercase.");
@@ -82,7 +82,7 @@ pub(crate) struct DeclareCommand {
     pub(super) declarations: Vec<brush_core::CommandArg>,
 }
 
-crate::impl_usage_parse!(DeclareCommand);
+crate::impl_usage_parse!(DeclareCommand, plus_options);
 
 impl FromArgs for DeclareCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
