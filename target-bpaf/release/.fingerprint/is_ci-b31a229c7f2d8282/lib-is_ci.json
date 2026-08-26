@@ -1,1 +1,0 @@
-{"rustc":15452054151793738726,"features":"[]","declared_features":"[]","target":1193022039977793448,"profile":3592778941406178886,"path":12868896217231258070,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"release/.fingerprint/is_ci-b31a229c7f2d8282/dep-lib-is_ci","checksum":false}}],"rustflags":["-C","link-arg=-fuse-ld=mold"],"config":9396254390672932401,"compile_kind":0}
