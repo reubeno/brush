@@ -431,8 +431,22 @@ jobs:
       - name: Format check
         run: cargo xtask check fmt
 
+      # N.B. The `parser-usage` engine depends on usage-rs crates whose MSRV
+      # (1.91) exceeds this workflow's baseline toolchain. `--all-features`
+      # therefore only compiles on the stable toolchain; older toolchains
+      # validate everything else, including the other engines.
       - name: Check
+        if: matrix.rust-version == 'stable'
         run: cargo xtask check build
+
+      - name: Check (baseline toolchain scope)
+        if: matrix.rust-version != 'stable'
+        run: |
+          set -ex
+          cargo check --workspace --all-targets
+          cargo check --package brush-shell --all-targets \
+            --no-default-features --features basic,reedline,minimal,parser-bpaf
+          cargo check --package brush-builtins --features parser-bpaf
 
       - name: Install cargo-deny
         if: runner.os == 'Linux'
