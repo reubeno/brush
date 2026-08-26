@@ -47,10 +47,15 @@ where
     .optional();
 
     use bpaf::Parser;
-    let many_values = value.map(|v| v.map(|v| vec![v]).unwrap_or_default());
-    let only_flag = flag.map(|_| Vec::new());
 
-    bpaf::construct!([many_values, only_flag]).optional()
+    // N.B. The construct consumes the flag, so absence of the flag yields
+    // `None` via `optional()`; an empty vector then means "flag given without
+    // a value" (bash's list-all form). Gating on the flag here is essential:
+    // an alternative that could succeed without it would make every
+    // invocation look like a list request.
+    bpaf::construct!(flag, value)
+        .map(|((), v)| v.map(|v| vec![v]).unwrap_or_default())
+        .optional()
 }
 
 /// Tri-state parser for a `-x` / `+x` option pair.
@@ -242,7 +247,7 @@ impl crate::args::bpaf_support::BpafArgs for SetCommand {
                 Some(group) if !group.starts_with('+') && !group.contains('=') => {
                     expanded.extend(group.chars().map(|c| format!("+{c}")));
                 }
-                _ => expanded.extend(expand_dash_o_group(&arg)),
+                _ => expanded.extend(expand_dash_group(&arg)),
             }
         }
 
@@ -289,6 +294,48 @@ impl builtins::Command for SetCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         super::execute(self, context).await
     }
+}
+
+/// Expands a single leading-dash token into bpaf-parseable tokens.
+///
+/// bpaf has no POSIX short-option clustering support, so multi-letter groups
+/// like `-euo` are split into individual switches (`-e`, `-u`, `-o`); a group
+/// ending in (or containing) the value-taking option `o` yields `-o` plus its
+/// attached value. Anything else (single switches, `--long`, bare `-`, or
+/// unrecognized shapes) passes through unchanged.
+fn expand_dash_group(arg: &str) -> Vec<String> {
+    let rest = match arg.strip_prefix('-') {
+        // Long options, bare "-", and empty groups are not clusters.
+        Some(r) if !r.is_empty() && !r.starts_with('-') => r,
+        _ => return vec![arg.to_string()],
+    };
+
+    // Clusters are plain letter runs; anything else (attached values via '=',
+    // digits, etc.) is left for the narrower `-oVALUE` handler below.
+    if rest.contains('=') || !rest.chars().all(|c| c.is_ascii_alphabetic()) {
+        return expand_dash_o_group(arg);
+    }
+
+    let mut expanded = Vec::new();
+    let mut pending = String::new();
+    for c in rest.chars() {
+        if c == 'o' {
+            if !pending.is_empty() {
+                expanded.push(format!("-{pending}"));
+                pending.clear();
+            }
+            expanded.push(String::from("-o"));
+            // N.B. any letters after `o` belong to its value, which the
+            // splitter/parser handle as the following token.
+            break;
+        }
+        pending.push(c);
+    }
+    if !pending.is_empty() {
+        expanded.push(format!("-{pending}"));
+    }
+
+    expanded
 }
 
 /// Expands a `-oVALUE` token into separate tokens (`-o`, `VALUE`) so the
