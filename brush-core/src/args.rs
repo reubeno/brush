@@ -73,6 +73,7 @@ impl ArgsError {
     /// # Arguments
     ///
     /// * `err` - The error to convert.
+    #[cfg(feature = "parser-clap")]
     // N.B. Transitional: clap remains an unconditional dependency of
     // brush-core until the migration completes.
     pub fn from_clap_error(err: &clap::Error) -> Self {
@@ -108,6 +109,7 @@ pub trait FromArgs: Sized {
 //
 // N.B. Until dispatch stops passing the invocation verbatim, `words` includes
 // the builtin's own name at index 0, occupying clap's bin-name slot.
+#[cfg(feature = "parser-clap")]
 impl<T: clap::Parser> FromArgs for T {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
         <T as clap::Parser>::try_parse_from(words.iter().map(String::as_str))

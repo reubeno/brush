@@ -172,6 +172,12 @@ pub(crate) struct CompGenCommand {
     word: Option<String>,
 }
 
+impl FromArgs for CompGenCommand {
+    fn from_args(words: &[String]) -> Result<Self, ArgsError> {
+        crate::args::UsageArgs::from_words(words)
+    }
+}
+
 impl builtins::Command for CompGenCommand {
     type Error = brush_core::Error;
 
@@ -263,6 +269,12 @@ pub(crate) struct CompOptCommand {
 
     /// If specified, scopes updates to completions of the named commands.
     names: Vec<String>,
+}
+
+impl FromArgs for CompOptCommand {
+    fn from_args(words: &[String]) -> Result<Self, ArgsError> {
+        crate::args::UsageArgs::from_words(words)
+    }
 }
 
 impl builtins::Command for CompOptCommand {

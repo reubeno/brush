@@ -1,5 +1,6 @@
 //! Facilities for implementing and managing builtins
 
+#[cfg(feature = "parser-clap")]
 use clap::builder::styling;
 pub use futures::future::BoxFuture;
 use std::io::Write;
@@ -96,6 +97,7 @@ pub trait Command: FromArgs {
     ) -> Result<String, error::Error>;
 }
 
+#[cfg(feature = "parser-clap")]
 /// Transitional helper rendering a builtin's help content from its
 /// clap-derived argument metadata.
 ///
@@ -188,10 +190,12 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
     }
 }
 
+#[cfg(feature = "parser-clap")]
 fn get_builtin_man_page(_name: &str, _command: &clap::Command) -> Result<String, error::Error> {
     error::unimp("man page rendering is not yet implemented")
 }
 
+#[cfg(feature = "parser-clap")]
 fn get_builtin_short_description(name: &str, command: &clap::Command) -> String {
     let about = command
         .get_about()
@@ -200,6 +204,7 @@ fn get_builtin_short_description(name: &str, command: &clap::Command) -> String 
     std::format!("{name} - {about}\n")
 }
 
+#[cfg(feature = "parser-clap")]
 fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
     let mut usage = String::new();
 
@@ -283,6 +288,7 @@ fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
     std::format!("{name}: {name} {usage}\n")
 }
 
+#[cfg(feature = "parser-clap")]
 fn brush_help_styles() -> clap::builder::Styles {
     styling::Styles::styled()
         .header(
@@ -295,6 +301,7 @@ fn brush_help_styles() -> clap::builder::Styles {
         .placeholder(styling::AnsiColor::Cyan.on_default())
 }
 
+#[cfg(feature = "parser-clap")]
 /// This function and the [`try_parse_known`] exists to deal with
 /// the Clap's limitation of treating `--` like a regular value
 /// `https://github.com/clap-rs/clap/issues/5055`
@@ -346,6 +353,7 @@ where
     (parsed_args, raw_args)
 }
 
+#[cfg(feature = "parser-clap")]
 /// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
 /// This function is used to parse arguments in builtins such as
 /// `crate::echo::EchoCommand`

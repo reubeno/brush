@@ -5,6 +5,8 @@
 use self::bpaf::BindKeyMap;
 #[cfg(feature = "parser-clap")]
 use self::clap::BindKeyMap;
+#[cfg(feature = "parser-usage")]
+use self::usage::BindKeyMap;
 arg_impl!(BindCommand);
 
 use brush_core::{
