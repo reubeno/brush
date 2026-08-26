@@ -37,7 +37,7 @@ pub(crate) struct ExportCommand {
     pub(super) unexport: bool,
 
     /// Display all exported names.
-    #[expect(dead_code)]
+    #[allow(dead_code)]
     pub(super) display_exported_names: bool,
 
     //

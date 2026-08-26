@@ -292,7 +292,7 @@ impl Spec {
     ///
     /// * `shell` - The shell instance to use for completion generation.
     /// * `context` - The context in which completion is being generated.
-    #[expect(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
@@ -456,7 +456,7 @@ impl Spec {
         Ok(Answer::Candidates(candidates, processing_options))
     }
 
-    #[expect(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines)]
     async fn generate_action_completions(
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
@@ -1012,7 +1012,7 @@ impl Config {
     /// * `shell` - The shell instance to use for completion generation.
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
-    #[expect(clippy::string_slice)]
+    #[allow(clippy::string_slice)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,

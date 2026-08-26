@@ -22,7 +22,7 @@ pub(crate) struct EnableCommand {
 
     /// Print a list of built-in commands with reusable output.
     #[bpaf(short('p'))]
-    #[expect(dead_code)]
+    #[allow(dead_code)]
     pub(super) print_reusably: bool,
 
     /// Only operate on special built-in commands.

@@ -76,7 +76,7 @@ fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {
 }
 
 #[cfg(test)]
-#[expect(clippy::panic_in_result_fn)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use brush_core::builtins::Command as _;

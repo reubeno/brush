@@ -175,7 +175,7 @@ mod tests {
     }
 }
 
-#[expect(clippy::option_option)]
+#[allow(clippy::option_option)]
 pub(crate) struct HistoryCommand {
     /// Clears all history.
     pub(super) clear_history: bool,

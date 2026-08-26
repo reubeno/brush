@@ -153,7 +153,7 @@ fn render_parse_failure(failure: bpaf::ParseFailure) -> ArgsError {
 /// Provides control over the resources available to the shell and processes
 /// it creates, on systems that allow such control.
 pub(crate) struct ULimitCommand {
-    #[expect(dead_code)]
+    #[allow(dead_code)]
     pub(super) soft: bool,
     pub(super) hard: bool,
     pub(super) all: bool,
