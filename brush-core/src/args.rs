@@ -43,6 +43,8 @@ impl std::fmt::Display for ArgsError {
     }
 }
 
+impl std::error::Error for ArgsError {}
+
 impl ArgsError {
     /// Constructs a usage error with the given message.
     ///
@@ -98,8 +100,8 @@ pub trait FromArgs: Sized {
     ///
     /// # Arguments
     ///
-    /// * `words` - The arguments as they appeared after expansion, excluding
-    ///   the builtin's own name.
+    /// * `words` - The arguments as they appeared after expansion, excluding the builtin's own
+    ///   name.
     fn from_args(words: &[String]) -> Result<Self, ArgsError>;
 }
 
