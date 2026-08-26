@@ -70,7 +70,7 @@ pub trait UsageArgs: Sized {
 
             Ok(command)
         } else {
-            parse_words::<Self>(&args)
+            parse_words::<Self>(args)
         }
     }
 }
@@ -97,15 +97,35 @@ macro_rules! impl_usage_parse {
 pub(crate) fn render_parse_failure(
     spec: &usage::spec::Spec<'_>,
     argv: &[&OsStr],
-    err: &usage::argv::Error<'_, '_>,
+    err: &usage::Error<'_, '_>,
 ) -> ArgsError {
-    let rendered =
-        usage::render::ErrorRender::new(spec).with_argv(argv).render(err);
+    use usage::Error;
 
-    // Help/version requests surface with exit-code success semantics.
+    let (message, help_request) = match err {
+        Error::Help { cmd, long } => (
+            usage::help::render_styled(spec, cmd, *long, usage::help::Style::auto())
+                .unwrap_or_default(),
+            true,
+        ),
+        Error::HelpAll { cmd } => (
+            usage::help::render_styled(spec, cmd, true, usage::help::Style::auto())
+                .unwrap_or_default(),
+            true,
+        ),
+        Error::MissingArgsHelp { cmd } => (
+            usage::help::render_styled(spec, cmd, false, usage::help::Style::auto_stderr())
+                .unwrap_or_default(),
+            false,
+        ),
+        _ => (
+            usage::render_failure(spec, argv, err),
+            false,
+        ),
+    };
+
     ArgsError {
-        message: rendered,
-        help_request: false,
+        message,
+        help_request,
     }
 }
 

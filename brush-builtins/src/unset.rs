@@ -3,6 +3,8 @@
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
 #[cfg(feature = "parser-bpaf")]
 use self::bpaf::UnsetNameInterpretation;
+#[cfg(feature = "parser-usage")]
+use self::usage::UnsetNameInterpretation;
 #[cfg(feature = "parser-clap")]
 use self::clap::UnsetNameInterpretation;
 arg_impl!(UnsetCommand);

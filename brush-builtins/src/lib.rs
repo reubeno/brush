@@ -50,7 +50,7 @@ pub(crate) fn minus_or_plus_flag(
 /// Declares a bpaf-engine tri-state flag struct mirroring
 /// `minus_or_plus_flag_arg`'s clap-side shape.
 #[cfg(feature = "parser-bpaf")]
-macro_rules! minus_or_plus_flag_bpaf {
+macro_rules! tri_state_flag {
     ($struct_name:ident) => {
         #[derive(Default)]
         pub(crate) struct $struct_name {
@@ -87,7 +87,7 @@ macro_rules! minus_or_plus_flag_bpaf {
 }
 
 #[cfg(feature = "parser-bpaf")]
-pub(crate) use minus_or_plus_flag_bpaf;
+pub(crate) use tri_state_flag;
 
 /// Selects a builtin's argument implementation according to the active
 /// argument-parsing engine feature (`parser-clap` / `parser-bpaf` /
@@ -296,6 +296,41 @@ macro_rules! minus_or_plus_flag_arg {
 
 /// Transitional extension used by the bpaf engine, whose parsers yield
 /// `Option<bool>` directly where the clap side yields generated flag structs.
+/// Declares a usage-engine flag struct: `-x` enables, `+x` disables.
+#[cfg(feature = "parser-usage")]
+#[macro_export]
+macro_rules! usage_minus_or_plus_flag_arg {
+    ($struct_name:ident, $flag_char:literal, $plus_flag:literal, $desc:literal) => {
+        // N.B. each attribute is spelled separately; combining them into one
+        // `#[usage(...)]` breaks the derive's parsing of interpolated literals
+        // coming from macro expansions.
+        #[derive(usage::Args)]
+        pub(crate) struct $struct_name {
+            #[usage(short = $flag_char)]
+            #[usage(help = $desc)]
+            _enable: bool,
+            #[usage(long = $plus_flag)]
+            #[usage(hide)]
+            _disable: bool,
+        }
+
+        impl $struct_name {
+            #[allow(dead_code, reason = "may not be used in all engine builds")]
+            pub const fn is_some(&self) -> bool {
+                self._enable || self._disable
+            }
+
+            pub const fn to_bool(&self) -> Option<bool> {
+                match (self._enable, self._disable) {
+                    (true, false) => Some(true),
+                    (false, true) => Some(false),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
 #[cfg(not(feature = "parser-clap"))]
 pub(crate) trait OptionBoolExt {
     /// Returns the inner value, mirroring the clap-side `to_bool`.

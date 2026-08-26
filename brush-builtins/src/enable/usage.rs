@@ -7,7 +7,6 @@
 use brush_core::ExecutionResult;
 use itertools::Itertools;
 use std::io::Write;
-use brush_core::builtins;
 use brush_core::error;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;

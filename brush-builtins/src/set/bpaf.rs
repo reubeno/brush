@@ -11,25 +11,25 @@ use bpaf::Parser;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
-crate::minus_or_plus_flag_bpaf!(ExportVariablesOnModification);
-crate::minus_or_plus_flag_bpaf!(NotifyJobTerminationImmediately);
-crate::minus_or_plus_flag_bpaf!(ExitOnNonzeroCommandExit);
-crate::minus_or_plus_flag_bpaf!(DisableFilenameGlobbing);
-crate::minus_or_plus_flag_bpaf!(RememberCommandLocations);
-crate::minus_or_plus_flag_bpaf!(PlaceAllAssignmentArgsInCommandEnv);
-crate::minus_or_plus_flag_bpaf!(EnableJobControl);
-crate::minus_or_plus_flag_bpaf!(DoNotExecuteCommands);
-crate::minus_or_plus_flag_bpaf!(RealEffectiveUidMismatch);
-crate::minus_or_plus_flag_bpaf!(ExitAfterOneCommand);
-crate::minus_or_plus_flag_bpaf!(TreatUnsetVariablesAsError);
-crate::minus_or_plus_flag_bpaf!(PrintShellInputLines);
-crate::minus_or_plus_flag_bpaf!(PrintCommandsAndArguments);
-crate::minus_or_plus_flag_bpaf!(PerformBraceExpansion);
-crate::minus_or_plus_flag_bpaf!(DisallowOverwritingRegularFilesViaOutputRedirection);
-crate::minus_or_plus_flag_bpaf!(ShellFunctionsInheritErrTrap);
-crate::minus_or_plus_flag_bpaf!(EnableBangStyleHistorySubstitution);
-crate::minus_or_plus_flag_bpaf!(DoNotResolveSymlinksWhenChangingDir);
-crate::minus_or_plus_flag_bpaf!(ShellFunctionsInheritDebugAndReturnTraps);
+crate::tri_state_flag!(ExportVariablesOnModification);
+crate::tri_state_flag!(NotifyJobTerminationImmediately);
+crate::tri_state_flag!(ExitOnNonzeroCommandExit);
+crate::tri_state_flag!(DisableFilenameGlobbing);
+crate::tri_state_flag!(RememberCommandLocations);
+crate::tri_state_flag!(PlaceAllAssignmentArgsInCommandEnv);
+crate::tri_state_flag!(EnableJobControl);
+crate::tri_state_flag!(DoNotExecuteCommands);
+crate::tri_state_flag!(RealEffectiveUidMismatch);
+crate::tri_state_flag!(ExitAfterOneCommand);
+crate::tri_state_flag!(TreatUnsetVariablesAsError);
+crate::tri_state_flag!(PrintShellInputLines);
+crate::tri_state_flag!(PrintCommandsAndArguments);
+crate::tri_state_flag!(PerformBraceExpansion);
+crate::tri_state_flag!(DisallowOverwritingRegularFilesViaOutputRedirection);
+crate::tri_state_flag!(ShellFunctionsInheritErrTrap);
+crate::tri_state_flag!(EnableBangStyleHistorySubstitution);
+crate::tri_state_flag!(DoNotResolveSymlinksWhenChangingDir);
+crate::tri_state_flag!(ShellFunctionsInheritDebugAndReturnTraps);
 
 /// Returns a parser capturing repeated occurrences of a named-option flag
 /// (e.g., `-o OPT`) into the same tri-state shape used by [`SetOption`].

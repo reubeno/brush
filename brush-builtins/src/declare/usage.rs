@@ -9,6 +9,17 @@ use std::{io::Write, sync::LazyLock};
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
+crate::usage_minus_or_plus_flag_arg!(MakeIndexedArrayFlag, 'i', "+i", "Make the variable an indexed array.");
+crate::usage_minus_or_plus_flag_arg!(MakeAssociativeArrayFlag, 'A', "+A", "Make the variable an associative array.");
+crate::usage_minus_or_plus_flag_arg!(CapitalizeValueOnAssignmentFlag, 'c', "+c", "Enable capitalize-on-assignment for the variable.");
+crate::usage_minus_or_plus_flag_arg!(LowercaseValueOnAssignmentFlag, 'l', "+l", "Assign values in lowercase.");
+crate::usage_minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "+x", "Export the variable.");
+crate::usage_minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "+i", "Make the variable an integer.");
+crate::usage_minus_or_plus_flag_arg!(MakeNameRefFlag, 'n', "+n", "Make the variable a name reference.");
+crate::usage_minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "+r", "Make the variable readonly.");
+crate::usage_minus_or_plus_flag_arg!(MakeTracedFlag, 't', "+t", "Enable tracing for the variable.");
+crate::usage_minus_or_plus_flag_arg!(UppercaseValueOnAssignmentFlag, 'u', "+u", "Assign values in uppercase.");
+
 /// Display or update variables and their attributes.
 #[derive(usage::Cli)]
 #[usage(

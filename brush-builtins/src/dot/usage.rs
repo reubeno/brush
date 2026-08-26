@@ -5,7 +5,6 @@
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::path::Path;
-use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
