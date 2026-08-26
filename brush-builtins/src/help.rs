@@ -1,55 +1,11 @@
+//! The `help` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(HelpCommand);
+
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
-
-/// Display command help.
-#[derive(Parser)]
-pub(crate) struct HelpCommand {
-    /// Display a short description for the commands.
-    #[arg(short = 'd')]
-    short_description: bool,
-
-    /// Display a man-style page of documentation for the commands.
-    #[arg(short = 'm')]
-    man_page_style: bool,
-
-    /// Display a short usage summary for the commands.
-    #[arg(short = 's')]
-    short_usage: bool,
-
-    /// Patterns of topics to display help for.
-    topic_patterns: Vec<String>,
-}
-
-impl builtins::Command for HelpCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.topic_patterns.is_empty() {
-            Self::display_general_help(&context)?;
-            return Ok(ExecutionResult::success());
-        }
-
-        // Match bash: succeed if at least one requested topic pattern matched
-        // something; return a non-zero exit code only when none of them matched.
-        let mut any_matched = false;
-        for topic_pattern in &self.topic_patterns {
-            if self.display_help_for_topic_pattern(&context, topic_pattern)? {
-                any_matched = true;
-            }
-        }
-
-        if any_matched {
-            Ok(ExecutionResult::success())
-        } else {
-            Ok(ExecutionResult::general_error())
-        }
-    }
-}
 
 impl HelpCommand {
     fn display_general_help(
@@ -148,7 +104,7 @@ impl HelpCommand {
     }
 }
 
-fn get_builtins_sorted_by_name<'a, SE: brush_core::ShellExtensions>(
+pub(super) fn get_builtins_sorted_by_name<'a, SE: brush_core::ShellExtensions>(
     context: &'a brush_core::ExecutionContext<'_, SE>,
 ) -> Vec<(&'a String, &'a builtins::Registration<SE>)> {
     context
@@ -157,4 +113,30 @@ fn get_builtins_sorted_by_name<'a, SE: brush_core::ShellExtensions>(
         .iter()
         .sorted_by_key(|(name, _)| *name)
         .collect()
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &HelpCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.topic_patterns.is_empty() {
+        HelpCommand::display_general_help(&context)?;
+        return Ok(ExecutionResult::success());
+    }
+
+    // Match bash: succeed if at least one requested topic pattern matched
+    // something; return a non-zero exit code only when none of them matched.
+    let mut any_matched = false;
+    for topic_pattern in &command.topic_patterns {
+        if command.display_help_for_topic_pattern(&context, topic_pattern)? {
+            any_matched = true;
+        }
+    }
+
+    if any_matched {
+        Ok(ExecutionResult::success())
+    } else {
+        Ok(ExecutionResult::general_error())
+    }
 }

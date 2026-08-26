@@ -17,9 +17,12 @@ bench = false
 workspace = true
 
 [features]
-default = []
+default = ["parser-clap"]
 serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
 experimental-parser = ["brush-parser/winnow-parser"]
+parser-clap = ["dep:clap"]
+parser-bpaf = ["dep:bpaf"]
+parser-usage = ["dep:usage"]
 
 [dependencies]
 async-recursion = "1.1.1"
@@ -29,7 +32,9 @@ bon = "3.9.1"
 cached = "2.0.2"
 cfg-if = "1.0.4"
 chrono = "0.4.44"
-clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
+clap = { version = "4.6.0", features = ["derive", "wrap_help"], optional = true }
+bpaf = { version = "0.9.27", optional = true }
+usage = { package = "usage-rs", version = "6", optional = true }
 color-print = "0.3.7"
 fancy-regex = "0.19.0"
 futures = "0.3.32"
@@ -87,3 +92,9 @@ uuid = { version = "1.23.1", features = ["js"] }
 anyhow = "1.0.102"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 tempfile = "3.27.0"
+
+# N.B. See brush-builtins/Cargo.toml: with every parser-engine feature enabled
+# at once, only the selected engine's bindings are compiled, so the others'
+# dependencies appear unused to cargo-udeps.
+[package.metadata.cargo-udeps.ignore]
+normal = ["bpaf"]

@@ -35,9 +35,17 @@ pub fn read_expectrl_log(log: Vec<u8>) -> Result<String> {
 }
 
 /// Makes expectrl output human-readable by unescaping and stripping ANSI codes.
+///
+// N.B. Unescaping can fail on output produced by a shell-under-test whose
+// escaping differs from expectrl's own (observed when comparing engines); in
+// that case keep the raw text so the comparison still runs (and fails) rather
+// than panicking the whole harness.
 pub fn make_expectrl_output_readable<S: AsRef<str>>(output: S) -> String {
     // Unescape the escaping done by expectrl's logging mechanism.
-    let unescaped = output.as_ref().to_unescaped().unwrap().to_string();
+    let unescaped = match output.as_ref().to_unescaped() {
+        Ok(text) => text.to_string(),
+        Err(_) => return strip_ansi_escapes::strip_str(output.as_ref()),
+    };
 
     // Remove VT escape sequences.
     strip_ansi_escapes::strip_str(unescaped)

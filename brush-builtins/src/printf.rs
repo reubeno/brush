@@ -1,62 +1,16 @@
-use clap::Parser;
+//! The `printf` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(PrintfCommand);
+
+use brush_core::{Error, ErrorKind, ExecutionResult, escape, expansion};
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
-use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
-
-/// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
-pub(crate) struct PrintfCommand {
-    /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
-    output_variable: Option<String>,
-
-    /// Format string + arguments to the format string.
-    ///
-    /// N.B. We intentionally do *not* enable `allow_hyphen_values` here. Doing so would
-    /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
-    /// a positional argument. With it disabled, a format string that genuinely needs to
-    /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
-    format_and_args: Vec<String>,
-}
-
-impl builtins::Command for PrintfCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        if let Some(variable_name) = &self.output_variable {
-            // Format to a u8 vector.
-            let mut result: Vec<u8> = vec![];
-            format(self.format_and_args.as_slice(), &mut result)?;
-
-            // Convert to a string.
-            let result_str = String::from_utf8(result).map_err(|_| {
-                brush_core::ErrorKind::PrintfInvalidUsage("invalid UTF-8 output".into())
-            })?;
-
-            // Assign to the selected variable.
-            expansion::assign_to_named_parameter(
-                context.shell,
-                &context.params,
-                variable_name,
-                result_str,
-            )
-            .await?;
-        } else {
-            format(self.format_and_args.as_slice(), context.stdout())?;
-            context.stdout().flush()?;
-        }
-
-        Ok(ExecutionResult::success())
-    }
-}
-
-fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {
+pub(super) fn format(
+    format_and_args: &[String],
+    writer: impl Write,
+) -> Result<(), brush_core::Error> {
     match format_and_args {
         // Special-case invocation of printf with %q-based format string from bash-completion.
         // It has hard-coded expectation of backslash-style escaping instead of quoting.
@@ -70,7 +24,7 @@ fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_co
     }
 }
 
-fn format_special_case_for_percent_q(
+pub(super) fn format_special_case_for_percent_q(
     prefix: Option<&str>,
     arg: &str,
     mut writer: impl Write,
@@ -86,7 +40,7 @@ fn format_special_case_for_percent_q(
     Ok(())
 }
 
-fn format_via_uucore(
+pub(super) fn format_via_uucore(
     format_string: &str,
     args: impl Iterator<Item = impl Into<OsString>>,
     mut writer: impl Write,
@@ -150,7 +104,7 @@ fn format_via_uucore(
     Ok(())
 }
 
-fn parse_format_string(
+pub(super) fn parse_format_string(
     format_string: &str,
 ) -> Result<Vec<format::FormatItem<format::EscapedChar>>, brush_core::Error> {
     let format_items: Result<Vec<_>, _> =
@@ -161,6 +115,36 @@ fn parse_format_string(
         .map_err(|e| ErrorKind::PrintfInvalidUsage(format!("printf parsing error: {e}")))?;
 
     Ok(format_items)
+}
+
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &PrintfCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if let Some(variable_name) = &command.output_variable {
+        // Format to a u8 vector.
+        let mut result: Vec<u8> = vec![];
+        format(command.format_and_args.as_slice(), &mut result)?;
+
+        // Convert to a string.
+        let result_str = String::from_utf8(result).map_err(|_| {
+            brush_core::ErrorKind::PrintfInvalidUsage("invalid UTF-8 output".into())
+        })?;
+
+        // Assign to the selected variable.
+        expansion::assign_to_named_parameter(
+            context.shell,
+            &context.params,
+            variable_name,
+            result_str,
+        )
+        .await?;
+    } else {
+        format(command.format_and_args.as_slice(), context.stdout())?;
+        context.stdout().flush()?;
+    }
+
+    Ok(ExecutionResult::success())
 }
 
 #[cfg(test)]

@@ -1,80 +1,17 @@
-use clap::Parser;
-use std::{fmt::Display, io::Write, path::Path};
+//! The `command` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(CommandCommand);
 
 use brush_core::{
-    ExecutionResult, builtins, commands, pathsearch,
+    ExecutionResult, commands, pathsearch,
     sys::{self, fs::PathExt},
 };
+use std::{fmt::Display, io::Write, path::Path};
 
-/// Directly invokes an external command, without going through typical search order.
-#[derive(Default, Parser)]
-pub(crate) struct CommandCommand {
-    /// Use default PATH value.
-    #[arg(short = 'p')]
-    pub use_default_path: bool,
+impl CommandCommand {}
 
-    /// Display a short description of the command.
-    #[arg(short = 'v')]
-    pub print_description: bool,
-
-    /// Display a more verbose description of the command.
-    #[arg(short = 'V')]
-    pub print_verbose_description: bool,
-
-    /// Command and arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    pub command_and_args: Vec<String>,
-}
-
-impl CommandCommand {
-    fn command(&self) -> Option<&str> {
-        self.command_and_args.first().map(|s| s.as_str())
-    }
-}
-
-impl builtins::Command for CommandCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        // Silently exit if no command was provided.
-        if let Some(command_name) = self.command() {
-            if self.print_description || self.print_verbose_description {
-                if let Some(found_cmd) =
-                    Self::try_find_command(context.shell, command_name, self.use_default_path)
-                {
-                    if self.print_description {
-                        writeln!(context.stdout(), "{found_cmd}")?;
-                    } else {
-                        match found_cmd {
-                            FoundCommand::Builtin(_name) => {
-                                writeln!(context.stdout(), "{command_name} is a shell builtin")?;
-                            }
-                            FoundCommand::External(path) => {
-                                writeln!(context.stdout(), "{command_name} is {path}")?;
-                            }
-                        }
-                    }
-                    Ok(ExecutionResult::success())
-                } else {
-                    if self.print_verbose_description {
-                        writeln!(context.stderr(), "command: {command_name}: not found")?;
-                    }
-                    Ok(ExecutionResult::general_error())
-                }
-            } else {
-                self.execute_command(context, command_name, self.use_default_path)
-                    .await
-            }
-        } else {
-            Ok(ExecutionResult::success())
-        }
-    }
-}
-
-enum FoundCommand {
+pub(super) enum FoundCommand {
     Builtin(String),
     External(String),
 }
@@ -156,5 +93,46 @@ impl CommandCommand {
         let wait_result = spawn_result.wait().await?;
 
         Ok(wait_result.into())
+    }
+}
+
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &CommandCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    // Silently exit if no command was provided.
+    if let Some(command_name) = command.command_and_args.first().map(|s| s.as_str()) {
+        if command.print_description || command.print_verbose_description {
+            if let Some(found_cmd) = CommandCommand::try_find_command(
+                context.shell,
+                command_name,
+                command.use_default_path,
+            ) {
+                if command.print_description {
+                    writeln!(context.stdout(), "{found_cmd}")?;
+                } else {
+                    match found_cmd {
+                        FoundCommand::Builtin(_name) => {
+                            writeln!(context.stdout(), "{command_name} is a shell builtin")?;
+                        }
+                        FoundCommand::External(path) => {
+                            writeln!(context.stdout(), "{command_name} is {path}")?;
+                        }
+                    }
+                }
+                Ok(ExecutionResult::success())
+            } else {
+                if command.print_verbose_description {
+                    writeln!(context.stderr(), "command: {command_name}: not found")?;
+                }
+                Ok(ExecutionResult::general_error())
+            }
+        } else {
+            command
+                .execute_command(context, command_name, command.use_default_path)
+                .await
+        }
+    } else {
+        Ok(ExecutionResult::success())
     }
 }

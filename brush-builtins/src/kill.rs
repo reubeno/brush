@@ -1,135 +1,13 @@
-use clap::Parser;
-use std::io::Write;
+//! The `kill` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(KillCommand);
 
 use brush_core::traps::TrapSignal;
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
+use brush_core::{ExecutionExitCode, ExecutionResult, sys};
+use std::io::Write;
 
-/// Signal a job or process.
-#[derive(Parser)]
-pub(crate) struct KillCommand {
-    /// Name of the signal to send.
-    #[arg(short = 's', value_name = "SIG_NAME")]
-    signal_name: Option<String>,
-
-    /// Number of the signal to send.
-    #[arg(short = 'n', value_name = "SIG_NUM")]
-    signal_number: Option<usize>,
-
-    //
-    // TODO(kill): implement -sigspec syntax
-    /// List known signal names.
-    #[arg(short = 'l', short_alias = 'L')]
-    list_signals: bool,
-
-    // Interpretation of these depends on whether -l is present.
-    #[arg(allow_hyphen_values = true)]
-    args: Vec<String>,
-}
-
-impl builtins::Command for KillCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        // Default signal is SIGKILL.
-        let mut trap_signal = TrapSignal::Signal(nix::sys::signal::Signal::SIGKILL);
-
-        // Try parsing the signal name (if specified).
-        if let Some(signal_name) = &self.signal_name {
-            if let Ok(parsed_trap_signal) = TrapSignal::try_from(signal_name.as_str()) {
-                trap_signal = parsed_trap_signal;
-            } else {
-                writeln!(
-                    context.stderr(),
-                    "{}: invalid signal name: {}",
-                    context.command_name,
-                    signal_name
-                )?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
-            }
-        }
-
-        // Try parsing the signal number (if specified).
-        if let Some(signal_number) = &self.signal_number {
-            #[expect(clippy::cast_possible_truncation)]
-            #[expect(clippy::cast_possible_wrap)]
-            if let Ok(parsed_trap_signal) = TrapSignal::try_from(*signal_number as i32) {
-                trap_signal = parsed_trap_signal;
-            } else {
-                writeln!(
-                    context.stderr(),
-                    "{}: invalid signal number: {}",
-                    context.command_name,
-                    signal_number
-                )?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
-            }
-        }
-
-        // Look through the remaining args for a pid/job spec or a -sigspec style option.
-        let mut pid_or_job_spec = None;
-        for arg in &self.args {
-            if let Some(possible_sigspec) = arg.strip_prefix("-") {
-                // See if this is -sigspec syntax. The sigspec may be a signal name
-                // (e.g., -TERM) or a signal number (e.g., -9).
-                if let Ok(parsed_trap_signal) = possible_sigspec.parse::<TrapSignal>() {
-                    trap_signal = parsed_trap_signal;
-                } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {}: invalid signal specification",
-                        context.command_name,
-                        possible_sigspec
-                    )?;
-                    return Ok(ExecutionResult::general_error());
-                }
-            } else if pid_or_job_spec.is_none() {
-                pid_or_job_spec = Some(arg);
-            } else {
-                writeln!(
-                    context.stderr(),
-                    "{}: too many jobs or processes specified",
-                    context.command_name
-                )?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
-            }
-        }
-
-        if self.list_signals {
-            return print_signals(&context, self.args.as_ref());
-        } else {
-            let Some(pid_or_job_spec) = pid_or_job_spec else {
-                writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
-            };
-
-            if pid_or_job_spec.starts_with('%') {
-                // It's a job spec.
-                if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
-                    job.kill(trap_signal)?;
-                } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {}: no such job",
-                        context.command_name,
-                        pid_or_job_spec
-                    )?;
-                    return Ok(ExecutionResult::general_error());
-                }
-            } else {
-                let pid = brush_core::int_utils::parse(pid_or_job_spec.as_str(), 10)?;
-
-                // It's a pid.
-                sys::signal::kill_process(pid, trap_signal)?;
-            }
-        }
-        Ok(ExecutionResult::success())
-    }
-}
-
-fn print_signals(
+pub(super) fn print_signals(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     signals: &[String],
 ) -> Result<ExecutionResult, brush_core::Error> {
@@ -176,4 +54,104 @@ fn print_signals(
     }
 
     Ok(exit_code)
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &KillCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    // Default signal is SIGKILL.
+    let mut trap_signal = TrapSignal::Signal(nix::sys::signal::Signal::SIGKILL);
+
+    // Try parsing the signal name (if specified).
+    if let Some(signal_name) = &command.signal_name {
+        if let Ok(parsed_trap_signal) = TrapSignal::try_from(signal_name.as_str()) {
+            trap_signal = parsed_trap_signal;
+        } else {
+            writeln!(
+                context.stderr(),
+                "{}: invalid signal name: {}",
+                context.command_name,
+                signal_name
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+    }
+
+    // Try parsing the signal number (if specified).
+    if let Some(signal_number) = &command.signal_number {
+        #[expect(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_wrap)]
+        if let Ok(parsed_trap_signal) = TrapSignal::try_from(*signal_number as i32) {
+            trap_signal = parsed_trap_signal;
+        } else {
+            writeln!(
+                context.stderr(),
+                "{}: invalid signal number: {}",
+                context.command_name,
+                signal_number
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+    }
+
+    // Look through the remaining args for a pid/job spec or a -sigspec style option.
+    let mut pid_or_job_spec = None;
+    for arg in &command.args {
+        if let Some(possible_sigspec) = arg.strip_prefix("-") {
+            // See if this is -sigspec syntax. The sigspec may be a signal name
+            // (e.g., -TERM) or a signal number (e.g., -9).
+            if let Ok(parsed_trap_signal) = possible_sigspec.parse::<TrapSignal>() {
+                trap_signal = parsed_trap_signal;
+            } else {
+                writeln!(
+                    context.stderr(),
+                    "{}: {}: invalid signal specification",
+                    context.command_name,
+                    possible_sigspec
+                )?;
+                return Ok(ExecutionResult::general_error());
+            }
+        } else if pid_or_job_spec.is_none() {
+            pid_or_job_spec = Some(arg);
+        } else {
+            writeln!(
+                context.stderr(),
+                "{}: too many jobs or processes specified",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+    }
+
+    if command.list_signals {
+        return print_signals(&context, command.args.as_ref());
+    } else {
+        let Some(pid_or_job_spec) = pid_or_job_spec else {
+            writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        };
+
+        if pid_or_job_spec.starts_with('%') {
+            // It's a job spec.
+            if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
+                job.kill(trap_signal)?;
+            } else {
+                writeln!(
+                    context.stderr(),
+                    "{}: {}: no such job",
+                    context.command_name,
+                    pid_or_job_spec
+                )?;
+                return Ok(ExecutionResult::general_error());
+            }
+        } else {
+            let pid = brush_core::int_utils::parse(pid_or_job_spec.as_str(), 10)?;
+
+            // It's a pid.
+            sys::signal::kill_process(pid, trap_signal)?;
+        }
+    }
+    Ok(ExecutionResult::success())
 }

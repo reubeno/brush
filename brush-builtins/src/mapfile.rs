@@ -1,119 +1,10 @@
+//! The `mapfile` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(MapFileCommand);
+
+use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, env, error, variables};
 use std::io::{Read, Write};
-
-use clap::Parser;
-
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
-
-/// Read lines from standard input into an indexed array variable.
-#[derive(Parser)]
-pub(crate) struct MapFileCommand {
-    /// Delimiter to use (defaults to newline).
-    #[arg(short = 'd')]
-    delimiter: Option<String>,
-
-    /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default_value_t = 0)]
-    max_count: i64,
-
-    /// Index into array at which to start assignment.
-    #[arg(short = 'O', allow_hyphen_values = true)]
-    origin: Option<i64>,
-
-    /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
-    skip_count: i64,
-
-    /// Whether or not to remove the delimiter from each read line.
-    #[arg(short = 't')]
-    remove_delimiter: bool,
-
-    /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default_value_t = 0)]
-    fd: brush_core::ShellFd,
-
-    /// Name of function to call for each group of lines.
-    #[arg(short = 'C')]
-    callback: Option<String>,
-
-    /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000, value_parser = clap::value_parser!(i64).range(1..))]
-    callback_group_size: i64,
-
-    /// Name of array to read into.
-    #[arg(default_value = "MAPFILE")]
-    array_var_name: String,
-}
-
-impl builtins::Command for MapFileCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.callback_group_size != 5000 || self.callback.is_some() {
-            return error::unimp("mapfile -C/-c is not yet implemented");
-        }
-
-        if let Some(origin) = self.origin {
-            if origin < 0 {
-                writeln!(
-                    context.stderr(),
-                    "{}: {origin}: invalid array origin",
-                    context.command_name
-                )?;
-                return Ok(ExecutionExitCode::GeneralError.into());
-            }
-        }
-
-        if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
-            if var.value().is_associative_array() {
-                writeln!(
-                    context.stderr(),
-                    "{}: {}: not an indexed array",
-                    context.command_name,
-                    self.array_var_name
-                )?;
-                return Ok(ExecutionExitCode::GeneralError.into());
-            }
-        }
-
-        let input_file = context
-            .try_fd(self.fd)
-            .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
-
-        // Read!
-        let results = self.read_entries(input_file)?;
-
-        if let Some(origin) = self.origin {
-            // -O: preserve existing array, assign at offset.
-            for (elem_idx, (_key, value)) in results.0.into_iter().enumerate() {
-                // If the user is getting to wraparounds in *bash*, they got bigger problems.
-                #[allow(clippy::cast_possible_wrap)]
-                let elem_idx = elem_idx as i64;
-                context.shell.env_mut().update_or_add_array_element(
-                    &self.array_var_name,
-                    (elem_idx + origin).to_string(),
-                    value,
-                    |_| Ok(()),
-                    env::EnvironmentLookup::Anywhere,
-                    env::EnvironmentScope::Global,
-                )?;
-            }
-        } else {
-            // No -O: replace the entire variable (clears existing).
-            context.shell.env_mut().update_or_add(
-                &self.array_var_name,
-                variables::ShellValueLiteral::Array(results),
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-        }
-
-        Ok(ExecutionResult::success())
-    }
-}
 
 impl MapFileCommand {
     fn read_entries(
@@ -177,7 +68,7 @@ impl MapFileCommand {
     }
 }
 
-fn setup_terminal_settings(
+pub(super) fn setup_terminal_settings(
     file: &brush_core::openfiles::OpenFile,
 ) -> Result<Option<brush_core::terminal::AutoModeGuard>, brush_core::Error> {
     let mode = brush_core::terminal::AutoModeGuard::new(file.to_owned()).ok();
@@ -191,4 +82,72 @@ fn setup_terminal_settings(
     }
 
     Ok(mode)
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &MapFileCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.callback_group_size != 5000 || command.callback.is_some() {
+        return error::unimp("mapfile -C/-c is not yet implemented");
+    }
+
+    if let Some(origin) = command.origin {
+        if origin < 0 {
+            writeln!(
+                context.stderr(),
+                "{}: {origin}: invalid array origin",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::GeneralError.into());
+        }
+    }
+
+    if let Some((_, var)) = context.shell.env().get(&command.array_var_name) {
+        if var.value().is_associative_array() {
+            writeln!(
+                context.stderr(),
+                "{}: {}: not an indexed array",
+                context.command_name,
+                command.array_var_name
+            )?;
+            return Ok(ExecutionExitCode::GeneralError.into());
+        }
+    }
+
+    let input_file = context
+        .try_fd(command.fd)
+        .ok_or_else(|| ErrorKind::BadFileDescriptor(command.fd))?;
+
+    // Read!
+    let results = command.read_entries(input_file)?;
+
+    if let Some(origin) = command.origin {
+        // -O: preserve existing array, assign at offset.
+        for (elem_idx, (_key, value)) in results.0.into_iter().enumerate() {
+            // If the user is getting to wraparounds in *bash*, they got bigger problems.
+            #[allow(clippy::cast_possible_wrap)]
+            let elem_idx = elem_idx as i64;
+            context.shell.env_mut().update_or_add_array_element(
+                &command.array_var_name,
+                (elem_idx + origin).to_string(),
+                value,
+                |_| Ok(()),
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+        }
+    } else {
+        // No -O: replace the entire variable (clears existing).
+        context.shell.env_mut().update_or_add(
+            &command.array_var_name,
+            variables::ShellValueLiteral::Array(results),
+            |_| Ok(()),
+            env::EnvironmentLookup::Anywhere,
+            env::EnvironmentScope::Global,
+        )?;
+    }
+
+    Ok(ExecutionResult::success())
 }

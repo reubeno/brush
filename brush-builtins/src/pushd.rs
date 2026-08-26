@@ -1,45 +1,31 @@
-use clap::Parser;
+//! The `pushd` builtin.
 
-use brush_core::{ExecutionResult, builtins};
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(PushdCommand);
 
-/// Push a path onto the current directory stack.
-#[derive(Parser)]
-pub(crate) struct PushdCommand {
-    /// Push the path without changing the current working directory.
-    #[clap(short = 'n')]
-    no_directory_change: bool,
+use brush_core::ExecutionResult;
 
-    /// Directory to push on the directory stack.
-    dir: String,
-    //
-    // TODO(pushd): implement +N and -N
-}
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &PushdCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.no_directory_change {
+        context
+            .shell
+            .directory_stack_mut()
+            .push(std::path::PathBuf::from(&command.dir));
+    } else {
+        let prev_working_dir = context.shell.working_dir().to_path_buf();
 
-impl builtins::Command for PushdCommand {
-    type Error = brush_core::Error;
+        let dir = std::path::Path::new(&command.dir);
+        context.shell.set_working_dir(dir)?;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.no_directory_change {
-            context
-                .shell
-                .directory_stack_mut()
-                .push(std::path::PathBuf::from(&self.dir));
-        } else {
-            let prev_working_dir = context.shell.working_dir().to_path_buf();
-
-            let dir = std::path::Path::new(&self.dir);
-            context.shell.set_working_dir(dir)?;
-
-            context.shell.directory_stack_mut().push(prev_working_dir);
-        }
-
-        // Display dirs.
-        let dirs_cmd = crate::dirs::DirsCommand::default();
-        dirs_cmd.execute(context).await?;
-
-        Ok(ExecutionResult::success())
+        context.shell.directory_stack_mut().push(prev_working_dir);
     }
+
+    // Display dirs.
+    let dirs_cmd = crate::dirs::DirsCommand::default();
+    brush_core::builtins::Command::execute(&dirs_cmd, context).await?;
+
+    Ok(ExecutionResult::success())
 }

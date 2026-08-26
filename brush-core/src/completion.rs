@@ -1,6 +1,5 @@
 //! Implements programmable command completion support.
 
-use clap::ValueEnum;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -18,109 +17,121 @@ use crate::{
 use brush_parser::unquote_str;
 
 /// Type of action to take to generate completion candidates.
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "parser-clap", derive(clap::ValueEnum))]
+#[cfg_attr(
+    feature = "parser-usage",
+    derive(usage::ValueEnum),
+    usage(rename_all = "lowercase")
+)]
 pub enum CompleteAction {
     /// Complete with valid aliases.
-    #[clap(name = "alias")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "alias"))]
     Alias,
     /// Complete with names of array shell variables.
-    #[clap(name = "arrayvar")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "arrayvar"))]
     ArrayVar,
     /// Complete with names of key bindings.
-    #[clap(name = "binding")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "binding"))]
     Binding,
     /// Complete with names of shell builtins.
-    #[clap(name = "builtin")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "builtin"))]
     Builtin,
     /// Complete with names of executable commands.
-    #[clap(name = "command")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "command"))]
     Command,
     /// Complete with directory names.
-    #[clap(name = "directory")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "directory"))]
     Directory,
     /// Complete with names of disabled shell builtins.
-    #[clap(name = "disabled")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "disabled"))]
     Disabled,
     /// Complete with names of enabled shell builtins.
-    #[clap(name = "enabled")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "enabled"))]
     Enabled,
     /// Complete with names of exported shell variables.
-    #[clap(name = "export")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "export"))]
     Export,
     /// Complete with filenames.
-    #[clap(name = "file")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "file"))]
     File,
     /// Complete with names of shell functions.
-    #[clap(name = "function")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "function"))]
     Function,
     /// Complete with valid user groups.
-    #[clap(name = "group")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "group"))]
     Group,
     /// Complete with names of valid shell help topics.
-    #[clap(name = "helptopic")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "helptopic"))]
     HelpTopic,
     /// Complete with the system's hostname(s).
-    #[clap(name = "hostname")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "hostname"))]
     HostName,
     /// Complete with the command names of shell-managed jobs.
-    #[clap(name = "job")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "job"))]
     Job,
     /// Complete with valid shell keywords.
-    #[clap(name = "keyword")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "keyword"))]
     Keyword,
     /// Complete with the command names of running shell-managed jobs.
-    #[clap(name = "running")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "running"))]
     Running,
     /// Complete with names of system services.
-    #[clap(name = "service")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "service"))]
     Service,
     /// Complete with the names of options settable via shopt.
-    #[clap(name = "setopt")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "setopt"))]
     SetOpt,
     /// Complete with the names of options settable via set -o.
-    #[clap(name = "shopt")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "shopt"))]
     ShOpt,
     /// Complete with the names of trappable signals.
-    #[clap(name = "signal")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "signal"))]
     Signal,
     /// Complete with the command names of stopped shell-managed jobs.
-    #[clap(name = "stopped")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "stopped"))]
     Stopped,
     /// Complete with valid usernames.
-    #[clap(name = "user")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "user"))]
     User,
     /// Complete with names of shell variables.
-    #[clap(name = "variable")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "variable"))]
     Variable,
 }
 
 /// Options influencing how command completions are generated.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(feature = "parser-clap", derive(clap::ValueEnum))]
+#[cfg_attr(
+    feature = "parser-usage",
+    derive(usage::ValueEnum),
+    usage(rename_all = "lowercase")
+)]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
-    #[clap(name = "bashdefault")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "bashdefault"))]
     BashDefault,
     /// Use default filename completion if no completions are generated.
-    #[clap(name = "default")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "default"))]
     Default,
     /// Treat completions as directory names.
-    #[clap(name = "dirnames")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "dirnames"))]
     DirNames,
     /// Treat completions as filenames.
-    #[clap(name = "filenames")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "filenames"))]
     FileNames,
     /// Suppress default auto-quotation of completions.
-    #[clap(name = "noquote")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "noquote"))]
     NoQuote,
     /// Do not sort completions.
-    #[clap(name = "nosort")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "nosort"))]
     NoSort,
     /// Do not append a trailing space to completions at the end of the input line.
-    #[clap(name = "nospace")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "nospace"))]
     NoSpace,
     /// Also generate directory completions.
-    #[clap(name = "plusdirs")]
+    #[cfg_attr(feature = "parser-clap", clap(name = "plusdirs"))]
     PlusDirs,
 }
 
@@ -289,7 +300,7 @@ impl Spec {
     ///
     /// * `shell` - The shell instance to use for completion generation.
     /// * `context` - The context in which completion is being generated.
-    #[expect(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
@@ -453,7 +464,7 @@ impl Spec {
         Ok(Answer::Candidates(candidates, processing_options))
     }
 
-    #[expect(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines)]
     async fn generate_action_completions(
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
@@ -1009,7 +1020,7 @@ impl Config {
     /// * `shell` - The shell instance to use for completion generation.
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
-    #[expect(clippy::string_slice)]
+    #[allow(clippy::string_slice)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
@@ -1527,6 +1538,10 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::items_after_test_module,
+    reason = "impls below serve the enums above"
+)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_matches;
@@ -1687,5 +1702,57 @@ mod tests {
                 },
             ]
         );
+    }
+}
+
+impl std::str::FromStr for CompleteOption {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "default" => Ok(Self::Default),
+            "bash-default" | "bashdefault" => Ok(Self::BashDefault),
+            "dir-names" | "dirnames" => Ok(Self::DirNames),
+            "file-names" | "filenames" => Ok(Self::FileNames),
+            "no-quote" | "noquote" => Ok(Self::NoQuote),
+            "no-sort" | "nosort" => Ok(Self::NoSort),
+            "no-space" | "nospace" => Ok(Self::NoSpace),
+            "plus-dirs" | "plusdirs" => Ok(Self::PlusDirs),
+            _ => Err(format!("invalid completion option: {s}")),
+        }
+    }
+}
+
+impl std::str::FromStr for CompleteAction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "alias" => Ok(Self::Alias),
+            "arrayvar" => Ok(Self::ArrayVar),
+            "binding" => Ok(Self::Binding),
+            "builtin" => Ok(Self::Builtin),
+            "command" => Ok(Self::Command),
+            "directory" => Ok(Self::Directory),
+            "disabled" => Ok(Self::Disabled),
+            "enabled" => Ok(Self::Enabled),
+            "export" => Ok(Self::Export),
+            "file" => Ok(Self::File),
+            "function" => Ok(Self::Function),
+            "group" => Ok(Self::Group),
+            "helptopic" => Ok(Self::HelpTopic),
+            "hostname" => Ok(Self::HostName),
+            "job" => Ok(Self::Job),
+            "keyword" => Ok(Self::Keyword),
+            "running" => Ok(Self::Running),
+            "service" => Ok(Self::Service),
+            "setopt" => Ok(Self::SetOpt),
+            "shopt" => Ok(Self::ShOpt),
+            "signal" => Ok(Self::Signal),
+            "stopped" => Ok(Self::Stopped),
+            "user" => Ok(Self::User),
+            "variable" => Ok(Self::Variable),
+            _ => Err(format!("invalid completion action: {s}")),
+        }
     }
 }

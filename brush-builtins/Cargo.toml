@@ -14,7 +14,15 @@ rust-version.workspace = true
 bench = false
 
 [features]
+# N.B. Exactly one builtin argument-parsing engine is selected per build.
+# clap remains an unconditional dependency until the migration completes;
+# bpaf/usage deps attach to their features as their bindings land.
+parser-clap = ['brush-core/parser-clap']
+parser-bpaf = ['dep:bpaf', 'brush-core/parser-bpaf']
+parser-usage = ['dep:usage', 'brush-core/parser-usage']
+
 default = [
+    'parser-clap',
     'builtin.alias',
     'builtin.bg',
     'builtin.bind',
@@ -133,6 +141,8 @@ brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
 chrono = "0.4.44"
 clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
+usage = { package = "usage-rs", version = "6", optional = true }
+bpaf = { version = "0.9.27", features = ["derive", "bright-color"], optional = true }
 fancy-regex = "0.19.0"
 itertools = "0.14.0"
 strum = "0.28.0"
@@ -171,3 +181,11 @@ procfs = "0.18.0"
 [dev-dependencies]
 anyhow = "1.0.102"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+
+# N.B. With all parser-engine features enabled simultaneously, the engine
+# selection in this crate compiles only the priority winner's argument modules,
+# so the losing engines' optional dependencies legitimately go unused from
+# cargo-udeps' point of view. Ignore them here rather than weakening the
+# blanket `--all-features` check.
+[package.metadata.cargo-udeps.ignore]
+normal = ["bpaf"]

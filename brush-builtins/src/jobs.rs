@@ -1,61 +1,10 @@
-use clap::Parser;
+//! The `jobs` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(JobsCommand);
+
+use brush_core::{ExecutionResult, error, jobs};
 use std::io::Write;
-
-use brush_core::{ExecutionResult, builtins, error, jobs};
-
-/// Manage jobs.
-#[derive(Parser)]
-pub(crate) struct JobsCommand {
-    /// Also show process IDs.
-    #[arg(short = 'l')]
-    also_show_pids: bool,
-
-    /// List only jobs that have changed status since the last notification.
-    #[arg(short = 'n')]
-    list_changed_only: bool,
-
-    /// Show only process IDs.
-    #[arg(short = 'p')]
-    show_pids_only: bool,
-
-    /// Show only running jobs.
-    #[arg(short = 'r')]
-    running_jobs_only: bool,
-
-    /// Show only stopped jobs.
-    #[arg(short = 's')]
-    stopped_jobs_only: bool,
-
-    /// Job specs to list.
-    // TODO(jobs): Add -x option
-    job_specs: Vec<String>,
-}
-
-impl builtins::Command for JobsCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.also_show_pids {
-            return error::unimp("jobs -l");
-        }
-        if self.list_changed_only {
-            return error::unimp("jobs -n");
-        }
-
-        if self.job_specs.is_empty() {
-            for job in &context.shell.jobs().jobs {
-                self.display_job(&context, job)?;
-            }
-        } else {
-            return error::unimp("jobs with job specs");
-        }
-
-        Ok(ExecutionResult::success())
-    }
-}
 
 impl JobsCommand {
     fn display_job(
@@ -80,4 +29,27 @@ impl JobsCommand {
 
         Ok(())
     }
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &JobsCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.also_show_pids {
+        return error::unimp("jobs -l");
+    }
+    if command.list_changed_only {
+        return error::unimp("jobs -n");
+    }
+
+    if command.job_specs.is_empty() {
+        for job in &context.shell.jobs().jobs {
+            command.display_job(&context, job)?;
+        }
+    } else {
+        return error::unimp("jobs with job specs");
+    }
+
+    Ok(ExecutionResult::success())
 }

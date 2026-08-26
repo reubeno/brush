@@ -1,155 +1,32 @@
-use clap::Parser;
+//! The `read` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(ReadCommand);
+
+use brush_core::{ErrorKind, env, error, variables};
 use itertools::Itertools;
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
-
-use brush_core::{ErrorKind, builtins, env, error, variables};
-
 use std::io::{Read, Write};
+use std::time::{Duration, Instant};
 
 /// Exit code returned when `read` times out.
 /// This is 128 + SIGALRM (14) = 142, matching bash behavior.
-const TIMEOUT_EXIT_CODE: u8 = 142;
+pub(super) const TIMEOUT_EXIT_CODE: u8 = 142;
 
 /// ASCII control character for Ctrl+C (ETX - End of Text).
-const CTRL_C: char = '\x03';
+pub(super) const CTRL_C: char = '\x03';
+
 /// ASCII control character for Ctrl+D (EOT - End of Transmission).
-const CTRL_D: char = '\x04';
+pub(super) const CTRL_D: char = '\x04';
+
 /// Backslash character used for escape processing.
-const BACKSLASH: char = '\\';
+pub(super) const BACKSLASH: char = '\\';
+
 /// Default line delimiter (newline).
-const DEFAULT_DELIMITER: char = '\n';
+pub(super) const DEFAULT_DELIMITER: char = '\n';
+
 /// NUL character used as delimiter when `-d ''` is specified.
-const NUL_DELIMITER: char = '\0';
-
-/// Parse standard input.
-#[derive(Parser)]
-pub(crate) struct ReadCommand {
-    /// Optionally, name of an array variable to receive read words
-    /// of input.
-    #[clap(short = 'a', value_name = "VAR_NAME")]
-    array_variable: Option<String>,
-
-    /// Optionally, a delimiter to use other than a newline character.
-    #[clap(short = 'd')]
-    delimiter: Option<String>,
-
-    /// Use readline-like input.
-    #[clap(short = 'e')]
-    use_readline: bool,
-
-    /// Provide text to use as initial input for readline.
-    #[clap(short = 'i', value_name = "STR")]
-    initial_text: Option<String>,
-
-    /// Read only the first N characters or until a specified
-    /// delimiter is reached, whichever happens first.
-    #[clap(short = 'n', value_name = "COUNT")]
-    return_after_n_chars: Option<usize>,
-
-    /// Read exactly N characters, ignoring any specified delimiter.
-    #[clap(short = 'N', value_name = "COUNT")]
-    return_after_n_chars_no_delimiter: Option<usize>,
-
-    /// Prompt to display before reading.
-    #[clap(short = 'p')]
-    prompt: Option<String>,
-
-    /// Read input in raw mode; no escape sequences.
-    #[clap(short = 'r')]
-    raw_mode: bool,
-
-    /// Do not echo input.
-    #[clap(short = 's')]
-    silent: bool,
-
-    /// Specify timeout in seconds; fail if the timeout elapses before
-    /// input is completed.
-    #[clap(short = 't', value_name = "SECONDS", allow_hyphen_values = true)]
-    timeout_in_seconds: Option<f64>,
-
-    /// File descriptor to read from instead of stdin.
-    #[clap(short = 'u', name = "FD")]
-    fd_num_to_read: Option<u8>,
-
-    /// Optionally, names of variables to receive read input.
-    variable_names: Vec<String>,
-}
-
-impl builtins::Command for ReadCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.use_readline {
-            return error::unimp("read -e");
-        }
-        if self.initial_text.is_some() {
-            return error::unimp("read -i");
-        }
-
-        // Validate timeout value if provided.
-        if let Some(result) = self.validate_timeout(&context)? {
-            return Ok(result);
-        }
-
-        // Find the input stream to use.
-        let fd_num = self.fd_num_to_read.map_or(
-            brush_core::openfiles::OpenFiles::STDIN_FD,
-            brush_core::ShellFd::from,
-        );
-
-        // Retrieve the file.
-        let input_stream = context
-            .try_fd(fd_num)
-            .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
-
-        // Retrieve effective value of IFS for splitting.
-        // We convert to owned String to release the borrow before the mutable borrow
-        // needed for variable assignment.
-        let ifs = context.shell.ifs().into_owned();
-
-        // Convert timeout to Duration.
-        let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
-
-        // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
-
-        // Determine whether to skip IFS splitting (for -N option).
-        let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
-
-        // Extract the input line and determine exit code based on result.
-        let (input_line, result) = match &read_result {
-            ReadResult::Line(line) => (Some(line.clone()), brush_core::ExecutionResult::success()),
-            ReadResult::Eof(Some(line)) => (
-                Some(line.clone()),
-                brush_core::ExecutionResult::general_error(),
-            ),
-            ReadResult::Eof(None) | ReadResult::Interrupted | ReadResult::InputNotReady => {
-                (None, brush_core::ExecutionResult::general_error())
-            }
-            ReadResult::TimedOut(partial) => (
-                partial.clone(),
-                brush_core::ExecutionResult::new(TIMEOUT_EXIT_CODE),
-            ),
-            ReadResult::InputReady => (None, brush_core::ExecutionResult::success()),
-        };
-
-        // Assign input to variables based on options.
-        assign_input_to_variables(
-            context.shell,
-            input_line.as_deref(),
-            &ifs,
-            skip_ifs_splitting,
-            self.array_variable.as_deref(),
-            &self.variable_names,
-        )?;
-
-        Ok(result)
-    }
-}
+pub(super) const NUL_DELIMITER: char = '\0';
 
 /// Assigns read input to shell variables based on the specified options.
 ///
@@ -157,7 +34,7 @@ impl builtins::Command for ReadCommand {
 /// - Array mode (`-a`): Split input by IFS and assign to array elements
 /// - Named variables: Split input by IFS and assign to each variable, with remainder to last
 /// - Default (`REPLY`): Assign entire input line to the `REPLY` variable
-fn assign_input_to_variables(
+pub(super) fn assign_input_to_variables(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     input_line: Option<&str>,
     ifs: &str,
@@ -193,7 +70,7 @@ fn assign_input_to_variables(
 /// Fields are assigned one per variable, with any remaining fields joined by space
 /// and assigned to the last variable. If there are more variables than fields,
 /// the extra variables are set to empty strings.
-fn assign_to_named_variables(
+pub(super) fn assign_to_named_variables(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     input_line: Option<&str>,
     ifs: &str,
@@ -231,7 +108,7 @@ fn assign_to_named_variables(
 }
 
 /// Builds array field values from input, optionally splitting by IFS.
-fn build_array_fields(
+pub(super) fn build_array_fields(
     input_line: Option<&str>,
     ifs: &str,
     skip_ifs_splitting: bool,
@@ -250,7 +127,7 @@ fn build_array_fields(
 }
 
 /// Builds field values from input for assignment to named variables.
-fn build_variable_fields(
+pub(super) fn build_variable_fields(
     input_line: Option<&str>,
     ifs: &str,
     skip_ifs_splitting: bool,
@@ -270,7 +147,7 @@ fn build_variable_fields(
 ///
 /// This enum clearly represents all possible outcomes of `read_line()`,
 /// making the contract with callers explicit.
-enum ReadResult {
+pub(super) enum ReadResult {
     /// Successfully read a complete line (delimiter or char limit reached).
     Line(String),
     /// Reached end of input. Contains any partial content read before EOF.
@@ -289,7 +166,7 @@ enum ReadResult {
 ///
 /// This separates the concerns of character-level I/O with timeout handling from the
 /// higher-level logic of line building and escape processing.
-struct InputReader {
+pub(super) struct InputReader {
     /// The input source.
     input: brush_core::openfiles::OpenFile,
     /// Optional deadline for timeout.
@@ -312,7 +189,7 @@ struct InputReader {
 }
 
 /// Events that can occur when reading input.
-enum InputEvent {
+pub(super) enum InputEvent {
     /// A regular character was read.
     Char(char),
     /// End of file was reached.
@@ -380,7 +257,7 @@ impl InputReader {
 }
 
 /// Configuration for line reading behavior.
-struct LineReaderConfig {
+pub(super) struct LineReaderConfig {
     /// Character that terminates input (None for -N mode).
     delimiter: Option<char>,
     /// Maximum characters to read (for -n or -N).
@@ -398,7 +275,7 @@ struct LineReaderConfig {
 /// For example, with `-n 3` and input `a\bc` (4 bytes):
 /// - Bash processes: 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) → "abc"
 /// - The backslash is consumed but doesn't count toward the limit
-fn read_line_with_reader(
+pub(super) fn read_line_with_reader(
     reader: &mut InputReader,
     config: &LineReaderConfig,
 ) -> Result<ReadResult, brush_core::Error> {
@@ -617,7 +494,11 @@ impl ReadCommand {
 /// * `ifs` - The IFS string (typically " \t\n")
 /// * `line` - The input line to split
 /// * `max_fields` - Optional limit on number of fields (for `read var1 var2`)
-fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeque<String> {
+pub(super) fn split_line_by_ifs(
+    ifs: &str,
+    line: &str,
+    max_fields: Option<usize>,
+) -> VecDeque<String> {
     let ifs_chars: Vec<char> = ifs.chars().collect();
 
     // Helper to check if a char is IFS whitespace (space, tab, or newline AND in IFS).
@@ -683,6 +564,78 @@ fn split_line_by_ifs(ifs: &str, line: &str, max_fields: Option<usize>) -> VecDeq
     }
 
     fields
+}
+
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &ReadCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.use_readline {
+        return error::unimp("read -e");
+    }
+    if command.initial_text.is_some() {
+        return error::unimp("read -i");
+    }
+
+    // Validate timeout value if provided.
+    if let Some(result) = command.validate_timeout(&context)? {
+        return Ok(result);
+    }
+
+    // Find the input stream to use.
+    let fd_num = command.fd_num_to_read.map_or(
+        brush_core::openfiles::OpenFiles::STDIN_FD,
+        brush_core::ShellFd::from,
+    );
+
+    // Retrieve the file.
+    let input_stream = context
+        .try_fd(fd_num)
+        .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+
+    // Retrieve effective value of IFS for splitting.
+    // We convert to owned String to release the borrow before the mutable borrow
+    // needed for variable assignment.
+    let ifs = context.shell.ifs().into_owned();
+
+    // Convert timeout to Duration.
+    let timeout = command.timeout_in_seconds.map(Duration::from_secs_f64);
+
+    // Perform the read operation (potentially with timeout).
+    let read_result = command.read_line(input_stream, context.stderr(), timeout)?;
+
+    // Determine whether to skip IFS splitting (for -N option).
+    let skip_ifs_splitting = command.return_after_n_chars_no_delimiter.is_some();
+
+    // Extract the input line and determine exit code based on result.
+    let (input_line, result) = match &read_result {
+        ReadResult::Line(line) => (Some(line.clone()), brush_core::ExecutionResult::success()),
+        ReadResult::Eof(Some(line)) => (
+            Some(line.clone()),
+            brush_core::ExecutionResult::general_error(),
+        ),
+        ReadResult::Eof(None) | ReadResult::Interrupted | ReadResult::InputNotReady => {
+            (None, brush_core::ExecutionResult::general_error())
+        }
+        ReadResult::TimedOut(partial) => (
+            partial.clone(),
+            brush_core::ExecutionResult::new(TIMEOUT_EXIT_CODE),
+        ),
+        ReadResult::InputReady => (None, brush_core::ExecutionResult::success()),
+    };
+
+    // Assign input to variables based on options.
+    assign_input_to_variables(
+        context.shell,
+        input_line.as_deref(),
+        &ifs,
+        skip_ifs_splitting,
+        command.array_variable.as_deref(),
+        &command.variable_names,
+    )?;
+
+    Ok(result)
 }
 
 #[cfg(test)]
