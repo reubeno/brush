@@ -8,6 +8,7 @@ use itertools::Itertools as _;
 use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
 use strum::IntoEnumIterator;
 use tokio::sync::Mutex;
+use super::BindError;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 
@@ -84,14 +85,6 @@ impl std::str::FromStr for BindKeyMap {
     }
 }
 
-impl brush_core::BuiltinError for BindError {}
-
-impl From<&BindError> for brush_core::ExecutionExitCode {
-    fn from(_: &BindError) -> Self {
-        Self::GeneralError
-    }
-}
-
 crate::impl_usage_parse!(BindCommand);
 
 impl FromArgs for BindCommand {
@@ -120,13 +113,6 @@ impl builtins::Command for BindCommand {
 }
 
 /// Errors that can occur while parsing bind arguments.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum BindError {
-    /// Unknown function specified.
-    #[error("unknown function: {0}")]
-    UnknownFunction(String),
-}
-
 impl brush_core::BuiltinError for BindError {}
 
 impl From<&BindError> for brush_core::ExecutionExitCode {
