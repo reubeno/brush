@@ -18,7 +18,10 @@ pub(crate) struct EchoCommand {
 
     /// Do not interpret backslash escapes in the provided text.
     // N.B. Parsed for parity with bash's `-E`; not yet consulted by execute.
-    #[expect(dead_code)]
+    // allow rather than expect: older toolchains (e.g. 1.88) consider the
+    // derive-written field live, newer ones treat it as dead, so a strict
+    // expectation cannot hold across the supported range.
+    #[allow(dead_code)]
     #[arg(short = 'E')]
     pub(super) no_interpret_backslash_escapes: bool,
 

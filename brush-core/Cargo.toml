@@ -92,3 +92,9 @@ uuid = { version = "1.23.1", features = ["js"] }
 anyhow = "1.0.102"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 tempfile = "3.27.0"
+
+# N.B. See brush-builtins/Cargo.toml: with every parser-engine feature enabled
+# at once, only the selected engine's bindings are compiled, so the others'
+# dependencies appear unused to cargo-udeps.
+[package.metadata.cargo-udeps.ignore]
+normal = ["bpaf"]
