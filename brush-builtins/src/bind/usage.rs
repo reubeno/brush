@@ -61,6 +61,37 @@ pub(crate) struct BindCommand {
     pub(super) key_sequence: Option<String>,
 }
 
+pub(crate) enum BindKeyMap {
+    EmacsStandard,
+    EmacsMeta,
+    EmacsCtlx,
+    ViCommand,
+    ViInsert,
+}
+
+impl std::str::FromStr for BindKeyMap {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "emacs-standard" | "emacs" => Ok(Self::EmacsStandard),
+            "emacs-meta" => Ok(Self::EmacsMeta),
+            "emacs-ctlx" => Ok(Self::EmacsCtlx),
+            "vi-command" | "vi" | "vi-move" => Ok(Self::ViCommand),
+            "vi-insert" => Ok(Self::ViInsert),
+            _ => Err(format!("invalid keymap: {s}")),
+        }
+    }
+}
+
+impl brush_core::BuiltinError for BindError {}
+
+impl From<&BindError> for brush_core::ExecutionExitCode {
+    fn from(_: &BindError) -> Self {
+        Self::GeneralError
+    }
+}
+
 crate::impl_usage_parse!(BindCommand);
 
 impl FromArgs for BindCommand {

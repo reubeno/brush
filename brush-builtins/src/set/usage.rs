@@ -10,6 +10,112 @@ use itertools::Itertools;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 use brush_core::args::{ArgsError, FromArgs};
 
+crate::usage_minus_or_plus_flag_arg!(
+    ExportVariablesOnModification,
+    'a',
+    "+a",
+    "Export variables on modification"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    NotifyJobTerminationImmediately,
+    'b',
+    "+b",
+    "Notify job termination immediately"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    ExitOnNonzeroCommandExit,
+    'e',
+    "+e",
+    "Exit on nonzero command exit"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    DisableFilenameGlobbing,
+    'f',
+    "+f",
+    "Disable filename globbing"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    RememberCommandLocations,
+    'h',
+    "+h",
+    "Remember command locations"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    PlaceAllAssignmentArgsInCommandEnv,
+    'k',
+    "+k",
+    "Place all assignment args in command environment"
+);
+crate::usage_minus_or_plus_flag_arg!(EnableJobControl, 'm', "+m", "Enable job control");
+crate::usage_minus_or_plus_flag_arg!(DoNotExecuteCommands, 'n', "+n", "Do not execute commands");
+crate::usage_minus_or_plus_flag_arg!(
+    RealEffectiveUidMismatch,
+    'p',
+    "+p",
+    "Real effective UID mismatch"
+);
+crate::usage_minus_or_plus_flag_arg!(ExitAfterOneCommand, 't', "+t", "Exit after one command");
+crate::usage_minus_or_plus_flag_arg!(
+    TreatUnsetVariablesAsError,
+    'u',
+    "+u",
+    "Treat unset variables as error"
+);
+crate::usage_minus_or_plus_flag_arg!(PrintShellInputLines, 'v', "+v", "Print shell input lines");
+crate::usage_minus_or_plus_flag_arg!(
+    PrintCommandsAndArguments,
+    'x',
+    "+x",
+    "Print commands and arguments"
+);
+crate::usage_minus_or_plus_flag_arg!(PerformBraceExpansion, 'B', "+B", "Perform brace expansion");
+crate::usage_minus_or_plus_flag_arg!(
+    DisallowOverwritingRegularFilesViaOutputRedirection,
+    'C',
+    "+C",
+    "Disallow overwriting regular files via output redirection"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    ShellFunctionsInheritErrTrap,
+    'E',
+    "+E",
+    "Shell functions inherit ERR trap"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    EnableBangStyleHistorySubstitution,
+    'H',
+    "+H",
+    "Enable bang style history substitution"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    DoNotResolveSymlinksWhenChangingDir,
+    'P',
+    "+P",
+    "Do not resolve symlinks when changing dir"
+);
+crate::usage_minus_or_plus_flag_arg!(
+    ShellFunctionsInheritDebugAndReturnTraps,
+    'T',
+    "+T",
+    "Shell functions inherit DEBUG and RETURN traps"
+);
+
+/// Sentinel bound to a bare `-o`/`+o` occurrence (a list-all request). Chosen to be
+/// unspellable from shell input so it can never collide with a real option name.
+const BARE_OPTION: &str = "\u{0}";
+
+#[derive(usage::Args)]
+pub(crate) struct SetOption {
+    // N.B. bare `-o`/`+o` occurrences (list-all requests) are rewritten to carry
+    // [`BARE_OPTION`] as an attached value by `SetCommand::new`; named occurrences
+    // accumulate like they did under the previous clap-based parser.
+    #[usage(short = 'o', value_name = "OPT")]
+    pub(super) enable: Option<Vec<String>>,
+    #[usage(long = "+o")]
+    #[usage(hide, value_name = "OPT")]
+    pub(super) disable: Option<Vec<String>>,
+}
+
 /// Manage set-based shell options.
 #[derive(usage::Cli)]
 #[usage(
