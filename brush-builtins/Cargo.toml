@@ -181,3 +181,11 @@ procfs = "0.18.0"
 [dev-dependencies]
 anyhow = "1.0.102"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+
+# N.B. With all parser-engine features enabled simultaneously, the engine
+# selection in this crate compiles only the priority winner's argument modules,
+# so the losing engines' optional dependencies legitimately go unused from
+# cargo-udeps' point of view. Ignore them here rather than weakening the
+# blanket `--all-features` check.
+[package.metadata.cargo-udeps.ignore]
+normal = ["bpaf"]
