@@ -465,7 +465,7 @@ fn exec_simple_builtin<T: SimpleCommand + Send + Sync, SE: extensions::ShellExte
     Box::pin(async move { exec_simple_builtin_impl::<T, SE>(context, args).await })
 }
 
-#[expect(clippy::unused_async)]
+#[allow(clippy::unused_async)]
 async fn exec_simple_builtin_impl<
     T: SimpleCommand + Send + Sync,
     SE: extensions::ShellExtensions,

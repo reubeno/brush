@@ -120,7 +120,7 @@ fn parse_format_string(
 }
 
 #[cfg(test)]
-#[expect(clippy::panic_in_result_fn)]
+#[allow(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;
