@@ -59,6 +59,13 @@ fn takes_trailing_args() -> bool {
         true
     }
 fn set_trailing_args(&mut self, args: Vec<String>) {
+        // N.B. Match clap's behavior here: clap consumes a bare leading `--`
+        // as its separator convention instead of delivering it among the
+        // positionals, so bash's `command -- cmd` resolves `cmd`, not `--`.
+        let mut args = args;
+        if args.first().map(String::as_str) == Some("--") {
+            args.remove(0);
+        }
         self.command_and_args = args;
     }
 }
