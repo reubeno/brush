@@ -9,6 +9,10 @@ pub(crate) use self::bpaf::{CompGenCommand, CompOptCommand};
 use self::clap::CommonCompleteCommandArgs;
 #[cfg(feature = "parser-clap")]
 pub(crate) use self::clap::{CompGenCommand, CompOptCommand};
+#[cfg(feature = "parser-usage")]
+use self::usage::CommonCompleteCommandArgs;
+#[cfg(feature = "parser-usage")]
+pub(crate) use self::usage::{CompGenCommand, CompOptCommand};
 arg_impl!(CompleteCommand);
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};

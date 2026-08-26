@@ -6,7 +6,6 @@
 //! of the clap-side engine.
 #![cfg(feature = "parser-bpaf")]
 
-
 use bpaf::Parser;
 use std::ffi::OsStr;
 
