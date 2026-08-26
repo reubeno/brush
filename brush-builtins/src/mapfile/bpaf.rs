@@ -55,7 +55,7 @@ fn join_tokens_taking_values(args: &mut Vec<String>, shorts: &str) {
 }
 
 fn run_bpaf_parser<T: crate::args::bpaf_support::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
-    crate::args::run_parser::<T>(args)
+    crate::args::bpaf_support::run_parser::<T>(args)
 }
 
 fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {

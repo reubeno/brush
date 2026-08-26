@@ -100,7 +100,7 @@ fn hist_file_option(
 }
 
 fn run_bpaf_parser<T: crate::args::bpaf_support::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
-    crate::args::run_parser::<T>(args)
+    crate::args::bpaf_support::run_parser::<T>(args)
 }
 
 fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {
@@ -289,7 +289,7 @@ fn set_trailing_args(&mut self, args: Vec<String>) {
         join_tokens_taking_values(&mut args, Self::value_taking_short_options());
 
         let (options, trailing) =
-            crate::args::split_option_section(&args, Self::value_taking_short_options(), &[]);
+            crate::args::bpaf_support::split_option_section(&args, Self::value_taking_short_options(), &[]);
 
         let mut command = run_bpaf_parser::<Self>(&options)?;
         command.set_trailing_args(trailing);

@@ -23,7 +23,7 @@ fn effective_history_count(history: &brush_core::history::History) -> usize {
 }
 
 fn run_bpaf_parser<T: crate::args::bpaf_support::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
-    crate::args::run_parser::<T>(args)
+    crate::args::bpaf_support::run_parser::<T>(args)
 }
 
 fn render_bpaf_failure(failure: bpaf::ParseFailure) -> ArgsError {

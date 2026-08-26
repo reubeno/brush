@@ -118,3 +118,25 @@ impl builtins::Command for BindCommand {
         super::execute(self, context).await
     }
 }
+
+/// Errors that can occur while parsing bind arguments.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BindError {
+    /// Unknown function specified.
+    #[error("unknown function: {0}")]
+    UnknownFunction(String),
+}
+
+impl brush_core::BuiltinError for BindError {}
+
+impl From<&BindError> for brush_core::ExecutionExitCode {
+    fn from(_: &BindError) -> Self {
+        Self::GeneralError
+    }
+}
+
+impl BindKeyMap {
+    pub(crate) const fn is_vi(&self) -> bool {
+        matches!(self, Self::ViCommand | Self::ViInsert)
+    }
+}

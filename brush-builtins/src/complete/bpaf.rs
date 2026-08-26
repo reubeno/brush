@@ -70,7 +70,7 @@ fn join_flag_looking_values(args: Vec<String>) -> Vec<String> {
 }
 
 fn run_parser<T: crate::args::bpaf_support::BpafArgs>(args: &[String]) -> Result<T, ArgsError> {
-    crate::args::run_parser::<T>(args)
+    crate::args::bpaf_support::run_parser::<T>(args)
 }
 
 fn render_parse_failure(failure: bpaf::ParseFailure) -> ArgsError {
