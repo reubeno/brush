@@ -9,31 +9,14 @@
     reason = "builtins implement a trait whose `execute` is async by contract"
 )]
 
-// N.B. The per-engine argument-parsing modules (`bpaf` / `clap` / `usage`) are
-// parallel same-named type hierarchies; builtin glue code binds against one
-// engine at a time through `arg_impl!`, so enabling several engines together
-// has no coherent interpretation yet.
-#[cfg(all(feature = "parser-bpaf", feature = "parser-clap"))]
-compile_error!(
-    "only one argument-parsing engine can be enabled at a time \
-     (found both `parser-bpaf` and `parser-clap`)"
-);
-#[cfg(all(feature = "parser-bpaf", feature = "parser-usage"))]
-compile_error!(
-    "only one argument-parsing engine can be enabled at a time \
-     (found both `parser-bpaf` and `parser-usage`)"
-);
-#[cfg(all(feature = "parser-clap", feature = "parser-usage"))]
-compile_error!(
-    "only one argument-parsing engine can be enabled at a time \
-     (found both `parser-clap` and `parser-usage`)"
-);
-
 /// Tri-state bpaf parser for a `-x` / `+x` option pair: `None` when absent,
 /// `Some(true)` for `-x`, `Some(false)` for `+x`.
 
 /// Tri-state bpaf parser for a `-x` / `+x` option pair.
-#[cfg(feature = "parser-bpaf")]
+// N.B. Bpaf-specific helpers below are only compiled when the bpaf engine is
+// actually *selected*; bpaf can be enabled while losing selection to usage,
+// which would otherwise leave these helpers dead with `-D warnings`.
+#[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
 pub(crate) fn minus_or_plus_flag(
     flag_char: char,
     plus_form: &'static str,
@@ -55,7 +38,7 @@ pub(crate) fn minus_or_plus_flag(
 
 /// Declares a bpaf-engine tri-state flag struct mirroring
 /// `minus_or_plus_flag_arg`'s clap-side shape.
-#[cfg(feature = "parser-bpaf")]
+#[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
 macro_rules! tri_state_flag {
     ($struct_name:ident) => {
         #[derive(Default)]
@@ -92,29 +75,46 @@ macro_rules! tri_state_flag {
     };
 }
 
-#[cfg(feature = "parser-bpaf")]
+#[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
 pub(crate) use tri_state_flag;
 
 /// Selects a builtin's argument implementation according to the active
-/// argument-parsing engine feature (`parser-clap` / `parser-bpaf` /
-/// `parser-usage`; exactly one must be enabled).
+/// argument-parsing engine features (`parser-usage`, `parser-bpaf`,
+/// `parser-clap`).
 ///
-/// Expands to declarations of the per-engine sibling modules plus a re-export
-/// of `$t` from whichever engine module is compiled, so the rest of the
-/// builtin's file can refer to the type engine-independently.
+/// The engines are parallel same-named type hierarchies; when several are
+/// enabled at once (e.g. via `--all-features`), a fixed priority decides:
+/// `parser-usage` wins over `parser-bpaf`, which wins over `parser-clap`.
+/// Only the selected engine's sibling module is declared, keeping name
+/// resolution unambiguous.
+///
+/// Expands to the selected per-engine sibling module declaration, an internal
+/// `imp` re-export of it, and a re-export of `$t` from that module, so the rest
+/// of the builtin's file can refer to the type engine-independently.
 macro_rules! arg_impl {
     ($t:ident) => {
-        #[cfg(feature = "parser-bpaf")]
+        // N.B. Exactly one branch can hold: each mod is declared only if its
+        // engine is both enabled and highest-priority among enabled engines.
+        // Priority: parser-usage > parser-bpaf > parser-clap.
+        #[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
         pub mod bpaf;
-        #[cfg(feature = "parser-clap")]
+        #[cfg(all(
+            feature = "parser-clap",
+            not(any(feature = "parser-usage", feature = "parser-bpaf"))
+        ))]
         pub mod clap;
         #[cfg(feature = "parser-usage")]
         pub mod usage;
 
+        // N.B. Only one glob can resolve: it feeds from the single declared
+        // sibling module above.
         mod imp {
-            #[cfg(feature = "parser-bpaf")]
+            #[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
             pub(crate) use super::bpaf::*;
-            #[cfg(feature = "parser-clap")]
+            #[cfg(all(
+                feature = "parser-clap",
+                not(any(feature = "parser-usage", feature = "parser-bpaf"))
+            ))]
             pub(crate) use super::clap::*;
             #[cfg(feature = "parser-usage")]
             pub(crate) use super::usage::*;
@@ -337,14 +337,16 @@ macro_rules! usage_minus_or_plus_flag_arg {
     };
 }
 
-#[cfg(not(feature = "parser-clap"))]
-#[allow(dead_code, reason = "used only by non-clap engine parent modules")]
+// N.B. Needed only when the bpaf engine is selected (its parsers yield plain
+// `Option<bool>` flags); see `arg_impl!` for engine selection priority.
+#[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
+#[allow(dead_code, reason = "used only by bpaf-engine parent modules")]
 pub(crate) trait OptionBoolExt {
     /// Returns the inner value, mirroring the clap-side `to_bool`.
     fn to_bool(&self) -> Option<bool>;
 }
 
-#[cfg(not(feature = "parser-clap"))]
+#[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
 impl OptionBoolExt for Option<bool> {
     #[inline]
     fn to_bool(&self) -> Option<bool> {

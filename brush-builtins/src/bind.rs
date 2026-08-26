@@ -1,13 +1,11 @@
 //! The `bind` builtin.
 
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
-#[cfg(feature = "parser-bpaf")]
-use self::bpaf::BindKeyMap;
-#[cfg(feature = "parser-clap")]
-use self::clap::BindKeyMap;
-#[cfg(feature = "parser-usage")]
-use self::usage::BindKeyMap;
 arg_impl!(BindCommand);
+
+// N.B. Resolves to whichever engine was selected by `arg_impl!` (priority:
+// parser-usage > parser-bpaf > parser-clap).
+use imp::BindKeyMap;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult,

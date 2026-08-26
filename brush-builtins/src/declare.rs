@@ -3,7 +3,7 @@
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
 arg_impl!(DeclareCommand);
 
-#[cfg(all(not(feature = "parser-clap"), not(feature = "parser-usage")))]
+#[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
 use crate::OptionBoolExt;
 use brush_core::{
     ErrorKind, ExecutionResult,

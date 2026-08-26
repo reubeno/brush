@@ -1,19 +1,12 @@
 //! The `complete` builtin.
 
 // N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
-#[cfg(feature = "parser-bpaf")]
-use self::bpaf::CommonCompleteCommandArgs;
-#[cfg(feature = "parser-bpaf")]
-pub(crate) use self::bpaf::{CompGenCommand, CompOptCommand};
-#[cfg(feature = "parser-clap")]
-use self::clap::CommonCompleteCommandArgs;
-#[cfg(feature = "parser-clap")]
-pub(crate) use self::clap::{CompGenCommand, CompOptCommand};
-#[cfg(feature = "parser-usage")]
-use self::usage::CommonCompleteCommandArgs;
-#[cfg(feature = "parser-usage")]
-pub(crate) use self::usage::{CompGenCommand, CompOptCommand};
 arg_impl!(CompleteCommand);
+
+// N.B. Resolve to whichever engine was selected by `arg_impl!` (priority:
+// parser-usage > parser-bpaf > parser-clap).
+use imp::CommonCompleteCommandArgs;
+pub(crate) use imp::{CompGenCommand, CompOptCommand};
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
 use brush_core::{ExecutionResult, error, escape};
