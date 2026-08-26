@@ -9,20 +9,6 @@
     reason = "builtins implement a trait whose `execute` is async by contract"
 )]
 
-// N.B. Builtins carry argument instrumentation for every supported parsing
-// engine via `cfg_attr`; exactly one engine feature may be active per build.
-#[cfg(all(
-    feature = "parser-clap",
-    any(feature = "parser-bpaf", feature = "parser-usage")
-))]
-compile_error!("select at most one builtin argument-parsing engine feature");
-#[cfg(not(any(
-    feature = "parser-clap",
-    feature = "parser-bpaf",
-    feature = "parser-usage"
-)))]
-compile_error!("select one builtin argument-parsing engine feature");
-
 /// Tri-state bpaf parser for a `-x` / `+x` option pair: `None` when absent,
 /// `Some(true)` for `-x`, `Some(false)` for `+x`.
 
