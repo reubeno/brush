@@ -182,19 +182,21 @@ async fn execute<SE: brush_core::ShellExtensions>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::clap::Parser;
     use anyhow::Result;
+    use brush_core::args::FromArgs as _;
     use pretty_assertions::{assert_eq, assert_matches};
 
+    // N.B. Parsed via the engine-agnostic `FromArgs` contract so this test
+    // compiles (and runs) under whichever argument-parsing engine is selected.
     #[test]
     fn test_parse_dash_a() -> Result<()> {
-        let cmd = HistoryCommand::try_parse_from(["history", "5"])?;
+        let cmd = HistoryCommand::from_args(&["history".into(), "5".into()])?;
         assert_matches!(cmd.append_session_to_file, None);
 
-        let cmd = HistoryCommand::try_parse_from(["history", "-a"])?;
+        let cmd = HistoryCommand::from_args(&["history".into(), "-a".into()])?;
         assert_matches!(cmd.append_session_to_file, Some(None));
 
-        let cmd = HistoryCommand::try_parse_from(["history", "-a", "token"])?;
+        let cmd = HistoryCommand::from_args(&["history".into(), "-a".into(), "token".into()])?;
         assert_eq!(
             cmd.append_session_to_file,
             Some(Some(String::from("token")))

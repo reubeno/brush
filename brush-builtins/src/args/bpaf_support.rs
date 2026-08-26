@@ -4,7 +4,7 @@
 //! the shell-specific knobs) for its command type; the helpers here run those
 //! parsers against invocation words and render help, mirroring the semantics
 //! of the clap-side engine.
-#![cfg(feature = "parser-bpaf")]
+#![cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
 
 use bpaf::Parser;
 use std::ffi::OsStr;
@@ -201,11 +201,10 @@ fn short_group_token_count(group: &str, value_shorts: &str) -> usize {
 /// and the trailing section of operands (captured verbatim), following
 /// shell-style option termination rules:
 ///
-/// * Parsing stops at the first `--`, which is dropped from the options and
-///   placed at the front of the trailing section.
+/// * Parsing stops at the first `--`, which is dropped from the options and placed at the front of
+///   the trailing section.
 /// * Parsing stops at the first operand, which starts the trailing section.
-/// * `value_shorts` characters consume a following value; long options in
-///   `value_longs` likewise.
+/// * `value_shorts` characters consume a following value; long options in `value_longs` likewise.
 pub fn split_option_section(
     args: &[String],
     value_shorts: &str,
