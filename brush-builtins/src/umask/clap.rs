@@ -4,8 +4,6 @@
 
 use brush_core::builtins;
 use clap::Parser;
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-use nix::sys::stat::Mode;
 
 /// Manage the process umask.
 #[derive(Parser)]
