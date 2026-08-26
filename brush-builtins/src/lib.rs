@@ -9,6 +9,26 @@
     reason = "builtins implement a trait whose `execute` is async by contract"
 )]
 
+// N.B. The per-engine argument-parsing modules (`bpaf` / `clap` / `usage`) are
+// parallel same-named type hierarchies; builtin glue code binds against one
+// engine at a time through `arg_impl!`, so enabling several engines together
+// has no coherent interpretation yet.
+#[cfg(all(feature = "parser-bpaf", feature = "parser-clap"))]
+compile_error!(
+    "only one argument-parsing engine can be enabled at a time \
+     (found both `parser-bpaf` and `parser-clap`)"
+);
+#[cfg(all(feature = "parser-bpaf", feature = "parser-usage"))]
+compile_error!(
+    "only one argument-parsing engine can be enabled at a time \
+     (found both `parser-bpaf` and `parser-usage`)"
+);
+#[cfg(all(feature = "parser-clap", feature = "parser-usage"))]
+compile_error!(
+    "only one argument-parsing engine can be enabled at a time \
+     (found both `parser-clap` and `parser-usage`)"
+);
+
 /// Tri-state bpaf parser for a `-x` / `+x` option pair: `None` when absent,
 /// `Some(true)` for `-x`, `Some(false)` for `+x`.
 
