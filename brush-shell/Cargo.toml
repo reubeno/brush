@@ -70,6 +70,12 @@ experimental-parser = [
     "brush-core/experimental-parser",
     "brush-parser/winnow-parser",
 ]
+parser-bpaf = ["brush-core/parser-bpaf", "brush-builtins/parser-bpaf"]
+parser-clap = []
+parser-usage = [
+    "brush-core/parser-usage",
+    "brush-builtins/parser-usage",
+]
 schema = ["dep:schemars"]
 
 [lints]
