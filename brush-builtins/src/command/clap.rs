@@ -25,14 +25,6 @@ pub(crate) struct CommandCommand {
     pub(crate) command_and_args: Vec<String>,
 }
 
-impl CommandCommand {
-    /// Returns the command to look up, if any.
-    pub(crate) fn first_arg(&self) -> Option<&str> {
-        self.command_and_args.first().map(|s| s.as_str())
-    }
-}
-
-
 impl builtins::Command for CommandCommand {
     type Error = brush_core::Error;
 

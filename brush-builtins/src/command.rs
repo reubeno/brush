@@ -101,7 +101,7 @@ async fn execute<SE: brush_core::ShellExtensions>(
     context: brush_core::ExecutionContext<'_, SE>,
 ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
     // Silently exit if no command was provided.
-    if let Some(command_name) = command.first_arg() {
+    if let Some(command_name) = command.command_and_args.first().map(|s| s.as_str()) {
         if command.print_description || command.print_verbose_description {
             if let Some(found_cmd) = CommandCommand::try_find_command(
                 context.shell,
