@@ -17,9 +17,9 @@ bench = false
 # N.B. Exactly one builtin argument-parsing engine is selected per build.
 # clap remains an unconditional dependency until the migration completes;
 # bpaf/usage deps attach to their features as their bindings land.
-parser-clap = []
-parser-bpaf = ['dep:bpaf']
-parser-usage = ['dep:usage']
+parser-clap = ['brush-core/parser-clap']
+parser-bpaf = ['dep:bpaf', 'brush-core/parser-bpaf']
+parser-usage = ['dep:usage', 'brush-core/parser-usage']
 
 default = [
     'parser-clap',

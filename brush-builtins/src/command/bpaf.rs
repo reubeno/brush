@@ -71,7 +71,7 @@ impl FromArgs for CommandCommand {
 
 impl CommandCommand {
     /// Returns the command to look up, if any.
-    pub(crate) fn command(&self) -> Option<&str> {
+    pub(crate) fn first_arg(&self) -> Option<&str> {
         self.command_and_args.first().map(|s| s.as_str())
     }
 }

@@ -153,6 +153,7 @@ pub(crate) fn expand_plus_option_groups(args: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+#[expect(dead_code, reason = "used only when value_longs is non-empty")]
 fn is_long_option(arg: &str) -> bool {
     let Some(long) = arg.strip_prefix("--").filter(|l| !l.is_empty()) else {
         return false;

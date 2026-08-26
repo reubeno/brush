@@ -332,6 +332,7 @@ macro_rules! usage_minus_or_plus_flag_arg {
 }
 
 #[cfg(not(feature = "parser-clap"))]
+#[expect(dead_code, reason = "used only by non-clap engine parent modules")]
 pub(crate) trait OptionBoolExt {
     /// Returns the inner value, mirroring the clap-side `to_bool`.
     fn to_bool(&self) -> Option<bool>;

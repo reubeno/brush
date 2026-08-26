@@ -14,19 +14,19 @@ use brush_core::builtins;
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
     #[usage(short = 'p')]
-    pub(super) use_default_path: bool,
+    pub(crate) use_default_path: bool,
 
     /// Display a short description of the command.
     #[usage(short = 'v')]
-    pub(super) print_description: bool,
+    pub(crate) print_description: bool,
 
     /// Display a more verbose description of the command.
     #[usage(short = 'V')]
-    pub(super) print_verbose_description: bool,
+    pub(crate) print_verbose_description: bool,
 
     /// Command and arguments.
     #[usage(trailing_var_arg, allow_hyphen_values)]
-    pub(super) command_and_args: Vec<String>,
+    pub(crate) command_and_args: Vec<String>,
 }
 
 crate::impl_usage_parse!(CommandCommand);
@@ -39,7 +39,7 @@ impl FromArgs for CommandCommand {
 
 impl CommandCommand {
     /// Returns the command to look up, if any.
-    pub(crate) fn command(&self) -> Option<&str> {
+    pub(crate) fn first_arg(&self) -> Option<&str> {
         self.command_and_args.first().map(|s| s.as_str())
     }
 }

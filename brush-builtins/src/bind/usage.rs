@@ -62,11 +62,17 @@ pub(crate) struct BindCommand {
     pub(super) key_sequence: Option<String>,
 }
 
+#[derive(Clone, usage::ValueEnum)]
 pub(crate) enum BindKeyMap {
+    #[usage(name = "emacs-standard", alias = "emacs")]
     EmacsStandard,
+    #[usage(name = "emacs-meta")]
     EmacsMeta,
+    #[usage(name = "emacs-ctlx")]
     EmacsCtlx,
+    #[usage(name = "vi-command", aliases = &["vi", "vi-move"])]
     ViCommand,
+    #[usage(name = "vi-insert")]
     ViInsert,
 }
 
@@ -112,11 +118,3 @@ impl builtins::Command for BindCommand {
     }
 }
 
-/// Errors that can occur while parsing bind arguments.
-
-
-impl BindKeyMap {
-    pub(crate) const fn is_vi(&self) -> bool {
-        matches!(self, Self::ViCommand | Self::ViInsert)
-    }
-}
