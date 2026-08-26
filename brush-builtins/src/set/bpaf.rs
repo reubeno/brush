@@ -247,7 +247,7 @@ impl crate::args::bpaf_support::BpafArgs for SetCommand {
         }
 
         let (options, trailing) =
-            crate::args::split_option_section(&expanded, Self::value_taking_short_options(), &[]);
+            crate::args::bpaf_support::split_option_section(&expanded, Self::value_taking_short_options(), &[]);
 
         let os_args: Vec<&OsStr> = options.iter().map(OsStr::new).collect();
         let mut command = Self::parser()
