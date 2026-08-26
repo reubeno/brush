@@ -1,0 +1,1 @@
+const DEFAULT_ROUNDING_MODE: RoundingMode = RoundingMode::HalfEven;

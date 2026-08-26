@@ -2,10 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::io::Write;
-use brush_core::{ExecutionResult, builtins, jobs, sys};
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Move a specified job to the foreground.

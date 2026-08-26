@@ -2,11 +2,10 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
-use brush_core::{ErrorKind, ExecutionResult, builtins};
-use cfg_if::cfg_if;
-use nix::sys::stat::Mode;
+use brush_core::builtins;
 use std::io::Write;
 use brush_core::args::{ArgsError, FromArgs};
 

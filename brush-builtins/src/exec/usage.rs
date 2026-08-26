@@ -2,10 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
-use std::{borrow::Cow, os::unix::process::CommandExt};
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
+use std::os::unix::process::CommandExt;
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Exec the provided command.

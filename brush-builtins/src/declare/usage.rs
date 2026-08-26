@@ -2,10 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use itertools::Itertools;
-use std::{io::Write, sync::LazyLock};
+use std::io::Write;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;
 

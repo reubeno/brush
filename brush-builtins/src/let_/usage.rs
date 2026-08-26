@@ -2,10 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::io::Write;
-use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
+use brush_core::{arithmetic::Evaluatable, builtins};
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Evaluate arithmetic expressions.

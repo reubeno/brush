@@ -2,11 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::io::Write;
-use brush_core::traps::TrapSignal;
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Signal a job or process.
