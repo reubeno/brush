@@ -1711,10 +1711,12 @@ impl std::str::FromStr for CompleteOption {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "default" => Ok(Self::Default),
+            "bash-default" | "bashdefault" => Ok(Self::BashDefault),
             "dir-names" | "dirnames" => Ok(Self::DirNames),
             "file-names" | "filenames" => Ok(Self::FileNames),
             "no-quote" | "noquote" => Ok(Self::NoQuote),
             "no-sort" | "nosort" => Ok(Self::NoSort),
+            "no-space" | "nospace" => Ok(Self::NoSpace),
             "plus-dirs" | "plusdirs" => Ok(Self::PlusDirs),
             _ => Err(format!("invalid completion option: {s}")),
         }
