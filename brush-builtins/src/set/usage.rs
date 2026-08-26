@@ -107,12 +107,11 @@ const BARE_OPTION: &str = "\u{0}";
 #[derive(usage::Args)]
 pub(crate) struct SetOption {
     // N.B. bare `-o`/`+o` occurrences (list-all requests) are rewritten to carry
-    // [`BARE_OPTION`] as an attached value by `SetCommand::new`; named occurrences
+    // [`super::BARE_OPTION`] via the derive's `default_missing`; named occurrences
     // accumulate like they did under the previous clap-based parser.
-    #[usage(short = 'o', value_name = "OPT")]
+    #[usage(short = 'o', value_name = "OPT", default_missing = "\u{0}")]
     pub(super) enable: Option<Vec<String>>,
-    #[usage(long = "+o")]
-    #[usage(hide, value_name = "OPT")]
+    #[usage(long = "+o", value_name = "OPT", num_args = 0..=1, default_missing = "\u{0}")]
     pub(super) disable: Option<Vec<String>>,
 }
 
@@ -176,7 +175,34 @@ pub(crate) struct SetCommand {
     pub(super) positional_args: Vec<String>,
 }
 
-crate::impl_usage_parse!(SetCommand);
+impl crate::args::UsageArgs for SetCommand {
+    fn parse_argv<'v>(
+        argv: &[&'v std::ffi::OsStr],
+    ) -> Result<Self, usage::argv::Error<'static, 'v>> {
+        <Self>::parse_from(argv)
+    }
+
+    #[doc(hidden)]
+    fn usage_spec() -> &'static usage::spec::Spec<'static> {
+        <Self>::spec()
+    }
+
+    fn takes_plus_options() -> bool {
+        true
+    }
+
+    fn takes_trailing_args() -> bool {
+        true
+    }
+
+    fn value_taking_short_options() -> &'static str {
+        "o"
+    }
+
+    fn set_trailing_args(&mut self, args: Vec<String>) {
+        self.positional_args = args;
+    }
+}
 
 impl FromArgs for SetCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {

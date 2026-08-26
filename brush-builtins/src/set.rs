@@ -8,6 +8,17 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::io::Write;
 
+/// Sentinel bound to a bare `-o`/`+o` occurrence (a list-all request), injected
+/// via the `default_missing` attribute on the usage-engine side. Chosen to be
+/// unspellable from shell input so it can never collide with a real option name.
+pub(crate) const BARE_OPTION: &str = "\u{0}";
+
+/// Returns whether an option-name collection indicates a bare `-o`/`+o`
+/// list-all request rather than named option updates.
+fn wants_list_all(option_names: &[String]) -> bool {
+    option_names.is_empty() || option_names.iter().all(|name| name == BARE_OPTION)
+}
+
 pub(super) fn display_all(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
 ) -> Result<(), brush_core::Error> {
@@ -192,7 +203,7 @@ async fn execute<SE: brush_core::ShellExtensions>(
     let mut named_options: HashMap<String, bool> = HashMap::new();
     if let Some(option_names) = &command.set_option.disable {
         saw_option = true;
-        if option_names.is_empty() {
+        if wants_list_all(option_names) {
             for option in
                 brush_core::namedoptions::options(brush_core::namedoptions::ShellOptionKind::SetO)
                     .iter()
@@ -210,7 +221,7 @@ async fn execute<SE: brush_core::ShellExtensions>(
     }
     if let Some(option_names) = &command.set_option.enable {
         saw_option = true;
-        if option_names.is_empty() {
+        if wants_list_all(option_names) {
             for option in
                 brush_core::namedoptions::options(brush_core::namedoptions::ShellOptionKind::SetO)
                     .iter()

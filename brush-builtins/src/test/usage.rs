@@ -19,7 +19,7 @@ use brush_core::builtins;
     disable_version_flag
 )]
 pub(crate) struct TestCommand {
-    #[usage(arg, double_dash = "automatic")]
+    #[usage(arg, double_dash = "preserve")]
     pub(super) args: Vec<String>,
 }
 

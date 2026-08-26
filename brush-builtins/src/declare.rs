@@ -409,6 +409,8 @@ impl DeclareCommand {
     }
 
     #[expect(clippy::unnecessary_wraps)]
+    // N.B. not const: the body is structured around a fallible `Result` flow.
+    #[allow(clippy::missing_const_for_fn)]
     fn apply_attributes_before_update(
         &self,
         var: &mut ShellVariable,

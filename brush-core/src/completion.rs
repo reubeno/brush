@@ -20,7 +20,11 @@ use brush_parser::unquote_str;
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "parser-clap", derive(clap::ValueEnum))]
-#[cfg_attr(feature = "parser-usage", derive(usage::ValueEnum))]
+#[cfg_attr(
+    feature = "parser-usage",
+    derive(usage::ValueEnum),
+    usage(rename_all = "lowercase")
+)]
 pub enum CompleteAction {
     /// Complete with valid aliases.
     #[cfg_attr(feature = "parser-clap", clap(name = "alias"))]
@@ -99,7 +103,11 @@ pub enum CompleteAction {
 /// Options influencing how command completions are generated.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "parser-clap", derive(clap::ValueEnum))]
-#[cfg_attr(feature = "parser-usage", derive(usage::ValueEnum))]
+#[cfg_attr(
+    feature = "parser-usage",
+    derive(usage::ValueEnum),
+    usage(rename_all = "lowercase")
+)]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
     #[cfg_attr(feature = "parser-clap", clap(name = "bashdefault"))]
@@ -1530,6 +1538,10 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::items_after_test_module,
+    reason = "impls below serve the enums above"
+)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_matches;

@@ -317,9 +317,10 @@ macro_rules! minus_or_plus_flag_arg {
     };
 }
 
+/// Declares a usage-engine flag struct: `-x` enables, `+x` disables.
+///
 /// Transitional extension used by the bpaf engine, whose parsers yield
 /// `Option<bool>` directly where the clap side yields generated flag structs.
-/// Declares a usage-engine flag struct: `-x` enables, `+x` disables.
 #[cfg(feature = "parser-usage")]
 #[macro_export]
 macro_rules! usage_minus_or_plus_flag_arg {

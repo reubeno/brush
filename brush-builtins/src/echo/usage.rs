@@ -32,7 +32,7 @@ pub(crate) struct EchoCommand {
     pub(super) no_interpret_backslash_escapes: bool,
 
     /// Tokens to echo to standard output.
-    #[usage(trailing_var_arg, allow_hyphen_values)]
+    #[usage(arg, double_dash = "preserve")]
     pub(super) args: Vec<String>,
 }
 

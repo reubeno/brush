@@ -37,7 +37,65 @@ crate::impl_usage_parse!(PrintfCommand);
 
 impl FromArgs for PrintfCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::UsageArgs::from_words(words)
+        // Bash's `printf` accepts only a leading `-v` option zone and drops at
+        // most one leading `--`; every later token (including further `--`s) is
+        // verbatim data. The engine's generic argv parser strips all of them,
+        // so scan the option zone manually and keep the remainder intact.
+        let mut output_variable: Option<String> = None;
+        let mut idx = 1; // N.B. words[0] is the command name.
+
+        if words.get(idx).map(String::as_str) == Some("--") {
+            idx += 1;
+        } else {
+            while let Some(word) = words.get(idx) {
+                let word = word.as_str();
+                if word == "-v" {
+                    idx += 1;
+                    match words.get(idx) {
+                        Some(value) => {
+                            output_variable = Some(value.clone());
+                            idx += 1;
+                        }
+                        None => {
+                            return Err(ArgsError {
+                                message: "printf: -v: option requires an argument\n"
+                                    .to_string(),
+                                help_request: false,
+                            });
+                        }
+                    }
+                } else if let Some(value) = word.strip_prefix("-v") {
+                    if !value.is_empty() && !value.starts_with('-') {
+                        output_variable = Some(value.to_string());
+                        idx += 1;
+                    } else {
+                        break;
+                    }
+                } else if word.starts_with('-') && word != "-" && word != "--" {
+                    // Bash rejects unknown leading options outright.
+                    let ch = word.chars().nth(1).unwrap_or('-');
+                    return Err(ArgsError {
+                        message: format!("printf: invalid option -- '{ch}'\n"),
+                        help_request: false,
+                    });
+                } else {
+                    break;
+                }
+            }
+        }
+
+        let format_and_args = words[idx..].to_vec();
+        if format_and_args.is_empty() {
+            return Err(ArgsError {
+                message: "printf: usage: printf [-v var] format [arguments]\n".to_string(),
+                help_request: false,
+            });
+        }
+
+        Ok(Self {
+            output_variable,
+            format_and_args,
+        })
     }
 }
 
