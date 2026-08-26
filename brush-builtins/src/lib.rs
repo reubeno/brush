@@ -15,8 +15,14 @@
 /// Tri-state bpaf parser for a `-x` / `+x` option pair.
 // N.B. Bpaf-specific helpers below are only compiled when the bpaf engine is
 // actually *selected*; bpaf can be enabled while losing selection to usage,
-// which would otherwise leave these helpers dead with `-D warnings`.
+// which would otherwise leave these helpers dead with `-D warnings`. Each
+// helper additionally tolerates having no consumers (e.g. when the crate is
+// consumed a la carte without the builtins that use it).
 #[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
+#[cfg_attr(
+    not(feature = "builtin.declare"),
+    allow(dead_code, reason = "no consuming builtin is currently enabled")
+)]
 pub(crate) fn minus_or_plus_flag(
     flag_char: char,
     plus_form: &'static str,
@@ -39,6 +45,10 @@ pub(crate) fn minus_or_plus_flag(
 /// Declares a bpaf-engine tri-state flag struct mirroring
 /// `minus_or_plus_flag_arg`'s clap-side shape.
 #[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
+#[cfg_attr(
+    not(feature = "builtin.set"),
+    allow(unused_macros, reason = "no consuming builtin is currently enabled")
+)]
 macro_rules! tri_state_flag {
     ($struct_name:ident) => {
         #[derive(Default)]
@@ -76,6 +86,13 @@ macro_rules! tri_state_flag {
 }
 
 #[cfg(all(feature = "parser-bpaf", not(feature = "parser-usage")))]
+#[cfg_attr(
+    not(feature = "builtin.set"),
+    allow(
+        unused_imports,
+        reason = "re-export kept alongside the macro it mirrors"
+    )
+)]
 pub(crate) use tri_state_flag;
 
 /// Selects a builtin's argument implementation according to the active
