@@ -2,12 +2,12 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
-use std::collections::HashMap;
 use std::io::Write;
 use itertools::Itertools;
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 crate::usage_minus_or_plus_flag_arg!(

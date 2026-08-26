@@ -2,6 +2,8 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
+
 use std::ffi::OsStr;
 
 use brush_core::args::{ArgsError, FromArgs};
@@ -115,7 +117,7 @@ impl builtins::Command for UnsetCommand {
         content_type: builtins::ContentType,
         options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::error::Error> {
-        use std::ffi::OsStr;
+        
         let _ = (name, content_type, options);
         unreachable!("unset renders help via about/synopsis")
     }

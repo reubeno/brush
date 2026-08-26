@@ -2,12 +2,12 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use itertools::Itertools as _;
-use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
+use std::{io::Write, str::FromStr as _};
 use strum::IntoEnumIterator;
-use tokio::sync::Mutex;
 use super::BindError;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::builtins;

@@ -2,12 +2,12 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use brush_core::sys::{self, fs::PathExt};
-use brush_core::{ExecutionResult, Shell, builtins, parser::ast};
+use brush_core::sys::fs::PathExt;
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Inspect the type of a named shell item.

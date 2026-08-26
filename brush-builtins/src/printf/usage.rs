@@ -2,11 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
-use std::{ffi::OsString, io::Write, ops::ControlFlow};
-use uucore::format;
-use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
+use std::io::Write;
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Format a string.

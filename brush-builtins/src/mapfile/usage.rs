@@ -2,10 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::io::{Read, Write};
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Read lines from standard input into an indexed array variable.

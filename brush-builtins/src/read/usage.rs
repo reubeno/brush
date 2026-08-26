@@ -2,12 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use itertools::Itertools;
-use std::collections::VecDeque;
-use std::time::{Duration, Instant};
-use brush_core::{ErrorKind, builtins, env, error, variables};
+use brush_core::builtins;
 use std::io::{Read, Write};
 use brush_core::args::{ArgsError, FromArgs};
 

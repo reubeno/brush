@@ -2,11 +2,12 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::io::Write;
 use std::path::PathBuf;
-use brush_core::{ExecutionResult, builtins, error};
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Change the current shell working directory.

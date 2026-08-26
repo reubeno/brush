@@ -2,13 +2,14 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Configure programmable command completion.

@@ -2,10 +2,11 @@
 
 #![cfg(feature = "parser-usage")]
 
+#![allow(unused_imports, reason = "transitional engine scaffolding")]
 #![allow(dead_code, reason = "transitional engine scaffolding")]
 
-use std::{collections::HashMap, io::Write};
-use brush_core::{ExecutionResult, builtins, env, variables};
+use std::io::Write;
+use brush_core::builtins;
 use brush_core::args::{ArgsError, FromArgs};
 
 /// Parse command options.
