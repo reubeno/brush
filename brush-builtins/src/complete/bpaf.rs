@@ -11,7 +11,6 @@ use brush_core::completion::Spec;
 
 use bpaf::Parser;
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::io::Write;
 use brush_core::args::{ArgsError, FromArgs};
 use brush_core::ExecutionExitCode;

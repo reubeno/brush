@@ -117,10 +117,7 @@ pub(crate) fn render_parse_failure(
                 .unwrap_or_default(),
             false,
         ),
-        _ => (
-            usage::render_failure(spec, argv, err),
-            false,
-        ),
+        _ => (usage::render_failure(spec, argv, err), false),
     };
 
     ArgsError {
@@ -163,9 +160,14 @@ fn is_long_option(arg: &str) -> bool {
 
     let name = long.split('=').next().unwrap_or("");
     let mut chars = name.chars();
-    let first_ok = chars.next().is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let first_ok = chars
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_');
 
-    first_ok && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    first_ok
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
 fn short_group_token_count(group: &str, value_shorts: &str) -> usize {

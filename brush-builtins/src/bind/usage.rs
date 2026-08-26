@@ -113,13 +113,7 @@ impl builtins::Command for BindCommand {
 }
 
 /// Errors that can occur while parsing bind arguments.
-impl brush_core::BuiltinError for BindError {}
 
-impl From<&BindError> for brush_core::ExecutionExitCode {
-    fn from(_: &BindError) -> Self {
-        Self::GeneralError
-    }
-}
 
 impl BindKeyMap {
     pub(crate) const fn is_vi(&self) -> bool {

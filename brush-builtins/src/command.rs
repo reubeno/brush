@@ -9,11 +9,7 @@ use brush_core::{
 };
 use std::{fmt::Display, io::Write, path::Path};
 
-impl CommandCommand {
-    fn command(&self) -> Option<&str> {
-        self.command_and_args.first().map(|s| s.as_str())
-    }
-}
+impl CommandCommand {}
 
 pub(super) enum FoundCommand {
     Builtin(String),

@@ -67,3 +67,277 @@ impl builtins::Command for CompleteCommand {
         super::execute(self, context).await
     }
 }
+
+
+// N.B. Shared argument set parsed via `usage(flatten)`.
+
+#[derive(usage::Args)]
+pub(crate) struct CommonCompleteCommandArgs {
+    /// Options governing the behavior of completions.
+    #[usage(short = 'o', value_enum)]
+    pub(super) options: Vec<CompleteOption>,
+
+    /// Actions to apply to generate completions.
+    #[usage(short = 'A', value_enum)]
+    pub(super) actions: Vec<CompleteAction>,
+
+    /// File glob pattern to be expanded to generate completions.
+    #[usage(short = 'G', allow_hyphen_values, value_name = "GLOB")]
+    pub(super) glob_pattern: Option<String>,
+
+    /// List of words that will be considered as completions.
+    #[usage(short = 'W', allow_hyphen_values)]
+    pub(super) word_list: Option<String>,
+
+    /// Name of a shell function to invoke to generate completions.
+    #[usage(short = 'F', allow_hyphen_values, value_name = "FUNC_NAME")]
+    pub(super) function_name: Option<String>,
+
+    /// Command to execute to generate completions.
+    #[usage(short = 'C', allow_hyphen_values)]
+    pub(super) command: Option<String>,
+
+    /// Pattern used as filter for completions.
+    #[usage(short = 'X', allow_hyphen_values, value_name = "PATTERN")]
+    pub(super) filter_pattern: Option<String>,
+
+    /// Prefix pattern used as filter for completions.
+    #[usage(short = 'P', allow_hyphen_values)]
+    pub(super) prefix: Option<String>,
+
+    /// Suffix pattern used as filter for completions.
+    #[usage(short = 'S', allow_hyphen_values)]
+    pub(super) suffix: Option<String>,
+
+    /// Complete with valid aliases.
+    #[usage(short = 'a')]
+    pub(super) action_alias: bool,
+
+    /// Complete with names of shell builtins.
+    #[usage(short = 'b')]
+    pub(super) action_builtin: bool,
+
+    /// Complete with names of executable commands.
+    #[usage(short = 'c')]
+    pub(super) action_command: bool,
+
+    /// Complete with directory names.
+    #[usage(short = 'd')]
+    pub(super) action_directory: bool,
+
+    /// Complete with names of exported shell variables.
+    #[usage(short = 'e')]
+    pub(super) action_exported: bool,
+
+    /// Complete with filenames.
+    #[usage(short = 'f')]
+    pub(super) action_file: bool,
+
+    /// Complete with valid user groups.
+    #[usage(short = 'g')]
+    pub(super) action_group: bool,
+
+    /// Complete with job specs.
+    #[usage(short = 'j')]
+    pub(super) action_job: bool,
+
+    /// Complete with keywords.
+    #[usage(short = 'k')]
+    pub(super) action_keyword: bool,
+
+    /// Complete with names of system services.
+    #[usage(short = 's')]
+    pub(super) action_service: bool,
+
+    /// Complete with valid usernames.
+    #[usage(short = 'u')]
+    pub(super) action_user: bool,
+
+    /// Complete with names of shell variables.
+    #[usage(short = 'v')]
+    pub(super) action_variable: bool,
+}
+
+
+
+crate::impl_usage_parse!(CompGenCommand);
+
+#[derive(usage::Cli)]
+#[usage(bin = "compgen", unknown_flags = "error", args_override_self = false)]
+pub(crate) struct CompGenCommand {
+    #[usage(flatten)]
+    common_args: CommonCompleteCommandArgs,
+
+    // N.B. The word can only start with a hyphen if it's after a --.
+    word: Option<String>,
+}
+
+impl builtins::Command for CompGenCommand {
+    type Error = brush_core::Error;
+
+async fn execute<SE: brush_core::ShellExtensions>(
+    &self,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, Self::Error> {
+    let mut spec = self
+        .common_args
+        .create_spec(context.shell.options().extended_globbing);
+    spec.options.no_sort = true;
+
+    let token_to_complete = self.word.as_deref().unwrap_or_default();
+
+    // We unquote the token-to-be-completed before passing it to the completion system.
+    let unquoted_token = brush_parser::unquote_str(token_to_complete);
+
+    let completion_context = completion::Context {
+        token_to_complete: unquoted_token.as_str(),
+        preceding_token: None,
+        command_name: None,
+        token_index: 0,
+        tokens: &[&completion::CompletionToken {
+            text: token_to_complete,
+            start: 0,
+        }],
+        input_line: token_to_complete,
+        cursor_index: token_to_complete.len(),
+        trigger: completion::CompletionTrigger::Programmatic,
+    };
+
+    let result = spec
+        .get_completions(context.shell, &completion_context)
+        .await?;
+
+    match result {
+        completion::Answer::Candidates(candidates, _options) => {
+            // We are expected to return 1 if there are no candidates, even if no errors
+            // occurred along the way.
+            if candidates.is_empty() {
+                return Ok(ExecutionResult::general_error());
+            }
+
+            for candidate in candidates {
+                writeln!(context.stdout(), "{candidate}")?;
+            }
+        }
+        completion::Answer::RestartCompletionProcess => {
+            return error::unimp("restart completion");
+        }
+    }
+
+    Ok(ExecutionResult::success())
+}
+
+    fn get_content(
+        name: &str,
+        content_type: builtins::ContentType,
+        options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::error::Error> {
+        crate::args::usage_support::get_content::<Self>(name, &content_type, options)
+    }
+}
+
+
+
+crate::impl_usage_parse!(CompOptCommand);
+
+#[derive(usage::Cli)]
+#[usage(bin = "compopt", unknown_flags = "error", args_override_self = false)]
+pub(crate) struct CompOptCommand {
+    /// Update the default completion settings.
+    #[usage(short = 'D')]
+    update_default: bool,
+
+    /// Update the completion settings for empty lines.
+    #[usage(short = 'E')]
+    update_empty: bool,
+
+    /// Update the completion settings for the initial word of the input line.
+    #[usage(short = 'I')]
+    update_initial_word: bool,
+
+    /// Enable the specified option for selected completion scenarios.
+    #[usage(short = 'o', value_name = "OPT", value_enum)]
+    enabled_options: Vec<CompleteOption>,
+    #[usage(long = "+o", hide, value_enum)]
+    disabled_options: Vec<CompleteOption>,
+
+    /// If specified, scopes updates to completions of the named commands.
+    names: Vec<String>,
+}
+
+impl builtins::Command for CompOptCommand {
+    type Error = brush_core::Error;
+
+async fn execute<SE: brush_core::ShellExtensions>(
+    &self,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, Self::Error> {
+    let mut options =
+        HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
+    for option in &self.disabled_options {
+        options.insert(option.clone(), false);
+    }
+    for option in &self.enabled_options {
+        options.insert(option.clone(), true);
+    }
+
+    if !self.names.is_empty() {
+        if self.update_default || self.update_empty || self.update_initial_word {
+            writeln!(
+                context.stderr(),
+                "compopt: cannot specify names with -D, -E, or -I"
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
+
+        for name in &self.names {
+            let spec = context.shell.completion_config_mut().get_or_add_mut(name);
+            Self::set_options_for_spec(spec, &options);
+        }
+    } else if self.update_default {
+        if let Some(spec) = &mut context.shell.completion_config_mut().default {
+            Self::set_options_for_spec(spec, &options);
+        } else {
+            let mut spec = Spec::default();
+            Self::set_options_for_spec(&mut spec, &options);
+            context.shell.completion_config_mut().default = Some(spec);
+        }
+    } else if self.update_empty {
+        if let Some(spec) = &mut context.shell.completion_config_mut().empty_line {
+            Self::set_options_for_spec(spec, &options);
+        } else {
+            let mut spec = Spec::default();
+            Self::set_options_for_spec(&mut spec, &options);
+            context.shell.completion_config_mut().empty_line = Some(spec);
+        }
+    } else if self.update_initial_word {
+        if let Some(spec) = &mut context.shell.completion_config_mut().initial_word {
+            Self::set_options_for_spec(spec, &options);
+        } else {
+            let mut spec = Spec::default();
+            Self::set_options_for_spec(&mut spec, &options);
+            context.shell.completion_config_mut().initial_word = Some(spec);
+        }
+    } else {
+        // If we got here, then we need to apply to any completion actively in-flight.
+        if let Some(in_flight_options) = context
+            .shell
+            .completion_config_mut()
+            .current_completion_options
+            .as_mut()
+        {
+            Self::set_options(in_flight_options, &options);
+        }
+    }
+
+    Ok(ExecutionResult::success())
+}
+
+    fn get_content(
+        name: &str,
+        content_type: builtins::ContentType,
+        options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::error::Error> {
+        crate::args::usage_support::get_content::<Self>(name, &content_type, options)
+    }
+}
