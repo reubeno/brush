@@ -59,3 +59,9 @@ impl builtins::Command for ExportCommand {
         super::execute(self, context).await
     }
 }
+
+impl builtins::DeclarationCommand for ExportCommand {
+    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
+        self.declarations = declarations;
+    }
+}
