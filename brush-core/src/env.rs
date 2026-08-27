@@ -275,8 +275,10 @@ impl ShellEnvironment {
         name: S,
         shell: &Shell<SE>,
     ) -> Option<Cow<'_, str>> {
-        self.get(name.as_ref())
-            .map(|(_, v)| v.value().to_cow_str(shell))
+        self.get(name.as_ref()).map(|(_, v)| {
+            let cow = v.value().to_cow_str(shell);
+            Cow::Owned(cow.to_string())
+        })
     }
 
     /// Checks if a variable of the given name is set in the environment.
@@ -507,16 +509,22 @@ impl ShellEnvironment {
     /// * `updater` - A function to call to update the variable after assigning the value.
     /// * `lookup_policy` - The policy to use when looking up the variable.
     /// * `scope_if_creating` - The scope to create the variable in if it doesn't already exist.
-    pub fn update_or_add_array_element<N: Into<String>>(
+    pub fn update_or_add_array_element<
+        N: Into<String>,
+        I: Into<bstr::BString>,
+        V: Into<bstr::BString>,
+    >(
         &mut self,
         name: N,
-        index: String,
-        value: String,
+        index: I,
+        value: V,
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
     ) -> Result<(), error::Error> {
         let name = name.into();
+        let index = index.into();
+        let value = value.into();
 
         if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
             var.assign_at_index(index, value, false)?;

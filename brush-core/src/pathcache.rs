@@ -41,7 +41,7 @@ impl PathCache {
         let pairs = self
             .cache
             .iter()
-            .map(|(k, v)| (Some(k.to_owned()), v.to_string_lossy().to_string()))
+            .map(|(k, v)| (Some(k.as_str().into()), crate::path_to_bstring(v)))
             .collect::<Vec<_>>();
 
         variables::ShellValue::associative_array_from_literals(variables::ArrayLiteral(pairs))

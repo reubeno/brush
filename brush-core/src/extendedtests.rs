@@ -228,7 +228,7 @@ async fn apply_binary_predicate(
             let captures_value = variables::ShellValueLiteral::Array(ArrayLiteral(
                 captures
                     .into_iter()
-                    .map(|c| (None, c.unwrap_or_default()))
+                    .map(|c| (None, c.unwrap_or_default().into()))
                     .collect(),
             ));
 

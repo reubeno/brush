@@ -834,7 +834,7 @@ impl Execute for ast::ForClauseCommand {
             // Update the variable.
             shell.env_mut().update_or_add(
                 &self.variable_name,
-                ShellValueLiteral::Scalar(value),
+                ShellValueLiteral::Scalar(value.into()),
                 |_| Ok(()),
                 EnvironmentLookup::Anywhere,
                 EnvironmentScope::Global,
@@ -1491,7 +1491,7 @@ async fn apply_assignment(
         ast::AssignmentValue::Scalar(unexpanded_value) => {
             let value =
                 expansion::basic_expand_assignment_word(shell, params, unexpanded_value).await?;
-            ShellValueLiteral::Scalar(value)
+            ShellValueLiteral::Scalar(value.into())
         }
         ast::AssignmentValue::Array(unexpanded_values) => {
             let mut elements = vec![];
@@ -1508,14 +1508,14 @@ async fn apply_assignment(
                     let value =
                         expansion::basic_expand_assignment_word(shell, params, unexpanded_value)
                             .await?;
-                    elements.push((key, value));
+                    elements.push((key.map(|k| k.into()), value.into()));
                 } else {
                     // Array elements are treated as regular words, not assignments
                     let values =
                         expansion::full_expand_and_split_word(shell, params, unexpanded_value)
                             .await?;
                     for value in values {
-                        elements.push((None, value));
+                        elements.push((None, value.into()));
                     }
                 }
             }
@@ -1567,7 +1567,7 @@ async fn apply_assignment(
             if let Some(array_index) = array_index {
                 match new_value {
                     ShellValueLiteral::Scalar(s) => {
-                        existing_value.assign_at_index(array_index, s, assignment.append)?;
+                        existing_value.assign_at_index(array_index.into(), s, assignment.append)?;
                     }
                     ShellValueLiteral::Array(_) => {
                         return error::unimp("replacing an array item with an array");
@@ -1596,9 +1596,9 @@ async fn apply_assignment(
     // If we fell down here, then we need to add it.
     let new_value = if let Some(array_index) = array_index {
         match new_value {
-            ShellValueLiteral::Scalar(s) => {
-                ShellValue::indexed_array_from_literals(ArrayLiteral(vec![(Some(array_index), s)]))
-            }
+            ShellValueLiteral::Scalar(s) => ShellValue::indexed_array_from_literals(ArrayLiteral(
+                vec![(Some(array_index.into()), s)],
+            )),
             ShellValueLiteral::Array(_) => {
                 return error::unimp("cannot assign list to array member");
             }

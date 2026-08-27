@@ -342,12 +342,12 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
                 match prompt_cmd_var.value() {
                     brush_core::ShellValue::String(cmd_str) => {
-                        Self::run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
+                        Self::run_pre_prompt_command(shell, cmd_str.to_string()).await?;
                     }
                     brush_core::ShellValue::IndexedArray(values) => {
                         let owned_values: Vec<_> = values.values().cloned().collect();
                         for cmd_str in owned_values {
-                            Self::run_pre_prompt_command(shell, cmd_str).await?;
+                            Self::run_pre_prompt_command(shell, cmd_str.to_string()).await?;
                         }
                     }
                     // Other types are ignored.
@@ -368,7 +368,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
                 for func_name in precmd_funcs.values() {
                     let _ = shell
                         .invoke_function(
-                            func_name,
+                            func_name.to_string(),
                             std::iter::empty::<&str>(),
                             shell.default_exec_params(),
                         )
@@ -407,7 +407,11 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             {
                 for func_name in preexec_funcs.values() {
                     let _ = shell
-                        .invoke_function(func_name, &[command_line], shell.default_exec_params())
+                        .invoke_function(
+                            func_name.to_string(),
+                            &[command_line],
+                            shell.default_exec_params(),
+                        )
                         .await;
                 }
             }

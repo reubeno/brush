@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use bstr::BString;
 use rand::RngExt as _;
 
 use crate::shell::ShellState;
@@ -44,7 +45,7 @@ pub(crate) fn inherit_env_vars(
             continue;
         }
 
-        let mut var = ShellVariable::new(ShellValue::String(v));
+        let mut var = ShellVariable::new(ShellValue::String(v.into()));
         var.export();
         shell.env_mut().set_global(k, var)?;
     }
@@ -83,7 +84,7 @@ pub(crate) fn init_well_known_vars(
     #[cfg(not(target_family = "wasm"))]
     {
         let mut bashpid_var =
-            ShellVariable::new(ShellValue::String(std::process::id().to_string()));
+            ShellVariable::new(ShellValue::String(std::process::id().to_string().into()));
         bashpid_var.treat_as_integer();
         shell.env_mut().set_global("BASHPID", bashpid_var)?;
     }
@@ -97,7 +98,7 @@ pub(crate) fn init_well_known_vars(
                     shell
                         .aliases()
                         .iter()
-                        .map(|(k, v)| (Some(k.to_owned()), v.to_owned()))
+                        .map(|(k, v)| (Some(k.as_str().into()), v.as_str().into()))
                         .collect::<Vec<_>>(),
                 );
 
@@ -268,7 +269,7 @@ pub(crate) fn init_well_known_vars(
 
     // EUID
     if let Ok(euid) = sys::users::get_effective_uid() {
-        let mut euid_var = ShellVariable::new(ShellValue::String(format!("{euid}")));
+        let mut euid_var = ShellVariable::new(ShellValue::String(format!("{euid}").into()));
         euid_var.treat_as_integer().set_readonly();
         shell.env_mut().set_global("EUID", euid_var)?;
     }
@@ -291,7 +292,7 @@ pub(crate) fn init_well_known_vars(
             getter: |_shell| {
                 let groups = get_current_user_gids();
                 ShellValue::indexed_array_from_strings(
-                    groups.into_iter().map(|gid| gid.to_string()),
+                    groups.into_iter().map(|gid| BString::from(gid.to_string())),
                 )
             },
             setter: |_| (),
@@ -317,19 +318,16 @@ pub(crate) fn init_well_known_vars(
         let histfile = home_dir.join(".brush_history");
         shell.env_mut().set_global(
             "HISTFILE",
-            ShellVariable::new(ShellValue::String(histfile.to_string_lossy().to_string())),
+            ShellVariable::new(ShellValue::String(crate::path_to_bstring(histfile))),
         )?;
     }
 
     // HOSTNAME
     shell.env_mut().set_global(
         "HOSTNAME",
-        ShellVariable::new(
-            sys::network::get_hostname()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        ),
+        ShellVariable::new(crate::os_string_to_bstring(
+            sys::network::get_hostname().unwrap_or_default(),
+        )),
     )?;
 
     // HOSTTYPE
@@ -414,7 +412,10 @@ pub(crate) fn init_well_known_vars(
         ShellVariable::new(ShellValue::Dynamic {
             getter: |shell| {
                 ShellValue::indexed_array_from_strings(
-                    shell.last_pipeline_statuses().iter().map(|s| s.to_string()),
+                    shell
+                        .last_pipeline_statuses()
+                        .iter()
+                        .map(|s| BString::from(s.to_string())),
                 )
             },
             setter: |_| (),
@@ -516,14 +517,14 @@ pub(crate) fn init_well_known_vars(
     // we inherited an out-of-sync version of the variable. Future updates
     // will be handled by set_working_dir().
     //
-    let pwd = shell.working_dir().to_string_lossy().to_string();
+    let pwd = crate::path_to_bstring(shell.working_dir());
     let mut pwd_var = ShellVariable::new(pwd);
     pwd_var.export();
     shell.env_mut().set_global("PWD", pwd_var)?;
 
     // UID
     if let Ok(uid) = sys::users::get_current_uid() {
-        let mut uid_var = ShellVariable::new(ShellValue::String(format!("{uid}")));
+        let mut uid_var = ShellVariable::new(ShellValue::String(format!("{uid}").into()));
         uid_var.treat_as_integer().set_readonly();
         shell.env_mut().set_global("UID", uid_var)?;
     }
