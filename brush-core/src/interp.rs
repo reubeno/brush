@@ -1656,6 +1656,22 @@ pub(crate) async fn setup_redirect(
                         shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
                     let default_fd_if_unspecified = get_default_fd_for_redirect_kind(kind);
+
+                    // The access this redirection is asking for, taken straight from the
+                    // syntax that requested it. This is what the command interceptor is
+                    // shown; it is deliberately derived from `kind` rather than recovered
+                    // from `options` after the fact.
+                    let access = match kind {
+                        ast::IoFileRedirectKind::Read | ast::IoFileRedirectKind::DuplicateInput => {
+                            extensions::OpenAccess::Read
+                        }
+                        ast::IoFileRedirectKind::Write
+                        | ast::IoFileRedirectKind::Append
+                        | ast::IoFileRedirectKind::Clobber
+                        | ast::IoFileRedirectKind::DuplicateOutput => extensions::OpenAccess::Write,
+                        ast::IoFileRedirectKind::ReadAndWrite => extensions::OpenAccess::ReadWrite,
+                    };
+
                     match kind {
                         ast::IoFileRedirectKind::Read => {
                             options.read(true);
@@ -1705,7 +1721,7 @@ pub(crate) async fn setup_redirect(
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
                     let opened_file = shell
-                        .open_file(&options, &expanded_file_path, params)
+                        .open_file(&options, access, &expanded_file_path, params)
                         .map_err(|err| {
                             error::ErrorKind::RedirectionFailure(
                                 expanded_file_path.to_string_lossy().to_string(),
@@ -1874,7 +1890,12 @@ fn setup_redirect_output_and_error_to(
         .append(append);
 
     let stdout_file = shell
-        .open_file(&file_options, &abs_file_path, params)
+        .open_file(
+            &file_options,
+            extensions::OpenAccess::Write,
+            &abs_file_path,
+            params,
+        )
         .map_err(|err| {
             error::ErrorKind::RedirectionFailure(
                 abs_file_path.to_string_lossy().to_string(),

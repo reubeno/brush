@@ -73,6 +73,68 @@ pub enum ExecDecision {
     Deny(String),
 }
 
+/// The access an open request is asking for.
+///
+/// This is the shell's *declared* intent for the open, derived at the call site
+/// (e.g. from the [`brush_parser::ast::IoFileRedirectKind`] of a redirection),
+/// not reverse-engineered from the resulting [`std::fs::OpenOptions`]. It is the
+/// axis a confinement policy selects on: read authority versus write authority.
+///
+/// [`brush_parser::ast::IoFileRedirectKind`]: ../../brush_parser/ast/enum.IoFileRedirectKind.html
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpenAccess {
+    /// The file is opened for reading only (`< file`, `source`/`.`).
+    Read,
+    /// The file is opened for writing only, whether by truncation or append
+    /// (`> file`, `>> file`, `>| file`, `&> file`).
+    Write,
+    /// The file is opened for both reading and writing (`<> file`).
+    ReadWrite,
+}
+
+impl OpenAccess {
+    /// Returns whether this access grants the ability to read the file.
+    #[must_use]
+    pub const fn reads(self) -> bool {
+        matches!(self, Self::Read | Self::ReadWrite)
+    }
+
+    /// Returns whether this access grants the ability to modify the file.
+    #[must_use]
+    pub const fn writes(self) -> bool {
+        matches!(self, Self::Write | Self::ReadWrite)
+    }
+}
+
+/// Describes a file open that the shell is about to perform, as presented to
+/// [`CommandInterceptor::before_open`].
+///
+/// The struct is `#[non_exhaustive]` so that further detail can be added later
+/// without breaking implementors; construct one with [`OpenRequest::new`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OpenRequest<'a> {
+    /// The absolute path that is about to be opened. Already resolved against
+    /// the shell's working directory, but *not* canonicalized — a policy that
+    /// cares about symlink or `..` escapes must canonicalize it itself.
+    pub path: &'a Path,
+    /// The access the shell is requesting.
+    pub access: OpenAccess,
+}
+
+impl<'a> OpenRequest<'a> {
+    /// Creates a new open request.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The absolute path about to be opened.
+    /// * `access` - The access being requested.
+    #[must_use]
+    pub const fn new(path: &'a Path, access: OpenAccess) -> Self {
+        Self { path, access }
+    }
+}
+
 /// Decision returned by [`CommandInterceptor::before_open`] to control whether
 /// a file may be opened.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,11 +188,20 @@ pub trait CommandInterceptor: Clone + Default + Send + Sync + 'static {
     ///
     /// # Arguments
     ///
-    /// * `path` - The absolute path that is about to be opened.
-    /// * `write` - Whether the open requests write access (`true`) or is
-    ///   read-only (`false`).
-    fn before_open(&self, path: &Path, write: bool) -> OpenDecision {
-        let _ = (path, write);
+    /// * `request` - What is about to be opened, and with what access. The
+    ///   access is the shell's declared intent, taken from the syntax that
+    ///   requested the open; see [`OpenRequest`].
+    ///
+    /// # Coverage
+    ///
+    /// This fires for every path-based open the shell performs. One documented
+    /// exception exists: platform-specific special files are resolved before
+    /// the path is made absolute, and are not shown to this hook. Today that is
+    /// only `/dev/null` on Windows (mapped to `NUL`); on Unix the special-file
+    /// hook resolves nothing at all. Opens performed by an already-spawned
+    /// external process are outside the shell entirely and never reach here.
+    fn before_open(&self, request: &OpenRequest<'_>) -> OpenDecision {
+        let _ = request;
         OpenDecision::Allow
     }
 }

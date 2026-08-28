@@ -20,7 +20,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use brush_core::extensions::{
-    CommandInterceptor, ErrorFormatter, ExecDecision, OpenDecision, ShellExtensions,
+    CommandInterceptor, ErrorFormatter, ExecDecision, OpenAccess, OpenDecision, OpenRequest,
+    ShellExtensions,
 };
 
 /// An interceptor that denies any external program whose basename is in a deny
@@ -31,7 +32,7 @@ struct PolicyInterceptor {
     denied_basenames: Arc<Vec<String>>,
     allowed_write_dir: Arc<Mutex<Option<PathBuf>>>,
     exec_calls: Arc<Mutex<Vec<String>>>,
-    open_calls: Arc<Mutex<Vec<(PathBuf, bool)>>>,
+    open_calls: Arc<Mutex<Vec<(PathBuf, OpenAccess)>>>,
 }
 
 impl PolicyInterceptor {
@@ -48,7 +49,7 @@ impl PolicyInterceptor {
         self.exec_calls.lock().unwrap().clone()
     }
 
-    fn open_calls(&self) -> Vec<(PathBuf, bool)> {
+    fn open_calls(&self) -> Vec<(PathBuf, OpenAccess)> {
         self.open_calls.lock().unwrap().clone()
     }
 }
@@ -69,13 +70,14 @@ impl CommandInterceptor for PolicyInterceptor {
         }
     }
 
-    fn before_open(&self, path: &Path, write: bool) -> OpenDecision {
+    fn before_open(&self, request: &OpenRequest<'_>) -> OpenDecision {
+        let path = request.path;
         self.open_calls
             .lock()
             .unwrap()
-            .push((path.to_path_buf(), write));
+            .push((path.to_path_buf(), request.access));
 
-        if !write {
+        if !request.access.writes() {
             return OpenDecision::Allow;
         }
 
@@ -229,14 +231,16 @@ async fn denies_write_outside_allowed_dir() -> Result<()> {
 
     let open_calls = interceptor.open_calls();
     assert!(
-        open_calls.iter().any(|(p, w)| *w && p == &forbidden_file),
-        "before_open should have been consulted (with write=true) for the forbidden path; saw: {open_calls:?}"
+        open_calls
+            .iter()
+            .any(|(p, access)| *access == OpenAccess::Write && p == &forbidden_file),
+        "before_open should have been consulted (with OpenAccess::Write) for the forbidden path; saw: {open_calls:?}"
     );
     Ok(())
 }
 
-/// Reads must be allowed by this policy (write=false), proving the `write` flag
-/// is threaded correctly and read-only opens aren't accidentally denied.
+/// Reads must be allowed by this policy, proving the declared access is threaded
+/// correctly and read-only opens aren't accidentally denied.
 #[tokio::test]
 async fn allows_read_open() -> Result<()> {
     let dir = tempfile::tempdir()?;
@@ -254,8 +258,56 @@ async fn allows_read_open() -> Result<()> {
 
     let open_calls = interceptor.open_calls();
     assert!(
-        open_calls.iter().any(|(p, w)| !*w && p == &script),
-        "before_open should have observed a read-only open of the sourced file; saw: {open_calls:?}"
+        open_calls
+            .iter()
+            .any(|(p, access)| *access == OpenAccess::Read && p == &script),
+        "before_open should have observed an OpenAccess::Read open of the sourced file; saw: {open_calls:?}"
     );
+    Ok(())
+}
+
+/// Every redirection kind must report the access its *syntax* asks for.
+///
+/// This is what makes the hook usable as a security contract: a policy that
+/// grants read authority but not write authority has to be able to tell `< f`
+/// from `<> f`, and `>> f` from `> f`, without guessing. Previously the access
+/// was recovered by string-matching the `Debug` rendering of `std::fs::OpenOptions`
+/// — an unstable, platform-varying format — rather than taken from the AST.
+#[tokio::test]
+async fn declared_access_matches_redirection_kind() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let existing = dir.path().join("existing.txt");
+    std::fs::write(&existing, "seed\n")?;
+
+    // No write restriction: we are asserting on the *reported* access, not on
+    // whether the open was permitted.
+    let interceptor = PolicyInterceptor::new(&[], None);
+    let mut shell = shell_with_interceptor(interceptor.clone()).await?;
+
+    let path = existing.display().to_string();
+    for (script, expected) in [
+        (format!("read line < {path}"), OpenAccess::Read),
+        (format!("echo out > {path}"), OpenAccess::Write),
+        (format!("echo more >> {path}"), OpenAccess::Write),
+        (format!("echo clobber >| {path}"), OpenAccess::Write),
+        (format!("exec 7<> {path}; exec 7>&-"), OpenAccess::ReadWrite),
+    ] {
+        let before = interceptor.open_calls().len();
+        let code = run(&mut shell, &script).await?;
+        assert_eq!(
+            code, 0,
+            "`{script}` should succeed under an allow-all policy"
+        );
+
+        let observed: Vec<_> = interceptor.open_calls().split_off(before);
+        assert!(
+            observed
+                .iter()
+                .any(|(p, access)| p == &existing && *access == expected),
+            "`{script}` should report {expected:?} for {}; saw: {observed:?}",
+            existing.display()
+        );
+    }
+
     Ok(())
 }

@@ -86,7 +86,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         options.read(true);
 
         let opened_file: openfiles::OpenFile = self
-            .open_file(&options, path, params)
+            .open_file(&options, crate::extensions::OpenAccess::Read, path, params)
             .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
 
         if opened_file.is_dir() {

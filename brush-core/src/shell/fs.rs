@@ -177,11 +177,16 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// # Arguments
     ///
     /// * `options` - The options to use opening the file.
+    /// * `access` - The access the caller is requesting. This is the *declared*
+    ///   intent, stated by the caller from the syntax that requested the open;
+    ///   it is what the configured command interceptor is shown. It must agree
+    ///   with `options`.
     /// * `path` - The path to the file to open; may be relative to the shell's working directory.
     /// * `params` - Execution parameters.
     pub(crate) fn open_file(
         &self,
         options: &std::fs::OpenOptions,
+        access: crate::extensions::OpenAccess,
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, std::io::Error> {
@@ -201,9 +206,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // policy applied here covers every path-based open in the shell.
         {
             use crate::extensions::CommandInterceptor as _;
-            let write = open_options_request_write(options);
+            let request = crate::extensions::OpenRequest::new(&path_to_open, access);
             if let crate::extensions::OpenDecision::Deny(reason) =
-                self.command_interceptor().before_open(&path_to_open, write)
+                self.command_interceptor().before_open(&request)
             {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
@@ -257,40 +262,5 @@ fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
         filename.to_string_lossy().parse::<ShellFd>().ok()
     } else {
         None
-    }
-}
-
-/// Best-effort determination of whether an [`std::fs::OpenOptions`] requests
-/// write access (including append). Used solely to inform the capability
-/// interceptor's `before_open` hook of write-intent.
-///
-/// `std::fs::OpenOptions` exposes no getters for its configured flags, so we
-/// inspect its `Debug` representation, which is documented to render the
-/// `write` and `append` booleans. If the format ever changes such that we
-/// cannot determine intent, we conservatively report `true` (write) so that a
-/// confinement policy never under-reports access.
-fn open_options_request_write(options: &std::fs::OpenOptions) -> bool {
-    let rendered = format!("{options:?}");
-
-    // Reads the boolean value of a `name: <bool>` field from the rendered
-    // debug string without slicing on byte offsets (which could panic on
-    // multi-byte boundaries).
-    let flag = |name: &str| -> Option<bool> {
-        let needle = format!("{name}: ");
-        let tail = rendered.split_once(&needle)?.1;
-        if tail.starts_with("true") {
-            Some(true)
-        } else if tail.starts_with("false") {
-            Some(false)
-        } else {
-            None
-        }
-    };
-
-    match (flag("write"), flag("append")) {
-        // We could read both flags: write access iff either is set.
-        (Some(write), Some(append)) => write || append,
-        // Could not parse the expected fields; fail safe toward "write".
-        _ => true,
     }
 }

@@ -15,8 +15,12 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let mut options = std::fs::File::options();
         options.read(true);
 
-        let mut history_file =
-            self.open_file(&options, history_path, &self.default_exec_params())?;
+        let mut history_file = self.open_file(
+            &options,
+            crate::extensions::OpenAccess::Read,
+            history_path,
+            &self.default_exec_params(),
+        )?;
 
         // Check on the file's size.
         if let openfiles::OpenFile::File(file) = &mut history_file {
