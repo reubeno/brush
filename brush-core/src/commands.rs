@@ -158,6 +158,26 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
     }
 }
 
+/// Resolves `command_name` to the executable brush would actually run.
+///
+/// Mirrors external command dispatch: a name containing a path separator is taken as
+/// written, anything else is looked up in `PATH` (using the shell's hash cache). Returns
+/// `None` when a bare name is not found.
+///
+/// Callers that launch a process outside [`SimpleCommand`]'s dispatch -- the `exec` builtin
+/// is the one in-tree case -- use this so the command-execution filter is shown the same
+/// resolved program that ordinary dispatch would show it.
+pub fn resolve_external_program<SE: extensions::ShellExtensions>(
+    shell: &mut Shell<SE>,
+    command_name: &str,
+) -> Option<PathBuf> {
+    if sys::fs::contains_path_separator(command_name) {
+        Some(PathBuf::from(command_name))
+    } else {
+        shell.find_first_executable_in_path_using_cache(command_name)
+    }
+}
+
 /// Composes a `std::process::Command` to execute the given command. Appropriately
 /// configures the command name and arguments, redirections, injected file
 /// descriptors, environment variables, etc.

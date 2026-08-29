@@ -170,4 +170,6 @@ procfs = "0.18.0"
 
 [dev-dependencies]
 anyhow = "1.0.102"
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
