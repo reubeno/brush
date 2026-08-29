@@ -1522,8 +1522,14 @@ mod tests {
         assert_eq!(super::parse_sequence_bound("99999999999999999999"), None);
 
         // The digits of `i64::MIN` are one past `i64::MAX`, so the sign has to be parsed with them.
-        assert_eq!(super::parse_sequence_bound("-9223372036854775808"), Some(i64::MIN));
-        assert_eq!(super::parse_sequence_bound("9223372036854775807"), Some(i64::MAX));
+        assert_eq!(
+            super::parse_sequence_bound("-9223372036854775808"),
+            Some(i64::MIN)
+        );
+        assert_eq!(
+            super::parse_sequence_bound("9223372036854775807"),
+            Some(i64::MAX)
+        );
         assert_eq!(super::parse_sequence_bound("-9223372036854775809"), None);
     }
 
