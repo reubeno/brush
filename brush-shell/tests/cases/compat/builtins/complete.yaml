@@ -34,7 +34,7 @@ cases:
       complete -Fmyfunc mycmd
       complete -p mycmd
 
-  - name: "Roundtrip: complete -F"
+  - name: "Roundtrip: complete -G"
     stdin: |
       complete -G pattern mycmd
       complete -p mycmd

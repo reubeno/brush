@@ -91,7 +91,7 @@ cases:
       var=value
       declare -p var
 
-  - name: "Update integer array with non-integer string"
+  - name: "Update integer indexed array with non-integer string"
     stdin: |
       declare -ai arr=()
       declare -p arr
@@ -99,7 +99,7 @@ cases:
       arr[0]="value"
       declare -p arr
 
-  - name: "Update integer array with non-integer string"
+  - name: "Update integer associative array with non-integer string"
     stdin: |
       declare -Ai arr=()
       declare -p arr
