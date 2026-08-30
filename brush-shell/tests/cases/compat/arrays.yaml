@@ -391,3 +391,77 @@ cases:
     stdin: |
       declare -a myarray=(
       )
+
+  #
+  # Ordering between value expansion and subscript evaluation. A shell expands an
+  # assignment's words before it evaluates any arithmetic subscript, so side effects
+  # in a subscript are not visible to the value being assigned.
+  #
+  - name: "Index arithmetic is evaluated after the value is expanded"
+    stdin: |
+      i=0
+      a[i++]=$i
+      declare -p a
+      echo "i=$i"
+
+  - name: "Compound array keys are evaluated after every value is expanded"
+    stdin: |
+      i=0
+      a=([i++]=$i [i++]=$i)
+      declare -p a
+      echo "i=$i"
+
+  - name: "Append with an arithmetic subscript"
+    stdin: |
+      i=0
+      a[i++]=$i
+      a[i++]+=$i
+      declare -p a
+      echo "i=$i"
+
+  - name: "Expansion order of a subscript relative to its value"
+    stdin: |
+      a[$(echo "sub" >&2; echo 0)]=$(echo "val" >&2; echo v)
+      declare -p a
+
+  - name: "Associative subscripts are not arithmetically evaluated"
+    stdin: |
+      i=0
+      declare -A m
+      m[i++]=$i
+      declare -p m
+      echo "i=$i"
+
+  - name: "Associative subscript is expanded once in a plain assignment"
+    stdin: |
+      declare -A m
+      k='$(echo expanded-twice)'
+      m[$k]=v
+      declare -p m
+
+  #
+  # The same subscript rules reached through a declaration builtin, which resolves
+  # subscripts itself once its options reveal the target array type.
+  #
+  - name: "declare resolves an arithmetic subscript"
+    known_failure: true # TODO(declare): subscripts are not resolved by declaration builtins
+    stdin: |
+      i=2
+      declare -a a[i]=x
+      declare -p a
+
+  - name: "declare evaluates subscript arithmetic after the value expands"
+    known_failure: true # TODO(declare): subscripts are not resolved by declaration builtins
+    stdin: |
+      i=0
+      declare -a a[i++]=$i
+      declare -p a
+      echo "i=$i"
+
+  - name: "declare expands an associative subscript a second time"
+    known_failure: true # TODO(declare): subscripts are not resolved by declaration builtins
+    stdin: |
+      declare -A n
+      k='$(echo expanded-twice)'
+      declare n[$k]=v
+      declare -p n

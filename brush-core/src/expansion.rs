@@ -604,23 +604,6 @@ pub(crate) async fn basic_expand_assignment_word(
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
-/// How an assignment's subscripts are handled while its words are expanded.
-///
-/// N.B. `ExpandOnly` and `Resolve(AssociativeArray)` currently do the same work, because an
-/// associative subscript is just a word and deferring means expanding it as one. That overlap is
-/// incidental, not an invitation to merge them: the interpreter picks `ExpandOnly` precisely
-/// because it does *not* know the target kind, and saying `Resolve(AssociativeArray)` there would
-/// assert something it cannot know. Nothing would fail today if the two were collapsed, which is
-/// why this note exists rather than a test.
-#[derive(Clone, Copy)]
-enum SubscriptHandling {
-    /// Expand each subscript as an ordinary word, leaving its final interpretation to the
-    /// declaration builtin that receives the assignment.
-    ExpandOnly,
-    /// Resolve each subscript against the target array type as it is expanded.
-    Resolve(AssignmentTarget),
-}
-
 /// Fully expands a raw parsed assignment and returns a new assignment AST. The result preserves
 /// the grammar-validated base variable name and assignment metadata while expanding its optional
 /// subscript and value according to assignment rules.
@@ -644,13 +627,11 @@ pub(crate) async fn expand_assignment(
     assignment: &ast::Assignment,
     target: AssignmentTarget,
 ) -> Result<ast::Assignment, error::Error> {
-    expand_assignment_impl(
-        shell,
-        params,
-        assignment,
-        SubscriptHandling::Resolve(target),
-    )
-    .await
+    // A shell expands an assignment's words before it resolves any subscript, so arithmetic
+    // side effects in a subscript are not observable to the values being assigned. The base
+    // name's subscript is left for the resolve pass, so it is expanded exactly once.
+    let expanded = expand_assignment_impl(shell, params, assignment, false).await?;
+    resolve_assignment_subscripts(shell, params, &expanded, target).await
 }
 
 /// Expands the words of a raw parsed assignment, without resolving its subscripts. Returns a new
@@ -673,7 +654,7 @@ pub(crate) async fn expand_assignment_words(
     params: &ExecutionParameters,
     assignment: &ast::Assignment,
 ) -> Result<ast::Assignment, error::Error> {
-    expand_assignment_impl(shell, params, assignment, SubscriptHandling::ExpandOnly).await
+    expand_assignment_impl(shell, params, assignment, true).await
 }
 
 /// Expands a raw parsed assignment's words and returns a new assignment AST, handling subscripts
@@ -690,20 +671,8 @@ async fn expand_assignment_impl(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     assignment: &ast::Assignment,
-    subscripts: SubscriptHandling,
+    expand_name_subscript: bool,
 ) -> Result<ast::Assignment, error::Error> {
-    let name = match &assignment.name {
-        // The parser grammar guarantees a literal shell identifier here. Assignment expansion
-        // applies to an optional subscript, never to the variable's base name.
-        ast::AssignmentName::VariableName(name) => ast::AssignmentName::VariableName(name.clone()),
-        ast::AssignmentName::ArrayElementName(name, index) => {
-            ast::AssignmentName::ArrayElementName(
-                name.clone(),
-                expand_subscript(shell, params, index, subscripts).await?,
-            )
-        }
-    };
-
     let value = match &assignment.value {
         ast::AssignmentValue::Scalar(value) => ast::AssignmentValue::Scalar(
             basic_expand_assignment_word(shell, params, value)
@@ -714,8 +683,7 @@ async fn expand_assignment_impl(
             let mut expanded = vec![];
             for (key, value) in elements {
                 if let Some(key) = key {
-                    let expanded_key =
-                        expand_subscript(shell, params, key.as_ref(), subscripts).await?;
+                    let expanded_key = basic_expand_word(shell, params, key.as_ref()).await?;
                     let expanded_value = basic_expand_assignment_word(shell, params, value).await?;
                     expanded.push((Some(expanded_key.into()), expanded_value.into()));
                 } else {
@@ -730,36 +698,26 @@ async fn expand_assignment_impl(
         }
     };
 
+    let name = match &assignment.name {
+        // The parser grammar guarantees a literal shell identifier here. Assignment expansion
+        // applies to an optional subscript, never to the variable's base name.
+        ast::AssignmentName::VariableName(name) => ast::AssignmentName::VariableName(name.clone()),
+        ast::AssignmentName::ArrayElementName(name, index) => {
+            let index = if expand_name_subscript {
+                basic_expand_word(shell, params, index).await?
+            } else {
+                index.clone()
+            };
+            ast::AssignmentName::ArrayElementName(name.clone(), index)
+        }
+    };
+
     Ok(ast::Assignment {
         name,
         value,
         append: assignment.append,
         loc: assignment.loc.clone(),
     })
-}
-
-/// Expands one subscript and returns its resulting text, honoring the requested handling.
-///
-/// # Arguments
-///
-/// * `shell` - The shell environment in which parameter, command, and arithmetic expansions run.
-/// * `params` - The execution parameters used by subscript expansion.
-/// * `index` - The unexpanded subscript text from the assignment AST.
-/// * `subscripts` - How to handle the subscript.
-async fn expand_subscript(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    params: &ExecutionParameters,
-    index: &str,
-    subscripts: SubscriptHandling,
-) -> Result<String, error::Error> {
-    match subscripts {
-        // Deliberately distinct from the associative case below, even though both word-expand
-        // today; see [`SubscriptHandling`].
-        SubscriptHandling::ExpandOnly => basic_expand_word(shell, params, index).await,
-        SubscriptHandling::Resolve(target) => {
-            expand_assignment_subscript(shell, params, index, target).await
-        }
-    }
 }
 
 /// Expands one array subscript against a known target type and returns its final index or key.
