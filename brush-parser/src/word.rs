@@ -1011,9 +1011,9 @@ peg::parser! {
             // N.B. A run of digits need not fit in a `usize`; decline the rule
             // when it does not, so the word falls through to being treated as a
             // (non-existent) user name instead of panicking the parser.
-            plus:("+"?) n:$(['0'..='9']*) &tilde_terminator() {? n.parse().map(|n| TildeExpr::NthDirFromTopOfDirStack { n, plus_used: plus.is_some() }).map_err(|_| "dir stack index out of range") } /
+            plus:("+"?) n:$(['0'..='9']*) &tilde_terminator() {? n.parse().map_or_else(|_| Err("dir stack index out of range"), |n| Ok(TildeExpr::NthDirFromTopOfDirStack { n, plus_used: plus.is_some() })) } /
             "-" &tilde_terminator() { TildeExpr::OldWorkingDir } /
-            "-" n:$(['0'..='9']*) &tilde_terminator() {? n.parse().map(|n| TildeExpr::NthDirFromBottomOfDirStack { n }).map_err(|_| "dir stack index out of range") } /
+            "-" n:$(['0'..='9']*) &tilde_terminator() {? n.parse().map_or_else(|_| Err("dir stack index out of range"), |n| Ok(TildeExpr::NthDirFromBottomOfDirStack { n })) } /
             user:$(portable_filename_char()*) &tilde_terminator() { TildeExpr::UserHome(user.to_owned()) }
 
         rule tilde_terminator() = ['/' | ':' | ';' | '}'] / ![_]
