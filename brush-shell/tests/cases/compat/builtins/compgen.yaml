@@ -86,6 +86,14 @@ cases:
 
       compgen -A command zzf
 
+  - name: "compgen -A command only returns functions matching the prefix"
+    stdin: |
+      zzfa() { :; }
+      zzfb() { :; }
+      totally_unrelated() { :; }
+
+      compgen -A command zzf
+
   - name: "compgen -A keyword"
     stdin: |
       compgen -A keyword esa | sort

@@ -512,7 +512,9 @@ impl Spec {
                     }
                     // Functions are stored unordered; bash enumerates them sorted by name.
                     for (name, _) in shell.funcs().iter().sorted_by_key(|v| v.0) {
-                        candidates.push(name.to_owned());
+                        if name.starts_with(token) {
+                            candidates.push(name.to_owned());
+                        }
                     }
                 }
                 CompleteAction::Directory => {
