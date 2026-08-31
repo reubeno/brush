@@ -110,3 +110,50 @@ cases:
       arr[5]=added
       echo "status: $?"
       declare -p arr
+
+  #
+  # Readonly enforcement reached through paths other than a plain assignment. The element guard
+  # lives in the one place all of these converge, so these cases keep the other callers honest.
+  #
+  - name: "readonly blocks an assignment expansion on an array element"
+    ignore_stderr: true
+    stdin: |
+      declare -a c=(one)
+      readonly c
+      echo "${c[1]:=default}"
+      declare -p c
+
+  - name: "readonly blocks an assignment expansion on a scalar"
+    ignore_stderr: true
+    stdin: |
+      declare u
+      readonly u
+      echo "${u:=default}"
+      echo "after"
+
+  - name: "readonly blocks an arithmetic assignment to an array element"
+    ignore_stderr: true
+    stdin: |
+      a=(one)
+      readonly a
+      (( a[0] = 99 ))
+      echo "status: $?"
+      declare -p a
+
+  - name: "readonly blocks an arithmetic assignment to a scalar"
+    ignore_stderr: true
+    stdin: |
+      s=1
+      readonly s
+      (( s = 5 ))
+      echo "status: $?"
+      declare -p s
+
+  - name: "readonly blocks mapfile from replacing an array"
+    ignore_stderr: true
+    stdin: |
+      m=(one)
+      readonly m
+      printf 'x\ny\n' | mapfile -t m
+      echo "status: $?"
+      declare -p m

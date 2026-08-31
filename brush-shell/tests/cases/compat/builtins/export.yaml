@@ -159,3 +159,51 @@ cases:
       value=world
       command export wrapped=$value
       declare -p wrapped
+
+  #
+  # `export` accepts the attribute options its declaration siblings do; brush rejects them
+  # outright ("unexpected argument"). Issue #1132: `mise activate bash` emits
+  # `export -a chpwd_functions` on every startup.
+  #
+  # Note what a shell actually does with `-a`, since it is easy to over-apply: the array
+  # attribute is set only when the operand carries an assignment. A bare name gets the export
+  # attribute alone, which is why the scalar assignment below stays a scalar rather than becoming
+  # element 0 of an array.
+  #
+  - name: "export -a on a bare name marks it exported without making it an array"
+    known_failure: true # TODO: export does not accept attribute options
+    ignore_stderr: true
+    stdin: |
+      export -a foo
+      declare -p foo
+
+  - name: "export -a on a bare name leaves a later scalar assignment scalar"
+    known_failure: true # TODO: export does not accept attribute options
+    ignore_stderr: true
+    stdin: |
+      export -a bar
+      bar=val
+      declare -p bar
+
+  - name: "export -a with an assignment creates an exported indexed array"
+    known_failure: true # TODO: export does not accept attribute options
+    ignore_stderr: true
+    stdin: |
+      export -a baz=hello
+      declare -p baz
+
+  - name: "export -A is accepted but does not make the variable associative"
+    known_failure: true # TODO: export does not accept attribute options
+    ignore_stderr: true
+    stdin: |
+      export -A m
+      m[k]=v
+      declare -p m
+
+  - name: "export -a then array append keeps the export attribute"
+    known_failure: true # TODO: export does not accept attribute options
+    ignore_stderr: true
+    stdin: |
+      export -a hooks
+      hooks+=(h1)
+      declare -p hooks
