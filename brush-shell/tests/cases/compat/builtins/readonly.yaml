@@ -71,3 +71,42 @@ cases:
       g() { echo redefined; }
       g
       readonly -f nosuchfn
+
+  #
+  # Readonly is enforced for assignments that target a single array element, not just for
+  # assignments that replace a whole variable.
+  #
+  - name: "readonly blocks a plain subscripted assignment"
+    ignore_stderr: true
+    stdin: |
+      arr=(one)
+      readonly arr
+      arr[0]=mutated
+      echo "status: $?"
+      declare -p arr
+
+  - name: "readonly blocks a subscripted assignment through declare"
+    ignore_stderr: true
+    stdin: |
+      declare -ar arr=(one)
+      declare 'arr[0]=mutated'
+      echo "status: $?"
+      declare -p arr
+
+  - name: "readonly blocks appending to an array element"
+    ignore_stderr: true
+    stdin: |
+      declare -A map=([k]=one)
+      readonly map
+      map[k]+=two
+      echo "status: $?"
+      declare -p map
+
+  - name: "readonly blocks adding a new array element"
+    ignore_stderr: true
+    stdin: |
+      arr=(one)
+      readonly arr
+      arr[5]=added
+      echo "status: $?"
+      declare -p arr

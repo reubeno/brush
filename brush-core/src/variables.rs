@@ -408,6 +408,13 @@ impl ShellVariable {
         value: String,
         append: bool,
     ) -> Result<(), error::Error> {
+        // Readonly is enforced here and not only in `assign`, so that every path reaching an
+        // element -- a subscripted assignment, a declaration builtin, arithmetic, or an
+        // assignment expansion -- is blocked, not just whole-variable assignment.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &self.value {
             ShellValue::Unset(_) => {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
