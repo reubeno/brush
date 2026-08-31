@@ -1,4 +1,5 @@
 use clap::Parser;
+use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -25,7 +26,8 @@ impl builtins::Command for AliasCommand {
         let mut exit_code = ExecutionResult::success();
 
         if self.print || self.aliases.is_empty() {
-            for (name, value) in context.shell.aliases() {
+            // Aliases are stored unordered; bash lists them sorted by name.
+            for (name, value) in context.shell.aliases().iter().sorted() {
                 writeln!(context.stdout(), "alias {name}='{value}'")?;
             }
         } else {
