@@ -707,9 +707,13 @@ peg::parser! {
             [Token::Word(w, num_loc) if w.chars().all(|c: char| c.is_ascii_digit())]
             &([Token::Operator(o, redir_loc) if
                     o.starts_with(['<', '>']) &&
-                    locations_are_contiguous(num_loc, redir_loc)]) {
+                    locations_are_contiguous(num_loc, redir_loc)]) {?
 
-                w.parse().unwrap()
+                // A run of ASCII digits still need not fit in an `IoFd`; e.g.
+                // `echo 99999999999999999999>&1` overflows. Decline the rule
+                // instead of unwrapping, so the token is reconsidered as an
+                // ordinary word rather than panicking the parser.
+                w.parse().map_err(|_| "io number out of range")
             }
 
         //
