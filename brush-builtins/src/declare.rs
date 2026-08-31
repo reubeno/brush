@@ -453,12 +453,7 @@ impl DeclareCommand {
             self.apply_attributes_before_update(var)?;
 
             if let Some(initial_value) = declaration.initial_value {
-                assign_declaration_value(
-                    var,
-                    initial_value,
-                    declaration.subscript.as_deref(),
-                    declaration.append,
-                )?;
+                var.assign_at(declaration.subscript, initial_value, declaration.append)?;
             }
 
             self.apply_attributes_after_update(var, verb)?;
@@ -475,12 +470,7 @@ impl DeclareCommand {
             self.apply_attributes_before_update(&mut var)?;
 
             if let Some(initial_value) = declaration.initial_value {
-                assign_declaration_value(
-                    &mut var,
-                    initial_value,
-                    declaration.subscript.as_deref(),
-                    declaration.append,
-                )?;
+                var.assign_at(declaration.subscript, initial_value, declaration.append)?;
             }
 
             if context.shell.options().export_variables_on_modification && !var.value().is_array() {
@@ -523,8 +513,8 @@ impl DeclareCommand {
     /// source variable has been found.
     ///
     /// The inherited value is updated rather than replaced, so the assignment runs through the
-    /// same helper as every other declared value; that is what makes `local -I name+=value`
-    /// append to what was inherited.
+    /// same `assign_at` path as every other declared value; that is what makes
+    /// `local -I name+=value` append to what was inherited.
     fn declare_inherited_local(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -535,12 +525,7 @@ impl DeclareCommand {
         self.apply_attributes_before_update(&mut var)?;
 
         if let Some(initial_value) = declaration.initial_value {
-            assign_declaration_value(
-                &mut var,
-                initial_value,
-                declaration.subscript.as_deref(),
-                declaration.append,
-            )?;
+            var.assign_at(declaration.subscript, initial_value, declaration.append)?;
         }
 
         if context.shell.options().export_variables_on_modification && !var.value().is_array() {
@@ -958,22 +943,4 @@ fn parse_string_operand(
         initial_value: None,
         append: false,
     }))
-}
-
-/// Assigns a declaration's value to a variable, targeting one array element when the declaration
-/// carried an (already-resolved) subscript.
-fn assign_declaration_value(
-    variable: &mut ShellVariable,
-    value: ShellValueLiteral,
-    subscript: Option<&str>,
-    append: bool,
-) -> Result<(), error::Error> {
-    match (value, subscript) {
-        (ShellValueLiteral::Scalar(value), Some(index)) => {
-            variable.assign_at_index(index.to_owned(), value, append)
-        }
-        // A compound value never reaches here alongside a subscript:
-        // `PreparedDeclaration::from_assignment` rejects that combination before one is built.
-        (value, _) => variable.assign(value, append),
-    }
 }

@@ -227,6 +227,32 @@ impl ShellVariable {
         }
     }
 
+    /// Assigns the given value to the variable, targeting one array element when an
+    /// (already-resolved) subscript is given. Assigning a list to a single element is an error,
+    /// as in a shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The resolved subscript of the element to assign to, if any.
+    /// * `value` - The value to assign.
+    /// * `append` - Whether or not to append the value to the preexisting value.
+    pub fn assign_at(
+        &mut self,
+        index: Option<String>,
+        value: ShellValueLiteral,
+        append: bool,
+    ) -> Result<(), error::Error> {
+        match (index, value) {
+            (Some(index), ShellValueLiteral::Scalar(value)) => {
+                self.assign_at_index(index, value, append)
+            }
+            (Some(_), ShellValueLiteral::Array(_)) => {
+                Err(error::ErrorKind::AssigningListToArrayMember.into())
+            }
+            (None, value) => self.assign(value, append),
+        }
+    }
+
     /// Assign the given value to the variable, conditionally appending to the preexisting value.
     ///
     /// # Arguments

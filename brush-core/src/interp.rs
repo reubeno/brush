@@ -1479,25 +1479,15 @@ async fn apply_assignment(
     // See if we can find an existing value associated with the variable.
     if let Some((existing_value_scope, existing_value)) = shell.env_mut().get_mut(variable_name) {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
-            if let Some(array_index) = array_index {
-                match new_value {
-                    ShellValueLiteral::Scalar(s) => {
-                        existing_value.assign_at_index(array_index, s, assignment.append)?;
-                    }
-                    ShellValueLiteral::Array(_) => {
-                        return error::unimp("replacing an array item with an array");
-                    }
-                }
-            } else {
-                if !export
-                    && export_variables_on_modification
-                    && !matches!(new_value, ShellValueLiteral::Array(_))
-                {
-                    export = true;
-                }
-
-                existing_value.assign(new_value, assignment.append)?;
+            if array_index.is_none()
+                && !export
+                && export_variables_on_modification
+                && !matches!(new_value, ShellValueLiteral::Array(_))
+            {
+                export = true;
             }
+
+            existing_value.assign_at(array_index, new_value, assignment.append)?;
 
             if export {
                 existing_value.export();
@@ -1515,7 +1505,7 @@ async fn apply_assignment(
                 ShellValue::indexed_array_from_literals(ArrayLiteral(vec![(Some(array_index), s)]))
             }
             ShellValueLiteral::Array(_) => {
-                return error::unimp("cannot assign list to array member");
+                return Err(error::ErrorKind::AssigningListToArrayMember.into());
             }
         }
     } else {

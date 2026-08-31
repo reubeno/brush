@@ -462,3 +462,23 @@ cases:
       k='$(echo expanded-twice)'
       declare n[$k]=v
       declare -p n
+
+  #
+  # Assigning a list to a single array element is an error; the shell reports it and
+  # continues with a failure status.
+  #
+  - name: "Assigning a list to an element of an existing array fails"
+    ignore_stderr: true
+    stdin: |
+      a=(1 2)
+      a[0]=(9 9)
+      echo "status: $?"
+      declare -p a
+
+  - name: "Assigning a list to an element of an unset variable fails"
+    ignore_stderr: true
+    stdin: |
+      b[0]=(9 9)
+      echo "status: $?"
+      declare -p b 2>/dev/null
+      echo "status: $?"
