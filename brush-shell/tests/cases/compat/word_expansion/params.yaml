@@ -569,6 +569,115 @@ cases:
       echo "\${var:-1:1}: ${var:-1:1}"
       echo "\${var:-3:1}: ${var:-3:1}"
 
+  - name: "Substring with negative length"
+    stdin: |
+      var="abcdefgh"
+      echo "\${var:2:-2}:    ${var:2:-2}"
+      echo "\${var:0:-1}:    ${var:0:-1}"
+      echo "\${var:0:-8}:   [${var:0:-8}]"
+      echo "\${var: -4:-1}: ${var: -4:-1}"
+      echo "\${var: -4:-4}:[${var: -4:-4}]"
+      echo "\${var:2:-6}:   [${var:2:-6}]"
+      echo "\${var:9:-1}:   [${var:9:-1}]"
+      n=2
+      echo "\${var:1:-n}:    ${var:1:-n}"
+      echo "\${var:1:(-2)}:  ${var:1:(-2)}"
+      elem=(abcdefgh)
+      echo "\${elem[0]:2:-2}:  ${elem[0]:2:-2}"
+
+  - name: "Substring with a negative length reaching past the offset"
+    ignore_stderr: true
+    stdin: |
+      var="abcdefgh"
+      ( echo "[${var:0:-9}]" ); echo "rc=$?"
+      ( echo "[${var:2:-7}]" ); echo "rc=$?"
+      ( echo "[${var:8:-1}]" ); echo "rc=$?"
+      empty=
+      ( echo "[${empty:0:-1}]" ); echo "rc=$?"
+
+  - name: "Substring with negative length past the end of an array"
+    stdin: |
+      arr=(a b c)
+      echo "\${arr[@]:3:-1}: [${arr[@]:3:-1}]"
+      echo "\${arr[@]:9:-1}: [${arr[@]:9:-1}]"
+      echo "\${arr[*]:9:-1}: [${arr[*]:9:-1}]"
+      set -- p q r
+      echo "\${@:5:-1}:      [${@:5:-1}]"
+
+  - name: "Substring with negative length on arrays"
+    # bash rejects a negative length for every array form. The offset at which it stops
+    # doing so and yields an empty slice instead is not the same one it uses for strings,
+    # and differs between indexed arrays (past the highest subscript) and the forms
+    # addressed by position (past the element count). The associative cases only pin that
+    # the length is still rejected: bash documents substring expansion of an associative
+    # array as producing undefined results, so its selection is not something to match.
+    ignore_stderr: true
+    stdin: |
+      arr=(a b c)
+      ( echo "[${arr[@]:0:-1}]" ); echo "rc=$?"
+      ( echo "[${arr[@]:2:-1}]" ); echo "rc=$?"
+      ( echo "[${arr[@]:3:-1}]" ); echo "rc=$?"
+      ( echo "[${arr[*]:0:-1}]" ); echo "rc=$?"
+      ( echo "[${arr[@]: -1:-1}]" ); echo "rc=$?"
+      set -- p q r
+      ( echo "[${@:1:-1}]" ); echo "rc=$?"
+      ( echo "[${@:4:-1}]" ); echo "rc=$?"
+      ( echo "[${@:5:-1}]" ); echo "rc=$?"
+      ( echo "[${*:3:-1}]" ); echo "rc=$?"
+      declare -A assoc=([x]=1)
+      ( echo "[${assoc[@]:0:-1}]" ); echo "rc=$?"
+      ( echo "[${assoc[@]:1:-1}]" ); echo "rc=$?"
+      ( echo "[${assoc[@]:2:-1}]" ); echo "rc=$?"
+
+  - name: "Substring with an out-of-range offset"
+    stdin: |
+      var="abcdefgh"
+      echo "\${var:99:-1}:      [${var:99:-1}]"
+      echo "\${var: -99:-1}:    [${var: -99:-1}]"
+      echo "\${var: -99:2}:     [${var: -99:2}]"
+      echo "\${var:99:2}:       [${var:99:2}]"
+      unset nosuch
+      echo "\${nosuch:0:-1}:    [${nosuch:0:-1}]"
+      echo "\${nosuch: -1:-1}:  [${nosuch: -1:-1}]"
+      arr=(a b c)
+      echo "\${arr[@]:99:-1}:   [${arr[@]:99:-1}]"
+      echo "\${arr[@]: -99:-1}: [${arr[@]: -99:-1}]"
+      empty_arr=()
+      echo "\${empty_arr[@]:0:-1}:   [${empty_arr[@]:0:-1}]"
+      declare -A empty_assoc=()
+      echo "\${empty_assoc[@]:0:-1}: [${empty_assoc[@]:0:-1}]"
+
+  - name: "Substring operator on a scalar referenced as an array"
+    ignore_stderr: true
+    stdin: |
+      s=hello
+      echo "\${s[@]:0:2}:  ${s[@]:0:2}"
+      echo "\${s[@]:1:2}:  ${s[@]:1:2}"
+      echo "\${s[@]:1}:    ${s[@]:1}"
+      echo "\${s[@]:0:-1}: ${s[@]:0:-1}"
+      echo "\${s[*]:1:-1}: ${s[*]:1:-1}"
+      echo "\${#s[@]}:     ${#s[@]}"
+      ( echo "[${s[@]:2:-9}]" ); echo "rc=$?"
+
+  - name: "Substring operator on a dynamic scalar referenced as an array"
+    # LINENO stands in for the dynamic scalars (RANDOM, EPOCHSECONDS, ...) because it's
+    # the deterministic one. The `:` padding keeps it at two digits so the slices below
+    # can tell string addressing apart from element addressing.
+    stdin: |
+      :
+      :
+      :
+      :
+      :
+      :
+      :
+      :
+      :
+      echo "\${LINENO[@]:1}:    ${LINENO[@]:1}"
+      echo "\${LINENO[@]:0:1}:  ${LINENO[@]:0:1}"
+      echo "\${#LINENO[@]}:     ${#LINENO[@]}"
+      ( echo "[${LINENO[@]:0:-1}]" ); echo "rc=$?"
+
   - name: "Substring on string with multi-byte chars"
     skip: true # TODO(expansion): succeeds on macOS, fails on Linux
     stdin: |
@@ -610,6 +719,57 @@ cases:
       myarray=(a b c)
       declare -a result2=("${myarray[@]:3}")
       declare -p result2
+
+  - name: "Substring operator on arrays with out-of-range offsets and lengths"
+    stdin: |
+      arr=(a b c d e)
+      echo "\${arr[@]:1:99}:    ${arr[@]:1:99}"
+      echo "\${arr[@]:0:0}:    [${arr[@]:0:0}]"
+      echo "\${arr[@]: -2:99}:  ${arr[@]: -2:99}"
+      echo "\${arr[@]: -9:2}:  [${arr[@]: -9:2}]"
+      echo "\${arr[@]:4:1}:     ${arr[@]:4:1}"
+      echo "\${arr[@]:5:1}:    [${arr[@]:5:1}]"
+      echo "\${arr[*]:1:2}:     ${arr[*]:1:2}"
+      echo "\${arr[*]: -2:99}:  ${arr[*]: -2:99}"
+      set -- p q r
+      echo "\${@:1:99}:         ${@:1:99}"
+      echo "\${@: -1:99}:       ${@: -1:99}"
+
+  - name: "Substring operator on sparse indexed arrays"
+    stdin: |
+      sparse=([1]=one [5]=five [9]=nine)
+      echo "\${sparse[@]:0}:     ${sparse[@]:0}"
+      echo "\${sparse[@]:1}:     ${sparse[@]:1}"
+      echo "\${sparse[@]:2}:     ${sparse[@]:2}"
+      echo "\${sparse[@]:6}:     ${sparse[@]:6}"
+      echo "\${sparse[@]:9}:     ${sparse[@]:9}"
+      echo "\${sparse[@]:10}:   [${sparse[@]:10}]"
+      echo "\${sparse[@]:1:1}:   ${sparse[@]:1:1}"
+      echo "\${sparse[@]:1:2}:   ${sparse[@]:1:2}"
+      echo "\${sparse[@]:5:0}:  [${sparse[@]:5:0}]"
+      echo "\${sparse[@]:2:99}:  ${sparse[@]:2:99}"
+      echo "\${sparse[@]: -1}:    ${sparse[@]: -1}"
+      echo "\${sparse[@]: -5}:    ${sparse[@]: -5}"
+      echo "\${sparse[@]: -10}:   ${sparse[@]: -10}"
+      echo "\${sparse[@]: -11}:  [${sparse[@]: -11}]"
+      echo "\${sparse[*]:2}:     ${sparse[*]:2}"
+      echo "\${sparse[*]:1:2}:   ${sparse[*]:1:2}"
+      echo "\${sparse[*]: -5}:    ${sparse[*]: -5}"
+      echo "\${sparse[*]: -11}:  [${sparse[*]: -11}]"
+      declare -a solo; solo[7]=x
+      echo "\${solo[@]:0}:       ${solo[@]:0}"
+      echo "\${solo[@]:7}:       ${solo[@]:7}"
+      echo "\${solo[@]:8}:      [${solo[@]:8}]"
+
+  - name: "Substring with negative length on a sparse indexed array"
+    ignore_stderr: true
+    stdin: |
+      sparse=([1]=one [5]=five [9]=nine)
+      ( echo "[${sparse[@]:0:-1}]" ); echo "rc=$?"
+      ( echo "[${sparse[@]:5:-1}]" ); echo "rc=$?"
+      ( echo "[${sparse[@]:9:-1}]" ); echo "rc=$?"
+      ( echo "[${sparse[@]:10:-1}]" ); echo "rc=$?"
+      ( echo "[${sparse[@]:11:-1}]" ); echo "rc=$?"
 
   - name: "Substring with length (with nested expressions)"
     stdin: |
