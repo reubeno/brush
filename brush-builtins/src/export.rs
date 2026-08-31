@@ -1,6 +1,6 @@
 use clap::Parser;
 use itertools::Itertools;
-use std::{borrow::Cow, io::Write};
+use std::io::Write;
 
 use brush_core::{
     ExecutionResult, builtins,
@@ -115,28 +115,16 @@ impl builtins::Command for ExportCommand {
 
 impl ExportCommand {
     /// Prepares one export operand and returns a representation that needs no further shell
-    /// expansion.
-    ///
-    /// A [`brush_core::CommandArg::Assignment`] had its words expanded by the interpreter, so only
-    /// its subscripts remain to be resolved. A [`brush_core::CommandArg::String`] may still hold
-    /// assignment syntax produced by quoting or by an expansion; that syntax is recognized here,
-    /// and its value is deliberately left verbatim rather than expanded a second time.
+    /// expansion. Only the subscripts of the assignment an operand may hold (see
+    /// [`brush_core::CommandArg::assignment`]) remain to be resolved here.
     async fn prepare_export(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
     ) -> Result<PreparedExport, brush_core::Error> {
-        let assignment = match declaration {
-            brush_core::CommandArg::Assignment(assignment) => Cow::Borrowed(assignment),
-            brush_core::CommandArg::String(operand) => {
-                match brush_parser::word::parse_scalar_assignment(
-                    operand,
-                    &context.shell.parser_options(),
-                ) {
-                    Ok(assignment) => Cow::Owned(assignment),
-                    Err(_) => return Ok(PreparedExport::Name(operand.clone())),
-                }
-            }
+        let Some(assignment) = declaration.assignment(&context.shell.parser_options()) else {
+            // Without assignment syntax, the operand just names a variable or function.
+            return Ok(PreparedExport::Name(declaration.to_string()));
         };
 
         // `export` has no array-typing options, so the target keeps whatever kind it already has.

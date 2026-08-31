@@ -1,6 +1,6 @@
 use clap::Parser;
 use itertools::Itertools;
-use std::{borrow::Cow, io::Write, sync::LazyLock};
+use std::{io::Write, sync::LazyLock};
 
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
@@ -544,26 +544,18 @@ impl DeclareCommand {
 
     /// Prepares one command argument for application. Returns the prepared declaration, or an
     /// error if its structured assignment is invalid.
-    ///
-    /// A [`brush_core::CommandArg::Assignment`] is an assignment the parser recognized in the
-    /// command line; the interpreter has already expanded its words. A
-    /// [`brush_core::CommandArg::String`] is any other operand: it may still turn out to hold
-    /// assignment syntax (from quoting, or produced by an expansion), in which case that syntax is
-    /// recognized here and its value is deliberately *not* expanded a second time.
     async fn prepare_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
         lookup: EnvironmentLookup,
     ) -> Result<PreparedDeclaration, brush_core::Error> {
-        let assignment = match declaration {
-            brush_core::CommandArg::Assignment(assignment) => Cow::Borrowed(assignment),
-            brush_core::CommandArg::String(operand) => {
-                match parse_string_operand(operand, &context.shell.parser_options())? {
-                    StringOperand::Assignment(assignment) => Cow::Owned(assignment),
-                    StringOperand::NameOnly(prepared) => return Ok(prepared),
-                }
-            }
+        // Assignment syntax (see [`brush_core::CommandArg::assignment`]) wins: it is the only
+        // interpretation under which the operand's text after `=` is a value. Checking it first
+        // also keeps a value that merely ends in `]` (say, `x=[a]`) from being mistaken for a
+        // subscripted name.
+        let Some(assignment) = declaration.assignment(&context.shell.parser_options()) else {
+            return prepare_bare_operand(&declaration.to_string());
         };
 
         // One lookup answers both questions the rest of preparation asks of the environment:
@@ -891,23 +883,9 @@ impl DeclareCommand {
     }
 }
 
-/// The result of structurally interpreting a plain string operand.
-enum StringOperand {
-    /// The operand holds assignment syntax whose subscript still needs resolving.
-    Assignment(ast::Assignment),
-    /// The operand only names a variable, so no further interpretation is needed.
-    NameOnly(PreparedDeclaration),
-}
-
-/// Interprets a plain string operand, returning either the assignment syntax it holds or a
-/// ready-to-apply bare-name declaration.
-///
-/// The operand has already been through ordinary word expansion, so any assignment recognized here
-/// keeps its value verbatim; only a subscript remains to be resolved by the caller.
-fn parse_string_operand(
-    operand: &str,
-    parser_options: &brush_parser::ParserOptions,
-) -> Result<StringOperand, error::Error> {
+/// Interprets an operand holding no assignment syntax, returning a ready-to-apply bare-name
+/// declaration.
+fn prepare_bare_operand(operand: &str) -> Result<PreparedDeclaration, error::Error> {
     // `declare array[index]` names an array without assigning to it. The subscript is retained
     // only to mark this as an array declaration; the element itself is never updated, so the
     // subscript is deliberately left unexpanded.
@@ -918,29 +896,22 @@ fn parse_string_operand(
     static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
         LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
 
-    // Assignment syntax wins: it is the only interpretation under which the operand's text after
-    // `=` is a value. Checking it first also keeps a value that merely ends in `]` (say,
-    // `x=[a]`) from being mistaken for a subscripted name.
-    if let Ok(assignment) = brush_parser::word::parse_scalar_assignment(operand, parser_options) {
-        return Ok(StringOperand::Assignment(assignment));
-    }
-
     if let Some(captures) = ARRAY_AND_INDEX_RE.captures(operand)?
         && let Some(name) = captures.get(1)
     {
-        return Ok(StringOperand::NameOnly(PreparedDeclaration {
+        return Ok(PreparedDeclaration {
             name: name.as_str().to_owned(),
             subscript: captures.get(2).map(|m| m.as_str().to_owned()),
             initial_value: None,
             append: false,
-        }));
+        });
     }
 
     // Just a name, as in `declare name`.
-    Ok(StringOperand::NameOnly(PreparedDeclaration {
+    Ok(PreparedDeclaration {
         name: operand.to_owned(),
         subscript: None,
         initial_value: None,
         append: false,
-    }))
+    })
 }

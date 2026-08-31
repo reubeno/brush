@@ -131,6 +131,33 @@ impl From<&String> for CommandArg {
 }
 
 impl CommandArg {
+    /// Returns the assignment this argument holds, if any. A [`CommandArg::Assignment`] always
+    /// holds one: the parser recognized it in the command line, and the interpreter has already
+    /// expanded its words. A [`CommandArg::String`] may still hold assignment syntax that quoting
+    /// or an expansion hid from the parser; it is recognized here, and its value is deliberately
+    /// left verbatim -- the operand as a whole was already expanded once, so expanding the value
+    /// again would be a double expansion.
+    ///
+    /// Only a declaration builtin should honor late-recognized assignment syntax; to any other
+    /// consumer, a string operand is just text.
+    ///
+    /// # Arguments
+    ///
+    /// * `parser_options` - The parser options governing assignment syntax.
+    pub fn assignment(
+        &self,
+        parser_options: &brush_parser::ParserOptions,
+    ) -> Option<Cow<'_, ast::Assignment>> {
+        match self {
+            Self::Assignment(assignment) => Some(Cow::Borrowed(assignment)),
+            Self::String(operand) => {
+                brush_parser::word::parse_scalar_assignment(operand, parser_options)
+                    .ok()
+                    .map(Cow::Owned)
+            }
+        }
+    }
+
     /// Renders this argument as `set -x` trace text, quoting the whole argument if a shell would
     /// need quoting to reproduce it.
     pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
