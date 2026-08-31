@@ -4,12 +4,7 @@ use std::borrow::Cow;
 
 use brush_parser::ast;
 
-use crate::{
-    env, error,
-    expansion::{self, AssignmentTarget},
-    extensions,
-    interp::ExecutionParameters,
-};
+use crate::{env, error, expansion, extensions, interp::ExecutionParameters, variables::ArrayKind};
 
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the current value of the IFS variable, or the default value if it is not set.
@@ -69,7 +64,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         &mut self,
         params: &ExecutionParameters,
         assignment: &ast::Assignment,
-        target: AssignmentTarget,
+        target: ArrayKind,
     ) -> Result<ast::Assignment, error::Error> {
         expansion::expand_assignment(self, params, assignment, target).await
     }
@@ -89,15 +84,11 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         &self,
         name: &str,
         lookup: env::EnvironmentLookup,
-    ) -> Option<AssignmentTarget> {
-        let value = self.env().get_using_policy(name, lookup)?.value();
-        if value.is_associative_array() {
-            Some(AssignmentTarget::AssociativeArray)
-        } else if value.is_indexed_array() {
-            Some(AssignmentTarget::IndexedArray)
-        } else {
-            None
-        }
+    ) -> Option<ArrayKind> {
+        self.env()
+            .get_using_policy(name, lookup)?
+            .value()
+            .array_kind()
     }
 
     /// Resolves the subscripts of an assignment whose words a shell already expanded, and returns
@@ -114,7 +105,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         &mut self,
         params: &ExecutionParameters,
         assignment: &ast::Assignment,
-        target: AssignmentTarget,
+        target: ArrayKind,
     ) -> Result<ast::Assignment, error::Error> {
         expansion::resolve_assignment_subscripts(self, params, assignment, target).await
     }

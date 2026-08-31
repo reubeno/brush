@@ -6,10 +6,9 @@ use brush_core::{
     ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
     error,
-    expansion::AssignmentTarget,
     parser::ast,
     variables::{
-        self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
+        self, ArrayKind, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
         ShellVariableUpdateTransform,
     },
 };
@@ -134,10 +133,6 @@ struct PreparedDeclaration {
 impl PreparedDeclaration {
     /// Converts an expanded, subscript-resolved assignment into a ready-to-apply declaration.
     /// Returns an error when a compound value targets a single array element.
-    ///
-    /// # Arguments
-    ///
-    /// * `assignment` - The assignment to convert.
     fn from_assignment(assignment: &ast::Assignment) -> Result<Self, error::Error> {
         let (name, subscript) = match &assignment.name {
             ast::AssignmentName::VariableName(name) => (name.to_owned(), None),
@@ -150,22 +145,10 @@ impl PreparedDeclaration {
             }
         };
 
-        let initial_value = match &assignment.value {
-            ast::AssignmentValue::Scalar(value) => ShellValueLiteral::Scalar(value.value.clone()),
-            ast::AssignmentValue::Array(elements) => ShellValueLiteral::Array(ArrayLiteral(
-                elements
-                    .iter()
-                    .map(|(key, value)| {
-                        (key.as_ref().map(|k| k.value.clone()), value.value.clone())
-                    })
-                    .collect(),
-            )),
-        };
-
         Ok(Self {
             name,
             subscript,
-            initial_value: Some(initial_value),
+            initial_value: Some(ShellValueLiteral::from(&assignment.value)),
             append: assignment.append,
         })
     }
@@ -196,31 +179,18 @@ impl PreparedDeclaration {
 }
 
 impl builtins::DeclarationCommand for DeclareCommand {
-    /// Stores the declarations to process when the command executes, replacing any previously
-    /// stored declarations.
-    ///
-    /// # Arguments
-    ///
-    /// * `declarations` - The declaration arguments to process.
     fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
         self.declarations = declarations;
     }
 }
 
 impl builtins::Command for DeclareCommand {
-    /// Returns `true` because declaration attributes may be disabled using `+` options.
     fn takes_plus_options() -> bool {
         true
     }
 
     type Error = brush_core::Error;
 
-    /// Executes the requested declaration updates or displays matching declarations. Returns the
-    /// aggregate execution result, including failures from individual declarations.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context to read from and update.
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         mut context: brush_core::ExecutionContext<'_, SE>,
@@ -302,11 +272,6 @@ impl builtins::Command for DeclareCommand {
 
 impl DeclareCommand {
     /// Resolves and returns the lookup and creation scopes for this declaration invocation.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell context used to determine whether execution is inside a function.
-    /// * `verb` - The invoked declaration variant (`declare`, `local`, or `readonly`).
     fn declaration_scope(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -336,12 +301,6 @@ impl DeclareCommand {
 
     /// Displays the variable or function named by a declaration argument. Returns `true` if the
     /// requested declaration was found and displayed.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context containing variables, functions, and output.
-    /// * `declaration` - The argument naming the declaration to display.
-    /// * `verb` - The declaration builtin variant being executed.
     fn try_display_declaration(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -420,13 +379,6 @@ impl DeclareCommand {
     /// Applies one prepared declaration to the variable environment. Returns `true` on success,
     /// or `false` for a declaration-level failure that should affect the command's exit status
     /// without aborting processing of subsequent declarations.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context whose variable environment is updated.
-    /// * `declaration` - The prepared declaration to apply.
-    /// * `verb` - The declaration builtin variant being executed.
-    /// * `scope` - The lookup and creation policy for this invocation.
     fn apply_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -447,8 +399,8 @@ impl DeclareCommand {
                 .shell
                 .existing_array_kind(declaration.name.as_str(), scope.lookup)
             && match existing {
-                AssignmentTarget::IndexedArray => dropping_indexed,
-                AssignmentTarget::AssociativeArray => dropping_associative,
+                ArrayKind::Indexed => dropping_indexed,
+                ArrayKind::Associative => dropping_associative,
             }
         {
             writeln!(
@@ -493,8 +445,8 @@ impl DeclareCommand {
             .get_mut_using_policy(declaration.name.as_str(), scope.lookup)
         {
             match self.requested_array_kind() {
-                Some(AssignmentTarget::AssociativeArray) => var.convert_to_associative_array()?,
-                Some(AssignmentTarget::IndexedArray) => var.convert_to_indexed_array()?,
+                Some(ArrayKind::Associative) => var.convert_to_associative_array()?,
+                Some(ArrayKind::Indexed) => var.convert_to_indexed_array()?,
                 None => (),
             }
 
@@ -512,8 +464,8 @@ impl DeclareCommand {
             self.apply_attributes_after_update(var, verb)?;
         } else {
             let unset_type = match self.requested_array_kind() {
-                Some(AssignmentTarget::IndexedArray) => ShellValueUnsetType::IndexedArray,
-                Some(AssignmentTarget::AssociativeArray) => ShellValueUnsetType::AssociativeArray,
+                Some(ArrayKind::Indexed) => ShellValueUnsetType::IndexedArray,
+                Some(ArrayKind::Associative) => ShellValueUnsetType::AssociativeArray,
                 None if declaration.implies_array() => ShellValueUnsetType::IndexedArray,
                 None => ShellValueUnsetType::Untyped,
             };
@@ -547,13 +499,8 @@ impl DeclareCommand {
     }
 
     /// Returns a copy of the variable a `-I` declaration inherits, or `None` when this
-    /// invocation did not ask to inherit or no same-name variable exists in an enclosing scope.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context whose environment is searched.
-    /// * `declaration` - The declaration whose target name is looked up.
-    /// * `scope` - The scope this declaration creates in; only a local can inherit.
+    /// invocation did not ask to inherit, is not creating a local, or no same-name variable
+    /// exists in an enclosing scope.
     fn inherited_local(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -578,13 +525,6 @@ impl DeclareCommand {
     /// The inherited value is updated rather than replaced, so the assignment runs through the
     /// same helper as every other declared value; that is what makes `local -I name+=value`
     /// append to what was inherited.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context receiving the new local.
-    /// * `declaration` - The declaration being applied.
-    /// * `verb` - The invoked declaration variant (`declare`, `local`, or `readonly`).
-    /// * `var` - The variable inherited from the enclosing scope.
     fn declare_inherited_local(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -625,12 +565,6 @@ impl DeclareCommand {
     /// [`brush_core::CommandArg::String`] is any other operand: it may still turn out to hold
     /// assignment syntax (from quoting, or produced by an expansion), in which case that syntax is
     /// recognized here and its value is deliberately *not* expanded a second time.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context used to interpret the declaration.
-    /// * `declaration` - The command argument to prepare.
-    /// * `lookup` - The scope policy used to inspect the declaration target.
     async fn prepare_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -652,7 +586,7 @@ impl DeclareCommand {
         let existing = context
             .shell
             .existing_array_kind(assignment.name.base_name(), lookup);
-        let target = self.assignment_target(existing);
+        let target = self.effective_array_kind(existing);
 
         let assignment = context
             .shell
@@ -674,11 +608,11 @@ impl DeclareCommand {
     ///
     /// A shell rejects those two options together; brush accepts them and lets `-A` win. See the
     /// `-a -A` known-failure case.
-    fn requested_array_kind(&self) -> Option<AssignmentTarget> {
+    fn requested_array_kind(&self) -> Option<ArrayKind> {
         if self.make_associative_array.to_bool() == Some(true) {
-            Some(AssignmentTarget::AssociativeArray)
+            Some(ArrayKind::Associative)
         } else if self.make_indexed_array.to_bool() == Some(true) {
-            Some(AssignmentTarget::IndexedArray)
+            Some(ArrayKind::Indexed)
         } else {
             None
         }
@@ -686,32 +620,21 @@ impl DeclareCommand {
 
     /// Returns the array kind governing subscript expansion for this invocation. An explicit
     /// `-a`/`-A` wins; otherwise the target keeps whatever kind it already has.
-    ///
-    /// # Arguments
-    ///
-    /// * `existing` - The array kind the target variable already has, if any.
-    fn assignment_target(&self, existing: Option<AssignmentTarget>) -> AssignmentTarget {
+    fn effective_array_kind(&self, existing: Option<ArrayKind>) -> ArrayKind {
         self.requested_array_kind()
             .or(existing)
-            .unwrap_or(AssignmentTarget::IndexedArray)
+            .unwrap_or(ArrayKind::Indexed)
     }
 
     /// Reinterprets an expanded assignment's scalar value as a compound array value, when the
     /// requested attributes or the target variable's existing type call for it. Returns the
     /// reinterpreted assignment, or `None` if the value should stay scalar.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context used for compound-element expansion.
-    /// * `assignment` - The expanded parsed assignment to consider.
-    /// * `target_is_array` - Whether the target variable already exists as an array.
-    /// * `target` - The array kind used when expanding newly recognized compound elements.
     async fn reinterpret_as_compound(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         assignment: &ast::Assignment,
         target_is_array: bool,
-        target: AssignmentTarget,
+        target: ArrayKind,
     ) -> Result<Option<ast::Assignment>, brush_core::Error> {
         // Absent an array attribute or an already-array target, text that looks like a compound
         // value stays scalar.
@@ -756,13 +679,7 @@ impl DeclareCommand {
         ))
     }
 
-    /// Displays all variables whose attributes match the requested filters. Returns success after
-    /// all matching variables are written, or an output error.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context containing variables and output.
-    /// * `verb` - The declaration builtin variant controlling scope and filtering.
+    /// Displays all variables whose attributes match the requested filters.
     fn display_matching_env_declarations(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -884,12 +801,7 @@ impl DeclareCommand {
         Ok(())
     }
 
-    /// Displays shell functions in the form requested by the command options. Returns success after
-    /// all functions are written, or an output error.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell execution context containing functions and output.
+    /// Displays shell functions in the form requested by the command options.
     fn display_matching_functions(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -905,12 +817,7 @@ impl DeclareCommand {
         Ok(())
     }
 
-    /// Applies attributes that must affect how a new value is assigned. Returns success after all
-    /// requested attributes have been applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `var` - The shell variable whose attributes are updated.
+    /// Applies attributes that must affect how a new value is assigned.
     #[expect(clippy::unnecessary_wraps)]
     const fn apply_attributes_before_update(
         &self,
@@ -978,13 +885,8 @@ impl DeclareCommand {
         Ok(())
     }
 
-    /// Applies readonly attributes after any value update has completed. Returns success if the
-    /// requested readonly state is valid, or an error if readonly status cannot be removed.
-    ///
-    /// # Arguments
-    ///
-    /// * `var` - The shell variable whose readonly state is updated.
-    /// * `verb` - The declaration builtin variant determining implicit readonly behavior.
+    /// Applies readonly attributes after any value update has completed. Errors if readonly
+    /// status cannot be removed.
     fn apply_attributes_after_update(
         &self,
         var: &mut ShellVariable,
@@ -1017,11 +919,6 @@ enum StringOperand {
 ///
 /// The operand has already been through ordinary word expansion, so any assignment recognized here
 /// keeps its value verbatim; only a subscript remains to be resolved by the caller.
-///
-/// # Arguments
-///
-/// * `operand` - The already-expanded operand text.
-/// * `parser_options` - The parser options governing assignment syntax.
 fn parse_string_operand(
     operand: &str,
     parser_options: &brush_parser::ParserOptions,
@@ -1064,14 +961,7 @@ fn parse_string_operand(
 }
 
 /// Assigns a declaration's value to a variable, targeting one array element when the declaration
-/// carried a subscript.
-///
-/// # Arguments
-///
-/// * `variable` - The shell variable to update.
-/// * `value` - The declaration value to assign.
-/// * `subscript` - The resolved subscript the declaration named, if any.
-/// * `append` - Whether to append to the existing scalar or element value.
+/// carried an (already-resolved) subscript.
 fn assign_declaration_value(
     variable: &mut ShellVariable,
     value: ShellValueLiteral,

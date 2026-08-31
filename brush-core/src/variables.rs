@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt::{Display, Write};
 
+use brush_parser::ast;
+
 use crate::shell::{Shell, ShellState};
 use crate::{error, escape, extensions};
 
@@ -635,6 +637,15 @@ pub enum ShellValueUnsetType {
     IndexedArray,
 }
 
+/// The kind of an array variable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArrayKind {
+    /// An array indexed by integers.
+    Indexed,
+    /// An array keyed by arbitrary strings.
+    Associative,
+}
+
 /// A shell value literal; used for assignment.
 #[derive(Clone, Debug)]
 pub enum ShellValueLiteral {
@@ -698,6 +709,25 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
+impl From<&ast::AssignmentValue> for ShellValueLiteral {
+    fn from(value: &ast::AssignmentValue) -> Self {
+        match value {
+            ast::AssignmentValue::Scalar(value) => Self::Scalar(value.value.clone()),
+            ast::AssignmentValue::Array(elements) => Self::Array(ArrayLiteral(
+                elements
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            key.as_ref().map(|key| key.value.clone()),
+                            value.value.clone(),
+                        )
+                    })
+                    .collect(),
+            )),
+        }
+    }
+}
+
 /// An array literal.
 #[derive(Clone, Debug)]
 pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
@@ -712,26 +742,34 @@ pub enum FormatStyle {
 }
 
 impl ShellValue {
+    /// Returns the kind of array this value is, or `None` if it is not an array. A declared but
+    /// unset array still has a kind.
+    pub const fn array_kind(&self) -> Option<ArrayKind> {
+        match self {
+            Self::IndexedArray(_) | Self::Unset(ShellValueUnsetType::IndexedArray) => {
+                Some(ArrayKind::Indexed)
+            }
+            Self::AssociativeArray(_) | Self::Unset(ShellValueUnsetType::AssociativeArray) => {
+                Some(ArrayKind::Associative)
+            }
+            _ => None,
+        }
+    }
+
     /// Returns whether or not the value is an indexed array, including a declared but unset one.
     pub const fn is_indexed_array(&self) -> bool {
-        matches!(
-            self,
-            Self::IndexedArray(_) | Self::Unset(ShellValueUnsetType::IndexedArray)
-        )
+        matches!(self.array_kind(), Some(ArrayKind::Indexed))
     }
 
     /// Returns whether or not the value is an associative array, including a declared but unset
     /// one.
     pub const fn is_associative_array(&self) -> bool {
-        matches!(
-            self,
-            Self::AssociativeArray(_) | Self::Unset(ShellValueUnsetType::AssociativeArray)
-        )
+        matches!(self.array_kind(), Some(ArrayKind::Associative))
     }
 
     /// Returns whether or not the value is an array.
     pub const fn is_array(&self) -> bool {
-        self.is_indexed_array() || self.is_associative_array()
+        self.array_kind().is_some()
     }
 
     /// Returns whether or not the value is set.

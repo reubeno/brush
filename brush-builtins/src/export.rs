@@ -5,9 +5,8 @@ use std::{borrow::Cow, io::Write};
 use brush_core::{
     ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
-    expansion::AssignmentTarget,
     parser::ast,
-    variables,
+    variables::{self, ArrayKind},
 };
 
 /// Add or update exported shell variables.
@@ -62,7 +61,7 @@ impl PreparedExport {
         Some(std::format!(
             "{}{op}{}",
             assignment.name,
-            assignment_value(assignment)
+            variables::ShellValueLiteral::from(&assignment.value)
         ))
     }
 }
@@ -122,11 +121,6 @@ impl ExportCommand {
     /// its subscripts remain to be resolved. A [`brush_core::CommandArg::String`] may still hold
     /// assignment syntax produced by quoting or by an expansion; that syntax is recognized here,
     /// and its value is deliberately left verbatim rather than expanded a second time.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell context used for expansion, parser options, and target lookup.
-    /// * `declaration` - The operand to prepare.
     async fn prepare_export(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -149,7 +143,7 @@ impl ExportCommand {
         let target = context
             .shell
             .existing_array_kind(assignment.name.base_name(), EnvironmentLookup::Anywhere)
-            .unwrap_or(AssignmentTarget::IndexedArray);
+            .unwrap_or(ArrayKind::Indexed);
         let assignment = context
             .shell
             .resolve_assignment_subscripts(&context.params, &assignment, target)
@@ -159,11 +153,6 @@ impl ExportCommand {
 
     /// Applies one prepared export operand and returns its command-level execution result. Expansion
     /// failures cannot occur here because preparation completed before any operands were applied.
-    ///
-    /// # Arguments
-    ///
-    /// * `context` - The shell context whose functions or variables are updated.
-    /// * `export` - A fully prepared name or assignment to apply.
     fn apply_export(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -214,7 +203,7 @@ impl ExportCommand {
                     }
                 };
 
-                let value = assignment_value(assignment);
+                let value = variables::ShellValueLiteral::from(&assignment.value);
 
                 // `export name+=value` appends to the existing value, exactly like a
                 // bare `name+=value`. update_or_add always replaces, so when the
@@ -251,22 +240,6 @@ impl ExportCommand {
         }
 
         Ok(ExecutionResult::success())
-    }
-}
-
-fn assignment_value(assignment: &ast::Assignment) -> variables::ShellValueLiteral {
-    match &assignment.value {
-        ast::AssignmentValue::Scalar(value) => {
-            variables::ShellValueLiteral::Scalar(value.flatten())
-        }
-        ast::AssignmentValue::Array(values) => {
-            variables::ShellValueLiteral::Array(variables::ArrayLiteral(
-                values
-                    .iter()
-                    .map(|(key, value)| (key.as_ref().map(|key| key.flatten()), value.flatten()))
-                    .collect(),
-            ))
-        }
     }
 }
 

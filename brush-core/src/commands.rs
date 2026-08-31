@@ -133,8 +133,7 @@ impl From<&String> for CommandArg {
 impl CommandArg {
     /// Renders this argument as `set -x` trace text, quoting the whole argument if a shell would
     /// need quoting to reproduce it.
-    #[must_use]
-    pub fn quote_for_tracing(&self) -> Cow<'_, str> {
+    pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             Self::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
             // An assignment argument is traced as one word, so `x=a b` is quoted whole
@@ -280,12 +279,8 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     Ok(cmd)
 }
 
-/// Runs the pre-execution hooks for a command that is about to be executed.
-///
-/// # Arguments
-///
-/// * `cmd` - The command about to be executed.
-/// * `source_text` - The command's text as it appeared in the source, before any expansion.
+/// Runs the pre-execution hooks for a command that is about to be executed. `source_text` is the
+/// command's text as it appeared in the source, before any expansion.
 pub(crate) async fn on_preexecute(
     cmd: &mut commands::SimpleCommand<'_, impl extensions::ShellExtensions>,
     source_text: &str,

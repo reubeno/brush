@@ -13,7 +13,7 @@ use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
 use crate::shell::Shell;
-use crate::variables::{ArrayLiteral, ShellValue, ShellValueLiteral, ShellVariable};
+use crate::variables::{ArrayKind, ArrayLiteral, ShellValue, ShellValueLiteral, ShellVariable};
 use crate::{
     ShellFd, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys, timing,
 };
@@ -1453,35 +1453,18 @@ async fn apply_assignment(
     let variable_name = assignment.name.base_name();
     // Subscript expansion depends on the existing target type. Scalars and missing variables use
     // indexed-array arithmetic; declared associative arrays retain word-like keys.
-    let target = if shell
+    let target = shell
         .env()
         .get(variable_name)
-        .is_some_and(|(_, variable)| variable.value().is_associative_array())
-    {
-        expansion::AssignmentTarget::AssociativeArray
-    } else {
-        expansion::AssignmentTarget::IndexedArray
-    };
+        .and_then(|(_, variable)| variable.value().array_kind())
+        .unwrap_or(ArrayKind::Indexed);
     let assignment = shell.expand_assignment(params, assignment, target).await?;
 
     let array_index = match &assignment.name {
         ast::AssignmentName::VariableName(_) => None,
         ast::AssignmentName::ArrayElementName(_, index) => Some(index.clone()),
     };
-    let new_value = match &assignment.value {
-        ast::AssignmentValue::Scalar(value) => ShellValueLiteral::Scalar(value.value.clone()),
-        ast::AssignmentValue::Array(values) => ShellValueLiteral::Array(ArrayLiteral(
-            values
-                .iter()
-                .map(|(key, value)| {
-                    (
-                        key.as_ref().map(|key| key.value.clone()),
-                        value.value.clone(),
-                    )
-                })
-                .collect(),
-        )),
-    };
+    let new_value = ShellValueLiteral::from(&assignment.value);
 
     if shell.options().print_commands_and_arguments {
         let op = if assignment.append { "+=" } else { "=" };

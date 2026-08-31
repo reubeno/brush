@@ -24,16 +24,7 @@ use crate::prompt;
 use crate::shell::Shell;
 use crate::sys;
 use crate::trace_categories;
-use crate::variables::{self, ShellValue, ShellVariable};
-
-/// Array type used when expanding assignment subscripts and keyed compound elements.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AssignmentTarget {
-    /// Expand and evaluate subscripts as arithmetic expressions.
-    IndexedArray,
-    /// Apply ordinary shell word expansion to associative keys.
-    AssociativeArray,
-}
+use crate::variables::{self, ArrayKind, ShellValue, ShellVariable};
 
 /// Controls how the expander handles a backslash-escape sequence (`\X`)
 /// when it appears outside any explicit quoting (single, double, ANSI-C).
@@ -625,7 +616,7 @@ pub(crate) async fn expand_assignment(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     assignment: &ast::Assignment,
-    target: AssignmentTarget,
+    target: ArrayKind,
 ) -> Result<ast::Assignment, error::Error> {
     // A shell expands an assignment's words before it resolves any subscript, so arithmetic
     // side effects in a subscript are not observable to the values being assigned. The base
@@ -657,16 +648,16 @@ pub(crate) async fn expand_assignment_words(
     expand_assignment_impl(shell, params, assignment, true).await
 }
 
-/// Expands a raw parsed assignment's words and returns a new assignment AST, handling subscripts
-/// as requested. The grammar-validated base variable name and the assignment's metadata are
-/// preserved.
+/// Expands a raw parsed assignment's words and returns a new assignment AST. The
+/// grammar-validated base variable name and the assignment's metadata are preserved.
 ///
 /// # Arguments
 ///
 /// * `shell` - The shell environment in which parameter, command, and arithmetic expansions run.
 /// * `params` - The execution parameters used by expansions and command substitutions.
 /// * `assignment` - A raw parsed assignment whose words have not yet been expanded.
-/// * `subscripts` - How to handle the assignment's subscript and compound-element keys.
+/// * `expand_name_subscript` - Whether to word-expand the base name's subscript, or leave it for
+///   a later resolve pass.
 async fn expand_assignment_impl(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
@@ -733,17 +724,15 @@ async fn expand_assignment_subscript(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     index: &str,
-    target: AssignmentTarget,
+    target: ArrayKind,
 ) -> Result<String, error::Error> {
     // Indexed subscripts are arithmetic contexts; associative subscripts are shell words whose
     // expanded text is used directly as the key.
     match target {
-        AssignmentTarget::IndexedArray => {
-            Ok(arithmetic::expand_and_eval(shell, params, index, false)
-                .await?
-                .to_string())
-        }
-        AssignmentTarget::AssociativeArray => basic_expand_word(shell, params, index).await,
+        ArrayKind::Indexed => Ok(arithmetic::expand_and_eval(shell, params, index, false)
+            .await?
+            .to_string()),
+        ArrayKind::Associative => basic_expand_word(shell, params, index).await,
     }
 }
 
@@ -766,7 +755,7 @@ pub(crate) async fn resolve_assignment_subscripts(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     assignment: &ast::Assignment,
-    target: AssignmentTarget,
+    target: ArrayKind,
 ) -> Result<ast::Assignment, error::Error> {
     let name = match &assignment.name {
         ast::AssignmentName::VariableName(name) => ast::AssignmentName::VariableName(name.clone()),
@@ -786,10 +775,8 @@ pub(crate) async fn resolve_assignment_subscripts(
         // halves with a key that expands to command-substitution syntax, so a "simplification"
         // that treats the two alike will fail.
         (ast::AssignmentValue::Scalar(_), _)
-        | (ast::AssignmentValue::Array(_), AssignmentTarget::AssociativeArray) => {
-            assignment.value.clone()
-        }
-        (ast::AssignmentValue::Array(elements), AssignmentTarget::IndexedArray) => {
+        | (ast::AssignmentValue::Array(_), ArrayKind::Associative) => assignment.value.clone(),
+        (ast::AssignmentValue::Array(elements), ArrayKind::Indexed) => {
             let mut resolved = Vec::with_capacity(elements.len());
             for (key, value) in elements {
                 let key = match key {
