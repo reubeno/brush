@@ -72,6 +72,27 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
+
+    /// Writes one extra `set -x` trace line per item, doing nothing when command tracing is
+    /// disabled. The items are only produced if they are going to be written, so a caller may
+    /// pass a lazy iterator and pay nothing for rendering when tracing is off.
+    ///
+    /// The interpreter already traces every simple command, so a builtin needs this only for
+    /// lines it emits on its own behalf — as `export` and `readonly` do when echoing each
+    /// assignment they perform.
+    ///
+    /// # Arguments
+    ///
+    /// * `lines` - The trace lines, each already quoted for display.
+    pub async fn trace_extra_lines(&mut self, lines: impl IntoIterator<Item = String>) {
+        if !self.shell.options().print_commands_and_arguments {
+            return;
+        }
+
+        for line in lines {
+            self.shell.trace_command(&self.params, line).await;
+        }
+    }
 }
 
 /// An argument to a command.
@@ -81,6 +102,10 @@ pub enum CommandArg {
     String(String),
     /// An assignment/declaration; typically treated as a string, but will
     /// be specially handled by a limited set of built-in commands.
+    ///
+    /// The assignment's words have already undergone shell expansion; its subscripts, however,
+    /// are left for the owning declaration builtin to resolve, since only it knows whether the
+    /// target is an indexed or associative array.
     Assignment(ast::Assignment),
 }
 
@@ -106,19 +131,47 @@ impl From<&String> for CommandArg {
 }
 
 impl CommandArg {
+    /// Returns the assignment this argument holds, if any. A [`CommandArg::Assignment`] always
+    /// holds one: the parser recognized it in the command line, and the interpreter has already
+    /// expanded its words. A [`CommandArg::String`] may still hold assignment syntax that quoting
+    /// or an expansion hid from the parser; it is recognized here, and its value is deliberately
+    /// left verbatim -- the operand as a whole was already expanded once, so expanding the value
+    /// again would be a double expansion.
+    ///
+    /// Only a declaration builtin should honor late-recognized assignment syntax; to any other
+    /// consumer, a string operand is just text.
+    ///
+    /// # Arguments
+    ///
+    /// * `parser_options` - The parser options governing assignment syntax.
+    pub fn assignment(
+        &self,
+        parser_options: &brush_parser::ParserOptions,
+    ) -> Option<Cow<'_, ast::Assignment>> {
+        match self {
+            Self::Assignment(assignment) => Some(Cow::Borrowed(assignment)),
+            Self::String(operand) => {
+                brush_parser::word::parse_scalar_assignment(operand, parser_options)
+                    .ok()
+                    .map(Cow::Owned)
+            }
+        }
+    }
+
+    /// Renders this argument as `set -x` trace text, quoting the whole argument if a shell would
+    /// need quoting to reproduce it.
     pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             Self::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
-            Self::Assignment(a) => {
-                let mut s = a.name.to_string();
-                let op = if a.append { "+=" } else { "=" };
-                s.push_str(op);
-                s.push_str(&escape::quote_if_needed(
-                    a.value.to_string().as_str(),
+            // An assignment argument is traced as one word, so `x=a b` is quoted whole
+            // (`'x=a b'`) rather than only around its value.
+            Self::Assignment(assignment) => Cow::Owned(
+                escape::quote_if_needed(
+                    assignment.to_string().as_str(),
                     escape::QuoteMode::SingleQuote,
-                ));
-                s.into()
-            }
+                )
+                .into_owned(),
+            ),
         }
     }
 }
@@ -253,15 +306,17 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     Ok(cmd)
 }
 
+/// Runs the pre-execution hooks for a command that is about to be executed. `source_text` is the
+/// command's text as it appeared in the source, before any expansion.
 pub(crate) async fn on_preexecute(
     cmd: &mut commands::SimpleCommand<'_, impl extensions::ShellExtensions>,
+    source_text: &str,
 ) -> Result<(), error::Error> {
-    // Set BASH_COMMAND before invoking the DEBUG trap (and generally before
-    // executing commands).
-    let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
+    // Set BASH_COMMAND before invoking the DEBUG trap (and generally before executing commands).
+    // It reports the command as written, not as expanded.
     cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
-        variables::ShellValueLiteral::Scalar(full_cmd),
+        variables::ShellValueLiteral::Scalar(source_text.to_owned()),
         |_| Ok(()),
         env::EnvironmentLookup::Anywhere,
         env::EnvironmentScope::Global,
@@ -567,15 +622,13 @@ pub(crate) fn execute_external_command(
     argv0_override: Option<&str>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
-    // Filter out the args; we only want strings.
+    // An assignment-shaped argument reaching an external command is just text; render it. (This
+    // is only reachable if a declaration builtin was disabled after its arguments were prepared.)
     let cmd_args = args
         .iter()
-        .filter_map(|e| {
-            if let CommandArg::String(s) = e {
-                Some(s)
-            } else {
-                None
-            }
+        .map(|arg| match arg {
+            CommandArg::String(value) => value.clone(),
+            CommandArg::Assignment(assignment) => assignment.to_string(),
         })
         .collect::<Vec<_>>();
 

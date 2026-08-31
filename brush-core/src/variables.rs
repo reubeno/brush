@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt::{Display, Write};
 
+use brush_parser::ast;
+
 use crate::shell::{Shell, ShellState};
 use crate::{error, escape, extensions};
 
@@ -187,14 +189,20 @@ impl ShellVariable {
         self
     }
 
-    /// Converts the variable to an indexed array.
+    /// Converts the variable to an indexed array. A declared-but-unset associative array cannot
+    /// be converted any more than a set one can; an unset scalar simply becomes a
+    /// declared-but-unset indexed array.
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
-        match self.value() {
-            ShellValue::IndexedArray(_) => Ok(()),
-            ShellValue::AssociativeArray(_) => {
+        match self.value().array_kind() {
+            Some(ArrayKind::Indexed) => Ok(()),
+            Some(ArrayKind::Associative) => {
                 Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
             }
-            _ => {
+            None if matches!(self.value, ShellValue::Unset(_)) => {
+                self.value = ShellValue::Unset(ShellValueUnsetType::IndexedArray);
+                Ok(())
+            }
+            None => {
                 let mut new_values = BTreeMap::new();
                 new_values.insert(
                     0,
@@ -206,14 +214,20 @@ impl ShellVariable {
         }
     }
 
-    /// Converts the variable to an associative array.
+    /// Converts the variable to an associative array. A declared-but-unset indexed array cannot
+    /// be converted any more than a set one can; an unset scalar simply becomes a
+    /// declared-but-unset associative array.
     pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
-        match self.value() {
-            ShellValue::AssociativeArray(_) => Ok(()),
-            ShellValue::IndexedArray(_) => {
+        match self.value().array_kind() {
+            Some(ArrayKind::Associative) => Ok(()),
+            Some(ArrayKind::Indexed) => {
                 Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
             }
-            _ => {
+            None if matches!(self.value, ShellValue::Unset(_)) => {
+                self.value = ShellValue::Unset(ShellValueUnsetType::AssociativeArray);
+                Ok(())
+            }
+            None => {
                 let mut new_values: BTreeMap<String, String> = BTreeMap::new();
                 new_values.insert(
                     String::from("0"),
@@ -222,6 +236,32 @@ impl ShellVariable {
                 self.value = ShellValue::AssociativeArray(new_values);
                 Ok(())
             }
+        }
+    }
+
+    /// Assigns the given value to the variable, targeting one array element when an
+    /// (already-resolved) subscript is given. Assigning a list to a single element is an error,
+    /// as in a shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The resolved subscript of the element to assign to, if any.
+    /// * `value` - The value to assign.
+    /// * `append` - Whether or not to append the value to the preexisting value.
+    pub fn assign_at(
+        &mut self,
+        index: Option<String>,
+        value: ShellValueLiteral,
+        append: bool,
+    ) -> Result<(), error::Error> {
+        match (index, value) {
+            (Some(index), ShellValueLiteral::Scalar(value)) => {
+                self.assign_at_index(index, value, append)
+            }
+            (Some(_), ShellValueLiteral::Array(_)) => {
+                Err(error::ErrorKind::AssigningListToArrayMember.into())
+            }
+            (None, value) => self.assign(value, append),
         }
     }
 
@@ -380,6 +420,13 @@ impl ShellVariable {
         value: String,
         append: bool,
     ) -> Result<(), error::Error> {
+        // Readonly is enforced here and not only in `assign`, so that every path reaching an
+        // element -- a subscripted assignment, a declaration builtin, arithmetic, or an
+        // assignment expansion -- is blocked, not just whole-variable assignment.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &self.value {
             ShellValue::Unset(_) => {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
@@ -635,6 +682,15 @@ pub enum ShellValueUnsetType {
     IndexedArray,
 }
 
+/// The kind of an array variable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArrayKind {
+    /// An array indexed by integers.
+    Indexed,
+    /// An array keyed by arbitrary strings.
+    Associative,
+}
+
 /// A shell value literal; used for assignment.
 #[derive(Clone, Debug)]
 pub enum ShellValueLiteral {
@@ -698,6 +754,25 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
+impl From<&ast::AssignmentValue> for ShellValueLiteral {
+    fn from(value: &ast::AssignmentValue) -> Self {
+        match value {
+            ast::AssignmentValue::Scalar(value) => Self::Scalar(value.value.clone()),
+            ast::AssignmentValue::Array(elements) => Self::Array(ArrayLiteral(
+                elements
+                    .iter()
+                    .map(|(key, value)| {
+                        (
+                            key.as_ref().map(|key| key.value.clone()),
+                            value.value.clone(),
+                        )
+                    })
+                    .collect(),
+            )),
+        }
+    }
+}
+
 /// An array literal.
 #[derive(Clone, Debug)]
 pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
@@ -712,26 +787,34 @@ pub enum FormatStyle {
 }
 
 impl ShellValue {
+    /// Returns the kind of array this value is, or `None` if it is not an array. A declared but
+    /// unset array still has a kind.
+    pub const fn array_kind(&self) -> Option<ArrayKind> {
+        match self {
+            Self::IndexedArray(_) | Self::Unset(ShellValueUnsetType::IndexedArray) => {
+                Some(ArrayKind::Indexed)
+            }
+            Self::AssociativeArray(_) | Self::Unset(ShellValueUnsetType::AssociativeArray) => {
+                Some(ArrayKind::Associative)
+            }
+            _ => None,
+        }
+    }
+
     /// Returns whether or not the value is an indexed array, including a declared but unset one.
     pub const fn is_indexed_array(&self) -> bool {
-        matches!(
-            self,
-            Self::IndexedArray(_) | Self::Unset(ShellValueUnsetType::IndexedArray)
-        )
+        matches!(self.array_kind(), Some(ArrayKind::Indexed))
     }
 
     /// Returns whether or not the value is an associative array, including a declared but unset
     /// one.
     pub const fn is_associative_array(&self) -> bool {
-        matches!(
-            self,
-            Self::AssociativeArray(_) | Self::Unset(ShellValueUnsetType::AssociativeArray)
-        )
+        matches!(self.array_kind(), Some(ArrayKind::Associative))
     }
 
     /// Returns whether or not the value is an array.
     pub const fn is_array(&self) -> bool {
-        self.is_indexed_array() || self.is_associative_array()
+        self.array_kind().is_some()
     }
 
     /// Returns whether or not the value is set.

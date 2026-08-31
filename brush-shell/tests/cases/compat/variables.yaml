@@ -79,38 +79,98 @@ cases:
       }
       f
 
-  - name: "local -I inherits from enclosing scope"
+  #
+  # An inheriting local reaches past the local scope it creates in, so the array kind governing
+  # its subscripts has to come from the variable it inherits -- not from the not-yet-created
+  # local, which would default to indexed and arithmetically evaluate an associative key to 0.
+  #
+  - name: "local -I resolves an associative subscript against the inherited variable"
     stdin: |
-      g=global-value
-      f() {
-          local -I g
-          echo "[$g]"
-      }
+      declare -A m=([foo]=x)
+      f() { local -I 'm[foo]+=y'; declare -p m; }
       f
-      echo "[$g]"
+      declare -p m
 
-  - name: "local -I with append"
+  - name: "local -I assigns an associative key without arithmetic evaluation"
     stdin: |
-      v=base
-      f() {
-          local -I v+=" +more"
-          echo "[$v]"
-      }
-      f
-      echo "[$v]"
+      declare -A n=([bar]=1)
+      g() { local -I 'n[bar]=2'; declare -p n; }
+      g
 
-  - name: "local -I combined flags (-Ix)"
+  - name: "local -I resolves an associative subscript in a parsed operand"
     stdin: |
+      declare -A p=([k]=a)
+      h() { local -I p[k]+=b; declare -p p; }
+      h
+
+  - name: "local -I still evaluates arithmetic for an inherited indexed array"
+    stdin: |
+      declare -a a=(zero one two)
+      i=1
+      f() { local -I "a[i+1]=X"; declare -p a; }
+      f
+
+  - name: "local -I with a matching explicit array kind inherits value and attributes"
+    stdin: |
+      declare -ax a=(one two)
+      declare -A m=([k]=v)
       f() {
-          local -Ix e
-          declare -p e
+          local -I -a a; declare -p a
+          local -I -A m; declare -p m
       }
       f
 
-  - name: "local -I without an enclosing variable falls through to normal creation"
+  - name: "local -I with a conflicting array kind fails"
+    ignore_stderr: true
     stdin: |
+      declare -a x=(one two)
+      f() { local -I -A x; echo "status=$?"; }
+      f
+      declare -A y=([k]=v)
+      g() { local -I -a y; echo "status=$?"; }
+      g
+      declare -p x y
+
+  - name: "local -I with an array kind over a scalar starts empty but keeps attributes"
+    stdin: |
+      declare -x s=hello
       f() {
-          local -I nosuch="fresh"
-          echo "[$nosuch]"
+          local -I -a s; declare -p s
+          s+=(z); declare -p s
       }
       f
+      declare -p s
+      t=world
+      g() { local -I -A t; declare -p t; }
+      g
+
+  - name: "local -I when a same-name local already exists updates it in place"
+    stdin: |
+      v=outer
+      f() { local v=first; local -I v+=suffix; declare -p v; }
+      f
+      declare -p v
+
+  - name: "local -I with a conflicting kind over a same-scope local fails"
+    ignore_stderr: true
+    stdin: |
+      f() { local -a w=(one); local -I -A w; echo "status=$?"; declare -p w; }
+      f
+
+  - name: "local -I failed conversion still creates a local shielding the outer variable"
+    known_failure: true # bash keeps the inherited (unconverted) local after the failed
+    # conversion, so later writes in the function land on it; brush creates no local, so
+    # they leak through to the enclosing variable.
+    ignore_stderr: true
+    stdin: |
+      declare -A z=([k]=v)
+      f() { local -I -a z; echo "status=$?"; z[0]=inner; }
+      f
+      declare -p z
+
+  - name: "local without -I does not inherit the enclosing array kind"
+    stdin: |
+      declare -A m=([foo]=x)
+      f() { local m[foo]=y; declare -p m; }
+      f
+      declare -p m

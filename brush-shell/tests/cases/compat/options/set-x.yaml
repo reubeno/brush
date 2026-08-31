@@ -64,7 +64,6 @@ cases:
       echo "After function call"
 
   - name: "declaration assignments show expanded values"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       value=world
       set -x
@@ -134,7 +133,6 @@ cases:
       set +x
 
   - name: "wrappers trace the full invocation for declaration targets"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       value=world
       set -x
@@ -146,7 +144,6 @@ cases:
       set +x
 
   - name: "export and readonly echo assignments but not bare names"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       set -x
       export a=1 b=2
@@ -158,7 +155,6 @@ cases:
       set +x
 
   - name: "export and readonly echo assignments recognized from strings"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       set -x
       readonly 'q=1'
@@ -166,7 +162,6 @@ cases:
       set +x
 
   - name: "assignment operands are traced as single quoted words"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       v="a b"
       set -x

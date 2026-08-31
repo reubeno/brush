@@ -254,3 +254,31 @@ cases:
       shopt -s expand_aliases
       alias myalias=if
       myalias true; then echo "true"; fi
+
+  #
+  # An alias body is expanded before the resulting words are inspected, so an alias can supply
+  # the name of a declaration builtin and have the operands that follow it still be treated as
+  # assignments rather than ordinary strings.
+  #
+  - name: "alias supplying a declaration builtin still splits its compound operand"
+    stdin: |
+      shopt -s expand_aliases
+      alias mydecl='declare -a'
+      v="a b"
+      mydecl arr=($v)
+      declare -p arr
+
+  - name: "alias ending mid-assignment joins with the following word"
+    stdin: |
+      shopt -s expand_aliases
+      alias mkvar='declare x='
+      mkvar hello
+      declare -p x
+
+  - name: "alias supplying export assigns and exports"
+    stdin: |
+      shopt -s expand_aliases
+      alias exp='export'
+      exp E1=val
+      echo "E1=$E1"
+      declare -p E1
