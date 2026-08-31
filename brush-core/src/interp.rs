@@ -1454,9 +1454,7 @@ async fn apply_assignment(
     // Subscript expansion depends on the existing target type. Scalars and missing variables use
     // indexed-array arithmetic; declared associative arrays retain word-like keys.
     let target = shell
-        .env()
-        .get(variable_name)
-        .and_then(|(_, variable)| variable.value().array_kind())
+        .existing_array_kind(variable_name, EnvironmentLookup::Anywhere)
         .unwrap_or(ArrayKind::Indexed);
     let assignment = shell.expand_assignment(params, assignment, target).await?;
 

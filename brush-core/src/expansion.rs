@@ -1959,15 +1959,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                let is_set_assoc_array = self
+                let kind = self
                     .shell
                     .env()
                     .get(name)
-                    .is_some_and(|(_, var)| var.value().is_associative_array());
+                    .and_then(|(_, var)| var.value().array_kind())
+                    .unwrap_or(ArrayKind::Indexed);
 
-                let index_to_use = self
-                    .expand_array_index(index.as_str(), is_set_assoc_array)
-                    .await?;
+                let index_to_use = self.expand_array_index(index.as_str(), kind).await?;
                 (name, Some(index_to_use))
             }
             brush_parser::word::Parameter::Positional(_)
@@ -2133,17 +2132,16 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                // First check to see if it's an associative array.
-                let is_set_assoc_array = self
+                // The array kind of the target governs how the index is expanded.
+                let kind = self
                     .shell
                     .env()
                     .get(name)
-                    .is_some_and(|(_, var)| var.value().is_associative_array());
+                    .and_then(|(_, var)| var.value().array_kind())
+                    .unwrap_or(ArrayKind::Indexed);
 
                 // Figure out which index to use.
-                let index_to_use = self
-                    .expand_array_index(index.as_str(), is_set_assoc_array)
-                    .await?;
+                let index_to_use = self.expand_array_index(index.as_str(), kind).await?;
 
                 // Index into the array.
                 if let Some((_, var)) = self.shell.env().get(name)
@@ -2205,14 +2203,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     async fn expand_array_index(
         &mut self,
         index: &str,
-        for_set_associative_array: bool,
+        kind: ArrayKind,
     ) -> Result<String, error::Error> {
-        let index_to_use = if for_set_associative_array {
-            self.basic_expand_to_str(index).await?
-        } else {
-            arithmetic::expand_and_eval(self.shell, self.params, index, false)
+        let index_to_use = match kind {
+            ArrayKind::Associative => self.basic_expand_to_str(index).await?,
+            ArrayKind::Indexed => arithmetic::expand_and_eval(self.shell, self.params, index, false)
                 .await?
-                .to_string()
+                .to_string(),
         };
 
         Ok(index_to_use)
