@@ -82,11 +82,89 @@ impl Default for ExpanderOptions {
 /// consumes both characters, leaving nothing.
 pub(crate) const DOUBLE_QUOTED_ESCAPE_CHARS: &[char] = &['\\', '$', '`', '"', '\n'];
 
+/// Describes what a parameter's expansion is a list of. Operators whose behavior depends
+/// on that shape -- `${#x}` and `${x:offset:length}` today -- consult this to decide
+/// whether they address characters or elements, via the methods below.
+#[derive(Clone, Debug)]
+enum ExpansionKind {
+    /// A single string; addressed by character.
+    String,
+    /// The elements of an indexed array, along with their subscripts in ascending order.
+    /// The subscripts matter because bash addresses these by subscript rather than by
+    /// position, which only makes a difference when the array is sparse.
+    IndexedArray(Vec<u64>),
+    /// Elements with no indices to address them by: an associative array, the positional
+    /// parameters, or a generated list of names.
+    ElementList,
+    /// A scalar that was written `${x[@]}` or `${x[*]}`. bash counts it as a single
+    /// element but slices it as a string.
+    ScalarAsArray,
+}
+
+impl ExpansionKind {
+    /// Returns whether `${x:offset:length}` rejects a negative length, which bash does for
+    /// every real array form.
+    const fn is_array(&self) -> bool {
+        matches!(self, Self::IndexedArray(_) | Self::ElementList)
+    }
+
+    /// Returns whether `${#x}` counts characters rather than elements.
+    const fn counts_chars(&self) -> bool {
+        matches!(self, Self::String)
+    }
+
+    /// Returns whether `${x:offset:length}` addresses characters rather than elements.
+    /// bash slices a scalar as a string even when it was written `${x[@]}`, so this is not
+    /// the same question as [`Self::counts_chars`].
+    const fn slices_chars(&self) -> bool {
+        matches!(self, Self::String | Self::ScalarAsArray)
+    }
+
+    /// Returns the size of the space that `${x:offset:length}` offsets live in, which a
+    /// negative offset counts back from. For an indexed array that is subscript space, one
+    /// past the highest subscript; a sparse array's is wider than its element count.
+    fn offset_space(&self, len: i64) -> i64 {
+        match self {
+            Self::IndexedArray(subscripts) => subscripts.last().map_or(0, |&last| {
+                i64::try_from(last).unwrap_or(i64::MAX).saturating_add(1)
+            }),
+            _ => len,
+        }
+    }
+
+    /// Returns the lowest offset that is out of range. bash validates the offset before it
+    /// ever looks at the length, and yields an empty slice for anything at or past this
+    /// point.
+    fn offset_limit(&self, len: i64) -> i64 {
+        match self {
+            // An offset of exactly the length is in range for a string, and for elements
+            // addressed by position; it just selects an empty slice.
+            Self::String | Self::ScalarAsArray | Self::ElementList => len + 1,
+            // An indexed array runs out just past its highest subscript.
+            Self::IndexedArray(_) => self.offset_space(len),
+        }
+    }
+
+    /// Translates an in-range offset into a position in the element list. For an indexed
+    /// array bash selects the first element whose subscript is at least the offset; the
+    /// length then counts elements positionally from there.
+    fn offset_to_position(&self, offset: i64) -> i64 {
+        match self {
+            Self::IndexedArray(subscripts) => {
+                let position =
+                    subscripts.partition_point(|&s| i64::try_from(s).is_ok_and(|s| s < offset));
+                i64::try_from(position).unwrap_or(i64::MAX)
+            }
+            _ => offset,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Expansion {
     fields: Vec<WordField>,
     concatenate: bool,
-    from_array: bool,
+    kind: ExpansionKind,
     undefined: bool,
 }
 
@@ -95,7 +173,7 @@ impl Default for Expansion {
         Self {
             fields: vec![],
             concatenate: true,
-            from_array: false,
+            kind: ExpansionKind::String,
             undefined: false,
         }
     }
@@ -146,24 +224,34 @@ impl Expansion {
             fields: vec![WordField::from(String::new())],
             concatenate: true,
             undefined: true,
-            from_array: false,
+            kind: ExpansionKind::String,
         }
     }
 
+    /// Returns the length that `${#x}` reports.
     fn polymorphic_len(&self) -> usize {
-        if self.from_array {
-            self.fields.len()
-        } else {
+        self.len_in(self.kind.counts_chars())
+    }
+
+    /// Returns the length that `${x:offset:length}` addresses.
+    fn slice_len(&self) -> usize {
+        self.len_in(self.kind.slices_chars())
+    }
+
+    fn len_in(&self, chars: bool) -> usize {
+        if chars {
             self.fields.iter().fold(0, |acc, field| acc + field.len())
+        } else {
+            self.fields.len()
         }
     }
 
     fn polymorphic_subslice(&self, index: usize, end: usize) -> Self {
         let len = end - index;
 
-        // If we came from an array, then interpret `index` and `end` as indices
+        // If we're addressing elements, then interpret `index` and `end` as indices
         // into the elements.
-        if self.from_array {
+        if !self.kind.slices_chars() {
             let actual_len = min(len, self.fields.len() - index);
             let fields = self.fields[index..(index + actual_len)].to_vec();
 
@@ -171,7 +259,7 @@ impl Expansion {
                 fields,
                 concatenate: self.concatenate,
                 undefined: self.undefined,
-                from_array: self.from_array,
+                kind: self.kind.clone(),
             }
         } else {
             // Otherwise, interpret `index` and `end` as indices into the string contents.
@@ -241,7 +329,7 @@ impl Expansion {
                 fields,
                 concatenate: self.concatenate,
                 undefined: self.undefined,
-                from_array: self.from_array,
+                kind: self.kind.clone(),
             }
         }
     }
@@ -951,7 +1039,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     fields,
                     concatenate: false,
                     undefined: false,
-                    from_array: false,
+                    kind: ExpansionKind::String,
                 }
             }
             brush_parser::word::WordPiece::TildeExpansion(tilde_expr) => {
@@ -1362,56 +1450,59 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
 
                 #[expect(clippy::cast_possible_wrap)]
-                let expanded_parameter_len = expanded_parameter.polymorphic_len() as i64;
-                let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
+                let expanded_parameter_len = expanded_parameter.slice_len() as i64;
 
-                // We handle negative indexes as offsets from the end of the element, with -1
-                // referencing the last element.
-                if expanded_offset < 0 {
-                    expanded_offset += expanded_parameter_len;
-
-                    // If the offset is still negative, then we need to yield an empty slice.
-                    // We force the offset to the end of the array.
-                    if expanded_offset < 0 {
-                        expanded_offset = expanded_parameter_len;
-                    }
+                // bash has nothing to slice when the parameter is unset, or when it
+                // expanded to no fields at all -- an empty array, say -- and yields an
+                // empty slice without validating the offset or the length.
+                if matches!(expanded_parameter.classify(), ParameterState::Undefined) {
+                    return Ok(expanded_parameter.polymorphic_subslice(0, 0));
                 }
 
-                // An offset past the end yields an empty slice, whatever the length says.
-                let offset_past_end = expanded_offset > expanded_parameter_len;
+                // A negative offset counts back from the end of the offset space: -1
+                // addresses the last character or position, or -- for an indexed array --
+                // the highest subscript.
+                let mut expanded_offset = offset.eval(self.shell, self.params, false).await?;
+                if expanded_offset < 0 {
+                    expanded_offset += expanded_parameter.kind.offset_space(expanded_parameter_len);
+                }
 
-                // Make sure the offset is within the bounds of the item.
-                let expanded_offset = min(expanded_offset, expanded_parameter_len);
+                // bash validates the offset before it looks at the length: an offset that is
+                // out of range -- still negative after counting back from the end, or at or
+                // past the end -- yields an empty slice, whatever the length says.
+                if expanded_offset < 0
+                    || expanded_offset
+                        >= expanded_parameter.kind.offset_limit(expanded_parameter_len)
+                {
+                    return Ok(expanded_parameter.polymorphic_subslice(0, 0));
+                }
+
+                // Offsets are validated in the space they were written in; from here on we
+                // need a position in the element list.
+                let expanded_offset = expanded_parameter.kind.offset_to_position(expanded_offset);
 
                 let end_offset = if let Some(length) = length {
-                    let mut expanded_length = length.eval(self.shell, self.params, false).await?;
+                    let expanded_length = length.eval(self.shell, self.params, false).await?;
 
-                    if expanded_length < 0 && !expanded_parameter.from_array {
-                        // A negative length is an offset from the end of the value rather
-                        // than a count, so it fixes where the slice ends instead of how
-                        // long it is: ${s:2:-2} on `abcdefgh` runs from index 2 to index
-                        // 6, giving `cdef`.
+                    if expanded_length < 0 {
+                        // For a string, a negative length says where the slice *ends*,
+                        // counting back from the end of the value, instead of how long it
+                        // is: `${s:2:-2}` on `abcdefgh` ends at index 6, giving `cdef`. bash
+                        // has no such reading for an array, and rejects a negative length
+                        // there outright.
                         let end_offset = expanded_parameter_len + expanded_length;
-
-                        if offset_past_end {
-                            expanded_offset
-                        } else if end_offset < expanded_offset {
+                        if expanded_parameter.kind.is_array() || end_offset < expanded_offset {
                             return Err(error::ErrorKind::CheckedExpansionError(format!(
                                 "{expanded_length}: substring expression < 0"
                             ))
                             .into());
-                        } else {
-                            end_offset
                         }
+                        end_offset
                     } else {
-                        if expanded_length < 0 {
-                            expanded_length += expanded_parameter_len;
-                        }
-
-                        let expanded_length =
-                            min(expanded_length, expanded_parameter_len - expanded_offset);
-
-                        expanded_offset + expanded_length
+                        min(
+                            expanded_offset.saturating_add(expanded_length),
+                            expanded_parameter_len,
+                        )
                     }
                 } else {
                     expanded_parameter_len
@@ -1505,7 +1596,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Ok(Expansion {
                     fields: transformed_fields,
                     concatenate: expanded_parameter.concatenate,
-                    from_array: expanded_parameter.from_array,
+                    kind: expanded_parameter.kind,
                     undefined: expanded_parameter.undefined,
                 })
             }
@@ -1624,7 +1715,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             .map(|name| WordField(vec![ExpansionPiece::Splittable(name)]))
                             .collect(),
                         concatenate,
-                        from_array: true,
+                        kind: ExpansionKind::ElementList,
                         undefined: false,
                     })
                 }
@@ -1645,7 +1736,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         .map(|key| WordField(vec![ExpansionPiece::Splittable(key)]))
                         .collect(),
                     concatenate,
-                    from_array: true,
+                    kind: ExpansionKind::ElementList,
                     undefined: false,
                 })
             }
@@ -1865,7 +1956,17 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
                 if let Some((_, var)) = self.shell.env().get(name) {
-                    let values = var.value().element_values(self.shell);
+                    // Resolve a dynamic value once, so the kind and the element values
+                    // can't disagree: a getter like RANDOM's changes on every read.
+                    let resolved;
+                    let value = match var.value() {
+                        ShellValue::Dynamic { getter, .. } => {
+                            resolved = getter(self.shell);
+                            &resolved
+                        }
+                        other => other,
+                    };
+                    let values = value.element_values(self.shell);
 
                     Ok(Expansion {
                         fields: values
@@ -1873,14 +1974,27 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             .map(|value| WordField(vec![ExpansionPiece::Splittable(value)]))
                             .collect(),
                         concatenate: *concatenate,
-                        from_array: true,
+                        kind: match value {
+                            // Slicing addresses an indexed array by subscript, so it needs
+                            // the subscripts themselves and not just the element count.
+                            ShellValue::IndexedArray(array) => {
+                                ExpansionKind::IndexedArray(array.keys().copied().collect())
+                            }
+                            // A scalar written `${x[@]}`: bash slices it as a string.
+                            ShellValue::String(_) => ExpansionKind::ScalarAsArray,
+                            // Associative arrays land here. bash documents substring
+                            // expansion of one as producing undefined results -- it
+                            // selects from an offset of 1 rather than 0 -- so we
+                            // deliberately address them like any other element list.
+                            _ => ExpansionKind::ElementList,
+                        },
                         undefined: false,
                     })
                 } else {
                     Ok(Expansion {
                         fields: vec![],
                         concatenate: *concatenate,
-                        from_array: true,
+                        kind: ExpansionKind::ElementList,
                         undefined: false,
                     })
                 }
@@ -1918,7 +2032,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
                         .collect(),
                     concatenate: *concatenate,
-                    from_array: true,
+                    kind: ExpansionKind::ElementList,
                     undefined: false,
                 }
             }
@@ -2090,7 +2204,10 @@ fn coalesce_expansions(expansions: Vec<Expansion>) -> Expansion {
 
             // TODO(expansion): What if expansions have different concatenation values?
             acc.concatenate = expansion.concatenate;
-            acc.from_array = expansion.from_array;
+            // The last kind wins, like `concatenate` above. An IndexedArray kind's
+            // subscripts no longer describe the merged fields; nothing slices a coalesced
+            // expansion today, and `polymorphic_subslice` must not until that's fixed.
+            acc.kind = expansion.kind;
 
             acc
         })
@@ -2132,7 +2249,7 @@ where
     Ok(Expansion {
         fields: transformed_fields,
         concatenate: expansion.concatenate,
-        from_array: expansion.from_array,
+        kind: expansion.kind,
         undefined: expansion.undefined,
     })
 }
