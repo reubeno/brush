@@ -78,3 +78,41 @@ cases:
           echo "[$nosuch]"
       }
       f
+
+  #
+  # An inheriting local reaches past the local scope it creates in, so the array kind governing
+  # its subscripts has to come from the variable it inherits -- not from the not-yet-created
+  # local, which would default to indexed and arithmetically evaluate an associative key to 0.
+  #
+  - name: "local -I resolves an associative subscript against the inherited variable"
+    stdin: |
+      declare -A m=([foo]=x)
+      f() { local -I 'm[foo]+=y'; declare -p m; }
+      f
+      declare -p m
+
+  - name: "local -I assigns an associative key without arithmetic evaluation"
+    stdin: |
+      declare -A n=([bar]=1)
+      g() { local -I 'n[bar]=2'; declare -p n; }
+      g
+
+  - name: "local -I resolves an associative subscript in a parsed operand"
+    stdin: |
+      declare -A p=([k]=a)
+      h() { local -I p[k]+=b; declare -p p; }
+      h
+
+  - name: "local -I still evaluates arithmetic for an inherited indexed array"
+    stdin: |
+      declare -a a=(zero one two)
+      i=1
+      f() { local -I "a[i+1]=X"; declare -p a; }
+      f
+
+  - name: "local without -I does not inherit the enclosing array kind"
+    stdin: |
+      declare -A m=([foo]=x)
+      f() { local m[foo]=y; declare -p m; }
+      f
+      declare -p m

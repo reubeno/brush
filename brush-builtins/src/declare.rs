@@ -229,7 +229,7 @@ impl builtins::Command for DeclareCommand {
                 let mut prepared_declarations = Vec::with_capacity(self.declarations.len());
                 for declaration in &self.declarations {
                     prepared_declarations.push(
-                        self.prepare_declaration(&mut context, declaration, scope.lookup)
+                        self.prepare_declaration(&mut context, declaration, scope)
                             .await?,
                     );
                 }
@@ -488,6 +488,27 @@ impl DeclareCommand {
         Ok(true)
     }
 
+    /// Returns whether this invocation declares a local that starts from the variable it shadows
+    /// (`local -I` / `declare -I`).
+    ///
+    /// Such a declaration deliberately reaches past the local scope it creates in, so everything
+    /// it reads about the target -- the value it inherits, and the array kind that governs how
+    /// its subscripts are resolved -- has to come from the enclosing scope. Both lookups ask this
+    /// question, and they have to agree, or a subscript would be resolved against a different
+    /// variable than the one being inherited.
+    const fn inherits_from_enclosing_scope(&self, scope: DeclarationScope) -> bool {
+        self.locals_inherit_from_prev_scope && matches!(scope.creation, EnvironmentScope::Local)
+    }
+
+    /// Returns the scope policy to use when inspecting this declaration's target.
+    const fn target_lookup(&self, scope: DeclarationScope) -> EnvironmentLookup {
+        if self.inherits_from_enclosing_scope(scope) {
+            EnvironmentLookup::Anywhere
+        } else {
+            scope.lookup
+        }
+    }
+
     /// Returns a copy of the variable a `-I` declaration inherits, or `None` when this
     /// invocation did not ask to inherit, is not creating a local, or no same-name variable
     /// exists in an enclosing scope.
@@ -497,14 +518,14 @@ impl DeclareCommand {
         declaration: &PreparedDeclaration,
         scope: DeclarationScope,
     ) -> Option<ShellVariable> {
-        if !self.locals_inherit_from_prev_scope || scope.creation != EnvironmentScope::Local {
+        if !self.inherits_from_enclosing_scope(scope) {
             return None;
         }
 
         context
             .shell
             .env()
-            .get_using_policy(declaration.name.as_str(), EnvironmentLookup::Anywhere)
+            .get_using_policy(declaration.name.as_str(), self.target_lookup(scope))
             .cloned()
     }
 
@@ -548,7 +569,7 @@ impl DeclareCommand {
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
-        lookup: EnvironmentLookup,
+        scope: DeclarationScope,
     ) -> Result<PreparedDeclaration, brush_core::Error> {
         // Assignment syntax (see [`brush_core::CommandArg::assignment`]) wins: it is the only
         // interpretation under which the operand's text after `=` is a value. Checking it first
@@ -559,10 +580,12 @@ impl DeclareCommand {
         };
 
         // One lookup answers both questions the rest of preparation asks of the environment:
-        // which subscript rules apply, and whether the target is already an array.
+        // which subscript rules apply, and whether the target is already an array. It has to
+        // resolve to the same variable the declaration will actually update -- for `-I` that is
+        // the one being inherited from an enclosing scope, not the local about to shadow it.
         let existing = context
             .shell
-            .existing_array_kind(assignment.name.base_name(), lookup);
+            .existing_array_kind(assignment.name.base_name(), self.target_lookup(scope));
         let target = self.effective_array_kind(existing);
 
         let assignment = context
