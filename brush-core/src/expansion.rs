@@ -768,12 +768,8 @@ pub(crate) async fn resolve_assignment_subscripts(
     };
 
     let value = match (&assignment.value, target) {
-        // Leaving these alone is the behavior, not a shortcut. A value was expanded when the
-        // assignment's words were, and an associative key is final at that point: expanding it
-        // again would run whatever the first expansion produced. Compare the `name[$k]=v` case
-        // above, which a shell really does expand a second time. The compat suite pins both
-        // halves with a key that expands to command-substitution syntax, so a "simplification"
-        // that treats the two alike will fail.
+        // A shell expands `declare name[$k]=v` a second time but `declare name=([$k]=v)` not;
+        // the compat suite pins both halves.
         (ast::AssignmentValue::Scalar(_), _)
         | (ast::AssignmentValue::Array(_), ArrayKind::Associative) => assignment.value.clone(),
         (ast::AssignmentValue::Array(elements), ArrayKind::Indexed) => {

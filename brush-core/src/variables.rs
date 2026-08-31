@@ -189,14 +189,20 @@ impl ShellVariable {
         self
     }
 
-    /// Converts the variable to an indexed array.
+    /// Converts the variable to an indexed array. A declared-but-unset associative array cannot
+    /// be converted any more than a set one can; an unset scalar simply becomes a
+    /// declared-but-unset indexed array.
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
-        match self.value() {
-            ShellValue::IndexedArray(_) => Ok(()),
-            ShellValue::AssociativeArray(_) => {
+        match self.value().array_kind() {
+            Some(ArrayKind::Indexed) => Ok(()),
+            Some(ArrayKind::Associative) => {
                 Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
             }
-            _ => {
+            None if matches!(self.value, ShellValue::Unset(_)) => {
+                self.value = ShellValue::Unset(ShellValueUnsetType::IndexedArray);
+                Ok(())
+            }
+            None => {
                 let mut new_values = BTreeMap::new();
                 new_values.insert(
                     0,
@@ -208,14 +214,20 @@ impl ShellVariable {
         }
     }
 
-    /// Converts the variable to an associative array.
+    /// Converts the variable to an associative array. A declared-but-unset indexed array cannot
+    /// be converted any more than a set one can; an unset scalar simply becomes a
+    /// declared-but-unset associative array.
     pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
-        match self.value() {
-            ShellValue::AssociativeArray(_) => Ok(()),
-            ShellValue::IndexedArray(_) => {
+        match self.value().array_kind() {
+            Some(ArrayKind::Associative) => Ok(()),
+            Some(ArrayKind::Indexed) => {
                 Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
             }
-            _ => {
+            None if matches!(self.value, ShellValue::Unset(_)) => {
+                self.value = ShellValue::Unset(ShellValueUnsetType::AssociativeArray);
+                Ok(())
+            }
+            None => {
                 let mut new_values: BTreeMap<String, String> = BTreeMap::new();
                 new_values.insert(
                     String::from("0"),

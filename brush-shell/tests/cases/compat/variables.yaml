@@ -110,6 +110,64 @@ cases:
       f() { local -I "a[i+1]=X"; declare -p a; }
       f
 
+  - name: "local -I with a matching explicit array kind inherits value and attributes"
+    stdin: |
+      declare -ax a=(one two)
+      declare -A m=([k]=v)
+      f() {
+          local -I -a a; declare -p a
+          local -I -A m; declare -p m
+      }
+      f
+
+  - name: "local -I with a conflicting array kind fails"
+    ignore_stderr: true
+    stdin: |
+      declare -a x=(one two)
+      f() { local -I -A x; echo "status=$?"; }
+      f
+      declare -A y=([k]=v)
+      g() { local -I -a y; echo "status=$?"; }
+      g
+      declare -p x y
+
+  - name: "local -I with an array kind over a scalar starts empty but keeps attributes"
+    stdin: |
+      declare -x s=hello
+      f() {
+          local -I -a s; declare -p s
+          s+=(z); declare -p s
+      }
+      f
+      declare -p s
+      t=world
+      g() { local -I -A t; declare -p t; }
+      g
+
+  - name: "local -I when a same-name local already exists updates it in place"
+    stdin: |
+      v=outer
+      f() { local v=first; local -I v+=suffix; declare -p v; }
+      f
+      declare -p v
+
+  - name: "local -I with a conflicting kind over a same-scope local fails"
+    ignore_stderr: true
+    stdin: |
+      f() { local -a w=(one); local -I -A w; echo "status=$?"; declare -p w; }
+      f
+
+  - name: "local -I failed conversion still creates a local shielding the outer variable"
+    known_failure: true # bash keeps the inherited (unconverted) local after the failed
+    # conversion, so later writes in the function land on it; brush creates no local, so
+    # they leak through to the enclosing variable.
+    ignore_stderr: true
+    stdin: |
+      declare -A z=([k]=v)
+      f() { local -I -a z; echo "status=$?"; z[0]=inner; }
+      f
+      declare -p z
+
   - name: "local without -I does not inherit the enclosing array kind"
     stdin: |
       declare -A m=([foo]=x)

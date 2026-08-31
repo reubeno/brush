@@ -934,6 +934,27 @@ cases:
       echo "status: $?"
       declare -p map
 
+  - name: "Converting a declared but unset array to the other kind fails"
+    ignore_stderr: true
+    stdin: |
+      declare -a arr
+      declare -A arr
+      echo "status: $?"
+      declare -p arr
+      declare -A map
+      declare -a map
+      echo "status: $?"
+      declare -p map
+
+  - name: "Redeclaring an unset array with the same kind leaves it unset"
+    stdin: |
+      declare -a arr
+      declare -a arr
+      declare -p arr
+      declare x
+      declare -a x
+      declare -p x
+
   #
   # Regression coverage: subscript expansion for operands that arrive already expanded.
   #

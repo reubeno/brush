@@ -1,6 +1,6 @@
 use clap::Parser;
 use itertools::Itertools;
-use std::{io::Write, sync::LazyLock};
+use std::io::Write;
 
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
@@ -151,12 +151,6 @@ impl PreparedDeclaration {
             initial_value: Some(ShellValueLiteral::from(&assignment.value)),
             append: assignment.append,
         })
-    }
-
-    /// Returns whether this declaration implies an array-typed variable, either by subscripting
-    /// its target or by supplying a compound value.
-    const fn implies_array(&self) -> bool {
-        self.subscript.is_some() || matches!(self.initial_value, Some(ShellValueLiteral::Array(_)))
     }
 
     /// Returns the text `readonly` echoes as an extra `set -x` trace line for this declaration, or
@@ -431,13 +425,6 @@ impl DeclareCommand {
             return Ok(false);
         }
 
-        // `local -I x[=v]` / `declare -I` (bash 5.0+) starts the new local from the nearest
-        // same-name variable in an enclosing scope. With no such variable, fall through to
-        // ordinary creation below.
-        if let Some(inherited) = self.inherited_local(context, &declaration, scope) {
-            return self.declare_inherited_local(context, declaration, verb, inherited);
-        }
-
         // Look up the variable.
         if let Some(var) = context
             .shell
@@ -458,14 +445,29 @@ impl DeclareCommand {
 
             self.apply_attributes_after_update(var, verb)?;
         } else {
-            let unset_type = match self.requested_array_kind() {
-                Some(ArrayKind::Indexed) => ShellValueUnsetType::IndexedArray,
-                Some(ArrayKind::Associative) => ShellValueUnsetType::AssociativeArray,
-                None if declaration.implies_array() => ShellValueUnsetType::IndexedArray,
-                None => ShellValueUnsetType::Untyped,
-            };
+            // `local -I x[=v]` / `declare -I` (bash 5.0+) starts the new local from the nearest
+            // same-name variable in an enclosing scope; with no such variable it starts unset,
+            // like any other new declaration.
+            let mut var = self
+                .inherited_local(context, &declaration, scope)?
+                .unwrap_or_else(|| {
+                    let unset_type = match self.requested_array_kind() {
+                        Some(ArrayKind::Indexed) => ShellValueUnsetType::IndexedArray,
+                        Some(ArrayKind::Associative) => ShellValueUnsetType::AssociativeArray,
+                        // A subscripted target or a compound value implies an indexed array.
+                        None if declaration.subscript.is_some()
+                            || matches!(
+                                declaration.initial_value,
+                                Some(ShellValueLiteral::Array(_))
+                            ) =>
+                        {
+                            ShellValueUnsetType::IndexedArray
+                        }
+                        None => ShellValueUnsetType::Untyped,
+                    };
 
-            let mut var = ShellVariable::new(ShellValue::Unset(unset_type));
+                    ShellVariable::new(ShellValue::Unset(unset_type))
+                });
 
             self.apply_attributes_before_update(&mut var)?;
 
@@ -512,55 +514,45 @@ impl DeclareCommand {
     /// Returns a copy of the variable a `-I` declaration inherits, or `None` when this
     /// invocation did not ask to inherit, is not creating a local, or no same-name variable
     /// exists in an enclosing scope.
+    ///
+    /// An explicitly requested array kind is reconciled here, as in a shell: a matching kind
+    /// inherits as-is, a conflicting kind is an error, and a non-array value is not inherited --
+    /// the local starts as an empty array of the requested kind, keeping only the inherited
+    /// attributes.
     fn inherited_local(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &PreparedDeclaration,
         scope: DeclarationScope,
-    ) -> Option<ShellVariable> {
+    ) -> Result<Option<ShellVariable>, brush_core::Error> {
         if !self.inherits_from_enclosing_scope(scope) {
-            return None;
+            return Ok(None);
         }
 
-        context
+        let Some(mut var) = context
             .shell
             .env()
             .get_using_policy(declaration.name.as_str(), self.target_lookup(scope))
             .cloned()
-    }
+        else {
+            return Ok(None);
+        };
 
-    /// Applies a declaration onto a variable inherited from an enclosing scope, adding the result
-    /// as a new local. Returns `true`, since an inherited declaration always succeeds once its
-    /// source variable has been found.
-    ///
-    /// The inherited value is updated rather than replaced, so the assignment runs through the
-    /// same `assign_at` path as every other declared value; that is what makes
-    /// `local -I name+=value` append to what was inherited.
-    fn declare_inherited_local(
-        &self,
-        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        declaration: PreparedDeclaration,
-        verb: DeclareVerb,
-        mut var: ShellVariable,
-    ) -> Result<bool, brush_core::Error> {
-        self.apply_attributes_before_update(&mut var)?;
-
-        if let Some(initial_value) = declaration.initial_value {
-            var.assign_at(declaration.subscript, initial_value, declaration.append)?;
+        if let Some(requested) = self.requested_array_kind() {
+            let inherited_kind = var.value().array_kind();
+            match requested {
+                ArrayKind::Indexed => var.convert_to_indexed_array()?,
+                ArrayKind::Associative => var.convert_to_associative_array()?,
+            }
+            if inherited_kind.is_none() {
+                var.assign(
+                    ShellValueLiteral::Array(variables::ArrayLiteral(vec![])),
+                    false,
+                )?;
+            }
         }
 
-        if context.shell.options().export_variables_on_modification && !var.value().is_array() {
-            var.export();
-        }
-
-        self.apply_attributes_after_update(&mut var, verb)?;
-
-        context
-            .shell
-            .env_mut()
-            .add(declaration.name, var, EnvironmentScope::Local)?;
-
-        Ok(true)
+        Ok(Some(var))
     }
 
     /// Prepares one command argument for application. Returns the prepared declaration, or an
@@ -576,7 +568,7 @@ impl DeclareCommand {
         // also keeps a value that merely ends in `]` (say, `x=[a]`) from being mistaken for a
         // subscripted name.
         let Some(assignment) = declaration.assignment(&context.shell.parser_options()) else {
-            return prepare_bare_operand(&declaration.to_string());
+            return Ok(prepare_bare_operand(&declaration.to_string()));
         };
 
         // One lookup answers both questions the rest of preparation asks of the environment:
@@ -586,7 +578,11 @@ impl DeclareCommand {
         let existing = context
             .shell
             .existing_array_kind(assignment.name.base_name(), self.target_lookup(scope));
-        let target = self.effective_array_kind(existing);
+        // An explicit `-a`/`-A` wins; otherwise the target keeps whatever kind it already has.
+        let target = self
+            .requested_array_kind()
+            .or(existing)
+            .unwrap_or(ArrayKind::Indexed);
 
         let assignment = context
             .shell
@@ -616,14 +612,6 @@ impl DeclareCommand {
         } else {
             None
         }
-    }
-
-    /// Returns the array kind governing subscript expansion for this invocation. An explicit
-    /// `-a`/`-A` wins; otherwise the target keeps whatever kind it already has.
-    fn effective_array_kind(&self, existing: Option<ArrayKind>) -> ArrayKind {
-        self.requested_array_kind()
-            .or(existing)
-            .unwrap_or(ArrayKind::Indexed)
     }
 
     /// Reinterprets an expanded assignment's scalar value as a compound array value, when the
@@ -908,33 +896,20 @@ impl DeclareCommand {
 
 /// Interprets an operand holding no assignment syntax, returning a ready-to-apply bare-name
 /// declaration.
-fn prepare_bare_operand(operand: &str) -> Result<PreparedDeclaration, error::Error> {
+fn prepare_bare_operand(operand: &str) -> PreparedDeclaration {
     // `declare array[index]` names an array without assigning to it. The subscript is retained
     // only to mark this as an array declaration; the element itself is never updated, so the
     // subscript is deliberately left unexpanded.
-    #[expect(
-        clippy::unwrap_used,
-        reason = "regex is a compile-time constant and is known to be valid"
-    )]
-    static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
-        LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
+    let (name, subscript) = match operand.strip_suffix(']').and_then(|s| s.split_once('[')) {
+        Some((name, subscript)) => (name, Some(subscript.to_owned())),
+        // Just a name, as in `declare name`.
+        None => (operand, None),
+    };
 
-    if let Some(captures) = ARRAY_AND_INDEX_RE.captures(operand)?
-        && let Some(name) = captures.get(1)
-    {
-        return Ok(PreparedDeclaration {
-            name: name.as_str().to_owned(),
-            subscript: captures.get(2).map(|m| m.as_str().to_owned()),
-            initial_value: None,
-            append: false,
-        });
-    }
-
-    // Just a name, as in `declare name`.
-    Ok(PreparedDeclaration {
-        name: operand.to_owned(),
-        subscript: None,
+    PreparedDeclaration {
+        name: name.to_owned(),
+        subscript,
         initial_value: None,
         append: false,
-    })
+    }
 }
