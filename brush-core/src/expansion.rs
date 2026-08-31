@@ -2207,9 +2207,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     ) -> Result<String, error::Error> {
         let index_to_use = match kind {
             ArrayKind::Associative => self.basic_expand_to_str(index).await?,
-            ArrayKind::Indexed => arithmetic::expand_and_eval(self.shell, self.params, index, false)
-                .await?
-                .to_string(),
+            ArrayKind::Indexed => {
+                arithmetic::expand_and_eval(self.shell, self.params, index, false)
+                    .await?
+                    .to_string()
+            }
         };
 
         Ok(index_to_use)
