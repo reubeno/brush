@@ -1,6 +1,7 @@
 //! Implements programmable command completion support.
 
 use clap::ValueEnum;
+use itertools::Itertools;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -466,7 +467,8 @@ impl Spec {
         for action in &self.actions {
             match action {
                 CompleteAction::Alias => {
-                    for name in shell.aliases().keys() {
+                    // Aliases are stored unordered; bash enumerates them sorted by name.
+                    for name in shell.aliases().keys().sorted() {
                         if name.starts_with(token) {
                             candidates.push(name.clone());
                         }
@@ -508,7 +510,8 @@ impl Spec {
                             candidates.push(keyword.to_string());
                         }
                     }
-                    for (name, _) in shell.funcs().iter() {
+                    // Functions are stored unordered; bash enumerates them sorted by name.
+                    for (name, _) in shell.funcs().iter().sorted_by_key(|v| v.0) {
                         candidates.push(name.to_owned());
                     }
                 }
@@ -544,7 +547,8 @@ impl Spec {
                     candidates.append(&mut file_completions);
                 }
                 CompleteAction::Function => {
-                    for (name, _) in shell.funcs().iter() {
+                    // Functions are stored unordered; bash enumerates them sorted by name.
+                    for (name, _) in shell.funcs().iter().sorted_by_key(|v| v.0) {
                         candidates.push(name.to_owned());
                     }
                 }
