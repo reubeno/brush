@@ -383,9 +383,9 @@ fn translate_key_sequence_to_reedline(
 
 fn translate_action_to_reedline_event(action: &KeyAction) -> Option<reedline::ReedlineEvent> {
     match action {
-        KeyAction::ShellCommand(cmd) => Some(reedline::ReedlineEvent::ExecuteHostCommand(
-            format_reedline_host_command(cmd.as_str()),
-        )),
+        KeyAction::ShellCommand(cmd) => {
+            Some(reedline::ReedlineEvent::ExecuteHostCommand(cmd.to_owned()))
+        }
         KeyAction::DoInputFunction(func) => translate_input_function_to_reedline_event(func),
         KeyAction::Sequence(actions) => {
             // Convert each action in the sequence to a reedline event.
@@ -403,20 +403,6 @@ fn translate_action_to_reedline_event(action: &KeyAction) -> Option<reedline::Re
             }
         }
     }
-}
-
-fn format_reedline_host_command(cmd: &str) -> String {
-    // NOTE: When this command gets returned from reedline's `read_line` function,
-    // we need a way to know that it didn't come from user input (e.g., so we don't
-    // add it to history, etc.). Since reedline doesn't provide any facilities for
-    // doing this, we apply a workaround of appending a special marker comment at
-    // the end of the command.
-    std::format!("{cmd} # bind-command")
-}
-
-fn parse_reedline_host_command(cmd: &str) -> Option<&str> {
-    // See the implementation of `format_reedline_host_command`. We look for the marker.
-    cmd.strip_suffix(" # bind-command")
 }
 
 fn translate_input_function_to_reedline_event(
@@ -472,11 +458,6 @@ fn translate_input_function_to_reedline_event(
         InputFunction::BrushAcceptHintWord => Some(ReedlineEvent::HistoryHintWordComplete),
         _ => None,
     }
-}
-
-pub(crate) fn is_reedline_host_command(cmd: &str) -> bool {
-    // See the implementation of `format_reedline_host_command`. We look for the marker.
-    cmd.ends_with("# bind-command")
 }
 
 const fn translate_reedline_keycode(keycode: reedline::KeyCode) -> Option<Key> {
@@ -702,8 +683,9 @@ fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option
                 None
             }
         }
-        reedline::ReedlineEvent::ExecuteHostCommand(cmd) => parse_reedline_host_command(cmd)
-            .map(|cmd_str| KeyAction::ShellCommand(cmd_str.to_string())),
+        reedline::ReedlineEvent::ExecuteHostCommand(cmd) => {
+            Some(KeyAction::ShellCommand(cmd.to_owned()))
+        }
         evt => {
             // TODO(input): Handle more?
             tracing::debug!(target: trace_categories::INPUT, "unhandled event: {evt:?}");
