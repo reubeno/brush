@@ -1,0 +1,5 @@
+#!/bin/sh
+# e2e shim: applications' test suites invoke "bash" by name; route that to the
+# shell under test. Falls back to the real bash so the same image can produce
+# a baseline run.
+exec "${SHELL_UNDER_TEST:-/bin/bash}" "$@"
