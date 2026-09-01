@@ -42,6 +42,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the path to the history file used by the shell, if one is set.
     pub fn history_file_path(&self) -> Option<PathBuf> {
         self.env_str("HISTFILE")
+            .filter(|s| !s.is_empty())
             .map(|s| PathBuf::from(s.into_owned()))
     }
 

@@ -191,3 +191,88 @@ cases:
     stdin: |
       bash -c 'printf "\xff\xfe\xfd" >history-file.txt'
       HISTFILE=history-file.txt $0 -o history -c 'echo hi'
+
+  # NOTE: These cases run interactively with the harness's --norc removed so that ~/.bashrc is
+  # honored. The system rc file also runs on some distros and may set HISTTIMEFORMAT, so each
+  # .bashrc unsets it.
+  - name: "HISTFILE loaded from environment"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          a b c
+          1 2 3
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+    stdin: |
+      history
+
+  - name: "HISTFILE changed by .bashrc"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          a b c
+          1 2 3
+      - path: "other-history-file.txt"
+        contents: |
+          x y z
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+          HISTFILE=other-history-file.txt
+    stdin: |
+      history
+
+  - name: "HISTFILE emptied by .bashrc"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          a b c
+          1 2 3
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+          HISTFILE=
+    stdin: |
+      history
+
+  - name: "empty HISTFILE in environment"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: ""
+    test_files:
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+    stdin: |
+      history
+
+  - name: "history -w with empty HISTFILE"
+    min_oracle_version: "5.3" # bash 5.2 fails with status 1; 5.3 warns but succeeds
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: ""
+    stdin: |
+      history -w; echo "status: $?"
