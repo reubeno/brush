@@ -198,6 +198,7 @@ cases:
   - name: "printf with percent literal"
     stdin: |
       printf "100%% complete\n"
+      printf '%%q\n'
 
   - name: "printf %b (backslash escape expansion)"
     known_failure: true
@@ -219,7 +220,6 @@ cases:
 
   # Test argument reuse with bash-specific formats
   - name: "printf %q argument reuse"
-    known_failure: true
     stdin: |
       printf "%q %q %q\n" "one with spaces" "two"
 
@@ -394,3 +394,51 @@ cases:
       printf -v ref "formatted %d" 42
       echo "target: $target"
       echo "ref: $ref"
+
+  - name: "printf %q with multiple args and mixed specs"
+    stdin: |
+      printf '%q\n' 'foo bar'
+      printf '%q ' 'a b' '' "x'y" 'a,b' '/tmp/x-[1]/y' $'a\nb'; echo
+      printf '%s=%q\n' k 'v w' m 'n$o'
+      printf '~%q\n' 'a b'
+
+  - name: "printf %q shell-sensitive characters"
+    stdin: |
+      printf '%q\n' '~' 'x:~' 'x=~' '#' 'x#y'
+      printf '%Q\n' '~' 'x:~' 'x=~' '#' 'x#y'
+
+  - name: "printf %Q"
+    stdin: |
+      printf '%Q\n' 'foo bar'
+
+  - name: "printf %q with ignored modifier"
+    stdin: |
+      printf '<%2q>\n' 'foo bar'
+
+  - name: "printf %q width and precision semantics"
+    known_failure: true # Requires q/Q modifier metadata from uucore
+    stdin: |
+      printf '<%12q>\n' 'foo bar'
+      printf '<%.5q>\n' 'foo bar'
+      printf '<%.5Q>\n' 'foo bar'
+
+  - name: "printf %q dynamic and positional modifiers"
+    known_failure: true # Dynamic modifiers are unsupported; positional forms follow uucore
+    ignore_stderr: true
+    stdin: |
+      printf '<%*q>\n' 12 'foo bar'
+      printf '<%.*Q>\n' 5 'foo bar'
+      printf '<%2$q>\n' first second
+
+  - name: "printf %q alternate form"
+    min_oracle_version: "5.3" # Alternate form forces single quoting starting in bash 5.3
+    stdin: |
+      printf '<%#q>\n' 'foo bar'
+      printf '<%#Q>\n' 'foo bar'
+
+  - name: "printf %q alternate form edge cases"
+    min_oracle_version: "5.3" # Alternate form forces single quoting starting in bash 5.3
+    known_failure: true # Requires alternate-form and width metadata from uucore
+    stdin: |
+      printf '<%#q>\n' 'foo'
+      printf '<%#12q>\n' 'foo bar'
