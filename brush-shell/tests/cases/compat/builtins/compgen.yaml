@@ -243,6 +243,20 @@ cases:
       touch subfile
       compgen -W 'completion' -o dirnames -- s | sort
 
+      echo "[Take 3]"
+      mkdir cdir cdir2
+      touch cfile
+      compgen -W 'completion' -o dirnames -- c | sort
+
+      echo "[Take 4]"
+      compgen -W 'nomatch' -o dirnames -- c | sort
+
+      echo "[Take 5]"
+      compgen -o dirnames -- c | sort
+
+      echo "[Take 6]"
+      compgen -W 'completion' -o dirnames -o plusdirs -- c | sort
+
   - name: "compgen -o default"
     stdin: |
       echo "[Take 1]"
