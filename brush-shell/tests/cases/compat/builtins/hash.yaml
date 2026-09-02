@@ -67,3 +67,40 @@ cases:
     stdin: |
       hash /dev/null && echo "1. Result: $?"
       hash /dev/nulll && echo "2. Result: $?"
+
+  - name: "hash -p refuses a directory"
+    stdin: |
+      # Normalize away the leading "shell: line N:" that the oracle prefixes onto diagnostics.
+      strip() { sed 's/^.*hash:/hash:/'; }
+
+      mkdir -p adir
+      touch afile
+
+      echo "[a directory is refused]"
+      hash -p adir z1 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      # The pipeline above ran in a subshell, so re-run it here to check the table itself.
+      hash -p adir z1 2>/dev/null; echo "rc=$?"
+      hash -t z1 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+      echo "[any other path is taken at face value]"
+      hash -p afile z2; echo "rc=$?"
+      hash -p /nonexistent/x z3; echo "rc=$?"
+      hash -t z2 z3; echo "rc=$?"
+
+      echo "[refused once per name]"
+      hash -p adir bad1 bad2 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+      echo "[a relative path resolves against the shell's working directory]"
+      mkdir -p sub/reldir sub2
+      cd sub
+      hash -p reldir z4 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      cd ../sub2
+      # ../sub/reldir exists, but 'reldir' does not from here, so this is just a path.
+      hash -p reldir z5 2>/dev/null; echo "rc=$?"
+      hash -t z5; echo "rc=$?"
+      cd ..
+
+      echo "[hash NAME stays strict about executables]"
+      mkdir -p d1; touch d1/only
+      PATH="d1:$PATH"
+      hash only 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
