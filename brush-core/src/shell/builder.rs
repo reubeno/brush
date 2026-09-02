@@ -23,7 +23,8 @@ impl<SE: extensions::ShellExtensions, S: shell_builder::IsComplete> ShellBuilder
         // Construct the shell.
         let mut shell = Shell::new(options)?;
 
-        // Load profiles/configuration, unless skipped.
+        // Load profiles/configuration (and then history), unless skipped. Callers that skip
+        // both are expected to call `load_config` themselves before needing history.
         if !profile.skip() || !rc.skip() {
             shell.load_config(&profile, &rc).await?;
         }

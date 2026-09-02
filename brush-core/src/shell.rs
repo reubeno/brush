@@ -249,12 +249,10 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             shell.env.set_global(var_name, var_value)?;
         }
 
-        // Set up history, if relevant. Do NOT fail if we can't load history.
+        // Set up history, if relevant. The history file itself is loaded later, once startup
+        // files have run, since they may change HISTFILE.
         if shell.options.enable_command_history {
-            shell.history = shell
-                .load_history()
-                .unwrap_or_default()
-                .or_else(|| Some(crate::history::History::default()));
+            shell.history = Some(crate::history::History::default());
         }
 
         Ok(shell)

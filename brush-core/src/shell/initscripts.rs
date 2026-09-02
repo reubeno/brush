@@ -41,13 +41,38 @@ impl RcLoadBehavior {
 }
 
 impl<SE: extensions::ShellExtensions> Shell<SE> {
-    /// Loads and executes standard shell configuration files (i.e., rc and profile).
+    /// Loads and executes standard shell configuration files (i.e., rc and profile), and then
+    /// loads the history file (if command history is enabled). History is loaded last since
+    /// the configuration files may change `HISTFILE`.
     ///
     /// # Arguments
     ///
     /// * `profile_behavior` - Behavior for loading profile files.
     /// * `rc_behavior` - Behavior for loading rc files.
     pub async fn load_config(
+        &mut self,
+        profile_behavior: &ProfileLoadBehavior,
+        rc_behavior: &RcLoadBehavior,
+    ) -> Result<(), error::Error> {
+        self.load_config_files(profile_behavior, rc_behavior)
+            .await?;
+
+        // As bash does, skip the file if startup files already added entries (e.g. via
+        // `history -s`). Do NOT fail if we can't load history.
+        if self.options.enable_command_history
+            && self
+                .history
+                .as_ref()
+                .is_none_or(crate::history::History::is_empty)
+            && let Ok(Some(history)) = self.load_history()
+        {
+            self.history = Some(history);
+        }
+
+        Ok(())
+    }
+
+    async fn load_config_files(
         &mut self,
         profile_behavior: &ProfileLoadBehavior,
         rc_behavior: &RcLoadBehavior,
