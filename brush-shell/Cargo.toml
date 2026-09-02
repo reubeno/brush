@@ -44,11 +44,11 @@ path = "tests/interactive_tests.rs"
 name = "brush-completion-tests"
 path = "tests/completion_tests.rs"
 
-# N.B. tests/pty_startup_tests.rs is deliberately left auto-discovered (no
-# `brush-*-tests` name): the CI `brush_*_tests-*` artifact glob would otherwise
-# ship it to the os-tests jobs, which run prebuilt test binaries outside a cargo
-# target dir and so can't run pty-based tests (see the interactive/version test
-# skips there).
+# N.B. tests/pty_startup_tests.rs and tests/reedline_interactive_tests.rs are
+# deliberately left auto-discovered (no `brush-*-tests` name): the CI
+# `brush_*_tests-*` artifact glob would otherwise ship them to the os-tests
+# jobs, which run prebuilt test binaries outside a cargo target dir and so
+# can't run pty-based tests (see the interactive/version test skips there).
 
 [[bench]]
 name = "shell"
