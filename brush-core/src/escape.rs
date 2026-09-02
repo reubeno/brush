@@ -366,30 +366,28 @@ fn backslash_escape(s: &str) -> Cow<'_, str> {
 }
 
 fn single_quote(s: &str) -> Cow<'_, str> {
-    // Special-case the empty string.
-    if s.is_empty() {
-        return Cow::Borrowed("''");
+    // Special-case the empty string and a lone single quote; both are rendered
+    // without any empty quoted runs.
+    match s {
+        "" => return Cow::Borrowed("''"),
+        "'" => return Cow::Borrowed(r"\'"),
+        _ => (),
     }
 
-    let mut result = String::with_capacity(s.len());
+    let mut result = String::with_capacity(s.len() + 2);
 
     // Go through the string; put everything in single quotes except for
     // the single quote character itself. It will get escaped outside
-    // all quoting.
-    let mut first = true;
-    for part in s.split('\'') {
-        if !first {
-            result.push('\\');
-            result.push('\'');
-        } else {
-            first = false;
+    // all quoting, with the quoted runs on either side of it kept even
+    // when they're empty.
+    for (i, part) in s.split('\'').enumerate() {
+        if i > 0 {
+            result.push_str(r"\'");
         }
 
-        if !part.is_empty() {
-            result.push('\'');
-            result.push_str(part);
-            result.push('\'');
-        }
+        result.push('\'');
+        result.push_str(part);
+        result.push('\'');
     }
 
     Cow::Owned(result)
@@ -490,7 +488,7 @@ mod tests {
         assert_eq!(quote_if_needed("a", QuoteMode::SingleQuote), "a");
         assert_eq!(quote_if_needed("a b", QuoteMode::SingleQuote), "'a b'");
         assert_eq!(quote_if_needed("", QuoteMode::SingleQuote), "''");
-        assert_eq!(quote_if_needed("'", QuoteMode::SingleQuote), "\\'");
+        assert_eq!(quote_if_needed("'", QuoteMode::SingleQuote), r"\'");
     }
 
     fn assert_echo_expands_to(unexpanded: &str, expected: &str) {
