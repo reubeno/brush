@@ -224,6 +224,11 @@ impl History {
         Ok(Search::new(self, query))
     }
 
+    /// Returns whether the history contains no items.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     /// Returns an iterator over the history items.
     pub fn iter(&self) -> impl Iterator<Item = &self::Item> {
         Search::all(self)

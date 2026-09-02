@@ -57,8 +57,13 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         self.load_config_files(profile_behavior, rc_behavior)
             .await?;
 
-        // Do NOT fail if we can't load history.
+        // As bash does, skip the file if startup files already added entries (e.g. via
+        // `history -s`). Do NOT fail if we can't load history.
         if self.options.enable_command_history
+            && self
+                .history
+                .as_ref()
+                .is_none_or(crate::history::History::is_empty)
             && let Ok(Some(history)) = self.load_history()
         {
             self.history = Some(history);

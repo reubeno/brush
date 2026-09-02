@@ -277,6 +277,65 @@ cases:
     stdin: |
       history -w; echo "status: $?"
 
+  - name: "history -s in .bashrc suppresses loading HISTFILE"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          a b c
+          1 2 3
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+          history -s marker
+    stdin: |
+      history
+
+  - name: "history -s then -c in .bashrc still loads HISTFILE"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          a b c
+          1 2 3
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+          history -s marker
+          history -c
+    stdin: |
+      history
+
+  - name: "history -s then -d in .bashrc still loads HISTFILE"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          a b c
+          1 2 3
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+          history -s marker
+          history -d 1
+    stdin: |
+      history
+
   - name: "loaded history entries without timestamps are stamped with load time"
     ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
     args: ["-i"]
