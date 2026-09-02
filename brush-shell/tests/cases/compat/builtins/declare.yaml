@@ -302,6 +302,18 @@ cases:
       i() { until :; do echo x; done; ( echo s; echo t ); }
       declare -f i
 
+  - name: "Displaying a function with case patterns"
+    stdin: |
+      f() {
+        case "$1" in
+          a|b|c) echo abc;;
+          (d|e) echo de;;
+          single) echo one;;
+          *) ;;
+        esac
+      }
+      declare -f f
+
   - name: "Displaying non-existent functions"
     stdin: |
       declare -f not_a_function

@@ -945,7 +945,8 @@ impl Display for CaseItem {
         writeln!(f)?;
         for (i, pattern) in self.patterns.iter().enumerate() {
             if i > 0 {
-                write!(f, "|")?;
+                // Note the spaces, which the shell puts around the pattern separator.
+                write!(f, " | ")?;
             }
             write!(f, "{pattern}")?;
         }
