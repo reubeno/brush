@@ -390,3 +390,33 @@ cases:
       echo "arr[0]: ${arr[0]}"
       echo "arr[1]: ${arr[1]}"
       echo "arr[2]: ${arr[2]}"
+
+  #
+  # Process substitution inside command substitution.
+  #
+  # These deadlocked before the read was moved off the runtime worker: the
+  # producer for `<(...)` is spawned from the same worker that read then
+  # blocked on, so it could never run to close the write end.
+  #
+  - name: "while read loop fed by process substitution inside command substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      x=$(while read -r line; do echo "got $line"; done < <(echo -e "a\nb"))
+      echo "$x"
+
+  - name: "while read loop fed by process substitution in function in command substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      f() {
+        while read -r line; do
+          echo "got $line"
+        done < <(echo -e "a\nb")
+      }
+      x=$(f)
+      echo "$x"
+
+  - name: "read from process substitution inside command substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      x=$(read -r line < <(echo hello); echo "$line")
+      echo "$x"

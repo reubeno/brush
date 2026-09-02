@@ -118,6 +118,23 @@ mod wait;
 
 mod builder;
 mod factory;
+
+async fn run_blocking_io<T>(
+    f: impl FnOnce() -> Result<T, brush_core::Error> + Send + 'static,
+) -> Result<T, brush_core::Error>
+where
+    T: Send + 'static,
+{
+    #[cfg(any(unix, windows))]
+    {
+        tokio::task::spawn_blocking(f).await?
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        f()
+    }
+}
 mod unimp;
 
 pub use builder::ShellBuilderExt;

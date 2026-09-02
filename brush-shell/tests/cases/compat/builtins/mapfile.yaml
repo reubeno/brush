@@ -200,3 +200,48 @@ cases:
       declare -n ref=target
       mapfile -t -O 2 ref < <(echo -e "a\nb")
       declare -p target
+
+  #
+  # Process substitution inside command substitution.
+  #
+  # These deadlocked before the read was moved off the runtime worker: the
+  # producer for `<(...)` is spawned from the same worker that mapfile then
+  # blocked on, so it could never run to close the write end.
+  #
+  - name: "mapfile from process substitution inside command substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      x=$(mapfile -t arr < <(echo -e "a\nb"); echo "${arr[*]}")
+      echo "$x"
+
+  - name: "mapfile from process substitution in function in command substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      f() {
+        mapfile -t arr < <(echo -e "a\nb")
+        echo "${arr[*]}"
+      }
+      x=$(f)
+      echo "$x"
+
+  - name: "repeated mapfile from process substitution in command substitution"
+    timeout_in_seconds: 10
+    stdin: |
+      f() {
+        mapfile -t a < <(echo one)
+        mapfile -t b < <(echo two)
+        echo "${a[*]} ${b[*]}"
+      }
+      x=$(f)
+      echo "$x"
+
+  - name: "mapfile from process substitution nested two command substitutions deep"
+    timeout_in_seconds: 10
+    stdin: |
+      g() {
+        mapfile -t arr < <(echo deep)
+        echo "${arr[*]}"
+      }
+      f() { echo "$(g)"; }
+      x=$(f)
+      echo "$x"

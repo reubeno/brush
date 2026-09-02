@@ -114,8 +114,34 @@ impl builtins::Command for ReadCommand {
         // Convert timeout to Duration.
         let timeout = self.timeout_in_seconds.map(Duration::from_secs_f64);
 
-        // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        let term_mode = self.setup_terminal_settings(&input_stream)?;
+
+        // Display prompt on stderr, but only if input is from a terminal (per bash behavior).
+        if let Some(prompt) = &self.prompt
+            && input_stream.is_terminal()
+        {
+            let mut stderr_file = context.stderr();
+            write!(stderr_file, "{prompt}")?;
+            stderr_file.flush()?;
+        }
+
+        let config = self.line_reader_config();
+
+        // Perform the synchronous descriptor read away from the async runtime workers.
+        let read_result = crate::run_blocking_io(move || {
+            let mut reader = InputReader::new(input_stream, timeout, term_mode);
+
+            if timeout == Some(Duration::ZERO) {
+                return Ok(if reader.check_input_available() {
+                    ReadResult::InputReady
+                } else {
+                    ReadResult::InputNotReady
+                });
+            }
+
+            read_line_with_reader(&mut reader, &config)
+        })
+        .await?;
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -501,28 +527,7 @@ fn read_line_with_reader(
 }
 
 impl ReadCommand {
-    /// Reads a line of input, optionally with a timeout.
-    ///
-    /// Handles backslash escape processing:
-    /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next
-    ///   char
-    /// - With `-r`: backslash is treated as a literal character
-    fn read_line(
-        &self,
-        input_file: brush_core::openfiles::OpenFile,
-        mut stderr_file: impl std::io::Write,
-        timeout: Option<Duration>,
-    ) -> Result<ReadResult, brush_core::Error> {
-        let term_mode = self.setup_terminal_settings(&input_file)?;
-
-        // Display prompt on stderr, but only if input is from a terminal (per bash behavior).
-        if let Some(prompt) = &self.prompt {
-            if input_file.is_terminal() {
-                write!(stderr_file, "{prompt}")?;
-                stderr_file.flush()?;
-            }
-        }
-
+    fn line_reader_config(&self) -> LineReaderConfig {
         // Determine delimiter based on options.
         let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
             None
@@ -540,26 +545,11 @@ impl ReadCommand {
             .return_after_n_chars_no_delimiter
             .or(self.return_after_n_chars);
 
-        // Create the input reader.
-        let mut reader = InputReader::new(input_file, timeout, term_mode);
-
-        // Handle -t 0 special case: just check if input is available without reading.
-        if timeout == Some(Duration::ZERO) {
-            return Ok(if reader.check_input_available() {
-                ReadResult::InputReady
-            } else {
-                ReadResult::InputNotReady
-            });
-        }
-
-        // Configure and perform the read.
-        let config = LineReaderConfig {
+        LineReaderConfig {
             delimiter,
             char_limit,
             process_escapes: !self.raw_mode,
-        };
-
-        read_line_with_reader(&mut reader, &config)
+        }
     }
 
     fn setup_terminal_settings(
