@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use brush_core::{ErrorKind, builtins, env, error, variables};
 
 use std::io::{Read, Write};
+use utf8_chars::BufReadCharsExt;
 
 /// Exit code returned when `read` times out.
 /// This is 128 + SIGALRM (14) = 142, matching bash behavior.
@@ -291,17 +292,9 @@ enum ReadResult {
 /// higher-level logic of line building and escape processing.
 struct InputReader {
     /// The input source.
-    input: brush_core::openfiles::OpenFile,
-    /// Optional deadline for timeout.
-    deadline: Option<Instant>,
-    /// Single-byte read buffer.
-    ///
-    /// TODO(utf-8): This only handles ASCII correctly. Multi-byte UTF-8 characters
-    /// will be read as separate bytes and incorrectly interpreted. To fix this,
-    /// we would need to buffer up to 4 bytes and decode incrementally using
-    /// `std::str::from_utf8`. Note that bash's `-n` counts bytes, not Unicode
-    /// codepoints, so the fix needs to preserve that behavior.
-    buffer: [u8; 1],
+    input: std::io::BufReader<PolledInput>,
+    /// Bytes from a malformed UTF-8 sequence, still owed to the caller one at a time.
+    pending: VecDeque<char>,
     /// Terminal mode guard - kept alive for RAII cleanup on drop.
     /// The guard restores original terminal settings when dropped, even though
     /// we don't access the field directly after construction.
@@ -333,9 +326,14 @@ impl InputReader {
         term_mode: Option<brush_core::terminal::AutoModeGuard>,
     ) -> Self {
         Self {
-            input,
-            deadline: timeout.map(|t| Instant::now() + t),
-            buffer: [0; 1],
+            input: std::io::BufReader::with_capacity(
+                1,
+                PolledInput {
+                    input,
+                    deadline: timeout.map(|t| Instant::now() + t),
+                },
+            ),
+            pending: VecDeque::new(),
             _term_mode: term_mode,
         }
     }
@@ -343,32 +341,37 @@ impl InputReader {
     /// Checks if input is immediately available (for `-t 0`). Returns `false` if an error
     /// occurs while checking for available input.
     fn check_input_available(&self) -> bool {
-        brush_core::sys::poll::poll_for_input(&self.input, Duration::ZERO).unwrap_or(false)
+        brush_core::sys::poll::poll_for_input(&self.input.get_ref().input, Duration::ZERO)
+            .unwrap_or(false)
     }
 
     /// Reads the next input event, handling timeout and control characters.
     fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
-        // Check timeout before attempting read.
-        if let Some(deadline) = self.deadline {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Ok(InputEvent::Timeout);
+        let ch = loop {
+            if let Some(ch) = self.pending.pop_front() {
+                break ch;
             }
 
-            // Poll for input with remaining timeout.
-            match brush_core::sys::poll::poll_for_input(&self.input, remaining) {
-                Ok(true) => { /* Data available, proceed. */ }
-                Ok(false) => return Ok(InputEvent::Timeout),
-                Err(e) => return Err(e.into()),
+            match self.input.read_char_raw() {
+                Ok(Some(ch)) => break ch,
+                Ok(None) => return Ok(InputEvent::Eof),
+                Err(e) => {
+                    // Hand back the bytes it consumed, one at a time; the byte that broke
+                    // the sequence was left unconsumed, for the next call to re-read.
+                    //
+                    // TODO(utf-8): `line` is a `String`, so an invalid byte can't
+                    // round-trip; bash preserves it verbatim, we re-encode it.
+                    if e.as_bytes().is_empty() {
+                        if e.as_io_error().kind() == std::io::ErrorKind::TimedOut {
+                            return Ok(InputEvent::Timeout);
+                        }
+                        return Err(e.into_io_error().into());
+                    }
+                    self.pending
+                        .extend(e.as_bytes().iter().copied().map(char::from));
+                }
             }
-        }
-
-        let n = self.input.read(&mut self.buffer)?;
-        if n == 0 {
-            return Ok(InputEvent::Eof);
-        }
-
-        let ch = self.buffer[0] as char;
+        };
 
         // Map control characters to events.
         Ok(match ch {
@@ -376,6 +379,33 @@ impl InputReader {
             CTRL_D => InputEvent::CtrlD,
             _ => InputEvent::Char(ch),
         })
+    }
+}
+
+/// Reads the input file one byte at a time, enforcing the deadline on every byte.
+///
+/// Wrapped in a 1-byte `BufReader`, which gives us both the pushback a byte that turns
+/// out not to belong to the current UTF-8 sequence needs, and the guarantee that `read`
+/// never consumes more of the descriptor than it asked for -- whatever runs next may
+/// want the rest.
+struct PolledInput {
+    /// The input source.
+    input: brush_core::openfiles::OpenFile,
+    /// Optional deadline for timeout.
+    deadline: Option<Instant>,
+}
+
+impl Read for PolledInput {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if let Some(deadline) = self.deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero()
+                || !brush_core::sys::poll::poll_for_input(&self.input, remaining)?
+            {
+                return Err(std::io::ErrorKind::TimedOut.into());
+            }
+        }
+        self.input.read(buf)
     }
 }
 
@@ -403,6 +433,9 @@ fn read_line_with_reader(
     config: &LineReaderConfig,
 ) -> Result<ReadResult, brush_core::Error> {
     let mut line = String::new();
+    // Tracked alongside `line`, which is a `String`: the limit counts characters, and
+    // recounting a growing string on every one of them is quadratic.
+    let mut output_chars = 0usize;
     let mut pending_backslash = false;
 
     loop {
@@ -459,10 +492,11 @@ fn read_line_with_reader(
 
                         // For other chars, add char literally (backslash consumed).
                         line.push(ch);
+                        output_chars += 1;
 
                         // Check character limit (based on output length).
                         if let Some(limit) = config.char_limit
-                            && line.len() >= limit
+                            && output_chars >= limit
                         {
                             return Ok(ReadResult::Line(line));
                         }
@@ -488,10 +522,11 @@ fn read_line_with_reader(
                 }
 
                 line.push(ch);
+                output_chars += 1;
 
                 // Check character limit (based on output length).
                 if let Some(limit) = config.char_limit
-                    && line.len() >= limit
+                    && output_chars >= limit
                 {
                     return Ok(ReadResult::Line(line));
                 }
@@ -690,6 +725,35 @@ mod tests {
     use itertools::assert_equal;
 
     use super::*;
+
+    // ==================== UTF-8 decoding tests ====================
+
+    // Decoding is otherwise covered end-to-end by the compat suite; what can't be
+    // expressed there is a partial sequence that never completes, since it needs a
+    // writer held open while `read` gives up on it.
+    //
+    // `-t` needs `poll_for_input`, which only the unix backend implements; elsewhere it
+    // reports `Unsupported`, so there's no timeout to observe.
+    #[cfg(unix)]
+    #[test]
+    fn test_read_times_out_mid_sequence_without_losing_the_partial_bytes() {
+        let (rx, mut tx) = std::io::pipe().unwrap();
+        tx.write_all(b"\xc3").unwrap();
+
+        let mut reader = InputReader::new(rx.into(), Some(Duration::from_millis(100)), None);
+        let config = LineReaderConfig {
+            delimiter: Some(DEFAULT_DELIMITER),
+            char_limit: None,
+            process_escapes: false,
+        };
+
+        // Holding `tx` means the continuation byte never arrives, so the deadline has to
+        // be enforced on it and not just on the byte that started the sequence.
+        let result = read_line_with_reader(&mut reader, &config).unwrap();
+        drop(tx);
+
+        assert!(matches!(result, ReadResult::TimedOut(Some(line)) if line == "\u{c3}"));
+    }
 
     // ==================== split_line_by_ifs tests ====================
 
