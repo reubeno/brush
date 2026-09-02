@@ -232,6 +232,33 @@ impl DeclareCommand {
         }
     }
 
+    /// `declare -f` with attribute flags applies them to the named function rather than
+    /// displaying it (e.g. `declare -ft name`, `declare -fx name`).
+    fn apply_function_attributes(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        declaration: &brush_core::CommandArg,
+    ) -> bool {
+        let func = match declaration {
+            brush_core::CommandArg::String(name) => context.shell.func_mut(name),
+            brush_core::CommandArg::Assignment(_) => None,
+        };
+
+        // As with display, bash reports failure without printing an error message here.
+        let Some(func) = func else {
+            return false;
+        };
+
+        match self.make_exported.to_bool() {
+            Some(true) => func.export(),
+            Some(false) => func.unexport(),
+            None => (),
+        }
+
+        // TODO(declare): function tracing (-t) isn't tracked; it's accepted silently.
+        true
+    }
+
     fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -242,6 +269,12 @@ impl DeclareCommand {
             || (matches!(verb, DeclareVerb::Declare)
                 && context.shell.in_function()
                 && !self.create_global);
+
+        if (self.function_names_or_defs_only || self.function_names_only)
+            && (self.make_traced.to_bool().is_some() || self.make_exported.to_bool().is_some())
+        {
+            return Ok(self.apply_function_attributes(context, declaration));
+        }
 
         if self.function_names_or_defs_only || self.function_names_only {
             return self.try_display_declaration(context, declaration, verb);

@@ -1131,3 +1131,31 @@ cases:
       readonly 'bad-name3=1' 2>&1 | strip
       export -f nosuchfn 2>&1 | strip
       export 'e[0]=1' 2>&1 | strip
+
+  - name: "declare -fx exports a function"
+    stdin: |
+      f() { :; }
+      count_exported() { env | grep -c "^BASH_FUNC_f"; }
+      count_exported
+      declare -fx f; echo "rc=$?"
+      count_exported
+      declare +x -f f; echo "rc=$?"
+      count_exported
+
+  - name: "declare -f with attribute flags doesn't display the function"
+    stdin: |
+      f() { echo body; }
+      echo "[$(declare -ft f)]"; echo "rc=$?"
+      echo "[$(declare -fx f)]"; echo "rc=$?"
+
+  - name: "declare -f with attribute flags on a missing function"
+    stdin: |
+      declare -ft nosuchfn 2>&1; echo "rc=$?"
+      declare -fx nosuchfn 2>&1; echo "rc=$?"
+
+  - name: "declare -ft records the trace attribute"
+    known_failure: true # TODO(declare): brush accepts -t on functions but doesn't track it
+    stdin: |
+      f() { :; }
+      declare -ft f
+      declare -F
