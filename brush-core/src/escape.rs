@@ -365,7 +365,16 @@ fn backslash_escape(s: &str) -> Cow<'_, str> {
     }
 }
 
-fn single_quote(s: &str) -> Cow<'_, str> {
+/// Plain single-quoting, as bash's `sh_single_quote` does it.
+///
+/// Unlike [`force_quote`] and [`quote_if_needed`], this never upgrades to ANSI-C quoting;
+/// control characters are emitted literally. Use it where bash prints values verbatim,
+/// such as `alias` output.
+///
+/// # Arguments
+///
+/// * `s` - The string to quote.
+pub fn single_quote(s: &str) -> Cow<'_, str> {
     // Special-case the empty string and a lone single quote; both are rendered
     // without any empty quoted runs.
     match s {

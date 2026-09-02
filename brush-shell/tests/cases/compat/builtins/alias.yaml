@@ -254,3 +254,17 @@ cases:
       shopt -s expand_aliases
       alias myalias=if
       myalias true; then echo "true"; fi
+
+  - name: "alias display quotes values"
+    stdin: |
+      alias q1="a'b"
+      alias q2="'"
+      alias q3="a''b"
+      alias q4='a "b" $c'
+      alias q5="$(printf 'a\tb')"
+      alias q6="a
+      b"
+
+      alias
+      alias -p
+      alias q1 q3
