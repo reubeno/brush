@@ -26,7 +26,10 @@ context is `e2e/`, so it can `COPY shim /e2e/bin`) whose entrypoint:
    the host, so the image's glibc must be at least the host's. Most apps
    hard-code `bash`, so the shared `shim/bash` exec's `$SHELL_UNDER_TEST`;
    put `/e2e/bin` first on `PATH`. When the variable is unset the shim
-   runs the real `bash`, which gives the baseline run.
+   runs the real `bash`, which gives the baseline run. If the suite has its
+   own knob for which shell to test (atuin's `ATUIN_TEST_BASH`), set that
+   instead and skip the shim; a shim on `PATH` also captures test tooling
+   written in bash (bats, say), which must not run under the shell under test.
 2. **Writes results** to `/results`: `log.txt` plus JUnit XML under
    `junit/`. Write whatever else helps debugging there too.
 3. **Exits non-zero** when any test fails. Known failures go in the adapter's
@@ -55,5 +58,6 @@ the tests write into.
 | app | notes |
 |-----|-------|
 | fzf | upstream `test/test_shell_integration.rb`, `TestBash` only; minitest + tmux, JUnit via `minitest-ci` |
+| atuin | our own suite in `atuin/tests/` (bats + tmux), written to be upstreamable |
 
-Planned: ble.sh, atuin.
+Planned: ble.sh.
