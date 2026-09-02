@@ -1022,8 +1022,38 @@ impl Config {
     /// * `shell` - The shell instance to use for completion generation.
     /// * `input` - The input line for which completions are being generated.
     /// * `position` - The 0-based index of the cursor in the input line.
-    #[expect(clippy::string_slice)]
     pub async fn get_completions(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        input: &str,
+        position: usize,
+    ) -> Result<Completions, error::Error> {
+        // Like bash, only expose the simple command containing the cursor to completion
+        // (e.g. COMP_WORDS/COMP_LINE): everything after the last command separator, minus
+        // leading variable assignments.
+        let command_start = Self::find_command_start(shell, input, position);
+        let command = input.get(command_start..).unwrap_or_default();
+
+        let mut completions = self
+            .get_completions_for_command(shell, command, position - command_start)
+            .await?;
+        completions.insertion_index += command_start;
+
+        Ok(completions)
+    }
+
+    /// Returns the byte offset at which the simple command containing the cursor starts.
+    fn find_command_start(
+        shell: &Shell<impl extensions::ShellExtensions>,
+        input: &str,
+        position: usize,
+    ) -> usize {
+        let tokens = Self::tokenize_input_for_completion(shell, input);
+        command_start_from_tokens(input, &tokens, position)
+    }
+
+    #[expect(clippy::string_slice)]
+    async fn get_completions_for_command(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         input: &str,
@@ -1495,6 +1525,59 @@ fn simple_tokenize_by_delimiters<'a>(
     tokens
 }
 
+/// Returns the byte offset at which the simple command containing the cursor starts, given
+/// the tokens of the whole input line.
+fn command_start_from_tokens(
+    input: &str,
+    tokens: &[CompletionToken<'_>],
+    position: usize,
+) -> usize {
+    let before_cursor: Vec<_> = tokens.iter().take_while(|t| t.start < position).collect();
+
+    // A '(' opening a command substitution isn't a separator; like bash, we don't complete
+    // inside `$(...)`, we treat the whole thing as part of the enclosing command's word.
+    let is_separator = |t: &CompletionToken<'_>| {
+        t.text
+            .chars()
+            .all(|c| matches!(c, ';' | '|' | '&' | '(' | '{'))
+            && !input.get(..t.start).is_some_and(|s| s.ends_with('$'))
+    };
+    let is_name = |t: &CompletionToken<'_>| {
+        t.text
+            .chars()
+            .enumerate()
+            .all(|(i, c)| c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
+    };
+
+    let mut i = before_cursor
+        .iter()
+        .rposition(|t| is_separator(t))
+        .map_or(0, |i| i + 1);
+
+    // Skip leading NAME=VALUE assignments. '=' is a word break, so each spans up to
+    // three adjacent tokens; only skip ones that end before the cursor's word.
+    while let (Some(name), Some(eq)) = (before_cursor.get(i), before_cursor.get(i + 1)) {
+        if eq.text != "=" || eq.start != name.end() || !is_name(name) {
+            break;
+        }
+
+        let mut next = i + 2;
+        let mut end = eq.end();
+        if let Some(value) = before_cursor.get(next).filter(|v| v.start == end) {
+            next += 1;
+            end = value.end();
+        }
+
+        if end >= position {
+            break;
+        }
+
+        i = next;
+    }
+
+    before_cursor.get(i).map_or(position, |t| t.start)
+}
+
 fn completion_filter_pattern_matches(
     pattern: &str,
     candidate: &str,
@@ -1543,6 +1626,38 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
 mod tests {
     use super::*;
     use pretty_assertions::assert_matches;
+
+    #[test]
+    fn command_start() {
+        let delims: Vec<char> = " \t\n\"'@><=;|&(:".chars().collect();
+        let start = |input: &str| {
+            command_start_from_tokens(
+                input,
+                &simple_tokenize_by_delimiters(input, &delims),
+                input.len(),
+            )
+        };
+
+        assert_eq!(start("ls fo"), 0);
+        assert_eq!(start("echo foo; ls fo"), 10);
+        assert_eq!(start("echo foo && ls fo"), 12);
+        assert_eq!(start("echo foo | ls fo"), 11);
+        assert_eq!(start("echo foo; QUX=THUD unset FZ"), 19);
+        assert_eq!(start("A=1 B= ls fo"), 7);
+        // Bash's find_cmd_start() would say 6 here (it treats the '&' of '>&' as a
+        // separator); we intentionally do better.
+        assert_eq!(start("ls 2>&1 fo"), 0);
+        // A '(' opening a command substitution is not a separator, matching bash.
+        assert_eq!(start("ls $(date) fo"), 0);
+        assert_eq!(start("echo $(ls fo"), 0);
+        // ...but a subshell or group really does start a new command.
+        assert_eq!(start("(ls fo"), 1);
+        assert_eq!(start("{ ls fo"), 2);
+        assert_eq!(start("echo foo;"), 9);
+        // An assignment under the cursor is the word being completed, not a prefix.
+        assert_eq!(start("QUX=TH"), 0);
+        assert_eq!(start("echo foo; QUX=TH"), 10);
+    }
 
     #[test]
     #[allow(clippy::too_many_lines)]
