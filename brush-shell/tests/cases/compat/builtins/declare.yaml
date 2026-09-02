@@ -30,6 +30,20 @@ cases:
       echo "-------------------------"
       (testvar="'" && declare -p testvar && declare | grep testvar=)
 
+  - name: "Display vars with adjacent single quotes"
+    stdin: |
+      (testvar="a''b" && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar="''" && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar="'a" && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (testvar="a'" && declare -p testvar && declare | grep testvar=)
+      echo "-------------------------"
+      (declare -a arr=("a''b" "'") && declare -p arr)
+      echo "-------------------------"
+      (declare -A m=([k]="a''b") && declare -p m)
+
   - name: "Display vars with interesting chars 2"
     min_oracle_version: 5.2 # some sequences render differently in older shell versions
     stdin: |
