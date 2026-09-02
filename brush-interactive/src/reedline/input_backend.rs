@@ -157,12 +157,21 @@ impl InputBackend for ReedlineInputBackend {
         if let Some(reedline) = &mut self.reedline {
             match reedline.read_line(&prompt) {
                 Ok(reedline::Signal::Success(s)) => {
+                    // reedline < 0.48 delivered `ExecuteHostCommand` payloads through
+                    // `Success` (hence the marker check); newer versions use the
+                    // dedicated `HostCommand` signal below. Keep both so the marker
+                    // round-trip stays correct regardless of which one we get.
                     if edit_mode::is_reedline_host_command(s.as_str()) {
                         Ok(ReadResult::BoundCommand(s))
                     } else {
                         Ok(ReadResult::Input(s))
                     }
                 }
+                // Since reedline 0.48 (nushell/reedline#1049), a key bound with
+                // `bind -x` comes back as `Signal::HostCommand` rather than
+                // `Signal::Success`. Without this arm it fell into the catch-all
+                // below and every bound key press terminated the interactive shell.
+                Ok(reedline::Signal::HostCommand(s)) => Ok(ReadResult::BoundCommand(s)),
                 Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
                 Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
                 Ok(reedline::Signal::ExternalBreak(_)) => Err(ShellError::UnexpectedInputFailure),
