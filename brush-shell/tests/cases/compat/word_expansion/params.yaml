@@ -777,3 +777,15 @@ cases:
       offset=7
       length=5
       echo "\${var:\$offset:\${length}}: ${var:$offset:${length}}"
+
+  - name: "String length counts characters, not bytes"
+    # brush counts UTF-8 bytes. Under the suite's default LC_ALL=C bash agrees, so
+    # the oracle needs a UTF-8 locale for the difference to show at all.
+    known_failure: true
+    env:
+      LC_ALL: "C.UTF-8"
+    stdin: |
+      var="héllo"
+      echo "${#var}"
+      var="테스트"
+      echo "${#var}"

@@ -405,6 +405,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "utf8-chars",
  "uucore",
 ]
 

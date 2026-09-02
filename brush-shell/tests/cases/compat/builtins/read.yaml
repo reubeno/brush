@@ -390,3 +390,47 @@ cases:
       echo "arr[0]: ${arr[0]}"
       echo "arr[1]: ${arr[1]}"
       echo "arr[2]: ${arr[2]}"
+
+  - name: "read with multi-byte UTF-8 input"
+    stdin: |
+      printf '테스트 héllo\n' | { read -r x; echo "[$x]"; }
+      printf '\xed\x85\x8c b\n' | { read -r p q; echo "[$p][$q]"; }
+
+  - name: "read -d with a multi-byte delimiter"
+    stdin: |
+      printf 'ab\xc3\xa9c\n' | { read -r -d 'é' x; echo "[$x]"; }
+
+  # An invalid byte can't round-trip through the Rust String we read into, so these
+  # cases match on shape (`?` is one byte to the C-locale oracle, one character to us)
+  # rather than echoing the byte back.
+  - name: "read does not swallow bytes after an invalid UTF-8 byte"
+    stdin: |
+      # The 'Z' doesn't continue the sequence 0xC3 starts; it and 'b' must survive.
+      printf 'a\xc3Zb\n' | { read -r x; case "$x" in a?Zb) echo "match";; *) echo "NO: $x";; esac; }
+      # ...and when the byte that doesn't continue it is the delimiter, the line must
+      # still end there.
+      printf '\xc3\nSECOND\n' | { read -r a; read -r b; case "$a" in ?) echo "one";; *) echo "NO";; esac; echo "[$b]"; }
+
+  - name: "read with a truncated multi-byte sequence at EOF"
+    stdin: |
+      printf '\xe4\xb8' | {
+        read -r x; echo "rc=$?"
+        case "$x" in ??) echo "two";; *) echo "NO";; esac
+        read -r y; echo "rc2=$?"
+      }
+
+  - name: "read -n and -N count characters, not bytes"
+    # brush has no locale support and always decodes input as UTF-8, so the oracle
+    # needs a UTF-8 locale to agree; under the suite's default LC_ALL=C bash counts
+    # bytes instead.
+    env:
+      LC_ALL: "C.UTF-8"
+    stdin: |
+      printf '테스트\n' | { read -r -n 2 x; echo "[$x]"; }
+      printf '테스트\n' | { read -r -N 2 x; echo "[$x]"; }
+      printf 'héllo\n' | { read -r -n 3 x; echo "[$x]"; }
+      # 4-byte sequences.
+      printf '\xf0\x9f\x98\x80\xf0\x9f\x98\x80z\n' | { read -r -n 2 x; echo "[$x]"; }
+      printf '\xf0\x9f\x98\x80\xf0\x9f\x98\x80z\n' | { read -r -N 2 x; echo "[$x]"; }
+      # The limit is checked separately on the character after a backslash escape.
+      printf '\\\xc3\xa9\xed\x85\x8cx\n' | { read -n 2 x; echo "[$x]"; }
