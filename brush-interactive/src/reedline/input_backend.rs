@@ -12,6 +12,10 @@ pub struct ReedlineInputBackend {
 
 const COMPLETION_MENU_NAME: &str = "completion_menu";
 
+/// How many times a failed `reedline.read_line()` is re-issued before the
+/// error is propagated. See `read_line` below.
+const MAX_READ_LINE_RETRIES: u32 = 3;
+
 fn completion_menu_text_style() -> Style {
     Style::new()
 }
@@ -154,18 +158,40 @@ impl InputBackend for ReedlineInputBackend {
         _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
-        if let Some(reedline) = &mut self.reedline {
+        let Some(reedline) = &mut self.reedline else {
+            return Ok(ReadResult::Eof);
+        };
+
+        let mut attempt: u32 = 0;
+        loop {
             match reedline.read_line(&prompt) {
-                Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
-                Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
-                Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
-                Ok(reedline::Signal::ExternalBreak(_)) => Err(ShellError::UnexpectedInputFailure),
-                Ok(reedline::Signal::HostCommand(cmd)) => Ok(ReadResult::BoundCommand(cmd)),
-                Ok(_) => Err(ShellError::UnexpectedInputFailure),
-                Err(err) => Err(ShellError::InputError(err)),
+                Ok(reedline::Signal::Success(s)) => return Ok(ReadResult::Input(s)),
+                Ok(reedline::Signal::CtrlC) => return Ok(ReadResult::Interrupted),
+                Ok(reedline::Signal::CtrlD) => return Ok(ReadResult::Eof),
+                Ok(reedline::Signal::ExternalBreak(_)) => {
+                    return Err(ShellError::UnexpectedInputFailure);
+                }
+                Ok(reedline::Signal::HostCommand(cmd)) => return Ok(ReadResult::BoundCommand(cmd)),
+                Ok(_) => return Err(ShellError::UnexpectedInputFailure),
+                // An error here is almost always transient. The prevalent case:
+                // reedline asks the terminal for the cursor position (DSR,
+                // `ESC [ 6 n`) before painting a prompt, and again after an
+                // external program (a `bind -x` command such as atuin's search
+                // UI, fzf, ...) hands the terminal back. crossterm waits a fixed
+                // 2s for the reply and then fails; a terminal busy repainting or
+                // a multiplexer briefly holding the reply is enough to trip it,
+                // and giving up would end the whole interactive session.
+                // Re-issuing the read is safe -- nothing has been consumed from
+                // the user's input -- so retry a bounded number of times before
+                // treating the failure as real.
+                Err(err) if attempt < MAX_READ_LINE_RETRIES => {
+                    attempt += 1;
+                    tracing::debug!(
+                        "reedline read_line failed (attempt {attempt}/{MAX_READ_LINE_RETRIES}), retrying: {err}"
+                    );
+                }
+                Err(err) => return Err(ShellError::InputError(err)),
             }
-        } else {
-            Ok(ReadResult::Eof)
         }
     }
 
