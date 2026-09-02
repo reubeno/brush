@@ -36,7 +36,21 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             }
         }
 
-        Ok(Some(crate::history::History::import(history_file)?))
+        let mut history = crate::history::History::import(history_file)?;
+
+        // As bash does, stamp entries that carry no timestamp in the file with the load time.
+        let load_time = chrono::Utc::now();
+        let unstamped: Vec<_> = history
+            .iter()
+            .filter(|item| item.timestamp.is_none())
+            .map(|item| (item.id, item.clone()))
+            .collect();
+        for (id, mut item) in unstamped {
+            item.timestamp = Some(load_time);
+            history.update_by_id(id, item)?;
+        }
+
+        Ok(Some(history))
     }
 
     /// Returns the path to the history file used by the shell, if one is set.

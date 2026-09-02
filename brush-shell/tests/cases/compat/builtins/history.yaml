@@ -276,3 +276,19 @@ cases:
       HISTFILE: ""
     stdin: |
       history -w; echo "status: $?"
+
+  - name: "loaded history entries without timestamps are stamped with load time"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTTIMEFORMAT: "[stamped] "
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          a b c
+          1 2 3
+    stdin: |
+      history
+      # Unset HISTFILE before exit so no wall-clock timestamp gets written to the file.
+      unset HISTFILE
