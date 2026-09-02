@@ -261,16 +261,11 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         // See if the the user interface has a non-empty read buffer.
         let buffer_info = self.input.get_read_buffer();
 
-        // If the user interface did, in fact, have a non-empty read buffer,
-        // then reflect it to the shell in case any shell code wants to
-        // process and/or transform the buffer.
-        let nonempty_buffer = if let Some((buffer, cursor)) = buffer_info {
-            if !buffer.is_empty() {
-                shell.set_edit_buffer(buffer, cursor)?;
-                true
-            } else {
-                false
-            }
+        // If the user interface has a read buffer -- even an empty one -- reflect it to the
+        // shell so that bound commands see READLINE_LINE/READLINE_POINT, as they do in bash.
+        let had_buffer = if let Some((buffer, cursor)) = buffer_info {
+            shell.set_edit_buffer(buffer, cursor)?;
+            true
         } else {
             false
         };
@@ -309,7 +304,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
 
         drop(shell);
 
-        if buffer_and_cursor.is_none() && nonempty_buffer {
+        if buffer_and_cursor.is_none() && had_buffer {
             buffer_and_cursor = Some((String::new(), 0));
         }
 
