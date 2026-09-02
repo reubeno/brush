@@ -69,6 +69,28 @@ cases:
       echo "[\$(command -v cat)]"
       command -v $(command -v cat)
 
+  - name: "command -v with multiple operands"
+    stdin: |
+      echo "[resolved builtins]"
+      command -v echo true pwd
+      echo "rc=$?"
+
+      echo "[skipped miss]"
+      command -v echo non-existent pwd
+      echo "rc=$?"
+
+      echo "[all misses]"
+      command -v non-existent also-non-existent
+      echo "rc=$?"
+
+  - name: "command -V with multiple operands"
+    ignore_stderr: true # miss wording on stderr differs between brush and bash
+    stdin: |
+      command -V echo true
+      echo "rc=$?"
+
+      command -V non-existent || echo "not found"
+
   - name: "command -V"
     ignore_stderr: true
     stdin: |

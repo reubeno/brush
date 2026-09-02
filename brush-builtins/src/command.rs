@@ -39,36 +39,47 @@ impl builtins::Command for CommandCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // Silently exit if no command was provided.
-        if let Some(command_name) = self.command() {
-            if self.print_description || self.print_verbose_description {
-                if let Some(found_cmd) =
-                    Self::try_find_command(context.shell, command_name, self.use_default_path)
-                {
-                    if self.print_description {
-                        writeln!(context.stdout(), "{found_cmd}")?;
-                    } else {
-                        match found_cmd {
-                            FoundCommand::Builtin(_name) => {
-                                writeln!(context.stdout(), "{command_name} is a shell builtin")?;
-                            }
-                            FoundCommand::External(path) => {
-                                writeln!(context.stdout(), "{command_name} is {path}")?;
-                            }
-                        }
-                    }
-                    Ok(ExecutionResult::success())
-                } else {
+        if self.print_description || self.print_verbose_description {
+            // bash iterates over every operand, printing one line per name that
+            // resolves; operands that do not resolve are skipped (with `-V`, each
+            // miss is reported on stderr). The exit status is successful if any
+            // operand resolved, and unsuccessful only when none did.
+            let mut any_found = false;
+            for command_name in &self.command_and_args {
+                let Some(found_cmd) = Self::try_find_command(
+                    context.shell,
+                    command_name.as_str(),
+                    self.use_default_path,
+                ) else {
                     if self.print_verbose_description {
                         writeln!(context.stderr(), "command: {command_name}: not found")?;
                     }
-                    Ok(ExecutionResult::general_error())
+                    continue;
+                };
+                any_found = true;
+                if self.print_description {
+                    writeln!(context.stdout(), "{found_cmd}")?;
+                } else {
+                    match found_cmd {
+                        FoundCommand::Builtin(_name) => {
+                            writeln!(context.stdout(), "{command_name} is a shell builtin")?;
+                        }
+                        FoundCommand::External(path) => {
+                            writeln!(context.stdout(), "{command_name} is {path}")?;
+                        }
+                    }
                 }
-            } else {
-                self.execute_command(context, command_name, self.use_default_path)
-                    .await
             }
+            if any_found || self.command_and_args.is_empty() {
+                Ok(ExecutionResult::success())
+            } else {
+                Ok(ExecutionResult::general_error())
+            }
+        } else if let Some(command_name) = self.command() {
+            self.execute_command(context, command_name, self.use_default_path)
+                .await
         } else {
+            // Silently exit if no command was provided.
             Ok(ExecutionResult::success())
         }
     }
