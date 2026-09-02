@@ -78,7 +78,9 @@ fn expect_next_prompt(session: &mut ShellSession) -> anyhow::Result<()> {
         .expect(DSR_QUERY)
         .context("no cursor-position query before prompt")?;
     session.send(DSR_REPLY)?;
-    session.expect(PROMPT).context("no prompt after answered query")?;
+    session
+        .expect(PROMPT)
+        .context("no prompt after answered query")?;
     Ok(())
 }
 
