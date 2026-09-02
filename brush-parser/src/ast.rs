@@ -679,7 +679,8 @@ impl SourceLocation for CaseClauseCommand {
 
 impl Display for CaseClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "case {} in", self.value)?;
+        // Note the trailing space, which the shell emits when printing a case clause.
+        write!(f, "case {} in ", self.value)?;
         for case in &self.cases {
             write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{case}")?;
         }
@@ -713,8 +714,18 @@ impl SourceLocation for CompoundList {
     }
 }
 
-impl Display for CompoundList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl CompoundList {
+    /// Displays the list with its trailing `;` retained, the way the shell prints the
+    /// body of a block closed by a reserved word (`fi`, `else`, `done`).
+    fn terminated(&self) -> impl Display + '_ {
+        TerminatedCompoundList(self)
+    }
+
+    fn fmt_items(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        keep_trailing_separator: bool,
+    ) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
             if i > 0 {
                 writeln!(f)?;
@@ -723,15 +734,31 @@ impl Display for CompoundList {
             // Write the and-or list.
             write!(f, "{}", item.0)?;
 
-            // Write the separator... unless we're on the list item and it's a ';'.
-            if i == self.0.len() - 1 && matches!(item.1, SeparatorOperator::Sequence) {
-                // Skip
-            } else {
+            // Write the separator... unless we're on the last list item and it's a ';'
+            // that the enclosing construct doesn't want.
+            if keep_trailing_separator
+                || i < self.0.len() - 1
+                || !matches!(item.1, SeparatorOperator::Sequence)
+            {
                 write!(f, "{}", item.1)?;
             }
         }
 
         Ok(())
+    }
+}
+
+impl Display for CompoundList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_items(f, false)
+    }
+}
+
+struct TerminatedCompoundList<'a>(&'a CompoundList);
+
+impl Display for TerminatedCompoundList<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt_items(f, true)
     }
 }
 
@@ -797,7 +824,7 @@ impl Display for IfClauseCommand {
         write!(
             indenter::indented(f).with_str(DISPLAY_INDENT),
             "{}",
-            self.then
+            self.then.terminated()
         )?;
         if let Some(elses) = &self.elses {
             for else_clause in elses {
@@ -842,7 +869,7 @@ impl Display for ElseClause {
         write!(
             indenter::indented(f).with_str(DISPLAY_INDENT),
             "{}",
-            self.body
+            self.body.terminated()
         )
     }
 }
@@ -1118,7 +1145,7 @@ impl Display for DoGroupCommand {
         write!(
             indenter::indented(f).with_str(DISPLAY_INDENT),
             "{}",
-            self.list
+            self.list.terminated()
         )?;
         writeln!(f)?;
         write!(f, "done")
