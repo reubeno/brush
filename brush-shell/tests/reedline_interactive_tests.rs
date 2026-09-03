@@ -89,6 +89,32 @@ fn transient_cursor_query_timeout_is_retried() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The retry is bounded: a terminal that never answers must make the shell
+/// give up (three attempts, ~2s each) rather than loop forever.
+#[test]
+fn unanswered_cursor_queries_eventually_fail_the_read() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+
+    session.send_line("echo BEFORE_$((7*6))")?;
+    session.expect("BEFORE_42")?;
+
+    // Never answer. Exactly three queries, then the shell exits on the error.
+    for attempt in 1..=3 {
+        session
+            .expect(DSR_QUERY)
+            .with_context(|| format!("no cursor-position query for attempt {attempt}"))?;
+    }
+    session
+        .expect("The cursor position could not be read")
+        .context("shell did not report the exhausted query")?;
+    session
+        .expect(expectrl::Eof)
+        .context("shell did not exit after exhausting retries")?;
+
+    Ok(())
+}
+
 //
 // Helpers
 //
@@ -135,7 +161,8 @@ fn start_reedline_session() -> anyhow::Result<ShellSession> {
     // N.B. Replace with `session` directly to disable logging of the session.
     let mut session = expectrl::session::log(session, std::io::stdout())?;
 
-    // The timeout test deliberately lets a ~2s crossterm timeout elapse.
+    // The timeout tests deliberately let ~2s crossterm timeouts elapse, up
+    // to three in a row (MAX_READ_LINE_ATTEMPTS) for the exhaustion test.
     session.set_expect_timeout(Some(Duration::from_secs(15)));
 
     Ok(session)
