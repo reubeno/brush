@@ -118,6 +118,8 @@ mod wait;
 
 mod builder;
 mod factory;
+#[cfg(feature = "builtin.type")]
+mod lookup;
 mod unimp;
 
 pub use builder::ShellBuilderExt;
