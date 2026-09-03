@@ -14,7 +14,8 @@ while [[ $# -gt 0 ]]; do
 done
 app=${1:?APP required}; shift
 [[ -f $here/$app/Dockerfile ]] || { echo "unknown app: $app" >&2; exit 2; }
-[[ -n $shell ]] || shell=$(ls "$here"/../target/{release,debug}/brush 2>/dev/null | head -1)
+for p in release debug; do [[ -n $shell || ! -x $here/../target/$p/brush ]] || shell=$here/../target/$p/brush; done
+[[ -n $shell ]] || { echo "no brush binary found; build first or pass --shell" >&2; exit 2; }
 results=${results:-$here/../target/e2e/$app}
 mkdir -p "$results"; results=$(cd "$results" && pwd)
 docker=${DOCKER:-docker}
