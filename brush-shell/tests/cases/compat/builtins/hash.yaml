@@ -104,3 +104,46 @@ cases:
       mkdir -p d1; touch d1/only
       PATH="d1:$PATH"
       hash only 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  #
+  # `hash` with no names lists the table. brush prints nothing for any such listing,
+  # whether the table is empty or populated, so these are marked `known_failure`. Hit
+  # counts get their own case: they can only be observed through the listing, but they
+  # are a separate gap and a fix for one need not be a fix for the other.
+  #
+  - name: "Display the whole table"
+    known_failure: true # TODO(hash): `hash` with no names should list the table
+    stdin: |
+      echo "[empty]"
+      hash; echo "rc=$?"
+
+      echo "[populated, in insertion order]"
+      hash -p /some/path sc1
+      hash -p /other/path sc2
+      hash; echo "rc=$?"
+
+      echo "[emptied again]"
+      hash -r
+      hash; echo "rc=$?"
+
+  - name: "Display the whole table in reusable form"
+    known_failure: true # TODO(hash): `hash -l` with no names should list the table
+    stdin: |
+      hash -p /some/path sc1
+      hash -p "/some/spaces path" sc2
+
+      hash -l; echo "rc=$?"
+
+  - name: "Count hits per hashed command"
+    known_failure: true # TODO(hash): hit counts are not tracked
+    stdin: |
+      # Normalize away the temporary directory the test runs in.
+      scrub() { sed -E "s|$PWD|<TMPDIR>|g"; }
+
+      printf '#!/bin/sh\n:\n' > prog
+      chmod +x prog
+      PATH="$PWD:$PATH"
+
+      prog
+      prog
+      hash | scrub; echo "rc=${PIPESTATUS[0]}"
