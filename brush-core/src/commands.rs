@@ -391,14 +391,13 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
         // We still haven't found a command to invoke. We'll need to look for an external command.
         if !sys::fs::contains_path_separator(&self.command_name) {
-            // All else failed; if we were given path directories to search, try to look through
-            // them for a matching executable. Otherwise, use our default search logic.
+            // All else failed; if we were given path directories to search, look through them
+            // for a match. Otherwise, use our default search logic.
             let path = if let Some(path_dirs) = &self.path_dirs {
-                pathsearch::search_for_executable(path_dirs.iter(), self.command_name.as_str())
-                    .next()
+                pathsearch::resolve_command(path_dirs, self.command_name.as_str())
             } else {
                 self.shell
-                    .find_first_executable_in_path_using_cache(&self.command_name)
+                    .resolve_command_in_path_using_cache(&self.command_name)
             };
 
             if let Some(path) = path {

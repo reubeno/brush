@@ -8,7 +8,7 @@ use crate::{
     ExecutionParameters, ShellFd,
     env::{EnvironmentLookup, EnvironmentScope},
     error, openfiles, pathsearch,
-    sys::{fs::PathExt as _, users},
+    sys::users,
     variables,
 };
 
@@ -81,11 +81,12 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
     }
 
-    /// Finds executables in the shell's current default PATH, matching the given glob pattern.
+    /// Finds executables with the given name in the shell's current PATH, yielding each match
+    /// in search order.
     ///
     /// # Arguments
     ///
-    /// * `required_glob_pattern` - The glob pattern to match against.
+    /// * `filename` - The name of the executable to look for.
     pub fn find_executables_in_path<'a>(
         &'a self,
         filename: &'a str,
@@ -123,14 +124,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         &self,
         candidate_name: S,
     ) -> Option<PathBuf> {
-        let path = self.env_str("PATH").unwrap_or_default();
-        for one_dir in crate::sys::fs::split_paths(path.as_ref()) {
-            let candidate_path = one_dir.join(candidate_name.as_ref());
-            if candidate_path.executable() {
-                return Some(candidate_path);
-            }
-        }
-        None
+        self.find_executables_in_path(candidate_name.as_ref())
+            .next()
     }
 
     /// Uses the shell's hash-based path cache to check whether the given filename is the name
@@ -156,6 +151,37 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         } else {
             None
         }
+    }
+
+    /// Resolves a command name against the shell's hash-based path cache, searching the
+    /// shell's current PATH on a miss and caching whatever the search turns up.
+    ///
+    /// Unlike [`Self::find_first_executable_in_path_using_cache`], a non-executable entry in
+    /// the PATH resolves as the command; the shell reports it as the command and then fails
+    /// to run it. See [`pathsearch::resolve_command`].
+    ///
+    /// # Arguments
+    ///
+    /// * `candidate_name` - The name of the command to resolve.
+    pub fn resolve_command_in_path_using_cache<S: AsRef<str>>(
+        &mut self,
+        candidate_name: S,
+    ) -> Option<PathBuf>
+    where
+        String: From<S>,
+    {
+        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+            return Some(cached_path);
+        }
+
+        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let paths = crate::sys::fs::split_paths(path_var.as_ref());
+        let found_path = pathsearch::resolve_command(paths, candidate_name.as_ref())?;
+
+        self.program_location_cache
+            .set(candidate_name, found_path.clone());
+
+        Some(found_path)
     }
 
     /// Gets the absolute form of the given path.
