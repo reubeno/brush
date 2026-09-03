@@ -101,3 +101,22 @@ cases:
       echo "Before func"
       f
       echo "After func"
+
+  - name: "set output quotes values"
+    stdin: |
+      q1="a'b"; q2="a''b"; q3="'"; q4="''"; q5="'a"; q6="a'"
+      set > set-output.txt
+      grep -E '^q[0-9]=' set-output.txt
+
+      # Remove set-output.txt to avoid it being byte-for-byte compared.
+      rm set-output.txt
+
+  - name: "set output leaves an empty value unquoted"
+    known_failure: true # TODO(escape): brush renders this as q1='' instead of q1=
+    stdin: |
+      q1=""
+      set > set-output.txt
+      grep -E '^q[0-9]=' set-output.txt
+
+      # Remove set-output.txt to avoid it being byte-for-byte compared.
+      rm set-output.txt

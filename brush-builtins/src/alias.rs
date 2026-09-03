@@ -2,7 +2,7 @@ use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionResult, builtins, escape};
 
 /// Manage aliases within the shell.
 #[derive(Parser)]
@@ -28,7 +28,11 @@ impl builtins::Command for AliasCommand {
         if self.print || self.aliases.is_empty() {
             // Aliases are stored unordered; bash lists them sorted by name.
             for (name, value) in context.shell.aliases().iter().sorted() {
-                writeln!(context.stdout(), "alias {name}='{value}'")?;
+                writeln!(
+                    context.stdout(),
+                    "alias {name}={}",
+                    escape::single_quote(value)
+                )?;
             }
         } else {
             for alias in &self.aliases {
@@ -40,7 +44,11 @@ impl builtins::Command for AliasCommand {
                         .aliases_mut()
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else if let Some(value) = context.shell.aliases().get(alias) {
-                    writeln!(context.stdout(), "alias {alias}='{value}'")?;
+                    writeln!(
+                        context.stdout(),
+                        "alias {alias}={}",
+                        escape::single_quote(value)
+                    )?;
                 } else {
                     writeln!(
                         context.stderr(),
