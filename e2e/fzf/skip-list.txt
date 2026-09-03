@@ -1,0 +1,3 @@
+# Tests excluded from the run, one "Class#method" per line. Lines starting with # are comments.
+# Background jobs run as in-process tasks, so `cmd &` prints "<pid unknown>" and $! is empty.
+TestBash#test_process_completion
