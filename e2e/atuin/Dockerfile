@@ -4,8 +4,9 @@ FROM ubuntu:24.04
 ARG ATUIN_VERSION=18.21.0
 RUN apt-get update && apt-get install -y --no-install-recommends bats tmux curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/atuin-x86_64-unknown-linux-gnu.tar.gz" \
-    | tar -xz -C /usr/local/bin --strip-components=1 atuin-x86_64-unknown-linux-gnu/atuin
+RUN target="$(uname -m)-unknown-linux-gnu" \
+    && curl -fsSL "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/atuin-${target}.tar.gz" \
+    | tar -xz -C /usr/local/bin --strip-components=1 "atuin-${target}/atuin"
 COPY atuin/entrypoint.sh atuin/skip-list.txt /e2e/
 COPY atuin/tests /e2e/tests
 ENV LANG=C.UTF-8
