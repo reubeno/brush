@@ -1,0 +1,2 @@
+# Test files excluded from the run, one per line, named as in `ble.sh --test NAME` (bash, main,
+# util, canvas, decode, edit, syntax, complete, keymap.vi). Lines starting with # are comments.

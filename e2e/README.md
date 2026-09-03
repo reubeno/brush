@@ -59,5 +59,4 @@ the tests write into.
 |-----|-------|
 | fzf | upstream `test/test_shell_integration.rb`, `TestBash` only; minitest + tmux, JUnit via `minitest-ci` |
 | atuin | our own suite in `atuin/tests/` (bats + tmux), written to be upstreamable |
-
-Planned: ble.sh.
+| blesh | upstream `ble.sh --test` (what its `make check` runs), one `lib/test-*.sh` file per run, each with a timeout (`BLESH_TEST_TIMEOUT`, default 180s; each file takes under 30s under bash); JUnit synthesized from the log, one testcase per upstream section. Args select files: `e2e/run.sh blesh util`. A hang logs the process tree; a hang or crash leaves ble.sh's per-test progress file in `progress/`, whose last `test` line is the test that was running |
