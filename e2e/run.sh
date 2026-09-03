@@ -27,5 +27,8 @@ if [[ $shell != bash ]]; then
     mount=(-v "$shell:/shell/$(basename "$shell"):ro")
     env=(-e "SHELL_UNDER_TEST=/shell/$(basename "$shell")")
 fi
+if [[ -n ${BLESH_TEST_TIMEOUT:-} ]]; then
+    env+=(-e "BLESH_TEST_TIMEOUT=$BLESH_TEST_TIMEOUT")
+fi
 echo "==> $app against ${shell}; results in $results"
 $docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$results:/results" "${mount[@]}" "${env[@]}" "$image" "$@"

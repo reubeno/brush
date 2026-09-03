@@ -5,6 +5,7 @@ set -uo pipefail
 # ble.sh --test runs under whatever shell invokes it, so no PATH shim is needed.
 shell=${SHELL_UNDER_TEST:-bash}
 timeout=${BLESH_TEST_TIMEOUT:-180}
+rm -rf /results/progress
 mkdir -p /results/junit /results/progress
 # Diagnostics for crashes and hangs: ble.sh keeps a per-run progress file (one "test TITLE" line as
 # each test starts, then "pass"/"fail") in its runtime directory and deletes it on a clean exit. Put
@@ -51,7 +52,10 @@ done
 # logged above it); a file that ends without any summary, or exits non-zero without a failed
 # section, is reported as one crashed/timed-out testcase whose body is whatever it logged last.
 sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' /results/log.txt | gawk '
-function esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/"/, "\\&quot;", s); return s }
+function esc(s) {
+    gsub(/[\x00-\x08\x0B\x0C\x0E-\x1F]/, "", s)
+    gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/"/, "\\&quot;", s); return s
+}
 function testcase(name, failed, msg,   body) {
     total++
     body = "  <testcase classname=\"" esc(file) "\" name=\"" esc(name) "\""
@@ -63,7 +67,7 @@ function testcase(name, failed, msg,   body) {
 /^==> test-[^ ]+: timed out/ { timedout = 1 }
 /^==> test-[^ ]+ \([0-9]+s\) exit=/ {
     sub(/.*exit=/, "")
-    if (!seen || ($0 != 0 && !filefail)) testcase(file, 1, (timedout ? "timed out" : "crashed") " (exit " $0 ")")
+    if (!seen || timedout || ($0 != 1 || !filefail)) testcase(file, 1, (timedout ? "timed out" : "crashed") " (exit " $0 ")")
     next
 }
 /\[section\] / && match($0, /([0-9]+)\/([0-9]+) \(([0-9]+) fail, ([0-9]+) crash, ([0-9]+) skip\)$/, m) {
