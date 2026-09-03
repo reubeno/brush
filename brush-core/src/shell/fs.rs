@@ -153,12 +153,23 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
     }
 
-    /// Resolves a command name against the shell's hash-based path cache, searching the
-    /// shell's current PATH on a miss and caching whatever the search turns up.
+    /// Resolves a command name by searching the shell's current PATH.
     ///
-    /// Unlike [`Self::find_first_executable_in_path_using_cache`], a non-executable entry in
-    /// the PATH resolves as the command; the shell reports it as the command and then fails
-    /// to run it. See [`pathsearch::resolve_command`].
+    /// Unlike [`Self::find_first_executable_in_path`], a non-executable entry in the PATH
+    /// resolves as the command; the shell reports it as the command and then fails to run it.
+    /// See [`pathsearch::resolve_command`].
+    ///
+    /// # Arguments
+    ///
+    /// * `candidate_name` - The name of the command to resolve.
+    pub fn resolve_command_in_path<S: AsRef<str>>(&self, candidate_name: S) -> Option<PathBuf> {
+        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let paths = crate::sys::fs::split_paths(path_var.as_ref());
+        pathsearch::resolve_command(paths, candidate_name.as_ref())
+    }
+
+    /// Like [`Self::resolve_command_in_path`], but consults the shell's hash-based path cache
+    /// first and caches whatever a search turns up.
     ///
     /// # Arguments
     ///
@@ -174,10 +185,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             return Some(cached_path);
         }
 
-        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = crate::sys::fs::split_paths(path_var.as_ref());
-        let found_path = pathsearch::resolve_command(paths, candidate_name.as_ref())?;
-
+        let found_path = self.resolve_command_in_path(candidate_name.as_ref())?;
         self.program_location_cache
             .set(candidate_name, found_path.clone());
 

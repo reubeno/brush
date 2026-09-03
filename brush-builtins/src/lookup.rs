@@ -46,8 +46,11 @@ pub(crate) fn resolve<'a, SE: ShellExtensions>(
     // These are all hash lookups, so there's nothing to save by stopping at the first hit;
     // any extras are trimmed off at the end.
     if !options.force_path_search {
-        // Check for aliases.
-        if let Some(target) = shell.aliases().get(name) {
+        // Check for aliases. They're only reported when alias expansion is enabled, since
+        // that's the only case in which the name would actually resolve to the alias.
+        if shell.options().expand_aliases
+            && let Some(target) = shell.aliases().get(name)
+        {
             resolved.push(Resolved::Alias(target.clone()));
         }
 
@@ -96,12 +99,17 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
 
     // A name with a separator in it is used as-is; it's never searched for.
     if sys::fs::contains_path_separator(name) {
-        if shell.absolute_path(Path::new(name)).executable() {
+        // A directory is never a command, even though it carries the execute bit.
+        let candidate = shell.absolute_path(Path::new(name));
+        if !candidate.is_dir() && candidate.executable() {
             resolved.push(to_file(PathBuf::from(name)));
         }
         return;
     }
 
+    // Reporting every location is a strict search for executables; reporting just the one the
+    // name resolves to matches what the shell would actually try to run, which can be a
+    // non-executable file if the search turns up nothing better.
     if let Some(path) = shell.program_location_cache().get(name) {
         resolved.push(Resolved::File { path, hashed: true });
         if !options.all_locations {
@@ -109,12 +117,11 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
         }
     }
 
-    resolved.extend(
-        shell
-            .find_executables_in_path(name)
-            .take(if options.all_locations { usize::MAX } else { 1 })
-            .map(to_file),
-    );
+    if options.all_locations {
+        resolved.extend(shell.find_executables_in_path(name).map(to_file));
+    } else {
+        resolved.extend(shell.resolve_command_in_path(name).map(to_file));
+    }
 }
 
 /// Writes the description shown by `type NAME` and `command -V NAME`, newline included.
