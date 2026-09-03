@@ -86,7 +86,7 @@ function testcase(name, failed, msg,   body) {
 /^==> test-[^ ]+: timed out/ { timedout = 1 }
 /^==> test-[^ ]+ \([0-9]+s\) exit=/ {
     sub(/.*exit=/, "")
-    if (!seen || timedout || ($0 != 1 || !filefail)) testcase(file, 1, (timedout ? "timed out" : "crashed") " (exit " $0 ")")
+    if (!seen || timedout || ($0 != 0 && !filefail)) testcase(file, 1, (timedout ? "timed out" : "crashed") " (exit " $0 ")")
     next
 }
 /\[section\] / && match($0, /([0-9]+)\/([0-9]+) \(([0-9]+) fail, ([0-9]+) crash, ([0-9]+) skip\)$/, m) {
