@@ -84,3 +84,66 @@ cases:
     stdin: |
       hash -p /some/ls ls
       type -p -a ls
+
+  - name: Test type honors expand_aliases
+    ignore_stderr: true
+    stdin: |
+      alias za="ls"
+
+      shopt -u expand_aliases
+      type za; echo "rc=$?"
+      type -t za; echo "rc=$?"
+      type -a za; echo "rc=$?"
+
+      shopt -s expand_aliases
+      type za; echo "rc=$?"
+      type -t za; echo "rc=$?"
+
+  - name: Test type and execution skip a directory found in PATH
+    ignore_stderr: true # brush's diagnostics don't match bash's text.
+    stdin: |
+      mkdir -p pdir/prog
+      PATH="$PWD/pdir:$PATH"
+
+      type prog; echo "rc=$?"
+      type -a prog; echo "rc=$?"
+      prog; echo "rc=$?"
+
+  - name: Test type reports a missing name
+    stdin: |
+      # Normalize away the leading "shell: line N:" that the oracle prefixes onto diagnostics.
+      strip() { sed 's/^.*type:/type:/'; }
+
+      type nonexistent 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      type nonexistent echo 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: Test type reports a non-executable file found in PATH
+    stdin: |
+      # Normalize away the leading "shell: line N:" that the oracle prefixes onto diagnostics.
+      strip() { sed 's/^.*type:/type:/'; }
+
+      mkdir -p d1 d2
+      touch d1/nx
+      printf '#!/bin/sh\necho D2\n' > d2/nx
+      chmod +x d2/nx
+      touch d1/only
+      touch d2/only2
+      PATH="d1:d2:$PATH"
+
+      echo "[an executable later in PATH beats a non-executable earlier]"
+      type nx; echo "rc=$?"
+      type -a nx; echo "rc=$?"
+      nx; echo "run rc=$?"
+
+      echo "[only a non-executable exists]"
+      type only; echo "rc=$?"
+      type -t only; echo "rc=$?"
+      type -p only; echo "rc=$?"
+      type -P only; echo "rc=$?"
+      # -a is a strict search for executables, so it reports nothing.
+      type -a only 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      # ...and the shell tries to run the file, rather than reporting it as not found.
+      only 2>/dev/null; echo "run rc=$?"
+
+      echo "[the fallback keeps searching the rest of PATH]"
+      type only2; echo "rc=$?"
