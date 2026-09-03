@@ -571,6 +571,13 @@ async fn instantiate_shell_from_args(
         .verbose(args.verbose)
         .parser(parser_impl)
         .error_formatter(new_error_behavior(args))
+        // This shell instance is always the sole owner of its OS process (it's
+        // never a subshell/command-substitution/background-job/function-call
+        // clone at construction time), so it's safe to keep the process's real
+        // working directory in sync with `cd` et al. See
+        // `CreateOptions::sync_process_cwd` for why this isn't the default at
+        // the brush-core library level.
+        .sync_process_cwd(true)
         .shell_version(env!("CARGO_PKG_VERSION").to_string());
 
     // Add builtins.

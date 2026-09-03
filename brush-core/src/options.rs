@@ -200,6 +200,11 @@ pub struct RuntimeOptions {
     pub external_cmd_leads_session: bool,
     /// Whether externally spawned commands are killed when their spawning shell is dropped.
     pub kill_external_commands_on_drop: bool,
+    /// Whether to keep the OS-level process working directory in sync with the
+    /// shell's own logical working directory after `cd`/`pushd`/`popd`. See
+    /// [`crate::shell::builder::CreateOptions::sync_process_cwd`] for the full
+    /// rationale and safety constraints.
+    pub sync_process_cwd: bool,
     /// Maximum function call depth.
     pub max_function_call_depth: Option<usize>,
 }
@@ -232,6 +237,7 @@ impl RuntimeOptions {
             exit_on_nonzero_command_exit: create_options.exit_on_nonzero_command_exit,
             external_cmd_leads_session: create_options.external_cmd_leads_session,
             kill_external_commands_on_drop: create_options.kill_external_commands_on_drop,
+            sync_process_cwd: create_options.sync_process_cwd,
             login_shell: create_options.login,
             disable_filename_globbing: create_options.disable_pathname_expansion,
             remember_command_locations: true,
