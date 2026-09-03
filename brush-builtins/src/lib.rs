@@ -118,12 +118,26 @@ mod wait;
 
 mod builder;
 mod factory;
-#[cfg(feature = "builtin.type")]
+#[cfg(any(feature = "builtin.command", feature = "builtin.type"))]
 mod lookup;
 mod unimp;
 
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
+
+/// Writes an alias definition in the reusable form printed by `alias` and `command -v`.
+#[cfg(any(feature = "builtin.alias", feature = "builtin.command"))]
+fn write_alias_definition(
+    mut writer: impl std::io::Write,
+    name: &str,
+    value: &str,
+) -> std::io::Result<()> {
+    writeln!(
+        writer,
+        "alias {name}={}",
+        brush_core::escape::single_quote(value)
+    )
+}
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.
