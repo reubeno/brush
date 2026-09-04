@@ -155,7 +155,6 @@ cases:
       echo "D: $D"
 
   - name: "Tilde expansion in list"
-    known_failure: true
     env:
       HOME: .
     test_files:
