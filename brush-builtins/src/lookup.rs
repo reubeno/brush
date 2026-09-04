@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use brush_core::{
     Shell, ShellExtensions,
     parser::ast,
+    pathsearch,
     sys::{self, fs::PathExt},
 };
 
@@ -32,6 +33,9 @@ pub(crate) struct Options {
     pub suppress_func_lookup: bool,
     /// Report every location the name resolves to, not just the first.
     pub all_locations: bool,
+    /// Directories to search for executables, in lieu of the shell's `PATH`. The shell's
+    /// hash-based path cache is still consulted first.
+    pub path_dirs: Option<Vec<PathBuf>>,
 }
 
 /// Resolves the given name, returning the ways it resolved (in lookup order). Unless
@@ -117,10 +121,15 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
         }
     }
 
-    if options.all_locations {
-        resolved.extend(shell.find_executables_in_path(name).map(to_file));
-    } else {
-        resolved.extend(shell.resolve_command_in_path(name).map(to_file));
+    match (&options.path_dirs, options.all_locations) {
+        (Some(dirs), true) => {
+            resolved.extend(pathsearch::search_for_executable(dirs.iter(), name).map(to_file));
+        }
+        (Some(dirs), false) => {
+            resolved.extend(pathsearch::resolve_command(dirs.iter(), name).map(to_file));
+        }
+        (None, true) => resolved.extend(shell.find_executables_in_path(name).map(to_file)),
+        (None, false) => resolved.extend(shell.resolve_command_in_path(name).map(to_file)),
     }
 }
 

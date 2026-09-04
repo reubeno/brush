@@ -46,6 +46,7 @@ impl builtins::Command for TypeCommand {
             force_path_search: self.force_path_search,
             suppress_func_lookup: self.suppress_func_lookup,
             all_locations: self.all_locations,
+            path_dirs: None,
         };
 
         for name in &self.names {

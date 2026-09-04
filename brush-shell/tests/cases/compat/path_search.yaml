@@ -1,0 +1,81 @@
+name: "PATH search"
+
+#
+# An empty entry in PATH names the working directory, so a command found through one is
+# reported with a leading "./". brush finds the command but reports the bare name; the
+# `known_failure` cases below cover each surface that exposes the difference. They share
+# one root cause in the path search, so they should be retired together.
+#
+cases:
+  - name: "empty PATH entry is reported as the working directory"
+    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
+    stdin: |
+      printf '#!/bin/sh\necho ran\n' > prog
+      chmod +x prog
+      PATH=":$PATH"
+
+      echo "[type]"
+      type prog; echo "rc=$?"
+      echo "[type -p]"
+      type -p prog; echo "rc=$?"
+      echo "[type -P]"
+      type -P prog; echo "rc=$?"
+      echo "[type -a]"
+      type -a prog; echo "rc=$?"
+      echo "[command -v]"
+      command -v prog; echo "rc=$?"
+
+  - name: "empty PATH entry is reported the same wherever it appears"
+    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
+    stdin: |
+      printf '#!/bin/sh\necho ran\n' > prog
+      chmod +x prog
+      original=$PATH
+
+      # Each of these keeps the rest of PATH reachable, so only the empty entry can
+      # account for finding `prog`, which exists solely in the working directory.
+      echo "[leading]"
+      PATH=":$original"; hash -r
+      command -v prog; echo "rc=$?"
+
+      echo "[trailing]"
+      PATH="$original:"; hash -r
+      command -v prog; echo "rc=$?"
+
+      echo "[middle]"
+      PATH="/nonexistent::$original"; hash -r
+      command -v prog; echo "rc=$?"
+
+  - name: "empty PATH entry is hashed as the working directory"
+    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
+    stdin: |
+      printf '#!/bin/sh\necho ran\n' > prog
+      chmod +x prog
+      PATH=":$PATH"
+
+      hash -r
+      hash prog; echo "rc=$?"
+      hash -t prog; echo "rc=$?"
+
+  #
+  # These two surfaces already agree with the oracle; they guard the parts of the
+  # behavior that work, so that a fix for the cases above doesn't regress them.
+  #
+  - name: "a command found through an empty PATH entry is runnable"
+    stdin: |
+      printf '#!/bin/sh\necho ran\n' > prog
+      chmod +x prog
+      PATH=":$PATH"
+
+      prog; echo "rc=$?"
+
+  - name: "command -V absolutizes a command found through an empty PATH entry"
+    stdin: |
+      # Normalize away the temporary directory the test runs in.
+      scrub() { sed -E "s|$PWD|<TMPDIR>|g"; }
+
+      printf '#!/bin/sh\necho ran\n' > prog
+      chmod +x prog
+      PATH=":$PATH"
+
+      command -V prog | scrub; echo "rc=${PIPESTATUS[0]}"
