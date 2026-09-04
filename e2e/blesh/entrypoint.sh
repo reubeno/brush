@@ -39,7 +39,7 @@ if (($#)); then
 else
     mapfile -t files < <(printf '%s\n' "${all[@]}" | grep -vxFf <(grep -v '^\s*\(#\|$\)' /e2e/skip-list.txt))
 fi
-log() { echo "$@" | tee -a /results/log.txt; }
+log() { printf '\n%s\n' "$*" | tee -a /results/log.txt; }
 for f in "${files[@]}"; do
     log "==> test-$f"
     rm -rf /results/run/blesh/*.test
@@ -81,7 +81,7 @@ done
 sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' /results/log.txt | gawk '
 function esc(s) {
     gsub(/[\x00-\x08\x0B\x0C\x0E-\x1F]/, "", s)
-    gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/"/, "\\&quot;", s); return s
+    gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); return s
 }
 function testcase(name, failed, msg,   body) {
     total++
