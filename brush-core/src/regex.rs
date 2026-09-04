@@ -66,9 +66,9 @@ impl Regex {
         self
     }
 
-    /// Enables (or disables) multiline support for this pattern.
-    /// This enables matching across lines as well as enables `.`
-    /// to match newline characters.
+    /// Enables (or disables) multiline support for this pattern: `.` then also matches
+    /// newline characters. `^` and `$` always anchor to the whole string, as in POSIX
+    /// regular expressions, which have no line anchors.
     ///
     /// # Arguments
     ///
@@ -128,7 +128,7 @@ pub(crate) fn compile_regex(
         // The fancy_regex crate internally seems to have flags that can be used
         // to enable multiline support, but they're not exposed via its
         // RegexBuilder. We instead just prefix with the right flags.
-        let updated_str = std::format!("(?ms){regex_str}");
+        let updated_str = std::format!("(?s){regex_str}");
         regex_str = updated_str.into();
     }
 
