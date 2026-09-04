@@ -5,15 +5,24 @@ set -uo pipefail
 # ble.sh --test runs under whatever shell invokes it, so no PATH shim is needed.
 shell=${SHELL_UNDER_TEST:-bash}
 timeout=${BLESH_TEST_TIMEOUT:-180}
+rm -rf /results/progress
+mkdir -p /results/junit /results/progress
+: > /results/log.txt
 case $timeout in
     ''|*[!0-9]*)
-        echo "BLESH_TEST_TIMEOUT must be a non-negative integer number of seconds, got '$timeout'" >&2
+        echo "BLESH_TEST_TIMEOUT must be a non-negative integer number of seconds, got '$timeout'" | tee -a /results/log.txt >&2
+        cat > /results/junit/blesh.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="blesh" tests="1" failures="1">
+  <testcase classname="configuration" name="BLESH_TEST_TIMEOUT">
+    <failure message="invalid BLESH_TEST_TIMEOUT">BLESH_TEST_TIMEOUT must be a non-negative integer number of seconds</failure>
+  </testcase>
+</testsuite>
+EOF
         exit 2
         ;;
 esac
 timeout=$((10#$timeout))
-rm -rf /results/progress
-mkdir -p /results/junit /results/progress
 # Diagnostics for crashes and hangs: ble.sh keeps a per-run progress file (one "test TITLE" line as
 # each test starts, then "pass"/"fail") in its runtime directory and deletes it on a clean exit. Put
 # that directory under /results so the file survives a panic or our SIGKILL; each run's leftovers are
@@ -30,7 +39,6 @@ if (($#)); then
 else
     mapfile -t files < <(printf '%s\n' "${all[@]}" | grep -vxFf <(grep -v '^\s*\(#\|$\)' /e2e/skip-list.txt))
 fi
-: > /results/log.txt
 log() { echo "$@" | tee -a /results/log.txt; }
 for f in "${files[@]}"; do
     log "==> test-$f"
@@ -42,17 +50,16 @@ for f in "${files[@]}"; do
     # process has already exited but a child is still writing to stdout/stderr.
     tee -a /results/log.txt <"$fifo" &
     tee_pid=$!
-    # setsid: own session, so the whole process tree can be listed (ps -s) and killed as a group.
+    # setsid: own session, so the whole process tree can be listed and killed.
     setsid "$shell" ble.sh --test "$f" </dev/null >"$fifo" 2>&1 &
     pid=$!
-    rm -f "$fifo"
     start=$SECONDS deadline=$((SECONDS + timeout))
     while { kill -0 "$pid" 2>/dev/null || kill -0 "$tee_pid" 2>/dev/null; } && ((SECONDS < deadline)); do sleep 1; done
     if { kill -0 "$pid" 2>/dev/null || kill -0 "$tee_pid" 2>/dev/null; }; then
         log "==> test-$f: timed out after ${timeout}s; process tree:"
         ps -s "$pid" -o pid,stat,etime,wchan:24,args --forest | tee -a /results/log.txt
         # SIGKILL, not TERM: ble.sh's exit trap would delete the progress file.
-        kill -KILL -- "-$pid" 2>/dev/null
+        pkill -KILL -s "$pid" 2>/dev/null
         kill -KILL "$tee_pid" 2>/dev/null || true
     fi
     wait "$pid" 2>/dev/null; exit=$?
@@ -60,6 +67,7 @@ for f in "${files[@]}"; do
         kill -TERM "$tee_pid" 2>/dev/null || true
         wait "$tee_pid" 2>/dev/null || true
     fi
+    rm -f "$fifo"
     for p in /results/run/blesh/*.test/*; do
         case ${p##*/} in *[!0-9]*|'') continue ;; esac  # the section file is named by BASHPID; skip diff temp files
         mkdir -p "/results/progress/test-$f" && cp "$p" "/results/progress/test-$f/"
@@ -86,7 +94,7 @@ function testcase(name, failed, msg,   body) {
 /^==> test-[^ ]+: timed out/ { timedout = 1 }
 /^==> test-[^ ]+ \([0-9]+s\) exit=/ {
     sub(/.*exit=/, "")
-    if (!seen || timedout || ($0 != 0 && !filefail)) testcase(file, 1, (timedout ? "timed out" : "crashed") " (exit " $0 ")")
+    if (!seen || timedout || ($0 != 0 && ($0 != 1 || !filefail))) testcase(file, 1, (timedout ? "timed out" : "crashed") " (exit " $0 ")")
     next
 }
 /\[section\] / && match($0, /([0-9]+)\/([0-9]+) \(([0-9]+) fail, ([0-9]+) crash, ([0-9]+) skip\)$/, m) {
