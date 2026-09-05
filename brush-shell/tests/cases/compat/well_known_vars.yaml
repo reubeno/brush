@@ -256,3 +256,12 @@ cases:
       second=${SRANDOM}
 
       [[ $first != $second ]] && echo "Confirmed SRANDOM at least isn't static"
+
+  - name: "EPOCHREALTIME has fixed six-digit microsecond precision"
+    stdin: |
+      # Tools strip the dot and do integer math, so the fractional part must always be
+      # exactly six digits (like bash), regardless of trailing zeros.
+      for i in 1 2 3 4 5; do
+        [[ $EPOCHREALTIME =~ ^[0-9]+\.[0-9]{6}$ ]] || echo "bad format: $EPOCHREALTIME"
+      done
+      echo "done"

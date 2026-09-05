@@ -365,31 +365,38 @@ fn backslash_escape(s: &str) -> Cow<'_, str> {
     }
 }
 
-fn single_quote(s: &str) -> Cow<'_, str> {
-    // Special-case the empty string.
-    if s.is_empty() {
-        return Cow::Borrowed("''");
+/// Plain single-quoting, as bash's `sh_single_quote` does it.
+///
+/// Unlike [`force_quote`] and [`quote_if_needed`], this never upgrades to ANSI-C quoting;
+/// control characters are emitted literally. Use it where bash prints values verbatim,
+/// such as `alias` output.
+///
+/// # Arguments
+///
+/// * `s` - The string to quote.
+pub fn single_quote(s: &str) -> Cow<'_, str> {
+    // Special-case the empty string and a lone single quote; both are rendered
+    // without any empty quoted runs.
+    match s {
+        "" => return Cow::Borrowed("''"),
+        "'" => return Cow::Borrowed(r"\'"),
+        _ => (),
     }
 
-    let mut result = String::with_capacity(s.len());
+    let mut result = String::with_capacity(s.len() + 2);
 
     // Go through the string; put everything in single quotes except for
     // the single quote character itself. It will get escaped outside
-    // all quoting.
-    let mut first = true;
-    for part in s.split('\'') {
-        if !first {
-            result.push('\\');
-            result.push('\'');
-        } else {
-            first = false;
+    // all quoting, with the quoted runs on either side of it kept even
+    // when they're empty.
+    for (i, part) in s.split('\'').enumerate() {
+        if i > 0 {
+            result.push_str(r"\'");
         }
 
-        if !part.is_empty() {
-            result.push('\'');
-            result.push_str(part);
-            result.push('\'');
-        }
+        result.push('\'');
+        result.push_str(part);
+        result.push('\'');
     }
 
     Cow::Owned(result)
@@ -490,7 +497,30 @@ mod tests {
         assert_eq!(quote_if_needed("a", QuoteMode::SingleQuote), "a");
         assert_eq!(quote_if_needed("a b", QuoteMode::SingleQuote), "'a b'");
         assert_eq!(quote_if_needed("", QuoteMode::SingleQuote), "''");
-        assert_eq!(quote_if_needed("'", QuoteMode::SingleQuote), "\\'");
+        assert_eq!(quote_if_needed("'", QuoteMode::SingleQuote), r"\'");
+
+        // The quoted run on either side of an escaped quote is kept even when it's empty;
+        // only a string that is *nothing but* a single quote loses its surrounding quotes.
+        assert_eq!(quote_if_needed("a'b", QuoteMode::SingleQuote), r"'a'\''b'");
+        assert_eq!(
+            quote_if_needed("a''b", QuoteMode::SingleQuote),
+            r"'a'\'''\''b'"
+        );
+        assert_eq!(quote_if_needed("'a", QuoteMode::SingleQuote), r"''\''a'");
+        assert_eq!(quote_if_needed("a'", QuoteMode::SingleQuote), r"'a'\'''");
+        assert_eq!(quote_if_needed("''", QuoteMode::SingleQuote), r"''\'''\'''");
+    }
+
+    #[test]
+    fn test_single_quote_never_upgrades() {
+        // Unlike `quote`, this never reaches for ANSI-C quoting; control characters are
+        // emitted literally.
+        assert_eq!(single_quote("a\tb"), "'a\tb'");
+        assert_eq!(single_quote("a\nb"), "'a\nb'");
+        assert_eq!(single_quote("a"), "'a'");
+
+        // ...whereas `quote` does upgrade for the same input.
+        assert_eq!(quote_if_needed("a\tb", QuoteMode::SingleQuote), r"$'a\tb'");
     }
 
     fn assert_echo_expands_to(unexpanded: &str, expected: &str) {

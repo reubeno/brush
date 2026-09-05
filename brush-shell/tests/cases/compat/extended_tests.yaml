@@ -546,3 +546,15 @@ cases:
     stdin: |
       [[ ( ! a
       ) ]] && echo should-not-print
+
+  # POSIX regexes have no line anchors: ^ and $ match only at the ends of the
+  # whole string, while . matches any character including newline.
+  - name: "Regex anchors match the whole string, not lines"
+    stdin: |
+      s=$'a\nb'
+      [[ $s =~ ^b ]] && echo "wrong 1" || echo "ok 1"
+      [[ $s =~ a$ ]] && echo "wrong 2" || echo "ok 2"
+      [[ $s =~ ^a.b$ ]] && echo "ok 3"
+      t=$' \t\nabc \t\n'
+      re=$'[ \t\n]+$'
+      [[ $t =~ $re ]] && printf '[%s]\n' "${t::${#t}-${#BASH_REMATCH}}"

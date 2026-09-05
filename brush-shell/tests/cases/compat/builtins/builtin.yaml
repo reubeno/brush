@@ -22,10 +22,34 @@ cases:
     stdin: |
       builtin echo variable=value
 
+  - name: "builtin expands assignment-looking argument for ordinary builtin"
+    stdin: |
+      value=world
+      builtin echo argument=$value
+
+  - name: "builtin expands assignment-looking argument for simple builtin"
+    stdin: |
+      value=world
+      builtin true argument=$value
+      echo "[$_]"
+
+  - name: "builtin expands assignment-looking builtin name"
+    stdin: |
+      value=world
+      builtin missing=$value 2>/dev/null
+      printf 'status=%s last=<%s>\n' "$?" "$_"
+
   - name: "builtin with decl builtin"
     stdin: |
       builtin declare variable=value
       declare -p variable
+
+  - name: "builtin forwards expanded declaration assignments"
+    stdin: |
+      value=world
+      builtin declare declared=$value
+      builtin export exported=$value
+      declare -p declared exported
 
   - name: "builtin with disabled builtin"
     ignore_stderr: true
@@ -42,3 +66,27 @@ cases:
       enable cd
       builtin cd .
       echo $?
+
+  - name: "Function shadowing builtin receives its arguments"
+    stdin: |
+      builtin() { echo "shadow builtin: [$*] count=$#"; }
+      builtin echo hi
+      unset -f builtin
+
+  - name: "builtin forwards a value with no field separators intact"
+    stdin: |
+      value=world
+      builtin declare declared=$value
+      builtin export exported=$value
+      declare -p declared exported
+
+  - name: "builtin does not preserve assignment splitting semantics"
+    # brush treats `builtin` as a declaration wrapper, so an assignment argument passed through it
+    # keeps assignment semantics (no field splitting). Bash applies ordinary word expansion here,
+    # splitting the value and leaving a separate bare-name operand.
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      v="x y"
+      builtin declare c=$v
+      declare -p c y

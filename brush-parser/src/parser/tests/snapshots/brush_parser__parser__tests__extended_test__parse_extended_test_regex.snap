@@ -10,7 +10,7 @@ ParseResult(
         CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
-              ExtendedTest(ExtendedTestExprCommand(
+              Compound(ExtendedTest(ExtendedTestExprCommand(
                 expr: BinaryTest(StringMatchesRegex, Word(
                   value: "\"$str\"",
                   loc: "[location]",
@@ -19,7 +19,7 @@ ParseResult(
                   loc: "[location]",
                 )),
                 loc: "[location]",
-              ), None),
+              )), None),
             ],
           ),
         ), Sequence),

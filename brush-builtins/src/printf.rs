@@ -58,32 +58,12 @@ impl builtins::Command for PrintfCommand {
 
 fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {
     match format_and_args {
-        // Special-case invocation of printf with %q-based format string from bash-completion.
-        // It has hard-coded expectation of backslash-style escaping instead of quoting.
-        [fmt, arg] if fmt == "%q" => format_special_case_for_percent_q(None, arg, writer),
-        [fmt, arg] if fmt == "~%q" => format_special_case_for_percent_q(Some("~"), arg, writer),
         // Handle format string with arguments using uucore
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
         // Handle case with no format string (we shouldn't be able to get here since clap will
         // fail parsing when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
-}
-
-fn format_special_case_for_percent_q(
-    prefix: Option<&str>,
-    arg: &str,
-    mut writer: impl Write,
-) -> Result<(), brush_core::Error> {
-    let mut result = escape::quote_if_needed(arg, escape::QuoteMode::BackslashEscape).to_string();
-
-    if let Some(prefix) = prefix {
-        result.insert_str(0, prefix);
-    }
-
-    write!(writer, "{result}")?;
-
-    Ok(())
 }
 
 fn format_via_uucore(
@@ -108,13 +88,22 @@ fn format_via_uucore(
     // matches the behavior of other shells, which print such a format string exactly once.
     let format_consumes_args = format_items
         .iter()
-        .any(|item| matches!(item, format::FormatItem::Spec(_)));
+        .any(|(item, _)| matches!(item, format::FormatItem::Spec(_)));
 
     // Keep going until we've exhausted all format arguments. Also make sure to run at least once
     // even if there's no format arguments.
     while format_args.is_empty() || !format_args_wrapper.is_exhausted() {
         // Process all format items, in order. We'll bail when we're told to stop.
-        for item in &format_items {
+        for (item, backslash_quote) in &format_items {
+            if let (format::FormatItem::Spec(format::Spec::QuotedString { position }), true) =
+                (item, *backslash_quote)
+            {
+                let arg = format_args_wrapper.next_string(*position).to_string_lossy();
+                let quoted = quote_printf_q(&arg);
+                write!(writer, "{quoted}")?;
+                continue;
+            }
+
             let control_flow = item
                 .write(&mut writer, &mut format_args_wrapper)
                 .map_err(|e| match e {
@@ -150,11 +139,44 @@ fn format_via_uucore(
     Ok(())
 }
 
-fn parse_format_string(
-    format_string: &str,
-) -> Result<Vec<format::FormatItem<format::EscapedChar>>, brush_core::Error> {
-    let format_items: Result<Vec<_>, _> =
-        format::parse_spec_and_escape(format_string.as_bytes()).collect();
+fn quote_printf_q(s: &str) -> String {
+    let quoted = escape::quote_if_needed(s, escape::QuoteMode::BackslashEscape);
+    if quoted.starts_with("$'") {
+        return quoted.into_owned();
+    }
+
+    let mut quoted = quoted.replace(":~", ":\\~").replace("=~", "=\\~");
+    if matches!(quoted.as_bytes().first(), Some(b'~' | b'#')) {
+        quoted.insert(0, '\\');
+    }
+    quoted
+}
+
+type ParsedFormatItem = (format::FormatItem<format::EscapedChar>, bool);
+
+fn parse_format_string(format_string: &str) -> Result<Vec<ParsedFormatItem>, brush_core::Error> {
+    let format_items: Result<Vec<_>, _> = format::parse_spec_and_escape(format_string.as_bytes())
+        .map(|result| match result {
+            Ok(item @ format::FormatItem::Spec(format::Spec::QuotedString { .. })) => {
+                Ok((item, true))
+            }
+            Ok(item) => Ok((item, false)),
+            // Fixed q/Q modifiers are deliberately ignored; dynamic modifiers remain unsupported
+            // until uucore exposes quoted-string metadata.
+            Err(format::FormatError::SpecError(spec))
+                if matches!(spec.last(), Some(b'q' | b'Q'))
+                    && !spec.contains(&b'*')
+                    && !spec.contains(&b'$') =>
+            {
+                let mut bare_q: &[u8] = b"q";
+                let item = format::Spec::parse(&mut bare_q)
+                    .map(format::FormatItem::Spec)
+                    .map_err(|spec| format::FormatError::SpecError(spec.to_vec()))?;
+                Ok((item, !spec.contains(&b'#')))
+            }
+            Err(error) => Err(error),
+        })
+        .collect();
 
     // Observe any errors we encountered along the way.
     let format_items = format_items

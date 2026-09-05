@@ -37,3 +37,56 @@ cases:
       cd test-dir
       rmdir $(pwd)
       ls
+
+  - name: "Command found in PATH is a directory"
+    ignore_stderr: true
+    stdin: |
+      mkdir -p pdir/prog
+      PATH="$PWD/pdir:$PATH"
+      prog
+      echo "Result: $?"
+
+  - name: "Command found in PATH is not executable"
+    ignore_stderr: true
+    stdin: |
+      mkdir -p pdir pdir2
+      touch pdir/only
+      PATH="$PWD/pdir:$PWD/pdir2:$PATH"
+
+      # The shell resolves the name to the file and fails to run it, rather than
+      # reporting the name as not found.
+      only
+      echo "Result: $?"
+
+      # An executable later in PATH still beats a non-executable earlier one.
+      touch pdir/both
+      printf '#!/bin/sh\necho HIT\n' > pdir2/both
+      chmod +x pdir2/both
+      both
+      echo "Result: $?"
+
+  - name: "Command found in PATH is a directory shadowing a later executable"
+    stdin: |
+      mkdir -p pdir/prog pdir2
+      printf '#!/bin/sh\necho HIT\n' > pdir2/prog
+      chmod +x pdir2/prog
+      PATH="$PWD/pdir:$PWD/pdir2:$PATH"
+
+      # The directory is skipped, not treated as a command that shadows the executable.
+      prog
+      echo "Result: $?"
+
+  - name: "Command found in PATH is not executable: search order and hashing"
+    ignore_stderr: true
+    stdin: |
+      mkdir -p d1 d2
+      touch d1/only d2/only
+      PATH="$PWD/d1:$PWD/d2:$PATH"
+
+      # The first non-executable file in PATH order is the one the name resolves to...
+      only
+      echo "Result: $?"
+
+      # ...and the shell remembers it, even though it could not be run.
+      hash -t only | sed "s|^$PWD/||"
+      echo "Result: ${PIPESTATUS[0]}"

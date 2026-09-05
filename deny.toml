@@ -25,13 +25,27 @@ yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
-    # Both advisories affect quick-xml's *parsing* paths (Attributes duplicate
-    # check, NsReader namespace resolution). quick-xml is pulled in only via
-    # junit-report (a dev-dependency for test reporting), which exclusively
-    # *writes* XML and never parses untrusted input. Remove these once
-    # junit-report releases with quick-xml >= 0.41.
-    { id = "RUSTSEC-2026-0194", reason = "parse-only DoS; junit-report (dev-only) only writes XML" },
-    { id = "RUSTSEC-2026-0195", reason = "NsReader-only DoS; junit-report (dev-only) only writes XML" },
+    # RUSTSEC-2026-0253: unsound `LruCache::pop()` in lru 0.16.4, which we reach only
+    # via num-prime -> uu_factor (the `coreutils.factor` builtin).
+    #
+    # Unreachable for us, on three independent grounds:
+    #   1. num-prime never calls `pop()` at all -- its only cache operations are
+    #      `get()` and `put()` (see num-prime's src/buffer.rs). The dangling pointers
+    #      the advisory describes originate solely inside `pop()`.
+    #   2. That cache is `LruCache<(u64, usize), u64>`; the key is `Copy` with no
+    #      `Drop` impl, so the panicking-`Drop`-during-`pop()` precondition cannot hold.
+    #   3. The advisory requires unwinding plus `catch_unwind`. Our release profile
+    #      sets `panic = "abort"`, and our only `catch_unwind` lives in
+    #      brush-test-harness, not in shipped shell code.
+    #
+    # Not fixable by upgrading: num-prime pins `lru = "0.16.3"` (^0.16) and the fix
+    # landed only in lru 0.18.2, with no 0.16.x backport (0.16.4 ends that line). So
+    # `cargo update -p lru` is a no-op here, despite what the diagnostic suggests.
+    #
+    # Upstream is aware but stalled: uutils/num-prime#105 is open, and its lru 0.18
+    # bump (uutils/num-prime#77) was closed unmerged. Remove this entry once num-prime
+    # ships an `lru >=0.18.2` bump and uu_factor picks it up.
+    { id = "RUSTSEC-2026-0253", reason = "unreachable: num-prime never calls pop(); its Copy key has no Drop impl; release builds are panic=abort" },
 ]
 #git-fetch-with-cli = true
 

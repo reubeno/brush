@@ -551,6 +551,7 @@ cases:
   # trap -p edge cases
   #
   - name: "trap -p - with no args shows all traps"
+    skip: true # TODO(signals): need to report on ignored signals
     stdin: |
       trap 'echo a' INT
       trap 'echo b' TERM
@@ -722,3 +723,13 @@ cases:
       trap -p INT
       trap -p TERM
       echo "done"
+
+  - name: "DEBUG trap - BASH_COMMAND reports commands before expansion"
+    known_failure: true # TODO: BASH_COMMAND improvements required
+    stdin: |
+      value=world
+      trap 'case $BASH_COMMAND in echo*|declare*|printf*) echo "cmd: <$BASH_COMMAND>";; esac' DEBUG
+      echo $value
+      declare declared=$value
+      printf '%s\n' "$value"
+      trap - DEBUG

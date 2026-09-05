@@ -639,28 +639,6 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                 .execute(&mut pipeline_context.shell, &params)
                 .await?
                 .into()),
-            Self::ExtendedTest(e, redirects) => {
-                // Set up any additional redirects.
-                if let Some(redirects) = redirects {
-                    for redirect in &redirects.0 {
-                        setup_redirect(&mut pipeline_context.shell, &mut params, redirect).await?;
-                    }
-                }
-
-                // Evaluate the extended test expression.
-                let result = if extendedtests::eval_extended_test_expr(
-                    &e.expr,
-                    &mut pipeline_context.shell,
-                    &params,
-                )
-                .await?
-                {
-                    0
-                } else {
-                    1
-                };
-                Ok(ExecutionResult::new(result).into())
-            }
         }
     }
 }
@@ -712,6 +690,15 @@ impl Execute for ast::CompoundCommand {
             Self::Arithmetic(a) => a.execute(shell, params).await,
             Self::ArithmeticForClause(a) => a.execute(shell, params).await,
             Self::Coprocess(c) => c.execute(shell, params).await,
+            Self::ExtendedTest(e) => {
+                let result =
+                    if extendedtests::eval_extended_test_expr(&e.expr, shell, params).await? {
+                        0
+                    } else {
+                        1
+                    };
+                Ok(ExecutionResult::new(result))
+            }
         }
     }
 }
@@ -812,17 +799,12 @@ impl Execute for ast::ForClauseCommand {
 
         // If we were given explicit words to iterate over, then expand them all, with splitting
         // enabled.
-        let mut expanded_values = vec![];
-        if let Some(unexpanded_values) = &self.values {
-            for value in unexpanded_values {
-                let mut expanded =
-                    expansion::full_expand_and_split_word(shell, params, value).await?;
-                expanded_values.append(&mut expanded);
-            }
+        let expanded_values = if let Some(unexpanded_values) = &self.values {
+            expand_words(shell, params, unexpanded_values).await?
         } else {
             // Otherwise, we use the current positional parameters.
-            expanded_values.extend_from_slice(shell.current_shell_args());
-        }
+            shell.current_shell_args().to_vec()
+        };
 
         for value in expanded_values {
             if shell.options().print_commands_and_arguments {
@@ -1239,17 +1221,21 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
 
                     if args.is_empty() {
                         if let Some(cmd_name) = next_args.first() {
-                            if let Some(alias_value) =
-                                context.shell.aliases().get(cmd_name.as_str())
+                            // Aliases are only expanded when `expand_aliases` is enabled; it's
+                            // enabled by default for interactive shells.
+                            if context.shell.options().expand_aliases
+                                && let Some(alias_value) =
+                                    context.shell.aliases().get(cmd_name.as_str())
                             {
                                 //
                                 // TODO(#57): This is a total hack; aliases are supposed to be
                                 // handled much earlier in the process.
                                 //
-                                let mut alias_pieces: Vec<_> = alias_value
-                                    .split_ascii_whitespace()
-                                    .map(|i| i.to_owned())
-                                    .collect();
+                                // N.B. Tokenizing first releases our borrow of the shell's aliases,
+                                // so we can take a mutable borrow of the shell to expand the words.
+                                let alias_words = tokenize_alias_body(&context.shell, alias_value);
+                                let mut alias_pieces =
+                                    expand_words(&mut context.shell, &params, alias_words).await?;
 
                                 next_args.remove(0);
                                 alias_pieces.append(&mut next_args);
@@ -1257,15 +1243,15 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                                 next_args = alias_pieces;
                             }
 
-                            let first_arg = next_args[0].as_str();
-
                             // Check if we're going to be invoking a special declaration builtin.
-                            // That will change how we parse and process args.
-                            if context
-                                .shell
-                                .builtins()
-                                .get(first_arg)
-                                .is_some_and(|r| !r.disabled && r.declaration_builtin)
+                            // That will change how we parse and process args. (An alias with an
+                            // empty body leaves us with no words at all.)
+                            if let Some(first_arg) = next_args.first()
+                                && context
+                                    .shell
+                                    .builtins()
+                                    .get(first_arg.as_str())
+                                    .is_some_and(|r| !r.disabled && r.declaration_builtin)
                             {
                                 command_takes_assignments = true;
                             }
@@ -1399,6 +1385,45 @@ async fn execute_command<T: Into<String>>(
     // Execute
     // TODO(jobs): do we need to move self back to foreground on error here?
     cmd.execute().await
+}
+
+/// Tokenizes the body of an alias into the unexpanded words that should replace the aliased command
+/// name.
+///
+/// This only handles alias bodies that amount to a simple sequence of words; bodies containing
+/// operators (pipes, redirections, `&&`, ...) and recursive expansion of chained aliases require
+/// alias substitution to happen in the tokenizer instead (see issue #57).
+fn tokenize_alias_body(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    alias_value: &str,
+) -> Vec<String> {
+    // Tokenize the body the same way the shell would tokenize any other input it's given.
+    let options = shell.parser_options().tokenizer_options();
+
+    // If we can't tokenize the body, fall back to naively splitting it on whitespace.
+    brush_parser::tokenize_str_with_options(alias_value, &options).map_or_else(
+        |_| {
+            alias_value
+                .split_ascii_whitespace()
+                .map(str::to_owned)
+                .collect()
+        },
+        |tokens| tokens.iter().map(|t| t.to_str().to_owned()).collect(),
+    )
+}
+
+/// Expands the given words, with splitting enabled, yielding the fields they expand to.
+async fn expand_words(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    words: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Result<Vec<String>, error::Error> {
+    // N.B. Expansion needs `&mut shell`, so the words have to be expanded in sequence.
+    let mut fields = vec![];
+    for word in words {
+        fields.extend(expansion::full_expand_and_split_word(shell, params, word).await?);
+    }
+    Ok(fields)
 }
 
 async fn expand_assignment(

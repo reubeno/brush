@@ -16,7 +16,7 @@ pub enum EnvironmentLookup {
     Anywhere,
     /// Look only in the global scope.
     OnlyInGlobal,
-    /// Look only in the current local scope.    
+    /// Look only in the current local scope.
     OnlyInCurrentLocal,
     /// Look only in local scopes.
     OnlyInLocal,

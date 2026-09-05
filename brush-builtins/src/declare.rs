@@ -5,7 +5,6 @@ use std::{io::Write, sync::LazyLock};
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
-    error,
     parser::ast,
     variables::{
         self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
@@ -139,10 +138,6 @@ impl builtins::Command for DeclareCommand {
             return Ok(ExecutionResult::general_error());
         }
 
-        if self.locals_inherit_from_prev_scope {
-            return error::unimp("declare -I");
-        }
-
         let mut result = ExecutionResult::success();
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
@@ -237,6 +232,33 @@ impl DeclareCommand {
         }
     }
 
+    /// `declare -f` with attribute flags applies them to the named function rather than
+    /// displaying it (e.g. `declare -ft name`, `declare -fx name`).
+    fn apply_function_attributes(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        declaration: &brush_core::CommandArg,
+    ) -> bool {
+        let func = match declaration {
+            brush_core::CommandArg::String(name) => context.shell.func_mut(name),
+            brush_core::CommandArg::Assignment(_) => None,
+        };
+
+        // As with display, bash reports failure without printing an error message here.
+        let Some(func) = func else {
+            return false;
+        };
+
+        match self.make_exported.to_bool() {
+            Some(true) => func.export(),
+            Some(false) => func.unexport(),
+            None => (),
+        }
+
+        // TODO(declare): function tracing (-t) isn't tracked; it's accepted silently.
+        true
+    }
+
     fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -248,12 +270,18 @@ impl DeclareCommand {
                 && context.shell.in_function()
                 && !self.create_global);
 
+        if (self.function_names_or_defs_only || self.function_names_only)
+            && (self.make_traced.to_bool().is_some() || self.make_exported.to_bool().is_some())
+        {
+            return Ok(self.apply_function_attributes(context, declaration));
+        }
+
         if self.function_names_or_defs_only || self.function_names_only {
             return self.try_display_declaration(context, declaration, verb);
         }
 
         // Extract the variable name and the initial value being assigned (if any).
-        let (name, assigned_index, initial_value, name_is_array) =
+        let (name, assigned_index, initial_value, name_is_array, append) =
             Self::declaration_to_name_and_value(declaration)?;
 
         // Special-case: `local -`
@@ -281,6 +309,41 @@ impl DeclareCommand {
             EnvironmentLookup::Anywhere
         };
 
+        // `local -I x[=v]` / `declare -I` (bash 5.0+): the new local inherits
+        // value and attributes from the nearest same-name variable in an
+        // enclosing scope instead of starting unset; `+=` appends to the
+        // inherited value. With no same-name variable anywhere, fall through
+        // to ordinary creation.
+        if self.locals_inherit_from_prev_scope && create_var_local {
+            let inherited = context
+                .shell
+                .env()
+                .get_using_policy(name.as_str(), EnvironmentLookup::Anywhere)
+                .cloned();
+
+            if let Some(mut var) = inherited {
+                self.apply_attributes_before_update(&mut var)?;
+
+                if let Some(initial_value) = initial_value {
+                    var.assign(initial_value, append || assigned_index.is_some())?;
+                }
+
+                if context.shell.options().export_variables_on_modification
+                    && !var.value().is_array()
+                {
+                    var.export();
+                }
+
+                self.apply_attributes_after_update(&mut var, verb)?;
+
+                context
+                    .shell
+                    .env_mut()
+                    .add(name, var, EnvironmentScope::Local)?;
+                return Ok(true);
+            }
+        }
+
         // Look up the variable.
         if let Some(var) = context
             .shell
@@ -297,8 +360,9 @@ impl DeclareCommand {
             self.apply_attributes_before_update(var)?;
 
             if let Some(initial_value) = initial_value {
-                // We append if the declaration included an explicit index.
-                var.assign(initial_value, assigned_index.is_some())?;
+                // We append for `name+=value`, or if the declaration included
+                // an explicit index.
+                var.assign(initial_value, append || assigned_index.is_some())?;
             }
 
             self.apply_attributes_after_update(var, verb)?;
@@ -318,7 +382,7 @@ impl DeclareCommand {
             self.apply_attributes_before_update(&mut var)?;
 
             if let Some(initial_value) = initial_value {
-                var.assign(initial_value, false)?;
+                var.assign(initial_value, append)?;
             }
 
             if context.shell.options().export_variables_on_modification && !var.value().is_array() {
@@ -339,13 +403,24 @@ impl DeclareCommand {
         Ok(true)
     }
 
+    #[expect(clippy::type_complexity)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
-    ) -> Result<(String, Option<String>, Option<ShellValueLiteral>, bool), brush_core::Error> {
+    ) -> Result<
+        (
+            String,
+            Option<String>,
+            Option<ShellValueLiteral>,
+            bool,
+            bool,
+        ),
+        brush_core::Error,
+    > {
         let name;
         let assigned_index;
         let initial_value;
         let name_is_array;
+        let append;
 
         match declaration {
             brush_core::CommandArg::String(s) => {
@@ -377,6 +452,7 @@ impl DeclareCommand {
                     name_is_array = false;
                 }
                 initial_value = None;
+                append = false;
             }
             brush_core::CommandArg::Assignment(assignment) => {
                 match &assignment.name {
@@ -393,6 +469,8 @@ impl DeclareCommand {
                         assigned_index = Some(index.to_owned());
                     }
                 }
+
+                append = assignment.append;
 
                 match &assignment.value {
                     ast::AssignmentValue::Scalar(s) => {
@@ -421,7 +499,7 @@ impl DeclareCommand {
             }
         }
 
-        Ok((name, assigned_index, initial_value, name_is_array))
+        Ok((name, assigned_index, initial_value, name_is_array, append))
     }
 
     fn display_matching_env_declarations(

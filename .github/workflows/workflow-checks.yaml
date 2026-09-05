@@ -1,5 +1,5 @@
 #
-# This workflow was based on https://docs.zizmor.sh/usage/#use-in-github-actions
+# This workflow was based on https://docs.zizmor.sh/integrations/
 #
 
 name: GitHub Actions Security Analysis with zizmor 🌈
@@ -19,28 +19,18 @@ concurrency:
 
 jobs:
   zizmor:
-    name: zizmor latest via PyPI
+    name: zizmor latest via zizmor-action
     runs-on: ubuntu-latest
     permissions:
       security-events: write # needed for SARIF uploads
-      contents: read # only needed for private repos
-      actions: read # only needed for private repos
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-
+      # Reporting pass: uploads SARIF to code scanning, giving us stateful
+      # analysis and incremental triage in the Security tab. Does not fail
+      # with non-zero result but reports them.
       - name: Run zizmor 🌈
-        run: uvx zizmor --format=sarif . > results.sarif
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
-        with:
-          sarif_file: results.sarif
-          category: zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2

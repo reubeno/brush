@@ -137,3 +137,24 @@ cases:
       declare -n ref=target
       echo "ref @A: ${ref@A}"
       echo "target @A: ${target@A}"
+
+  - name: "Parameter quote transformations - Q with embedded single quotes"
+    stdin: |
+      for var in "a'b" "a''b" "'" "''" "'a" "a'" "'''" "" "a 'b c' d"; do
+        printf '[%s] ' "$var"
+        echo "${var@Q}"
+      done
+
+      arr=("a'b" "a''b" "'")
+      echo "arr@: ${arr[@]@Q}"
+      echo "arr*: ${arr[*]@Q}"
+
+      declare -A m=([k]="a''b")
+      echo "assoc: ${m[k]@Q}"
+
+  - name: "Parameter quote transformations - Q upgrades for control characters"
+    min_oracle_version: 5.2 # some sequences render differently in older shell versions
+    stdin: |
+      # Unlike alias values, @Q reaches for ANSI-C quoting when it needs to.
+      var=$(printf 'a\tb'); echo "tab: ${var@Q}"
+      var=$'a\nb'; echo "newline: ${var@Q}"

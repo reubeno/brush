@@ -1,0 +1,8 @@
+# Check link fragments too
+include_fragments = "full"
+
+# Include hidden files
+hidden = true
+
+# Include links in verbatim blocks
+include_verbatim = true

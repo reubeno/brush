@@ -374,8 +374,6 @@ pub enum Command {
     Compound(CompoundCommand, Option<RedirectList>),
     /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
-    /// A command that evaluates an extended test expression.
-    ExtendedTest(ExtendedTestExprCommand, Option<RedirectList>),
 }
 
 impl Node for Command {}
@@ -391,7 +389,6 @@ impl SourceLocation for Command {
                 }
             }
             Self::Function(f) => f.location(),
-            Self::ExtendedTest(e, _) => e.location(),
         }
     }
 }
@@ -408,13 +405,6 @@ impl Display for Command {
                 Ok(())
             }
             Self::Function(function_definition) => write!(f, "{function_definition}"),
-            Self::ExtendedTest(extended_test_expr, redirect_list) => {
-                write!(f, "[[ {extended_test_expr} ]]")?;
-                if let Some(redirect_list) = redirect_list {
-                    write!(f, "{redirect_list}")?;
-                }
-                Ok(())
-            }
         }
     }
 }
@@ -448,6 +438,8 @@ pub enum CompoundCommand {
     UntilClause(WhileOrUntilClauseCommand),
     /// A coprocess, which runs a command asynchronously in a subshell.
     Coprocess(CoprocessCommand),
+    /// An extended test command, evaluating an extended test expression.
+    ExtendedTest(ExtendedTestExprCommand),
 }
 
 impl Node for CompoundCommand {}
@@ -465,6 +457,7 @@ impl SourceLocation for CompoundCommand {
             Self::WhileClause(w) => w.location(),
             Self::UntilClause(u) => u.location(),
             Self::Coprocess(c) => c.location(),
+            Self::ExtendedTest(e) => e.location(),
         }
     }
 }
@@ -493,6 +486,9 @@ impl Display for CompoundCommand {
             }
             Self::Coprocess(coproc_clause_command) => {
                 write!(f, "{coproc_clause_command}")
+            }
+            Self::ExtendedTest(extended_test_expr_command) => {
+                write!(f, "[[ {extended_test_expr_command} ]]")
             }
         }
     }
@@ -683,7 +679,8 @@ impl SourceLocation for CaseClauseCommand {
 
 impl Display for CaseClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "case {} in", self.value)?;
+        // Note the trailing space, which the shell emits when printing a case clause.
+        write!(f, "case {} in ", self.value)?;
         for case in &self.cases {
             write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{case}")?;
         }
@@ -717,8 +714,18 @@ impl SourceLocation for CompoundList {
     }
 }
 
-impl Display for CompoundList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl CompoundList {
+    /// Displays the list with its trailing `;` retained, the way the shell prints the
+    /// body of a block closed by a reserved word (`fi`, `else`, `done`).
+    fn terminated(&self) -> impl Display + '_ {
+        TerminatedCompoundList(self)
+    }
+
+    fn fmt_items(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        keep_trailing_separator: bool,
+    ) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
             if i > 0 {
                 writeln!(f)?;
@@ -727,15 +734,31 @@ impl Display for CompoundList {
             // Write the and-or list.
             write!(f, "{}", item.0)?;
 
-            // Write the separator... unless we're on the list item and it's a ';'.
-            if i == self.0.len() - 1 && matches!(item.1, SeparatorOperator::Sequence) {
-                // Skip
-            } else {
+            // Write the separator... unless we're on the last list item and it's a ';'
+            // that the enclosing construct doesn't want.
+            if keep_trailing_separator
+                || i < self.0.len() - 1
+                || !matches!(item.1, SeparatorOperator::Sequence)
+            {
                 write!(f, "{}", item.1)?;
             }
         }
 
         Ok(())
+    }
+}
+
+impl Display for CompoundList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_items(f, false)
+    }
+}
+
+struct TerminatedCompoundList<'a>(&'a CompoundList);
+
+impl Display for TerminatedCompoundList<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt_items(f, true)
     }
 }
 
@@ -801,7 +824,7 @@ impl Display for IfClauseCommand {
         write!(
             indenter::indented(f).with_str(DISPLAY_INDENT),
             "{}",
-            self.then
+            self.then.terminated()
         )?;
         if let Some(elses) = &self.elses {
             for else_clause in elses {
@@ -846,7 +869,7 @@ impl Display for ElseClause {
         write!(
             indenter::indented(f).with_str(DISPLAY_INDENT),
             "{}",
-            self.body
+            self.body.terminated()
         )
     }
 }
@@ -922,7 +945,8 @@ impl Display for CaseItem {
         writeln!(f)?;
         for (i, pattern) in self.patterns.iter().enumerate() {
             if i > 0 {
-                write!(f, "|")?;
+                // Note the spaces, which the shell puts around the pattern separator.
+                write!(f, " | ")?;
             }
             write!(f, "{pattern}")?;
         }
@@ -1122,7 +1146,7 @@ impl Display for DoGroupCommand {
         write!(
             indenter::indented(f).with_str(DISPLAY_INDENT),
             "{}",
-            self.list
+            self.list.terminated()
         )?;
         writeln!(f)?;
         write!(f, "done")
@@ -1399,6 +1423,17 @@ pub enum AssignmentName {
     VariableName(String),
     /// An element in a named array.
     ArrayElementName(String, String),
+}
+
+impl AssignmentName {
+    /// Returns the base name of the assignment, without any array indexing
+    /// if present.
+    pub fn base_name(&self) -> &str {
+        match self {
+            Self::VariableName(name) => name,
+            Self::ArrayElementName(name, _index) => name,
+        }
+    }
 }
 
 impl Display for AssignmentName {

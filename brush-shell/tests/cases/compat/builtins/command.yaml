@@ -69,6 +69,28 @@ cases:
       echo "[\$(command -v cat)]"
       command -v $(command -v cat)
 
+  - name: "command -v with multiple operands"
+    stdin: |
+      echo "[resolved builtins]"
+      command -v echo true pwd
+      echo "rc=$?"
+
+      echo "[skipped miss]"
+      command -v echo non-existent pwd
+      echo "rc=$?"
+
+      echo "[all misses]"
+      command -v non-existent also-non-existent
+      echo "rc=$?"
+
+  - name: "command -V with multiple operands"
+    ignore_stderr: true # miss wording on stderr differs between brush and bash
+    stdin: |
+      command -V echo true
+      echo "rc=$?"
+
+      command -V non-existent || echo "not found"
+
   - name: "command -V"
     ignore_stderr: true
     stdin: |
@@ -87,6 +109,39 @@ cases:
     stdin: |
       command ls --help
 
+  - name: "command forwards expanded declaration assignments"
+    known_failure: true # TODO: command builtin improvements required
+    stdin: |
+      value=world
+      command declare declared=$value
+      command export exported=$value
+      declare -p declared exported
+
+  - name: "nested wrappers resolve ordinary and declaration targets"
+    known_failure: true # TODO: command builtin improvements required
+    stdin: |
+      value=world
+      command builtin echo ordinary=$value
+      command builtin declare declared=$value
+      builtin command echo reverse=$value
+      declare -p declared
+
+  - name: "command expands assignment-looking argument for ordinary builtin"
+    stdin: |
+      value=world
+      command echo argument=$value
+
+  - name: "command expands assignment-looking argument for external command"
+    stdin: |
+      value=world
+      command sh -c 'printf "<%s>\n" "$1"' sh argument=$value
+
+  - name: "command expands assignment-looking command name"
+    stdin: |
+      value=world
+      command missing=$value 2>/dev/null
+      printf 'status=%s last=<%s>\n' "$?" "$_"
+
   - name: "command with -p"
     ignore_stderr: true # In case it fails on the oracle as well, ignore the specific error message.
     # See "command -v -p" above: `command -p`'s default utility path resolves
@@ -96,3 +151,245 @@ cases:
       unset PATH
 
       command -p -- ls
+
+  #
+  # Regression coverage: `command` does not change whether an argument is an assignment word, so
+  # its arguments undergo ordinary word expansion and the nested builtin recognizes any assignment
+  # syntax that survives.
+  #
+  - name: "command does not preserve assignment splitting semantics"
+    known_failure: true # TODO: command builtin improvements required
+    ignore_stderr: true
+    stdin: |
+      v="x y"
+      command declare b=$v
+      declare -p b y
+
+  - name: "command forwards a value with no field separators intact"
+    known_failure: true # TODO: command builtin improvements required
+    stdin: |
+      value=world
+      command declare declared=$value
+      command readonly fixed=$value
+      declare -p declared fixed
+
+  - name: "Function shadowing command receives its arguments"
+    stdin: |
+      command() { echo "shadow command: [$*] count=$#"; }
+      command echo hi
+      unset -f command
+
+  - name: "command -v finds aliases, keywords, and functions"
+    stdin: |
+      shopt -s expand_aliases
+      alias al="echo hi"
+      f() { :; }
+
+      command -v al; echo "rc=$?"
+      command -v if; echo "rc=$?"
+      command -v f; echo "rc=$?"
+      command -v echo; echo "rc=$?"
+
+  - name: "command -V describes aliases, keywords, and functions"
+    stdin: |
+      shopt -s expand_aliases
+      alias al="echo hi"
+      f() { :; }
+
+      command -V al; echo "rc=$?"
+      command -V if; echo "rc=$?"
+      command -V f; echo "rc=$?"
+      command -V echo; echo "rc=$?"
+
+  - name: "command -v/-V with multiple names"
+    stdin: |
+      # Normalize away the leading "shell: line N:" that the oracle prefixes onto diagnostics.
+      strip() { sed 's/^.*command:/command:/'; }
+
+      shopt -s expand_aliases
+      alias al="echo hi"
+      f() { :; }
+
+      echo "[all found]"
+      command -v al f if echo; echo "rc=$?"
+      command -V al f if echo; echo "rc=$?"
+
+      echo "[some found]"
+      command -v nonexistent f 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      command -v f nonexistent 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      command -V f nonexistent 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+      echo "[none found]"
+      command -v nope1 nope2 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      command -V nope1 nope2 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "command -v/-V output is reusable/quoted for odd alias values"
+    stdin: |
+      shopt -s expand_aliases
+      alias q="echo 'it'\''s"
+      alias q2='a "b" $c'
+      alias q3="'"
+      alias q4="a''b"
+
+      command -v q
+      command -v q2
+      command -v q3
+      command -v q4
+      command -V q
+
+  - name: "command -v/-V honors expand_aliases"
+    stdin: |
+      strip() { sed 's/^.*command:/command:/'; }
+      alias za="ls"
+
+      shopt -u expand_aliases
+      command -v za; echo "rc=$?"
+      command -V za 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+      shopt -s expand_aliases
+      command -v za; echo "rc=$?"
+
+  - name: "command -v/-V: last of -v/-V wins"
+    stdin: |
+      command -v -V echo
+      command -V -v echo
+      command -vV echo
+      command -Vv echo
+      command -V -v nonexistent; echo "rc=$?"
+
+  - name: "command -V reports hashed commands"
+    stdin: |
+      # Normalize away the temporary directory the test runs in.
+      scrub() { sed -E "s|$PWD|<TMPDIR>|g"; }
+
+      mkdir -p bin
+      printf '#!/bin/sh\n:\n' > bin/mytool
+      chmod +x bin/mytool
+      PATH="$PWD/bin:$PATH"
+
+      hash mytool
+      command -v mytool | scrub
+      command -V mytool | scrub
+
+  - name: "command -v/-V report path names as given"
+    stdin: |
+      printf '#!/bin/sh\necho hi\n' > prog
+      chmod +x prog
+
+      command -v ./prog; echo "rc=$?"
+      command -V ./prog; echo "rc=$?"
+
+  - name: "command -v with non-executable and non-file path names"
+    stdin: |
+      strip() { sed 's/^.*command:/command:/'; }
+      mkdir subdir
+      touch plainfile
+
+      command -v ./subdir; echo "rc=$?"
+      command -V ./subdir 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      command -v ./plainfile; echo "rc=$?"
+
+  - name: "command -v with empty name"
+    stdin: |
+      strip() { sed 's/^.*command:/command:/'; }
+
+      command -v ""; echo "rc=$?"
+      command -V "" 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "command -p searches the default path"
+    # See "command -v -p" above: on NixOS the oracle's default utility path finds no
+    # standard utilities at all, so the `sh` lookup below can't be reconciled there.
+    incompatible_os: ["nixos"]
+    stdin: |
+      strip() { sed 's/^.*command:/command:/'; }
+
+      echo "[builtins are still found]"
+      command -p -v echo; echo "rc=$?"
+      command -p -V echo; echo "rc=$?"
+
+      echo "[externals come from the default path]"
+      # bash's default path is compiled in and brush asks the C library for it, so the two
+      # can name different directories on the same host; only the basename is comparable.
+      dirless() { sed 's#/[^ ]*/#<dir>/#'; }
+      command -p -v sh | dirless; echo "rc=${PIPESTATUS[0]}"
+      command -p -V sh | dirless; echo "rc=${PIPESTATUS[0]}"
+
+      echo "[PATH is ignored]"
+      mkdir -p bin
+      printf '#!/bin/sh\n:\n' > bin/mytool
+      chmod +x bin/mytool
+      PATH="$PWD/bin:$PATH"
+      command -v mytool > /dev/null; echo "rc=$?"
+      command -p -v mytool; echo "rc=$?"
+
+      echo "[missing name]"
+      command -p -V definitely-not-a-real-command 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "command -V reports a PATH-found command with an absolute path"
+    stdin: |
+      # Normalize away the temporary directory the test runs in.
+      scrub() { sed -E "s|$PWD|<TMPDIR>|g"; }
+
+      mkdir -p d1
+      printf '#!/bin/sh\n:\n' > d1/ex
+      chmod +x d1/ex
+      touch d1/only
+      PATH="d1:$PATH"
+
+      echo "[a non-executable in PATH is still reported]"
+      command -v only; echo "rc=$?"
+      command -V only | scrub; echo "rc=${PIPESTATUS[0]}"
+
+      command -v ex; echo "rc=$?"
+      command -V ex | scrub; echo "rc=${PIPESTATUS[0]}"
+
+      echo "[a \".\" entry contributes no \"./\" to the absolute path]"
+      printf '#!/bin/sh\n:\n' > here; chmod +x here
+      PATH=".:$PATH" command -v here; echo "rc=$?"
+      PATH=".:$PATH" command -V here | scrub; echo "rc=${PIPESTATUS[0]}"
+
+      echo "[...but explicit and hashed paths are left alone]"
+      printf '#!/bin/sh\n:\n' > prog; chmod +x prog
+      command -V ./prog; echo "rc=$?"
+      hash -p rel/path hp
+      command -V hp; echo "rc=$?"
+
+  - name: "command -v/-V with no operands"
+    stdin: |
+      command -v; echo "rc=$?"
+      command -V; echo "rc=$?"
+
+  - name: "command -v/-V skips a disabled builtin"
+    stdin: |
+      # Normalize away the temporary directory the test runs in.
+      scrub() { sed -E "s|$PWD|<TMPDIR>|g"; }
+
+      mkdir -p bin
+      printf '#!/bin/sh\n:\n' > bin/echo
+      chmod +x bin/echo
+      PATH="$PWD/bin:$PATH"
+
+      # `echo` is disabled for the rest of this block, so report through printf.
+      enable -n echo
+      command -v echo | scrub; disabled_v=${PIPESTATUS[0]}
+      command -V echo | scrub; disabled_V=${PIPESTATUS[0]}
+      enable echo
+      printf 'rc=%s rc=%s\n' "$disabled_v" "$disabled_V"
+
+      command -v echo; echo "rc=$?"
+
+  - name: "command -v/-V reports an alias ahead of a same-named function"
+    stdin: |
+      f() { :; }
+      shopt -s expand_aliases
+      alias f='echo A'
+
+      command -v f; echo "rc=$?"
+      command -V f; echo "rc=$?"
+
+  - name: "command -p -v/-V still honors the hash table"
+    stdin: |
+      hash -p /nonexistent/cat cat
+      command -v cat; echo "rc=$?"
+      command -p -v cat; echo "rc=$?"
+      command -p -V cat; echo "rc=$?"

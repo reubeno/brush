@@ -1,5 +1,14 @@
 //! Standard builtins.
 
+// `brush_core::builtins::Command::execute` is async by contract: the trait declares a desugared
+// `-> impl Future<...> + Send` so that `brush_core::builtins::exec_builtin` can box and dispatch
+// every builtin uniformly. Most builtins in this crate do purely synchronous work, so their
+// `execute` bodies contain no `.await` -- that is the trait contract being honored, not a defect.
+#![allow(
+    clippy::unused_async_trait_impl,
+    reason = "builtins implement a trait whose `execute` is async by contract"
+)]
+
 #[cfg(feature = "builtin.alias")]
 mod alias;
 #[cfg(feature = "builtin.bg")]
@@ -109,10 +118,26 @@ mod wait;
 
 mod builder;
 mod factory;
+#[cfg(any(feature = "builtin.command", feature = "builtin.type"))]
+mod lookup;
 mod unimp;
 
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
+
+/// Writes an alias definition in the reusable form printed by `alias` and `command -v`.
+#[cfg(any(feature = "builtin.alias", feature = "builtin.command"))]
+fn write_alias_definition(
+    mut writer: impl std::io::Write,
+    name: &str,
+    value: &str,
+) -> std::io::Result<()> {
+    writeln!(
+        writer,
+        "alias {name}={}",
+        brush_core::escape::single_quote(value)
+    )
+}
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be
 /// enabled or disabled by specifying an option with a leading '+' or '-' character.

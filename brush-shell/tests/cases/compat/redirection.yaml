@@ -260,6 +260,23 @@ cases:
       echo "[10]"
       cat fd10.txt
 
+  - name: "Redirection with out-of-range io number falls back to a word"
+    stdin: |
+      # A run of digits too large to fit an io number isn't a valid redirection
+      # prefix, so it's treated as an ordinary word argument instead.
+      echo hi 299999999999999999999999999999999999999999999999999999>out.txt
+      cat out.txt
+
+  - name: "Redirection with out-of-range io number duplicated to a valid fd"
+    stdin: |
+      echo 99999999999999999999>&1
+
+  - name: "Redirection with out-of-range io numbers on both sides of a dup"
+    ignore_stderr: true # Error message wording differs between shells.
+    stdin: |
+      echo hi 299999999999999999999999999999999999999999999999999999>&20000000000000000000000000000000000000000000
+      echo "exit: $?"
+
   - name: "Inheritance of fds from parent"
     test_files:
       - path: "test.sh"

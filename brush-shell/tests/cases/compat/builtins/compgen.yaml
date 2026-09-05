@@ -5,7 +5,18 @@ cases:
       alias myalias="ls"
       alias myalias2="echo hi"
 
-      compgen -A alias myalias | sort
+      compgen -A alias myalias
+
+  - name: "compgen -A alias is sorted by name"
+    stdin: |
+      alias e=5
+      alias c=3
+      alias a=1
+      alias f=6
+      alias d=4
+      alias b=2
+
+      compgen -A alias
 
   - name: "compgen -A binding"
     stdin: |
@@ -54,7 +65,34 @@ cases:
         echo hello
       }
 
-      compgen -A function myfunc | sort
+      compgen -A function myfunc
+
+  - name: "compgen -A function is sorted by name"
+    stdin: |
+      e() { :; }
+      c() { :; }
+      a() { :; }
+      f() { :; }
+      d() { :; }
+      b() { :; }
+
+      compgen -A function
+
+  - name: "compgen -A command is sorted by name"
+    stdin: |
+      zzfe() { :; }
+      zzfc() { :; }
+      zzfa() { :; }
+
+      compgen -A command zzf
+
+  - name: "compgen -A command only returns functions matching the prefix"
+    stdin: |
+      zzfa() { :; }
+      zzfb() { :; }
+      totally_unrelated() { :; }
+
+      compgen -A command zzf
 
   - name: "compgen -A keyword"
     stdin: |
@@ -204,6 +242,20 @@ cases:
       mkdir subdir
       touch subfile
       compgen -W 'completion' -o dirnames -- s | sort
+
+      echo "[Take 3]"
+      mkdir cdir cdir2
+      touch cfile
+      compgen -W 'completion' -o dirnames -- c | sort
+
+      echo "[Take 4]"
+      compgen -W 'nomatch' -o dirnames -- c | sort
+
+      echo "[Take 5]"
+      compgen -o dirnames -- c | sort
+
+      echo "[Take 6]"
+      compgen -W 'completion' -o dirnames -o plusdirs -- c | sort
 
   - name: "compgen -o default"
     stdin: |

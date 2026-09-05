@@ -37,13 +37,14 @@ impl builtins::Command for HashCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
+        let cmd = &context.command_name;
 
         if self.remove_all {
             context.shell.program_location_cache_mut().reset();
         } else if self.remove {
             for name in &self.names {
                 if !context.shell.program_location_cache_mut().unset(name) {
-                    writeln!(context.stderr(), "{name}: not found")?;
+                    writeln!(context.stderr(), "{cmd}: {name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -71,12 +72,26 @@ impl builtins::Command for HashCommand {
                         )?;
                     }
                 } else {
-                    writeln!(context.stderr(), "{name}: not found")?;
+                    writeln!(context.stderr(), "{cmd}: {name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
         } else if let Some(path) = &self.path_to_use {
+            // The shell's working directory is its own state, not the process's, so a
+            // relative path is resolved against it before it's inspected -- but reported as given.
+            let is_dir = context.shell.absolute_path(path).is_dir();
+
             for name in &self.names {
+                if is_dir {
+                    writeln!(
+                        context.stderr(),
+                        "{cmd}: {}: Is a directory",
+                        path.display()
+                    )?;
+                    result = ExecutionResult::general_error();
+                    continue;
+                }
+
                 context
                     .shell
                     .program_location_cache_mut()
@@ -98,7 +113,7 @@ impl builtins::Command for HashCommand {
                     .find_first_executable_in_path_using_cache(name)
                     .is_none()
                 {
-                    writeln!(context.stderr(), "{name}: not found")?;
+                    writeln!(context.stderr(), "{cmd}: {name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }

@@ -157,7 +157,7 @@ execute_with_shell() {
     local stderr_file="$output_dir/$output_subdir/stderr.txt"
     local trace_file="$output_dir/$output_subdir/trace.txt"
     local exit_code_file="$output_dir/$output_subdir/exit_code.txt"
-    
+
     # Execute the shell with:
     # - BASH_XTRACEFD=3 set in the environment
     # - PS4 set to include script name and line number
@@ -170,7 +170,7 @@ execute_with_shell() {
         >"$stdout_file" \
         2>"$stderr_file" \
         3>"$trace_file"
-    
+
     local exit_code=$?
     echo "$exit_code" > "$exit_code_file"
     return $exit_code

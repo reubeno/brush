@@ -140,6 +140,20 @@ cases:
       echo "Assign colon-tilde: ${myvar3:=~:~/bin}"
       echo "myvar3 after := ${myvar3}"
 
+  - name: "Tilde expansion: out-of-range dir stack index"
+    stdin: |
+      # A run of digits too large to fit the dir-stack index type isn't a valid
+      # index, so the tilde word falls back to (failed) username lookup and is
+      # left unexpanded, same as an ordinary nonexistent user.
+      D=~99999999999999999999
+      echo "D: $D"
+
+      D=~-99999999999999999999
+      echo "D: $D"
+
+      D=~+99999999999999999999
+      echo "D: $D"
+
   - name: "Tilde expansion in list"
     known_failure: true
     env:

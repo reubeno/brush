@@ -1,11 +1,234 @@
 name: "Builtins: alias"
 cases:
+  #
+  # Defining, listing, and removing aliases.
+  #
+
   - name: "Basic alias usage"
     stdin: |
       shopt -s expand_aliases
       alias myalias=echo
       alias
       myalias 'hello'
+
+  - name: "Alias listing"
+    stdin: |
+      alias a=echo
+      alias b='ls -l'
+      alias
+      echo "---"
+      alias -p
+      echo "---"
+      alias a
+      echo "exit=$?"
+
+  - name: "Alias listing is sorted by name"
+    stdin: |
+      alias e=5
+      alias c=3
+      alias a=1
+      alias f=6
+      alias d=4
+      alias b=2
+      alias
+
+  - name: "Redefining an alias"
+    stdin: |
+      shopt -s expand_aliases
+      alias r='echo one'
+      r
+      alias r='echo two'
+      r
+
+  - name: "Unalias"
+    stdin: |
+      shopt -s expand_aliases
+      alias x='echo aliased'
+      x
+      unalias x
+      x 2>/dev/null || echo "gone: $?"
+
+  - name: "Unalias all"
+    stdin: |
+      alias a=echo
+      alias b=echo
+      unalias -a
+      alias
+      echo "exit=$?"
+
+  - name: "Unalias non-existent alias"
+    ignore_stderr: true # brush doesn't prefix errors with script name and line
+    stdin: |
+      unalias nosuchalias
+      echo "exit=$?"
+
+  #
+  # Expansion of the alias body: quoting and word expansions.
+  #
+
+  - name: "Alias body with quoted args"
+    stdin: |
+      shopt -s expand_aliases
+      alias fmt='printf "[%s]\n" -a --format "table {{.Names}}\t{{.State}}"'
+      fmt
+
+  - name: "Alias body with single-quoted args"
+    stdin: |
+      shopt -s expand_aliases
+      alias q="printf '[%s]\n' 'a b' c"
+      q
+
+  - name: "Alias body with escaped chars"
+    stdin: |
+      shopt -s expand_aliases
+      alias esc='printf "[%s]\n" a\ b c'
+      esc
+
+  - name: "Alias body with ANSI-C quoting"
+    stdin: |
+      shopt -s expand_aliases
+      alias d='printf "[%s]\n" $'"'"'a\tb'"'"''
+      d
+
+  - name: "Alias body with variable expansion"
+    stdin: |
+      shopt -s expand_aliases
+      export MYVAR="a b"
+      alias e='printf "[%s]\n" $MYVAR "$MYVAR"'
+      e
+
+  - name: "Alias body with tilde expansion"
+    stdin: |
+      shopt -s expand_aliases
+      alias t='echo ~/sub'
+      [ "$(t)" = "$HOME/sub" ] && echo "tilde expanded"
+
+  - name: "Alias body with command substitution"
+    stdin: |
+      shopt -s expand_aliases
+      alias c='echo $(echo inner)'
+      c
+
+  - name: "Alias body with pathname expansion"
+    stdin: |
+      shopt -s expand_aliases
+      touch aa.txt ab.txt
+      alias g='printf "[%s]\n" *.txt'
+      g
+
+  - name: "Alias body is expanded at use time"
+    stdin: |
+      shopt -s expand_aliases
+      alias e='echo $MYVAR'
+      MYVAR=first
+      e
+      MYVAR=second
+      e
+
+  - name: "Alias with empty body"
+    stdin: |
+      shopt -s expand_aliases
+      alias empty=''
+      empty
+      echo "exit=$?"
+
+  - name: "Args are appended after the alias body"
+    stdin: |
+      shopt -s expand_aliases
+      alias p='printf "[%s]\n" first'
+      p second "third fourth"
+
+  #
+  # Where alias expansion applies.
+  #
+
+  - name: "Alias takes precedence over function"
+    stdin: |
+      shopt -s expand_aliases
+      myfunc() { echo function-version; }
+      alias myfunc='echo alias-version'
+      myfunc
+      unalias myfunc
+      myfunc
+
+  - name: "Alias for a command name is not recursively re-expanded"
+    stdin: |
+      shopt -s expand_aliases
+      alias echo='echo prefix'
+      echo hello
+
+  - name: "Aliases are not expanded when expand_aliases is unset"
+    stdin: |
+      alias x='echo aliased'
+      x 2>/dev/null || echo "not-expanded"
+
+  - name: "Alias used in a pipeline"
+    stdin: |
+      shopt -s expand_aliases
+      alias u='tr a-z A-Z'
+      echo hello | u
+
+  - name: "Alias used after && and ||"
+    stdin: |
+      shopt -s expand_aliases
+      alias e='echo ran'
+      true && e
+      false || e
+
+  - name: "Alias used in a function body"
+    stdin: |
+      shopt -s expand_aliases
+      alias body='echo from-alias'
+      f() { body; }
+      f
+
+  - name: "Alias used in a for loop body"
+    stdin: |
+      shopt -s expand_aliases
+      alias pr='echo item'
+      for i in 1 2; do pr $i; done
+
+  #
+  # Cases the current (execution-time) alias implementation does not handle.
+  # These need alias substitution to move into the tokenizer; see issue #57.
+  #
+
+  - name: "Quoting the command name suppresses alias expansion"
+    known_failure: true # Issue #57
+    stdin: |
+      shopt -s expand_aliases
+      alias e='echo aliased'
+      e
+      \e 2>/dev/null || echo "backslash-suppressed"
+      "e" 2>/dev/null || echo "quote-suppressed"
+
+  - name: "Alias body containing a pipeline"
+    known_failure: true # Issue #57
+    stdin: |
+      shopt -s expand_aliases
+      alias pl='echo hello | tr a-z A-Z'
+      pl
+
+  - name: "Alias body containing a redirection"
+    known_failure: true # Issue #57
+    stdin: |
+      shopt -s expand_aliases
+      alias w='echo written > out.txt'
+      w
+      cat out.txt
+
+  - name: "Alias body containing a command separator"
+    known_failure: true # Issue #57
+    stdin: |
+      shopt -s expand_aliases
+      alias two='echo one; echo two'
+      two
+
+  - name: "Alias defined and used on the same line"
+    known_failure: true # Issue #57
+    stdin: |
+      shopt -s expand_aliases
+      alias sl='echo same-line'; sl
 
   - name: "Alias with trailing space"
     known_failure: true # Issue #57
@@ -31,3 +254,17 @@ cases:
       shopt -s expand_aliases
       alias myalias=if
       myalias true; then echo "true"; fi
+
+  - name: "alias display quotes values"
+    stdin: |
+      alias q1="a'b"
+      alias q2="'"
+      alias q3="a''b"
+      alias q4='a "b" $c'
+      alias q5="$(printf 'a\tb')"
+      alias q6="a
+      b"
+
+      alias
+      alias -p
+      alias q1 q3

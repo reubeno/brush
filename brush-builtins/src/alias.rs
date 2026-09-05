@@ -1,7 +1,10 @@
 use clap::Parser;
+use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
+
+use crate::write_alias_definition;
 
 /// Manage aliases within the shell.
 #[derive(Parser)]
@@ -25,8 +28,9 @@ impl builtins::Command for AliasCommand {
         let mut exit_code = ExecutionResult::success();
 
         if self.print || self.aliases.is_empty() {
-            for (name, value) in context.shell.aliases() {
-                writeln!(context.stdout(), "alias {name}='{value}'")?;
+            // Aliases are stored unordered; bash lists them sorted by name.
+            for (name, value) in context.shell.aliases().iter().sorted() {
+                write_alias_definition(context.stdout(), name, value)?;
             }
         } else {
             for alias in &self.aliases {
@@ -38,7 +42,7 @@ impl builtins::Command for AliasCommand {
                         .aliases_mut()
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else if let Some(value) = context.shell.aliases().get(alias) {
-                    writeln!(context.stdout(), "alias {alias}='{value}'")?;
+                    write_alias_definition(context.stdout(), alias, value)?;
                 } else {
                     writeln!(
                         context.stderr(),

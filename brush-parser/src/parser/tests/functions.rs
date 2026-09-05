@@ -97,3 +97,28 @@ fn parse_function_with_local_vars() -> Result<()> {
     });
     Ok(())
 }
+
+#[test]
+fn parse_function_with_extended_test_body() -> Result<()> {
+    // bash accepts `[[ ... ]]` (itself a compound command) as a brace-less function
+    // body, e.g. real-world usage in Gentoo Portage's bin/eapi.sh:
+    //   ___eapi_has_pkg_pretend() [[ ${1-${EAPI-0}} != [0-3] ]]
+    let input = "foo() [[ -n $1 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_function_with_extended_test_body_and_redirect() -> Result<()> {
+    let input = "foo() [[ -n $1 ]] 2>&1";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
