@@ -1,3 +1,4 @@
+use brush_core::trace_categories;
 use nu_ansi_term::Style;
 use reedline::MenuBuilder;
 
@@ -11,6 +12,11 @@ pub struct ReedlineInputBackend {
 }
 
 const COMPLETION_MENU_NAME: &str = "completion_menu";
+
+/// How many times `reedline.read_line()` is attempted before its error is
+/// propagated: the initial call plus this many minus one retries. See
+/// `read_line` below.
+const MAX_READ_LINE_ATTEMPTS: u32 = 3;
 
 fn completion_menu_text_style() -> Style {
     Style::new()
@@ -154,18 +160,49 @@ impl InputBackend for ReedlineInputBackend {
         _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
-        if let Some(reedline) = &mut self.reedline {
+        let Some(reedline) = &mut self.reedline else {
+            return Ok(ReadResult::Eof);
+        };
+
+        let mut attempt: u32 = 1;
+        loop {
             match reedline.read_line(&prompt) {
-                Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
-                Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
-                Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
-                Ok(reedline::Signal::ExternalBreak(_)) => Err(ShellError::UnexpectedInputFailure),
-                Ok(reedline::Signal::HostCommand(cmd)) => Ok(ReadResult::BoundCommand(cmd)),
-                Ok(_) => Err(ShellError::UnexpectedInputFailure),
-                Err(err) => Err(ShellError::InputError(err)),
+                Ok(reedline::Signal::Success(s)) => return Ok(ReadResult::Input(s)),
+                Ok(reedline::Signal::CtrlC) => return Ok(ReadResult::Interrupted),
+                Ok(reedline::Signal::CtrlD) => return Ok(ReadResult::Eof),
+                Ok(reedline::Signal::ExternalBreak(_)) => {
+                    return Err(ShellError::UnexpectedInputFailure);
+                }
+                Ok(reedline::Signal::HostCommand(cmd)) => return Ok(ReadResult::BoundCommand(cmd)),
+                Ok(_) => return Err(ShellError::UnexpectedInputFailure),
+                // An error here is almost always transient. The prevalent case:
+                // reedline asks the terminal for the cursor position (DSR,
+                // `ESC [ 6 n`) before painting a prompt, and again after an
+                // external program (a `bind -x` command such as atuin's search
+                // UI, fzf, ...) hands the terminal back. crossterm waits a fixed
+                // 2s for the reply and then fails; a terminal busy repainting or
+                // a multiplexer briefly holding the reply is enough to trip it,
+                // and giving up would end the whole interactive session. That
+                // failure happens before any input is read, so re-issuing the
+                // read is safe; retry a bounded number of times before treating
+                // the failure as real. A terminal that never answers therefore
+                // fails after MAX_READ_LINE_ATTEMPTS x 2s rather than 2s.
+                //
+                // The one known exception: reedline restores the terminal mode
+                // *after* computing its result, so if `disable_raw_mode` itself
+                // fails, a line that was already submitted is lost and the retry
+                // prompts afresh. That is a tcsetattr failure on a tty that just
+                // worked; the alternative -- exiting the shell -- loses the same
+                // line and everything else with it.
+                Err(err) if attempt < MAX_READ_LINE_ATTEMPTS => {
+                    attempt += 1;
+                    tracing::debug!(
+                        target: trace_categories::INPUT,
+                        "reedline read_line failed; retrying (attempt {attempt}/{MAX_READ_LINE_ATTEMPTS}): {err}"
+                    );
+                }
+                Err(err) => return Err(ShellError::InputError(err)),
             }
-        } else {
-            Ok(ReadResult::Eof)
         }
     }
 
