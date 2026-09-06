@@ -1,0 +1,57 @@
+
+============================================================================
+Three-way shell benchmark (interleaved samples, median ± MAD·1.4826)
+samples=15, pinned to cpu96, numa-node=3
+============================================================================
+
+🧪 startup
+         bash:     2.25 ms  (±0.07 ms)
+   anchor-clap:     4.33 ms  (±0.07 ms)
+   abstract-clap:     4.44 ms  (±0.18 ms)
+   vs bash: anchor-clap is 0.52× (+92.7%)
+   vs bash: abstract-clap is 0.51× (+97.8%)
+   pairwise:
+     anchor-clap vs abstract-clap: 1.03× (anchor-clap faster)
+
+🧪 interp-loop
+         bash:   148.46 ms  (±5.08 ms)
+   anchor-clap:   290.01 ms  (±2.14 ms)
+   abstract-clap:   296.16 ms  (±6.52 ms)
+   vs bash: anchor-clap is 0.51× (+95.4%)
+   vs bash: abstract-clap is 0.50× (+99.5%)
+   pairwise:
+     anchor-clap vs abstract-clap: 1.02× (anchor-clap faster)
+
+🧪 wordops
+         bash:   283.80 ms  (±8.80 ms)
+   anchor-clap:   110.38 ms  (±6.75 ms)
+   abstract-clap:   112.90 ms  (±5.24 ms)
+   vs bash: anchor-clap is 2.57× (-61.1%)
+   vs bash: abstract-clap is 2.51× (-60.2%)
+   pairwise:
+     anchor-clap vs abstract-clap: 1.02× (anchor-clap faster)
+
+🧪 config-lint-500
+         bash:    31.37 ms  (±0.40 ms)
+   anchor-clap:   102.72 ms  (±1.50 ms)
+   abstract-clap:   101.57 ms  (±5.96 ms)
+   vs bash: anchor-clap is 0.31× (+227.5%)
+   vs bash: abstract-clap is 0.31× (+223.8%)
+   pairwise:
+     anchor-clap vs abstract-clap: 0.99× (abstract-clap faster)
+
+🧪 deploy-sim
+         bash:    19.67 ms  (±0.85 ms)
+   anchor-clap:    53.85 ms  (±1.02 ms)
+   abstract-clap:    53.91 ms  (±2.17 ms)
+   vs bash: anchor-clap is 0.37× (+173.7%)
+   vs bash: abstract-clap is 0.36× (+174.0%)
+   pairwise:
+     anchor-clap vs abstract-clap: 1.00× (anchor-clap faster)
+
+📊 Peak RSS (VmHWM, KiB):
+               bash     anchor-clap   abstract-clap
+      interp-loop            2752           11776           11840
+          wordops            2752           13440           13568
+   config-lint-500            2752           13248           13312
+       deploy-sim            4480           13568           13632
