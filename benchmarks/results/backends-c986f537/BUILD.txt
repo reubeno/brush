@@ -1,0 +1,6 @@
+Binaries (release, same source commit c986f537):
+  clap:  cargo build --release -p brush-shell
+  bpaf:  cargo build --release -p brush-shell --no-default-features --features basic,reedline,minimal,parser-bpaf
+  usage: cargo build --release -p brush-shell --no-default-features --features basic,reedline,minimal,parser-usage
+Run: benchmarks/three-way.py --numa-node 3 --core 96 --samples 15 (oracle parity checked, byte-identical).
+Binary sizes: clap 6535448, bpaf 6601496, usage 7007208 bytes.
