@@ -118,7 +118,6 @@ impl CommandCommand {
     }
 }
 
-#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
 async fn execute<SE: brush_core::ShellExtensions>(
     command: &CommandCommand,
     context: brush_core::ExecutionContext<'_, SE>,

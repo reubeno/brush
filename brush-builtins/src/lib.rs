@@ -11,8 +11,6 @@
 
 /// Tri-state bpaf parser for a `-x` / `+x` option pair: `None` when absent,
 /// `Some(true)` for `-x`, `Some(false)` for `+x`.
-
-/// Tri-state bpaf parser for a `-x` / `+x` option pair.
 // N.B. Bpaf-specific helpers below are only compiled when the bpaf engine is
 // actually *selected*; bpaf can be enabled while losing selection to usage,
 // which would otherwise leave these helpers dead with `-D warnings`. Each
@@ -59,7 +57,7 @@ macro_rules! tri_state_flag {
 
         impl $struct_name {
             #[allow(dead_code, reason = "engine-side constructor")]
-            pub(crate) fn from_bool(value: Option<bool>) -> Self {
+            pub(crate) const fn from_bool(value: Option<bool>) -> Self {
                 let mut this = Self {
                     enable: false,
                     disable: false,
@@ -307,7 +305,7 @@ macro_rules! minus_or_plus_flag_arg {
 
             /// Constructs the tri-state flag from an engine-parsed value.
             #[allow(dead_code, reason = "used by non-clap engine modules")]
-            pub(crate) fn from_bool(value: Option<bool>) -> Self {
+            pub(crate) const fn from_bool(value: Option<bool>) -> Self {
                 let mut this = Self {
                     _enable: false,
                     _disable: false,

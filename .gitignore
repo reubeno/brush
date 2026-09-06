@@ -2,3 +2,4 @@ target/
 mutants.out*/
 target-clap/
 target-bpaf/
+target-usage/
