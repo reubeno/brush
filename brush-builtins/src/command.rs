@@ -12,7 +12,9 @@ use crate::lookup::{self, Resolved};
 use crate::write_alias_definition;
 
 impl CommandCommand {
-    fn command(&self) -> Option<&str> {
+    // N.B. Named to avoid colliding with the `command` constructor generated
+    // by some engine derives (e.g. `usage::Cli`) on this same type.
+    fn command_word(&self) -> Option<&str> {
         self.command_and_args.first().map(|s| s.as_str())
     }
 
@@ -126,7 +128,7 @@ async fn execute<SE: brush_core::ShellExtensions>(
     }
 
     // Silently exit if no command was provided.
-    let Some(command_name) = command.command() else {
+    let Some(command_name) = command.command_word() else {
         return Ok(ExecutionResult::success());
     };
 

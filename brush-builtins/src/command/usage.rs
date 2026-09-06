@@ -34,7 +34,35 @@ crate::impl_usage_parse!(CommandCommand);
 
 impl FromArgs for CommandCommand {
     fn from_args(words: &[String]) -> Result<Self, ArgsError> {
-        crate::args::UsageArgs::from_words(words)
+        let mut command: Self = crate::args::UsageArgs::from_words(words)?;
+
+        // N.B. bash gives `-v`/`-V` last-wins semantics, but the switches
+        // above only record presence. When both fired, resolve the tie from
+        // the raw option words in order; clustered spellings (e.g. `-vV`)
+        // count left-to-right, matching the parser's option-zone boundary.
+        if command.print_description && command.print_verbose_description {
+            // N.B. words[0] is the command name itself.
+            let args: Vec<String> = words.iter().skip(1).cloned().collect();
+            let (options, _) = crate::args::usage_support::split_option_section(&args, "", &[]);
+
+            let mut last_is_verbose = false;
+            for option in &options {
+                if let Some(group) = option.strip_prefix('-') {
+                    for c in group.chars() {
+                        if c == 'v' {
+                            last_is_verbose = false;
+                        } else if c == 'V' {
+                            last_is_verbose = true;
+                        }
+                    }
+                }
+            }
+
+            command.print_description = !last_is_verbose;
+            command.print_verbose_description = last_is_verbose;
+        }
+
+        Ok(command)
     }
 }
 

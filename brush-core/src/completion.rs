@@ -1,6 +1,5 @@
 //! Implements programmable command completion support.
 
-use clap::ValueEnum;
 use itertools::Itertools;
 use std::{
     borrow::Cow,
