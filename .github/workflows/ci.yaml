@@ -441,6 +441,9 @@ jobs:
 
       - name: Check (baseline toolchain scope)
         if: matrix.rust-version != 'stable'
+        # N.B. Multi-line script with line continuations; run under bash on
+        # all platforms (the default PowerShell on Windows cannot parse it).
+        shell: bash
         run: |
           set -ex
           cargo check --workspace --all-targets
