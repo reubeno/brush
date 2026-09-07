@@ -1,10 +1,13 @@
-use clap::Parser;
+//! The `dirs` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(DirsCommand);
+
+use brush_core::ExecutionResult;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
-
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum DirError {
+pub(super) enum DirError {
     /// Directory stack is empty.
     #[error("directory stack is empty")]
     DirStackEmpty,
@@ -25,77 +28,52 @@ impl From<&DirError> for brush_core::ExecutionExitCode {
 
 impl brush_core::BuiltinError for DirError {}
 
-/// Manage the current directory stack.
-#[derive(Default, Parser)]
-pub(crate) struct DirsCommand {
-    /// Clear the directory stack.
-    #[arg(short = 'c')]
-    clear: bool,
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &DirsCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    if command.clear {
+        context.shell.directory_stack_mut().clear();
+    } else {
+        let dirs = vec![context.shell.working_dir()]
+            .into_iter()
+            .chain(
+                context
+                    .shell
+                    .directory_stack()
+                    .iter()
+                    .rev()
+                    .map(|p| p.as_path()),
+            )
+            .collect::<Vec<_>>();
 
-    /// Don't tilde-shorten paths.
-    #[arg(short = 'l')]
-    tilde_long: bool,
+        let one_per_line = command.print_one_per_line || command.print_one_per_line_with_index;
 
-    /// Print one directory per line instead of all on one line.
-    #[arg(short = 'p')]
-    print_one_per_line: bool,
-
-    /// Print one directory per line with its index.
-    #[arg(short = 'v')]
-    print_one_per_line_with_index: bool,
-    //
-    // TODO(dirs): implement +N and -N
-}
-
-impl builtins::Command for DirsCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.clear {
-            context.shell.directory_stack_mut().clear();
-        } else {
-            let dirs = vec![context.shell.working_dir()]
-                .into_iter()
-                .chain(
-                    context
-                        .shell
-                        .directory_stack()
-                        .iter()
-                        .rev()
-                        .map(|p| p.as_path()),
-                )
-                .collect::<Vec<_>>();
-
-            let one_per_line = self.print_one_per_line || self.print_one_per_line_with_index;
-
-            for (i, dir) in dirs.iter().enumerate() {
-                if !one_per_line && i > 0 {
-                    write!(context.stdout(), " ")?;
-                }
-
-                if self.print_one_per_line_with_index {
-                    write!(context.stdout(), "{i:2}  ")?;
-                }
-
-                let mut dir_str = dir.to_string_lossy().to_string();
-
-                if !self.tilde_long {
-                    dir_str = context.shell.tilde_shorten(dir_str);
-                }
-
-                write!(context.stdout(), "{dir_str}")?;
-
-                if one_per_line || i == dirs.len() - 1 {
-                    writeln!(context.stdout())?;
-                }
+        for (i, dir) in dirs.iter().enumerate() {
+            if !one_per_line && i > 0 {
+                write!(context.stdout(), " ")?;
             }
 
-            return Ok(ExecutionResult::success());
+            if command.print_one_per_line_with_index {
+                write!(context.stdout(), "{i:2}  ")?;
+            }
+
+            let mut dir_str = dir.to_string_lossy().to_string();
+
+            if !command.tilde_long {
+                dir_str = context.shell.tilde_shorten(dir_str);
+            }
+
+            write!(context.stdout(), "{dir_str}")?;
+
+            if one_per_line || i == dirs.len() - 1 {
+                writeln!(context.stdout())?;
+            }
         }
 
-        Ok(ExecutionResult::success())
+        return Ok(ExecutionResult::success());
     }
+
+    Ok(ExecutionResult::success())
 }

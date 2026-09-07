@@ -1,26 +1,19 @@
-use brush_core::{ExecutionExitCode, builtins, trace_categories};
+//! The `unimp` builtin.
 
-use clap::Parser;
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(UnimplementedCommand);
 
-/// (UNIMPLEMENTED COMMAND)
-#[derive(Parser)]
-pub(crate) struct UnimplementedCommand {
-    #[clap(allow_hyphen_values = true)]
-    args: Vec<String>,
-}
+use brush_core::{ExecutionExitCode, trace_categories};
 
-impl builtins::Command for UnimplementedCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        tracing::warn!(target: trace_categories::UNIMPLEMENTED,
-            "unimplemented built-in: {} {}",
-            context.command_name,
-            self.args.join(" ")
-        );
-        Ok(ExecutionExitCode::Unimplemented.into())
-    }
+#[expect(clippy::unused_async, reason = "mirrors async trait contract")]
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &UnimplementedCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    tracing::warn!(target: trace_categories::UNIMPLEMENTED,
+        "unimplemented built-in: {} {}",
+        context.command_name,
+        command.args.join(" ")
+    );
+    Ok(ExecutionExitCode::Unimplemented.into())
 }

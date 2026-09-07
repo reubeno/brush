@@ -1,0 +1,77 @@
+
+============================================================================
+Three-way shell benchmark (interleaved samples, median ± MAD·1.4826)
+samples=15, pinned to cpu96, numa-node=3
+============================================================================
+
+🧪 startup
+         bash:     2.41 ms  (±0.05 ms)
+         clap:     4.69 ms  (±0.23 ms)
+         bpaf:     4.70 ms  (±0.24 ms)
+        usage:     4.85 ms  (±0.15 ms)
+   vs bash: clap is 0.51× (+94.3%)
+   vs bash: bpaf is 0.51× (+94.6%)
+   vs bash: usage is 0.50× (+101.0%)
+   pairwise:
+     clap vs bpaf: 1.00× (clap faster)
+     clap vs usage: 1.03× (clap faster)
+     bpaf vs usage: 1.03× (bpaf faster)
+
+🧪 interp-loop
+         bash:   154.36 ms  (±18.08 ms)
+         clap:   284.86 ms  (±2.96 ms)
+         bpaf:   289.66 ms  (±7.85 ms)
+        usage:   233.03 ms  (±13.12 ms)
+   vs bash: clap is 0.54× (+84.5%)
+   vs bash: bpaf is 0.53× (+87.7%)
+   vs bash: usage is 0.66× (+51.0%)
+   pairwise:
+     clap vs bpaf: 1.02× (clap faster)
+     clap vs usage: 0.82× (usage faster)
+     bpaf vs usage: 0.80× (usage faster)
+
+🧪 wordops
+         bash:   343.82 ms  (±40.30 ms)
+         clap:   110.76 ms  (±9.75 ms)
+         bpaf:   116.40 ms  (±3.49 ms)
+        usage:   142.48 ms  (±35.28 ms)
+   vs bash: clap is 3.10× (-67.8%)
+   vs bash: bpaf is 2.95× (-66.1%)
+   vs bash: usage is 2.41× (-58.6%)
+   pairwise:
+     clap vs bpaf: 1.05× (clap faster)
+     clap vs usage: 1.29× (clap faster)
+     bpaf vs usage: 1.22× (bpaf faster)
+
+🧪 config-lint-500
+         bash:    25.51 ms  (±2.06 ms)
+         clap:   106.66 ms  (±2.61 ms)
+         bpaf:    78.58 ms  (±1.56 ms)
+        usage:    62.17 ms  (±13.40 ms)
+   vs bash: clap is 0.24× (+318.1%)
+   vs bash: bpaf is 0.32× (+208.0%)
+   vs bash: usage is 0.41× (+143.7%)
+   pairwise:
+     clap vs bpaf: 0.74× (bpaf faster)
+     clap vs usage: 0.58× (usage faster)
+     bpaf vs usage: 0.79× (usage faster)
+
+🧪 deploy-sim
+         bash:    22.36 ms  (±1.25 ms)
+         clap:    55.50 ms  (±2.07 ms)
+         bpaf:    54.38 ms  (±1.32 ms)
+        usage:    54.07 ms  (±3.18 ms)
+   vs bash: clap is 0.40× (+148.2%)
+   vs bash: bpaf is 0.41× (+143.2%)
+   vs bash: usage is 0.41× (+141.8%)
+   pairwise:
+     clap vs bpaf: 0.98× (bpaf faster)
+     clap vs usage: 0.97× (usage faster)
+     bpaf vs usage: 0.99× (usage faster)
+
+📊 Peak RSS (VmHWM, KiB):
+               bash            clap            bpaf           usage
+      interp-loop            2752           11840           11904           12032
+          wordops            2752           13504           13504           13376
+   config-lint-500            2816           13312           13248           13504
+       deploy-sim            4416           13568           13824           14144

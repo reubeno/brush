@@ -1,34 +1,20 @@
-use clap::Parser;
+//! The `command` builtin.
+
+// N.B. Selects the engine-specific argument implementation; see `arg_impl!`.
+arg_impl!(CommandCommand);
+
 use std::io::Write;
 use std::path::PathBuf;
 
-use brush_core::{ExecutionResult, builtins, commands, sys};
+use brush_core::{ExecutionResult, commands, sys};
 
 use crate::lookup::{self, Resolved};
 use crate::write_alias_definition;
 
-/// Directly invokes an external command, without going through typical search order.
-#[derive(Default, Parser)]
-pub(crate) struct CommandCommand {
-    /// Use default PATH value.
-    #[arg(short = 'p')]
-    pub use_default_path: bool,
-
-    /// Display a short description of the command.
-    #[arg(short = 'v', overrides_with = "print_verbose_description")]
-    pub print_description: bool,
-
-    /// Display a more verbose description of the command.
-    #[arg(short = 'V', overrides_with = "print_description")]
-    pub print_verbose_description: bool,
-
-    /// Command and arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    pub command_and_args: Vec<String>,
-}
-
 impl CommandCommand {
-    fn command(&self) -> Option<&str> {
+    // N.B. Named to avoid colliding with the `command` constructor generated
+    // by some engine derives (e.g. `usage::Cli`) on this same type.
+    fn command_word(&self) -> Option<&str> {
         self.command_and_args.first().map(|s| s.as_str())
     }
 
@@ -132,22 +118,18 @@ impl CommandCommand {
     }
 }
 
-impl builtins::Command for CommandCommand {
-    type Error = brush_core::Error;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        if self.print_description || self.print_verbose_description {
-            return self.describe_names(&context);
-        }
-
-        // Silently exit if no command was provided.
-        let Some(command_name) = self.command() else {
-            return Ok(ExecutionResult::success());
-        };
-
-        self.execute_command(context, command_name).await
+async fn execute<SE: brush_core::ShellExtensions>(
+    command: &CommandCommand,
+    context: brush_core::ExecutionContext<'_, SE>,
+) -> Result<ExecutionResult, brush_core::Error> {
+    if command.print_description || command.print_verbose_description {
+        return command.describe_names(&context);
     }
+
+    // Silently exit if no command was provided.
+    let Some(command_name) = command.command_word() else {
+        return Ok(ExecutionResult::success());
+    };
+
+    command.execute_command(context, command_name).await
 }

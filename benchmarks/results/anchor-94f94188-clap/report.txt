@@ -1,0 +1,37 @@
+
+============================================================================
+Three-way shell benchmark (interleaved samples, median ± MAD·1.4826)
+samples=15, pinned to cpu96, numa-node=3
+============================================================================
+
+🧪 startup
+         bash:     2.37 ms  (±0.09 ms)
+   clap-baseline:     4.64 ms  (±0.21 ms)
+   vs bash: clap-baseline is 0.51× (+95.7%)
+
+🧪 interp-loop
+         bash:   151.94 ms  (±7.73 ms)
+   clap-baseline:   287.07 ms  (±4.92 ms)
+   vs bash: clap-baseline is 0.53× (+88.9%)
+
+🧪 wordops
+         bash:   314.89 ms  (±40.37 ms)
+   clap-baseline:   108.78 ms  (±6.47 ms)
+   vs bash: clap-baseline is 2.89× (-65.5%)
+
+🧪 config-lint-500
+         bash:    31.60 ms  (±0.40 ms)
+   clap-baseline:   107.46 ms  (±1.73 ms)
+   vs bash: clap-baseline is 0.29× (+240.1%)
+
+🧪 deploy-sim
+         bash:    19.96 ms  (±1.88 ms)
+   clap-baseline:    53.38 ms  (±1.32 ms)
+   vs bash: clap-baseline is 0.37× (+167.4%)
+
+📊 Peak RSS (VmHWM, KiB):
+               bash   clap-baseline
+      interp-loop            2752           11776
+          wordops            2752           13440
+   config-lint-500            2752           13248
+       deploy-sim            4416           13440
