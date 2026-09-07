@@ -36,6 +36,10 @@ const PROMPT: &str = "brush> ";
 const DSR_QUERY: &str = "\x1b[6n";
 const DSR_REPLY: &str = "\x1b[1;1R";
 
+/// OSC 633 markers bracketing a command: emitted before it runs, and after.
+const COMMAND_STARTED: &str = "\x1b]633;C";
+const COMMAND_FINISHED: &str = "\x1b]633;D";
+
 /// A key bound with `bind -x` must run its command and leave the shell
 /// alive. Regression test for reedline >= 0.48 delivering such keys as
 /// `Signal::HostCommand`, which previously fell through to a fatal
@@ -62,6 +66,77 @@ fn bound_key_runs_command_and_shell_survives() -> anyhow::Result<()> {
     session
         .expect("STILL_42")
         .context("shell did not survive the bound command")?;
+
+    Ok(())
+}
+
+/// `preexec` fires for lines the user typed, not for a command a key binding ran. The
+/// hooks exist to observe what the user is about to run; bash-preexec has the same split,
+/// because a `bind -x` command runs from readline rather than from the command line.
+#[test]
+fn bound_key_command_does_not_fire_preexec() -> anyhow::Result<()> {
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.arg("--enable-zsh-hooks");
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    // The hook counts its dispatches as well as reporting its argument, so a stray dispatch
+    // for the bound command can't hide between the markers below. Markers are split so the
+    // echoed keystrokes of the setup lines can't satisfy the expectations.
+    session.send_line(r#"preexec() { n=$((n+1)); echo "PRE_""EXEC[$1]"; }"#)?;
+    expect_next_prompt(&mut session, 0)?;
+
+    // Dispatch 1, for this line.
+    session.send_line(r#"bind -x '"\C-t": echo BOUND_""FIRED'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+
+    // Ctrl+T. The bound command runs, but nothing was typed, so no dispatch.
+    session.send("\x14")?;
+    session
+        .expect("BOUND_FIRED")
+        .context("bound command did not run")?;
+    expect_next_prompt(&mut session, 0).context("no prompt after bound command")?;
+
+    // Dispatch 2, for this line -- `$n` expands after the hook has already run, so a third
+    // dispatch anywhere would show up here.
+    session.send_line("echo COUNT_$n")?;
+    session
+        .expect("PRE_EXEC[echo COUNT_$n]")
+        .context("preexec did not fire for a typed line")?;
+    session
+        .expect("COUNT_2")
+        .context("preexec fired for something other than the two typed lines")?;
+
+    Ok(())
+}
+
+/// A command a key binding runs is bracketed by the same OSC 633 marker pair as a typed one.
+/// Terminals track commands by that pair, so emitting only the closing marker -- as this path
+/// used to -- leaves one counting a command that never started.
+#[test]
+fn osc_command_markers_stay_paired_for_a_bound_command() -> anyhow::Result<()> {
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.arg("--enable-terminal-integration");
+        // OSC 633 is emitted only for terminals known to understand it.
+        cmd.env("TERM_PROGRAM", "vscode");
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    session.send_line(r#"bind -x '"\C-t": echo BOUND_""FIRED'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+
+    // Ctrl+T. The bound command runs without the user typing a line, but it is still a
+    // command, so it gets both markers around it.
+    session.send("\x14")?;
+    session
+        .expect(COMMAND_STARTED)
+        .context("no command-started marker for the bound command")?;
+    session
+        .expect("BOUND_FIRED")
+        .context("bound command did not run")?;
+    session
+        .expect(COMMAND_FINISHED)
+        .context("no command-finished marker for the bound command")?;
 
     Ok(())
 }
@@ -142,6 +217,12 @@ fn expect_next_prompt(session: &mut ShellSession, mut withhold: usize) -> anyhow
 }
 
 fn start_reedline_session() -> anyhow::Result<ShellSession> {
+    start_reedline_session_with(|_| {})
+}
+
+fn start_reedline_session_with(
+    configure: impl FnOnce(&mut std::process::Command),
+) -> anyhow::Result<ShellSession> {
     let shell_path = assert_cmd::cargo::cargo_bin!("brush");
 
     let mut cmd = std::process::Command::new(shell_path);
@@ -155,6 +236,7 @@ fn start_reedline_session() -> anyhow::Result<ShellSession> {
     ]);
     cmd.env("PS1", PROMPT);
     cmd.env("TERM", "xterm-256color");
+    configure(&mut cmd);
 
     let session = expectrl::session::Session::spawn(cmd)?;
 

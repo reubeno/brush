@@ -336,6 +336,16 @@ async fn run_in_shell(
     let read_commands_from_stdin = args.will_read_commands_from_stdin();
     let interactive_options: brush_interactive::InteractiveOptions = ui_options.into();
 
+    // Before config files run, so they (and what they source) observe it -- and only for a
+    // shell that goes on to read commands interactively below, since only such a shell
+    // dispatches hooks.
+    if read_commands_from_stdin {
+        brush_interactive::init_zsh_style_hooks(
+            &mut *shell_ref.lock().await,
+            &interactive_options,
+        )?;
+    }
+
     // Load profile and rc files as appropriate.
     initialize_shell(shell_ref, &args).await?;
 
