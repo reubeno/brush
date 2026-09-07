@@ -46,3 +46,21 @@ cases:
       unset PROMPT_COMMAND
 
       declare -p calls
+
+  # Expanding the prompt runs commands too (command substitutions in PS1), so what it leaves
+  # behind must not be visible to the next command either.
+  - name: "prompt expansion preserves the last argument in $_"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      PS1='$(true PS1-ARG)$ '
+      true USER-ARG
+      echo "UNDERSCORE[$_]"
+
+  - name: "prompt expansion preserves $? and PIPESTATUS"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      PS1='$( (exit 9) | (exit 8) )$ '
+      (exit 4) | (exit 5)
+      echo "AFTER[$?][${PIPESTATUS[*]}]"
