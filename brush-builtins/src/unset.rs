@@ -1,9 +1,8 @@
-use std::borrow::Cow;
 use std::io::Write;
 
 use clap::Parser;
 
-use brush_core::{ExecutionResult, Shell, builtins};
+use brush_core::{ExecutionParameters, ExecutionResult, Shell, builtins, variables::ArrayKind};
 
 /// Unset a variable.
 #[derive(Parser)]
@@ -62,23 +61,72 @@ impl builtins::Command for UnsetCommand {
                 if let Ok(parameter) =
                     brush_parser::word::parse_parameter(name, &context.shell.parser_options())
                 {
-                    let result = match parameter {
+                    // The diagnostic below names the variable, not the operand, so an element's
+                    // base name is kept alongside the outcome.
+                    let (target, removed) = match parameter {
                         brush_parser::word::Parameter::Positional(_) => continue,
                         brush_parser::word::Parameter::Special(_) => continue,
                         brush_parser::word::Parameter::Named(name) => {
-                            context.shell.env_mut().unset(name.as_str())?.is_some()
+                            let removed = context.shell.env_mut().unset(name.as_str());
+                            (name, removed.map(|prev| prev.is_some()))
                         }
                         brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                            unset_array_index(context.shell, name.as_str(), index.as_str())?
+                            let removed = unset_array_element(
+                                context.shell,
+                                &context.params,
+                                name.as_str(),
+                                index.as_str(),
+                            )
+                            .await;
+                            (name, removed)
                         }
+                        // `name[*]` and `name[@]` reach the word parser as their own parameter
+                        // kind, but `unset` reads them as ordinary subscripts.
                         brush_parser::word::Parameter::NamedWithAllIndices {
-                            name: _,
-                            concatenate: _,
-                        } => continue,
+                            name,
+                            concatenate,
+                        } => {
+                            let index = if concatenate { "*" } else { "@" };
+                            let removed = unset_array_element(
+                                context.shell,
+                                &context.params,
+                                name.as_str(),
+                                index,
+                            )
+                            .await;
+                            (name, removed)
+                        }
                     };
 
-                    if result {
-                        continue;
+                    match removed {
+                        Ok(true) => continue,
+                        Ok(false) => (),
+                        // A readonly variable stays, whether the operand named the whole
+                        // variable or one of its elements; the remaining names are still
+                        // processed.
+                        Err(err)
+                            if matches!(err.kind(), brush_core::ErrorKind::ReadonlyVariable) =>
+                        {
+                            writeln!(
+                                context.stderr(),
+                                "{}: {target}: cannot unset: readonly variable",
+                                context.command_name
+                            )?;
+                            result = ExecutionResult::general_error();
+                            continue;
+                        }
+                        // A subscript on something that is not an array fails this name, but
+                        // the remaining names are still processed.
+                        Err(err) if matches!(err.kind(), brush_core::ErrorKind::NotArray) => {
+                            writeln!(
+                                context.stderr(),
+                                "{}: {target}: not an array variable",
+                                context.command_name
+                            )?;
+                            result = ExecutionResult::general_error();
+                            continue;
+                        }
+                        Err(err) => return Err(err),
                     }
                 }
             }
@@ -107,28 +155,48 @@ impl builtins::Command for UnsetCommand {
     }
 }
 
-fn unset_array_index(
+/// Unsets the element a `name[subscript]` operand names. Returns whether anything was removed.
+///
+/// The subscript is resolved the way every other subscript is -- see
+/// [`brush_core::Shell::resolve_array_subscript`] -- with the outcomes a shell reserves for
+/// `unset` layered on top: an empty subscript names nothing, `*` and `@` name every element, and
+/// a variable that is not an array behaves as if it were element 0 of itself.
+async fn unset_array_element(
     shell: &mut Shell<impl brush_core::ShellExtensions>,
+    params: &ExecutionParameters,
     name: &str,
     index: &str,
 ) -> Result<bool, brush_core::Error> {
-    // First check to see if it's an associative array.
-    let is_assoc_array = shell
-        .env()
-        .get(name)
-        .is_some_and(|(_, var)| var.value().is_associative_array());
-
-    // Compute which index we should actually use. For indexed arrays, we need to evaluate
-    // the index string as an arithmetic expression first.
-    let index_to_use: Cow<'_, str> = if is_assoc_array {
-        index.into()
-    } else {
-        // First evaluate the index expression.
-        let index_as_expr = brush_parser::arithmetic::parse(index)?;
-        let evaluated_index = shell.eval_arithmetic(&index_as_expr)?;
-        evaluated_index.to_string().into()
+    let Some((_, var)) = shell.env().get(name) else {
+        return Ok(false);
     };
 
-    // Now we can try to unset, and return the result.
-    shell.env_mut().unset_index(name, index_to_use.as_ref())
+    // An empty subscript names no element at all; a shell ignores it silently, and does so
+    // before it would refuse a readonly variable.
+    if index.is_empty() {
+        return Ok(true);
+    }
+    if var.is_readonly() {
+        return Err(brush_core::ErrorKind::ReadonlyVariable.into());
+    }
+
+    let kind = var.value().array_kind();
+    if matches!(index, "*" | "@") {
+        return shell.env_mut().unset_all_indices(name);
+    }
+
+    let Some(kind) = kind else {
+        // A variable that is not an array still answers a subscript that evaluates to 0: it is
+        // its own element 0, and unsetting that unsets the variable.
+        let index = shell
+            .resolve_array_subscript(params, index, ArrayKind::Indexed)
+            .await?;
+        if index != "0" {
+            return Err(brush_core::ErrorKind::NotArray.into());
+        }
+        return Ok(shell.env_mut().unset(name)?.is_some());
+    };
+
+    let index = shell.resolve_array_subscript(params, index, kind).await?;
+    shell.env_mut().unset_index(name, index.as_str())
 }

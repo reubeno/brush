@@ -259,3 +259,123 @@ cases:
 
       echo "[Checking after unset]"
       type [
+
+  #
+  # A readonly variable refuses to be unset. The failure is reported and fails the builtin's
+  # status, but the remaining names are still processed. The diagnostic is pinned through a
+  # pipeline, where it carries no line prefix.
+  #
+  - name: "unset refuses a readonly variable and continues with the rest"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      readonly zz_ro=1
+      zz_other=2
+      { unset zz_ro zz_other; } 2>&1 | strip
+      unset zz_ro zz_other 2>/dev/null
+      echo "status: $?"
+      declare -p zz_ro
+      declare -p zz_other 2>/dev/null
+      echo "other_status: $?"
+
+  - name: "unset refuses an element of a readonly array"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      # One key only: bash and brush enumerate an associative array in different orders.
+      declare -A zz_m=([k]=1)
+      readonly zz_m
+      { unset 'zz_m[k]'; } 2>&1 | strip
+      unset 'zz_m[k]' 2>/dev/null
+      echo "status: $?"
+      declare -p zz_m
+      declare -a zz_a=(1 2)
+      readonly zz_a
+      { unset 'zz_a[0]'; } 2>&1 | strip
+      unset 'zz_a[0]' 2>/dev/null
+      echo "status: $?"
+      declare -p zz_a
+
+  #
+  # An element operand's subscript is resolved the way every other subscript is: arithmetically
+  # for an indexed array (so a blank one is element 0), literally for an associative one -- after
+  # one round of word expansion in both cases.
+  #
+  - name: "unset resolves an element subscript against the array's kind"
+    stdin: |
+      declare -a zz_a=(1 2 3)
+      i=1
+      unset 'zz_a[i]'
+      declare -p zz_a
+      declare -a zz_b=(1 2 3)
+      unset 'zz_b[1+1]'
+      declare -p zz_b
+      declare -a zz_c=(1 2 3)
+      j=2
+      unset 'zz_c[$j]'
+      declare -p zz_c
+
+  - name: "unset does not evaluate an associative key arithmetically"
+    stdin: |
+      declare -A zz_m
+      zz_m[1+1]=literal
+      zz_m[2]=numeric
+      unset 'zz_m[1+1]'
+      declare -p zz_m
+
+  - name: "unset expands an associative key once"
+    stdin: |
+      declare -A zz_m
+      zz_m[k]=v
+      k=k
+      unset 'zz_m[$k]'
+      declare -p zz_m
+      echo "status: $?"
+
+  #
+  # A subscript no element can have is not an error: an empty one names nothing and is quietly
+  # ignored, while `*` and `@` name every element of an indexed array (clearing it, but leaving it
+  # declared) and -- a shell quirk -- nothing at all in an associative one.
+  #
+  - name: "unset with an empty subscript does nothing"
+    stdin: |
+      declare -a zz_a=(1 2 3)
+      unset 'zz_a[]'
+      echo "status: $?"
+      declare -p zz_a
+      declare -A zz_m=([k]=v)
+      unset 'zz_m[]'
+      echo "status: $?"
+      declare -p zz_m
+
+  - name: "unset with a star or at subscript clears an indexed array"
+    stdin: |
+      declare -a zz_a=(1 2 3)
+      unset 'zz_a[*]'
+      echo "status: $?"
+      declare -p zz_a
+      declare -a zz_b=(1 2 3)
+      unset 'zz_b[@]'
+      echo "status: $?"
+      declare -p zz_b
+
+  - name: "unset with a star or at subscript leaves an associative array alone"
+    stdin: |
+      declare -A zz_m=([k]=v)
+      unset 'zz_m[*]'
+      echo "status: $?"
+      declare -p zz_m
+      unset 'zz_m[@]'
+      echo "status: $?"
+      declare -p zz_m
+
+  - name: "unset refuses every element subscript of a readonly array"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -a zz_a=(1 2)
+      readonly zz_a
+      { unset 'zz_a[*]'; } 2>&1 | strip
+      unset 'zz_a[*]' 2>/dev/null
+      echo "star: $?"
+      { unset 'zz_a[]'; } 2>&1 | strip
+      unset 'zz_a[]' 2>/dev/null
+      echo "empty: $?"
+      declare -p zz_a

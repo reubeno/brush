@@ -63,6 +63,23 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         expansion::expand_assignment(self, params, assignment, target).await
     }
 
+    /// Resolves one array subscript against the kind of the array it names. See
+    /// [`expansion::resolve_array_subscript`].
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - The execution parameters to use during expansion.
+    /// * `index` - The subscript, as written after the operand's own word expansion.
+    /// * `kind` - The target array type controlling subscript expansion.
+    pub async fn resolve_array_subscript(
+        &mut self,
+        params: &ExecutionParameters,
+        index: &str,
+        kind: ArrayKind,
+    ) -> Result<String, error::Error> {
+        expansion::resolve_array_subscript(self, params, index, kind).await
+    }
+
     /// Resolves the subscripts of an assignment whose words were already expanded, leaving its
     /// values untouched. See [`expansion::resolve_assignment_subscripts`].
     ///

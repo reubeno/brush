@@ -571,3 +571,15 @@ cases:
       declare -a "c=([$k]=v)"
       declare -A "o=([$k]=v)"
       declare -p b n c o
+
+  #
+  # An empty subscript in a parameter reference is rejected while the word is parsed, before any
+  # array is consulted.
+  #
+  - name: "An empty subscript is a bad substitution"
+    known_failure: true # TODO: the word parser accepts an empty subscript and treats it as element 0
+    ignore_stderr: true
+    stdin: |
+      zz_a=(1 2 3)
+      echo "[${zz_a[]}]"
+      echo "status: $?"
