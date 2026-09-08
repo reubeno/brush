@@ -122,8 +122,23 @@ pub(crate) struct DeclareCommand {
 #[derive(Clone, Copy)]
 pub(crate) enum DeclareVerb {
     Declare,
+    // `local` and `readonly` are the only builtins declaring with these verbs, so the variants go
+    // away with them.
+    #[cfg_attr(
+        not(feature = "builtin.declare"),
+        allow(dead_code, reason = "constructed only by the `local` builtin")
+    )]
     Local,
+    #[cfg_attr(
+        not(feature = "builtin.declare"),
+        allow(dead_code, reason = "constructed only by the `readonly` builtin")
+    )]
     Readonly,
+    // `export` is the only builtin that declares with this verb, so the variant goes away with it.
+    #[cfg_attr(
+        not(feature = "builtin.export"),
+        allow(dead_code, reason = "constructed only by the `export` builtin")
+    )]
     Export,
 }
 
