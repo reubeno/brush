@@ -73,13 +73,15 @@ mod jobs;
 mod kill;
 #[cfg(feature = "builtin.let")]
 mod let_;
+#[cfg(feature = "builtin.pushd")]
+#[cfg(feature = "builtin.declare")]
+mod local;
 #[cfg(feature = "builtin.mapfile")]
 mod mapfile;
 #[cfg(feature = "builtin.popd")]
 mod popd;
 #[cfg(all(feature = "builtin.printf", any(unix, windows)))]
 mod printf;
-#[cfg(feature = "builtin.pushd")]
 mod pushd;
 #[cfg(feature = "builtin.pwd")]
 mod pwd;

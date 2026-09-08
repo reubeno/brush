@@ -432,15 +432,14 @@ where
 }
 
 impl std::fmt::Display for Error {
+    /// N.B. The kind is also this error's [`std::error::Error::source`], so a consumer that
+    /// walks and prints the whole chain sees the message twice. Nothing in the shell does; every
+    /// diagnostic prints this line alone.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.variable {
             write!(f, "{name}: ")?;
         }
-        if f.alternate() {
-            write!(f, "{:#}", self.kind)
-        } else {
-            write!(f, "{}", self.kind)
-        }
+        write!(f, "{}", self.kind)
     }
 }
 

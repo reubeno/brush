@@ -1341,9 +1341,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                     assignment,
                     &mut context.shell,
                     &params,
-                    false,
-                    None,
-                    EnvironmentScope::Global,
+                    AssignmentTarget::Shell,
                 )
                 .await?;
             }
@@ -1388,9 +1386,7 @@ async fn execute_command<T: Into<String>>(
             assignment,
             guard.shell(),
             &params,
-            true,
-            Some(EnvironmentScope::Command),
-            EnvironmentScope::Command,
+            AssignmentTarget::CommandEnvironment,
         )
         .await?;
     }
@@ -1463,13 +1459,42 @@ async fn expand_words(
     Ok(fields)
 }
 
+/// Where an assignment binds, and how the variable it binds is marked. The interpreter performs
+/// exactly these two kinds of assignment.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum AssignmentTarget {
+    /// An assignment statement (`x=1`): it updates the variable wherever it is in scope, creates
+    /// a global if there is none, and exports only when `set -a` says to.
+    Shell,
+    /// A `name=value` prefix on a command: it lives in the command's own scope, shadowing
+    /// anything of the same name, and is exported to the command for its duration.
+    CommandEnvironment,
+}
+
+impl AssignmentTarget {
+    /// The scope an existing variable must live in for this assignment to update it rather than
+    /// create a new one; `None` updates whichever variable is in scope.
+    const fn required_scope(self) -> Option<EnvironmentScope> {
+        match self {
+            Self::Shell => None,
+            Self::CommandEnvironment => Some(EnvironmentScope::Command),
+        }
+    }
+
+    /// The scope a newly created variable is added to.
+    const fn creation_scope(self) -> EnvironmentScope {
+        match self {
+            Self::Shell => EnvironmentScope::Global,
+            Self::CommandEnvironment => EnvironmentScope::Command,
+        }
+    }
+}
+
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
-    export: bool,
-    required_scope: Option<EnvironmentScope>,
-    creation_scope: EnvironmentScope,
+    target_scope: AssignmentTarget,
 ) -> Result<(), error::Error> {
     // Base names are never expanded, so this stays valid for the expanded assignment below.
     let variable_name = assignment.name.base_name();
@@ -1525,9 +1550,7 @@ async fn apply_assignment(
         array_index,
         new_value,
         append,
-        export,
-        required_scope,
-        creation_scope,
+        target_scope,
     )
     .map_err(as_assignment_error)?;
 
@@ -1535,20 +1558,21 @@ async fn apply_assignment(
     stopped_by.map_or(Ok(()), |err| Err(as_assignment_error(err)))
 }
 
-/// Binds an already-expanded value to a variable, creating the variable if necessary.
-#[expect(clippy::too_many_arguments)]
+/// Binds an already-expanded value to a variable, creating the variable if necessary. Kept
+/// separate from [`apply_assignment`] because binding an existing variable has to return while
+/// the environment is still mutably borrowed.
 fn bind_assignment(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     variable_name: &str,
     array_index: Option<String>,
     new_value: ShellValueLiteral,
     append: bool,
-    mut export: bool,
-    required_scope: Option<EnvironmentScope>,
-    creation_scope: EnvironmentScope,
+    target_scope: AssignmentTarget,
 ) -> Result<(), error::Error> {
     // Read option before taking mutable borrow on env.
     let export_variables_on_modification = shell.options().export_variables_on_modification;
+    let mut export = target_scope == AssignmentTarget::CommandEnvironment;
+    let required_scope = target_scope.required_scope();
 
     // See if we can find an existing value associated with the variable.
     if let Some((existing_value_scope, existing_value)) = shell.env_mut().get_mut(variable_name) {
@@ -1598,7 +1622,9 @@ fn bind_assignment(
         new_var.export();
     }
 
-    shell.env_mut().add(variable_name, new_var, creation_scope)
+    shell
+        .env_mut()
+        .add(variable_name, new_var, target_scope.creation_scope())
 }
 
 #[expect(clippy::too_many_lines)]
