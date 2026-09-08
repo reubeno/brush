@@ -66,6 +66,15 @@ cases:
       echo one
       echo two
 
+  # PS0 is expanded after a command is read and before it runs, and only by an interactive
+  # shell -- so its command substitution has no more business running here than PS1's does.
+  - name: "PS0 expansion in a non-interactive shell reading stdin"
+    args: ["-s"]
+    stdin: |
+      PS0='$(echo PS0-EXPANDED >&2)'
+      echo one
+      echo two
+
   # PROMPT_COMMAND runs between commands, so what it leaves in $?, PIPESTATUS, and $_ must
   # not be visible to the next command.
   - name: "PROMPT_COMMAND preserves the last argument in $_"
