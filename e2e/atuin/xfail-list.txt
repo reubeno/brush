@@ -1,0 +1,11 @@
+# Tests that run but are expected to fail, one pytest test name per line. Each entry needs a comment
+# saying why; the runner reports an entry that starts passing, so a fix cannot land unnoticed.
+# Lines starting with # are comments.
+
+# The Ctrl-R search opens and the selected entry does reach the command line, but Enter does not
+# run it: the screen ends with the recalled `echo needle-in-history` sitting at the prompt, so its
+# output appears once rather than twice. atuin's init also prints `atuin-bind: unknown keymap ''`
+# at startup, but that is not what fails here -- the two sibling tests that open the search and
+# escape out of it both pass. Tracked under the umbrella binding issue,
+# https://github.com/reubeno/brush/issues/380
+test_ctrl_r_search_runs_the_selected_command

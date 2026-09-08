@@ -106,8 +106,9 @@ extend-ignore-re = [
 "hel" = "hel"
 "ba" = "ba"
 
-# This is a specific technical name.
+# These are specific component names.
 "iterm" = "iterm"
+"jod" = "jod"
 
 [profile.release]
 strip = true

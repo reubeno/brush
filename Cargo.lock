@@ -2581,13 +2581,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "junit-parser"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81427d0aab8e54e19351be5c088187e964ddccad4938b48204eb1e9932d972d6"
+dependencies = [
+ "quick-xml 0.42.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "junit-report"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb201fc2964416320139f702d888df6a39685e648f68e3c910a77cfda99ce44d"
 dependencies = [
  "derive-getters",
- "quick-xml",
+ "quick-xml 0.41.0",
  "time",
 ]
 
@@ -3485,6 +3495,15 @@ name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
 ]
@@ -6520,6 +6539,7 @@ dependencies = [
  "clap-markdown",
  "clap_complete",
  "clap_mangen",
+ "junit-parser",
  "libc",
  "num_cpus",
  "pty-process",

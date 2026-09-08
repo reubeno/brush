@@ -1,0 +1,14 @@
+# Tests that run but are expected to fail, one pytest test id per line. Each entry needs a comment
+# saying why; the runner reports an entry that starts passing, so a fix cannot land unnoticed.
+# Lines starting with # are comments.
+
+# ble.sh does not get far enough under brush to emit a section summary for any of its test files.
+test_upstream_file[bash]
+test_upstream_file[main]
+test_upstream_file[util]
+test_upstream_file[canvas]
+test_upstream_file[decode]
+test_upstream_file[edit]
+test_upstream_file[syntax]
+test_upstream_file[complete]
+test_upstream_file[keymap.vi]

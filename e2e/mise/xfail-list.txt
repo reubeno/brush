@@ -1,0 +1,10 @@
+# Tests that run but are expected to fail, one pytest test name per line. Each entry needs a comment
+# saying why; the runner reports an entry that starts passing, so a fix cannot land unnoticed.
+# Lines starting with # are comments.
+
+# mise's status-aware activation uses `export -a`, which brush does not support yet:
+# https://github.com/reubeno/brush/issues/1132
+test_bash_chpwd_hook_tolerates_nounset
+test_bash_prompt_hook_runs_consecutively
+test_bash_deactivate_clears_the_chpwd_hook
+test_bash_activation_skips_only_the_first_prompt_hook
