@@ -142,6 +142,35 @@ fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn dash_s_with_positional_args_is_interactive() -> anyhow::Result<()> {
+    // With `-s`, trailing words are positional parameters and commands still come from
+    // stdin -- so at a terminal the shell is interactive, and `PROMPT_COMMAND` runs.
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.args(["-s", "myarg"]);
+    })?;
+
+    session.expect_prompt()?;
+
+    // N.B. The markers are computed, so the echoed command line can't satisfy the assertion.
+    let output = session.exec_output(r#"echo "FLAGS[${-//[!i]/}] ARG[$1]""#)?;
+    assert!(
+        output.contains("FLAGS[i] ARG[myarg]"),
+        "expected an interactive shell with $1 set; got: {output}"
+    );
+
+    session.exec_output("PROMPT_COMMAND='echo PC-RAN'")?;
+    let output = session.exec_output("echo done")?;
+    assert!(
+        output.contains("PC-RAN"),
+        "PROMPT_COMMAND didn't run: {output}"
+    );
+
+    session.exit()?;
+
+    Ok(())
+}
+
 //
 // Helpers
 //

@@ -3,6 +3,29 @@ common_test_files:
   - path: "script.sh"
     contents: |
       echo \"$0\" \"$1\" \"$2\" \"$@\"
+  # Announces that it ran, so cases can prove a script was *not* executed.
+  - path: "announce.sh"
+    contents: |
+      echo "RAN-SCRIPT count=[$#] one=[$1] two=[$2]"
+      case $- in *i*) echo "interactive";; *) echo "not-interactive";; esac
+      case $- in *s*) echo "stdin-flag";; *) echo "no-stdin-flag";; esac
+  # Consumes stdin, to prove leftover stdin reaches the script as data.
+  - path: "reader.sh"
+    contents: |
+      while IFS= read -r line; do echo "read=[$line]"; done
+  # Only sourced by an *interactive* shell, and only via `--rcfile`. Both effects it has
+  # -- the variable and the alias -- are things a non-interactive shell does not get.
+  - path: "testrc"
+    contents: |
+      # Re-assert the harness's prompt: cases that load this file drop `--norc`, which
+      # lets a system-wide /etc/bash.bashrc (Debian/Ubuntu) clobber the inherited PS1.
+      PS1='test$ '
+      RC_MARKER=loaded
+      alias aliascheck='echo ALIAS-EXPANDED'
+  # Reports whether the rc file reached it, from inside a named script.
+  - path: "rccheck.sh"
+    contents: |
+      echo "RC[$RC_MARKER]"
 
 cases:
   - name: "-c mode arguments without --"
@@ -120,3 +143,246 @@ cases:
     args:
       - "-o"
       - "--"
+
+  #
+  # Where the shell takes its commands from, and what the leftover words become.
+  #
+  # Three sources are possible -- a `-c` string, a named script, or standard input --
+  # and exactly one of `-c`/`-s`/a leading non-option word picks it. Getting that
+  # classification wrong silently changes both which commands run and what `$1`... are,
+  # so every combination below is pinned against bash.
+  #
+
+  - name: "no args reads commands from stdin"
+    stdin: |
+      echo "count=[$#] all=[$@]"
+      case $- in *i*) echo "interactive";; *) echo "not-interactive";; esac
+      case $- in *s*) echo "stdin-flag";; *) echo "no-stdin-flag";; esac
+
+  - name: "-s with no positional args"
+    args: ["-s"]
+    stdin: |
+      echo "count=[$#] all=[$@]"
+      case $- in *s*) echo "stdin-flag";; *) echo "no-stdin-flag";; esac
+
+  - name: "-s with one positional arg"
+    args: ["-s", "myarg"]
+    stdin: |
+      echo "count=[$#] one=[$1] all=[$@]"
+
+  - name: "-s with multiple positional args"
+    args: ["-s", "a", "b", "c"]
+    stdin: |
+      echo "count=[$#] one=[$1] two=[$2] three=[$3] all=[$@] star=[$*]"
+
+  - name: "-s with hyphen-leading positional args"
+    args: ["-s", "a", "-2", "c"]
+    stdin: |
+      echo "count=[$#] one=[$1] two=[$2] three=[$3] all=[$@]"
+
+  # `-s` claims the script slot, so a script named among the trailing words is a
+  # positional parameter and must NOT be executed.
+  - name: "-s does not run a script named among its positional args"
+    args: ["-s", "announce.sh"]
+    stdin: |
+      echo "count=[$#] one=[$1]"
+
+  # ...and $0 stays the shell's own name rather than being taken from the words.
+  - name: "-s leaves $0 alone rather than consuming the first positional"
+    args: ["-s", "myarg"]
+    stdin: |
+      case "$0" in myarg) echo "BAD: \$0 took the positional";; *) echo "OK: \$0 untouched";; esac
+      echo "one=[$1]"
+
+  - name: "-s reports the stdin flag in \\$-"
+    args: ["-s", "myarg"]
+    stdin: |
+      case $- in *s*) echo "stdin-flag";; *) echo "no-stdin-flag";; esac
+
+  # A shell reading commands from a pipe is not interactive, positional args or not.
+  - name: "-s with positional args on a non-terminal is not interactive"
+    args: ["-s", "myarg"]
+    stdin: |
+      case $- in *i*) echo "interactive";; *) echo "not-interactive";; esac
+      echo "one=[$1]"
+
+  # ...but -i forces it, and must not disturb the positional parameters.
+  - name: "-i -s with positional args is interactive"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i", "-s", "myarg"]
+    stdin: |
+      case $- in *i*) echo "interactive";; *) echo "not-interactive";; esac
+      echo "count=[$#] one=[$1]"
+
+  - name: "-si with positional args"
+    ignore_stderr: true
+    args: ["-si", "myarg"]
+    stdin: |
+      case $- in *i*) echo "interactive";; *) echo "not-interactive";; esac
+      echo "count=[$#] one=[$1]"
+
+  - name: "-is with positional args"
+    ignore_stderr: true
+    args: ["-is", "myarg"]
+    stdin: |
+      case $- in *i*) echo "interactive";; *) echo "not-interactive";; esac
+      echo "count=[$#] one=[$1]"
+
+  #
+  # The tty-attached half of the matrix, and the one the piped cases above cannot reach:
+  # with `-s`, commands still come from stdin, so a terminal-attached shell is
+  # *interactive* -- trailing positional args notwithstanding. The `#expect:` directives
+  # are the assertion in these (stdout is too pty-dependent to diff).
+  #
+  # Being interactive is not cosmetic. It is what makes the shell source its rc file and
+  # expand aliases, so those are checked here too rather than taken on faith; the
+  # non-pty cases that follow pin the matching negatives.
+  #
+
+  - name: "-s with positional args is interactive on a terminal"
+    pty: true
+    incompatible_configs: ["sh"]
+    ignore_stdout: true # pty transcripts differ in echo and escape-sequence details
+    ignore_whitespace: true
+    args: ["-s", "myarg"]
+    # N.B. The markers must be *computed*, or the terminal's echo of the typed command
+    # line satisfies the expectation on its own and the case can never fail.
+    stdin: |
+      #expect-prompt
+      echo "FLAGS[${-//[!i]/}] ARG[$1]"
+      #send:Enter
+      #expect:FLAGS[i] ARG[myarg]
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "-s with positional args loads the rc file on a terminal"
+    pty: true
+    incompatible_configs: ["sh"]
+    removed_default_args: ["--norc"] # `--norc` otherwise overrides `--rcfile`
+    ignore_stdout: true
+    ignore_whitespace: true
+    args: ["--rcfile", "testrc", "-s", "myarg"]
+    stdin: |
+      #expect-prompt
+      echo "RC[$RC_MARKER] ARG[$1]"
+      #send:Enter
+      #expect:RC[loaded] ARG[myarg]
+      #expect-prompt
+      aliascheck
+      #send:Enter
+      #expect:ALIAS-EXPANDED
+      #expect-prompt
+      #send:Ctrl+D
+
+  # The negatives, which need no terminal: the same `--rcfile` must be ignored whenever
+  # the shell is not interactive, so the rc variable stays unset and the alias undefined.
+  - name: "the rc file is not loaded when -s reads from a pipe"
+    removed_default_args: ["--norc"]
+    ignore_stderr: true # only the "command not found" wording differs
+    args: ["--rcfile", "testrc", "-s", "myarg"]
+    stdin: |
+      echo "RC[$RC_MARKER] ARG[$1]"
+      aliascheck
+
+  - name: "the rc file is not loaded for a -c command"
+    removed_default_args: ["--norc"]
+    args: ["--rcfile", "testrc", "-c", 'echo "RC[$RC_MARKER]"']
+
+  - name: "the rc file is not loaded for a named script"
+    removed_default_args: ["--norc"]
+    args: ["--rcfile", "testrc", "rccheck.sh"]
+
+  #
+  # A named script wins over stdin: the script runs, and whatever is left on stdin is
+  # data for the script, never commands for the shell.
+  #
+
+  - name: "a named script runs and stdin is not read as commands"
+    args: ["announce.sh", "a", "b"]
+    stdin: |
+      echo STDIN-SHOULD-NOT-RUN
+
+  - name: "-i with a named script still runs the script"
+    ignore_stderr: true
+    args: ["-i", "announce.sh"]
+    stdin: |
+      echo STDIN-SHOULD-NOT-RUN
+
+  - name: "a script sees stdin as data, not commands"
+    args: ["reader.sh"]
+    stdin: |
+      first-line
+      second-line
+
+  #
+  # `-c` wins over everything, including `-s` and a named script.
+  #
+
+  - name: "-c runs its command and stdin is not read as commands"
+    args: ["-c", "echo from-c"]
+    stdin: |
+      echo STDIN-SHOULD-NOT-RUN
+
+  - name: "-s followed by -c runs the -c command"
+    args: ["-s", "-c", "echo from-c"]
+    stdin: |
+      echo STDIN-SHOULD-NOT-RUN
+
+  - name: "-c with -i is interactive but still runs the -c command"
+    ignore_stderr: true
+    args: ["-i", "-c", 'echo from-c; case $- in *i*) echo interactive;; *) echo not-interactive;; esac']
+    stdin: |
+      echo STDIN-SHOULD-NOT-RUN
+
+  #
+  # `--` and `-` as end-of-options markers. brush presently keeps them as ordinary
+  # positional words instead of consuming them, so these are pinned as known failures
+  # -- they document the gap and will flag the day it gets fixed.
+  #
+
+  - name: "-s with -- before positional args"
+    known_failure: true
+    args: ["-s", "--", "myarg"]
+    stdin: |
+      echo "count=[$#] one=[$1] all=[$@]"
+
+  - name: "-s with a lone --"
+    known_failure: true
+    args: ["-s", "--"]
+    stdin: |
+      echo "count=[$#] one=[$1] all=[$@]"
+
+  - name: "-s with a lone -"
+    known_failure: true
+    args: ["-s", "-"]
+    stdin: |
+      echo "count=[$#] one=[$1] all=[$@]"
+
+  - name: "-- before a script path"
+    known_failure: true
+    ignore_stderr: true
+    args: ["--", "announce.sh"]
+
+  - name: "- before a script path"
+    known_failure: true
+    ignore_stderr: true
+    args: ["-", "announce.sh"]
+
+  # After the `-c` command string, every remaining word is a positional parameter --
+  # even one that looks like an option. brush still parses these as options.
+  - name: "-c with an option-like word as $0"
+    known_failure: true
+    args: ["-c", 'echo "0=[$0] 1=[$1]"', "-s"]
+
+  - name: "-c with -i as $0"
+    known_failure: true
+    ignore_stderr: true
+    args: ["-c", 'echo "0=[$0] 1=[$1]"', "-i"]
+
+  # Repeating a boolean option is harmless in bash; brush's parser rejects it.
+  - name: "repeated -s"
+    known_failure: true
+    ignore_stderr: true
+    args: ["-s", "-s"]
+    stdin: |
+      echo "count=[$#] all=[$@]"
