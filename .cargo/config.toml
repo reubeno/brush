@@ -8,3 +8,6 @@ rustflags = ["--cfg", 'getrandom_backend="wasm_js"']
 [target.wasm32-wasip2]
 # Uninteresting flag to ensure this overrides the flags in [build]
 rustflags = ["--cfg", "x"]
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
