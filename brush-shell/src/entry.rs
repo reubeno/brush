@@ -32,7 +32,9 @@ impl CommandLineArgs {
     // TODO(cmdline): We can safely remove this `impl` after the issue is resolved
     // https://github.com/clap-rs/clap/issues/5055
     // This function takes precedence over [`clap::Parser::parse_from`]
-    fn try_parse_from(itr: impl IntoIterator<Item = String>) -> Result<Self, clap::Error> {
+    pub(crate) fn try_parse_from(
+        itr: impl IntoIterator<Item = String>,
+    ) -> Result<Self, clap::Error> {
         let mut args: Vec<String> = itr.into_iter().collect();
 
         // In bash, `-c` treats `--` as an option terminator and takes its
@@ -316,17 +318,6 @@ async fn run_async(
     Ok(exit_code)
 }
 
-/// Determines whether `run_in_shell` will run the shell interactively. Must be sync'd with it.
-const fn will_run_interactively(args: &CommandLineArgs) -> bool {
-    if args.command.is_some() {
-        false
-    } else if args.read_commands_from_stdin {
-        true
-    } else {
-        args.script_args.is_empty()
-    }
-}
-
 /// Runs the shell according to the provided command-line arguments.
 /// Also responsible for loading profiles and rc files as appropriate.
 ///
@@ -342,25 +333,25 @@ async fn run_in_shell(
     input_backend: &mut impl brush_interactive::InputBackend,
     ui_options: &brush_interactive::UIOptions,
 ) -> Result<u8, brush_interactive::ShellError> {
-    // First load profile and rc files as appropriate.
+    let read_commands_from_stdin = args.will_read_commands_from_stdin();
+    let interactive_options: brush_interactive::InteractiveOptions = ui_options.into();
+
+    // Load profile and rc files as appropriate.
     initialize_shell(shell_ref, &args).await?;
 
     // If a command was specified via -c, then run that command and then exit.
     if let Some(command) = args.command {
         shell_ref.lock().await.run_dash_c_command(command).await?;
 
-    // If -s was provided, then read commands from stdin. If there was a script (and optionally
-    // args) passed on the command line via positional arguments, then we copy over the
-    // parameters but do *not* execute it.
-    } else if args.read_commands_from_stdin {
-        let interactive_options = ui_options.into();
+    // Otherwise read commands interactively: -s was given (positional args become parameters;
+    // a script named among them is *not* run), or nothing to run was specified.
+    } else if read_commands_from_stdin {
         brush_interactive::InteractiveShell::new(shell_ref, input_backend, &interactive_options)?
             .run_interactively()
             .await?;
 
-    // If a script path was provided, then run the script.
-    } else if !args.script_args.is_empty() {
-        // The path to a script was provided on the command line; run the script.
+    // Otherwise a script path was given; run it.
+    } else {
         shell_ref
             .lock()
             .await
@@ -368,14 +359,6 @@ async fn run_in_shell(
                 Path::new(&args.script_args[0]),
                 args.script_args.iter().skip(1),
             )
-            .await?;
-
-    // If we got down here, then we don't have any commands to run. We'll be reading
-    // them in from stdin one way or the other.
-    } else {
-        let interactive_options = ui_options.into();
-        brush_interactive::InteractiveShell::new(shell_ref, input_backend, &interactive_options)?
-            .run_interactively()
             .await?;
     }
 
@@ -510,8 +493,7 @@ async fn instantiate_shell_from_args(
 
     // Commands are read from stdin if -s was provided, or if no command was specified (either via
     // -c or as a positional argument).
-    let read_commands_from_stdin = (args.read_commands_from_stdin && args.command.is_none())
-        || (args.script_args.is_empty() && args.command.is_none());
+    let read_commands_from_stdin = args.will_read_commands_from_stdin();
 
     let builtin_set = if args.sh_mode {
         brush_builtins::BuiltinSet::ShMode
@@ -628,7 +610,7 @@ fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {
         // If stdin isn't a terminal, then `reedline` doesn't do the right thing
         // (reference: https://github.com/nushell/reedline/issues/509). Switch to
         // the minimal input backend instead for that scenario.
-        if std::io::stdin().is_terminal() && will_run_interactively(args) {
+        if std::io::stdin().is_terminal() && args.will_read_commands_from_stdin() {
             InputBackendType::Reedline
         } else {
             InputBackendType::Minimal
