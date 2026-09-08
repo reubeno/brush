@@ -308,13 +308,13 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
 /// command's text as it appeared in the source, before any expansion.
 pub(crate) async fn on_preexecute(
     cmd: &mut commands::SimpleCommand<'_, impl extensions::ShellExtensions>,
-    source_text: &str,
+    source_text: String,
 ) -> Result<(), error::Error> {
     // Set BASH_COMMAND before invoking the DEBUG trap (and generally before executing commands).
     // It reports the command as written, not as expanded.
     cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
-        variables::ShellValueLiteral::Scalar(source_text.to_owned()),
+        variables::ShellValueLiteral::Scalar(source_text),
         |_| Ok(()),
         env::EnvironmentLookup::Anywhere,
         env::EnvironmentScope::Global,

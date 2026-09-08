@@ -1131,7 +1131,7 @@ impl Execute for ast::FunctionDefinition {
         let result = match shell.define_func(func_name, self.clone(), &source_info) {
             Ok(()) => ExecutionResult::success(),
             Err(err) if matches!(err.kind(), error::ErrorKind::ReadonlyFunction(_)) => {
-                writeln!(params.stderr(shell), "{}", err.kind())?;
+                writeln!(params.stderr(shell), "{err}")?;
                 ExecutionResult::general_error()
             }
             Err(err) => return Err(err),
@@ -1417,7 +1417,7 @@ async fn execute_command<T: Into<String>>(
     cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
 
     // Run through any pre-execution hooks as best effort.
-    let _ = commands::on_preexecute(&mut cmd, source_text.as_str()).await;
+    let _ = commands::on_preexecute(&mut cmd, source_text).await;
 
     // Execute
     // TODO(jobs): do we need to move self back to foreground on error here?
