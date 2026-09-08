@@ -63,3 +63,15 @@ cases:
       pushd /
       dirs -c
       dirs
+
+  #
+  # DIRSTACK mirrors `dirs`: element 0 is the current directory, so one pushd yields two
+  # elements. brush's dynamic DIRSTACK omits the current directory.
+  #
+  - name: "DIRSTACK includes the current directory"
+    known_failure: true # TODO: the DIRSTACK getter omits the current directory
+    stdin: |
+      cd /usr
+      echo "empty=${#DIRSTACK[@]}"
+      pushd / > /dev/null
+      echo "after_pushd=${#DIRSTACK[@]}"

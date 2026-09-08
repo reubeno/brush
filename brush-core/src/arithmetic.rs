@@ -98,6 +98,11 @@ pub(crate) async fn expand_and_eval(
         .await
         .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
 
+    // An empty or blank expression (`$(( ))`, the subscript of `declare 'a[ ]=1'`) evaluates to 0.
+    if expanded_self.trim().is_empty() {
+        return Ok(0);
+    }
+
     // Now parse.
     let expr = brush_parser::arithmetic::parse(&expanded_self)
         .map_err(|_e| EvalError::ParseError(expanded_self))?;
@@ -213,6 +218,11 @@ fn deref_lvalue(
                 .unwrap_or(Cow::Borrowed(""))
         }
     };
+
+    // An unset or blank variable evaluates to 0.
+    if value_str.trim().is_empty() {
+        return Ok(0);
+    }
 
     let parsed_value = brush_parser::arithmetic::parse(value_str.as_ref())
         .map_err(|_err| EvalError::ParseError(value_str.to_string()))?;

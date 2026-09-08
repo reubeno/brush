@@ -69,6 +69,13 @@ pub struct Registration {
     source_info: crate::SourceInfo,
     /// Whether or not this function definition should be exported to children.
     exported: bool,
+    /// Whether or not this function may be redefined or unset.
+    #[cfg_attr(feature = "serde", serde(default))]
+    readonly: bool,
+    /// Whether or not this function inherits the DEBUG and RETURN traps. The attribute is
+    /// recorded and displayed (`declare -ft`) but not yet honored by trap handling.
+    #[cfg_attr(feature = "serde", serde(default))]
+    traced: bool,
 }
 
 impl From<brush_parser::ast::FunctionDefinition> for Registration {
@@ -77,6 +84,8 @@ impl From<brush_parser::ast::FunctionDefinition> for Registration {
             definition: Arc::new(definition),
             source_info: crate::SourceInfo::default(),
             exported: false,
+            readonly: false,
+            traced: false,
         }
     }
 }
@@ -96,6 +105,8 @@ impl Registration {
             definition: Arc::new(definition),
             source_info: source_info.clone(),
             exported: false,
+            readonly: false,
+            traced: false,
         }
     }
 
@@ -122,5 +133,46 @@ impl Registration {
     /// Returns whether this function is exported.
     pub const fn is_exported(&self) -> bool {
         self.exported
+    }
+
+    /// Marks the function readonly: it can no longer be redefined or unset.
+    pub const fn set_readonly(&mut self) {
+        self.readonly = true;
+    }
+
+    /// Returns whether this function is readonly.
+    pub const fn is_readonly(&self) -> bool {
+        self.readonly
+    }
+
+    /// Enables tracing for the function.
+    pub const fn enable_trace(&mut self) {
+        self.traced = true;
+    }
+
+    /// Disables tracing for the function.
+    pub const fn disable_trace(&mut self) {
+        self.traced = false;
+    }
+
+    /// Returns whether tracing is enabled for this function.
+    pub const fn is_trace_enabled(&self) -> bool {
+        self.traced
+    }
+
+    /// Returns the canonical attribute flag string for this function, as displayed by
+    /// `declare -F`: `f` followed by the attributes the function carries.
+    pub fn attribute_flags(&self) -> String {
+        let mut flags = String::from("f");
+        if self.readonly {
+            flags.push('r');
+        }
+        if self.traced {
+            flags.push('t');
+        }
+        if self.exported {
+            flags.push('x');
+        }
+        flags
     }
 }

@@ -187,41 +187,79 @@ impl ShellVariable {
         self
     }
 
-    /// Converts the variable to an indexed array.
-    pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
-        match self.value() {
-            ShellValue::IndexedArray(_) => Ok(()),
-            ShellValue::AssociativeArray(_) => {
-                Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
+    /// Converts the variable to the given array kind. A readonly variable refuses the request
+    /// outright -- even a re-selection of the kind it already has -- and that refusal takes
+    /// precedence over a kind conflict, as in a shell. Otherwise, selecting the kind the
+    /// variable already has is a no-op and converting between the two array kinds is an error.
+    /// Anything else retypes the variable: a declared-but-unset variable stays
+    /// declared-but-unset with the new kind, and a set scalar becomes an array per the given
+    /// policy.
+    pub fn convert_to_array_kind(
+        &mut self,
+        kind: ArrayKind,
+        scalar_policy: ScalarConversionPolicy,
+    ) -> Result<(), error::Error> {
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
+        match self.value().array_kind() {
+            Some(existing) if existing == kind => Ok(()),
+            Some(_) => Err(match kind {
+                ArrayKind::Indexed => error::ErrorKind::ConvertingAssociativeArrayToIndexedArray,
+                ArrayKind::Associative => {
+                    error::ErrorKind::ConvertingIndexedArrayToAssociativeArray
+                }
             }
-            _ => {
-                let mut new_values = BTreeMap::new();
-                new_values.insert(
-                    0,
-                    self.value.to_cow_str_without_dynamic_support().to_string(),
-                );
-                self.value = ShellValue::IndexedArray(new_values);
+            .into()),
+            None => {
+                self.value = if matches!(self.value, ShellValue::Unset(_)) {
+                    ShellValue::Unset(kind.into())
+                } else {
+                    let promoted =
+                        matches!(scalar_policy, ScalarConversionPolicy::PromoteToElementZero)
+                            .then(|| self.value.to_cow_str_without_dynamic_support().to_string());
+                    match kind {
+                        ArrayKind::Indexed => {
+                            ShellValue::IndexedArray(promoted.map(|v| (0, v)).into_iter().collect())
+                        }
+                        ArrayKind::Associative => ShellValue::AssociativeArray(
+                            promoted
+                                .map(|v| (String::from("0"), v))
+                                .into_iter()
+                                .collect(),
+                        ),
+                    }
+                };
+
                 Ok(())
             }
         }
     }
 
-    /// Converts the variable to an associative array.
-    pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
-        match self.value() {
-            ShellValue::AssociativeArray(_) => Ok(()),
-            ShellValue::IndexedArray(_) => {
-                Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
+    /// Assigns the given value to the variable, targeting one array element when an
+    /// (already-resolved) subscript is given. Assigning a list to a single element is an error,
+    /// as in a shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The resolved subscript of the element to assign to, if any.
+    /// * `value` - The value to assign.
+    /// * `append` - Whether or not to append the value to the preexisting value.
+    pub fn assign_at(
+        &mut self,
+        index: Option<String>,
+        value: ShellValueLiteral,
+        append: bool,
+    ) -> Result<(), error::Error> {
+        match (index, value) {
+            (Some(index), ShellValueLiteral::Scalar(value)) => {
+                self.assign_at_index(index, value, append)
             }
-            _ => {
-                let mut new_values: BTreeMap<String, String> = BTreeMap::new();
-                new_values.insert(
-                    String::from("0"),
-                    self.value.to_cow_str_without_dynamic_support().to_string(),
-                );
-                self.value = ShellValue::AssociativeArray(new_values);
-                Ok(())
+            (Some(_), ShellValueLiteral::Array(_)) => {
+                Err(error::ErrorKind::AssigningListToArrayMember.into())
             }
+            (None, value) => self.assign(value, append),
         }
     }
 
@@ -261,7 +299,10 @@ impl ShellVariable {
                 // If we're trying to append an array to a string, we first promote the string to be
                 // an array with the string being present at index 0.
                 (ShellValue::String(_), ShellValueLiteral::Array(_)) => {
-                    self.convert_to_indexed_array()?;
+                    self.convert_to_array_kind(
+                        ArrayKind::Indexed,
+                        ScalarConversionPolicy::PromoteToElementZero,
+                    )?;
                 }
                 _ => (),
             }
@@ -380,12 +421,22 @@ impl ShellVariable {
         value: String,
         append: bool,
     ) -> Result<(), error::Error> {
+        // Readonly is enforced here and not only in `assign`, so that every path reaching an
+        // element -- a subscripted assignment, a declaration builtin, arithmetic, or an
+        // assignment expansion -- is blocked, not just whole-variable assignment.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &self.value {
             ShellValue::Unset(_) => {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
             }
             ShellValue::String(_) => {
-                self.convert_to_indexed_array()?;
+                self.convert_to_array_kind(
+                    ArrayKind::Indexed,
+                    ScalarConversionPolicy::PromoteToElementZero,
+                )?;
             }
             _ => (),
         }
@@ -529,6 +580,14 @@ impl ShellVariable {
         }
     }
 
+    /// Replaces a dynamic value with the value it currently resolves to; other values are left
+    /// untouched.
+    pub fn resolve_dynamic(&mut self, shell: &Shell<impl extensions::ShellExtensions>) {
+        if matches!(self.value, ShellValue::Dynamic { .. }) {
+            self.value = self.resolve_value(shell);
+        }
+    }
+
     /// Returns the canonical attribute flag string for this variable.
     pub fn attribute_flags(&self, shell: &Shell<impl extensions::ShellExtensions>) -> String {
         let value = self.resolve_value(shell);
@@ -635,6 +694,34 @@ pub enum ShellValueUnsetType {
     IndexedArray,
 }
 
+/// The kind of an array variable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArrayKind {
+    /// An array indexed by integers.
+    Indexed,
+    /// An array keyed by arbitrary strings.
+    Associative,
+}
+
+impl From<ArrayKind> for ShellValueUnsetType {
+    fn from(kind: ArrayKind) -> Self {
+        match kind {
+            ArrayKind::Indexed => Self::IndexedArray,
+            ArrayKind::Associative => Self::AssociativeArray,
+        }
+    }
+}
+
+/// What happens to a set scalar value when its variable converts to an array kind.
+#[derive(Clone, Copy, Debug)]
+pub enum ScalarConversionPolicy {
+    /// The scalar becomes element 0 of the new array.
+    PromoteToElementZero,
+    /// The scalar is discarded; the variable becomes a set, empty array. This is how a shell
+    /// converts a function-local variable.
+    Discard,
+}
+
 /// A shell value literal; used for assignment.
 #[derive(Clone, Debug)]
 pub enum ShellValueLiteral {
@@ -698,6 +785,22 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
+/// Takes an assignment's value as the literal to assign. The words are used as they are, so the
+/// value must already have been expanded.
+impl From<brush_parser::ast::AssignmentValue> for ShellValueLiteral {
+    fn from(value: brush_parser::ast::AssignmentValue) -> Self {
+        match value {
+            brush_parser::ast::AssignmentValue::Scalar(value) => Self::Scalar(value.value),
+            brush_parser::ast::AssignmentValue::Array(elements) => Self::Array(ArrayLiteral(
+                elements
+                    .into_iter()
+                    .map(|(key, value)| (key.map(|key| key.value), value.value))
+                    .collect(),
+            )),
+        }
+    }
+}
+
 /// An array literal.
 #[derive(Clone, Debug)]
 pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
@@ -712,26 +815,34 @@ pub enum FormatStyle {
 }
 
 impl ShellValue {
+    /// Returns the kind of array this value is, or `None` if it is not an array. A declared but
+    /// unset array still has a kind.
+    pub const fn array_kind(&self) -> Option<ArrayKind> {
+        match self {
+            Self::IndexedArray(_) | Self::Unset(ShellValueUnsetType::IndexedArray) => {
+                Some(ArrayKind::Indexed)
+            }
+            Self::AssociativeArray(_) | Self::Unset(ShellValueUnsetType::AssociativeArray) => {
+                Some(ArrayKind::Associative)
+            }
+            _ => None,
+        }
+    }
+
     /// Returns whether or not the value is an indexed array, including a declared but unset one.
     pub const fn is_indexed_array(&self) -> bool {
-        matches!(
-            self,
-            Self::IndexedArray(_) | Self::Unset(ShellValueUnsetType::IndexedArray)
-        )
+        matches!(self.array_kind(), Some(ArrayKind::Indexed))
     }
 
     /// Returns whether or not the value is an associative array, including a declared but unset
     /// one.
     pub const fn is_associative_array(&self) -> bool {
-        matches!(
-            self,
-            Self::AssociativeArray(_) | Self::Unset(ShellValueUnsetType::AssociativeArray)
-        )
+        matches!(self.array_kind(), Some(ArrayKind::Associative))
     }
 
     /// Returns whether or not the value is an array.
     pub const fn is_array(&self) -> bool {
-        self.is_indexed_array() || self.is_associative_array()
+        self.array_kind().is_some()
     }
 
     /// Returns whether or not the value is set.

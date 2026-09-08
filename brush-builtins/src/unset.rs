@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::io::Write;
 
 use clap::Parser;
 
@@ -51,6 +52,7 @@ impl builtins::Command for UnsetCommand {
         }
 
         let unspecified = self.name_interpretation.unspecified();
+        let mut result = ExecutionResult::success();
 
         #[expect(clippy::needless_continue)]
         for name in &self.names {
@@ -81,15 +83,27 @@ impl builtins::Command for UnsetCommand {
                 }
             }
 
-            // TODO(unset): Deal with readonly functions
             if unspecified || self.name_interpretation.shell_functions {
-                if context.shell.undefine_func(name) {
-                    continue;
+                match context.shell.undefine_func(name) {
+                    Ok(true) => continue,
+                    Ok(false) => (),
+                    // A readonly function stays; the remaining names are still processed.
+                    Err(err)
+                        if matches!(err.kind(), brush_core::ErrorKind::ReadonlyFunction(_)) =>
+                    {
+                        writeln!(
+                            context.stderr(),
+                            "{}: {name}: cannot unset: readonly function",
+                            context.command_name
+                        )?;
+                        result = ExecutionResult::general_error();
+                    }
+                    Err(err) => return Err(err),
                 }
             }
         }
 
-        Ok(ExecutionResult::success())
+        Ok(result)
     }
 }
 

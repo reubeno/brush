@@ -59,10 +59,8 @@ cases:
       echo "target: $target"
 
   - name: "readonly -f marks a function readonly rather than displaying it"
-    # brush routes `readonly -f` through the same display path as `declare -f`, so it prints the
-    # function's definition and never makes it readonly. A shell prints nothing, rejects a later
-    # redefinition, and reports a missing name as "readonly: NAME: not a function".
-    known_failure: true
+    # A shell prints nothing, rejects a later redefinition, and reports a missing name as
+    # "readonly: NAME: not a function".
     ignore_stderr: true
     stdin: |
       g() { echo original; }
@@ -71,3 +69,305 @@ cases:
       g() { echo redefined; }
       g
       readonly -f nosuchfn
+
+  #
+  # Readonly is enforced for assignments that target a single array element, not just for
+  # assignments that replace a whole variable.
+  #
+  - name: "readonly blocks a plain subscripted assignment"
+    ignore_stderr: true
+    stdin: |
+      arr=(one)
+      readonly arr
+      arr[0]=mutated
+      echo "status: $?"
+      declare -p arr
+
+  - name: "readonly blocks a subscripted assignment through declare"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -ar arr=(one)
+      declare 'arr[0]=mutated'
+      echo "status: $?"
+      declare -p arr
+      strip <err.txt; rm err.txt
+
+  - name: "readonly blocks appending to an array element"
+    ignore_stderr: true
+    stdin: |
+      declare -A map=([k]=one)
+      readonly map
+      map[k]+=two
+      echo "status: $?"
+      declare -p map
+
+  - name: "readonly blocks adding a new array element"
+    ignore_stderr: true
+    stdin: |
+      arr=(one)
+      readonly arr
+      arr[5]=added
+      echo "status: $?"
+      declare -p arr
+
+  #
+  # Readonly enforcement reached through paths other than a plain assignment. The element guard
+  # lives in the one place all of these converge, so these cases keep the other callers honest.
+  #
+  - name: "readonly blocks an assignment expansion on an array element"
+    ignore_stderr: true
+    stdin: |
+      declare -a c=(one)
+      readonly c
+      echo "${c[1]:=default}"
+      declare -p c
+
+  - name: "readonly blocks an assignment expansion on a scalar"
+    ignore_stderr: true
+    stdin: |
+      declare u
+      readonly u
+      echo "${u:=default}"
+      echo "after"
+
+  - name: "readonly blocks an arithmetic assignment to an array element"
+    ignore_stderr: true
+    stdin: |
+      a=(one)
+      readonly a
+      (( a[0] = 99 ))
+      echo "status: $?"
+      declare -p a
+
+  - name: "readonly blocks an arithmetic assignment to a scalar"
+    ignore_stderr: true
+    stdin: |
+      s=1
+      readonly s
+      (( s = 5 ))
+      echo "status: $?"
+      declare -p s
+
+  - name: "readonly blocks mapfile from replacing an array"
+    ignore_stderr: true
+    stdin: |
+      m=(one)
+      readonly m
+      printf 'x\ny\n' | mapfile -t m
+      echo "status: $?"
+      declare -p m
+
+  #
+  # A subscripted operand is not a valid identifier for readonly: nothing is assigned and
+  # nothing becomes readonly.
+  #
+  - name: "readonly rejects a subscripted operand"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      arr=(1 2)
+      readonly 'arr[0]=v'
+      echo "assign_status=$?"
+      declare -p arr
+      arr[0]=okay
+      echo "write_status=$?"
+      declare -p arr
+      arr2=(1)
+      readonly 'arr2[0]'
+      echo "bare_status=$?"
+      strip <err.txt; rm err.txt
+
+  - name: "readonly does not evaluate the subscript of a rejected operand"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      i=0
+      readonly "arr3[i++]=v" 2>/dev/null
+      echo "assign_status=$? i=$i"
+      readonly "arr4[1/0]=v" 2>/dev/null
+      echo "error_status=$?"
+      readonly "arr5[i++]" 2>/dev/null
+      echo "bare_status=$? i=$i"
+      { readonly "arr3[i++]=v"; readonly "arr4[1/0]=v"; readonly "arr5[i++]"; } 2>&1 | strip
+
+  - name: "a failed readonly assignment inside a pipeline reports its status"
+    known_failure: true # TODO: a readonly assignment failing as a pipeline element reports status 0
+    stdin: |
+      readonly r=1
+      r=2 | cat
+      echo "pipeline: ${PIPESTATUS[0]}"
+
+  #
+  # readonly's -a/-A act only on an operand that assigns a value; on a bare operand they are
+  # ignored outright: a scalar stays a scalar and an associative array stays associative, both
+  # simply becoming readonly with status 0.
+  #
+  - name: "readonly -a on a scalar marks it readonly without conversion"
+    stdin: |
+      e=x
+      readonly -a e
+      echo "status=$?"
+      declare -p e
+
+  - name: "readonly -a on an associative array is a selector not a conversion"
+    ignore_stderr: true
+    stdin: |
+      declare -A m2=([k]=v)
+      readonly -a m2
+      echo "status=$?"
+      declare -p m2
+      m2[k]=w
+      echo "write_status=$?"
+
+  - name: "readonly -a with an assignment converts and types the variable"
+    stdin: |
+      e5=x
+      readonly -a e5=y
+      echo "value_status=$?"
+      declare -p e5
+      readonly -A na=([k]=v)
+      echo "assoc_status=$?"
+      declare -p na
+
+  #
+  # readonly takes only -a, -A, -f, and -p. Any other option is a usage error (status 2) that
+  # touches nothing, and a plus option is taken as an operand and rejected as an invalid
+  # identifier (status 1).
+  #
+  - name: "readonly rejects the options it does not take"
+    stdin: |
+      for opt in -g -i -x -t -l -u -c -F -I; do
+        readonly $opt zz_opt=1 2>/dev/null
+        echo "$opt: $?"
+      done
+      declare -p zz_opt 2>/dev/null
+      echo "declare_status: $?"
+      zz_opt=stillwritable
+      echo "write_status: $?"
+
+  - name: "readonly treats a plus option as an invalid identifier operand"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { readonly +I; readonly +a zz_plus; } 2>&1 | strip
+      readonly +a zz_plus 2>/dev/null
+      echo "status=$?"
+      declare -p zz_plus 2>/dev/null
+      echo "declare_status: $?"
+
+  - name: "readonly -a and -A together with an assignment makes an indexed array"
+    # Given both, a shell lets -a win, whichever order they come in; a bare operand gets neither.
+    stdin: |
+      readonly -aA zz_ra=1
+      echo "status=$?"
+      readonly -Aa zz_rb=2
+      readonly -aA zz_rc
+      declare -p zz_ra zz_rb zz_rc
+
+  - name: "readonly -n is accepted and ignored"
+    known_failure: true # TODO: bash accepts `readonly -n` and assigns a plain scalar; brush rejects the option
+    stdin: |
+      t=1
+      readonly -n r=t
+      echo "status=$?"
+      declare -p r
+
+  - name: "the readonly attribute cannot be removed from a function"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      g() { echo original; }
+      readonly -f g
+      { declare +r -f g; } 2>&1 | strip
+      declare +r -f g 2>/dev/null
+      echo "status: $?"
+      declare -F g
+      g
+
+  - name: "a readonly function cannot be unset"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      g() { echo original; }
+      h() { echo h; }
+      readonly -f g
+      { unset -f g; } 2>&1 | strip
+      unset -f g h 2>/dev/null
+      echo "status: $?"
+      g
+      declare -F h
+      echo "h_status: $?"
+
+  - name: "redefining a readonly function fails without abandoning the list"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      g() { echo original; }
+      readonly -f g
+      { g() { echo redefined; }; } 2>&1 | strip
+      { g() { echo redefined; }; echo "status: $?"; g; } 2>/dev/null
+      declare -pF g
+
+  - name: "a readonly assignment failing inside a function abandons the caller's list"
+    known_failure: true # TODO: the error abandons only the function body, not the list that called it
+    stdin: |
+      readonly z=1
+      g() { z=3; echo "in g after"; }
+      g; echo "caller same list"
+      echo "caller next line"
+
+  - name: "readonly -f with no operands lists readonly functions with their attributes"
+    stdin: |
+      zz_ro() { echo ro; }
+      zz_rw() { echo rw; }
+      readonly -f zz_ro
+      readonly -f
+      echo "[p]"
+      readonly -pf
+
+  #
+  # A conversion failure is a builtin error for a scalar or quoted operand -- reported under the
+  # builtin's name, with the readonly attribute still granted -- but an assignment error for an
+  # unquoted compound operand: reported bare, nothing granted, and the command list abandoned.
+  #
+  - name: "readonly -a conversion failure on a scalar or quoted operand still marks readonly"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -A s=([k]=v) q=([k]=v)
+      { readonly -a s=x; } 2>&1 | strip
+      { readonly -a 'q=(1)'; } 2>&1 | strip
+      echo "status: $?"
+      declare -p s q
+
+  - name: "readonly -a conversion failure on an unquoted compound operand grants nothing"
+    ignore_stderr: true
+    stdin: |
+      declare -A u=([k]=v)
+      readonly -a u=(1); echo "same list"
+      echo "status: $?"
+      declare -p u
+      u[z]=1
+      echo "status: $?"
+      readonly -a b=(1 []=2); echo "same list"
+      echo "status: $?"
+      declare -p b
+      b[5]=x
+      echo "status: $?"
+      declare -p b
+
+  #
+  # `-p` alongside operands is a no-op for readonly and export: the operands are applied as if
+  # `-p` were absent, and nothing is displayed.
+  #
+  - name: "readonly -p and export -p with operands apply them"
+    ignore_stderr: true
+    # stderr carries the failed write's diagnostic, which brush prints through the interpreter's
+    # error display rather than the assignment's own redirection.
+    stdin: |
+      readonly -p zz_rp=1
+      echo "status: $?"
+      declare -p zz_rp
+      zz_rp=2 2>/dev/null
+      echo "write_status: $?"
+      export -p zz_ep=2
+      echo "status: $?"
+      declare -p zz_ep
+      readonly -p zz_rq
+      export -p zz_eq
+      declare -p zz_rq zz_eq

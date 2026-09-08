@@ -1,14 +1,16 @@
 use clap::Parser;
 use itertools::Itertools;
-use std::{io::Write, sync::LazyLock};
+use std::borrow::Cow;
+use std::io::Write;
 
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
+    expansion::ResolvedAssignment,
     parser::ast,
     variables::{
-        self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
-        ShellVariableUpdateTransform,
+        self, ArrayKind, ScalarConversionPolicy, ShellValue, ShellValueLiteral,
+        ShellValueUnsetType, ShellVariable, ShellVariableUpdateTransform,
     },
 };
 
@@ -29,6 +31,11 @@ crate::minus_or_plus_flag_arg!(
 );
 crate::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
 crate::minus_or_plus_flag_arg!(
+    InheritLocalsFlag,
+    'I',
+    "Initialize a new local from the contents and attributes of the variable it shadows."
+);
+crate::minus_or_plus_flag_arg!(
     LowercaseValueOnAssignmentFlag,
     'l',
     "Enable lowercase-on-assignment for the variable."
@@ -48,66 +55,175 @@ crate::minus_or_plus_flag_arg!(
 crate::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "Mark the variable for export.");
 
 /// Display or update variables and their attributes.
-#[derive(Parser)]
+///
+/// `export` and `readonly` are this command with a verb-implied attribute and a subset of its
+/// options; they build one of these from their own command line and run it with
+/// [`DeclareCommand::execute_as`].
+#[derive(Parser, Default)]
 #[clap(override_usage = "declare [OPTIONS] [DECLARATIONS]...")]
 pub(crate) struct DeclareCommand {
     /// Constrain to function names or definitions.
     #[arg(short = 'f')]
-    function_names_or_defs_only: bool,
+    pub(crate) function_names_or_defs_only: bool,
 
     /// Constrain to function names only.
     #[arg(short = 'F')]
-    function_names_only: bool,
+    pub(crate) function_names_only: bool,
 
     /// Create global variable, if applicable.
     #[arg(short = 'g')]
-    create_global: bool,
+    pub(crate) create_global: bool,
 
     /// When creating a local variable that shadows another variable of the same name,
     /// then initialize it with the contents and attributes of the variable being shadowed.
-    #[arg(short = 'I')]
-    locals_inherit_from_prev_scope: bool,
+    /// As in a shell, `+I` behaves like `-I`.
+    #[clap(flatten)]
+    pub(crate) locals_inherit_from_prev_scope: InheritLocalsFlag,
 
     /// Display each item's attributes and values.
     #[arg(short = 'p')]
-    print: bool,
+    pub(crate) print: bool,
 
     //
     // Attribute options
     #[clap(flatten)] // -a
-    make_indexed_array: MakeIndexedArrayFlag,
+    pub(crate) make_indexed_array: MakeIndexedArrayFlag,
     #[clap(flatten)] // -A
-    make_associative_array: MakeAssociativeArrayFlag,
+    pub(crate) make_associative_array: MakeAssociativeArrayFlag,
     #[clap(flatten)] // -c
-    capitalize_value_on_assignment: CapitalizeValueOnAssignmentFlag,
+    pub(crate) capitalize_value_on_assignment: CapitalizeValueOnAssignmentFlag,
     #[clap(flatten)] // -i
-    make_integer: MakeIntegerFlag,
+    pub(crate) make_integer: MakeIntegerFlag,
     #[clap(flatten)] // -l
-    lowercase_value_on_assignment: LowercaseValueOnAssignmentFlag,
+    pub(crate) lowercase_value_on_assignment: LowercaseValueOnAssignmentFlag,
     #[clap(flatten)] // -n
-    make_nameref: MakeNameRefFlag,
+    pub(crate) make_nameref: MakeNameRefFlag,
     #[clap(flatten)] // -r
-    make_readonly: MakeReadonlyFlag,
+    pub(crate) make_readonly: MakeReadonlyFlag,
     #[clap(flatten)] // -t
-    make_traced: MakeTracedFlag,
+    pub(crate) make_traced: MakeTracedFlag,
     #[clap(flatten)] // -u
-    uppercase_value_on_assignment: UppercaseValueOnAssignmentFlag,
+    pub(crate) uppercase_value_on_assignment: UppercaseValueOnAssignmentFlag,
     #[clap(flatten)] // -x
-    make_exported: MakeExportedFlag,
+    pub(crate) make_exported: MakeExportedFlag,
 
     //
     // Declarations
     //
     // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
     #[clap(skip)]
-    declarations: Vec<brush_core::CommandArg>,
+    pub(crate) declarations: Vec<brush_core::CommandArg>,
 }
 
+/// The builtin a declaration was invoked as. All of them share one implementation; the verb
+/// selects the scope rules, the implied attribute, and the `export`/`readonly` quirks listed on
+/// [`DeclareVerb::is_export_or_readonly`].
 #[derive(Clone, Copy)]
-enum DeclareVerb {
+pub(crate) enum DeclareVerb {
     Declare,
     Local,
     Readonly,
+    Export,
+}
+
+impl DeclareVerb {
+    /// Whether this is `export` or `readonly`. The two differ from `declare` in the same ways:
+    /// they grant one fixed attribute (`-x`, `-r`) rather than taking it from an option; `-a`/`-A`
+    /// apply only to an operand that assigns a value, may be combined, and `-a` wins; a
+    /// subscripted operand is an invalid identifier; `-p` alongside operands is a no-op; each
+    /// assignment performed is echoed as an extra `set -x` line; `-f` reports a missing function;
+    /// and a readonly variable is reported the way a bare assignment reports it, without naming
+    /// the builtin.
+    const fn is_export_or_readonly(self) -> bool {
+        matches!(self, Self::Readonly | Self::Export)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DeclarationScope {
+    lookup: EnvironmentLookup,
+    creation: EnvironmentScope,
+}
+
+/// A declaration whose expansion and structural interpretation are complete.
+struct PreparedDeclaration {
+    /// The variable being declared.
+    name: String,
+    /// The subscript the operand named, if any (present even when nothing is assigned, as in
+    /// `declare arr[5]`), resolved to the element's final index or key.
+    subscript: Option<String>,
+    /// The subscript as the operand wrote it, for diagnostics. Differs from `subscript` only when
+    /// resolution changed it (`a[i+1]` to `a[2]`).
+    written_subscript: Option<String>,
+    /// The value to assign, if any.
+    initial_value: Option<ShellValueLiteral>,
+    /// Whether the operand appended rather than replaced.
+    append: bool,
+    /// Whether the operand is unquoted compound syntax (`name=(...)`). A failure to assign such
+    /// an operand is an assignment error rather than a builtin failure: nothing is granted and
+    /// the command list is abandoned.
+    is_compound_syntax: bool,
+    /// The array kind the target has before this declaration, if it exists and is an array.
+    current_kind: Option<ArrayKind>,
+    /// The array kind the declaration converts its target to, if any. See
+    /// [`DeclareCommand::conversion_kind`].
+    conversion: Option<ArrayKind>,
+    /// An error that stopped this operand short while it was prepared -- a bad subscript on
+    /// its name, or a bad key in its compound value -- raised once what was kept has been
+    /// applied.
+    stopped_by: Option<brush_core::Error>,
+}
+
+impl PreparedDeclaration {
+    /// A declaration that names a variable without assigning to it. Other shapes are built from
+    /// this one with struct update syntax.
+    fn bare(name: &str, subscript: Option<&str>) -> Self {
+        Self {
+            name: name.to_owned(),
+            subscript: subscript.map(str::to_owned),
+            written_subscript: subscript.map(str::to_owned),
+            initial_value: None,
+            append: false,
+            is_compound_syntax: false,
+            current_kind: None,
+            conversion: None,
+            stopped_by: None,
+        }
+    }
+
+    /// A declaration that binds its target as an array without assigning to it, which is how a
+    /// shell binds a target whose subscript turned out to be bad. Appending an empty list makes a
+    /// new variable a set, empty array and promotes a scalar to element 0. A target that is
+    /// already an array needs no binding, and must not get one: appending to a declared-but-unset
+    /// array would fill it out and wrongly leave it set.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The variable being declared.
+    /// * `current_kind` - The array kind the target already has, if it exists and is an array.
+    fn bound_as_array(name: &str, current_kind: Option<ArrayKind>) -> Self {
+        Self {
+            initial_value: current_kind
+                .is_none()
+                .then(|| ShellValueLiteral::Array(variables::ArrayLiteral(vec![]))),
+            append: true,
+            ..Self::bare(name, None)
+        }
+    }
+
+    /// Returns the text `readonly` and `export` echo as an extra `set -x` trace line for this
+    /// declaration: only a scalar assignment to a whole, validly named variable is echoed.
+    fn render_traced_assignment(&self) -> Option<String> {
+        let Some(value @ ShellValueLiteral::Scalar(_)) = &self.initial_value else {
+            return None;
+        };
+        if self.subscript.is_some() || !env::valid_variable_name(self.name.as_str()) {
+            return None;
+        }
+
+        let op = if self.append { "+=" } else { "=" };
+        Some(std::format!("{}{op}{value}", self.name))
+    }
 }
 
 impl builtins::DeclarationCommand for DeclareCommand {
@@ -125,43 +241,127 @@ impl builtins::Command for DeclareCommand {
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        mut context: brush_core::ExecutionContext<'_, SE>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let verb = match context.command_name.as_str() {
-            "local" => DeclareVerb::Local,
-            "readonly" => DeclareVerb::Readonly,
-            _ => DeclareVerb::Declare,
+        // The command name tells `declare`/`typeset` from `local`.
+        let verb = if context.command_name == "local" {
+            DeclareVerb::Local
+        } else {
+            DeclareVerb::Declare
         };
+        self.execute_as(verb, &self.declarations, context).await
+    }
+}
+
+impl DeclareCommand {
+    /// Executes this command as the given declaration builtin.
+    ///
+    /// # Arguments
+    ///
+    /// * `verb` - The builtin performing the declaration.
+    /// * `declarations` - The operands to process. (Taken separately from `self` so a wrapper
+    ///   builtin can lend its own without copying them.)
+    /// * `context` - The execution context.
+    pub(crate) async fn execute_as<SE: brush_core::ShellExtensions>(
+        &self,
+        verb: DeclareVerb,
+        declarations: &[brush_core::CommandArg],
+        mut context: brush_core::ExecutionContext<'_, SE>,
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        if !verb.is_export_or_readonly()
+            && self.make_indexed_array.to_bool() == Some(true)
+            && self.make_associative_array.to_bool() == Some(true)
+        {
+            writeln!(
+                context.stderr(),
+                "{}: -a: invalid option",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::new(2));
+        }
 
         if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
-            writeln!(context.stderr(), "can only be used in a function")?;
+            writeln!(
+                context.stderr(),
+                "{}: can only be used in a function",
+                context.command_name
+            )?;
             return Ok(ExecutionResult::general_error());
         }
 
+        let for_functions = self.function_names_only || self.function_names_or_defs_only;
         let mut result = ExecutionResult::success();
-        if !self.declarations.is_empty() {
-            for declaration in &self.declarations {
-                if self.print && !matches!(verb, DeclareVerb::Readonly) {
-                    if !self.try_display_declaration(&context, declaration, verb)? {
+        if !declarations.is_empty() {
+            // Operands are displayed, applied to functions, or applied to variables. `-p`
+            // selects display and `-f`/`-F` select functions, which are displayed unless an
+            // attribute is being applied to them.
+            let display = self.print && !verb.is_export_or_readonly();
+            if display || for_functions {
+                let applies_function_attributes = for_functions
+                    && (verb.is_export_or_readonly()
+                        || self.make_traced.is_some()
+                        || self.make_exported.is_some()
+                        || self.make_readonly.is_some());
+
+                for declaration in declarations {
+                    // A function cannot be declared by assignment.
+                    if for_functions && matches!(declaration, brush_core::CommandArg::Assignment(_))
+                    {
+                        writeln!(
+                            context.stderr(),
+                            "{}: cannot use `-f' to make functions",
+                            context.command_name
+                        )?;
+                        result = ExecutionResult::general_error();
+                        continue;
+                    }
+
+                    let succeeded = if applies_function_attributes {
+                        self.apply_function_attributes(&mut context, declaration, verb)?
+                    } else {
+                        self.try_display_declaration(&context, declaration, verb)?
+                    };
+                    if !succeeded {
                         result = ExecutionResult::general_error();
                     }
-                } else {
-                    if !self.process_declaration(&mut context, declaration, verb)? {
+                }
+            } else {
+                let scope = self.declaration_scope(&context, verb);
+
+                // Operands are processed in order, each against the environment its
+                // predecessors left behind. An assignment error propagates, so the interpreter
+                // abandons the rest of the command list.
+                for declaration in declarations {
+                    let prepared = self
+                        .prepare_declaration(&mut context, declaration, verb, scope)
+                        .await?;
+
+                    if verb.is_export_or_readonly()
+                        && context.shell.options().print_commands_and_arguments
+                        && let Some(line) = prepared.render_traced_assignment()
+                    {
+                        context.trace_extra_line(line).await;
+                    }
+
+                    if !self.apply_declaration(&mut context, prepared, verb, scope)? {
                         result = ExecutionResult::general_error();
                     }
                 }
             }
         } else {
-            // Display matching declarations from the variable environment.
-            if !self.function_names_only && !self.function_names_or_defs_only {
+            if !for_functions {
                 self.display_matching_env_declarations(&context, verb)?;
             }
 
-            // Do the same for functions.
-            if !matches!(verb, DeclareVerb::Local | DeclareVerb::Readonly)
-                && (!self.print || self.function_names_only || self.function_names_or_defs_only)
+            // Functions are listed under -f/-F, and otherwise only when nothing selected
+            // variables specifically: `-p`, an attribute option, or a verb that implies one.
+            if !matches!(verb, DeclareVerb::Local)
+                && (for_functions
+                    || (!self.print
+                        && !verb.is_export_or_readonly()
+                        && self.attribute_selectors().is_empty()))
             {
-                self.display_matching_functions(&context)?;
+                self.display_matching_functions(&context, verb)?;
             }
         }
 
@@ -170,6 +370,35 @@ impl builtins::Command for DeclareCommand {
 }
 
 impl DeclareCommand {
+    /// Resolves the lookup and creation scopes for this invocation.
+    fn declaration_scope(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        verb: DeclareVerb,
+    ) -> DeclarationScope {
+        let create_local = matches!(verb, DeclareVerb::Local)
+            || (matches!(verb, DeclareVerb::Declare)
+                && context.shell.in_function()
+                && !self.create_global);
+
+        let lookup = if create_local {
+            EnvironmentLookup::OnlyInCurrentLocal
+        } else if self.create_global {
+            EnvironmentLookup::OnlyInGlobal
+        } else {
+            EnvironmentLookup::Anywhere
+        };
+
+        let creation = if create_local {
+            EnvironmentScope::Local
+        } else {
+            EnvironmentScope::Global
+        };
+
+        DeclarationScope { lookup, creation }
+    }
+
+    /// Displays the variable or function named by an operand. Returns `true` if it was found.
     fn try_display_declaration(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -178,8 +407,12 @@ impl DeclareCommand {
     ) -> Result<bool, brush_core::Error> {
         let name = match declaration {
             brush_core::CommandArg::String(s) => s,
-            brush_core::CommandArg::Assignment(_) => {
-                writeln!(context.stderr(), "declare: {declaration}: not found")?;
+            brush_core::CommandArg::Assignment(assignment) => {
+                writeln!(
+                    context.stderr(),
+                    "{}: {assignment}: not found",
+                    context.command_name
+                )?;
                 return Ok(false);
             }
         };
@@ -194,7 +427,11 @@ impl DeclareCommand {
             if let Some(func_registration) = context.shell.funcs().get(name) {
                 if self.function_names_only {
                     if self.print {
-                        writeln!(context.stdout(), "declare -f {name}")?;
+                        writeln!(
+                            context.stdout(),
+                            "declare -{} {name}",
+                            func_registration.attribute_flags()
+                        )?;
                     } else {
                         writeln!(context.stdout(), "{name}")?;
                     }
@@ -203,374 +440,700 @@ impl DeclareCommand {
                 }
                 Ok(true)
             } else {
-                // For some reason, bash does not print an error message in this case.
+                // A shell reports a missing function only through the exit status here.
                 Ok(false)
             }
         } else if let Some(variable) = context.shell.env().get_using_policy(name, lookup) {
-            let mut cs = variable.attribute_flags(context.shell);
-            if cs.is_empty() {
-                cs.push('-');
-            }
-
             let resolved_value = variable.resolve_value(context.shell);
-            let separator_str = if matches!(resolved_value, ShellValue::Unset(_)) {
-                ""
-            } else {
-                "="
-            };
-
-            writeln!(
-                context.stdout(),
-                "declare -{cs} {name}{separator_str}{}",
-                resolved_value.format(variables::FormatStyle::DeclarePrint, context.shell)?
-            )?;
-
+            write_declare_line(context, name, variable, &resolved_value)?;
             Ok(true)
         } else {
-            writeln!(context.stderr(), "declare: {name}: not found")?;
+            // Diagnostics name the builtin as invoked (`local`, `typeset`, ...), even though
+            // displayed declarations always read `declare`.
+            writeln!(
+                context.stderr(),
+                "{}: {name}: not found",
+                context.command_name
+            )?;
             Ok(false)
         }
     }
 
-    /// `declare -f` with attribute flags applies them to the named function rather than
-    /// displaying it (e.g. `declare -ft name`, `declare -fx name`).
+    /// Applies attribute flags to the named function (`declare -ft name`, `readonly -f name`).
+    /// Returns `true` if the function was found.
     fn apply_function_attributes(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
-    ) -> bool {
+        verb: DeclareVerb,
+    ) -> Result<bool, brush_core::Error> {
         let func = match declaration {
             brush_core::CommandArg::String(name) => context.shell.func_mut(name),
             brush_core::CommandArg::Assignment(_) => None,
         };
 
-        // As with display, bash reports failure without printing an error message here.
         let Some(func) = func else {
-            return false;
+            if verb.is_export_or_readonly() {
+                writeln!(
+                    context.stderr(),
+                    "{}: {declaration}: not a function",
+                    context.command_name
+                )?;
+            }
+            return Ok(false);
         };
+
+        if self.make_readonly.to_bool() == Some(false) && func.is_readonly() {
+            writeln!(
+                context.stderr(),
+                "{}: {declaration}: readonly function",
+                context.command_name
+            )?;
+            return Ok(false);
+        }
 
         match self.make_exported.to_bool() {
             Some(true) => func.export(),
             Some(false) => func.unexport(),
             None => (),
         }
+        match self.make_traced.to_bool() {
+            Some(true) => func.enable_trace(),
+            Some(false) => func.disable_trace(),
+            None => (),
+        }
+        if matches!(verb, DeclareVerb::Readonly) || self.make_readonly.to_bool() == Some(true) {
+            func.set_readonly();
+        }
 
-        // TODO(declare): function tracing (-t) isn't tracked; it's accepted silently.
-        true
+        Ok(true)
     }
 
-    fn process_declaration(
+    /// Applies one prepared declaration to the variable environment. Returns `true` on success,
+    /// or `false` for a failure that affects the exit status without stopping the remaining
+    /// operands.
+    fn apply_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        declaration: &brush_core::CommandArg,
+        declaration: PreparedDeclaration,
         verb: DeclareVerb,
+        scope: DeclarationScope,
     ) -> Result<bool, brush_core::Error> {
-        let create_var_local = matches!(verb, DeclareVerb::Local)
-            || (matches!(verb, DeclareVerb::Declare)
-                && context.shell.in_function()
-                && !self.create_global);
-
-        if (self.function_names_or_defs_only || self.function_names_only)
-            && (self.make_traced.to_bool().is_some() || self.make_exported.to_bool().is_some())
-        {
-            return Ok(self.apply_function_attributes(context, declaration));
+        // `+a`/`+A` cannot remove an array attribute, even from a declared-but-unset array.
+        let dropping = match declaration.current_kind {
+            Some(ArrayKind::Indexed) => self.make_indexed_array.to_bool() == Some(false),
+            Some(ArrayKind::Associative) => self.make_associative_array.to_bool() == Some(false),
+            None => false,
+        };
+        if dropping {
+            writeln!(
+                context.stderr(),
+                "{}: {}: cannot destroy array variables in this way",
+                context.command_name,
+                declaration.name,
+            )?;
+            return Ok(false);
         }
-
-        if self.function_names_or_defs_only || self.function_names_only {
-            return self.try_display_declaration(context, declaration, verb);
-        }
-
-        // Extract the variable name and the initial value being assigned (if any).
-        let (name, assigned_index, initial_value, name_is_array, append) =
-            Self::declaration_to_name_and_value(declaration)?;
 
         // Special-case: `local -`
-        if name == "-" && matches!(verb, DeclareVerb::Local) {
+        if declaration.name == "-" && matches!(verb, DeclareVerb::Local) {
             // TODO(local): `local -` allows shadowing the current `set` options (i.e., $-), with
             // subsequent updates getting discarded when the current local scope is popped.
             tracing::warn!("not yet implemented: local -");
             return Ok(true);
         }
 
-        // Make sure it's a valid name.
-        if !env::valid_variable_name(name.as_str()) {
+        if !env::valid_variable_name(declaration.name.as_str()) {
             writeln!(
                 context.stderr(),
-                "{}: {name}: not a valid variable name",
-                context.command_name
+                "{}: `{}': not a valid identifier",
+                context.command_name,
+                declaration.name,
             )?;
             return Ok(false);
         }
 
-        // Figure out where we should look.
-        let lookup = if create_var_local {
-            EnvironmentLookup::OnlyInCurrentLocal
-        } else {
-            EnvironmentLookup::Anywhere
-        };
-
-        // `local -I x[=v]` / `declare -I` (bash 5.0+): the new local inherits
-        // value and attributes from the nearest same-name variable in an
-        // enclosing scope instead of starting unset; `+=` appends to the
-        // inherited value. With no same-name variable anywhere, fall through
-        // to ordinary creation.
-        if self.locals_inherit_from_prev_scope && create_var_local {
-            let inherited = context
-                .shell
-                .env()
-                .get_using_policy(name.as_str(), EnvironmentLookup::Anywhere)
-                .cloned();
-
-            if let Some(mut var) = inherited {
-                self.apply_attributes_before_update(&mut var)?;
-
-                if let Some(initial_value) = initial_value {
-                    var.assign(initial_value, append || assigned_index.is_some())?;
-                }
-
-                if context.shell.options().export_variables_on_modification
-                    && !var.value().is_array()
-                {
-                    var.export();
-                }
-
-                self.apply_attributes_after_update(&mut var, verb)?;
-
-                context
-                    .shell
-                    .env_mut()
-                    .add(name, var, EnvironmentScope::Local)?;
-                return Ok(true);
-            }
+        if verb.is_export_or_readonly()
+            && let Some(subscript) = &declaration.subscript
+        {
+            writeln!(
+                context.stderr(),
+                "{}: `{}[{subscript}]': not a valid identifier",
+                context.command_name,
+                declaration.name,
+            )?;
+            return Ok(false);
         }
 
-        // Look up the variable.
+        // A failure is reported against the variable as written. An assignment error
+        // propagates; any other failure fails just this operand.
+        let name = declaration.name.clone();
+        let subscript = declaration.written_subscript.clone();
+        match self.update_declared_variable(context, declaration, verb, scope) {
+            Ok(()) => Ok(true),
+            Err(err) => {
+                let err = err.for_variable(&name, subscript.as_deref());
+                if err.is_assignment_error() {
+                    Err(err)
+                } else {
+                    self.report_recoverable_error(context, err, verb)
+                }
+            }
+        }
+    }
+
+    /// Reports a recoverable per-operand failure to stderr and returns `Ok(false)`; any other
+    /// error propagates.
+    fn report_recoverable_error(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        err: brush_core::Error,
+        verb: DeclareVerb,
+    ) -> Result<bool, brush_core::Error> {
+        match err.kind() {
+            // Plain `export` and `readonly` report a readonly variable the way a bare assignment
+            // does, without naming the builtin; a bad subscript is always reported bare.
+            ErrorKind::ReadonlyVariable
+                if verb.is_export_or_readonly() && self.requested_array_kind().is_none() =>
+            {
+                writeln!(context.stderr(), "{err}")?;
+            }
+            ErrorKind::BadArraySubscript(_) => writeln!(context.stderr(), "{err}")?,
+            ErrorKind::ReadonlyVariable
+            | ErrorKind::ConvertingIndexedArrayToAssociativeArray
+            | ErrorKind::ConvertingAssociativeArrayToIndexedArray => {
+                writeln!(context.stderr(), "{}: {err}", context.command_name)?;
+            }
+            _ => return Err(err),
+        }
+
+        Ok(false)
+    }
+
+    /// Applies one prepared declaration to the environment, updating the variable it names or
+    /// creating it.
+    fn update_declared_variable(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        declaration: PreparedDeclaration,
+        verb: DeclareVerb,
+        scope: DeclarationScope,
+    ) -> Result<(), brush_core::Error> {
+        // Read before the env borrow below is taken out.
+        let auto_export = context.shell.options().export_variables_on_modification;
+
+        // `local -I` / `declare -I` (bash 5.0+) starts the new local from a copy of the nearest
+        // same-name variable, wherever it lives. The copy is bound first and then updated like
+        // any existing variable, so a kind conflict still leaves the local in place. A readonly
+        // inheritee refuses the declaration outright.
+        let inheritee = self.inheritee(context.shell.env(), &declaration.name, scope);
+        let inherited = if let Some(inheritee) = inheritee {
+            if inheritee.is_readonly() {
+                return Err(ErrorKind::ReadonlyVariable.into());
+            }
+
+            let mut var = inheritee.clone();
+            // Inherit what a dynamic value (DIRSTACK and friends) resolves to, and inherit a
+            // nameref's target string as an ordinary scalar.
+            var.resolve_dynamic(context.shell);
+            var.unset_treat_as_nameref();
+
+            context
+                .shell
+                .env_mut()
+                .add(declaration.name.clone(), var, scope.creation)?;
+            true
+        } else {
+            false
+        };
+
         if let Some(var) = context
             .shell
             .env_mut()
-            .get_mut_using_policy(name.as_str(), lookup)
+            .get_mut_using_policy(declaration.name.as_str(), scope.lookup)
         {
-            if self.make_associative_array.is_some() {
-                var.convert_to_associative_array()?;
-            }
-            if self.make_indexed_array.is_some() {
-                var.convert_to_indexed_array()?;
-            }
-
-            self.apply_attributes_before_update(var)?;
-
-            if let Some(initial_value) = initial_value {
-                // We append for `name+=value`, or if the declaration included
-                // an explicit index.
-                var.assign(initial_value, append || assigned_index.is_some())?;
-            }
-
-            self.apply_attributes_after_update(var, verb)?;
-        } else {
-            let unset_type = if self.make_indexed_array.is_some() {
-                ShellValueUnsetType::IndexedArray
-            } else if self.make_associative_array.is_some() {
-                ShellValueUnsetType::AssociativeArray
-            } else if name_is_array {
-                ShellValueUnsetType::IndexedArray
+            // A shell discards a function-local scalar's value on conversion; only a global
+            // keeps it as element 0.
+            let policy = if matches!(scope.creation, EnvironmentScope::Local) {
+                ScalarConversionPolicy::Discard
             } else {
-                ShellValueUnsetType::Untyped
+                ScalarConversionPolicy::PromoteToElementZero
             };
+            let conversion = declaration.conversion.map(|kind| (kind, policy));
 
-            let mut var = ShellVariable::new(ShellValue::Unset(unset_type));
-
-            self.apply_attributes_before_update(&mut var)?;
-
-            if let Some(initial_value) = initial_value {
-                var.assign(initial_value, append)?;
+            // `set -a` exports a new variable outright, but an existing one only when the
+            // declaration assigns to it.
+            let export = auto_export && (inherited || declaration.initial_value.is_some());
+            self.update_variable(var, declaration, verb, conversion, export)?;
+        } else {
+            // `export -n` removes an attribute; unless it also assigns, it has nothing to create.
+            if matches!(verb, DeclareVerb::Export)
+                && self.make_exported.to_bool() == Some(false)
+                && declaration.initial_value.is_none()
+            {
+                return Ok(());
             }
 
-            if context.shell.options().export_variables_on_modification && !var.value().is_array() {
+            // A local may not shadow a readonly global (a readonly local in an enclosing
+            // function's scope is fine).
+            if matches!(scope.creation, EnvironmentScope::Local)
+                && context
+                    .shell
+                    .env()
+                    .get_using_policy(&declaration.name, EnvironmentLookup::OnlyInGlobal)
+                    .is_some_and(ShellVariable::is_readonly)
+            {
+                return Err(ErrorKind::ReadonlyVariable.into());
+            }
+
+            let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
+            // The value is unset, so the scalar policy is moot.
+            let conversion = declaration
+                .conversion
+                .map(|kind| (kind, ScalarConversionPolicy::Discard));
+
+            // The variable is bound even when assigning to it fails, so a failed element
+            // assignment still leaves it declared with its kind and no value.
+            let name = declaration.name.clone();
+            let updated =
+                self.update_variable(&mut var, declaration, verb, conversion, auto_export);
+            context.shell.env_mut().add(name, var, scope.creation)?;
+            updated?;
+        }
+
+        Ok(())
+    }
+
+    /// The shared tail of a declaration: converts the variable's kind, assigns any value, and
+    /// applies attributes, in the order a shell does.
+    ///
+    /// * The value update comes first: kind conversion, the readonly check, the attributes that
+    ///   shape how a value is assigned, then the value itself.
+    /// * The operand's outcome is that update's, or else the failure recorded while it was
+    ///   prepared (a bad subscript or compound key).
+    /// * A failed outcome for an unquoted compound operand is an assignment error: nothing
+    ///   further is granted, and the error propagates.
+    /// * Otherwise the verb's own attribute (`export`'s `-x`/`+x`, `readonly`'s) is granted
+    ///   whatever the outcome.
+    /// * Attributes requested by option (`declare -x`, `-r`), and the export `set -a` implies,
+    ///   are granted unless the update itself failed; a bad subscript on the name still grants
+    ///   them (`declare -rx 'b[*]=1'` leaves `b` an empty readonly, exported array). `set -a`
+    ///   never exports an array, outranks an explicit `+x`, but yields to `export -n`.
+    ///
+    /// # Arguments
+    ///
+    /// * `var` - The variable to update.
+    /// * `declaration` - The declaration to apply.
+    /// * `verb` - The builtin performing the declaration.
+    /// * `conversion` - The array kind to convert the variable to first, if any, with the policy
+    ///   for a set scalar value.
+    /// * `auto_export` - Whether `set -a` applies to this update.
+    fn update_variable(
+        &self,
+        var: &mut ShellVariable,
+        mut declaration: PreparedDeclaration,
+        verb: DeclareVerb,
+        conversion: Option<(ArrayKind, ScalarConversionPolicy)>,
+        auto_export: bool,
+    ) -> Result<(), brush_core::Error> {
+        let is_compound_syntax = declaration.is_compound_syntax;
+        let stopped_by = declaration.stopped_by.take();
+        let updated = self.update_value(var, declaration, conversion);
+        let value_assigned = updated.is_ok();
+        let outcome = updated.and(stopped_by.map_or(Ok(()), Err));
+        if outcome.is_err() && is_compound_syntax {
+            return outcome.map_err(brush_core::Error::into_assignment_error);
+        }
+
+        let implied_export = matches!(verb, DeclareVerb::Export);
+        match verb {
+            DeclareVerb::Export => self.apply_export_flag(var),
+            DeclareVerb::Readonly => {
+                var.set_readonly();
+            }
+            DeclareVerb::Declare | DeclareVerb::Local => (),
+        }
+
+        if value_assigned {
+            if !implied_export {
+                self.apply_export_flag(var);
+            }
+            self.apply_readonly_flag(var)?;
+
+            let auto_export =
+                auto_export && !(implied_export && self.make_exported.to_bool() == Some(false));
+            if auto_export && !var.value().is_array() {
                 var.export();
             }
-
-            self.apply_attributes_after_update(&mut var, verb)?;
-
-            let scope = if create_var_local {
-                EnvironmentScope::Local
-            } else {
-                EnvironmentScope::Global
-            };
-
-            context.shell.env_mut().add(name, var, scope)?;
         }
 
-        Ok(true)
+        outcome
     }
 
-    #[expect(clippy::type_complexity)]
-    fn declaration_to_name_and_value(
+    /// Performs the value half of a declaration: the kind conversion, the option attributes that
+    /// shape how a value is assigned, and the assignment itself. Everything that can refuse the
+    /// update is checked before the variable is touched, so a refused operand leaves no
+    /// attribute behind.
+    fn update_value(
+        &self,
+        var: &mut ShellVariable,
+        declaration: PreparedDeclaration,
+        conversion: Option<(ArrayKind, ScalarConversionPolicy)>,
+    ) -> Result<(), brush_core::Error> {
+        if let Some((kind, policy)) = conversion {
+            var.convert_to_array_kind(kind, policy)?;
+        }
+
+        if var.is_readonly()
+            && (declaration.initial_value.is_some() || self.requests_value_transform())
+        {
+            return Err(ErrorKind::ReadonlyVariable.into());
+        }
+
+        self.apply_value_shaping_attributes(var);
+
+        if let Some(initial_value) = declaration.initial_value {
+            var.assign_at(declaration.subscript, initial_value, declaration.append)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the array kind a declaration converts its target to, if any. An explicit
+    /// `-a`/`-A` always converts (for `export`/`readonly`, only alongside a value). Otherwise an
+    /// operand whose shape implies an array -- a subscripted name or a compound value -- makes
+    /// an indexed array of a target that is not one already.
+    ///
+    /// # Arguments
+    ///
+    /// * `assigns_value` - Whether the operand assigns a value.
+    /// * `implies_array` - Whether the operand's shape implies an array target.
+    /// * `verb` - The builtin performing the declaration.
+    /// * `current` - The array kind the target currently has, if it exists and is an array.
+    fn conversion_kind(
+        &self,
+        assigns_value: bool,
+        implies_array: bool,
+        verb: DeclareVerb,
+        current: Option<ArrayKind>,
+    ) -> Option<ArrayKind> {
+        if verb.is_export_or_readonly() && !assigns_value {
+            return None;
+        }
+
+        self.requested_array_kind()
+            .or_else(|| (current.is_none() && implies_array).then_some(ArrayKind::Indexed))
+    }
+
+    /// Returns the variable a `-I` declaration would start the new local from: the nearest
+    /// same-name variable, wherever it lives. `None` when this invocation did not ask to
+    /// inherit, is not creating a local, or no such variable exists.
+    fn inheritee<'a>(
+        &self,
+        env: &'a env::ShellEnvironment,
+        name: &str,
+        scope: DeclarationScope,
+    ) -> Option<&'a ShellVariable> {
+        if self.locals_inherit_from_prev_scope.is_some()
+            && matches!(scope.creation, EnvironmentScope::Local)
+        {
+            env.get_using_policy(name, EnvironmentLookup::Anywhere)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the current array kind of the variable this declaration will update: the one a
+    /// `-I` declaration inherits, or else one already in the declaration's own scope. `None`
+    /// when no such variable exists or it is not an array. A dynamic value answers with the
+    /// kind of what it resolves to.
+    fn current_target_kind(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        scope: DeclarationScope,
+    ) -> Option<ArrayKind> {
+        let env = context.shell.env();
+        self.inheritee(env, name, scope)
+            .or_else(|| env.get_using_policy(name, scope.lookup))
+            .and_then(|var| match var.value() {
+                ShellValue::Dynamic { .. } => var.resolve_value(context.shell).array_kind(),
+                value => value.array_kind(),
+            })
+    }
+
+    /// Prepares one operand for application: interprets it, decides the array conversion it
+    /// calls for, and resolves its subscripts against the resulting kind.
+    async fn prepare_declaration(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
-    ) -> Result<
-        (
-            String,
-            Option<String>,
-            Option<ShellValueLiteral>,
-            bool,
-            bool,
-        ),
-        brush_core::Error,
-    > {
-        let name;
-        let assigned_index;
-        let initial_value;
-        let name_is_array;
-        let append;
-
-        match declaration {
-            brush_core::CommandArg::String(s) => {
-                // We need to handle the case of someone invoking `declare array[index]`.
-                // In such case, we ignore the index and treat it as a declaration of
-                // the array.
-                #[allow(
-                    clippy::unwrap_in_result,
-                    clippy::unwrap_used,
-                    reason = "regex is valid and should not fail"
-                )]
-                static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
-                    LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
-
-                if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
-                    name = captures
-                        .get(1)
-                        .ok_or_else(|| {
-                            brush_core::ErrorKind::InternalError("declaration parse error".into())
-                        })?
-                        .as_str()
-                        .to_owned();
-
-                    assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
-                    name_is_array = true;
-                } else {
-                    name = s.clone();
-                    assigned_index = None;
-                    name_is_array = false;
-                }
-                initial_value = None;
-                append = false;
-            }
-            brush_core::CommandArg::Assignment(assignment) => {
-                match &assignment.name {
-                    ast::AssignmentName::VariableName(var_name) => {
-                        name = var_name.to_owned();
-                        assigned_index = None;
-                    }
-                    ast::AssignmentName::ArrayElementName(var_name, index) => {
-                        if matches!(assignment.value, ast::AssignmentValue::Array(_)) {
-                            return Err(ErrorKind::AssigningListToArrayMember.into());
-                        }
-
-                        name = var_name.to_owned();
-                        assigned_index = Some(index.to_owned());
-                    }
-                }
-
-                append = assignment.append;
-
-                match &assignment.value {
-                    ast::AssignmentValue::Scalar(s) => {
-                        if let Some(index) = &assigned_index {
-                            initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
-                                Some(index.to_owned()),
-                                s.value.clone(),
-                            )])));
-                            name_is_array = true;
-                        } else {
-                            initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
-                            name_is_array = false;
-                        }
-                    }
-                    ast::AssignmentValue::Array(a) => {
-                        initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
-                            a.iter()
-                                .map(|(i, v)| {
-                                    (i.as_ref().map(|w| w.value.clone()), v.value.clone())
-                                })
-                                .collect(),
-                        )));
-                        name_is_array = true;
-                    }
+        verb: DeclareVerb,
+        scope: DeclarationScope,
+    ) -> Result<PreparedDeclaration, brush_core::Error> {
+        // Assignment syntax wins over a bare name: it is the only interpretation under which
+        // the text after `=` is a value, and checking it first keeps a value that merely ends
+        // in `]` (`x=[a]`) from being mistaken for a subscripted name. Quoting or an expansion
+        // may have hidden it from the parser; the operand as a whole was already expanded, so
+        // such a value is taken verbatim.
+        let assignment = match declaration {
+            brush_core::CommandArg::Assignment(assignment) => Cow::Borrowed(assignment),
+            brush_core::CommandArg::String(operand) => {
+                match brush_parser::word::parse_scalar_assignment(
+                    operand,
+                    &context.shell.parser_options(),
+                ) {
+                    Ok(assignment) => Cow::Owned(assignment),
+                    Err(_) => return Ok(self.prepare_bare_operand(context, operand, verb, scope)),
                 }
             }
+        };
+
+        // Only a parser-recognized compound operand is compound syntax; a quoted one
+        // (`'a=(1 2)'`) is a scalar until reinterpreted below.
+        let is_compound_syntax = matches!(declaration, brush_core::CommandArg::Assignment(_))
+            && matches!(assignment.value, ast::AssignmentValue::Array(_));
+
+        // A rejected subscripted operand (see apply_declaration) is reported as written: its
+        // subscript is never evaluated and its value never assigned.
+        if verb.is_export_or_readonly()
+            && let ast::AssignmentName::ArrayElementName(name, subscript) = &assignment.name
+        {
+            return Ok(PreparedDeclaration {
+                is_compound_syntax,
+                ..PreparedDeclaration::bare(name, Some(subscript))
+            });
         }
 
-        Ok((name, assigned_index, initial_value, name_is_array, append))
+        // Subscripts resolve against the kind the target will have once this declaration has
+        // applied: the kind it converts to, else the kind it already has, else indexed.
+        let name = assignment.name.base_name();
+        let current_kind = self.current_target_kind(context, name, scope);
+        let implies_array = matches!(assignment.name, ast::AssignmentName::ArrayElementName(..))
+            || matches!(assignment.value, ast::AssignmentValue::Array(_));
+        let conversion = self.conversion_kind(true, implies_array, verb, current_kind);
+        let target = conversion.or(current_kind).unwrap_or(ArrayKind::Indexed);
+
+        let name = name.to_owned();
+        let written_subscript = match &assignment.name {
+            ast::AssignmentName::VariableName(_) => None,
+            ast::AssignmentName::ArrayElementName(_, index) => Some(index.clone()),
+        };
+        let resolved = context
+            .shell
+            .resolve_assignment_subscripts(&context.params, assignment.into_owned(), target)
+            .await;
+        let ResolvedAssignment {
+            assignment,
+            stopped_by,
+        } = match resolved {
+            Ok(resolved) => resolved,
+            // A bad subscript on the name: a shell still binds the target as an array (leaving
+            // one that is already an array exactly as it was) and then fails the operand.
+            Err(err) if matches!(err.kind(), ErrorKind::BadArraySubscript(_)) => {
+                return Ok(PreparedDeclaration {
+                    is_compound_syntax,
+                    current_kind,
+                    conversion,
+                    stopped_by: Some(err),
+                    ..PreparedDeclaration::bound_as_array(&name, current_kind)
+                });
+            }
+            Err(err) => return Err(err),
+        };
+
+        // A value that only now looks like compound syntax is reinterpreted. A bad key in it is
+        // only a warning, as in a shell: the value stops short, but the operand succeeds.
+        let assignment = match self
+            .reinterpret_as_compound(context, &assignment, current_kind.is_some(), target)
+            .await?
+        {
+            Some(reinterpreted) => {
+                if let Some(err) = reinterpreted.stopped_by {
+                    writeln!(context.stderr(), "{err}")?;
+                }
+                reinterpreted.assignment
+            }
+            None => assignment,
+        };
+
+        let (name, subscript) = match assignment.name {
+            ast::AssignmentName::VariableName(name) => (name, None),
+            ast::AssignmentName::ArrayElementName(name, index) => (name, Some(index)),
+        };
+        Ok(PreparedDeclaration {
+            name,
+            subscript,
+            written_subscript,
+            initial_value: Some(assignment.value.into()),
+            append: assignment.append,
+            is_compound_syntax,
+            current_kind,
+            conversion,
+            stopped_by,
+        })
     }
 
+    /// Prepares an operand holding no assignment syntax. `declare array[index]` names an array
+    /// without assigning to it; the subscript only marks the operand as an array declaration
+    /// and is never evaluated. An empty subscript, or one followed by more text (`a[1][2]`), is
+    /// left in the name so that it fails as an invalid identifier.
+    fn prepare_bare_operand(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        operand: &str,
+        verb: DeclareVerb,
+        scope: DeclarationScope,
+    ) -> PreparedDeclaration {
+        let (name, subscript) = match operand.strip_suffix(']').and_then(|s| s.split_once('[')) {
+            Some((name, subscript)) if !subscript.is_empty() && !subscript.contains(']') => {
+                (name, Some(subscript))
+            }
+            _ => (operand, None),
+        };
+
+        let current_kind = self.current_target_kind(context, name, scope);
+        PreparedDeclaration {
+            current_kind,
+            conversion: self.conversion_kind(false, subscript.is_some(), verb, current_kind),
+            ..PreparedDeclaration::bare(name, subscript)
+        }
+    }
+
+    /// Returns the array kind this invocation explicitly requested with `-a` or `-A`, if any.
+    /// When both are given (which only `export` and `readonly` allow), `-a` wins.
+    fn requested_array_kind(&self) -> Option<ArrayKind> {
+        if self.make_indexed_array.to_bool() == Some(true) {
+            Some(ArrayKind::Indexed)
+        } else if self.make_associative_array.to_bool() == Some(true) {
+            Some(ArrayKind::Associative)
+        } else {
+            None
+        }
+    }
+
+    /// Reinterprets an expanded assignment's scalar value as a compound array value when the
+    /// requested attributes or the target's existing type call for it. Returns `None` if the
+    /// value should stay scalar.
+    async fn reinterpret_as_compound(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        assignment: &ast::Assignment,
+        target_is_array: bool,
+        target: ArrayKind,
+    ) -> Result<Option<ResolvedAssignment>, brush_core::Error> {
+        // Without an array attribute or an already-array target, the text stays scalar. A
+        // subscripted operand is reinterpreted only under an explicit attribute: an existing
+        // array's element takes the text literally.
+        let subscripted = matches!(assignment.name, ast::AssignmentName::ArrayElementName(..));
+        if self.requested_array_kind().is_none() && (subscripted || !target_is_array) {
+            return Ok(None);
+        }
+
+        // Parser-recognized compound assignments already had their elements expanded.
+        let ast::AssignmentValue::Scalar(value) = &assignment.value else {
+            return Ok(None);
+        };
+
+        let Some(elements) = brush_parser::word::parse_compound_assignment_value(
+            value.value.as_str(),
+            &context.shell.parser_options(),
+        ) else {
+            return Ok(None);
+        };
+
+        // The compound syntax hid the elements from the operand's expansion, so they are
+        // expanded now, exactly once. A compound value cannot target a single element, so the
+        // subscript is dropped and the whole array assigned.
+        let compound = ast::Assignment {
+            name: ast::AssignmentName::VariableName(assignment.name.base_name().to_owned()),
+            value: ast::AssignmentValue::Array(elements),
+            append: assignment.append,
+            loc: assignment.loc.clone(),
+        };
+
+        Ok(Some(
+            context
+                .shell
+                .expand_assignment(&context.params, &compound, target)
+                .await?,
+        ))
+    }
+
+    /// Returns the predicates the attribute options select variables with, one per option given
+    /// in its `-X` form. They apply as a union: `declare -rt` lists variables that are readonly
+    /// *or* traced. A plus option (`+x`) selects nothing, as in a shell.
+    fn attribute_selectors(&self) -> Vec<VariableSelector> {
+        let mut selectors: Vec<VariableSelector> = vec![];
+        if self.make_indexed_array.to_bool() == Some(true) {
+            selectors.push(|v| v.value().is_indexed_array());
+        }
+        if self.make_associative_array.to_bool() == Some(true) {
+            selectors.push(|v| v.value().is_associative_array());
+        }
+        if self.make_integer.to_bool() == Some(true) {
+            selectors.push(|v| v.is_treated_as_integer());
+        }
+        if self.capitalize_value_on_assignment.to_bool() == Some(true) {
+            selectors.push(|v| {
+                matches!(
+                    v.get_update_transform(),
+                    ShellVariableUpdateTransform::Capitalize
+                )
+            });
+        }
+        if self.lowercase_value_on_assignment.to_bool() == Some(true) {
+            selectors.push(|v| {
+                matches!(
+                    v.get_update_transform(),
+                    ShellVariableUpdateTransform::Lowercase
+                )
+            });
+        }
+        if self.make_nameref.to_bool() == Some(true) {
+            selectors.push(|v| v.is_treated_as_nameref());
+        }
+        if self.make_readonly.to_bool() == Some(true) {
+            selectors.push(|v| v.is_readonly());
+        }
+        if self.make_traced.to_bool() == Some(true) {
+            selectors.push(|v| v.is_trace_enabled());
+        }
+        if self.uppercase_value_on_assignment.to_bool() == Some(true) {
+            selectors.push(|v| {
+                matches!(
+                    v.get_update_transform(),
+                    ShellVariableUpdateTransform::Uppercase
+                )
+            });
+        }
+        if self.make_exported.to_bool() == Some(true) {
+            selectors.push(|v| v.is_exported());
+        }
+        selectors
+    }
+
+    /// Displays all variables whose attributes match the requested filters.
     fn display_matching_env_declarations(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         verb: DeclareVerb,
     ) -> Result<(), brush_core::Error> {
-        //
-        // Dump all declarations. Use attribute flags to filter which variables are dumped.
-        //
+        // The verb decides which variables are eligible at all: `readonly` and `export` list
+        // only the variables carrying their attribute. Attribute options then select among them.
+        let eligible = |v: &ShellVariable| {
+            v.is_enumerable()
+                && match verb {
+                    DeclareVerb::Readonly => v.is_readonly(),
+                    DeclareVerb::Export => v.is_exported(),
+                    DeclareVerb::Declare | DeclareVerb::Local => true,
+                }
+        };
+        let selectors = self.attribute_selectors();
 
-        // We start by excluding all variables that are not enumerable.
-        #[expect(clippy::type_complexity)]
-        let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool>> =
-            vec![Box::new(|(_, v)| v.is_enumerable())];
-
-        // Add filters depending on verb.
-        if matches!(verb, DeclareVerb::Readonly) {
-            filters.push(Box::new(|(_, v)| v.is_readonly()));
-        }
-
-        // Add filters depending on attribute flags.
-        if let Some(value) = self.make_indexed_array.to_bool() {
-            filters.push(Box::new(move |(_, v)| {
-                matches!(v.value(), ShellValue::IndexedArray(_)) == value
-            }));
-        }
-        if let Some(value) = self.make_associative_array.to_bool() {
-            filters.push(Box::new(move |(_, v)| {
-                matches!(v.value(), ShellValue::AssociativeArray(_)) == value
-            }));
-        }
-        if let Some(value) = self.make_integer.to_bool() {
-            filters.push(Box::new(move |(_, v)| v.is_treated_as_integer() == value));
-        }
-        if let Some(value) = self.capitalize_value_on_assignment.to_bool() {
-            filters.push(Box::new(move |(_, v)| {
-                matches!(
-                    v.get_update_transform(),
-                    ShellVariableUpdateTransform::Capitalize
-                ) == value
-            }));
-        }
-        if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
-            filters.push(Box::new(move |(_, v)| {
-                matches!(
-                    v.get_update_transform(),
-                    ShellVariableUpdateTransform::Lowercase
-                ) == value
-            }));
-        }
-        if let Some(value) = self.make_nameref.to_bool() {
-            filters.push(Box::new(move |(_, v)| v.is_treated_as_nameref() == value));
-        }
-        if let Some(value) = self.make_readonly.to_bool() {
-            filters.push(Box::new(move |(_, v)| v.is_readonly() == value));
-        }
-        if let Some(value) = self.make_readonly.to_bool() {
-            filters.push(Box::new(move |(_, v)| v.is_trace_enabled() == value));
-        }
-        if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
-            filters.push(Box::new(move |(_, v)| {
-                matches!(
-                    v.get_update_transform(),
-                    ShellVariableUpdateTransform::Uppercase
-                ) == value
-            }));
-        }
-        if let Some(value) = self.make_exported.to_bool() {
-            filters.push(Box::new(move |(_, v)| v.is_exported() == value));
-        }
+        // A shell lists in `declare -p` form whenever an attribute option or an
+        // attribute-implying verb selected the variables, not only under `-p`.
+        let declare_form = self.print || verb.is_export_or_readonly() || !selectors.is_empty();
 
         let iter_policy = if matches!(verb, DeclareVerb::Local) {
             EnvironmentLookup::OnlyInCurrentLocal
@@ -578,34 +1141,17 @@ impl DeclareCommand {
             EnvironmentLookup::Anywhere
         };
 
-        // Iterate through an ordered list of all matching declarations tracked in the
-        // environment.
         for (name, variable) in context
             .shell
             .env()
             .iter_using_policy(iter_policy)
-            .filter(|pair| filters.iter().all(|f| f(*pair)))
+            .filter(|(_, v)| {
+                eligible(v) && (selectors.is_empty() || selectors.iter().any(|f| f(v)))
+            })
             .sorted_by_key(|v| v.0)
         {
-            if self.print {
-                let mut cs = variable.attribute_flags(context.shell);
-                if cs.is_empty() {
-                    cs.push('-');
-                }
-
-                let separator_str = if matches!(variable.value(), ShellValue::Unset(_)) {
-                    ""
-                } else {
-                    "="
-                };
-
-                writeln!(
-                    context.stdout(),
-                    "declare -{cs} {name}{separator_str}{}",
-                    variable
-                        .value()
-                        .format(variables::FormatStyle::DeclarePrint, context.shell)?
-                )?;
+            if declare_form {
+                write_declare_line(context, name, variable, variable.value())?;
             } else {
                 writeln!(
                     context.stdout(),
@@ -620,26 +1166,69 @@ impl DeclareCommand {
         Ok(())
     }
 
+    /// Displays shell functions. An attribute option (`-x`, `-r`, `-t`) or an
+    /// attribute-implying verb lists only the functions carrying one of those attributes, each
+    /// definition followed by its attribute line.
     fn display_matching_functions(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        verb: DeclareVerb,
     ) -> Result<(), brush_core::Error> {
-        for (name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
-            if self.function_names_only {
-                writeln!(context.stdout(), "declare -f {name}")?;
-            } else {
+        use brush_core::functions::Registration;
+
+        let mut selectors: Vec<fn(&Registration) -> bool> = vec![];
+        match verb {
+            DeclareVerb::Export => selectors.push(Registration::is_exported),
+            DeclareVerb::Readonly => selectors.push(Registration::is_readonly),
+            DeclareVerb::Declare | DeclareVerb::Local => (),
+        }
+        if self.make_exported.to_bool() == Some(true) {
+            selectors.push(Registration::is_exported);
+        }
+        if self.make_readonly.to_bool() == Some(true) {
+            selectors.push(Registration::is_readonly);
+        }
+        if self.make_traced.to_bool() == Some(true) {
+            selectors.push(Registration::is_trace_enabled);
+        }
+        let filtered = !selectors.is_empty();
+
+        for (name, registration) in context
+            .shell
+            .funcs()
+            .iter()
+            .filter(|(_, registration)| !filtered || selectors.iter().any(|s| s(registration)))
+            .sorted_by_key(|v| v.0)
+        {
+            if !self.function_names_only {
                 writeln!(context.stdout(), "{}", registration.definition())?;
+            }
+            if self.function_names_only || filtered {
+                writeln!(
+                    context.stdout(),
+                    "declare -{} {name}",
+                    registration.attribute_flags()
+                )?;
             }
         }
 
         Ok(())
     }
 
-    #[expect(clippy::unnecessary_wraps)]
-    const fn apply_attributes_before_update(
-        &self,
-        var: &mut ShellVariable,
-    ) -> Result<(), brush_core::Error> {
+    /// Returns whether an option asks for an attribute that can transform the variable's value:
+    /// the integer and case transforms (added or removed), or becoming a nameref. A readonly
+    /// variable refuses these; `+n` and the pure flags (`-x`/`-t`) stay permitted.
+    fn requests_value_transform(&self) -> bool {
+        self.make_integer.is_some()
+            || self.capitalize_value_on_assignment.is_some()
+            || self.lowercase_value_on_assignment.is_some()
+            || self.uppercase_value_on_assignment.is_some()
+            || self.make_nameref.to_bool() == Some(true)
+    }
+
+    /// Applies the option attributes that shape how a value is assigned, so they go on before
+    /// the value does.
+    const fn apply_value_shaping_attributes(&self, var: &mut ShellVariable) {
         if let Some(value) = self.make_integer.to_bool() {
             if value {
                 var.treat_as_integer();
@@ -691,32 +1280,68 @@ impl DeclareCommand {
                 var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
-        if let Some(value) = self.make_exported.to_bool() {
-            if value {
+    }
+
+    /// Applies the `-x`/`+x` flag, if given.
+    const fn apply_export_flag(&self, var: &mut ShellVariable) {
+        match self.make_exported.to_bool() {
+            Some(true) => {
                 var.export();
-            } else {
+            }
+            Some(false) => {
                 var.unexport();
             }
+            None => (),
         }
-
-        Ok(())
     }
 
-    fn apply_attributes_after_update(
-        &self,
-        var: &mut ShellVariable,
-        verb: DeclareVerb,
-    ) -> Result<(), brush_core::Error> {
-        if matches!(verb, DeclareVerb::Readonly) {
-            var.set_readonly();
-        } else if let Some(value) = self.make_readonly.to_bool() {
-            if value {
+    /// Applies the `-r`/`+r` flag, if given. Errors if readonly status cannot be removed.
+    fn apply_readonly_flag(&self, var: &mut ShellVariable) -> Result<(), brush_core::Error> {
+        match self.make_readonly.to_bool() {
+            Some(true) => {
                 var.set_readonly();
-            } else {
+            }
+            Some(false) => {
                 var.unset_readonly()?;
             }
+            None => (),
         }
 
         Ok(())
     }
+}
+
+/// A predicate selecting variables for display.
+type VariableSelector = fn(&ShellVariable) -> bool;
+
+/// Writes the `declare -<flags> name=value` line that displays a variable.
+///
+/// # Arguments
+///
+/// * `value` - The value to display; a dynamic variable's already resolved, if the caller wants
+///   it shown.
+fn write_declare_line(
+    context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    name: &str,
+    variable: &ShellVariable,
+    value: &ShellValue,
+) -> Result<(), brush_core::Error> {
+    let mut flags = variable.attribute_flags(context.shell);
+    if flags.is_empty() {
+        flags.push('-');
+    }
+
+    let separator = if matches!(value, ShellValue::Unset(_)) {
+        ""
+    } else {
+        "="
+    };
+
+    writeln!(
+        context.stdout(),
+        "declare -{flags} {name}{separator}{}",
+        value.format(variables::FormatStyle::DeclarePrint, context.shell)?
+    )?;
+
+    Ok(())
 }

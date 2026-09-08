@@ -574,34 +574,29 @@ cases:
       declare -p -n 2>/dev/null | sort
 
   - name: "Single-quoted scalar assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'x=hello'
       echo "$x"
 
   - name: "Single-quoted scalar with dollar sign preserved"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare 'x=$Y'
       echo "$x"
 
   - name: "Double-quoted scalar assignment expands"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare "x=$Y"
       echo "$x"
 
   - name: "Single-quoted array assignment with -a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a 'arr=(1 2 3)'
       echo "${arr[@]}"
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment with deferred expansion"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a 'arr=(${X})'
@@ -609,7 +604,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment with IFS splitting"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a,b"
       IFS=, declare -a 'arr=(${X})'
@@ -617,7 +611,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Double-quoted compound assignment with escaped expansion"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a "arr=(\${X})"
@@ -625,7 +618,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Variable-generated compound assignment syntax"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       value='(${X})'
@@ -634,7 +626,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Command-substitution-generated compound assignment syntax"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a "arr=$(printf '(%s)' '${X}')"
@@ -642,7 +633,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted compound value in parsed assignment is reparsed"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a arr='(${X})'
@@ -650,13 +640,11 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment without -a is scalar"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr=(1 2 3)'
       declare -p arr
 
   - name: "Single-quoted array assignment Gentoo rpm.eclass pattern"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       RPM_COMPRESS_TYPE="lzma zstd"
       IFS=, declare -a 'types=(${RPM_COMPRESS_TYPE})'
@@ -664,7 +652,6 @@ cases:
       echo "${#types[@]}"
 
   - name: "local -a single-quoted array assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       f() {
         X="a b"
@@ -674,13 +661,11 @@ cases:
       f
 
   - name: "Single-quoted indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[0]=hello'
       declare -p arr
 
   - name: "Quoted array assignment does not execute value as shell code"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       payload='(x); printf "INJECTED\n"; #'
       declare -a "arr=$payload"
@@ -695,7 +680,6 @@ cases:
       declare -p arr
 
   - name: "Quoted array assignment applies uppercase attribute"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -au 'arr=(ab Cd)'
       declare -p arr
@@ -708,21 +692,18 @@ cases:
       declare -p arr
 
   - name: "Quoted assignment uses existing indexed array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(old)
       declare 'arr=(new values)'
       declare -p arr
 
   - name: "Quoted assignment uses existing associative array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -A map=([old]=value)
       declare 'map=([new]=value [other]=two)'
       declare -p map
 
   - name: "Quoted assignment uses declaration target scope"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(global)
       f() {
@@ -734,7 +715,6 @@ cases:
       declare -p arr
 
   - name: "Quoted global assignment ignores local array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=global
       f() {
@@ -746,7 +726,6 @@ cases:
       declare -p arr
 
   - name: "Quoted local declaration does not inherit global array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(global)
       f() {
@@ -757,61 +736,52 @@ cases:
       declare -p arr
 
   - name: "Single-quoted nonzero indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[5]=hello'
       declare -p arr
 
   - name: "Single-quoted indexed element append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a arr=([0]=one)
       declare 'arr[0]+=two'
       declare -p arr
 
   - name: "Single-quoted associative element append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -A map=([key]=one)
       declare 'map[key]+=two'
       declare -p map
 
   - name: "Single-quoted arithmetic indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[2+2]=value'
       declare -p arr
 
   - name: "Single-quoted variable arithmetic indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare 'arr[index+1]=value'
       declare -p arr
 
   - name: "Single-quoted parameter-expanded indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare 'arr[$index+1]=value'
       declare -p arr
 
   - name: "Single-quoted command-substitution indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare 'arr[$(echo 2)+index]=value'
       declare -p arr
 
   - name: "Single-quoted parameter-expanded associative element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key="space key"
       declare -A 'map[$key]=value'
       declare -p map
 
   - name: "Single-quoted indexed subscript expands without re-expanding value"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=2
       value=expanded
@@ -819,7 +789,6 @@ cases:
       declare -p arr
 
   - name: "Single-quoted associative subscript expands without re-expanding value"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key="space key"
       value=expanded
@@ -827,7 +796,6 @@ cases:
       declare -p map
 
   - name: "Single-quoted append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'text=one'
       declare 'text+=two' 2>/dev/null
@@ -835,14 +803,12 @@ cases:
       declare -p text
 
   - name: "Single-quoted array-like scalar assignment with +a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare +a 'arr=(1 2)'
       echo "status: $?"
       declare -p arr
 
   - name: "Cannot remove indexed array attribute with +a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a arr=(1 2)
       declare +a arr 2>/dev/null
@@ -857,7 +823,6 @@ cases:
       declare -p arr
 
   - name: "Single-quoted associative array assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -A 'map=([alpha]=one [beta]=two)' 2>/dev/null
       echo "status: $?"
@@ -887,7 +852,6 @@ cases:
       f
 
   - name: "Function shadowing declare is reached through command"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare() { echo "shadow declare: [$*]"; }
       command declare cx=1
@@ -910,7 +874,6 @@ cases:
       declare -p arr
 
   - name: "Temporary IFS does split a quoted compound declare operand"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a,b"
       IFS=, declare -a 'arr=(${X})'
@@ -969,14 +932,12 @@ cases:
   # like a subscript.
   #
   - name: "Assignment value ending in a bracket is not a subscripted name"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       v='[a]'
       declare "x=$v"
       declare -p x
 
   - name: "Assignment value containing brackets is preserved"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'a[1]=v[2]'
       declare -p a
@@ -990,7 +951,6 @@ cases:
   # Regression coverage: `+a`/`+A` report why they refuse to remove an array attribute.
   #
   - name: "Removing array attribute reports an error"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -a arr=(1 2)
@@ -999,7 +959,6 @@ cases:
       declare -p arr
 
   - name: "Removing array attribute from a declared but unset array fails"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -a arr
@@ -1008,13 +967,35 @@ cases:
       declare -p arr
 
   - name: "Removing associative array attribute fails"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -A map=([k]=v)
       declare +A map
       echo "status: $?"
       declare -p map
+
+  - name: "Converting a declared but unset array to the other kind fails"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -a arr
+      declare -A arr
+      echo "status: $?"
+      declare -p arr
+      declare -A map
+      declare -a map
+      echo "status: $?"
+      declare -p map
+      strip <err.txt; rm err.txt
+
+  - name: "Redeclaring an unset array with the same kind leaves it unset"
+    stdin: |
+      declare -a arr
+      declare -a arr
+      declare -p arr
+      declare x
+      declare -a x
+      declare -p x
 
   #
   # Regression coverage: subscript expansion for operands that arrive already expanded.
@@ -1031,7 +1012,6 @@ cases:
   # deliberately expands to command-substitution syntax, so a second expansion is visible in the
   # result and the two cases cannot be collapsed without failing.
   - name: "Subscript of a parsed element assignment is expanded a second time"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key='$(echo SECOND)'
       declare -A m
@@ -1045,7 +1025,6 @@ cases:
       declare -p m
 
   - name: "Quoted element subscript is expanded exactly once"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       key='$(echo SECOND)'
       declare -A m
@@ -1053,7 +1032,6 @@ cases:
       declare -p m
 
   - name: "Parsed indexed subscript is arithmetically evaluated"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       index=3
       declare arr[index+1]=v
@@ -1066,15 +1044,12 @@ cases:
       declare -p m
 
   - name: "Compound indexed key is arithmetically evaluated"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a a=([2+2]=v)
       declare -p a
 
   - name: "Compound value assigned to an array element targets the whole array"
-    # A shell drops the subscript and applies the compound assignment to the whole array; brush
-    # stores the compound text as the element's literal value.
-    known_failure: true
+    # A shell drops the subscript and applies the compound assignment to the whole array.
     stdin: |
       declare -a n=(1)
       declare -a 'n[0]=(9 8)'
@@ -1082,19 +1057,17 @@ cases:
       declare -p n
 
   - name: "Empty subscript is rejected"
-    # brush's bare-name array form accepts an empty subscript; a shell rejects it.
-    known_failure: true
     ignore_stderr: true
     stdin: |
-      declare 'b[]'
+      declare 'b[]' 2>/dev/null
       echo "status: $?"
-      declare -p b 2>&1
+      declare -p b 2>/dev/null
+      echo "declare_status: $?"
 
   #
   # Attribute-filtered display.
   #
   - name: "Display filtered by readonly and trace attributes"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -r zzro=1
       declare -t zztr=2
@@ -1105,8 +1078,7 @@ cases:
 
   - name: "Display filtered by several attributes lists any that match"
     # A shell combines attribute filters as a union: `declare -rt` lists variables that are
-    # readonly or traced. brush intersects them, listing only variables that are both.
-    known_failure: true
+    # readonly or traced.
     stdin: |
       declare -r zzro=1
       declare -t zztr=2
@@ -1114,26 +1086,35 @@ cases:
       declare -prt | grep zz | sort
 
   - name: "Display is not filtered by a plus attribute option"
-    # brush treats `+x` as a request for variables lacking the attribute; a shell applies no
-    # filter at all in that case. This affects every attribute, not just the one shown here.
-    known_failure: true
+    # A plus attribute option (`+x`) applies no display filter at all.
     stdin: |
       declare -x zzex=1
       zzplain=2
       declare +x | grep zz | sort
 
   - name: "Combining -a and -A is rejected"
-    # A shell treats `-a` and `-A` together as an invalid option combination. brush accepts it and
-    # lets `-A` win, which lands on the same variable type but without the diagnostic or status.
+    # A shell treats `-a` and `-A` together as an invalid option combination.
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -aA both
+      echo "status: $?"
+      declare -p both 2>/dev/null
+      echo "declare_status: $?"
+      strip <err.txt; rm err.txt
+
+  - name: "Combining -a and -A with a compound operand still creates the variable"
+    # bash reports the invalid option combination and still creates the variable from the
+    # compound operand, as an associative array. brush creates nothing.
     known_failure: true
     ignore_stderr: true
     stdin: |
       declare -aA both=(x)
       echo "status: $?"
-      declare -p both 2>&1
+      declare -p both 2>/dev/null
+      echo "declare_status: $?"
 
   - name: "Display diagnostics name the builtin as invoked"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       check() {
         case $2 in
@@ -1147,7 +1128,6 @@ cases:
       f
 
   - name: "Display filtered by array attributes includes unassigned arrays"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a zzempty
       declare -A zzemptyA
@@ -1157,7 +1137,6 @@ cases:
       echo "-A:"; declare -pA | grep zz | sort
 
   - name: "Declaration diagnostics name the builtin and quote the operand"
-    known_failure: true # TODO: declare improvements required
     # Covers every diagnostic the declaration builtins emit, so a new one cannot quietly omit the
     # builtin's name. The leading "file: line N:" a shell prefixes is stripped.
     stdin: |
@@ -1194,8 +1173,471 @@ cases:
       declare -fx nosuchfn 2>&1; echo "rc=$?"
 
   - name: "declare -ft records the trace attribute"
-    known_failure: true # TODO(declare): brush accepts -t on functions but doesn't track it
     stdin: |
       f() { :; }
       declare -ft f
       declare -F
+
+  #
+  # Operand ordering, kind conversion, readonly, and attribute rules.
+  #
+  # Operands are processed one at a time, each against the environment its predecessors
+  # left behind: a later operand's subscript or reinterpreted compound value sees what an
+  # earlier one assigned. (Values the interpreter expanded before the command ran do not; see
+  # "Multiple readonly operands expand before assignments are applied".)
+  #
+  - name: "each operand sees what the preceding operands assigned"
+    stdin: |
+      declare -a 'x=(1 2)' 'y=(${x[@]})'
+      declare -p y
+      i=5
+      declare 'a[i]=1' i=9 'c[i]=2'
+      declare -p a i c
+      unset i
+      declare 'i=3' 'd[i]=x' 'e[i+1]=y'
+      declare -p d e
+
+  # A failed kind conversion reports the one operand and keeps going.
+  #
+  - name: "a failed conversion on one operand does not abort sibling operands"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -a q=(1)
+      declare -A q r=v
+      echo "status=$?"
+      declare -p r q
+      strip <err.txt; rm err.txt
+
+  #
+  # Converting a set function-local scalar to an array discards its value; only a global keeps
+  # the scalar as element 0. This holds with or without -I, and for appended array literals.
+  #
+  - name: "converting a set local scalar to an array discards its value"
+    stdin: |
+      f() { local t=hi; declare -a t; declare -p t; }
+      f
+      g() { local s=hello; local -I -a s; declare -p s; }
+      g
+      u=hi
+      declare -a u
+      declare -p u
+
+  - name: "appending an array literal to a local scalar discards the scalar"
+    stdin: |
+      f() { local s=hello; declare s+=(x); declare -p s; }
+      f
+      s2=hello
+      declare s2+=(x)
+      declare -p s2
+
+  #
+  # A bare subscripted operand implies an indexed array for an existing variable too: an
+  # existing scalar is promoted (keeping its value at element 0 at global scope) and a
+  # declared-but-unset variable is retyped.
+  #
+  - name: "a bare subscripted operand promotes an existing scalar to an indexed array"
+    stdin: |
+      v=out
+      declare 'v[0]'
+      declare -p v
+      declare u
+      declare 'u[0]'
+      declare -p u
+
+  #
+  # Retyping a readonly variable is refused like any other modification -- even re-selecting the
+  # kind it already has. A bare re-declaration with no kind is fine.
+  #
+  - name: "a readonly variable cannot be retyped to an array"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare q2
+      readonly q2
+      declare -a q2
+      echo "status=$?"
+      declare -p q2
+      s3=1
+      readonly s3
+      declare -A s3
+      echo "status2=$?"
+      declare -p s3
+      readonly -a arr=(1)
+      declare -a arr
+      echo "status3=$?"
+      declare arr
+      echo "status4=$?"
+      declare -p arr
+      declare -a ra=(1)
+      readonly ra
+      declare -a ra
+      echo "status3=$?"
+      strip <err.txt; rm err.txt
+
+  #
+  # Attributes that can transform a variable's value (-i/-l/-u/-c, and -n) are refused on a
+  # readonly variable, whether being added or removed; pure flags (-x/-t, and +n on a
+  # non-nameref) are fine.
+  #
+  - name: "value-transforming attributes are refused on a readonly variable"
+    stdin: |
+      n=abc
+      readonly n
+      for flag in -i +i -l +l -u +u -c +c -n +n -x +x -t +t; do
+        declare $flag n 2>/dev/null
+        echo "$flag=$?"
+      done
+      declare -p n
+
+  #
+  # `set -a` exports a variable a declaration modifies, but a bare re-declaration with no
+  # assignment leaves the export attribute alone.
+  #
+  - name: "set -a exports a variable modified via declare"
+    stdin: |
+      w=1
+      u2=1
+      set -a
+      declare w=2
+      declare -p w u2
+      declare u2
+      declare -p u2
+
+  #
+  # `+I` is accepted and behaves like `-I`.
+  #
+  - name: "+I is accepted and inherits like -I"
+    stdin: |
+      v=outer
+      f() { local +I v; echo "inner=${v-UNSET}"; v=changed; }
+      f
+      echo "global=$v"
+      g() { local -I +I v; echo "both=${v-UNSET}"; }
+      g
+      declare +I newvar
+      echo "declare_status=$?"
+
+  - name: "declare -pF shows function attributes"
+    stdin: |
+      f() { :; }
+      declare -ft f
+      declare -fx f
+      declare -pF f
+      declare +t -f f
+      declare -pF f
+      declare -F f
+      declare -fr f
+      declare -pF f
+
+  - name: "attribute options list in declare -p form without -p"
+    stdin: |
+      zz_x=1
+      export zz_e=2
+      declare -i zz_i=3
+      declare -a zz_a=(1)
+      declare -t zz_t=4
+      declare -r zz_r=5
+      zz_f() { :; }
+      declare -ft zz_f
+      declare -x | grep zz_
+      declare -i | grep zz_
+      declare -a | grep zz_
+      declare -t
+      declare -xi | grep zz_
+      declare -r | grep zz_
+      readonly | grep zz_
+      readonly -a | grep -c zz_
+      declare +x | grep -c '^declare'
+      declare | grep zz_f
+      declare -x | grep -c zz_f
+
+  - name: "option attributes are not granted when the assignment is refused"
+    stdin: |
+      readonly zz_ro=1
+      declare -x zz_ro=2 2>/dev/null
+      echo "status: $?"
+      declare -p zz_ro
+      export zz_ro=3 2>/dev/null
+      echo "status: $?"
+      declare -p zz_ro
+
+  - name: "the integer attribute evaluates an arithmetic value on assignment"
+    known_failure: true # TODO: integer-attributed assignments are not evaluated arithmetically
+    stdin: |
+      declare -i x=1+1
+      declare -p x
+      declare -i y
+      y=2*3
+      declare -p y
+      declare -ai a=(1+1 2*3)
+      declare -p a
+
+  - name: "a local cannot shadow a readonly global"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      readonly zz_ro=1
+      f() { local zz_ro=2 other=3; echo "status: $?"; declare -p zz_ro other; }
+      { f; } 2>&1 | strip
+      g() { declare zz_ro; echo "status: $?"; }
+      { g; } 2>&1 | strip
+      h() { local -a zz_ro; echo "status: $?"; }
+      { h; } 2>&1 | strip
+      outer() { local inner=1; readonly inner; middle; }
+      middle() { local inner=2; echo "status: $?"; declare -p inner; }
+      outer
+
+  #
+  # A parenthesized value in a subscripted operand is reinterpreted as a compound value (and
+  # assigned to the whole array) only under an explicit -a/-A; without one, an existing array's
+  # element receives the text literally.
+  #
+  - name: "a parenthesized value in a subscripted string operand stays literal without -a"
+    stdin: |
+      declare -a sub=(1 2)
+      declare 'sub[0]=(a b)'
+      declare -p sub
+      declare -A sm=([k]=v)
+      declare 'sm[k]=(a b)'
+      declare -p sm
+      f() { local -a la=(1); local 'la[0]=(x y)'; declare -p la; }
+      f
+      declare -a sub2=(1 2)
+      declare -a 'sub2[0]=(a b)'
+      declare -p sub2
+
+  #
+  # With no operands, -f/-F list only the functions matching the attribute options given, as a
+  # union; a plus option applies no filter. When definitions are listed under a filter, each is
+  # followed by its attribute line.
+  #
+  - name: "declare -F with attribute options lists only matching functions"
+    stdin: |
+      zf_a() { echo a; }
+      zf_b() { echo b; }
+      zf_c() { echo c; }
+      zf_d() { echo d; }
+      declare -fx zf_a
+      readonly -f zf_b
+      declare -ft zf_c
+      echo "[Fx]"; declare -Fx
+      echo "[Fr]"; declare -Fr
+      echo "[Ft]"; declare -Ft
+      echo "[Frx]"; declare -Frx
+      echo "[fx]"; declare -fx
+      echo "[F+x]"; declare -F +x | grep -c zf_
+      echo "[typeset -Fx]"; typeset -Fx
+
+  #
+  # A subscript no element can have -- empty, or `*`/`@` on an indexed array -- is a bad array
+  # subscript. The operand fails, but a shell has already bound the target with the kind the
+  # operand implies, and it goes on to the remaining operands. The diagnostic is pinned through
+  # the pipeline, where it carries no line prefix.
+  #
+  - name: "a bad subscript fails the operand but still declares the target"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { declare 'b[]=1' later=1; } 2>&1 | strip
+      declare 'b[]=1' later=1 2>/dev/null
+      echo "status: $?"
+      declare -p b later
+      { declare 'c[*]=1'; declare 'd[@]=1'; } 2>&1 | strip
+      declare 'c[*]=1' 'd[@]=1' 2>/dev/null
+      declare -p c d 2>/dev/null
+      declare -A e
+      { declare 'e[]=1'; } 2>&1 | strip
+      declare 'e[]=1' 2>/dev/null
+      declare -p e
+
+  #
+  # Which target a bad subscript binds depends on what was there before. A variable that does not
+  # exist yet, or holds a scalar, gets bound; one that is *already* an array is left exactly as it
+  # was, so a declared-but-unset array stays unset rather than becoming a set, empty one.
+  #
+  - name: "a bad subscript binds only a target that is not already an array"
+    stdin: |
+      declare 'zz_new[]=1' 2>/dev/null
+      declare -p zz_new
+      declare -a zz_unset_a
+      declare 'zz_unset_a[]=1' 2>/dev/null
+      declare -p zz_unset_a
+      declare -A zz_unset_A
+      declare 'zz_unset_A[]=1' 2>/dev/null
+      declare -p zz_unset_A
+      declare -a zz_set=(9)
+      declare 'zz_set[]=1' 2>/dev/null
+      declare -p zz_set
+      zz_scalar=scalar
+      declare 'zz_scalar[]=1' 2>/dev/null
+      declare -p zz_scalar
+      declare 'zz_star[*]=1' 2>/dev/null
+      declare -p zz_star
+      declare -A zz_assoc
+      declare 'zz_assoc[*]=1' 2>/dev/null
+      declare -p zz_assoc
+
+  - name: "an expansion that leaves an indexed subscript empty is element 0"
+    stdin: |
+      e=
+      declare "b[$e]=1" 2>/dev/null
+      echo "status: $?"
+      a[$e]=x
+      declare -p a
+      declare 'w[ ]=2'
+      declare -p w
+
+  #
+  # A bad key inside a compound value stops the assignment at that element: the elements before
+  # it are assigned, the rest are not. For a quoted operand -- whose compound syntax the builtin
+  # recognizes only after expansion -- that is a warning and the operand still succeeds. For an
+  # unquoted operand it is an assignment error: attributes are not granted, the status is 1, and
+  # the rest of the command list is abandoned.
+  #
+  - name: "a bad key in a quoted compound operand stops the value with a warning"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { declare -a 'c=([2]=x []=1 [3]=y)'; } 2>&1 | strip
+      declare -a 'c=([2]=x []=1 [3]=y)' 2>/dev/null
+      echo "status: $?"
+      declare -p c
+      { declare -A 'F=([a]=1 []=2 [b]=3)'; } 2>&1 | strip
+      declare -A 'F=([a]=1 []=2 [b]=3)' 2>/dev/null
+      echo "status: $?"
+      declare -p F
+      { declare -a 'G=(1 [*]=2 3)'; } 2>&1 | strip
+      { declare -a 'H=(1 [@]=2 3)'; } 2>&1 | strip
+      declare -a 'G=(1 [*]=2 3)' 'H=(1 [@]=2 3)' 2>/dev/null
+      echo "status: $?"
+      declare -p G H
+
+  - name: "a bad subscript on the name still grants option attributes"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { declare -rx 'b[*]=1'; } 2>&1 | strip
+      declare -rx 'b[*]=1' 2>/dev/null
+      echo "status: $?"
+      declare -p b
+      n=s
+      declare -x 'n[@]=1' 2>/dev/null
+      echo "status: $?"
+      declare -p n
+
+  - name: "a bad key in an unquoted compound operand is an assignment error"
+    ignore_stderr: true
+    stdin: |
+      declare -a c=(1 []=2 3); echo "same list"
+      echo "status: $?"
+      declare -p c
+      declare -a d=(1 [*]=2 3); echo "same list"
+      echo "status: $?"
+      declare -p d
+      declare -a e=(1 [@]=2 3); echo "same list"
+      echo "status: $?"
+      declare -p e
+      declare -A F=([a]=1 []=2 [b]=3); echo "same list"
+      echo "status: $?"
+      declare -p F
+      s=scalar
+      declare -a s=(1 []=2)
+      declare -p s
+      f() { local -a l=(1 []=2); echo "in function after"; }
+      f
+      echo "caller next line"
+
+  - name: "an assignment error on a compound operand grants no attributes"
+    ignore_stderr: true
+    stdin: |
+      declare -rx r=(1 []=2)
+      echo "status: $?"
+      declare -p r
+      r[5]=x
+      echo "status: $?"
+      declare -p r
+      declare -i i=(1 []=2)
+      declare -p i
+
+  - name: "a conversion failure on an unquoted compound operand is an assignment error"
+    ignore_stderr: true
+    stdin: |
+      declare -A x=([k]=v)
+      declare -a x=(1); echo "same list"
+      echo "status: $?"
+      declare -p x
+      declare -a y=(1)
+      declare -A y=([k]=v); echo "same list"
+      echo "status: $?"
+      declare -p y
+
+  - name: "a readonly variable assigned an unquoted compound operand is an assignment error"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      declare r=(1 2); echo "same list"
+      echo "status: $?"
+      declare -p r
+      declare -a r=(1 2); echo "same list"
+      echo "status: $?"
+      declare -p r
+
+  #
+  # A list assigned to one element abandons not just the remaining operands but, as an
+  # assignment error, the rest of the command list. brush continues the list.
+  #
+  - name: "a list assigned to an element abandons the rest of the list"
+    ignore_stderr: true
+    stdin: |
+      declare m[1]=(a b); echo "status: $?"
+      echo after
+
+  #
+  # A declaration naming a nameref acts on the variable it references.
+  #
+  - name: "declare assigns through a nameref"
+    known_failure: true # TODO: declaration builtins do not follow namerefs
+    stdin: |
+      declare -n nr=tgt
+      declare nr=hello
+      declare -p tgt nr
+
+  - name: "a subscripted assignment through a nameref targets the referenced array"
+    known_failure: true # TODO: subscripted assignments do not follow namerefs
+    stdin: |
+      declare -A m
+      declare -n r=m
+      r[key]=v
+      declare -p m
+      declare r[other]=w
+      declare -p m
+
+  #
+  # A bare operand's subscript must end the word: text after the closing bracket, or a second
+  # subscript, makes the whole operand an invalid identifier. (An assignment form is rejected by
+  # the parser the same way.)
+  #
+  - name: "a bare operand with a nested or trailing subscript is not a valid identifier"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { declare 'nb[a][b]'; declare 'nt[a]x]'; declare 'nb[a][b]=1'; } 2>&1 | strip
+      declare 'nb[a][b]' 2>/dev/null
+      echo "status: $?"
+      declare -p nb nt 2>/dev/null
+      echo "declare_status: $?"
+
+  #
+  # The diagnostic for a bad key in an unquoted compound operand. brush surfaces it through the
+  # interpreter's error display, which adds an `error:` prefix and the builtin's name; a shell
+  # prints the bare `[]=2: bad array subscript`.
+  #
+  - name: "a bad key in an unquoted compound operand is reported as written"
+    known_failure: true # TODO: interpreter-displayed assignment errors carry an `error:` prefix and the builtin name
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { declare -a c=(1 []=2 3); } 2>&1 | strip
+      { declare -A m=([a]=1 [""]=2); } 2>&1 | strip
+
+  - name: "a function cannot be declared by assignment"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { declare -f f=1; echo "status: $?"; } 2>&1 | strip
+      { declare -Fx f=1; echo "status: $?"; } 2>&1 | strip
+      declare -F f; echo "status: $?"

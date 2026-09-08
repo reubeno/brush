@@ -512,8 +512,14 @@ async fn exec_declaration_builtin_impl<
 
     for (i, arg) in args.into_iter().enumerate() {
         match arg {
+            // A `+X` word is an option only for a builtin that takes plus options; to any other
+            // (`export`, `readonly`) it is an operand, which the builtin then rejects as an
+            // invalid identifier, as a shell does.
             CommandArg::String(s)
-                if i == 0 || (s.len() > 1 && (s.starts_with('-') || s.starts_with('+'))) =>
+                if i == 0
+                    || (s.len() > 1
+                        && (s.starts_with('-')
+                            || (s.starts_with('+') && T::takes_plus_options()))) =>
             {
                 options.push(s);
             }
