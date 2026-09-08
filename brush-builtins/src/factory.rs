@@ -84,7 +84,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(feature = "builtin.declare")]
     m.insert(
         "readonly".into(),
-        decl_builtin::<declare::DeclareCommand, SE>().special(),
+        decl_builtin::<readonly::ReadonlyCommand, SE>().special(),
     );
     #[cfg(feature = "builtin.times")]
     m.insert(

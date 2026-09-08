@@ -4,18 +4,24 @@ use std::path::PathBuf;
 
 use crate::{Shell, ShellFd, extensions, results, sys};
 
-/// Unified error type for this crate. Contains just a kind for now,
-/// but will be extended later with additional context.
+/// Unified error type for this crate: a kind plus the context the shell has attached to it.
 #[derive(thiserror::Error, Debug)]
-#[error("{kind}")]
 pub struct Error {
     /// The kind of error.
     #[source]
     kind: ErrorKind,
 
+    /// The variable this error is about, if it was raised by an assignment to or declaration of
+    /// one; displayed as a `name: ` prefix, as a shell does. See [`Error::for_variable`].
+    variable: Option<String>,
+
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+
+    /// Whether or not this error arose from a variable assignment; see
+    /// [`Error::is_assignment_error`].
+    from_assignment: bool,
 }
 
 /// Monolithic error type for the shell
@@ -29,12 +35,22 @@ pub enum ErrorKind {
     #[error("cannot assign list to array member")]
     AssigningListToArrayMember,
 
+    /// An array element was named with a subscript no element can have. Carries the element as
+    /// written (`name[subscript]`).
+    #[error("{0}: bad array subscript")]
+    BadArraySubscript(String),
+
+    /// A compound value keyed an indexed array element with `*` or `@`. Carries the element as
+    /// written (`[key]=value`).
+    #[error("{0}: cannot assign to non-numeric index")]
+    AssigningToNonNumericIndex(String),
+
     /// An attempt was made to convert an associative array to an indexed array.
-    #[error("cannot convert associative array to indexed array")]
+    #[error("cannot convert associative to indexed array")]
     ConvertingAssociativeArrayToIndexedArray,
 
     /// An attempt was made to convert an indexed array to an associative array.
-    #[error("cannot convert indexed array to associative array")]
+    #[error("cannot convert indexed to associative array")]
     ConvertingIndexedArrayToAssociativeArray,
 
     /// An error occurred while sourcing the indicated script file.
@@ -157,8 +173,12 @@ pub enum ErrorKind {
     Utf8Error(#[from] std::str::Utf8Error),
 
     /// An attempt was made to modify a readonly variable.
-    #[error("cannot mutate readonly variable")]
+    #[error("readonly variable")]
     ReadonlyVariable,
+
+    /// An attempt was made to redefine or unset a readonly function.
+    #[error("{0}: readonly function")]
+    ReadonlyFunction(String),
 
     /// The indicated pattern is invalid.
     #[error("invalid pattern: '{0}'")]
@@ -329,11 +349,21 @@ pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync 
     fn as_io_error(&self) -> Option<&std::io::Error> {
         None
     }
+
+    /// Returns whether this is a variable assignment error; see
+    /// [`Error::is_assignment_error`].
+    fn is_assignment_error(&self) -> bool {
+        false
+    }
 }
 
 impl BuiltinError for Error {
     fn as_io_error(&self) -> Option<&std::io::Error> {
         self.as_io_error()
+    }
+
+    fn is_assignment_error(&self) -> bool {
+        self.is_assignment_error()
     }
 }
 
@@ -394,7 +424,22 @@ where
     fn from(convertible_to_kind: T) -> Self {
         Self {
             kind: convertible_to_kind.into(),
+            variable: None,
             fatal: false,
+            from_assignment: false,
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(name) = &self.variable {
+            write!(f, "{name}: ")?;
+        }
+        if f.alternate() {
+            write!(f, "{:#}", self.kind)
+        } else {
+            write!(f, "{}", self.kind)
         }
     }
 }
@@ -410,6 +455,55 @@ impl Error {
     /// Returns whether or not this error is fatal.
     pub const fn is_fatal(&self) -> bool {
         self.fatal
+    }
+
+    /// Names the variable this error is about, so it displays as `name: message`, the way a
+    /// shell reports a failed assignment or declaration. A list assigned to an element is
+    /// reported against the element (`name[subscript]`); a kind whose message already names its
+    /// target (a bad subscript, a readonly function) is left alone, as is an error already
+    /// attributed to a variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The variable's name.
+    /// * `subscript` - The subscript of the element assigned to, as written, if any.
+    #[must_use]
+    pub fn for_variable(mut self, name: &str, subscript: Option<&str>) -> Self {
+        if self.variable.is_some() {
+            return self;
+        }
+
+        self.variable = match (&self.kind, subscript) {
+            (
+                ErrorKind::BadArraySubscript(_)
+                | ErrorKind::AssigningToNonNumericIndex(_)
+                | ErrorKind::ReadonlyFunction(_),
+                _,
+            ) => None,
+            (ErrorKind::AssigningListToArrayMember, Some(subscript)) => {
+                Some(std::format!("{name}[{subscript}]"))
+            }
+            _ => Some(name.to_owned()),
+        };
+        self
+    }
+
+    /// Marks this error as a variable assignment error.
+    #[must_use]
+    pub const fn into_assignment_error(mut self) -> Self {
+        self.from_assignment = true;
+        self
+    }
+
+    /// Returns whether or not this is a variable assignment error: one that a shell reports and
+    /// then abandons the rest of the current command list for, instead of letting the command
+    /// that raised it fail on its own. A failed assignment statement (`x=v`, `a=(...)`) is one,
+    /// and so is a declaration builtin's failure to assign an unquoted compound operand. The
+    /// mark is visible through a [`ErrorKind::BuiltinError`] wrapper, so wrapping a builtin's
+    /// error does not hide it.
+    pub fn is_assignment_error(&self) -> bool {
+        self.from_assignment
+            || matches!(&self.kind, ErrorKind::BuiltinError(inner, _) if inner.is_assignment_error())
     }
 
     /// Returns a reference to the error kind.

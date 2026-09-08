@@ -4,7 +4,10 @@ use std::borrow::Cow;
 use std::cmp::min;
 use std::io::Write as _;
 
-use brush_parser::word::{ParameterTransformOp, SubstringMatchKind};
+use brush_parser::{
+    ast,
+    word::{ParameterTransformOp, SubstringMatchKind},
+};
 use itertools::Itertools;
 
 use crate::ExecutionParameters;
@@ -21,9 +24,7 @@ use crate::prompt;
 use crate::shell::Shell;
 use crate::sys;
 use crate::trace_categories;
-use crate::variables::ShellValueUnsetType;
-use crate::variables::ShellVariable;
-use crate::variables::{self, ShellValue};
+use crate::variables::{self, ArrayKind, ShellValue, ShellVariable};
 
 /// Controls how the expander handles a backslash-escape sequence (`\X`)
 /// when it appears outside any explicit quoting (single, double, ANSI-C).
@@ -576,7 +577,8 @@ pub(crate) async fn full_expand_and_split_word_with_options(
     expander.full_expand_with_splitting(word_str.as_ref()).await
 }
 
-/// Expands a word in assignment context (enables tilde-after-colon expansion).
+/// Expands a word in assignment context and returns the resulting text. Assignment context enables
+/// tilde expansion after colons and does not perform field splitting.
 ///
 /// # Arguments
 ///
@@ -591,6 +593,237 @@ pub(crate) async fn basic_expand_assignment_word(
     let mut expander = WordExpander::new(shell, params);
     expander.parser_options.tilde_expansion_after_colon = true;
     expander.basic_expand_to_str(word_str.as_ref()).await
+}
+
+/// An assignment whose value is expanded and whose subscripts are resolved against its target's
+/// array kind.
+pub struct ResolvedAssignment {
+    /// The expanded assignment.
+    pub assignment: ast::Assignment,
+    /// The error of a bad compound key (empty, or `*`/`@` on an indexed array), if one stopped
+    /// the value short. The elements before it were kept, as in a shell; the caller assigns them
+    /// and then raises this.
+    pub stopped_by: Option<error::Error>,
+}
+
+/// Fully expands a raw parsed assignment whose target kind is already known: an ordinary
+/// `name=value` statement, or compound elements a declaration builtin has just recognized inside
+/// an operand. (A declaration builtin's operands themselves go through
+/// [`expand_assignment_words`] instead.)
+///
+/// # Arguments
+///
+/// * `shell` - The shell environment in which expansions run.
+/// * `params` - The execution parameters used by expansions and command substitutions.
+/// * `assignment` - A raw parsed assignment whose words have not yet been expanded.
+/// * `target` - The array kind that determines how subscripts and compound keys are resolved.
+pub(crate) async fn expand_assignment(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    assignment: &ast::Assignment,
+    target: ArrayKind,
+) -> Result<ResolvedAssignment, error::Error> {
+    // The value is expanded before any subscript is resolved, so arithmetic side effects in a
+    // subscript are not visible to the value.
+    let value = expand_assignment_value(shell, params, &assignment.value).await?;
+
+    let expanded = ast::Assignment {
+        name: assignment.name.clone(),
+        value,
+        append: assignment.append,
+        loc: assignment.loc.clone(),
+    };
+    resolve_assignment_subscripts(shell, params, expanded, target).await
+}
+
+/// Expands the words of an assignment that appeared as a command argument, without resolving its
+/// subscripts: the value is fully expanded, while the subscript and compound keys get ordinary
+/// word expansion only.
+///
+/// This is the first of the two stages a declaration builtin's operand goes through. The operand
+/// is one command word, so all of it is word-expanded before the command runs. Whether a
+/// subscript is then an arithmetic index or a literal key depends on the target's array kind,
+/// which only the builtin knows once it has read its options; it finishes with
+/// [`resolve_assignment_subscripts`]. The subscript therefore ends up expanded twice, as in a
+/// shell: with `k='$x'`, `declare name[$k]=v` assigns to `name[$x]`'s value.
+///
+/// # Arguments
+///
+/// * `shell` - The shell environment in which expansions run.
+/// * `params` - The execution parameters used by expansions and command substitutions.
+/// * `assignment` - A raw parsed assignment whose words have not yet been expanded.
+pub(crate) async fn expand_assignment_words(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    assignment: &ast::Assignment,
+) -> Result<ast::Assignment, error::Error> {
+    let value = expand_assignment_value(shell, params, &assignment.value).await?;
+
+    // The grammar guarantees a literal identifier for the base name; only a subscript expands.
+    let name = match &assignment.name {
+        ast::AssignmentName::VariableName(name) => ast::AssignmentName::VariableName(name.clone()),
+        ast::AssignmentName::ArrayElementName(name, index) => {
+            ast::AssignmentName::ArrayElementName(
+                name.clone(),
+                basic_expand_word(shell, params, index).await?,
+            )
+        }
+    };
+
+    Ok(ast::Assignment {
+        name,
+        value,
+        append: assignment.append,
+        loc: assignment.loc.clone(),
+    })
+}
+
+/// Expands an assignment's value. A scalar value and a keyed compound element are expanded as
+/// assignment words (no field splitting); an unkeyed compound element is an ordinary word that
+/// is field-split into as many elements as it produces. Compound keys get word expansion only;
+/// see [`resolve_assignment_subscripts`] for the rest.
+async fn expand_assignment_value(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    value: &ast::AssignmentValue,
+) -> Result<ast::AssignmentValue, error::Error> {
+    match value {
+        ast::AssignmentValue::Scalar(value) => Ok(ast::AssignmentValue::Scalar(
+            basic_expand_assignment_word(shell, params, value)
+                .await?
+                .into(),
+        )),
+        ast::AssignmentValue::Array(elements) => {
+            let mut expanded = vec![];
+            for (key, value) in elements {
+                if let Some(key) = key {
+                    let expanded_key = basic_expand_word(shell, params, key.as_ref()).await?;
+                    let expanded_value = basic_expand_assignment_word(shell, params, value).await?;
+                    expanded.push((Some(expanded_key.into()), expanded_value.into()));
+                } else {
+                    let values = full_expand_and_split_word(shell, params, value).await?;
+                    expanded.extend(values.into_iter().map(|value| (None, value.into())));
+                }
+            }
+
+            Ok(ast::AssignmentValue::Array(expanded))
+        }
+    }
+}
+
+/// Expands one `name[subscript]=` subscript against a known target kind and returns its final
+/// index or key. An empty subscript, or `*`/`@` on an indexed array, is a bad array subscript,
+/// reported against the element as written.
+async fn expand_assignment_subscript(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    name: &str,
+    index: &str,
+    target: ArrayKind,
+) -> Result<String, error::Error> {
+    // A shell checks an indexed subscript's text before evaluating it (`a[$empty]` is element 0,
+    // `a[]` is an error) and an associative key's text after expanding it.
+    match target {
+        ArrayKind::Indexed => {
+            if matches!(index, "" | "*" | "@") {
+                return Err(
+                    error::ErrorKind::BadArraySubscript(std::format!("{name}[{index}]")).into(),
+                );
+            }
+            Ok(arithmetic::expand_and_eval(shell, params, index, false)
+                .await?
+                .to_string())
+        }
+        ArrayKind::Associative => {
+            let key = basic_expand_word(shell, params, index).await?;
+            if key.is_empty() {
+                return Err(
+                    error::ErrorKind::BadArraySubscript(std::format!("{name}[{index}]")).into(),
+                );
+            }
+            Ok(key)
+        }
+    }
+}
+
+/// Resolves one already-word-expanded compound element key: arithmetically for an indexed
+/// array, literally for an associative one. A key no element can have is reported against the
+/// element as written.
+async fn resolve_compound_key(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    key: &str,
+    value: &str,
+    target: ArrayKind,
+) -> Result<String, error::Error> {
+    let element = || std::format!("[{key}]={value}");
+    match (target, key) {
+        (_, "") => Err(error::ErrorKind::BadArraySubscript(element()).into()),
+        (ArrayKind::Indexed, "*" | "@") => {
+            Err(error::ErrorKind::AssigningToNonNumericIndex(element()).into())
+        }
+        (ArrayKind::Indexed, _) => Ok(arithmetic::expand_and_eval(shell, params, key, false)
+            .await?
+            .to_string()),
+        (ArrayKind::Associative, _) => Ok(key.to_owned()),
+    }
+}
+
+/// Resolves the subscripts of an assignment whose words were already expanded by
+/// [`expand_assignment_words`]; values are left untouched so they are never expanded twice.
+///
+/// A bad `name[subscript]=` subscript fails the whole assignment. A bad compound key stops the
+/// value at that element, as in a shell: the elements before it are kept, the rest dropped, and
+/// the key's error is returned in [`ResolvedAssignment::stopped_by`].
+///
+/// # Arguments
+///
+/// * `shell` - The shell environment in which subscript expansion and evaluation run.
+/// * `params` - The execution parameters used by subscript expansion.
+/// * `assignment` - The already-word-expanded assignment whose subscripts should be resolved.
+/// * `target` - The array kind that selects arithmetic or literal subscript semantics.
+pub(crate) async fn resolve_assignment_subscripts(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    mut assignment: ast::Assignment,
+    target: ArrayKind,
+) -> Result<ResolvedAssignment, error::Error> {
+    if let ast::AssignmentName::ArrayElementName(name, index) = &mut assignment.name {
+        *index = expand_assignment_subscript(shell, params, name, index, target).await?;
+    }
+
+    let mut stopped_by = None;
+    if let ast::AssignmentValue::Array(elements) = &mut assignment.value {
+        for (i, (key, value)) in elements.iter_mut().enumerate() {
+            let Some(key) = key else {
+                continue;
+            };
+            match resolve_compound_key(shell, params, &key.value, &value.value, target).await {
+                Ok(resolved) => key.value = resolved,
+                // A key no element can have stops the value here; anything else (an arithmetic
+                // error, say) fails the whole expansion.
+                Err(err)
+                    if matches!(
+                        err.kind(),
+                        error::ErrorKind::BadArraySubscript(_)
+                            | error::ErrorKind::AssigningToNonNumericIndex(_)
+                    ) =>
+                {
+                    stopped_by = Some((i, err));
+                    break;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        if let Some((i, _)) = &stopped_by {
+            elements.truncate(*i);
+        }
+    }
+
+    Ok(ResolvedAssignment {
+        assignment,
+        stopped_by: stopped_by.map(|(_, err)| err),
+    })
 }
 
 /// Assigns a value to a named parameter.
@@ -1751,19 +1984,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
-                    matches!(
-                        var.value(),
-                        ShellValue::AssociativeArray(_)
-                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                    )
-                } else {
-                    false
-                };
+                let kind = self
+                    .shell
+                    .env()
+                    .get(name)
+                    .and_then(|(_, var)| var.value().array_kind())
+                    .unwrap_or(ArrayKind::Indexed);
 
-                let index_to_use = self
-                    .expand_array_index(index.as_str(), is_set_assoc_array)
-                    .await?;
+                let index_to_use = self.expand_array_index(index.as_str(), kind).await?;
                 (name, Some(index_to_use))
             }
             brush_parser::word::Parameter::Positional(_)
@@ -1778,7 +2006,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
         let value = value.into();
 
-        if let Some(index) = index {
+        let result = if let Some(index) = index {
             self.shell.env_mut().update_or_add_array_element(
                 variable_name,
                 index,
@@ -1795,7 +2023,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
             )
-        }
+        };
+
+        result.map_err(|err| err.for_variable(variable_name, None))
     }
 
     async fn try_resolve_parameter_to_variable(
@@ -1929,21 +2159,16 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                // First check to see if it's an associative array.
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
-                    matches!(
-                        var.value(),
-                        ShellValue::AssociativeArray(_)
-                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                    )
-                } else {
-                    false
-                };
+                // The array kind of the target governs how the index is expanded.
+                let kind = self
+                    .shell
+                    .env()
+                    .get(name)
+                    .and_then(|(_, var)| var.value().array_kind())
+                    .unwrap_or(ArrayKind::Indexed);
 
                 // Figure out which index to use.
-                let index_to_use = self
-                    .expand_array_index(index.as_str(), is_set_assoc_array)
-                    .await?;
+                let index_to_use = self.expand_array_index(index.as_str(), kind).await?;
 
                 // Index into the array.
                 if let Some((_, var)) = self.shell.env().get(name)
@@ -2005,14 +2230,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     async fn expand_array_index(
         &mut self,
         index: &str,
-        for_set_associative_array: bool,
+        kind: ArrayKind,
     ) -> Result<String, error::Error> {
-        let index_to_use = if for_set_associative_array {
-            self.basic_expand_to_str(index).await?
-        } else {
-            arithmetic::expand_and_eval(self.shell, self.params, index, false)
-                .await?
-                .to_string()
+        let index_to_use = match kind {
+            ArrayKind::Associative => self.basic_expand_to_str(index).await?,
+            ArrayKind::Indexed => {
+                arithmetic::expand_and_eval(self.shell, self.params, index, false)
+                    .await?
+                    .to_string()
+            }
         };
 
         Ok(index_to_use)
