@@ -1,2 +1,4 @@
 target/
 mutants.out*/
+__pycache__/
+.pytest_cache/

@@ -12,4 +12,4 @@ exclude="^(TestZsh|TestFish|TestNushell)#"
 [[ -n $skips ]] && exclude="$exclude|^($skips)$"
 ruby -Itest test/test_shell_integration.rb --verbose --exclude "/$exclude/" \
     --ci-report --ci-dir /results/junit "$@" 2>&1 | tee /results/log.txt
-exit $?
+exit "${PIPESTATUS[0]}"

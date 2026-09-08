@@ -1,3 +1,3 @@
-# Tests excluded from the run, one "Class#method" per line. Lines starting with # are comments.
-# Background jobs run as in-process tasks, so `cmd &` prints "<pid unknown>" and $! is empty.
-TestBash#test_process_completion
+# Tests that must not run at all, one "Class#method" per line, each with a comment saying why.
+# Reserve this for tests that hang or are irrelevant to the shell under test; anything that merely
+# fails belongs in xfail-list.txt, so it keeps running and a fix is reported.

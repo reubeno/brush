@@ -1,0 +1,21 @@
+# Tests that run but are expected to fail, one test name per line. Each entry needs a comment
+# saying why; the runner reports an entry that starts passing, so a fix cannot land unnoticed.
+# Lines starting with # are comments.
+
+# The Alt-C widget does not change directory: the binding installs without error, but the tests
+# see no directory change at all. Tracked under the umbrella fzf binding issue,
+# https://github.com/reubeno/brush/issues/380
+test_alt_c
+test_alt_c_absolute_cmd
+test_alt_c_command
+test_alt_c_symlink
+
+# Ctrl-R recall of a multi-line entry comes back empty:
+# https://github.com/reubeno/brush/issues/738
+test_ctrl_r_multiline
+
+# Completion does not trigger for the second command of a `;` sequence.
+test_completion_in_command_sequence
+
+# Background jobs run as in-process tasks, so `cmd &` prints "<pid unknown>" and $! is empty.
+test_process_completion

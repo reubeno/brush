@@ -5,16 +5,15 @@ starts an interactive shell inside tmux with the integration loaded, sends keyst
 and checks the screen and the history database.
 
 ```bash
-bats tests/                 # needs bats, tmux, atuin on PATH
-bats tests/bash.bats -f history
+pytest tests/               # needs pytest, tmux, atuin on PATH
+pytest tests/ -k history
 ```
 
 Environment:
 
 - `ATUIN_TEST_BASH` — bash binary to test (default: `bash` from `PATH`).
-- `ATUIN_TEST_TIMEOUT` — seconds to wait for a screen condition (default: 10).
-- `ATUIN_TEST_SKIP` — newline-separated test names to skip.
+- `E2E_TEST_TIMEOUT` — seconds to wait for a screen condition (default: 10).
 
 Each test gets a fresh `HOME`, so atuin's config and database are isolated and no
-sync is configured. `tests/helpers/shell.bash` holds the tmux driver; per-shell test
-files (`bash.bats`) hold the scenarios.
+sync is configured. The tmux driver is `lib/tmux_shell.py`, shared with the other
+suites in this harness; per-shell test files (`test_atuin.py`) hold the scenarios.

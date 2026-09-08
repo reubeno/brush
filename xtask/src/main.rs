@@ -6,6 +6,8 @@ mod bash_tests;
 mod check;
 mod ci;
 mod common;
+#[cfg(unix)]
+mod e2e;
 mod generate;
 mod test;
 
