@@ -1675,3 +1675,53 @@ cases:
       { declare -f f=1; echo "status: $?"; } 2>&1 | strip
       { declare -Fx f=1; echo "status: $?"; } 2>&1 | strip
       declare -F f; echo "status: $?"
+
+  #
+  # Every one of `declare`'s options has a `+X` form, including the four that select a mode rather
+  # than an attribute. For those four `+X` means "off", which is already the default, so they are
+  # accepted and (except for `+p`) do nothing: `+f` and `+F` drop the function restriction, `+g`
+  # drops global creation, and `+p` prints just as `-p` does. brush models those four as plain
+  # boolean flags with no plus form, so clap rejects the word outright and the command exits 2.
+  # This also takes down any combined form that includes one of them, such as `+ft`.
+  #
+  - name: "declare +f drops the function restriction"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      f() { :; }
+      { declare +fp f; echo "status: $?"; } 2>&1 | strip
+
+  - name: "declare +F drops names-only display and declares a variable instead"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      f() { :; }
+      declare -F f
+      declare +F f
+      echo "status: $?"
+      declare -p f
+
+  - name: "declare +g declares locally inside a function"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      g=outer
+      f() { declare +g g=inner; echo "inside: $g"; }
+      f
+      echo "outside: $g"
+
+  - name: "declare +p displays just as -p does"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      x=1
+      declare -p x
+      declare +p x
+      echo "status: $?"
+
+  - name: "declare +ft combines a mode option and an attribute option"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      f() { :; }
+      declare -ft f
+      declare +ft f
+      echo "status: $?"
+      declare -pF f
+      declare -p f

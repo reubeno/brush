@@ -303,3 +303,45 @@ cases:
     stdin: |
       f() { local -A x=([k]=v); x=tempy local -I 'x[j]=w'; declare -p x; }
       f
+
+  #
+  # `local -g` declares into the global scope instead of the function's own, the way `declare -g`
+  # does. brush's `local` always creates a local, so `-g` is silently ignored: the variable
+  # disappears when the function returns, and a same-name local is written instead of the global.
+  #
+  - name: "local -g creates a global rather than a local"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() { local -g g=1; }
+      f
+      declare -p g
+
+  - name: "local -g updates the global while a same-name local shadows it"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      h=outer
+      f() {
+          local h=inner
+          local -g h=global
+          echo "inside: $h"
+      }
+      f
+      echo "outside: $h"
+
+  - name: "local -g carries its attributes and array kind to the global"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() {
+          local -gx s=str
+          local -g -a arr=(x y)
+      }
+      f
+      declare -p s arr
+
+  - name: "local -g with a bare name declares an unset global"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() { local -g bare; }
+      f
+      declare -p bare
+      echo "status=$?"
