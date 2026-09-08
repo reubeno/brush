@@ -154,23 +154,68 @@ impl InputBackend for ReedlineInputBackend {
         _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
-        if let Some(reedline) = &mut self.reedline {
+        // Bounded retry count for transient terminal-query timeouts (see below) --
+        // not a general retry-forever loop.
+        const MAX_TIMEOUT_RETRIES: u32 = 3;
+
+        let Some(reedline) = &mut self.reedline else {
+            return Ok(ReadResult::Eof);
+        };
+
+        let mut attempt: u32 = 0;
+        loop {
             match reedline.read_line(&prompt) {
                 Ok(reedline::Signal::Success(s)) => {
-                    if edit_mode::is_reedline_host_command(s.as_str()) {
-                        Ok(ReadResult::BoundCommand(s))
+                    // reedline < 0.48 delivered `ExecuteHostCommand` payloads through
+                    // `Success` (hence the marker check); newer versions use the
+                    // dedicated `HostCommand` signal below. Keep both so the marker
+                    // round-trip stays correct regardless of which one we get.
+                    return Ok(if edit_mode::is_reedline_host_command(s.as_str()) {
+                        ReadResult::BoundCommand(s)
                     } else {
-                        Ok(ReadResult::Input(s))
-                    }
+                        ReadResult::Input(s)
+                    });
                 }
-                Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
-                Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
-                Ok(reedline::Signal::ExternalBreak(_)) => Err(ShellError::UnexpectedInputFailure),
-                Ok(_) => Err(ShellError::UnexpectedInputFailure),
-                Err(err) => Err(ShellError::InputError(err)),
+                // Since reedline 0.48 (nushell/reedline#1049), a key bound with
+                // `bind -x` comes back as `Signal::HostCommand` rather than
+                // `Signal::Success`. Without this arm it fell into the catch-all
+                // below and every bound key press terminated the interactive shell.
+                Ok(reedline::Signal::HostCommand(s)) => return Ok(ReadResult::BoundCommand(s)),
+                Ok(reedline::Signal::CtrlC) => return Ok(ReadResult::Interrupted),
+                Ok(reedline::Signal::CtrlD) => return Ok(ReadResult::Eof),
+                Ok(reedline::Signal::ExternalBreak(_)) => {
+                    return Err(ShellError::UnexpectedInputFailure);
+                }
+                Ok(_) => return Err(ShellError::UnexpectedInputFailure),
+                // Reedline internally queries the terminal for the cursor position
+                // (via crossterm's `cursor::position()`) to redraw correctly after an
+                // external program has taken over the terminal and handed it back --
+                // e.g. atuin's Ctrl-R search popup, or fzf. That query has a hardcoded
+                // 2000ms internal timeout (crossterm's `read_position_raw`, unix.rs)
+                // and does not retry itself; it can time out without any real terminal
+                // malfunction -- the response is often just late. Previously this was
+                // propagated as a fatal error, tearing down the entire interactive
+                // shell over a single missed redraw. Retry a bounded number of times
+                // instead. crossterm reports this failure as generic
+                // `io::ErrorKind::Other` (not `TimedOut`), so the *message* is the only
+                // signal available to distinguish it from a genuine I/O failure, which
+                // should still be fatal, not silently retried. Matching on message text
+                // is inherently fragile against upstream wording changes; see the
+                // linked issue for the ask to give this its own error kind/variant.
+                Err(err)
+                    if attempt < MAX_TIMEOUT_RETRIES
+                        && err.kind() == std::io::ErrorKind::Other
+                        && err
+                            .to_string()
+                            .contains("cursor position could not be read") =>
+                {
+                    attempt += 1;
+                    tracing::debug!(
+                        "reedline cursor-position query timed out (attempt {attempt}/{MAX_TIMEOUT_RETRIES}); retrying"
+                    );
+                }
+                Err(err) => return Err(ShellError::InputError(err)),
             }
-        } else {
-            Ok(ReadResult::Eof)
         }
     }
 
