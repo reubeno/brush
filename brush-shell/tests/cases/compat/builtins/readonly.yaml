@@ -371,3 +371,48 @@ cases:
       readonly -p zz_rq
       export -p zz_eq
       declare -p zz_rq zz_eq
+
+  #
+  # A refusal is reported against the variable it is about, not against the command that tried to
+  # write it. The check matches on a suffix, so the shell's own `file: line N:` prefix is not part
+  # of the comparison.
+  #
+  - name: "Readonly refusals name the variable, not the command"
+    stdin: |
+      check() {
+        case $2 in
+          *"$1") echo "$1: ok";;
+          *) echo "$1: unexpected: $2";;
+        esac
+      }
+      readonly -a a=(1)
+      readonly r=1
+      check "declare: a: readonly variable" "$( { declare a=9; } 2>&1 )"
+      check "r: readonly variable" "$( { export r=9; } 2>&1 )"
+      check "r: readonly variable" "$( { readonly r=9; } 2>&1 )"
+      check "local: r: readonly variable" "$( f() { local -g r=9; }; f 2>&1 )"
+      check "a: readonly variable" "$( { read -a a <<< 'p q'; } 2>&1 )"
+      declare -p a r
+
+  #
+  # The same refusal raised by an assignment statement, by a builtin that writes an array, or by
+  # arithmetic names the variable too, but brush writes it to the shell's stderr through the
+  # interpreter's error display rather than to the command's own, so a redirection on the command
+  # does not capture it.
+  #
+  - name: "Readonly refusals from writes outside a declaration builtin are capturable"
+    known_failure: true # TODO: these diagnostics go to the shell's stderr, not the command's
+    stdin: |
+      check() {
+        case $2 in
+          *"$1") echo "$1: ok";;
+          *) echo "$1: unexpected: $2";;
+        esac
+      }
+      readonly -a a=(1)
+      readonly r=1
+      check "a: readonly variable" "$( { a[0]=9; } 2>&1 )"
+      check "a: readonly variable" "$( { printf 'x\n' | mapfile -t a; } 2>&1 )"
+      check "a: readonly variable" "$( { (( a[0]++ )); } 2>&1 )"
+      check "r: readonly variable" "$( { (( r++ )); } 2>&1 )"
+      declare -p a r

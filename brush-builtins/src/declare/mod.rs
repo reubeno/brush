@@ -117,8 +117,9 @@ pub(crate) struct DeclareCommand {
 }
 
 /// The builtin a declaration was invoked as. All of them share one implementation; the verb
-/// selects the scope rules, the implied attribute, and the `export`/`readonly` quirks listed on
-/// [`DeclareVerb::is_export_or_readonly`].
+/// selects the scope rules and whether an attribute is implied by the name -- which is where
+/// nearly every behavioral difference between them comes from. See
+/// [`DeclareVerb::implies_attribute`].
 #[derive(Clone, Copy)]
 pub(crate) enum DeclareVerb {
     Declare,
@@ -143,14 +144,23 @@ pub(crate) enum DeclareVerb {
 }
 
 impl DeclareVerb {
-    /// Whether this is `export` or `readonly`. The two differ from `declare` in the same ways:
-    /// they grant one fixed attribute (`-x`, `-r`) rather than taking it from an option; `-a`/`-A`
-    /// apply only to an operand that assigns a value, may be combined, and `-a` wins; a
-    /// subscripted operand is an invalid identifier; `-p` alongside operands is a no-op; each
-    /// assignment performed is echoed as an extra `set -x` line; `-f` reports a missing function;
-    /// and a readonly variable is reported the way a bare assignment reports it, without naming
-    /// the builtin.
-    const fn is_export_or_readonly(self) -> bool {
+    /// Whether this builtin grants an attribute by virtue of its own name (`export` grants `-x`,
+    /// `readonly` grants `-r`) rather than taking every attribute from an option, as `declare`
+    /// and `local` do.
+    ///
+    /// Almost everything that separates `export` and `readonly` from `declare` follows from
+    /// this, so this one predicate stands in for all of it:
+    ///
+    /// - the granted attribute is not an option, so `-p` alongside operands has nothing to
+    ///   select and is a no-op, and `-f` applies the attribute instead of displaying;
+    /// - `-a`/`-A` become modifiers of an assignment rather than the point of the command: they
+    ///   apply only to an operand that assigns a value, may be combined, and `-a` wins;
+    /// - a subscripted operand is an invalid identifier;
+    /// - a missing function under `-f` is reported;
+    /// - each assignment performed is echoed as an extra `set -x` line;
+    /// - a readonly variable is reported the way a bare assignment reports it, without naming
+    ///   the builtin.
+    const fn implies_attribute(self) -> bool {
         matches!(self, Self::Readonly | Self::Export)
     }
 }
@@ -162,6 +172,11 @@ struct DeclarationScope {
 }
 
 /// A declaration whose expansion and structural interpretation are complete.
+///
+/// A shell applies what it can before it complains, so preparing an operand can succeed and
+/// still have found something wrong: [`Self::stopped_by`] carries that error until the rest of
+/// the operand has been applied, in the same two-phase shape as
+/// [`ResolvedAssignment::stopped_by`], which is where most of them come from.
 struct PreparedDeclaration {
     /// The variable being declared.
     name: String,
@@ -175,9 +190,10 @@ struct PreparedDeclaration {
     initial_value: Option<ShellValueLiteral>,
     /// Whether the operand appended rather than replaced.
     append: bool,
-    /// Whether the operand is unquoted compound syntax (`name=(...)`). A failure to assign such
-    /// an operand is an assignment error rather than a builtin failure: nothing is granted and
-    /// the command list is abandoned.
+    /// Whether the operand is unquoted compound syntax (`name=(...)`). A shell's refusal to
+    /// assign such an operand is an assignment error rather than a builtin failure: nothing is
+    /// granted and the command list is abandoned. (Only a refusal -- see
+    /// [`brush_core::ErrorKind::is_assignment_failure`].)
     is_compound_syntax: bool,
     /// The array kind the target has before this declaration, if it exists and is an array.
     current_kind: Option<ArrayKind>,
@@ -208,22 +224,25 @@ impl PreparedDeclaration {
     }
 
     /// A declaration that binds its target as an array without assigning to it, which is how a
-    /// shell binds a target whose subscript turned out to be bad. Appending an empty list makes a
-    /// new variable a set, empty array and promotes a scalar to element 0. A target that is
-    /// already an array needs no binding, and must not get one: appending to a declared-but-unset
-    /// array would fill it out and wrongly leave it set.
+    /// shell binds a target whose subscript turned out to be bad.
     ///
     /// # Arguments
     ///
     /// * `name` - The variable being declared.
     /// * `current_kind` - The array kind the target already has, if it exists and is an array.
     fn bound_as_array(name: &str, current_kind: Option<ArrayKind>) -> Self {
-        Self {
-            initial_value: current_kind
-                .is_none()
-                .then(|| ShellValueLiteral::Array(variables::ArrayLiteral(vec![]))),
-            append: true,
-            ..Self::bare(name, None)
+        match current_kind {
+            // A target that is already an array needs no binding, and must not get one:
+            // appending to a declared-but-unset array would fill it out and wrongly leave it set.
+            Some(_) => Self::bare(name, None),
+            // Appending an empty list is how a shell binds a target as an array without giving
+            // it a value: a new variable becomes a set, empty array, and a scalar is promoted to
+            // element 0.
+            None => Self {
+                initial_value: Some(ShellValueLiteral::Array(variables::ArrayLiteral(vec![]))),
+                append: true,
+                ..Self::bare(name, None)
+            },
         }
     }
 
@@ -279,7 +298,7 @@ impl DeclareCommand {
         declarations: &[brush_core::CommandArg],
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
-        if !verb.is_export_or_readonly()
+        if !verb.implies_attribute()
             && self.make_indexed_array.to_bool() == Some(true)
             && self.make_associative_array.to_bool() == Some(true)
         {
@@ -306,10 +325,10 @@ impl DeclareCommand {
             // Operands are displayed, applied to functions, or applied to variables. `-p`
             // selects display and `-f`/`-F` select functions, which are displayed unless an
             // attribute is being applied to them.
-            let display = self.print && !verb.is_export_or_readonly();
+            let display = self.print && !verb.implies_attribute();
             if display || for_functions {
                 let applies_function_attributes = for_functions
-                    && (verb.is_export_or_readonly()
+                    && (verb.implies_attribute()
                         || self.make_traced.is_some()
                         || self.make_exported.is_some()
                         || self.make_readonly.is_some());
@@ -347,7 +366,10 @@ impl DeclareCommand {
                         .prepare_declaration(&mut context, declaration, verb, scope)
                         .await?;
 
-                    if verb.is_export_or_readonly()
+                    // `export` and `readonly` echo each assignment they perform as a trace
+                    // line of its own, on top of the one the interpreter already wrote for the
+                    // command.
+                    if verb.implies_attribute()
                         && let Some(line) = prepared.render_traced_assignment()
                     {
                         context.trace_extra_line(line).await;
@@ -368,7 +390,7 @@ impl DeclareCommand {
             if !matches!(verb, DeclareVerb::Local)
                 && (for_functions
                     || (!self.print
-                        && !verb.is_export_or_readonly()
+                        && !verb.implies_attribute()
                         && self.attribute_selectors().is_empty()))
             {
                 self.display_matching_functions(&context, verb)?;
@@ -418,7 +440,7 @@ impl DeclareCommand {
         };
 
         let Some(func) = func else {
-            if verb.is_export_or_readonly() {
+            if verb.implies_attribute() {
                 writeln!(
                     context.stderr(),
                     "{}: {declaration}: not a function",
@@ -498,7 +520,7 @@ impl DeclareCommand {
             return Ok(false);
         }
 
-        if verb.is_export_or_readonly()
+        if verb.implies_attribute()
             && let Some(subscript) = &declaration.subscript
         {
             writeln!(
@@ -539,7 +561,7 @@ impl DeclareCommand {
             // Plain `export` and `readonly` report a readonly variable the way a bare assignment
             // does, without naming the builtin; a bad subscript is always reported bare.
             ErrorKind::ReadonlyVariable
-                if verb.is_export_or_readonly() && self.requested_array_kind().is_none() =>
+                if verb.implies_attribute() && self.requested_array_kind().is_none() =>
             {
                 writeln!(context.stderr(), "{err}")?;
             }
@@ -691,7 +713,13 @@ impl DeclareCommand {
         let updated = self.update_value(var, declaration, conversion);
         let value_assigned = updated.is_ok();
         let outcome = updated.and(stopped_by.map_or(Ok(()), Err));
-        if outcome.is_err() && is_compound_syntax {
+        // Only a shell's own refusal to assign becomes an assignment error; brush failing to
+        // carry the assignment out (an unimplemented case, say) fails the operand like any
+        // other error rather than abandoning the caller's command list.
+        if let Err(err) = &outcome
+            && is_compound_syntax
+            && err.kind().is_assignment_failure()
+        {
             return outcome.map_err(brush_core::Error::into_assignment_error);
         }
 
@@ -767,7 +795,7 @@ impl DeclareCommand {
         verb: DeclareVerb,
         current: Option<ArrayKind>,
     ) -> Option<ArrayKind> {
-        if verb.is_export_or_readonly() && !assigns_value {
+        if verb.implies_attribute() && !assigns_value {
             return None;
         }
 
@@ -846,7 +874,7 @@ impl DeclareCommand {
 
         // A rejected subscripted operand (see apply_declaration) is reported as written: its
         // subscript is never evaluated and its value never assigned.
-        if verb.is_export_or_readonly()
+        if verb.implies_attribute()
             && let ast::AssignmentName::ArrayElementName(name, subscript) = &assignment.name
         {
             return Ok(PreparedDeclaration {

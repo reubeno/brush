@@ -387,6 +387,34 @@ cases:
       echo "\${myarray[@]}:" ${myarray[@]}
       echo "\${myarray[*]}:" ${myarray[*]}
 
+  #
+  # Field splitting applies to what an expansion produced, not to the literal text around it. A
+  # compound value's elements are separated by the parser on whitespace; an IFS character sitting
+  # in literal text is just a character. brush splits the whole element after expanding it, so a
+  # literal separator splits it too.
+  #
+  - name: "Literal text in a compound value is not field-split"
+    known_failure: true # TODO: compound elements field-split literal text, not just expansion results
+    stdin: |
+      IFS=,
+      arr=(a,b)
+      declare -p arr
+
+  - name: "A compound value field-splits an expansion but not the literal beside it"
+    known_failure: true # TODO: compound elements field-split literal text, not just expansion results
+    stdin: |
+      IFS=,
+      v="p,q"
+      arr=(a,b $v keep,me)
+      declare -p arr
+
+  - name: "A quoted compound operand does not field-split its literal text"
+    known_failure: true # TODO: compound elements field-split literal text, not just expansion results
+    stdin: |
+      IFS=,
+      declare -a "arr=(a,b)"
+      declare -p arr
+
   - name: "Empty array with newline"
     stdin: |
       declare -a myarray=(

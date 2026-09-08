@@ -13,7 +13,7 @@ use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
 use crate::shell::Shell;
-use crate::variables::{ArrayKind, ArrayLiteral, ShellValue, ShellValueLiteral, ShellVariable};
+use crate::variables::{ArrayLiteral, ShellValue, ShellValueLiteral, ShellVariable};
 use crate::{
     ShellFd, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys, timing,
 };
@@ -1498,13 +1498,7 @@ async fn apply_assignment(
 ) -> Result<(), error::Error> {
     // Base names are never expanded, so this stays valid for the expanded assignment below.
     let variable_name = assignment.name.base_name();
-    // Subscripts resolve against the existing target's kind; a scalar or missing variable is
-    // about to become an indexed array.
-    let target = shell
-        .env()
-        .get(variable_name)
-        .and_then(|(_, var)| var.value().array_kind())
-        .unwrap_or(ArrayKind::Indexed);
+    let target = shell.env().subscript_kind(variable_name);
     let expansion::ResolvedAssignment {
         assignment: expanded,
         stopped_by,
