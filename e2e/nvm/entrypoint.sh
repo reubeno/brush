@@ -3,8 +3,8 @@
 # (junit XML + full log); exit status = test status.
 set -uo pipefail
 source /e2e/lib/run_pytest.sh
-shell=${SHELL_UNDER_TEST:-bash}
-export NVM_TEST_SHELL=$shell
+shell="${SHELL_UNDER_TEST:-bash}"
+export NVM_TEST_SHELL="$shell"
 mkdir -p /results/junit
 suite="/nvm/test/fast/Listing versions"
 urchin -f -s "$shell" "$suite" 2>&1 | tee /results/log.txt

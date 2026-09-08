@@ -3,5 +3,5 @@
 # (junit XML + full log); exit status = test status.
 set -uo pipefail
 source /e2e/lib/run_pytest.sh
-export ZOXIDE_TEST_SHELL=${SHELL_UNDER_TEST:-bash}
+export ZOXIDE_TEST_SHELL="${SHELL_UNDER_TEST:-bash}"
 e2e_run_pytest zoxide "$@"

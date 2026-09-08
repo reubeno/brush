@@ -3,5 +3,5 @@
 # (junit XML + full log); exit status = test status.
 set -uo pipefail
 source /e2e/lib/run_pytest.sh
-export MISE_TEST_SHELL=${SHELL_UNDER_TEST:-bash}
+export MISE_TEST_SHELL="${SHELL_UNDER_TEST:-bash}"
 e2e_run_pytest mise "$@"
