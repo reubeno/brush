@@ -47,6 +47,100 @@ cases:
 
       declare -p calls
 
+  # Reading commands from a pipe doesn't make a shell interactive, so no prompt is
+  # displayed and PROMPT_COMMAND never runs.
+  - name: "PROMPT_COMMAND in a non-interactive shell reading stdin"
+    args: ["-s"]
+    stdin: |
+      PROMPT_COMMAND='echo PROMPT-COMMAND-RAN'
+      echo one
+      echo two
+
+  # Nor is the prompt itself expanded there. PS1 is left single-quoted so the command
+  # substitution runs at prompt time rather than at assignment time, and it writes to stderr
+  # to escape its own capture -- expanding this prompt is otherwise silent.
+  - name: "prompt expansion in a non-interactive shell reading stdin"
+    args: ["-s"]
+    stdin: |
+      PS1='$(echo PS1-EXPANDED >&2)$ '
+      echo one
+      echo two
+
+  # PS0 is expanded after a command is read and before it runs, and only by an interactive
+  # shell -- so its command substitution has no more business running here than PS1's does.
+  - name: "PS0 expansion in a non-interactive shell reading stdin"
+    args: ["-s"]
+    stdin: |
+      PS0='$(echo PS0-EXPANDED >&2)'
+      echo one
+      echo two
+
+  # PROMPT_COMMAND runs between commands, so what it leaves in $?, PIPESTATUS, and $_ must
+  # not be visible to the next command.
+  - name: "PROMPT_COMMAND preserves the last argument in $_"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      PROMPT_COMMAND='true PC-ARG'
+      true USER-ARG
+      echo "UNDERSCORE[$_]"
+      unset PROMPT_COMMAND
+
+  # bash accepts a string or an indexed array in PROMPT_COMMAND and ignores any other type.
+  - name: "PROMPT_COMMAND as an indexed array"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      PROMPT_COMMAND=('echo INDEXED-0' 'echo INDEXED-1')
+      echo command-ran
+      unset PROMPT_COMMAND
+
+  # Each element is saved/restored on its own, so element N sees the status of the last
+  # *user* command rather than whatever element N-1 left behind. `(exit 6)` is what makes
+  # the two distinguishable: a leak from `false` would print 1 here, not 6.
+  - name: "PROMPT_COMMAND array elements each see the last command's status"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      PROMPT_COMMAND=('false' 'echo PC-SAW[$?]')
+      (exit 6)
+      echo "AFTER[$?]"
+      unset PROMPT_COMMAND
+
+  # An `exit` from PROMPT_COMMAND ends the shell then and there: the remaining array
+  # elements don't run, the command waiting on stdin never does, and the shell exits with
+  # the status `exit` was given.
+  - name: "exit from PROMPT_COMMAND ends the shell with its status"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      PROMPT_COMMAND=('echo PC-A' 'exit 7' 'echo PC-C')
+      echo NEVER-RUNS
+
+  - name: "PROMPT_COMMAND as an associative array is ignored"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      declare -A PROMPT_COMMAND
+      PROMPT_COMMAND[x]='echo ASSOC-X'
+      PROMPT_COMMAND[y]='echo ASSOC-Y'
+      echo command-ran
+      unset PROMPT_COMMAND
+
+  # `return` outside a function or sourced script requests no control flow at all -- the
+  # builtin only does so when `in_function()` or `in_sourced_script()` -- so neither a
+  # PROMPT_COMMAND entry nor a line typed at the prompt can end the shell this way. bash
+  # reports the error and carries on, and the remaining array elements still run.
+  - name: "return does not exit the shell, from PROMPT_COMMAND or the prompt"
+    ignore_stderr: true # bash echoes prompts and job-control warnings on a non-tty `-i` shell
+    args: ["-i"]
+    stdin: |
+      PROMPT_COMMAND=('echo PC-A' 'return' 'echo PC-B')
+      echo STILL-ALIVE
+      unset PROMPT_COMMAND
+      return
+      echo STILL-ALIVE-AFTER-BARE-RETURN
+
   # Expanding the prompt runs commands too (command substitutions in PS1), so what it leaves
   # behind must not be visible to the next command either.
   - name: "prompt expansion preserves the last argument in $_"

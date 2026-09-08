@@ -1,5 +1,6 @@
 use std::io::IsTerminal as _;
 use std::io::Write as _;
+use std::ops::ControlFlow;
 
 use crate::InputBackend;
 use crate::InteractivePrompt;
@@ -28,24 +29,24 @@ impl From<&InteractiveExecutionResult> for i32 {
 }
 
 /// Options for interactive shells.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct InteractiveOptions {
     /// Whether terminal shell integration is enabled.
     pub terminal_shell_integration: bool,
-    /// Whether or not to run `PROMPT_COMMAND` before each prompt.
-    pub run_prompt_command: bool,
     /// Whether or not to run zsh-style exec/cmd functions (e.g., `preexec_functions`,
     /// `precmd_functions`).
     pub run_cmd_exec_funcs: bool,
 }
 
-impl Default for InteractiveOptions {
-    fn default() -> Self {
-        Self {
-            terminal_shell_integration: false,
-            run_prompt_command: true,
-            run_cmd_exec_funcs: false,
-        }
+/// Reads `PROMPT_COMMAND` as bash does: a string is a single command, an indexed array is one
+/// command per element, and any other type runs nothing at all.
+fn read_prompt_commands<SE: brush_core::ShellExtensions>(
+    shell: &brush_core::Shell<SE>,
+) -> Vec<String> {
+    match shell.env_var("PROMPT_COMMAND").map(|var| var.value()) {
+        Some(brush_core::ShellValue::String(cmd)) => vec![cmd.to_owned()],
+        Some(brush_core::ShellValue::IndexedArray(cmds)) => cmds.values().cloned().collect(),
+        _ => vec![],
     }
 }
 
@@ -181,11 +182,26 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
     async fn run_interactively_once(&mut self) -> Result<InteractiveExecutionResult, ShellError> {
         let mut shell = self.shell.lock().await;
 
-        // Run any pre-prompt actions.
-        Self::run_pre_prompt_actions(&mut shell, &self.options).await?;
+        // Check for any completed jobs.
+        shell.check_for_completed_jobs()?;
 
-        // Compose the prompt.
-        let prompt = Self::compose_prompt(&mut shell, self.terminal_integration.as_ref()).await?;
+        // Everything between here and reading input is prompt work, and a shell that displays
+        // no prompt does none of it: `script | brush -s` reads commands through this loop but
+        // isn't interactive in the `$-` sense, so bash runs no PROMPT_COMMAND and expands no
+        // PS1 there.
+        let prompt = if shell.options().interactive {
+            // Run any pre-prompt actions.
+            if let ControlFlow::Break(exit) =
+                Self::run_pre_prompt_actions(&mut shell, &self.options).await?
+            {
+                return Ok(InteractiveExecutionResult::Executed(exit));
+            }
+
+            // Compose the prompt.
+            Self::compose_prompt(&mut shell, self.terminal_integration.as_ref()).await?
+        } else {
+            InteractivePrompt::default()
+        };
 
         drop(shell);
 
@@ -325,29 +341,17 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         result
     }
 
+    /// Runs pre-prompt actions. Breaks with the result of one that exited the shell.
     async fn run_pre_prompt_actions(
         shell: &mut brush_core::Shell<SE>,
         options: &InteractiveOptions,
-    ) -> Result<(), ShellError> {
-        // Check for any completed jobs.
-        shell.check_for_completed_jobs()?;
-
+    ) -> Result<ControlFlow<brush_core::ExecutionResult>, ShellError> {
         // If there's a variable called PROMPT_COMMAND, then run it first.
-        if options.run_prompt_command {
-            if let Some(prompt_cmd_var) = shell.env_var("PROMPT_COMMAND") {
-                match prompt_cmd_var.value() {
-                    brush_core::ShellValue::String(cmd_str) => {
-                        Self::run_pre_prompt_command(shell, cmd_str.to_owned()).await?;
-                    }
-                    brush_core::ShellValue::IndexedArray(values) => {
-                        let owned_values: Vec<_> = values.values().cloned().collect();
-                        for cmd_str in owned_values {
-                            Self::run_pre_prompt_command(shell, cmd_str).await?;
-                        }
-                    }
-                    // Other types are ignored.
-                    _ => (),
-                }
+        for prompt_cmd in read_prompt_commands(shell) {
+            if let ControlFlow::Break(exit) =
+                Self::run_pre_prompt_command(shell, prompt_cmd).await?
+            {
+                return Ok(ControlFlow::Break(exit));
             }
         }
 
@@ -372,7 +376,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             }
         }
 
-        Ok(())
+        Ok(ControlFlow::Continue(()))
     }
 
     async fn run_pre_exec_actions(
@@ -381,11 +385,14 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         options: &InteractiveOptions,
         terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
     ) -> Result<(), ShellError> {
-        // Display the pre-command prompt on stderr (if there is one).
-        let precmd_prompt = shell.compose_precmd_prompt().await?;
-        if !precmd_prompt.is_empty() {
-            eprint!("{precmd_prompt}");
-            std::io::stderr().flush()?;
+        // Display the pre-command prompt on stderr (if there is one). Like the other prompts,
+        // this is expanded only by a shell that's interactive in the `$-` sense.
+        if shell.options().interactive {
+            let precmd_prompt = shell.compose_precmd_prompt().await?;
+            if !precmd_prompt.is_empty() {
+                eprint!("{precmd_prompt}");
+                std::io::stderr().flush()?;
+            }
         }
 
         // Update history (if applicable).
@@ -420,24 +427,24 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         Ok(())
     }
 
+    /// Runs one `PROMPT_COMMAND` entry. Breaks with its result if it exited the shell.
     async fn run_pre_prompt_command(
         shell: &mut brush_core::Shell<SE>,
         prompt_cmd: String,
-    ) -> Result<(), ShellError> {
-        // Save (and later restore) the last exit status.
-        let prev_last_result = shell.last_exit_status();
-        let prev_last_pipeline_statuses = shell.last_pipeline_statuses().to_vec();
+    ) -> Result<ControlFlow<brush_core::ExecutionResult>, ShellError> {
+        let saved_status = shell.save_command_status();
 
         // Run the command.
         let params = shell.default_exec_params();
         let source_info = brush_core::SourceInfo::from("PROMPT_COMMAND");
-        shell.run_string(prompt_cmd, &source_info, &params).await?;
+        let result = shell.run_string(prompt_cmd, &source_info, &params).await?;
+        if result.is_exit() {
+            return Ok(ControlFlow::Break(result));
+        }
 
-        // Restore the last exit status.
-        *shell.last_pipeline_statuses_mut() = prev_last_pipeline_statuses;
-        shell.set_last_exit_status(prev_last_result);
+        shell.restore_command_status(saved_status);
 
-        Ok(())
+        Ok(ControlFlow::Continue(()))
     }
 }
 

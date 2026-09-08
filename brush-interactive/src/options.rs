@@ -23,7 +23,6 @@ impl From<&UIOptions> for crate::InteractiveOptions {
         Self {
             terminal_shell_integration: options.terminal_shell_integration,
             run_cmd_exec_funcs: options.zsh_style_hooks,
-            ..Default::default()
         }
     }
 }
