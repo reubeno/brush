@@ -35,7 +35,10 @@ mod command;
 mod complete;
 #[cfg(feature = "builtin.continue")]
 mod continue_;
-#[cfg(feature = "builtin.declare")]
+// `export` is implemented in terms of `declare` (see `export.rs`), so its code is needed
+// whenever either builtin is selected. The `declare`/`typeset`/`local`/`readonly`
+// registrations stay gated on `builtin.declare` alone.
+#[cfg(any(feature = "builtin.declare", feature = "builtin.export"))]
 mod declare;
 #[cfg(feature = "builtin.dirs")]
 mod dirs;
@@ -73,7 +76,6 @@ mod jobs;
 mod kill;
 #[cfg(feature = "builtin.let")]
 mod let_;
-#[cfg(feature = "builtin.pushd")]
 #[cfg(feature = "builtin.declare")]
 mod local;
 #[cfg(feature = "builtin.mapfile")]
@@ -82,6 +84,7 @@ mod mapfile;
 mod popd;
 #[cfg(all(feature = "builtin.printf", any(unix, windows)))]
 mod printf;
+#[cfg(feature = "builtin.pushd")]
 mod pushd;
 #[cfg(feature = "builtin.pwd")]
 mod pwd;
