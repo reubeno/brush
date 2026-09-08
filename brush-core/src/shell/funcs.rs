@@ -1,7 +1,8 @@
 //! Function support for shells.
 
 use crate::{
-    ExecutionParameters, commands, error, extensions, functions, results::ExecutionWaitResult,
+    ExecutionParameters, ExecutionResult, commands, error, extensions, functions,
+    results::ExecutionWaitResult,
 };
 
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
@@ -83,7 +84,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         Ok(())
     }
 
-    /// Invokes a function defined in this shell, returning the resulting exit status.
+    /// Invokes a function defined in this shell, returning its execution result.
     ///
     /// # Arguments
     ///
@@ -95,7 +96,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         name: N,
         args: I,
         params: ExecutionParameters,
-    ) -> Result<u8, error::Error> {
+    ) -> Result<ExecutionResult, error::Error> {
         let name = name.as_ref();
         let command_name = String::from(name);
 
@@ -120,7 +121,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             commands::invoke_shell_function(func_registration, context, &command_args).await?;
 
         match result.wait().await? {
-            ExecutionWaitResult::Completed(result) => Ok(result.exit_code.into()),
+            ExecutionWaitResult::Completed(result) => Ok(result),
             ExecutionWaitResult::Stopped(..) => {
                 error::unimp("stopped child from function invocation")
             }

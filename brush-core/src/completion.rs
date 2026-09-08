@@ -785,7 +785,8 @@ impl Spec {
         let params = shell.default_exec_params();
         let invoke_result = shell
             .invoke_function(function_name, args.iter(), params)
-            .await;
+            .await
+            .map(|result| u8::from(result.exit_code));
 
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 
