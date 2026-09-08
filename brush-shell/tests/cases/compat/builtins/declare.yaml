@@ -1373,6 +1373,23 @@ cases:
       declare -ai a=(1+1 2*3)
       declare -p a
 
+  #
+  # `declare -g` names a global, but a shell resolves a subscripted operand's kind against the
+  # local that shadows it and then assigns there -- so the global is left untouched. brush honors
+  # `-g` for both halves and writes the global.
+  #
+  - name: "declare -g with a subscripted operand under a shadowing local"
+    known_failure: true # TODO: -g resolves the subscript against the global, not the shadowing local
+    stdin: |
+      declare -A g=([x]=1)
+      f() {
+        local -a g=(9)
+        declare -g g[y]=2
+        declare -p g
+      }
+      f
+      declare -p g
+
   - name: "a local cannot shadow a readonly global"
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
