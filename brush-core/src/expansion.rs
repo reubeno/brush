@@ -712,15 +712,12 @@ async fn expand_assignment_value(
 }
 
 /// Resolves one array subscript against the kind of the array it names, and returns the index or
-/// key it selects. An indexed array's subscript is an arithmetic expression (expanded, then
-/// evaluated); an associative array's is a literal key (expanded only).
+/// key it selects, using a fresh expander.
 ///
-/// This is the one place that rule lives. Callers layer their own validation on top -- an
-/// assignment rejects the subscripts no element can have (see [`expand_assignment_subscript`]),
-/// while `unset` quietly ignores them -- but none of them re-decide how a subscript is read.
-/// (Parameter expansion resolves its own subscripts through
-/// [`WordExpander::expand_array_index`], which applies this same rule using the surrounding
-/// expander's settings rather than a fresh one.)
+/// Callers layer their own validation on top -- an assignment rejects the subscripts no element
+/// can have (see [`expand_assignment_subscript`]), while `unset` quietly ignores them -- but none
+/// of them re-decide how a subscript is read; that rule lives only in
+/// [`WordExpander::expand_array_index`], which this defers to.
 ///
 /// # Arguments
 ///
@@ -734,12 +731,9 @@ pub(crate) async fn resolve_array_subscript(
     index: &str,
     kind: ArrayKind,
 ) -> Result<String, error::Error> {
-    match kind {
-        ArrayKind::Indexed => Ok(arithmetic::expand_and_eval(shell, params, index, false)
-            .await?
-            .to_string()),
-        ArrayKind::Associative => basic_expand_word(shell, params, index).await,
-    }
+    WordExpander::new(shell, params)
+        .expand_array_index(index, kind)
+        .await
 }
 
 /// Expands one `name[subscript]=` subscript against a known target kind and returns its final
@@ -824,13 +818,7 @@ pub(crate) async fn resolve_assignment_subscripts(
                 Ok(resolved) => key.value = resolved,
                 // A key no element can have stops the value here; anything else (an arithmetic
                 // error, say) fails the whole expansion.
-                Err(err)
-                    if matches!(
-                        err.kind(),
-                        error::ErrorKind::BadArraySubscript(_)
-                            | error::ErrorKind::AssigningToNonNumericIndex(_)
-                    ) =>
-                {
+                Err(err) if err.kind().is_bad_element_key() => {
                     stopped_by = Some((i, err));
                     break;
                 }
@@ -2006,13 +1994,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                let kind = self
-                    .shell
-                    .env()
-                    .get(name)
-                    .and_then(|(_, var)| var.value().array_kind())
-                    .unwrap_or(ArrayKind::Indexed);
-
+                let kind = self.shell.env().subscript_kind(name);
                 let index_to_use = self.expand_array_index(index.as_str(), kind).await?;
                 (name, Some(index_to_use))
             }
@@ -2182,14 +2164,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
                 // The array kind of the target governs how the index is expanded.
-                let kind = self
-                    .shell
-                    .env()
-                    .get(name)
-                    .and_then(|(_, var)| var.value().array_kind())
-                    .unwrap_or(ArrayKind::Indexed);
-
-                // Figure out which index to use.
+                let kind = self.shell.env().subscript_kind(name);
                 let index_to_use = self.expand_array_index(index.as_str(), kind).await?;
 
                 // Index into the array.
@@ -2249,24 +2224,34 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
     }
 
-    /// Resolves a subscript in a parameter reference. This is
-    /// [`resolve_array_subscript`]'s rule applied with this expander's own settings, which a
-    /// nested expansion must inherit.
+    /// Resolves one array subscript against the kind of the array it names, and returns the
+    /// index or key it selects. An indexed array's subscript is an arithmetic expression
+    /// (expanded, then evaluated); an associative array's is a literal key (expanded only).
+    ///
+    /// This is the one place that rule lives. A subscript reached from outside an expansion --
+    /// an assignment's, or `unset`'s -- comes here through [`resolve_array_subscript`]; one
+    /// reached from inside a parameter reference comes here directly, so that the literal key's
+    /// expansion inherits the surrounding expander's settings.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The subscript, as written after the operand's own word expansion.
+    /// * `kind` - The array kind that selects arithmetic or literal semantics.
     async fn expand_array_index(
         &mut self,
         index: &str,
         kind: ArrayKind,
     ) -> Result<String, error::Error> {
-        let index_to_use = match kind {
-            ArrayKind::Associative => self.basic_expand_to_str(index).await?,
+        match kind {
+            ArrayKind::Associative => self.basic_expand_to_str(index).await,
             ArrayKind::Indexed => {
-                arithmetic::expand_and_eval(self.shell, self.params, index, false)
-                    .await?
-                    .to_string()
+                Ok(
+                    arithmetic::expand_and_eval(self.shell, self.params, index, false)
+                        .await?
+                        .to_string(),
+                )
             }
-        };
-
-        Ok(index_to_use)
+        }
     }
 
     fn expand_special_parameter(

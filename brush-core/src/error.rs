@@ -5,15 +5,17 @@ use std::path::PathBuf;
 use crate::{Shell, ShellFd, extensions, results, sys};
 
 /// Unified error type for this crate: a kind plus the context the shell has attached to it.
-#[derive(thiserror::Error, Debug)]
+#[derive(Debug)]
 pub struct Error {
     /// The kind of error.
-    #[source]
     kind: ErrorKind,
 
     /// The variable this error is about, if it was raised by an assignment to or declaration of
     /// one; displayed as a `name: ` prefix, as a shell does. See [`Error::for_variable`].
-    variable: Option<String>,
+    ///
+    /// Boxed because it is `None` on all but the assignment paths, and `Error` is returned by
+    /// value from nearly every function in this crate.
+    variable: Option<Box<str>>,
 
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
@@ -340,6 +342,31 @@ pub enum ErrorKind {
     NoMatch(String),
 }
 
+impl ErrorKind {
+    /// Returns whether this is a shell's own refusal to perform an assignment, as opposed to
+    /// brush failing to carry one out (an unimplemented case, an I/O error). Only the former
+    /// may be turned into an assignment error, which abandons the rest of the command list;
+    /// see [`Error::is_assignment_error`].
+    pub const fn is_assignment_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::ReadonlyVariable
+                | Self::AssigningListToArrayMember
+                | Self::ConvertingIndexedArrayToAssociativeArray
+                | Self::ConvertingAssociativeArrayToIndexedArray
+        ) || self.is_bad_element_key()
+    }
+
+    /// Returns whether this names an array element that no element can be: an empty subscript,
+    /// or `*`/`@` where only a number will do.
+    pub const fn is_bad_element_key(&self) -> bool {
+        matches!(
+            self,
+            Self::BadArraySubscript(_) | Self::AssigningToNonNumericIndex(_)
+        )
+    }
+}
+
 /// Trait implementable by built-in commands to represent errors.
 pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {
     /// Try to extract a reference to the underlying `std::io::Error`, if any.
@@ -432,14 +459,22 @@ where
 }
 
 impl std::fmt::Display for Error {
-    /// N.B. The kind is also this error's [`std::error::Error::source`], so a consumer that
-    /// walks and prints the whole chain sees the message twice. Nothing in the shell does; every
-    /// diagnostic prints this line alone.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.variable {
             write!(f, "{name}: ")?;
         }
         write!(f, "{}", self.kind)
+    }
+}
+
+impl std::error::Error for Error {
+    /// The kind's own source, not the kind itself: this error already displays the kind's
+    /// message, so returning the kind here would make a consumer that prints the whole chain
+    /// (`anyhow`, `eyre`, `{:#}`) print it twice. Whatever the kind wraps -- an
+    /// [`std::io::Error`], say -- stays reachable; the kind itself is reachable through
+    /// [`Error::kind`].
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.kind.source()
     }
 }
 
@@ -480,9 +515,9 @@ impl Error {
                 _,
             ) => None,
             (ErrorKind::AssigningListToArrayMember, Some(subscript)) => {
-                Some(std::format!("{name}[{subscript}]"))
+                Some(std::format!("{name}[{subscript}]").into_boxed_str())
             }
-            _ => Some(name.to_owned()),
+            _ => Some(Box::from(name)),
         };
         self
     }
@@ -572,4 +607,79 @@ pub fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 /// * `project_issue_id` - The GitHub issue ID where the implementation is tracked.
 pub fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
     Err(ErrorKind::UnimplementedAndTracked(msg, project_issue_id).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error as _;
+
+    use super::*;
+
+    #[test]
+    fn error_displays_its_message_once_and_does_not_repeat_it_as_its_source() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "no such file");
+        let err = Error::from(ErrorKind::IoError(io_err));
+
+        // The kind's message shows up in this error's own message...
+        assert_eq!(err.to_string(), "i/o error: no such file");
+        // ...so the source has to be what the kind wraps, not the kind itself; otherwise a
+        // consumer that prints the whole chain prints the same text twice.
+        let source = err.source().unwrap();
+        assert_eq!(source.to_string(), "no such file");
+        assert!(source.downcast_ref::<std::io::Error>().is_some());
+        assert!(err.as_io_error().is_some());
+    }
+
+    #[test]
+    fn naming_a_variable_prefixes_the_message() {
+        let err = Error::from(ErrorKind::ReadonlyVariable).for_variable("v", None);
+        assert_eq!(err.to_string(), "v: readonly variable");
+
+        // A list assigned to an element is reported against the element.
+        let err = Error::from(ErrorKind::AssigningListToArrayMember).for_variable("a", Some("i+1"));
+        assert_eq!(
+            err.to_string(),
+            "a[i+1]: cannot assign list to array member"
+        );
+
+        // A kind whose message already names its target is left alone.
+        let err =
+            Error::from(ErrorKind::BadArraySubscript(String::from("a[]"))).for_variable("a", None);
+        assert_eq!(err.to_string(), "a[]: bad array subscript");
+    }
+
+    #[test]
+    fn only_a_shells_own_refusal_counts_as_an_assignment_failure() {
+        for kind in [
+            ErrorKind::ReadonlyVariable,
+            ErrorKind::AssigningListToArrayMember,
+            ErrorKind::ConvertingIndexedArrayToAssociativeArray,
+            ErrorKind::ConvertingAssociativeArrayToIndexedArray,
+            ErrorKind::BadArraySubscript(String::from("a[]")),
+            ErrorKind::AssigningToNonNumericIndex(String::from("[*]=1")),
+        ] {
+            assert!(kind.is_assignment_failure(), "expected refusal: {kind}");
+        }
+
+        // brush failing to carry an assignment out is not the shell refusing to perform it, and
+        // must not be turned into an assignment error: that would abandon the caller's whole
+        // command list over an unimplemented case or a broken pipe.
+        for kind in [
+            ErrorKind::Unimplemented("misaligned keys/values"),
+            ErrorKind::IoError(std::io::Error::other("broken pipe")),
+            ErrorKind::NotArray,
+        ] {
+            assert!(
+                !kind.is_assignment_failure(),
+                "expected non-refusal: {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_an_unusable_element_key_stops_a_compound_value_short() {
+        assert!(ErrorKind::BadArraySubscript(String::new()).is_bad_element_key());
+        assert!(ErrorKind::AssigningToNonNumericIndex(String::new()).is_bad_element_key());
+        assert!(!ErrorKind::ReadonlyVariable.is_bad_element_key());
+    }
 }

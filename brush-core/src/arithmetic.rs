@@ -32,9 +32,10 @@ pub enum EvalError {
     #[error("failed to access array")]
     FailedToAccessArray,
 
-    /// Failed to update the shell environment in an assignment operator.
-    #[error("failed to update environment")]
-    FailedToUpdateEnvironment,
+    /// Failed to update the shell environment in an assignment operator. Carries the reason,
+    /// which already names the variable it is about (`a: readonly variable`).
+    #[error("{0}")]
+    FailedToUpdateEnvironment(String),
 
     /// Failed to parse an arithmetic expression.
     #[error("failed to parse expression: {0}")]
@@ -378,7 +379,7 @@ fn assign(
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,
                 )
-                .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
+                .map_err(|err| EvalError::FailedToUpdateEnvironment(err.to_string()))?;
         }
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
             let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
@@ -393,7 +394,7 @@ fn assign(
                     env::EnvironmentLookup::Anywhere,
                     env::EnvironmentScope::Global,
                 )
-                .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
+                .map_err(|err| EvalError::FailedToUpdateEnvironment(err.to_string()))?;
         }
     }
 

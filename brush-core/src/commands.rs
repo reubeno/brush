@@ -73,9 +73,10 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
         self.params.iter_fds(self.shell)
     }
 
-    /// Writes one extra `set -x` trace line, doing nothing when command tracing is disabled. The
-    /// interpreter already traces every command; this is for lines a builtin emits on its own
-    /// behalf, as `export` and `readonly` do for each assignment they perform.
+    /// Writes one extra `set -x` trace line on the builtin's own behalf; the interpreter already
+    /// traces the command itself. `export` and `readonly` use this to echo each assignment they
+    /// perform. Self-gating: this is a no-op when command tracing is off, so callers need not
+    /// check.
     ///
     /// # Arguments
     ///

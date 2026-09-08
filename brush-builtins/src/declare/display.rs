@@ -73,8 +73,6 @@ impl DeclareCommand {
         }
     }
 
-    /// Applies attribute flags to the named function (`declare -ft name`, `readonly -f name`).
-    /// Returns `true` if the function was found.
     /// Returns the predicates the attribute options select variables with, one per option given
     /// in its `-X` form. They apply as a union: `declare -rt` lists variables that are readonly
     /// *or* traced. A plus option (`+x`) selects nothing, as in a shell.
@@ -148,7 +146,7 @@ impl DeclareCommand {
 
         // A shell lists in `declare -p` form whenever an attribute option or an
         // attribute-implying verb selected the variables, not only under `-p`.
-        let declare_form = self.print || verb.is_export_or_readonly() || !selectors.is_empty();
+        let declare_form = self.print || verb.implies_attribute() || !selectors.is_empty();
 
         let iter_policy = if matches!(verb, DeclareVerb::Local) {
             EnvironmentLookup::OnlyInCurrentLocal

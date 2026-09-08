@@ -1597,6 +1597,23 @@ cases:
       declare -p r
 
   #
+  # Only a shell's own refusal to assign is an assignment error. brush failing to carry an
+  # assignment out is an ordinary per-operand failure, so the caller's command list survives it.
+  # The literal below mixes keyed and unkeyed elements in an associative array, which brush does
+  # not yet assign the way bash pairs them up; what this case pins down is that hitting that gap
+  # does not abandon the rest of the line.
+  #
+  - name: "an unimplemented compound value fails the operand without abandoning the list"
+    known_failure: true # TODO: misaligned keys/values in an associative array literal
+    ignore_stderr: true
+    stdin: |
+      declare -A y=(a [k]=b [""]=c d)
+      echo "status: $?"
+      declare -p y
+      declare -A z=(a [k]=b); echo "same list"
+      echo "reached"
+
+  #
   # A list assigned to one element abandons not just the remaining operands but, as an
   # assignment error, the rest of the command list. brush continues the list.
   #
