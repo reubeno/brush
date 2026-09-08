@@ -550,6 +550,12 @@ impl ShellVariable {
     ///
     /// * `index` - The index at which to unset the value.
     pub fn unset_index(&mut self, index: &str) -> Result<bool, error::Error> {
+        // As with assignment, readonly is enforced here so that every path reaching an element is
+        // blocked, not just whole-variable unset.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &mut self.value {
             ShellValue::Unset(ty) => match ty {
                 ShellValueUnsetType::Untyped => Err(error::ErrorKind::NotArray.into()),
@@ -564,6 +570,33 @@ impl ShellVariable {
                 Ok(values.remove(&key).is_some())
             }
             ShellValue::Dynamic { .. } => Ok(false),
+        }
+    }
+
+    /// Unsets every element of the array, leaving the variable itself declared. Returns whether
+    /// any element was removed. A variable that is not an array is an error; a declared-but-unset
+    /// array has nothing to remove and stays unset. An associative array is left alone -- a shell
+    /// quirk: `*` and `@` name no key.
+    pub fn unset_all_indices(&mut self) -> Result<bool, error::Error> {
+        // As with `unset_index`, readonly is enforced here so that every path reaching an
+        // element is blocked.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
+        match &mut self.value {
+            ShellValue::Unset(ShellValueUnsetType::Untyped) | ShellValue::String(_) => {
+                Err(error::ErrorKind::NotArray.into())
+            }
+            ShellValue::Unset(
+                ShellValueUnsetType::IndexedArray | ShellValueUnsetType::AssociativeArray,
+            ) => Ok(false),
+            ShellValue::IndexedArray(values) => {
+                let removed_any = !values.is_empty();
+                values.clear();
+                Ok(removed_any)
+            }
+            ShellValue::AssociativeArray(_) | ShellValue::Dynamic { .. } => Ok(false),
         }
     }
 

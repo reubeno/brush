@@ -343,6 +343,20 @@ impl ShellEnvironment {
         }
     }
 
+    /// Tries to unset every element of the named array variable. Returns whether any element was
+    /// removed; a variable that does not exist removes nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the array variable to clear.
+    pub fn unset_all_indices(&mut self, name: &str) -> Result<bool, error::Error> {
+        if let Some((_, var)) = self.get_mut(name) {
+            var.unset_all_indices()
+        } else {
+            Ok(false)
+        }
+    }
+
     fn try_unset_in_map(
         map: &mut ShellVariableMap,
         name: &str,
