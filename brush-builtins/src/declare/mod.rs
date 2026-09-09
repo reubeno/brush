@@ -688,7 +688,9 @@ impl DeclareCommand {
     /// refused conversion grants only `export`'s `-x` or `readonly`'s `-r`.
     ///
     /// An unquoted compound operand is the exception to the whole table: any failed outcome is
-    /// an assignment error, nothing at all is granted, and the error propagates.
+    /// an assignment error, none of these attributes is granted, and the error propagates. The
+    /// attributes that shape how a value is stored are applied earlier and survive regardless --
+    /// see [`Self::apply_pre_assignment_attributes`].
     ///
     /// `set -a` never exports an array, outranks an explicit `+x`, but yields to `export -n`.
     ///
