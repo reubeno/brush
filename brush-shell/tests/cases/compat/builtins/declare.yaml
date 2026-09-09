@@ -1128,6 +1128,14 @@ cases:
       f() { check "local: nosuch: not found" "$(local -p nosuch 2>&1)"; }
       f
 
+  - name: "Display quotes an associative key of @"
+    # bash quotes both `*` and `@` when displaying an associative key; brush quotes only `*`.
+    # Pre-existing; the key quoting predates this branch.
+    known_failure: true
+    stdin: |
+      declare -A zzat=(['@']=at ['*']=star [k]=v)
+      declare -p zzat
+
   - name: "Display filtered by array attributes includes unassigned arrays"
     stdin: |
       declare -a zzempty
@@ -1578,6 +1586,8 @@ cases:
       declare -p r
       declare -i i=(1 []=2)
       declare -p i
+      declare -t t=(1 []=2)
+      declare -p t
 
   - name: "a conversion failure on an unquoted compound operand is an assignment error"
     ignore_stderr: true

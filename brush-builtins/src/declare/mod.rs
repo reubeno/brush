@@ -736,6 +736,7 @@ impl DeclareCommand {
             if !implied_export {
                 self.apply_export_flag(var);
             }
+            self.apply_trace_flag(var);
             self.apply_readonly_flag(var)?;
 
             let auto_export =
@@ -1050,8 +1051,8 @@ impl DeclareCommand {
     }
 
     /// Applies the option attributes that have to be on the variable before a value is: the ones
-    /// that shape how the value is stored (`-i`, `-c`/`-l`/`-u`, `-n`) and `-t`, which shapes
-    /// nothing but belongs to the same pass.
+    /// that shape how the value is stored (`-i`, `-c`/`-l`/`-u`, `-n`). A shell keeps these even
+    /// when the assignment then fails, which is what separates them from the flags applied after.
     const fn apply_pre_assignment_attributes(&self, var: &mut ShellVariable) {
         if let Some(value) = self.make_integer.to_bool() {
             if value {
@@ -1087,13 +1088,6 @@ impl DeclareCommand {
                 var.unset_treat_as_nameref();
             }
         }
-        if let Some(value) = self.make_traced.to_bool() {
-            if value {
-                var.enable_trace();
-            } else {
-                var.disable_trace();
-            }
-        }
         if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
             if value {
                 var.set_update_transform(ShellVariableUpdateTransform::Uppercase);
@@ -1114,6 +1108,20 @@ impl DeclareCommand {
             }
             Some(false) => {
                 var.unexport();
+            }
+            None => (),
+        }
+    }
+
+    /// Applies the `-t`/`+t` flag, if given. It shapes nothing about the value, so like `-x` and
+    /// `-r` it is granted only once the assignment has gone through.
+    const fn apply_trace_flag(&self, var: &mut ShellVariable) {
+        match self.make_traced.to_bool() {
+            Some(true) => {
+                var.enable_trace();
+            }
+            Some(false) => {
+                var.disable_trace();
             }
             None => (),
         }
