@@ -53,7 +53,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     }
 
     /// Expands a raw parsed assignment and resolves its subscripts against `target`. See
-    /// [`expansion::expand_assignment`].
+    /// `expansion::expand_assignment`.
     ///
     /// # Arguments
     ///
@@ -70,7 +70,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     }
 
     /// Resolves one array subscript against the kind of the array it names. See
-    /// [`expansion::resolve_array_subscript`].
+    /// `expansion::resolve_array_subscript`.
     ///
     /// # Arguments
     ///
@@ -87,7 +87,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     }
 
     /// Resolves the subscripts of an assignment whose words were already expanded, leaving its
-    /// values untouched. See [`expansion::resolve_assignment_subscripts`].
+    /// values untouched. See `expansion::resolve_assignment_subscripts`.
     ///
     /// # Arguments
     ///
