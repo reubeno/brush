@@ -741,9 +741,7 @@ fn get_bash_argv_value(shell: &dyn ShellState) -> variables::ShellValue {
     for frame in shell.call_stack().iter() {
         if let Some(args) = frame_bash_args(frame, extdebug) {
             // Push args in reverse order per frame (last arg at lowest index = top of stack)
-            for arg in args.iter().rev() {
-                argv.push(arg.clone());
-            }
+            argv.extend(args.iter().cloned().rev());
         }
     }
 
