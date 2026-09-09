@@ -35,7 +35,10 @@ mod command;
 mod complete;
 #[cfg(feature = "builtin.continue")]
 mod continue_;
-#[cfg(feature = "builtin.declare")]
+// `export` is implemented in terms of `declare` (see `export.rs`), so its code is needed
+// whenever either builtin is selected. The `declare`/`typeset`/`local`/`readonly`
+// registrations stay gated on `builtin.declare` alone.
+#[cfg(any(feature = "builtin.declare", feature = "builtin.export"))]
 mod declare;
 #[cfg(feature = "builtin.dirs")]
 mod dirs;
@@ -73,6 +76,8 @@ mod jobs;
 mod kill;
 #[cfg(feature = "builtin.let")]
 mod let_;
+#[cfg(feature = "builtin.declare")]
+mod local;
 #[cfg(feature = "builtin.mapfile")]
 mod mapfile;
 #[cfg(feature = "builtin.popd")]
@@ -85,6 +90,8 @@ mod pushd;
 mod pwd;
 #[cfg(feature = "builtin.read")]
 mod read;
+#[cfg(feature = "builtin.declare")]
+mod readonly;
 #[cfg(feature = "builtin.return")]
 mod return_;
 #[cfg(feature = "builtin.set")]
@@ -150,7 +157,7 @@ fn write_alias_definition(
 #[macro_export]
 macro_rules! minus_or_plus_flag_arg {
     ($struct_name:ident, $flag_char:literal, $desc:literal) => {
-        #[derive(clap::Parser)]
+        #[derive(clap::Parser, Default)]
         pub(crate) struct $struct_name {
             #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue, help = $desc)]
             _enable: bool,
@@ -165,6 +172,16 @@ macro_rules! minus_or_plus_flag_arg {
         }
 
         impl $struct_name {
+            /// Builds the flag as if `-X` (`Some(true)`), `+X` (`Some(false)`), or neither
+            /// (`None`) had been given on the command line.
+            #[allow(dead_code, reason = "may not be used in all macro instantiations")]
+            pub const fn new(value: Option<bool>) -> Self {
+                Self {
+                    _enable: matches!(value, Some(true)),
+                    _disable: matches!(value, Some(false)),
+                }
+            }
+
             #[allow(dead_code, reason = "may not be used in all macro instantiations")]
             pub const fn is_some(&self) -> bool {
                 self._enable || self._disable

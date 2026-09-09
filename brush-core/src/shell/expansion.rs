@@ -2,7 +2,9 @@
 
 use std::borrow::Cow;
 
-use crate::{error, expansion, extensions, interp::ExecutionParameters};
+use brush_parser::ast;
+
+use crate::{error, expansion, extensions, interp::ExecutionParameters, variables::ArrayKind};
 
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the current value of the IFS variable, or the default value if it is not set.
@@ -42,5 +44,56 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<Vec<String>, error::Error> {
         let result = expansion::full_expand_and_split_word(self, params, s.as_ref()).await?;
         Ok(result)
+    }
+
+    /// Expands a raw parsed assignment and resolves its subscripts against `target`. See
+    /// `expansion::expand_assignment`.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - The execution parameters to use during expansion.
+    /// * `assignment` - The parsed assignment to expand.
+    /// * `target` - The target array type controlling subscript expansion.
+    pub async fn expand_assignment(
+        &mut self,
+        params: &ExecutionParameters,
+        assignment: &ast::Assignment,
+        target: ArrayKind,
+    ) -> Result<expansion::ResolvedAssignment, error::Error> {
+        expansion::expand_assignment(self, params, assignment, target).await
+    }
+
+    /// Resolves one array subscript against the kind of the array it names. See
+    /// `expansion::resolve_array_subscript`.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - The execution parameters to use during expansion.
+    /// * `index` - The subscript, as written after the operand's own word expansion.
+    /// * `kind` - The target array type controlling subscript expansion.
+    pub async fn resolve_array_subscript(
+        &mut self,
+        params: &ExecutionParameters,
+        index: &str,
+        kind: ArrayKind,
+    ) -> Result<String, error::Error> {
+        expansion::resolve_array_subscript(self, params, index, kind).await
+    }
+
+    /// Resolves the subscripts of an assignment whose words were already expanded, leaving its
+    /// values untouched. See `expansion::resolve_assignment_subscripts`.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - The execution parameters to use during expansion.
+    /// * `assignment` - The already-word-expanded assignment to resolve.
+    /// * `target` - The target array type controlling subscript expansion.
+    pub async fn resolve_assignment_subscripts(
+        &mut self,
+        params: &ExecutionParameters,
+        assignment: ast::Assignment,
+        target: ArrayKind,
+    ) -> Result<expansion::ResolvedAssignment, error::Error> {
+        expansion::resolve_assignment_subscripts(self, params, assignment, target).await
     }
 }

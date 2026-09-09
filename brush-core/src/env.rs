@@ -7,7 +7,7 @@ use std::collections::hash_map;
 use crate::Shell;
 use crate::error;
 use crate::extensions;
-use crate::variables::{self, ShellValue, ShellValueUnsetType, ShellVariable};
+use crate::variables::{self, ArrayKind, ShellValue, ShellValueUnsetType, ShellVariable};
 
 /// Represents the policy for looking up variables in a shell environment.
 #[derive(Clone, Copy)]
@@ -92,8 +92,6 @@ impl<SE: extensions::ShellExtensions> Drop for ScopeGuard<'_, SE> {
 pub struct ShellEnvironment {
     /// Stack of scopes, with the top of the stack being the current scope.
     scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
-    /// Whether or not to auto-export variables on creation or modification.
-    export_variables_on_modification: bool,
     /// Count of total entries (may include duplicates with shadowed variables).
     entry_count: usize,
 }
@@ -109,7 +107,6 @@ impl ShellEnvironment {
     pub fn new() -> Self {
         Self {
             scopes: vec![(EnvironmentScope::Global, ShellVariableMap::default())],
-            export_variables_on_modification: false,
             entry_count: 0,
         }
     }
@@ -346,6 +343,33 @@ impl ShellEnvironment {
         }
     }
 
+    /// Tries to unset every element of the named array variable. Returns whether any element was
+    /// removed; a variable that does not exist removes nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the array variable to clear.
+    pub fn unset_all_indices(&mut self, name: &str) -> Result<bool, error::Error> {
+        if let Some((_, var)) = self.get_mut(name) {
+            var.unset_all_indices()
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Returns the array kind a subscript on the named variable resolves against: the kind the
+    /// variable already has, or [`ArrayKind::Indexed`] when there is no such variable or it is
+    /// not an array -- either way, a subscripted assignment is about to make it an indexed one.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable the subscript names.
+    pub fn subscript_kind(&self, name: &str) -> ArrayKind {
+        self.get(name)
+            .and_then(|(_, var)| var.value().array_kind())
+            .unwrap_or(ArrayKind::Indexed)
+    }
+
     fn try_unset_in_map(
         map: &mut ShellVariableMap,
         name: &str,
@@ -478,19 +502,12 @@ impl ShellEnvironment {
     ) -> Result<(), error::Error> {
         let name = name.into();
 
-        let auto_export = self.export_variables_on_modification;
         if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
-            var.assign(value, false)?;
-            if auto_export {
-                var.export();
-            }
+            var.assign(value, false).map_err(name_it(&name))?;
             updater(var)
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
-            var.assign(value, false)?;
-            if auto_export {
-                var.export();
-            }
+            var.assign(value, false).map_err(name_it(&name))?;
             updater(&mut var)?;
 
             self.add(name, var, scope_if_creating)
@@ -519,7 +536,8 @@ impl ShellEnvironment {
         let name = name.into();
 
         if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
-            var.assign_at_index(index, value, false)?;
+            var.assign_at_index(index, value, false)
+                .map_err(name_it(&name))?;
             updater(var)
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
@@ -529,7 +547,8 @@ impl ShellEnvironment {
                     value,
                 )])),
                 false,
-            )?;
+            )
+            .map_err(name_it(&name))?;
             updater(&mut var)?;
 
             self.add(name, var, scope_if_creating)
@@ -546,13 +565,9 @@ impl ShellEnvironment {
     pub fn add<N: Into<String>>(
         &mut self,
         name: N,
-        mut var: ShellVariable,
+        var: ShellVariable,
         target_scope: EnvironmentScope,
     ) -> Result<(), error::Error> {
-        if self.export_variables_on_modification {
-            var.export();
-        }
-
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if *scope_type == target_scope {
                 let prev_var = map.set(name, var);
@@ -640,6 +655,14 @@ impl ShellVariableMap {
     pub fn set<N: Into<String>>(&mut self, name: N, var: ShellVariable) -> Option<ShellVariable> {
         self.variables.insert(name.into(), var)
     }
+}
+
+/// Returns a mapper that names `name` as the variable an assignment error is about, so it is
+/// reported as `name: message`, the way a shell reports a failed assignment. An error already
+/// attributed to a variable is left alone, so a caller with more precise context may attach it
+/// first.
+fn name_it(name: &str) -> impl Fn(error::Error) -> error::Error + '_ {
+    move |err| err.for_variable(name, None)
 }
 
 /// Checks if the given name is a valid variable name.

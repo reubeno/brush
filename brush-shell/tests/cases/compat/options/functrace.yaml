@@ -14,7 +14,6 @@ cases:
   # DEBUG trap inheritance in functions
   #
   - name: "DEBUG trap - does not fire in function without set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
       myfunc() {
@@ -40,7 +39,6 @@ cases:
   # DEBUG trap inheritance in subshells
   #
   - name: "DEBUG trap - does not fire in subshell without set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
       echo "before subshell"
@@ -48,7 +46,6 @@ cases:
       echo "after subshell"
 
   - name: "DEBUG trap - fires in subshell with set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       set -T
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
@@ -88,7 +85,6 @@ cases:
       echo "after"
 
   - name: "DEBUG trap - fires in pipeline with set -T"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       set -T
       trap 'echo "[debug: $BASH_COMMAND]" >&2' DEBUG
@@ -143,8 +139,11 @@ cases:
   #
   # Function-specific trace attribute (declare -t)
   #
+  # N.B. The cases immediately below name a function but write `declare -t name`, which without
+  # `-f` gives the trace attribute to a *variable* of that name. The function attribute is
+  # `declare -ft name`; it is covered separately further down.
+  #
   - name: "declare -t - enables trace for specific function"
-    known_failure: true # TODO(BASH_COMMAND): quotes differ
     stdin: |
       trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
       traced_func() {
@@ -312,3 +311,42 @@ cases:
       a
       echo "debug count: $count"
 
+  #
+  # The function trace attribute proper (`declare -ft`). A traced function inherits the DEBUG and
+  # RETURN traps from the calling shell, the way `set -T` does for every function. brush records
+  # and displays the attribute, but does not yet consult it when deciding whether a trap fires
+  # inside a function.
+  #
+  - name: "declare -ft - records and displays the function trace attribute"
+    stdin: |
+      f() { :; }
+      g() { :; }
+      declare -ft f
+      declare -pF f
+      declare -pF g
+      declare -Ft
+
+  - name: "declare -ft - a traced function inherits the DEBUG trap"
+    known_failure: true # TODO(functrace): the function trace attribute is recorded but not honored
+    stdin: |
+      trap 'echo "[debug: $BASH_COMMAND]"' DEBUG
+      traced() {
+        echo "in traced"
+      }
+      untraced() {
+        echo "in untraced"
+      }
+      declare -ft traced
+      untraced
+      traced
+
+  - name: "declare -ft - a traced function inherits the RETURN trap"
+    known_failure: true # TODO(functrace): the function trace attribute is recorded but not honored
+    stdin: |
+      trap 'echo "[return from ${FUNCNAME[0]}]"' RETURN
+      traced() { echo "in traced"; }
+      untraced() { echo "in untraced"; }
+      declare -ft traced
+      untraced
+      traced
+      echo done

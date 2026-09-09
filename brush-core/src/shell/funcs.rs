@@ -17,17 +17,22 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     }
 
     /// Tries to undefine a function in the shell's environment. Returns whether or
-    /// not a definition was removed.
+    /// not a definition was removed. A readonly function is refused.
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the function to undefine.
-    pub fn undefine_func(&mut self, name: &str) -> bool {
-        self.funcs.remove(name).is_some()
+    pub fn undefine_func(&mut self, name: &str) -> Result<bool, error::Error> {
+        if self.funcs.get(name).is_some_and(|reg| reg.is_readonly()) {
+            return Err(error::ErrorKind::ReadonlyFunction(name.to_owned()).into());
+        }
+
+        Ok(self.funcs.remove(name).is_some())
     }
 
     /// Defines a function in the shell's environment. If a function already exists
-    /// with the given name, it is replaced with the new definition.
+    /// with the given name, it is replaced with the new definition -- unless it is
+    /// readonly, in which case the definition is refused.
     ///
     /// # Arguments
     ///
@@ -39,9 +44,15 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         name: impl Into<String>,
         definition: brush_parser::ast::FunctionDefinition,
         source_info: &crate::SourceInfo,
-    ) {
+    ) -> Result<(), error::Error> {
+        let name = name.into();
+        if self.funcs.get(&name).is_some_and(|reg| reg.is_readonly()) {
+            return Err(error::ErrorKind::ReadonlyFunction(name).into());
+        }
+
         let reg = functions::Registration::new(definition, source_info);
-        self.funcs.update(name.into(), reg);
+        self.funcs.update(name, reg);
+        Ok(())
     }
 
     /// Tries to return a mutable reference to the registration for a named function.
@@ -79,9 +90,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             body: func_body,
         };
 
-        self.define_func(name, def, &crate::SourceInfo::default());
-
-        Ok(())
+        self.define_func(name, def, &crate::SourceInfo::default())
     }
 
     /// Invokes a function defined in this shell, returning its execution result.

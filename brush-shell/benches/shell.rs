@@ -119,22 +119,24 @@ mod unix {
 
         // Benchmark: function invocation.
         let mut shell = rt.block_on(instantiate_shell());
-        shell.define_func(
-            String::from("testfunc"),
-            brush_parser::ast::FunctionDefinition {
-                fname: String::from("testfunc").into(),
-                body: brush_parser::ast::FunctionBody(
-                    brush_parser::ast::CompoundCommand::BraceGroup(
-                        brush_parser::ast::BraceGroupCommand {
-                            list: brush_parser::ast::CompoundList(vec![]),
-                            loc: SourceSpan::default(),
-                        },
+        shell
+            .define_func(
+                String::from("testfunc"),
+                brush_parser::ast::FunctionDefinition {
+                    fname: String::from("testfunc").into(),
+                    body: brush_parser::ast::FunctionBody(
+                        brush_parser::ast::CompoundCommand::BraceGroup(
+                            brush_parser::ast::BraceGroupCommand {
+                                list: brush_parser::ast::CompoundList(vec![]),
+                                loc: SourceSpan::default(),
+                            },
+                        ),
+                        None,
                     ),
-                    None,
-                ),
-            },
-            &brush_core::SourceInfo::default(),
-        );
+                },
+                &brush_core::SourceInfo::default(),
+            )
+            .unwrap();
         c.bench_function("function_call", |b| {
             b.iter_batched_ref(
                 || shell.clone(),
