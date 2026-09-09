@@ -234,6 +234,61 @@ cases:
       [[ a =~ ^(a|b)$ ]] && echo "4. Pass"
       [[ a =~ c ]]       && echo "5. Pass"
 
+  # A ']' in the first member position (after any '^') is a member of the bracket
+  # expression, not its terminator.
+  - name: "Regex with leading ] in bracket expression"
+    stdin: |
+      [[ "]" =~ ^[]]$   ]] && echo "1. Matched"
+      [[ "a" =~ ^[]a]$  ]] && echo "2. Matched"
+      [[ "[" =~ ^[][]$  ]] && echo "3. Matched"
+      [[ "]" =~ ^[][]$  ]] && echo "4. Matched"
+      [[ "a" =~ ^[][]$  ]] || echo "5. Not matched"
+      [[ "[" =~ ^[^][]$ ]] || echo "6. Not matched"
+      [[ "a" =~ ^[^][]$ ]] && echo "7. Matched"
+      [[ "[" =~ ^[]a[]$ ]] && echo "8. Matched"
+      # Only the first '^' negates; the second is an ordinary member, so the ']'
+      # that follows it does terminate the expression.
+      [[ "xa" =~ ^[^^][ab]$ ]] && echo "9. Matched"
+      [[ "x[" =~ ^[^^][ab]$ ]] || echo "10. Not matched"
+      [[ "x]" =~ ^[^^]]$    ]] && echo "11. Matched"
+      # That leading ']' can also be the low end of a range.
+      [[ "^" =~ ^[]-a]$ ]] && echo "12. Matched"
+      [[ "]" =~ ^[]-a]$ ]] && echo "13. Matched"
+      [[ "-" =~ ^[]-a]$ ]] || echo "14. Not matched"
+      [[ "b" =~ ^[]-a]$ ]] || echo "15. Not matched"
+      echo "done"
+
+  # `fancy_regex` and POSIX ERE disagree on how a '-' range endpoint binds, and
+  # brush passes the user's bracket expression through without normalizing it.
+  - name: "Regex with '-' as a range endpoint"
+    known_failure: true
+    stdin: |
+      for s in '+' ',' '-' '.' '/' 'a'; do
+        [[ "$s" =~ ^[+--]$ ]] && echo "1. matched: $s"
+      done
+      for s in '+' ',' '-' '.' '/' 'a'; do
+        [[ "$s" =~ ^[--/]$ ]] && echo "2. matched: $s"
+      done
+      echo "done"
+
+  # A reversed range is rejected by both shells, but bash reports a bad regex as
+  # a usage error (status 2) while brush treats it as a failed match (status 1).
+  - name: "Regex with a reversed range"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      [[ x =~ ^[9-0]$ ]]
+      echo "status=$?"
+
+  # POSIX ERE reads '?*' as two stacked quantifiers; `fancy_regex` rejects the
+  # second as having no valid target.
+  - name: "Regex with stacked quantifiers"
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      [[ "]" =~ ^[a]?*]$ ]]
+      echo "status=$?"
+
   - name: "Regex with case insensitivity"
     stdin: |
       shopt -u nocasematch
