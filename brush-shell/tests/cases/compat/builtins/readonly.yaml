@@ -336,6 +336,7 @@ cases:
       declare -p s q
 
   - name: "readonly -a conversion failure on an unquoted compound operand grants nothing"
+    min_oracle_version: "5.3" # bash 5.3 makes a bad compound key an assignment error; 5.2 assigned and granted
     ignore_stderr: true
     stdin: |
       declare -A u=([k]=v)

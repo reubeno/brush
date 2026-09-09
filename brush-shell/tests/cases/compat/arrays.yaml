@@ -555,6 +555,7 @@ cases:
   # error: the elements before it are assigned, the rest of the command list is abandoned.
   #
   - name: "A bad compound key stops the assignment and abandons the list"
+    min_oracle_version: "5.3" # bash 5.3 makes a bad compound key an assignment error; 5.2 skipped the element
     ignore_stderr: true
     stdin: |
       a=(1 []=2 3); echo "same list"
