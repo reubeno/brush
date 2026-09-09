@@ -315,11 +315,11 @@ impl Spec {
                 shell, &params, word_list, &options,
             )
             .await?;
-            for word in words {
-                if word.starts_with(context.token_to_complete) {
-                    candidates.push(word);
-                }
-            }
+            candidates.extend(
+                words
+                    .into_iter()
+                    .filter(|word| word.starts_with(context.token_to_complete)),
+            );
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
@@ -335,9 +335,7 @@ impl Spec {
                 )?
                 .into_paths();
 
-            for expansion in expansions {
-                candidates.push(expansion);
-            }
+            candidates.extend(expansions);
         }
         if let Some(function_name) = &self.function_name {
             let call_result = self

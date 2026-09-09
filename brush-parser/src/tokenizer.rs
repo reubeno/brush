@@ -426,9 +426,9 @@ impl TokenParseState {
                 let completed_here_tag = cross_token_state.current_here_tags.remove(0);
 
                 // First queue the redirection operator and (start) here-tag.
-                for here_token in completed_here_tag.tokens {
-                    cross_token_state.queued_tokens.push(here_token);
-                }
+                cross_token_state
+                    .queued_tokens
+                    .extend(completed_here_tag.tokens);
 
                 // Leave a hint that we are about to start a here-document.
                 cross_token_state.queued_tokens.push(TokenizeResult {
@@ -456,9 +456,9 @@ impl TokenParseState {
 
                 // Now we're ready to queue up any tokens that came between the completed
                 // here tag and the next here tag (or newline after it if it was the last).
-                for pending_token in completed_here_tag.pending_tokens_after {
-                    cross_token_state.queued_tokens.push(pending_token);
-                }
+                cross_token_state
+                    .queued_tokens
+                    .extend(completed_here_tag.pending_tokens_after);
 
                 if cross_token_state.current_here_tags.is_empty() {
                     cross_token_state.here_state = HereState::None;
