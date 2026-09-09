@@ -367,6 +367,20 @@ cases:
       echo "status: $?"
       declare -p zz_m
 
+  - name: "unset with a star or at subscript removes that key from an associative array"
+    # `*` and `@` clear an indexed array, but an associative array can hold them as ordinary
+    # keys, so there they name one element like any other key.
+    stdin: |
+      declare -A zz_m=(['*']=star [k]=v)
+      echo "before: ${#zz_m[@]}"
+      unset 'zz_m[*]'
+      echo "status: $?"
+      declare -p zz_m
+      declare -A zz_n=(['@']=at [k]=v)
+      unset 'zz_n[@]'
+      echo "status: $?"
+      echo "after: ${#zz_n[@]} ${zz_n[k]}"
+
   - name: "unset refuses every element subscript of a readonly array"
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }

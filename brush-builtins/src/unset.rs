@@ -159,7 +159,8 @@ impl builtins::Command for UnsetCommand {
 ///
 /// The subscript is resolved the way every other subscript is -- see
 /// [`brush_core::Shell::resolve_array_subscript`] -- with the outcomes a shell reserves for
-/// `unset` layered on top: an empty subscript names nothing, `*` and `@` name every element, and
+/// `unset` layered on top: an empty subscript names nothing, `*` and `@` name every element of
+/// an indexed array (but are ordinary keys of an associative one), and
 /// a variable that is not an array behaves as if it were element 0 of itself.
 async fn unset_array_element(
     shell: &mut Shell<impl brush_core::ShellExtensions>,
@@ -181,7 +182,9 @@ async fn unset_array_element(
     }
 
     let kind = var.value().array_kind();
-    if matches!(index, "*" | "@") {
+    // `*` and `@` name every element of an indexed array, but an associative array can hold
+    // either as an ordinary key, so there they name one element like any other key does.
+    if matches!(index, "*" | "@") && kind != Some(ArrayKind::Associative) {
         return shell.env_mut().unset_all_indices(name);
     }
 
