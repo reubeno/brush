@@ -97,6 +97,10 @@ pub enum TestSubcommand {
     /// the brush binary (compat tests, interactive tests, completion tests).
     Integration(IntegrationTestArgs),
 
+    /// Run containerized end-to-end tests against real applications.
+    #[cfg(unix)]
+    E2e(crate::e2e::E2eArgs),
+
     /// Run external test suites.
     #[clap(subcommand)]
     External(ExternalTestCommand),
@@ -218,6 +222,8 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
         TestSubcommand::Integration(args) => {
             run_integration_tests(&sh, &cmd.binary_args, args, verbose)
         }
+        #[cfg(unix)]
+        TestSubcommand::E2e(args) => crate::e2e::run(&cmd.binary_args, args, verbose),
         TestSubcommand::External(ext_cmd) => run_external(ext_cmd, &cmd.binary_args, &sh, verbose),
     }
 }

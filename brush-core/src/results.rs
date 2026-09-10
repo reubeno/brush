@@ -88,6 +88,11 @@ impl ExecutionResult {
             ExecutionControlFlow::ReturnFromFunctionOrScript | ExecutionControlFlow::ExitShell
         )
     }
+
+    /// Returns whether the execution result indicates an exit from the shell.
+    pub const fn is_exit(&self) -> bool {
+        matches!(self.next_control_flow, ExecutionControlFlow::ExitShell)
+    }
 }
 
 impl From<ExecutionExitCode> for ExecutionResult {

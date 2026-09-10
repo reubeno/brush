@@ -41,6 +41,7 @@ pub enum ReadResult {
 }
 
 /// Represents an interactive prompt.
+#[derive(Default)]
 pub struct InteractivePrompt {
     /// Prompt to display.
     pub prompt: String,

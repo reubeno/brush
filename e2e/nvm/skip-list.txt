@@ -1,0 +1,7 @@
+# Tests that must not run at all, one upstream test filename per line, each with a comment saying
+# why. Reserve this for tests that hang or are irrelevant to the shell under test; anything that
+# merely fails belongs in xfail-list.txt, so it keeps running and a fix is reported.
+# urchin runs every executable file in the suite, so the image takes the execute bit off these.
+
+# Has a /bin/zsh shebang, so it would not exercise the shell under test at all.
+Running 'nvm ls' should not show a trailing slash

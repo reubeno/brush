@@ -37,6 +37,8 @@ tempfile = "3.27.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.184"
+# Used by the unix-only containerized e2e runner to read back each adapter's JUnit.
+junit-parser = "1.7.0"
 
 [build-dependencies]
 # Defines the `pty` cfg (see build.rs) used to gate pty-based bash test code.

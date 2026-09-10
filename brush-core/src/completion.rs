@@ -315,11 +315,11 @@ impl Spec {
                 shell, &params, word_list, &options,
             )
             .await?;
-            for word in words {
-                if word.starts_with(context.token_to_complete) {
-                    candidates.push(word);
-                }
-            }
+            candidates.extend(
+                words
+                    .into_iter()
+                    .filter(|word| word.starts_with(context.token_to_complete)),
+            );
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
@@ -335,9 +335,7 @@ impl Spec {
                 )?
                 .into_paths();
 
-            for expansion in expansions {
-                candidates.push(expansion);
-            }
+            candidates.extend(expansions);
         }
         if let Some(function_name) = &self.function_name {
             let call_result = self
@@ -785,7 +783,8 @@ impl Spec {
         let params = shell.default_exec_params();
         let invoke_result = shell
             .invoke_function(function_name, args.iter(), params)
-            .await;
+            .await
+            .map(|result| u8::from(result.exit_code));
 
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 

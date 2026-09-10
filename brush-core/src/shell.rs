@@ -309,6 +309,36 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             .set_global("_", crate::variables::ShellVariable::new(value));
     }
 
+    /// Captures the state the last command left behind; see [`SavedCommandStatus`].
+    pub fn save_command_status(&self) -> SavedCommandStatus {
+        SavedCommandStatus {
+            exit_status: self.last_exit_status,
+            exit_status_change_count: self.last_exit_status_change_count,
+            pipeline_statuses: self.last_pipeline_statuses.clone(),
+            last_arg: self.env_str("_").map(|value| value.into_owned()),
+        }
+    }
+
+    /// Reapplies a snapshot, exit-status change counter included. Consumes it; `clone` it to
+    /// put the same one back more than once, e.g. between successive hook functions.
+    ///
+    /// # Arguments
+    ///
+    /// * `saved` - The snapshot to restore.
+    pub fn restore_command_status(&mut self, saved: SavedCommandStatus) {
+        self.last_pipeline_statuses = saved.pipeline_statuses;
+        // Assigned directly rather than through `set_last_exit_status`, which would bump
+        // the change counter we're about to put back.
+        self.last_exit_status = saved.exit_status;
+        self.last_exit_status_change_count = saved.exit_status_change_count;
+        match saved.last_arg {
+            Some(last_arg) => self.update_last_arg_variable(Some(last_arg)),
+            // `_` was unset when the snapshot was taken, so put it back that way. Unsetting
+            // a readonly `_` fails; ignore that, as `update_last_arg_variable` does.
+            None => _ = self.env.unset("_"),
+        }
+    }
+
     /// Applies errexit semantics to a result if enabled and appropriate.
     /// This should be called at "statement boundaries" where errexit should be checked.
     ///
@@ -349,6 +379,19 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
     }
+}
+
+/// Snapshot of the state the last command left behind: `$?`, `PIPESTATUS`, and `$_`.
+///
+/// Take one with [`Shell::save_command_status`] and put it back with
+/// [`Shell::restore_command_status`] around anything the user didn't type -- a shell hook,
+/// `PROMPT_COMMAND`, prompt expansion -- so it stays invisible to the next command.
+#[derive(Clone, Debug)]
+pub struct SavedCommandStatus {
+    exit_status: u8,
+    exit_status_change_count: usize,
+    pipeline_statuses: Vec<u8>,
+    last_arg: Option<String>,
 }
 
 #[inherent::inherent]
@@ -511,8 +554,9 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
         self.last_exit_status
     }
 
-    /// Updates the last exit status. To *restore* a saved status, restore
-    /// `last_exit_status_change_count` as well.
+    /// Updates the last exit status, bumping `last_exit_status_change_count`. To *restore* a
+    /// status rather than set one, use [`Self::restore_command_status`], which puts the
+    /// counter back too.
     pub fn set_last_exit_status(&mut self, status: u8) {
         self.last_exit_status = status;
         self.last_exit_status_change_count += 1;
@@ -548,4 +592,36 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use super::*;
+
+    /// `$_` round-trips through a snapshot, unset included, so an embedder that saves before
+    /// running commands of its own gets back exactly what was there -- not an empty string.
+    /// (The interactive loop can't reach the unset case: every command resets `$_`.)
+    #[tokio::test]
+    async fn saved_command_status_round_trips_last_arg() -> Result<(), error::Error> {
+        let mut shell = Shell::builder()
+            .profile(ProfileLoadBehavior::Skip)
+            .rc(RcLoadBehavior::Skip)
+            .build()
+            .await?;
+
+        shell.update_last_arg_variable(Some(String::from("saved")));
+        let with_value = shell.save_command_status();
+
+        shell.env.unset("_")?;
+        let while_unset = shell.save_command_status();
+
+        shell.restore_command_status(with_value);
+        assert_eq!(shell.env_str("_").as_deref(), Some("saved"));
+
+        shell.restore_command_status(while_unset);
+        assert_eq!(shell.env_str("_"), None);
+
+        Ok(())
+    }
 }

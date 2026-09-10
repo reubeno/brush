@@ -1,0 +1,4 @@
+# Test files that must not run at all, one per line, named as in `ble.sh --test NAME` (bash, main,
+# util, canvas, decode, edit, syntax, complete, keymap.vi), each with a comment saying why.
+# Reserve this for files that hang or are irrelevant to the shell under test; anything that merely
+# fails belongs in xfail-list.txt, so it keeps running and a fix is reported.
