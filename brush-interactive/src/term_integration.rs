@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::fmt::Write;
+use std::io::Write as _;
 
 use crate::term_detection;
 
 /// Utility for integrating with terminal emulators.
-#[derive(Default)]
 pub(crate) struct TerminalIntegration {
     /// Info about the hosting terminal.
     term: term_detection::TerminalInfo,
@@ -12,13 +12,58 @@ pub(crate) struct TerminalIntegration {
 
 #[allow(dead_code)]
 impl TerminalIntegration {
-    /// Creates a new terminal integration utility.
+    /// Starts terminal integration, emitting the sequence that announces it, and returns the
+    /// utility the interactive loop reports events to.
     ///
     /// # Arguments
     ///
     /// * `term_info` - Information about the terminal capabilities.
-    pub const fn new(term_info: term_detection::TerminalInfo) -> Self {
-        Self { term: term_info }
+    pub fn init(term_info: term_detection::TerminalInfo) -> std::io::Result<Self> {
+        let integration = Self { term: term_info };
+        Self::write(integration.initialize().as_ref())?;
+        Ok(integration)
+    }
+
+    /// Returns a utility that integrates with nothing: it reports no capabilities, so every
+    /// event handler below does nothing and every sequence it composes is empty. This is what
+    /// a shell gets when integration is switched off, so it need not ask whether it has one.
+    pub fn disabled() -> Self {
+        Self {
+            term: term_detection::TerminalInfo::default(),
+        }
+    }
+
+    //
+    // Event handlers: these are called at the points in the interactive loop that the
+    // terminal wants to know about; each does what the event calls for. A terminal that
+    // reports no support has nothing to say at any of them, so every handler is inert.
+    //
+
+    /// Called after a command line has been read and before it runs.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The command that is about to be executed.
+    pub fn on_pre_exec_command(&self, command: &str) -> std::io::Result<()> {
+        Self::write(self.pre_exec_command(command).as_ref())
+    }
+
+    /// Called after a command has run.
+    ///
+    /// # Arguments
+    ///
+    /// * `exit_code` - The exit code the command left behind.
+    pub fn on_post_exec_command(&self, exit_code: i32) -> std::io::Result<()> {
+        Self::write(self.post_exec_command(exit_code).as_ref())
+    }
+
+    /// Writes a sequence to standard output, flushing so the terminal sees it before whatever
+    /// the shell does next. Writing nothing still flushes; that costs nothing and keeps the
+    /// inert case from being a separate path.
+    fn write(seq: &str) -> std::io::Result<()> {
+        let mut stdout = std::io::stdout();
+        stdout.write_all(seq.as_bytes())?;
+        stdout.flush()
     }
 
     /// Returns the terminal escape sequence that should be emitted to initialize terminal
@@ -29,6 +74,29 @@ impl TerminalIntegration {
         } else {
             "".into()
         }
+    }
+
+    /// Returns a composed prompt bracketed with the sequences that mark where a prompt starts
+    /// and ends, and that report the working directory -- or the prompt as given, when there is
+    /// nothing to add. Returned rather than composed in place so the untouched prompt costs
+    /// nothing, not even the copy that concatenating three empty strings onto it would make.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The prompt as composed by the shell.
+    /// * `working_dir` - The shell's current working directory.
+    pub fn decorate_prompt(&self, prompt: String, working_dir: &std::path::Path) -> String {
+        if !self.term.supports_osc_633 {
+            return prompt;
+        }
+
+        [
+            self.pre_prompt().as_ref(),
+            self.report_cwd(working_dir).as_ref(),
+            prompt.as_str(),
+            self.post_prompt().as_ref(),
+        ]
+        .concat()
     }
 
     /// Returns the terminal escape sequence that should be emitted before the prompt.

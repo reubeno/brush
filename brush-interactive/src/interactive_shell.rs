@@ -33,13 +33,16 @@ impl From<&InteractiveExecutionResult> for i32 {
 pub struct InteractiveOptions {
     /// Whether terminal shell integration is enabled.
     pub terminal_shell_integration: bool,
-    /// Whether or not to run zsh-style exec/cmd functions (e.g., `preexec_functions`,
-    /// `precmd_functions`).
-    pub run_cmd_exec_funcs: bool,
+    /// Whether to run zsh-style `precmd_functions`/`preexec_functions` hooks. Inert on its
+    /// own: the embedder must also call [`init_zsh_style_hooks`](crate::init_zsh_style_hooks)
+    /// before the shell loads its profile and rc files.
+    pub zsh_style_hooks: bool,
 }
 
 /// Reads `PROMPT_COMMAND` as bash does: a string is a single command, an indexed array is one
-/// command per element, and any other type runs nothing at all.
+/// command per element, and any other type runs nothing at all. Deliberately *not* read as a
+/// word list the way the hook registries are: bash gives `PROMPT_COMMAND` its own handling
+/// rather than expanding it as `"${PROMPT_COMMAND[@]}"`.
 fn read_prompt_commands<SE: brush_core::ShellExtensions>(
     shell: &brush_core::Shell<SE>,
 ) -> Vec<String> {
@@ -56,8 +59,8 @@ pub struct InteractiveShell<'a, IB: InputBackend, SE: brush_core::ShellExtension
     shell: crate::ShellRef<SE>,
     /// The input backend to use.
     input: &'a mut IB,
-    /// Terminal integration utility, if any.
-    terminal_integration: Option<crate::term_integration::TerminalIntegration>,
+    /// Terminal integration utility; inert if integration is off or unsupported.
+    terminal_integration: crate::term_integration::TerminalIntegration,
     /// Terminal-control guard, held for the lifetime of the interactive shell.
     _terminal_control: Option<brush_core::terminal::TerminalControl>,
     /// Options.
@@ -86,17 +89,13 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             None
         };
 
-        // Set up terminal integration if enabled *and* if stdin is a terminal.
+        // Set up terminal integration if enabled *and* if stdin is a terminal. Otherwise a
+        // switched-off one, which every call site below can report events to unconditionally.
         let terminal_integration = if options.terminal_shell_integration && stdin_is_terminal {
             let terminfo = crate::term_detection::get_terminal_info(&HostEnvironment);
-            let terminal_integration = crate::term_integration::TerminalIntegration::new(terminfo);
-
-            print!("{}", terminal_integration.initialize().as_ref());
-            std::io::stdout().flush()?;
-
-            Some(terminal_integration)
+            crate::term_integration::TerminalIntegration::init(terminfo)?
         } else {
-            None
+            crate::term_integration::TerminalIntegration::disabled()
         };
 
         Ok(Self {
@@ -123,10 +122,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         loop {
             let result = self.run_interactively_once().await?;
             match result {
-                InteractiveExecutionResult::Executed(brush_core::ExecutionResult {
-                    next_control_flow: brush_core::results::ExecutionControlFlow::ExitShell,
-                    ..
-                }) => {
+                InteractiveExecutionResult::Executed(result) if result.is_exit() => {
                     break;
                 }
                 InteractiveExecutionResult::Executed(brush_core::ExecutionResult {
@@ -198,7 +194,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             }
 
             // Compose the prompt.
-            Self::compose_prompt(&mut shell, self.terminal_integration.as_ref()).await?
+            Self::compose_prompt(&mut shell, &self.terminal_integration).await?
         } else {
             InteractivePrompt::default()
         };
@@ -234,7 +230,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
 
     async fn compose_prompt(
         shell: &mut brush_core::Shell<SE>,
-        terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
+        terminal_integration: &crate::term_integration::TerminalIntegration,
     ) -> Result<InteractivePrompt, ShellError> {
         // Now that we've done that, compose the prompt.
         let mut prompt = InteractivePrompt {
@@ -243,19 +239,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             continuation_prompt: shell.compose_continuation_prompt().await?,
         };
 
-        if let Some(terminal_integration) = terminal_integration {
-            let pre_prompt = terminal_integration.pre_prompt();
-            let working_dir = terminal_integration.report_cwd(shell.working_dir());
-            let post_prompt = terminal_integration.post_prompt();
-
-            prompt.prompt = [
-                pre_prompt.as_ref(),
-                working_dir.as_ref(),
-                prompt.prompt.as_str(),
-                post_prompt.as_ref(),
-            ]
-            .concat();
-        }
+        prompt.prompt = terminal_integration.decorate_prompt(prompt.prompt, shell.working_dir());
 
         Ok(prompt)
     }
@@ -287,19 +271,24 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         };
 
         // If the line came from direct user input (as opposed to a key binding, say), then we
-        // need to do a few more things before executing it.
-        if user_input {
-            Self::run_pre_exec_actions(
-                &mut shell,
-                read_result.as_str(),
-                &self.options,
-                self.terminal_integration.as_ref(),
-            )
-            .await?;
+        // need to do a few more things before executing it. A hook that exited the shell
+        // stands in for the command: the line never runs, and neither does the bookkeeping
+        // below, which only matters to a shell that goes on to read another line.
+        if user_input
+            && let ControlFlow::Break(exit) =
+                Self::run_pre_exec_actions(&mut shell, read_result.as_str(), &self.options).await?
+        {
+            return Ok(InteractiveExecutionResult::Executed(exit));
         }
 
         // Count the command's lines.
         let line_count = read_result.lines().count().max(1);
+
+        // Terminal integration brackets the command with a matched pair of markers, so both
+        // are emitted here, around the one call that runs it: no failure between them can
+        // leave a started command unclosed, and nothing below this writes to the terminal.
+        self.terminal_integration
+            .on_pre_exec_command(&read_result)?;
 
         // Execute the command.
         let params = shell.default_exec_params();
@@ -308,6 +297,9 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             Ok(result) => Ok(InteractiveExecutionResult::Executed(result)),
             Err(e) => Ok(InteractiveExecutionResult::Failed(e)),
         };
+
+        self.terminal_integration
+            .on_post_exec_command(result.as_ref().map_or(1, i32::from))?;
 
         // Update cumulative line counter based on actual lines in the command.
         shell.increment_interactive_line_offset(line_count);
@@ -328,16 +320,6 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             self.input.set_read_buffer(updated_buffer, updated_cursor);
         }
 
-        // Invoke terminal integration.
-        if let Some(terminal_integration) = &self.terminal_integration {
-            let exit_code = result.as_ref().map_or(1, i32::from);
-            print!(
-                "{}",
-                terminal_integration.post_exec_command(exit_code).as_ref()
-            );
-            std::io::stdout().flush()?;
-        }
-
         result
     }
 
@@ -346,7 +328,12 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         shell: &mut brush_core::Shell<SE>,
         options: &InteractiveOptions,
     ) -> Result<ControlFlow<brush_core::ExecutionResult>, ShellError> {
-        // If there's a variable called PROMPT_COMMAND, then run it first.
+        // precmd hooks first: bash-preexec prepends its dispatcher to PROMPT_COMMAND.
+        if let ControlFlow::Break(exit) = crate::zsh_hooks::run_precmd(shell, options).await? {
+            return Ok(ControlFlow::Break(exit));
+        }
+
+        // Next, if there's a variable called PROMPT_COMMAND, then run it.
         for prompt_cmd in read_prompt_commands(shell) {
             if let ControlFlow::Break(exit) =
                 Self::run_pre_prompt_command(shell, prompt_cmd).await?
@@ -355,36 +342,21 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             }
         }
 
-        // Next, run any zsh-style `precmd_functions`.
-        // TODO(precmd_functions): verify if we need to save/restore exit results.
-        if options.run_cmd_exec_funcs {
-            // If there's a variable called precmd_functions, then call them.
-            if let Some(brush_core::ShellValue::IndexedArray(precmd_funcs)) = shell
-                .env_var("precmd_functions")
-                .map(|var| var.value())
-                .cloned()
-            {
-                for func_name in precmd_funcs.values() {
-                    let _ = shell
-                        .invoke_function(
-                            func_name,
-                            std::iter::empty::<&str>(),
-                            shell.default_exec_params(),
-                        )
-                        .await;
-                }
-            }
-        }
-
         Ok(ControlFlow::Continue(()))
     }
 
+    /// Runs pre-exec actions. Breaks with the result of a hook that exited the shell.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell to run the actions in.
+    /// * `command_line` - The line as entered by the user.
+    /// * `options` - The options the interactive loop is running with.
     async fn run_pre_exec_actions(
         shell: &mut brush_core::Shell<SE>,
         command_line: &str,
         options: &InteractiveOptions,
-        terminal_integration: Option<&crate::term_integration::TerminalIntegration>,
-    ) -> Result<(), ShellError> {
+    ) -> Result<ControlFlow<brush_core::ExecutionResult>, ShellError> {
         // Display the pre-command prompt on stderr (if there is one). Like the other prompts,
         // this is expanded only by a shell that's interactive in the `$-` sense.
         if shell.options().interactive {
@@ -398,33 +370,9 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         // Update history (if applicable).
         shell.add_to_history(command_line.trim_end_matches('\n'))?;
 
-        // Next, run any zsh-style `preexec_functions`.
-        // TODO(preexec_functions): verify if we need to save/restore exit results.
-        if options.run_cmd_exec_funcs {
-            // If there's a variable called preexec_functions, then call them.
-            if let Some(brush_core::ShellValue::IndexedArray(preexec_funcs)) = shell
-                .env_var("preexec_functions")
-                .map(|var| var.value())
-                .cloned()
-            {
-                for func_name in preexec_funcs.values() {
-                    let _ = shell
-                        .invoke_function(func_name, &[command_line], shell.default_exec_params())
-                        .await;
-                }
-            }
-        }
-
-        // Invoke terminal integration.
-        if let Some(terminal_integration) = terminal_integration {
-            print!(
-                "{}",
-                terminal_integration.pre_exec_command(command_line).as_ref()
-            );
-            std::io::stdout().flush()?;
-        }
-
-        Ok(())
+        // preexec hooks get the line as entered; they are the last thing before it runs, so
+        // their break is this function's.
+        crate::zsh_hooks::run_preexec(shell, options, command_line).await
     }
 
     /// Runs one `PROMPT_COMMAND` entry. Breaks with its result if it exited the shell.
