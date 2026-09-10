@@ -161,7 +161,7 @@ fn pending_hooks<SE: brush_core::ShellExtensions>(
         .then_some(hook_names)
 }
 
-/// Whether the line runs any command: blank, comment-only, and unparseable lines run none,
+/// Whether the line runs any command: blank, comment-only, and unparsable lines run none,
 /// and so dispatch no `preexec` -- matching the `DEBUG` trap bash-preexec dispatches from.
 /// Parsing is what answers this; a text test for "blank or all comment" would still miss the
 /// syntax error. So a shell with a `preexec` hook registered pays a parse of the line here and
