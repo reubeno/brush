@@ -36,6 +36,15 @@ pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), erro
     Err(error::ErrorKind::NotSupportedOnThisPlatform("continuing process").into())
 }
 
+/// Checks whether a specific process exists and can be signaled.
+///
+/// This is a stub implementation that returns an error.
+pub fn check_process(
+    _pid: sys::process::ProcessId,
+) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("checking process").into())
+}
+
 /// Sends a signal to a specific process.
 ///
 /// This is a stub implementation that returns an error.

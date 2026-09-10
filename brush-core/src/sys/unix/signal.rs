@@ -35,6 +35,19 @@ pub fn kill_process(
     Ok(())
 }
 
+/// Checks whether a specific process exists and can be signaled.
+///
+/// This performs the `kill(2)` signal-zero check without actually sending
+/// a signal.
+pub fn check_process(
+    pid: sys::process::ProcessId,
+) -> Result<(), error::Error> {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+
+    Ok(())
+}
+
 pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
     nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))?;
     Ok(())
