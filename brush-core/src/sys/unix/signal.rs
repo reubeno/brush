@@ -37,13 +37,17 @@ pub fn kill_process(
 
 /// Checks whether a specific process exists and can be signaled.
 ///
-/// This performs the `kill(2)` signal-zero check without actually sending
-/// a signal.
-pub fn check_process(
+/// # Arguments
+/// * `pid` - The process ID to signal-zero check.
+pub fn check_signalable(
     pid: sys::process::ProcessId,
 ) -> Result<(), error::Error> {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
-        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+        .map_err(|errno| match errno {
+            nix::errno::Errno::ESRCH => error::ErrorKind::NoSuchProcess,
+            nix::errno::Errno::EPERM => error::ErrorKind::PermissionDenied,
+            _ => error::ErrorKind::FailedToSendSignal,
+        })?;
 
     Ok(())
 }

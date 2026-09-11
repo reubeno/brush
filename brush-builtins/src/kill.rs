@@ -61,7 +61,7 @@ impl builtins::Command for KillCommand {
                 #[expect(clippy::cast_possible_truncation)]
                 #[expect(clippy::cast_possible_wrap)]
                 if let Ok(parsed_trap_signal) = TrapSignal::try_from(*signal_number as i32) {
-                   trap_signal = parsed_trap_signal;
+                    trap_signal = parsed_trap_signal;
                 } else {
                     writeln!(
                         context.stderr(),
@@ -77,21 +77,24 @@ impl builtins::Command for KillCommand {
         // Look through the remaining args for a pid/job spec or a -sigspec style option.
         let mut pid_or_job_spec = None;
         for arg in &self.args {
+            // See if this is -sigspec syntax. The sigspec may be a signal name
+            // (e.g., -TERM) or a signal number (e.g., -9, including -0).
             if let Some(possible_sigspec) = arg.strip_prefix("-") {
-                // See if this is -sigspec syntax. The sigspec may be a signal name
-                // (e.g., -TERM) or a signal number (e.g., -9).
-                if possible_sigspec == "0" {
-                    signal_zero = true;
-                } else if let Ok(parsed_trap_signal) = possible_sigspec.parse::<TrapSignal>() {
-                    trap_signal = parsed_trap_signal;
-                } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {}: invalid signal specification",
-                        context.command_name,
-                        possible_sigspec
-                    )?;
-                    return Ok(ExecutionResult::general_error());
+                if let Ok(signal_number) = possible_sigspec.parse::<i32>() {
+                    if signal_number == 0 {
+                        signal_zero = true;
+                    } else if let Ok(parsed_trap_signal) = possible_sigspec.parse::<TrapSignal>() {
+                        signal_zero = false;
+                        trap_signal = parsed_trap_signal;
+                    } else {
+                        writeln!(
+                            context.stderr(),
+                            "{}: {}: invalid signal specification",
+                            context.command_name,
+                            possible_sigspec
+                        )?;
+                        return Ok(ExecutionResult::general_error());
+                    }
                 }
             } else if pid_or_job_spec.is_none() {
                 pid_or_job_spec = Some(arg);
@@ -116,7 +119,11 @@ impl builtins::Command for KillCommand {
             if pid_or_job_spec.starts_with('%') {
                 // It's a job spec.
                 if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
-                    job.kill(trap_signal)?;
+                    if signal_zero {
+                        job.check_signalable()?;
+                    } else {
+                        job.kill(trap_signal)?;
+                    }
                 } else {
                     writeln!(
                         context.stderr(),
@@ -131,7 +138,7 @@ impl builtins::Command for KillCommand {
 
                 // It's a pid.
                 if signal_zero {
-                    sys::signal::check_process(pid)?;
+                    sys::signal::check_signalable(pid)?;
                 } else {
                     sys::signal::kill_process(pid, trap_signal)?;
                 }

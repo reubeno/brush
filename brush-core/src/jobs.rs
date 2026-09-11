@@ -422,6 +422,15 @@ impl Job {
         Ok(())
     }
 
+    /// Checks whether the job can be signaled.
+    pub fn check_signalable(&self) -> Result<(), error::Error> {
+        if let Some(pid) = self.process_group_id() {
+            sys::signal::check_signalable(pid)
+        } else {
+            Err(error::ErrorKind::FailedToSendSignal.into())
+        }
+    }
+
     /// Kills the job.
     ///
     /// # Arguments

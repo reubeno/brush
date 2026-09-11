@@ -39,7 +39,7 @@ pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), erro
 /// Checks whether a specific process exists and can be signaled.
 ///
 /// This is a stub implementation that returns an error.
-pub fn check_process(
+pub fn check_signalable(
     _pid: sys::process::ProcessId,
 ) -> Result<(), error::Error> {
     Err(error::ErrorKind::NotSupportedOnThisPlatform("checking process").into())
