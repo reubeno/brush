@@ -156,7 +156,7 @@ regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 strip-ansi-escapes = "0.2.1"
-test-with = { version = "0.16.0", default-features = false, features = [
+test-with = { version = "0.17.0", default-features = false, features = [
     "executable",
 ] }
 version-compare = "0.2.1"
