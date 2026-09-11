@@ -409,6 +409,16 @@ jobs:
         rust-version: ["stable", "1.88.0"]
         # Run checks on Linux, Windows, and macOS.
         os: ["ubuntu-24.04", "windows-2025", "macos-latest"]
+        # Extra args for the build check, per toolchain. Spelled out for both
+        # legs so it's clear that stable compiles every crate in the workspace.
+        include:
+          - rust-version: "stable"
+            build_check_args: ""
+          # The application-tier crates declare a higher MSRV than the
+          # workspace-wide one, so they can't be built by the MSRV toolchain;
+          # see docs/reference/msrv-policy.md.
+          - rust-version: "1.88.0"
+            build_check_args: "--workspace-msrv"
 
     steps:
       - name: Checkout
@@ -432,7 +442,7 @@ jobs:
         run: cargo xtask check fmt
 
       - name: Check
-        run: cargo xtask check build
+        run: cargo xtask check build ${{ matrix.build_check_args }}
 
       - name: Install cargo-deny
         if: runner.os == 'Linux'

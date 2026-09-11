@@ -9,7 +9,8 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+# Application tier; see docs/reference/msrv-policy.md.
+rust-version = "1.95.0"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/{ name }-v{ version }/brush-{ target }{ archive-suffix }"
@@ -49,6 +50,14 @@ path = "tests/completion_tests.rs"
 # `brush_*_tests-*` artifact glob would otherwise ship them to the os-tests
 # jobs, which run prebuilt test binaries outside a cargo target dir and so
 # can't run pty-based tests (see the interactive/version test skips there).
+
+# Generates man pages, markdown help, completion scripts, and the config
+# schema. Lives here so that xtask doesn't have to depend on brush-shell;
+# `cargo xtask gen` shells out to it.
+[[example]]
+name = "gen"
+path = "examples/gen.rs"
+required-features = ["schema"]
 
 [[bench]]
 name = "shell"
@@ -121,6 +130,13 @@ uuid = { version = "1.23.1", features = ["js"] }
 [dev-dependencies]
 anyhow = "1.0.102"
 tempfile = "3.27.0"
+# Used by the `gen` example.
+clap-markdown = "0.1.5"
+clap_complete = "4.6.4"
+clap_mangen = "0.3.0"
+# Also a regular optional dependency, enabled by `experimental-load`. The `gen`
+# example needs it without that feature, so it's listed here too.
+serde_json = "1.0.149"
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 brush-test-harness = { path = "../brush-test-harness", features = ["insta"] }
 assert_cmd = "2.2.0"
