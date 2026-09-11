@@ -5,12 +5,32 @@
 //! - **Completions**: Shell completion scripts for bash, zsh, fish, etc.
 //! - **Schemas**: JSON schemas for configuration files
 //! - **Distribution archives**: Reproducible documentation bundles with checksums
+//!
+//! Everything derived from brush's command-line interface is produced by the
+//! `gen` example in `brush-shell`, which this module shells out to. That keeps
+//! xtask free of any dependency on the shell it's used to build.
 
+use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use xshell::{Shell, cmd};
+
+/// Run the `gen` example in `brush-shell` with the given arguments.
+///
+/// The example is built with brush-shell's default features plus `schema`; the
+/// artifacts it generates describe the command-line interface as it appears
+/// with that feature set.
+fn run_gen_example(sh: &Shell, args: &[&OsStr]) -> Result<()> {
+    cmd!(
+        sh,
+        "cargo run --package brush-shell --features schema --example gen -- {args...}"
+    )
+    .run()
+    .context("Failed to run the gen example in brush-shell")?;
+    Ok(())
+}
 
 /// Generate various artifacts.
 #[derive(Parser)]
@@ -101,48 +121,39 @@ pub struct GenerateSchemaArgs {
 
 /// Run a generation command.
 pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
+    let sh = Shell::new()?;
     match cmd {
         GenCommand::Docs(docs_cmd) => match docs_cmd {
-            DocsCommand::Man(args) => gen_man(args, verbose),
-            DocsCommand::Markdown(args) => gen_markdown_docs(args, verbose),
-            DocsCommand::Dist(args) => gen_docs_dist(args, verbose),
+            DocsCommand::Man(args) => gen_man(&sh, args, verbose),
+            DocsCommand::Markdown(args) => gen_markdown_docs(&sh, args, verbose),
+            DocsCommand::Dist(args) => gen_docs_dist(&sh, args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
+            // These names are the ones understood by clap_complete's `Shell`.
             let shell = match completion_cmd {
-                CompletionCommand::Bash => clap_complete::Shell::Bash,
-                CompletionCommand::Elvish => clap_complete::Shell::Elvish,
-                CompletionCommand::Fish => clap_complete::Shell::Fish,
-                CompletionCommand::PowerShell => clap_complete::Shell::PowerShell,
-                CompletionCommand::Zsh => clap_complete::Shell::Zsh,
+                CompletionCommand::Bash => "bash",
+                CompletionCommand::Elvish => "elvish",
+                CompletionCommand::Fish => "fish",
+                CompletionCommand::PowerShell => "powershell",
+                CompletionCommand::Zsh => "zsh",
             };
-            gen_completion_script(shell, verbose);
-            Ok(())
+            gen_completion_script(&sh, shell, verbose)
         }
         GenCommand::Schema(schema_cmd) => match schema_cmd {
-            SchemaCommand::Config(args) => gen_config_schema(args, verbose),
+            SchemaCommand::Config(args) => gen_config_schema(&sh, args, verbose),
         },
     }
 }
 
-fn gen_man(args: &GenerateManArgs, verbose: bool) -> Result<()> {
+fn gen_man(sh: &Shell, args: &GenerateManArgs, verbose: bool) -> Result<()> {
     if verbose {
         eprintln!("Generating man pages to: {}", args.output_dir.display());
     }
 
-    // Create the output dir if it doesn't exist. If it already does, we proceed
-    // onward and hope for the best.
-    if !args.output_dir.exists() {
-        std::fs::create_dir_all(&args.output_dir)?;
-    }
-
-    // Generate!
-    let cmd = brush_shell::args::CommandLineArgs::command();
-    clap_mangen::generate_to(cmd, &args.output_dir)?;
-
-    Ok(())
+    run_gen_example(sh, &[OsStr::new("man"), args.output_dir.as_os_str()])
 }
 
-fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
+fn gen_markdown_docs(sh: &Shell, args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
     if verbose {
         eprintln!(
             "Generating markdown docs to: {}",
@@ -150,31 +161,21 @@ fn gen_markdown_docs(args: &GenerateMarkdownArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    let options = clap_markdown::MarkdownOptions::new()
-        .show_footer(false)
-        .show_table_of_contents(true);
-
-    // Generate!
-    let markdown =
-        clap_markdown::help_markdown_custom::<brush_shell::args::CommandLineArgs>(&options);
-    std::fs::write(&args.output_path, markdown)?;
-
-    Ok(())
+    run_gen_example(sh, &[OsStr::new("markdown"), args.output_path.as_os_str()])
 }
 
 /// Generate a shell completion script to stdout.
 ///
 /// The completion script is written directly to stdout so it can be piped
 /// to a file or sourced directly by the shell.
-fn gen_completion_script(shell: clap_complete::Shell, verbose: bool) {
+fn gen_completion_script(sh: &Shell, shell: &str, verbose: bool) -> Result<()> {
     if verbose {
         eprintln!("Generating {shell} completion script...");
     }
-    let mut cmd = brush_shell::args::CommandLineArgs::command();
-    clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
+    run_gen_example(sh, &[OsStr::new("completion"), OsStr::new(shell)])
 }
 
-fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
+fn gen_config_schema(sh: &Shell, args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
     if verbose {
         eprintln!(
             "Generating config schema to: {}",
@@ -182,17 +183,10 @@ fn gen_config_schema(args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
         );
     }
 
-    // Generate JSON schema for the configuration file.
-    let schema = schemars::schema_for!(brush_shell::config::Config);
-    let json = serde_json::to_string_pretty(&schema)?;
-    std::fs::write(&args.output_path, format!("{json}\n"))?;
-
-    Ok(())
+    run_gen_example(sh, &[OsStr::new("schema"), args.output_path.as_os_str()])
 }
 
-fn gen_docs_dist(args: &GenerateDistArgs, verbose: bool) -> Result<()> {
-    let sh = Shell::new()?;
-
+fn gen_docs_dist(sh: &Shell, args: &GenerateDistArgs, verbose: bool) -> Result<()> {
     // Create a temporary directory for staging the documentation
     let temp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
     let staging_dir = temp_dir.path();
@@ -210,13 +204,13 @@ fn gen_docs_dist(args: &GenerateDistArgs, verbose: bool) -> Result<()> {
     let md_args = GenerateMarkdownArgs {
         output_path: md_dir.join("brush.md"),
     };
-    gen_markdown_docs(&md_args, verbose)?;
+    gen_markdown_docs(sh, &md_args, verbose)?;
 
     // Generate man pages
     let man_args = GenerateManArgs {
         output_dir: man_dir,
     };
-    gen_man(&man_args, verbose)?;
+    gen_man(sh, &man_args, verbose)?;
 
     // Get absolute path for output
     let output_path = if args.output_path.is_absolute() {

@@ -10,7 +10,8 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+# Application tier; see docs/reference/msrv-policy.md.
+rust-version = "1.95.0"
 
 [package.metadata]
 cargo-fuzz = true

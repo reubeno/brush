@@ -24,7 +24,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use crate::check::{self, CheckCommand};
+use crate::check::{self, BuildArgs, CheckCommand};
 use crate::test::{
     self, BinaryArgs, IntegrationTestArgs, TestCommand, TestSubcommand, UnitTestArgs,
 };
@@ -108,7 +108,7 @@ fn run_quick(args: &QuickArgs, verbose: bool) -> Result<()> {
         ),
         (
             "Build check",
-            Box::new(|| check::run(&CheckCommand::Build, verbose)),
+            Box::new(|| check::run(&CheckCommand::Build(BuildArgs::default()), verbose)),
         ),
         (
             "Lint check",
@@ -134,7 +134,7 @@ fn run_pre_commit(args: &PreCommitArgs, verbose: bool) -> Result<()> {
         ),
         (
             "Build check",
-            Box::new(|| check::run(&CheckCommand::Build, verbose)),
+            Box::new(|| check::run(&CheckCommand::Build(BuildArgs::default()), verbose)),
         ),
         (
             "Lint check",
