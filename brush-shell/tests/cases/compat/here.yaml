@@ -281,3 +281,29 @@ cases:
       EOF
       )
       echo $var
+
+  - name: "Here doc larger than pipe buffer"
+    stdin: |
+      payload=
+      i=0
+      while [ $i -lt 500 ]; do
+        payload="${payload}0123456789012345678901234567890123456789"
+        i=$((i + 1))
+      done
+      out=$(cat <<EOF
+      $payload
+      EOF
+      )
+      echo "${#out}"
+
+  - name: "Here string larger than pipe buffer"
+    stdin: |
+      shopt -ou posix
+      payload=
+      i=0
+      while [ $i -lt 500 ]; do
+        payload="${payload}0123456789012345678901234567890123456789"
+        i=$((i + 1))
+      done
+      out=$(cat <<<"$payload")
+      echo "${#out}"
