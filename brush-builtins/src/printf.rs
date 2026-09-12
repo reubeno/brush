@@ -163,7 +163,7 @@ fn parse_format_string(format_string: &str) -> Result<Vec<ParsedFormatItem>, bru
             Ok(item) => Ok((item, false)),
             // Fixed q/Q modifiers are deliberately ignored; dynamic modifiers remain unsupported
             // until uucore exposes quoted-string metadata.
-            Err(format::FormatError::SpecError(spec))
+            Err(format::FormatError::SpecError(spec, span))
                 if matches!(spec.last(), Some(b'q' | b'Q'))
                     && !spec.contains(&b'*')
                     && !spec.contains(&b'$') =>
@@ -171,7 +171,7 @@ fn parse_format_string(format_string: &str) -> Result<Vec<ParsedFormatItem>, bru
                 let mut bare_q: &[u8] = b"q";
                 let item = format::Spec::parse(&mut bare_q)
                     .map(format::FormatItem::Spec)
-                    .map_err(|spec| format::FormatError::SpecError(spec.to_vec()))?;
+                    .map_err(|spec| format::FormatError::SpecError(spec.to_vec(), span))?;
                 Ok((item, !spec.contains(&b'#')))
             }
             Err(error) => Err(error),
