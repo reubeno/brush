@@ -184,7 +184,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     cmd.arg0(argv0);
 
     // Pass through args.
-    cmd.args(args);
+    sys::commands::set_args(&mut cmd, args);
 
     // Use the shell's current working dir.
     cmd.current_dir(context.shell.working_dir());
@@ -622,14 +622,14 @@ pub(crate) fn execute_external_command(
         }
     }
 
-    // When tracing is enabled, report.
+    // When tracing is enabled, report. Note that we report the args as the shell
+    // expanded them; on some platforms they are encoded before being handed to the
+    // child process.
     tracing::debug!(
         target: trace_categories::COMMANDS,
         "Spawning: cmd='{} {}'",
         cmd.get_program().to_string_lossy().to_string(),
-        cmd.get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .join(" ")
+        cmd_args.iter().map(|a| a.as_str()).join(" ")
     );
 
     match sys::process::spawn(cmd, context.shell.options().kill_external_commands_on_drop) {

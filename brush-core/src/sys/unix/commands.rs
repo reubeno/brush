@@ -3,11 +3,23 @@
 pub use std::os::unix::process::CommandExt;
 pub use std::os::unix::process::ExitStatusExt;
 
+use std::ffi::OsStr;
+
 use command_fds::{CommandFdExt, FdMapping};
 
 use crate::ShellFd;
 use crate::error;
 use crate::openfiles;
+
+/// Sets the arguments to be passed to the given command.
+///
+/// # Arguments
+///
+/// * `cmd` - The command to set arguments on.
+/// * `args` - The arguments to pass to the command.
+pub fn set_args<S: AsRef<OsStr>>(cmd: &mut std::process::Command, args: &[S]) {
+    cmd.args(args);
+}
 
 /// Extension trait for injecting file descriptors into commands.
 pub trait CommandFdInjectionExt {
