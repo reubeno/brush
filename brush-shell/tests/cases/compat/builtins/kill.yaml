@@ -22,6 +22,11 @@ cases:
     stdin: |
       kill -n 9 $$
 
+  - name: "kill -n 0"
+    stdin: |
+      kill -n $((5-5)) $$
+      echo OK
+
   - name: "kill -sigspec"
     stdin: |
       kill -USR1 $$
@@ -29,6 +34,15 @@ cases:
   - name: "kill -sigspec (numeric)"
     stdin: |
       kill -9 $$
+
+  - name: "kill -0 (numeric)"
+    stdin: |
+      kill -0000 $$
+      echo OK
+
+  - name: "kill -0 (numeric, non-existent)"
+    stdin: |
+      kill -0 99999999
 
   - name: "kill -sigspec (numeric, full name resolution)"
     stdin: |
