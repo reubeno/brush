@@ -434,6 +434,31 @@ impl ExpansionPiece {
     }
 }
 
+/// Where field splitting is in the value it is walking.
+enum SplitState {
+    /// Nothing but IFS whitespace has been seen yet.
+    Leading,
+    /// A field is open; more characters go into it.
+    InField,
+    /// A field just ended on whitespace, and the delimiter run that ended it can
+    /// still take one non-whitespace delimiter without starting an empty field.
+    AfterWhitespace,
+    /// A field just ended, and the delimiter run has already used up its one
+    /// non-whitespace delimiter.
+    AfterDelimiter,
+}
+
+/// Returns whether the given character counts as whitespace for the purposes of
+/// field splitting.
+///
+/// This is the set of characters `isspace` reports in the C locale, which is what
+/// decides whether a run of delimiters collapses into one. It is not
+/// [`char::is_whitespace`]: that one also covers the non-breaking space and the
+/// rest of the Unicode spaces, and those delimit fields one at a time.
+const fn is_ifs_whitespace(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r')
+}
+
 enum ParameterState {
     Undefined,
     DefinedEmptyString,
@@ -918,18 +943,21 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let mut fields: Vec<WordField> = vec![];
         let mut current_field = WordField::new();
 
-        // Go through the fields we have so far.
+        // Go through the fields we have so far. Each one is split on its own, so a value
+        // that already arrived as several fields (`${arr[@]}`, say) never has a delimiter
+        // run reach across the boundary between two of them.
         for existing_field in expansion.fields {
+            let mut state = SplitState::Leading;
+
             for piece in existing_field.0 {
                 match piece {
-                    ExpansionPiece::Unsplittable(_) => current_field.0.push(piece),
+                    ExpansionPiece::Unsplittable(_) => {
+                        current_field.0.push(piece);
+                        state = SplitState::InField;
+                    }
                     ExpansionPiece::Splittable(s) => {
                         for c in s.chars() {
-                            if ifs.contains(c) {
-                                if !current_field.0.is_empty() {
-                                    fields.push(std::mem::take(&mut current_field));
-                                }
-                            } else {
+                            if !ifs.contains(c) {
                                 match current_field.0.last_mut() {
                                     Some(ExpansionPiece::Splittable(last)) => last.push(c),
                                     Some(ExpansionPiece::Unsplittable(_)) | None => {
@@ -938,13 +966,56 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                                             .push(ExpansionPiece::Splittable(c.to_string()));
                                     }
                                 }
+                                state = SplitState::InField;
+                                continue;
                             }
+
+                            // The character delimits a field. What that means depends on
+                            // whether it is one of the whitespace characters, and on what
+                            // the splitter has seen since the last field ended.
+                            let whitespace = is_ifs_whitespace(c);
+                            state = match state {
+                                // A field was open, so this closes it whichever kind of
+                                // delimiter we are looking at.
+                                SplitState::InField => {
+                                    fields.push(std::mem::take(&mut current_field));
+                                    if whitespace {
+                                        SplitState::AfterWhitespace
+                                    } else {
+                                        SplitState::AfterDelimiter
+                                    }
+                                }
+                                // Whitespace before the first field is dropped, but a
+                                // delimiter there ends a field that was empty.
+                                SplitState::Leading if whitespace => SplitState::Leading,
+                                SplitState::Leading => {
+                                    fields.push(WordField::new());
+                                    SplitState::AfterDelimiter
+                                }
+                                // Whitespace around a delimiter belongs to the same run,
+                                // so `a : b` yields two fields and not three.
+                                SplitState::AfterWhitespace if whitespace => {
+                                    SplitState::AfterWhitespace
+                                }
+                                SplitState::AfterWhitespace => SplitState::AfterDelimiter,
+                                SplitState::AfterDelimiter if whitespace => {
+                                    SplitState::AfterDelimiter
+                                }
+                                // The run already used up its one delimiter, so this one
+                                // closes a second, empty field.
+                                SplitState::AfterDelimiter => {
+                                    fields.push(WordField::new());
+                                    SplitState::AfterDelimiter
+                                }
+                            };
                         }
                     }
                 }
             }
 
-            if !current_field.0.is_empty() {
+            // A trailing delimiter does not leave an empty field behind, so only an open
+            // field is worth keeping here.
+            if matches!(state, SplitState::InField) {
                 fields.push(std::mem::take(&mut current_field));
             }
         }
