@@ -79,22 +79,20 @@ impl builtins::Command for KillCommand {
         for arg in &self.args {
             // See if this is -sigspec syntax. The sigspec may be a signal name
             // (e.g., -TERM) or a signal number (e.g., -9, including -0).
-            if let Some(possible_sigspec) = arg.strip_prefix("-") {
-                if let Ok(signal_number) = possible_sigspec.parse::<i32>() {
-                    if signal_number == 0 {
-                        signal_zero = true;
-                    } else if let Ok(parsed_trap_signal) = possible_sigspec.parse::<TrapSignal>() {
-                        signal_zero = false;
-                        trap_signal = parsed_trap_signal;
-                    } else {
-                        writeln!(
-                            context.stderr(),
-                            "{}: {}: invalid signal specification",
-                            context.command_name,
-                            possible_sigspec
-                        )?;
-                        return Ok(ExecutionResult::general_error());
-                    }
+            if Some(possible_sigspec) = arg.strip_prefix("-") {
+                if let Ok(0) = possible_sigspec.parse::<i32>() {
+                    signal_zero = true;
+                } else if let Ok(parsed_trap_signal) = possible_sigspec.parse::<TrapSignal>() {
+                    signal_zero = false;
+                    trap_signal = parsed_trap_signal;
+                } else {
+                    writeln!(
+                        context.stderr(),
+                        "{}: {}: invalid signal specification",
+                        context.command_name,
+                        possible_sigspec
+                    )?;
+                    return Ok(ExecutionResult::general_error());
                 }
             } else if pid_or_job_spec.is_none() {
                 pid_or_job_spec = Some(arg);

@@ -25,6 +25,7 @@ cases:
   - name: "kill -n 0"
     stdin: |
       kill -n $((5-5)) $$
+      echo OK
 
   - name: "kill -sigspec"
     stdin: |
@@ -37,6 +38,7 @@ cases:
   - name: "kill -0 (numeric)"
     stdin: |
       kill -0000 $$
+      echo OK
 
   - name: "kill -0 (numeric, non-existent)"
     stdin: |
