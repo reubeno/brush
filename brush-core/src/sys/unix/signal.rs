@@ -39,15 +39,12 @@ pub fn kill_process(
 ///
 /// # Arguments
 /// * `pid` - The process ID to signal-zero check.
-pub fn check_signalable(
-    pid: sys::process::ProcessId,
-) -> Result<(), error::Error> {
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
-        .map_err(|errno| match errno {
-            nix::errno::Errno::ESRCH => error::ErrorKind::NoSuchProcess,
-            nix::errno::Errno::EPERM => error::ErrorKind::PermissionDenied,
-            _ => error::ErrorKind::FailedToSendSignal,
-        })?;
+pub fn check_signalable(pid: sys::process::ProcessId) -> Result<(), error::Error> {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).map_err(|errno| match errno {
+        nix::errno::Errno::ESRCH => error::ErrorKind::NoSuchProcess,
+        nix::errno::Errno::EPERM => error::ErrorKind::PermissionDenied,
+        _ => error::ErrorKind::FailedToSendSignal,
+    })?;
 
     Ok(())
 }
