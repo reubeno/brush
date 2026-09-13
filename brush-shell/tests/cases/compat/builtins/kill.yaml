@@ -41,6 +41,7 @@ cases:
       echo OK
 
   - name: "kill -0 (numeric, non-existent)"
+    ignore_stderr: true
     stdin: |
       kill -0 99999999
 
