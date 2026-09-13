@@ -21,8 +21,10 @@ fn cacheable_parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseE
 
 peg::parser! {
     grammar arithmetic() for str {
+        // An expression holding nothing but whitespace evaluates to 0, wherever it came from:
+        // `$(( ))`, `let ''`, or a blank array subscript.
         pub(crate) rule full_expression() -> ast::ArithmeticExpr =
-            ![_] { ast::ArithmeticExpr::Literal(0) } /
+            _ ![_] { ast::ArithmeticExpr::Literal(0) } /
             _ e:expression() _ { e }
 
         pub(crate) rule expression() -> ast::ArithmeticExpr = precedence!{
@@ -168,4 +170,24 @@ fn parse_shell_literal_number(s: &str, radix: u64) -> Result<i64, &'static str> 
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_blank_expression_yields_zero() {
+        for input in ["", " ", "\t", " \n "] {
+            assert!(
+                matches!(parse(input), Ok(ast::ArithmeticExpr::Literal(0))),
+                "expected 0 for {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_rejects_an_incomplete_expression() {
+        assert!(parse("1 +").is_err());
+    }
 }

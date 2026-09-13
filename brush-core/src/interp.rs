@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::arithmetic::{self, ExpandAndEvaluate};
+use crate::arithmetic::ExpandAndEvaluate;
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
@@ -13,9 +13,7 @@ use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
 };
 use crate::shell::Shell;
-use crate::variables::{
-    ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
-};
+use crate::variables::{ArrayLiteral, ShellValue, ShellValueLiteral, ShellVariable};
 use crate::{
     ShellFd, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys, timing,
 };
@@ -1100,7 +1098,7 @@ impl Execute for ast::FunctionDefinition {
     async fn execute(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
-        _params: &ExecutionParameters,
+        params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let func_name = self.fname.value.clone();
 
@@ -1127,9 +1125,17 @@ impl Execute for ast::FunctionDefinition {
             .map_or_else(crate::SourceInfo::default, |frame| {
                 frame.adjusted_source_info()
             });
-        shell.define_func(func_name, self.clone(), &source_info);
-
-        let result = ExecutionResult::success();
+        // A readonly function refuses redefinition. That is reported here rather than
+        // propagated, so the rest of the command list still runs, as in a shell. It is written
+        // as the bare message, like the diagnostics the declaration builtins emit.
+        let result = match shell.define_func(func_name, self.clone(), &source_info) {
+            Ok(()) => ExecutionResult::success(),
+            Err(err) if matches!(err.kind(), error::ErrorKind::ReadonlyFunction(_)) => {
+                writeln!(params.stderr(shell), "{err}")?;
+                ExecutionResult::general_error()
+            }
+            Err(err) => return Err(err),
+        };
         shell.set_last_exit_status(result.exit_code.into());
 
         Ok(result)
@@ -1193,10 +1199,28 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                         if command_takes_assignments {
                             // This looks like an assignment, and the command being invoked is a
                             // well-known builtin that takes arguments that need to function like
-                            // assignments (but which are processed by the builtin).
-                            let expanded =
-                                expand_assignment(&mut context.shell, &params, assignment).await?;
-                            args.push(CommandArg::Assignment(expanded));
+                            // assignments (but which are processed by the builtin). Expand its
+                            // words now, exactly as a shell does before the command runs; the
+                            // builtin resolves the subscripts later, once it knows the target
+                            // array type.
+                            let expanded = CommandArg::Assignment(
+                                expansion::expand_assignment_words(
+                                    &mut context.shell,
+                                    &params,
+                                    assignment,
+                                )
+                                .await?,
+                            );
+
+                            // A compound operand is traced on its own line as it is expanded,
+                            // ahead of the command's own trace line.
+                            if context.shell.options().print_commands_and_arguments
+                                && let Some(line) = expanded.compound_assignment_for_tracing()
+                            {
+                                context.shell.trace_command(&params, line).await;
+                            }
+
+                            args.push(expanded);
                         } else {
                             // This *looks* like an assignment, but it's really a string we should
                             // fully treat as a regular looking
@@ -1287,8 +1311,20 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 process_group_id: context.process_group_id,
             };
 
-            match execute_command(context, params, cmd_name, &assignments, &args).await {
+            match execute_command(
+                context,
+                params,
+                cmd_name,
+                self.to_string(),
+                &assignments,
+                &args,
+            )
+            .await
+            {
                 Ok(result) => Ok(result),
+                // A variable assignment error raised by a declaration builtin abandons the rest
+                // of the command list, exactly as one raised by an assignment statement does.
+                Err(err) if err.is_assignment_error() => Err(err),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
 
@@ -1305,9 +1341,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                     assignment,
                     &mut context.shell,
                     &params,
-                    false,
-                    None,
-                    EnvironmentScope::Global,
+                    AssignmentTarget::Shell,
                 )
                 .await?;
             }
@@ -1337,6 +1371,7 @@ async fn execute_command<T: Into<String>>(
     mut context: PipelineExecutionContext<'_, impl extensions::ShellExtensions>,
     params: ExecutionParameters,
     cmd_name: T,
+    source_text: String,
     assignments: &[&ast::Assignment],
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
@@ -1351,9 +1386,7 @@ async fn execute_command<T: Into<String>>(
             assignment,
             guard.shell(),
             &params,
-            true,
-            Some(EnvironmentScope::Command),
-            EnvironmentScope::Command,
+            AssignmentTarget::CommandEnvironment,
         )
         .await?;
     }
@@ -1380,7 +1413,7 @@ async fn execute_command<T: Into<String>>(
     cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
 
     // Run through any pre-execution hooks as best effort.
-    let _ = commands::on_preexecute(&mut cmd).await;
+    let _ = commands::on_preexecute(&mut cmd, source_text).await;
 
     // Execute
     // TODO(jobs): do we need to move self back to foreground on error here?
@@ -1426,201 +1459,127 @@ async fn expand_words(
     Ok(fields)
 }
 
-async fn expand_assignment(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    params: &ExecutionParameters,
-    assignment: &ast::Assignment,
-) -> Result<ast::Assignment, error::Error> {
-    let value = expand_assignment_value(shell, params, &assignment.value).await?;
-    Ok(ast::Assignment {
-        name: basic_expand_assignment_name(shell, params, &assignment.name).await?,
-        value,
-        append: assignment.append,
-        loc: assignment.loc.clone(),
-    })
+/// Where an assignment binds, and how the variable it binds is marked. The interpreter performs
+/// exactly these two kinds of assignment.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum AssignmentTarget {
+    /// An assignment statement (`x=1`): it updates the variable wherever it is in scope, creates
+    /// a global if there is none, and exports only when `set -a` says to.
+    Shell,
+    /// A `name=value` prefix on a command: it lives in the command's own scope, shadowing
+    /// anything of the same name, and is exported to the command for its duration.
+    CommandEnvironment,
 }
 
-async fn basic_expand_assignment_name(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    params: &ExecutionParameters,
-    name: &ast::AssignmentName,
-) -> Result<ast::AssignmentName, error::Error> {
-    match name {
-        ast::AssignmentName::VariableName(name) => {
-            let expanded = expansion::basic_expand_word(shell, params, name).await?;
-            Ok(ast::AssignmentName::VariableName(expanded))
+impl AssignmentTarget {
+    /// The scope an existing variable must live in for this assignment to update it rather than
+    /// create a new one; `None` updates whichever variable is in scope.
+    const fn required_scope(self) -> Option<EnvironmentScope> {
+        match self {
+            Self::Shell => None,
+            Self::CommandEnvironment => Some(EnvironmentScope::Command),
         }
-        ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded_name = expansion::basic_expand_word(shell, params, name).await?;
-            let expanded_index = expansion::basic_expand_word(shell, params, index).await?;
-            Ok(ast::AssignmentName::ArrayElementName(
-                expanded_name,
-                expanded_index,
-            ))
+    }
+
+    /// The scope a newly created variable is added to.
+    const fn creation_scope(self) -> EnvironmentScope {
+        match self {
+            Self::Shell => EnvironmentScope::Global,
+            Self::CommandEnvironment => EnvironmentScope::Command,
         }
     }
 }
 
-async fn expand_assignment_value(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    params: &ExecutionParameters,
-    value: &ast::AssignmentValue,
-) -> Result<ast::AssignmentValue, error::Error> {
-    let expanded = match value {
-        ast::AssignmentValue::Scalar(s) => {
-            let expanded_word = expansion::basic_expand_assignment_word(shell, params, s).await?;
-            ast::AssignmentValue::Scalar(ast::Word::from(expanded_word))
-        }
-        ast::AssignmentValue::Array(arr) => {
-            let mut expanded_values = vec![];
-            for (key, value) in arr {
-                if let Some(k) = key {
-                    let expanded_key = expansion::basic_expand_assignment_word(shell, params, k)
-                        .await?
-                        .into();
-                    let expanded_value =
-                        expansion::basic_expand_assignment_word(shell, params, value)
-                            .await?
-                            .into();
-                    expanded_values.push((Some(expanded_key), expanded_value));
-                } else {
-                    // Array elements are treated as regular words, not assignments
-                    let split_expanded_value =
-                        expansion::full_expand_and_split_word(shell, params, value).await?;
-                    for expanded_value in split_expanded_value {
-                        expanded_values.push((None, expanded_value.into()));
-                    }
-                }
-            }
-
-            ast::AssignmentValue::Array(expanded_values)
-        }
-    };
-
-    Ok(expanded)
-}
-
-#[expect(clippy::too_many_lines)]
 async fn apply_assignment(
     assignment: &ast::Assignment,
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
-    mut export: bool,
-    required_scope: Option<EnvironmentScope>,
-    creation_scope: EnvironmentScope,
+    target_scope: AssignmentTarget,
 ) -> Result<(), error::Error> {
-    // Figure out if we are trying to assign to a variable or assign to an element of an existing
-    // array.
-    let mut array_index;
-    let variable_name = match &assignment.name {
-        ast::AssignmentName::VariableName(name) => {
-            array_index = None;
-            name
-        }
-        ast::AssignmentName::ArrayElementName(name, index) => {
-            let expanded = expansion::basic_expand_word(shell, params, index).await?;
-            array_index = Some(expanded);
-            name
-        }
-    };
+    // Base names are never expanded, so this stays valid for the expanded assignment below.
+    let variable_name = assignment.name.base_name();
+    let target = shell.env().subscript_kind(variable_name);
+    let expansion::ResolvedAssignment {
+        assignment: expanded,
+        stopped_by,
+    } = shell.expand_assignment(params, assignment, target).await?;
+    let ast::Assignment {
+        name: expanded_name,
+        value: expanded_value,
+        append,
+        ..
+    } = expanded;
 
-    // Expand the values.
-    let new_value = match &assignment.value {
-        ast::AssignmentValue::Scalar(unexpanded_value) => {
-            let value =
-                expansion::basic_expand_assignment_word(shell, params, unexpanded_value).await?;
-            ShellValueLiteral::Scalar(value)
-        }
-        ast::AssignmentValue::Array(unexpanded_values) => {
-            let mut elements = vec![];
-            for (unexpanded_key, unexpanded_value) in unexpanded_values {
-                let key = match unexpanded_key {
-                    Some(unexpanded_key) => Some(
-                        expansion::basic_expand_assignment_word(shell, params, unexpanded_key)
-                            .await?,
-                    ),
-                    None => None,
-                };
-
-                if key.is_some() {
-                    let value =
-                        expansion::basic_expand_assignment_word(shell, params, unexpanded_value)
-                            .await?;
-                    elements.push((key, value));
-                } else {
-                    // Array elements are treated as regular words, not assignments
-                    let values =
-                        expansion::full_expand_and_split_word(shell, params, unexpanded_value)
-                            .await?;
-                    for value in values {
-                        elements.push((None, value));
-                    }
-                }
-            }
-            ShellValueLiteral::Array(ArrayLiteral(elements))
-        }
+    let array_index = match expanded_name {
+        ast::AssignmentName::VariableName(_) => None,
+        ast::AssignmentName::ArrayElementName(_, index) => Some(index),
     };
+    let new_value = ShellValueLiteral::from(expanded_value);
 
     if shell.options().print_commands_and_arguments {
-        let op = if assignment.append { "+=" } else { "=" };
-        shell
-            .trace_command(params, std::format!("{}{op}{new_value}", assignment.name))
-            .await;
+        // A shell traces a scalar assignment with its expanded value under the name as written
+        // (subscript included), and a compound assignment entirely as written.
+        let line = if matches!(assignment.value, ast::AssignmentValue::Array(_)) {
+            assignment.to_string()
+        } else {
+            let op = if append { "+=" } else { "=" };
+            std::format!("{}{op}{new_value}", assignment.name)
+        };
+        shell.trace_command(params, line).await;
     }
 
-    // See if we need to eval an array index.
-    if let Some(idx) = &array_index {
-        // An array subscript is arithmetically evaluated unless the target is an
-        // associative array (in which case the subscript is used as a literal key).
-        // A scalar or unset/untyped variable becomes an indexed array, so its
-        // subscript still needs to be evaluated.
-        let will_be_indexed_array =
-            if let Some((_, existing_value)) = shell.env().get(variable_name) {
-                !matches!(
-                    existing_value.value(),
-                    ShellValue::AssociativeArray(_)
-                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                )
-            } else {
-                true
-            };
+    // A failure here is an assignment error, reported against the variable as written.
+    let written_subscript = match &assignment.name {
+        ast::AssignmentName::VariableName(_) => None,
+        ast::AssignmentName::ArrayElementName(_, index) => Some(index.as_str()),
+    };
+    let as_assignment_error = |err: error::Error| {
+        err.for_variable(variable_name, written_subscript)
+            .into_assignment_error()
+    };
 
-        if will_be_indexed_array {
-            array_index = Some(
-                arithmetic::expand_and_eval(shell, params, idx.as_str(), false)
-                    .await?
-                    .to_string(),
-            );
-        }
-    }
+    bind_assignment(
+        shell,
+        variable_name,
+        array_index,
+        new_value,
+        append,
+        target_scope,
+    )
+    .map_err(as_assignment_error)?;
 
+    // The elements before a bad compound key are now assigned; raise the key's error.
+    stopped_by.map_or(Ok(()), |err| Err(as_assignment_error(err)))
+}
+
+/// Binds an already-expanded value to a variable, creating the variable if necessary. Kept
+/// separate from [`apply_assignment`] because binding an existing variable has to return while
+/// the environment is still mutably borrowed.
+fn bind_assignment(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    variable_name: &str,
+    array_index: Option<String>,
+    new_value: ShellValueLiteral,
+    append: bool,
+    target_scope: AssignmentTarget,
+) -> Result<(), error::Error> {
     // Read option before taking mutable borrow on env.
     let export_variables_on_modification = shell.options().export_variables_on_modification;
+    let mut export = target_scope == AssignmentTarget::CommandEnvironment;
+    let required_scope = target_scope.required_scope();
 
     // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().get_mut(variable_name.as_str())
-    {
+    if let Some((existing_value_scope, existing_value)) = shell.env_mut().get_mut(variable_name) {
         if required_scope.is_none() || Some(existing_value_scope) == required_scope {
-            if let Some(array_index) = array_index {
-                match new_value {
-                    ShellValueLiteral::Scalar(s) => {
-                        existing_value.assign_at_index(array_index, s, assignment.append)?;
-                    }
-                    ShellValueLiteral::Array(_) => {
-                        return error::unimp("replacing an array item with an array");
-                    }
-                }
-            } else {
-                if !export
-                    && export_variables_on_modification
-                    && !matches!(new_value, ShellValueLiteral::Array(_))
-                {
-                    export = true;
-                }
-
-                existing_value.assign(new_value, assignment.append)?;
+            if array_index.is_none()
+                && !export
+                && export_variables_on_modification
+                && !matches!(new_value, ShellValueLiteral::Array(_))
+            {
+                export = true;
             }
+
+            existing_value.assign_at(array_index, new_value, append)?;
 
             if export {
                 existing_value.export();
@@ -1638,13 +1597,13 @@ async fn apply_assignment(
                 ShellValue::indexed_array_from_literals(ArrayLiteral(vec![(Some(array_index), s)]))
             }
             ShellValueLiteral::Array(_) => {
-                return error::unimp("cannot assign list to array member");
+                return Err(error::ErrorKind::AssigningListToArrayMember.into());
             }
         }
     } else {
         match new_value {
             ShellValueLiteral::Scalar(s) => {
-                export = export || shell.options().export_variables_on_modification;
+                export = export || export_variables_on_modification;
                 ShellValue::String(s)
             }
             ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values),
@@ -1657,7 +1616,9 @@ async fn apply_assignment(
         new_var.export();
     }
 
-    shell.env_mut().add(variable_name, new_var, creation_scope)
+    shell
+        .env_mut()
+        .add(variable_name, new_var, target_scope.creation_scope())
 }
 
 #[expect(clippy::too_many_lines)]

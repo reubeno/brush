@@ -140,7 +140,7 @@ cases:
         echo "Left inner loop"
       done
 
-  - name: "Multi-line for loop"
+  - name: "Multi-line for loop in a script"
     test_files:
       - path: "script.sh"
         contents: |

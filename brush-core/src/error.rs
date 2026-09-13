@@ -4,18 +4,26 @@ use std::path::PathBuf;
 
 use crate::{Shell, ShellFd, extensions, results, sys};
 
-/// Unified error type for this crate. Contains just a kind for now,
-/// but will be extended later with additional context.
-#[derive(thiserror::Error, Debug)]
-#[error("{kind}")]
+/// Unified error type for this crate: a kind plus the context the shell has attached to it.
+#[derive(Debug)]
 pub struct Error {
     /// The kind of error.
-    #[source]
     kind: ErrorKind,
+
+    /// The variable this error is about, if it was raised by an assignment to or declaration of
+    /// one; displayed as a `name: ` prefix, as a shell does. See [`Error::for_variable`].
+    ///
+    /// Boxed because it is `None` on all but the assignment paths, and `Error` is returned by
+    /// value from nearly every function in this crate.
+    variable: Option<Box<str>>,
 
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+
+    /// Whether or not this error arose from a variable assignment; see
+    /// [`Error::is_assignment_error`].
+    from_assignment: bool,
 }
 
 /// Monolithic error type for the shell
@@ -29,12 +37,22 @@ pub enum ErrorKind {
     #[error("cannot assign list to array member")]
     AssigningListToArrayMember,
 
+    /// An array element was named with a subscript no element can have. Carries the element as
+    /// written (`name[subscript]`).
+    #[error("{0}: bad array subscript")]
+    BadArraySubscript(String),
+
+    /// A compound value keyed an indexed array element with `*` or `@`. Carries the element as
+    /// written (`[key]=value`).
+    #[error("{0}: cannot assign to non-numeric index")]
+    AssigningToNonNumericIndex(String),
+
     /// An attempt was made to convert an associative array to an indexed array.
-    #[error("cannot convert associative array to indexed array")]
+    #[error("cannot convert associative to indexed array")]
     ConvertingAssociativeArrayToIndexedArray,
 
     /// An attempt was made to convert an indexed array to an associative array.
-    #[error("cannot convert indexed array to associative array")]
+    #[error("cannot convert indexed to associative array")]
     ConvertingIndexedArrayToAssociativeArray,
 
     /// An error occurred while sourcing the indicated script file.
@@ -157,8 +175,12 @@ pub enum ErrorKind {
     Utf8Error(#[from] std::str::Utf8Error),
 
     /// An attempt was made to modify a readonly variable.
-    #[error("cannot mutate readonly variable")]
+    #[error("readonly variable")]
     ReadonlyVariable,
+
+    /// An attempt was made to redefine or unset a readonly function.
+    #[error("{0}: readonly function")]
+    ReadonlyFunction(String),
 
     /// The indicated pattern is invalid.
     #[error("invalid pattern: '{0}'")]
@@ -320,6 +342,31 @@ pub enum ErrorKind {
     NoMatch(String),
 }
 
+impl ErrorKind {
+    /// Returns whether this is a shell's own refusal to perform an assignment, as opposed to
+    /// brush failing to carry one out (an unimplemented case, an I/O error). Only the former
+    /// may be turned into an assignment error, which abandons the rest of the command list;
+    /// see [`Error::is_assignment_error`].
+    pub const fn is_assignment_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::ReadonlyVariable
+                | Self::AssigningListToArrayMember
+                | Self::ConvertingIndexedArrayToAssociativeArray
+                | Self::ConvertingAssociativeArrayToIndexedArray
+        ) || self.is_bad_element_key()
+    }
+
+    /// Returns whether this names an array element that no element can be: an empty subscript,
+    /// or `*`/`@` where only a number will do.
+    pub const fn is_bad_element_key(&self) -> bool {
+        matches!(
+            self,
+            Self::BadArraySubscript(_) | Self::AssigningToNonNumericIndex(_)
+        )
+    }
+}
+
 /// Trait implementable by built-in commands to represent errors.
 pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {
     /// Try to extract a reference to the underlying `std::io::Error`, if any.
@@ -329,11 +376,21 @@ pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync 
     fn as_io_error(&self) -> Option<&std::io::Error> {
         None
     }
+
+    /// Returns whether this is a variable assignment error; see
+    /// [`Error::is_assignment_error`].
+    fn is_assignment_error(&self) -> bool {
+        false
+    }
 }
 
 impl BuiltinError for Error {
     fn as_io_error(&self) -> Option<&std::io::Error> {
         self.as_io_error()
+    }
+
+    fn is_assignment_error(&self) -> bool {
+        self.is_assignment_error()
     }
 }
 
@@ -394,8 +451,30 @@ where
     fn from(convertible_to_kind: T) -> Self {
         Self {
             kind: convertible_to_kind.into(),
+            variable: None,
             fatal: false,
+            from_assignment: false,
         }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(name) = &self.variable {
+            write!(f, "{name}: ")?;
+        }
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl std::error::Error for Error {
+    /// The kind's own source, not the kind itself: this error already displays the kind's
+    /// message, so returning the kind here would make a consumer that prints the whole chain
+    /// (`anyhow`, `eyre`, `{:#}`) print it twice. Whatever the kind wraps -- an
+    /// [`std::io::Error`], say -- stays reachable; the kind itself is reachable through
+    /// [`Error::kind`].
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.kind.source()
     }
 }
 
@@ -410,6 +489,55 @@ impl Error {
     /// Returns whether or not this error is fatal.
     pub const fn is_fatal(&self) -> bool {
         self.fatal
+    }
+
+    /// Names the variable this error is about, so it displays as `name: message`, the way a
+    /// shell reports a failed assignment or declaration. A list assigned to an element is
+    /// reported against the element (`name[subscript]`); a kind whose message already names its
+    /// target (a bad subscript, a readonly function) is left alone, as is an error already
+    /// attributed to a variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The variable's name.
+    /// * `subscript` - The subscript of the element assigned to, as written, if any.
+    #[must_use]
+    pub fn for_variable(mut self, name: &str, subscript: Option<&str>) -> Self {
+        if self.variable.is_some() {
+            return self;
+        }
+
+        self.variable = match (&self.kind, subscript) {
+            (
+                ErrorKind::BadArraySubscript(_)
+                | ErrorKind::AssigningToNonNumericIndex(_)
+                | ErrorKind::ReadonlyFunction(_),
+                _,
+            ) => None,
+            (ErrorKind::AssigningListToArrayMember, Some(subscript)) => {
+                Some(std::format!("{name}[{subscript}]").into_boxed_str())
+            }
+            _ => Some(Box::from(name)),
+        };
+        self
+    }
+
+    /// Marks this error as a variable assignment error.
+    #[must_use]
+    pub const fn into_assignment_error(mut self) -> Self {
+        self.from_assignment = true;
+        self
+    }
+
+    /// Returns whether or not this is a variable assignment error: one that a shell reports and
+    /// then abandons the rest of the current command list for, instead of letting the command
+    /// that raised it fail on its own. A failed assignment statement (`x=v`, `a=(...)`) is one,
+    /// and so is a declaration builtin's failure to assign an unquoted compound operand. The
+    /// mark is visible through a [`ErrorKind::BuiltinError`] wrapper, so wrapping a builtin's
+    /// error does not hide it.
+    pub fn is_assignment_error(&self) -> bool {
+        self.from_assignment
+            || matches!(&self.kind, ErrorKind::BuiltinError(inner, _) if inner.is_assignment_error())
     }
 
     /// Returns a reference to the error kind.
@@ -479,4 +607,79 @@ pub fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 /// * `project_issue_id` - The GitHub issue ID where the implementation is tracked.
 pub fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
     Err(ErrorKind::UnimplementedAndTracked(msg, project_issue_id).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error as _;
+
+    use super::*;
+
+    #[test]
+    fn error_displays_its_message_once_and_does_not_repeat_it_as_its_source() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "no such file");
+        let err = Error::from(ErrorKind::IoError(io_err));
+
+        // The kind's message shows up in this error's own message...
+        assert_eq!(err.to_string(), "i/o error: no such file");
+        // ...so the source has to be what the kind wraps, not the kind itself; otherwise a
+        // consumer that prints the whole chain prints the same text twice.
+        let source = err.source().unwrap();
+        assert_eq!(source.to_string(), "no such file");
+        assert!(source.downcast_ref::<std::io::Error>().is_some());
+        assert!(err.as_io_error().is_some());
+    }
+
+    #[test]
+    fn naming_a_variable_prefixes_the_message() {
+        let err = Error::from(ErrorKind::ReadonlyVariable).for_variable("v", None);
+        assert_eq!(err.to_string(), "v: readonly variable");
+
+        // A list assigned to an element is reported against the element.
+        let err = Error::from(ErrorKind::AssigningListToArrayMember).for_variable("a", Some("i+1"));
+        assert_eq!(
+            err.to_string(),
+            "a[i+1]: cannot assign list to array member"
+        );
+
+        // A kind whose message already names its target is left alone.
+        let err =
+            Error::from(ErrorKind::BadArraySubscript(String::from("a[]"))).for_variable("a", None);
+        assert_eq!(err.to_string(), "a[]: bad array subscript");
+    }
+
+    #[test]
+    fn only_a_shells_own_refusal_counts_as_an_assignment_failure() {
+        for kind in [
+            ErrorKind::ReadonlyVariable,
+            ErrorKind::AssigningListToArrayMember,
+            ErrorKind::ConvertingIndexedArrayToAssociativeArray,
+            ErrorKind::ConvertingAssociativeArrayToIndexedArray,
+            ErrorKind::BadArraySubscript(String::from("a[]")),
+            ErrorKind::AssigningToNonNumericIndex(String::from("[*]=1")),
+        ] {
+            assert!(kind.is_assignment_failure(), "expected refusal: {kind}");
+        }
+
+        // brush failing to carry an assignment out is not the shell refusing to perform it, and
+        // must not be turned into an assignment error: that would abandon the caller's whole
+        // command list over an unimplemented case or a broken pipe.
+        for kind in [
+            ErrorKind::Unimplemented("misaligned keys/values"),
+            ErrorKind::IoError(std::io::Error::other("broken pipe")),
+            ErrorKind::NotArray,
+        ] {
+            assert!(
+                !kind.is_assignment_failure(),
+                "expected non-refusal: {kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_an_unusable_element_key_stops_a_compound_value_short() {
+        assert!(ErrorKind::BadArraySubscript(String::new()).is_bad_element_key());
+        assert!(ErrorKind::AssigningToNonNumericIndex(String::new()).is_bad_element_key());
+        assert!(!ErrorKind::ReadonlyVariable.is_bad_element_key());
+    }
 }
