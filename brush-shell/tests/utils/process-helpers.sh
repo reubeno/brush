@@ -1,5 +1,6 @@
+# shellcheck shell=bash
 function get-proc-stat-value() {
-    cat /proc/self/stat | cut -d ' ' --output-delimiter=, -f$1
+    cat /proc/self/stat | cut -d ' ' --output-delimiter=, -f"$1"
 }
 
 function get-pid() {

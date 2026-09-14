@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # The pytest half of the adapter contract (see ../README.md), shared because every adapter needs
 # it identically: JUnit and a full log under /results, and the run's own exit status.
 #

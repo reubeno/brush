@@ -165,6 +165,7 @@ execute_with_shell() {
     # - -x flag to enable tracing
     # - stdout to stdout file
     # - stderr to stderr file
+    # shellcheck disable=SC2016 # PS4 is expanded by the traced shell.
     env BASH_XTRACEFD=3 PS4='+${BASH_SOURCE:-}:${LINENO:-}: ' \
         "$shell_path" -x "$script_path" "${script_args[@]}" \
         >"$stdout_file" \

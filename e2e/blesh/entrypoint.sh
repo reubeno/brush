@@ -9,6 +9,7 @@ export BLESH_TEST_SHELL="${SHELL_UNDER_TEST:-bash}"
 export BLESH_TEST_FILES=
 (($# == 0)) || printf -v BLESH_TEST_FILES '%s\n' "$@"
 mkdir -p /results/progress
+# shellcheck disable=SC2174 # /results already exists; only run/ needs mode 700.
 mkdir -p -m 700 /results/run
 export XDG_RUNTIME_DIR=/results/run RUST_BACKTRACE=1
 e2e_run_pytest blesh --tb=short
