@@ -222,7 +222,8 @@ def test_no_note_when_dir_is_in_path_via_symlink(install, tmp_path):
     path = os.pathsep.join([str(link), os.environ["PATH"]])
     result = install("--version", VERSION, "--dir", dest, PATH=path)
     assert_succeeded(result)
-    assert "note:" not in result.stdout
+    # Only the attestation note is allowed (gh may be missing or unauthenticated here).
+    assert not [line for line in result.stdout.splitlines() if "note:" in line and "attestation" not in line]
 
 
 def test_unset_home_without_dir(install):
