@@ -3,7 +3,7 @@
 # results go to /results (junit XML + full log); exit status = test status.
 set -uo pipefail
 mkdir -p /results
-cd /fzf
+cd /fzf || exit 1
 tmux new-session -d
 # Turn skip-list.txt into a minitest --exclude regex.
 skips=$(grep -v '^\s*\(#\|$\)' /e2e/skip-list.txt | paste -sd'|')
