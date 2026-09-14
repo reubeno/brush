@@ -185,6 +185,14 @@ def test_verifies_real_attestation(install, tmp_path):
     assert "verified GitHub build attestation" in result.stdout
 
 
+# Runs on the CI images that deliberately lack gh (see .github/workflows/install-script.yaml).
+@pytest.mark.skipif(GH_INSTALLED, reason="gh is installed")
+def test_missing_gh_warns_with_reason(install, tmp_path):
+    result = install("--version", VERSION, "--dir", tmp_path)
+    assert_succeeded(result)
+    assert "note: GitHub CLI (gh) is not installed, so the build attestation wasn't checked" in result.stdout
+
+
 def test_unauthenticated_gh_warns_with_reason(install, tmp_path):
     result = install("--version", VERSION, "--dir", tmp_path, shims=["gh-unauthenticated"])
     assert_succeeded(result)
@@ -215,7 +223,7 @@ def test_notes_when_another_brush_comes_first_in_path(install, tmp_path):
     assert f"note: running 'brush' will run {earlier / 'brush'}, not {dest / 'brush'}" in result.stdout
 
 
-def test_no_note_when_dir_is_in_path_via_symlink(install, tmp_path):
+def test_no_path_note_when_dir_is_in_path_via_symlink(install, tmp_path):
     dest, link = tmp_path / "dest", tmp_path / "link"
     link.symlink_to(dest)
 
