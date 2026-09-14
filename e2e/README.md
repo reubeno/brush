@@ -67,6 +67,10 @@ context is `e2e/`, so it can `COPY shim /e2e/bin`) whose entrypoint:
    own knob for which shell to test (atuin's `ATUIN_TEST_BASH`), set that
    instead and skip the shim; a shim on `PATH` also captures test tooling
    written in bash (tmux, say), which must not run under the shell under test.
+   A suite that takes a shell *path* has nowhere to put a command-line flag; turn
+   the behavior on through brush's config file (`$HOME/.config/brush/config.toml`,
+   and `HOME` is `/tmp` in the container) instead, which bash ignores and so leaves
+   the baseline run alone.
 2. **Writes results** to `/results`: `log.txt` plus JUnit XML under
    `junit/`. Write whatever else helps debugging there too.
 3. **Exits non-zero** when any test fails. Entrypoints pipe the runner through
@@ -138,7 +142,7 @@ what they would otherwise each reinvent:
 | app | notes |
 |-----|-------|
 | fzf | upstream `test/test_shell_integration.rb`, `TestBash` only; minitest + tmux, JUnit via `minitest-ci` |
-| atuin | our own suite in `atuin/tests/` (pytest + tmux), written to be upstreamable |
+| atuin | our own suite in `atuin/tests/` (pytest + tmux), written to be upstreamable. atuin's bash integration is bash-preexec, so the adapter turns on brush's `zsh-hooks` through a config file to exercise the native hooks rather than the `DEBUG`-trap emulation |
 | blesh | upstream `ble.sh --test`, one pytest case per test section with a process-group timeout (`BLESH_TEST_TIMEOUT`, default 180s); sections are read from ble.sh's own build output, so a section added upstream runs rather than being missed; full output and leftover per-section artifacts are retained; args select sections: `cargo xtask test e2e blesh -- util`. Every section is currently expected to fail: ble.sh gets far enough to emit no section summary at all |
 | mise | selected upstream bash activation tests (pytest), run directly against the shell under test |
 | nvm | upstream `test/fast/Listing versions` suite (urchin) plus interactive regression coverage for [#1173](https://github.com/reubeno/brush/issues/1173) |

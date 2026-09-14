@@ -110,20 +110,24 @@ terminal-shell-integration = true
 
 ### `zsh-hooks`
 
-Enables zsh-style `preexec` and `precmd` hook functions. When set:
+Enables zsh-style `precmd` and `preexec` hook functions, registered through
+the `precmd_functions` and `preexec_functions` arrays. This is what prompt
+frameworks, command timers, and history tools expect; in stock bash the
+same effect requires `DEBUG`/`PROMPT_COMMAND` plumbing.
 
-- A function named `preexec` (if defined) is invoked before each
-  interactively-entered command runs, with the command line as `$1`.
-- A function named `precmd` (if defined) is invoked just before each
-  prompt is displayed.
-
-This is convenient for prompt frameworks, command timing, and
-integrations that expect zsh-style hook conventions. Equivalent
-behavior in stock bash typically requires `DEBUG`/`PROMPT_COMMAND`
-plumbing.
+brush implements the hooks natively, with bash semantics, taking
+[bash-preexec](https://github.com/rcaloras/bash-preexec) as the reference for
+what the hooks mean in a bash shell. It also claims bash-preexec's inclusion
+guards, so an integration that sources bash-preexec (or inlines a copy of it,
+as atuin does) finds it already loaded and leaves the hooks to brush rather
+than dispatching them a second time.
 
 Enable persistently with `zsh-hooks = true` under `[experimental]` in
 `config.toml`, or per-invocation with `brush --enable-zsh-hooks`.
+
+See [zsh-style hooks](zsh-hooks.md) for the full contract: what each hook
+sees, which entries are dispatched, and where brush differs from zsh and
+from bash-preexec.
 
 ### `terminal-shell-integration`
 

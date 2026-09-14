@@ -1,0 +1,566 @@
+name: "zsh-style hook tests"
+# An interactive shell writes "exit" to stderr on the way out, so `expected_stderr` is
+# asserted only where stderr is itself the thing under test -- a case claiming a hook is
+# skipped "quietly", or one pinning a diagnostic. Elsewhere it is left off, and the
+# harness ignores it.
+cases:
+  # The hooks only fire from the interactive read loop. A shell reading commands from a
+  # pipe does *not* qualify, even though it reads them from stdin the same way -- so the
+  # bash-preexec inclusion guards must stay unclaimed and the arrays undeclared. Claiming
+  # them here would tell an integration that hooks are handled while nothing runs them,
+  # and firing hooks here lets a hook that reads stdin consume the script itself.
+  - name: "zsh hooks stay inert in a non-interactive shell"
+    args:
+      - "--enable-zsh-hooks"
+      - "-s"
+    stdin: |
+      preexec() { echo "PREEXEC-FIRED"; }
+      precmd() { echo "PRECMD-FIRED"; }
+      echo "guard=[${bash_preexec_imported:-unset}]"
+      echo "legacy=[${__bp_imported:-unset}]"
+      echo "precmds=[${precmd_functions[*]:-unset}]"
+      echo "preexecs=[${preexec_functions[*]:-unset}]"
+    expected_exit_code: 0
+    expected_stdout: |
+      guard=[unset]
+      legacy=[unset]
+      precmds=[unset]
+      preexecs=[unset]
+
+  # A hook that reads stdin must not be able to eat the script being piped in.
+  - name: "non-interactive zsh hooks cannot consume piped script lines"
+    args:
+      - "--enable-zsh-hooks"
+      - "-s"
+    stdin: |
+      precmd() { read -r junk; echo "ATE[$junk]"; }
+      precmd_functions=(precmd)
+      echo one
+      echo two
+      echo three
+    expected_exit_code: 0
+    expected_stdout: |
+      one
+      two
+      three
+
+  # `-i` makes the shell interactive in the `$-` sense, but a script still runs instead of
+  # the interactive loop; nothing may be claimed.
+  - name: "zsh hooks stay inert when -i runs a script"
+    args:
+      - "--enable-zsh-hooks"
+      - "-i"
+      - "script.sh"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "guard=[${bash_preexec_imported:-unset}] arrays=[${precmd_functions[*]:-unset}|${preexec_functions[*]:-unset}]"
+    expected_exit_code: 0
+    expected_stdout: |
+      guard=[unset] arrays=[unset|unset]
+
+  # `-c` runs a command instead of the interactive loop; nothing may be claimed.
+  - name: "zsh hooks stay inert when -c runs a command"
+    args:
+      - "--enable-zsh-hooks"
+      - "-c"
+      - 'echo "guard=[${bash_preexec_imported:-unset}] arrays=[${precmd_functions[*]:-unset}|${preexec_functions[*]:-unset}]"'
+    expected_exit_code: 0
+    expected_stdout: |
+      guard=[unset] arrays=[unset|unset]
+
+  # Without `-s` a shell fed by a pipe reads commands the same way; still not interactive.
+  - name: "zsh hooks stay inert reading a pipe without -s"
+    args:
+      - "--enable-zsh-hooks"
+    stdin: |
+      precmd() { echo "PRECMD-FIRED"; }
+      echo "guard=[${bash_preexec_imported:-unset}] arrays=[${precmd_functions[*]:-unset}]"
+    expected_exit_code: 0
+    expected_stdout: |
+      guard=[unset] arrays=[unset]
+
+  # `-i` makes a pipe-fed shell interactive, and that is the whole test: the contract is
+  # claimed before the first line runs, both hooks fire (precmd ahead of every prompt,
+  # including the one for EOF), each sees the last command's status, and neither hook's
+  # own non-zero return leaks into the next command's `$?` or `PIPESTATUS`.
+  - name: "zsh hooks fire when -i makes a pipe-fed shell interactive"
+    args:
+      - "--enable-zsh-hooks"
+      - "-i"
+      - "-s"
+    stdin: |
+      echo "guard=[${bash_preexec_imported:-unset}] arrays=[${precmd_functions[*]}|${preexec_functions[*]}]"
+      preexec() { echo "PREEXEC[$1]"; return 8; }; precmd() { echo "PRECMD[$?][${PIPESTATUS[*]}]"; return 9; }
+      (exit 4) | (exit 5)
+      echo "AFTER[$?][${PIPESTATUS[*]}]"
+    expected_exit_code: 0
+    expected_stdout: |
+      guard=[defined] arrays=[precmd|preexec]
+      PRECMD[0][0]
+      PREEXEC[(exit 4) | (exit 5)]
+      PRECMD[5][4 5]
+      PREEXEC[echo "AFTER[$?][${PIPESTATUS[*]}]"]
+      AFTER[5][4 5]
+      PRECMD[0][0]
+    expected_stderr: |
+      exit
+
+  # The guards and hook arrays are assigned the way `name=value` assigns, so a variable
+  # that already exists -- inherited from the environment, say -- keeps its attributes
+  # while taking the new value. It is not replaced wholesale.
+  - name: "zsh hook state is assigned without clobbering attributes"
+    args:
+      - "--enable-zsh-hooks"
+      - "-i"
+      - "-s"
+    env:
+      bash_preexec_imported: stale
+      precmd_functions: stale
+    stdin: |
+      declare -p bash_preexec_imported precmd_functions
+    expected_exit_code: 0
+    expected_stdout: |
+      declare -x bash_preexec_imported="defined"
+      declare -ax precmd_functions=([0]="precmd")
+
+  # `$?` and `PIPESTATUS` are restored before every hook, not just the first: a hook that
+  # runs a pipeline of its own doesn't change what the next one sees. There is no
+  # `BP_PIPESTATUS` copy; bash-preexec offers one only because it can't restore the original.
+  - name: "zsh hooks each see the command's own status and PIPESTATUS"
+    args:
+      - "--enable-zsh-hooks"
+      - "-i"
+      - "-s"
+    stdin: |
+      first() { echo "FIRST[$?][${PIPESTATUS[*]}][${BP_PIPESTATUS-unset}]"; true | false | true; }
+      second() { echo "SECOND[$?][${PIPESTATUS[*]}]"; }
+      precmd_functions=(first second); preexec_functions=(first second)
+      (exit 3) | (exit 4)
+    expected_exit_code: 4
+    expected_stdout: |
+      FIRST[0][0][unset]
+      SECOND[0][0]
+      FIRST[0][0][unset]
+      SECOND[0][0]
+      FIRST[4][3 4][unset]
+      SECOND[4][3 4]
+
+  # The command has already been entered into history when preexec runs. Integrations that
+  # inline bash-preexec commonly recover the command this way instead of trusting `$1`.
+  - name: "zsh preexec sees the command in history"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      preexec() { echo "HISTORY[$(history 1 | sed 's/^ *[0-9]* *//')]"; }
+      echo from-history
+    expected_exit_code: 0
+    expected_stdout: |
+      HISTORY[echo from-history]
+      from-history
+
+  # Hook errors are reported but do not abort the shell, overwrite the previous status, or
+  # prevent later hooks from running.
+  - name: "zsh precmd failures are non-fatal and preserve status"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      precmd() { local -r ro=1; ro=2; }; later() { echo LATER-RAN; }; precmd_functions=(precmd later)
+      (exit 6)
+      echo "AFTER[$?]"
+    expected_exit_code: 0
+    expected_stdout: |
+      LATER-RAN
+      LATER-RAN
+      AFTER[6]
+      LATER-RAN
+    expected_stderr: |
+      error: cannot mutate readonly variable
+      error: cannot mutate readonly variable
+      error: cannot mutate readonly variable
+      exit
+
+  - name: "zsh preexec failures are non-fatal"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      preexec() { local -r ro=1; ro=2; }
+      echo STILL-RAN
+    expected_exit_code: 0
+    expected_stdout: |
+      STILL-RAN
+    expected_stderr: |
+      error: cannot mutate readonly variable
+      exit
+
+  # A name that resolves to nothing is quiet, so a hook may be registered before it is
+  # defined -- matching bash-preexec, which guards each entry with `type -t`.
+  - name: "zsh hook registries skip names that resolve to nothing"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      precmd_functions=(not_defined)
+      not_defined() { echo LATE-RAN; }
+      echo QUIET
+    expected_exit_code: 0
+    expected_stdout: |
+      LATE-RAN
+      QUIET
+      LATE-RAN
+    # Asserted, because "quietly" is the whole claim: nothing but the interactive
+    # shell's own farewell may reach stderr.
+    expected_stderr: |
+      exit
+
+  # Every non-function entry is ignored the same way, whatever it happens to name: nothing
+  # at all, a directory, a file without the execute bit. There is no category that gets a
+  # diagnostic, so stderr is asserted rather than waved past -- and with no message there
+  # is no OS-specific errno text to make the expectation unportable.
+  - name: "zsh hook names that are not functions are skipped quietly"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    test_files:
+      - path: "not-executable"
+        contents: |
+          #!/bin/sh
+          echo SHOULD-NOT-RUN
+      - path: "a-directory/keep"
+        contents: "placeholder so the directory exists\n"
+    stdin: |
+      later() { echo LATER-RAN; }; precmd_functions=(./not-executable ./a-directory later)
+      echo REAL
+    expected_exit_code: 0
+    expected_stdout: |
+      LATER-RAN
+      REAL
+      LATER-RAN
+    expected_stderr: |
+      exit
+
+  # Only shell functions are dispatched -- as zsh does, and deliberately unlike bash-preexec,
+  # whose `type -t` guard also admits builtins and externals. Rationale in
+  # docs/reference/zsh-hooks.md, under `Differences`.
+  - name: "zsh hooks run shell functions only, ignoring builtins and programs"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    test_files:
+      - path: "external-hook"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "EXTERNAL-RAN[$#][$1]"
+    stdin: |
+      real() { echo "FUNCTION-RAN[$#][$1]"; }; precmd_functions=(./external-hook echo true real); preexec_functions=(./external-hook echo true real)
+      echo REAL
+    expected_exit_code: 0
+    expected_stdout: |
+      FUNCTION-RAN[0][]
+      FUNCTION-RAN[1][echo REAL]
+      REAL
+      FUNCTION-RAN[0][]
+    expected_stderr: |
+      exit
+
+  # A function shadowing a builtin name is still dispatched: the rule is "look the name up as
+  # a function", not "reject names that are builtins". zsh behaves the same way.
+  - name: "zsh hooks dispatch a function that shadows a builtin"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      true() { echo SHADOWING-FUNCTION-RAN; }; precmd_functions=(true)
+      echo REAL
+    expected_exit_code: 0
+    expected_stdout: |
+      SHADOWING-FUNCTION-RAN
+      REAL
+      SHADOWING-FUNCTION-RAN
+    expected_stderr: |
+      exit
+
+  # A hook name is invoked as a single already-expanded word, so a name holding spaces or
+  # glob characters is looked up verbatim -- and, finding nothing, skipped quietly. This is
+  # bash-preexec's behavior too: it invokes `"$precmd_function"`, quoted.
+  - name: "zsh hook names are not re-expanded"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    test_files:
+      - path: "hook with space"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo SHOULD-NOT-RUN
+    stdin: |
+      precmd_functions=("echo hi" "*")
+      echo QUIET
+    expected_exit_code: 0
+    expected_stdout: |
+      QUIET
+    expected_stderr: |
+      exit
+
+  # Additional array entries receive the preexec command line, and both registries run in
+  # array order. Replacing the array removes the seeded bare hook like any other entry.
+  - name: "zsh hook arrays pass arguments and preserve order"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      preexec() { echo BARE-PREEXEC; }; precmd() { echo BARE-PRECMD; }; pre_a() { echo "PRE-A[$1]"; }; pre_b() { echo "PRE-B[$1]"; }; post_a() { echo "POST-A[$?]"; }; post_b() { echo "POST-B[$?]"; }; preexec_functions=(pre_a pre_b); precmd_functions=(post_a post_b)
+      (exit 7)
+    expected_exit_code: 7
+    expected_stdout: |
+      POST-A[0]
+      POST-B[0]
+      PRE-A[(exit 7)]
+      PRE-B[(exit 7)]
+      POST-A[7]
+      POST-B[7]
+
+  # Each registry is read once per dispatch, so a hook that edits it is heeded from the next
+  # dispatch on -- never mid-loop. `added` is appended during the second dispatch but doesn't
+  # run until the third.
+  - name: "zsh hook registry edits take effect on the next dispatch"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      grower() { echo GROWER; precmd_functions+=(added); }; added() { echo ADDED; }; precmd_functions=(grower)
+      echo COMMAND
+    expected_exit_code: 0
+    expected_stdout: |
+      GROWER
+      COMMAND
+      GROWER
+      ADDED
+
+  # Claiming the inclusion guards makes a subsequently sourced bash-preexec implementation
+  # return before installing its own dispatch machinery. The preamble below is verbatim
+  # from bash-preexec v0.7.0 (MIT; https://github.com/rcaloras/bash-preexec), so this
+  # exercises the real bail-out path rather than a hand-written approximation of it --
+  # including the two version checks that run *ahead* of the guard, which brush must also
+  # satisfy for the guard to matter at all. Everything after it stands in for the ~500
+  # lines that install the `DEBUG` trap and rewrite `PROMPT_COMMAND`; none of it may run.
+  - name: "sourcing bash-preexec after initialization is a no-op"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    test_files:
+      - path: "bash-preexec.sh"
+        contents: |
+          # Make sure this is bash that's running and return otherwise.
+          # Use POSIX syntax for this line:
+          if [ -z "${BASH_VERSION-}" ]; then
+              return 1
+          fi
+
+          # We only support Bash 3.1+.
+          # Note: BASH_VERSINFO is first available in Bash-2.0.
+          if [[ -z "${BASH_VERSINFO-}" ]] || (( BASH_VERSINFO[0] < 3 || (BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] < 1) )); then
+              return 1
+          fi
+
+          # Avoid duplicate inclusion
+          if [[ -n "${bash_preexec_imported:-}" || -n "${__bp_imported:-}" ]]; then
+              return 0
+          fi
+          bash_preexec_imported="defined"
+
+          # WARNING: This variable is no longer used and should not be relied upon.
+          # Use ${bash_preexec_imported} instead.
+          # shellcheck disable=SC2034
+          __bp_imported="${bash_preexec_imported}"
+
+          echo BASH-PREEXEC-INSTALLED
+          trap 'echo BASH-PREEXEC-DEBUG-TRAP' DEBUG
+    stdin: |
+      source ./bash-preexec.sh
+      echo "SOURCED[$?] GUARDS[$bash_preexec_imported|$__bp_imported]"
+    expected_exit_code: 0
+    expected_stdout: |
+      SOURCED[0] GUARDS[defined|defined]
+    expected_stderr: |
+      exit
+
+  # `exit` from a hook terminates the shell immediately. Later hooks, PROMPT_COMMAND, and the
+  # pending user command do not run.
+  - name: "exit from zsh precmd stops remaining prompt actions"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      first() { exit 7; }; never() { echo NEVER-HOOK; }; precmd_functions=(first never); PROMPT_COMMAND='echo NEVER-PROMPT'
+      echo NEVER-COMMAND
+    expected_exit_code: 7
+    expected_stdout: ""
+    expected_stderr: |
+      exit
+
+  - name: "exit from zsh preexec stops the command"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      preexec() { exit 5; }
+      echo NEVER-COMMAND
+    expected_exit_code: 5
+    expected_stdout: ""
+    expected_stderr: |
+      exit
+
+  - name: "exit from PROMPT_COMMAND exits the interactive shell"
+    args: ["-i", "-s"]
+    stdin: |
+      PROMPT_COMMAND='exit 3'
+      echo NEVER-COMMAND
+    expected_exit_code: 3
+    expected_stdout: ""
+    expected_stderr: |
+      exit
+
+  # Hook state belongs to this shell only. Exporting it would incorrectly tell a child bash
+  # that bash-preexec is installed there too.
+  - name: "zsh hook guards and registries are not exported"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      case "$(export -p)" in *bash_preexec_imported*|*__bp_imported*|*precmd_functions*|*preexec_functions*) echo EXPORTED;; *) echo NOT-EXPORTED;; esac
+      echo "guards=[$bash_preexec_imported|$__bp_imported]"
+    expected_exit_code: 0
+    expected_stdout: |
+      NOT-EXPORTED
+      guards=[defined|defined]
+
+  # A line that runs no command doesn't invoke preexec: bash-preexec dispatches from the
+  # DEBUG trap, which fires per command, so blank lines, whitespace, and comment-only lines
+  # produce nothing. A comment *after* a command is still a command line, so it does.
+  - name: "zsh preexec skips lines that run no command"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: "preexec() { echo \"PREEXEC[$1]\"; }\n\n   \n# just a comment\n   # indented comment\necho REAL # trailing comment\n"
+    expected_exit_code: 0
+    expected_stdout: |
+      PREEXEC[echo REAL # trailing comment]
+      REAL
+
+  # A line that doesn't parse runs no command either, so it invokes no preexec.
+  - name: "zsh preexec skips a syntax error"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      preexec() { echo "PREEXEC[$1]"; }
+      echo )
+      echo REAL
+    expected_exit_code: 0
+    expected_stdout: |
+      PREEXEC[echo REAL]
+      REAL
+    expected_stderr: |
+      error: main: syntax error at line 1 col 6
+      exit
+
+  # `$_` is restored alongside `$?` and `PIPESTATUS`: before every hook, so each one sees the
+  # last *user* command's last argument rather than an earlier hook's, and again afterwards,
+  # so the next command does too. The hooks report only when `$_` holds the sentinel, which
+  # keeps the earlier dispatches -- whose `$_` is the shell's own path -- out of the
+  # expectation.
+  - name: "zsh hooks preserve the last argument in $_"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      precmd() { case $_ in USER-ARG) echo "PRECMD-SEES[$_]";; esac; true PRECMD-ARG; }; preexec() { case $_ in USER-ARG) echo "PREEXEC-SEES[$_]";; esac; true PREEXEC-ARG; }
+      true USER-ARG
+      echo "UNDERSCORE[$_]"
+    expected_exit_code: 0
+    expected_stdout: |
+      PRECMD-SEES[USER-ARG]
+      PREEXEC-SEES[USER-ARG]
+      UNDERSCORE[USER-ARG]
+
+  # With the feature disabled, neither the contract nor dispatch is active even in an
+  # interactive shell.
+  - name: "zsh hooks are inert when disabled"
+    args: ["-i", "-s"]
+    stdin: |
+      precmd() { echo PRECMD-RAN; }; preexec() { echo PREEXEC-RAN; }
+      echo "state=[${bash_preexec_imported:-unset}|${__bp_imported:-unset}|${precmd_functions[*]:-unset}|${preexec_functions[*]:-unset}]"
+    expected_exit_code: 0
+    expected_stdout: |
+      state=[unset|unset|unset|unset]
+
+  # Native precmd dispatch occurs before PROMPT_COMMAND, matching bash-preexec's dispatcher.
+  - name: "zsh precmd runs before PROMPT_COMMAND"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      precmd() { echo PRECMD-FIRST; }; PROMPT_COMMAND='echo PROMPT-SECOND'
+      echo COMMAND
+    expected_exit_code: 0
+    expected_stdout: |
+      PRECMD-FIRST
+      PROMPT-SECOND
+      COMMAND
+      PRECMD-FIRST
+      PROMPT-SECOND
+
+  # The status snapshot is put back after the last precmd hook too, not just between hooks,
+  # so PROMPT_COMMAND -- which bash-preexec reaches through the same dispatcher -- sees what
+  # the user's command left behind rather than what a hook did.
+  - name: "zsh precmd leaves no trace in what PROMPT_COMMAND sees"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      precmd() { true | false; return 3; }; PROMPT_COMMAND='echo "PC[$?][${PIPESTATUS[*]}][$_]"'
+      true PROMPT-ARG
+      (exit 9) | (exit 8)
+    expected_exit_code: 8
+    expected_stdout: |
+      PC[0][0][]
+      PC[0][0][PROMPT-ARG]
+      PC[8][9 8][PROMPT-ARG]
+
+  # A hook registry that ended up a scalar still dispatches. bash-preexec iterates
+  # `"${precmd_functions[@]}"`, and in bash a scalar *is* element 0, so it runs the hook;
+  # skipping it here would silently drop hooks from a registry that still expands and
+  # prints exactly as the user wrote it.
+  - name: "zsh hook registry is read as a word list, scalar included"
+    args:
+      - "--enable-zsh-hooks"
+      - "-i"
+      - "-s"
+    stdin: |
+      my_precmd() { echo "SCALAR-PRECMD"; }; my_preexec() { echo "SCALAR-PREEXEC[$1]"; }; unset precmd_functions preexec_functions; precmd_functions=my_precmd; preexec_functions=my_preexec
+      declare -p precmd_functions
+    expected_exit_code: 0
+    expected_stdout: |
+      SCALAR-PRECMD
+      SCALAR-PREEXEC[declare -p precmd_functions]
+      declare -- precmd_functions="my_precmd"
+      SCALAR-PRECMD
+
+  # preexec gets the command line as entered, newlines included. (bash-preexec reads
+  # `history 1` instead, which with `cmdhist` is the same command joined onto one line.)
+  - name: "zsh preexec receives a multi-line command verbatim"
+    args:
+      - "--enable-zsh-hooks"
+      - "-i"
+      - "-s"
+    stdin: |
+      preexec() { echo "PREEXEC<$1>"; }
+      for i in 1 2; do
+        echo "loop $i"
+      done
+    expected_exit_code: 0
+    expected_stdout: |
+      PREEXEC<for i in 1 2; do
+        echo "loop $i"
+      done>
+      loop 1
+      loop 2
+
+  # `errexit` applies to a hook the way bash applies it to the PROMPT_COMMAND that
+  # bash-preexec dispatches from: a hook that returns non-zero exits the shell, and the
+  # remaining hooks don't run. Without `set -e` (see the failure cases above) the same
+  # non-zero return is ignored. Both dispatch sites are checked because they sit on
+  # different paths -- one ahead of the prompt, one ahead of the command.
+  - name: "zsh precmd obeys errexit like PROMPT_COMMAND"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      precmd() { echo PRECMD; false; }; later() { echo LATER; }; precmd_functions=(precmd later)
+      set -e
+      echo NEVER
+    expected_exit_code: 1
+    expected_stdout: |
+      PRECMD
+      LATER
+      PRECMD
+    expected_stderr: |
+      exit
+
+  - name: "zsh preexec obeys errexit and stops the command"
+    args: ["--enable-zsh-hooks", "-i", "-s"]
+    stdin: |
+      preexec() { echo PREEXEC; false; }
+      set -e
+      echo NEVER
+    expected_exit_code: 1
+    expected_stdout: |
+      PREEXEC
+      PREEXEC
+    expected_stderr: |
+      exit
