@@ -196,7 +196,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.cross_tool_to_install != '' }}
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: ${{ matrix.cross_tool_to_install }}
 
@@ -306,19 +306,19 @@ jobs:
           cache-all-crates: true
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
         if: ${{ matrix.coverage }}
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: cargo-llvm-cov
 
       - name: Install WASI runtime
         if: ${{ matrix.wasi_runtime }}
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: ${{ matrix.wasi_runtime }}
 
@@ -327,7 +327,7 @@ jobs:
         id: set-up-homebrew
         # We ignore the stale-action-refs check because this action does not have any releases or tags.
         # We're forced to pick a specific commit.
-        uses: Homebrew/actions/setup-homebrew@3cdb78d0f62ad29dd32de765782654f4eedea607 # zizmor: ignore[stale-action-refs]
+        uses: Homebrew/actions/setup-homebrew@f8d4222eb633e65c2a0157383cf80861fc7fae7f # zizmor: ignore[stale-action-refs]
         with:
           stable: true
 
@@ -446,7 +446,7 @@ jobs:
 
       - name: Install cargo-deny
         if: runner.os == 'Linux'
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: cargo-deny
 
@@ -478,7 +478,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: cargo-udeps
 
@@ -523,7 +523,7 @@ jobs:
           toolchain: nightly
 
       - name: Install cargo-public-api
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:
           tool: cargo-public-api
 
