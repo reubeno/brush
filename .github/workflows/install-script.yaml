@@ -1,0 +1,77 @@
+name: "Install script"
+
+on:
+  pull_request:
+    paths:
+      - "scripts/install/**"
+      - ".github/workflows/install-script.yaml"
+  push:
+    branches: ["main"]
+    paths:
+      - "scripts/install/**"
+      - ".github/workflows/install-script.yaml"
+  # Weekly, to catch release changes (e.g., renamed assets) that break the script.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch: null
+
+permissions: {}
+
+# Only allow one run of the workflow per branch / PR at a time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "Test (${{ matrix.name }})"
+
+    permissions:
+      contents: read
+      attestations: read # needed for `gh attestation verify`
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "linux-x86_64"
+            os: ubuntu-latest
+          - name: "linux-aarch64"
+            os: ubuntu-24.04-arm
+          - name: "macos-aarch64"
+            os: macos-latest
+          - name: "macos-x86_64"
+            os: macos-15-intel
+          # musl + busybox userland, no gh.
+          - name: "alpine"
+            os: ubuntu-latest
+            container: "alpine:3"
+            prepare: "apk add --no-cache bash curl"
+          # glibc too old for the gnu build; exercises the musl fallback.
+          - name: "almalinux-8"
+            os: ubuntu-latest
+            container: "almalinux:8"
+
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 15
+
+    steps:
+      - name: "Install container prerequisites"
+        if: ${{ matrix.prepare }}
+        shell: sh # bash may not be installed yet
+        run: ${{ matrix.prepare }}
+
+      - name: "Checkout repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Install uv"
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: "Run tests"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uvx 'pytest==8.*' -p no:cacheprovider -v scripts/install/tests

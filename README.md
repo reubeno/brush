@@ -52,6 +52,7 @@
 ### Quick start:
 
 ```console
+$ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/reubeno/brush/main/scripts/install/install.sh | sh
 $ cargo binstall brush-shell         # using cargo-binstall
 $ brew install brush                 # using Homebrew
 $ pacman -S brush                    # Arch Linux
@@ -140,7 +141,13 @@ cargo binstall brush-shell
 <details>
 <summary>🚀 <b>Installing prebuilt binaries from GitHub</b></summary>
 
-We publish prebuilt binaries of `brush` for Linux (x86_64, aarch64) and macOS (aarch64) to GitHub for official [releases](https://github.com/reubeno/brush/releases). You can manually download and extract the `brush` binary from one of the archives published there, or otherwise use the GitHub CLI to download it, e.g.:
+We publish prebuilt binaries of `brush` for Linux (x86_64, aarch64) and macOS (x86_64, aarch64) to GitHub for official [releases](https://github.com/reubeno/brush/releases). The simplest way to install one is with our install script, which installs `brush` to `~/.local/bin`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/reubeno/brush/main/scripts/install/install.sh | sh
+```
+
+The script checks the download against its published SHA-256 checksum, which guards against a corrupted download but not a compromised release (the checksum comes from the same release). If an authenticated [GitHub CLI](https://cli.github.com/) is available, it also verifies the archive's build provenance attestation, confirming it was built by this repository's release workflow; pass `--require-attestation` to fail rather than proceed when that check can't be performed. See the comments at the top of [`scripts/install/install.sh`](scripts/install/install.sh) for all options. Alternatively, you can manually download and extract the `brush` binary from one of the archives published there, or otherwise use the GitHub CLI to download it, e.g.:
 
 ```bash
 gh release download --repo reubeno/brush --pattern "brush-x86_64-unknown-linux-gnu.*"
