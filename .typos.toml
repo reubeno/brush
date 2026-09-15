@@ -1,0 +1,7 @@
+[default]
+extend-ignore-words-re = [
+    # e.g. mis-parsing
+    "^mis-[a-zA-Z]*$",
+    # identifiers with length <= 4 chars is likely noise
+    "^[a-zA-Z]{1,4}$",
+]
