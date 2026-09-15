@@ -73,6 +73,7 @@ SHIMS = {
         """,
     ),
     "old-glibc": ("getconf", 'echo "glibc 2.17"'),
+    "minimum-glibc": ("getconf", 'echo "glibc 2.34"'),
 }
 
 GH_INSTALLED = shutil.which("gh") is not None
@@ -174,6 +175,20 @@ def test_old_glibc_falls_back_to_musl(install, tmp_path):
     result = install("--version", VERSION, "--dir", tmp_path, shims=["old-glibc"])
     assert_succeeded(result)
     assert "-unknown-linux-musl.tar.gz" in result.stdout
+
+
+def host_glibc():
+    name, version = platform.libc_ver()
+    return tuple(map(int, version.split("."))) if name == "glibc" else None
+
+
+# The shim only steers target selection; the gnu build still has to run on the real libc here.
+@pytest.mark.skipif(not host_glibc() or host_glibc() < (2, 34), reason="gnu build needs glibc 2.34+")
+def test_minimum_glibc_selects_gnu_build(install, tmp_path):
+    # Exactly the minimum, so an off-by-one in the version comparison shows up too.
+    result = install("--version", VERSION, "--dir", tmp_path, shims=["minimum-glibc"])
+    assert_succeeded(result)
+    assert "-unknown-linux-gnu.tar.gz" in result.stdout
 
 
 @pytest.mark.skipif(not GH_INSTALLED, reason="gh is not installed")
