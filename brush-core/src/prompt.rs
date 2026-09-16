@@ -58,7 +58,6 @@ pub(crate) async fn expand_prompt(
     Ok(formatted_prompt)
 }
 
-#[cached::macros::cached(max_size = 64, key = "String", convert = r#"{ spec.to_owned() }"#)]
 fn parse_prompt(
     spec: &str,
 ) -> Result<Vec<brush_parser::prompt::PromptPiece>, brush_parser::WordParseError> {
