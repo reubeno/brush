@@ -1,6 +1,13 @@
 #
 # Based on https://github.com/release-plz/release-plz/blob/a5043c478d46d051c00e4fbc85036ac22510f07e/.github/workflows/cd.yml
 #
+# N.B. scripts/install/install.sh depends on details of this workflow: its path (attestations are
+# verified against it), the `brush-shell-v*` release tags, the `brush-<target>.tar.gz` and
+# `brush-<target>.sha256` asset names, the `brush` binary at the archive root, and the glibc
+# floor of the `*-linux-gnu` builds (2.34, set by the ubuntu-22.04 runners; the script picks the
+# gnu build only on glibc 2.34+ and the musl build otherwise). Changing any of these breaks the
+# install script for new releases; update it (and its tests) to match.
+#
 
 name: CD # Continuous Deployment
 run-name: CD${{ github.event_name == 'release' && ' (release)' || ' (dry run)' }}
