@@ -147,6 +147,9 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           cache: false
+          # The cross ARM64 musl linker wrapper emits shell traces as linker warnings.
+          # See https://github.com/cross-rs/cross/issues/1618.
+          build-warnings: ${{ matrix.target == 'aarch64-unknown-linux-musl' && 'warn' || 'deny' }}
 
       - name: "Setup cross-compiling toolchain"
         if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
