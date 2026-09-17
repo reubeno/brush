@@ -12,6 +12,7 @@
         }
     },
     "features": {},
+    "postCreateCommand": "rustup component add llvm-tools-preview",
     "remoteUser": "devel",
     "updateRemoteUserUID": true
 }

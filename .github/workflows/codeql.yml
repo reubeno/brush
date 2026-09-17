@@ -49,20 +49,6 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended,security-and-quality
 
-      # - name: Set up rust toolchain
-      #   if: ${{ matrix.language == 'rust' }}
-      #   uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # v1
-      #   with:
-      #     toolchain: stable
-
-      # - name: Enable cargo cache
-      #   if: ${{ matrix.language == 'rust' }}
-      #   uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
-
-      # - name: Build Rust code
-      #   if: ${{ matrix.language == 'rust' }}
-      #   run: cargo build --all-targets --all-features
-
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:

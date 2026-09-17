@@ -1,0 +1,30 @@
+# The Rust toolchain officially used by this project for development and CI.
+#
+# We pin to an exact version rather than `stable`, so that we get consistent
+# results across local development and CI runs, particularly for clippy
+# and other checks that change from release to release. Dependabot's
+# `rust-toolchain` ecosystem bumps it as new releases become available
+# (see .github/dependabot.yml).
+#
+# Note that this is not the MSRV; that's separately specified; see
+# docs/reference/msrv-policy.md.
+#
+# For CI authors: install this version via `rustup toolchain install`
+# (no toolchain name, which causes rustup to honor the version in this
+# file), passing `--profile minimal`. Note that in this nameless form rustup
+# silently ignores `--target` and `--component`; add extra targets and
+# components afterwards with `rustup target add` / `rustup component add`.
+# The components listed below are added on top of whichever profile is
+# chosen, so the only thing the default profile would add is rust-docs:
+# roughly 900 MB across some 66k files that nothing in CI reads, and slow
+# to unpack on Windows runners.
+# This file deliberately doesn't set `profile = "minimal"` itself, so a
+# local install still gets the docs; named installs (MSRV, nightly) need
+# the flag anyway. A job that deliberately needs a different toolchain installs
+# it by name and then runs `rustup override set <toolchain>`; that override
+# takes precedence over this file. Don't use dtolnay/rust-toolchain:
+# it selects its toolchain with `rustup default`, which this file
+# silently overrides.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

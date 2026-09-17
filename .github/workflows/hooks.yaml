@@ -1,0 +1,66 @@
+# Every hook defined in .pre-commit-config.yaml: file hygiene, spelling,
+# workflow analysis, link checking, the cargo-deny audit, and rustfmt. Runs the
+# same `cargo xtask check hooks` a contributor runs.
+#
+# This is its own workflow rather than a job in ci.yaml so that it can run on
+# every change -- including docs-only pushes, which ci.yaml skips -- without
+# dragging the build and test matrix along with it.
+name: "Pre-commit hooks"
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  CLICOLOR: 1
+  CLICOLOR_FORCE: 1
+
+permissions:
+  contents: read
+
+# Only allow one run of the workflow per branch / PR at a time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hooks:
+    name: "Pre-commit hooks"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up rust toolchain
+        run: rustup toolchain install --profile minimal
+
+      - name: Enable cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install prek
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        with:
+          tool: prek
+
+      - name: Cache hook environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: prek-${{ runner.os }}-
+
+      - name: Run pre-commit hooks
+        run: cargo xtask check hooks
+
+      # The fixing hooks rewrite files in place and then fail. Show what they
+      # changed so the required fix is visible in the log.
+      - name: Show changes made by hooks
+        if: failure()
+        run: git diff
