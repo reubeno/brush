@@ -41,6 +41,14 @@ pub enum ErrorKind {
     #[error("failed to source file: {0}")]
     FailedSourcingFile(PathBuf, #[source] std::io::Error),
 
+    /// The process or process group does not exist.
+    #[error("no such process")]
+    NoSuchProcess,
+
+    /// The process or process group exists, but cannot be signaled.
+    #[error("operation not permitted")]
+    PermissionDenied,
+
     /// The shell failed to send a signal to a process.
     #[error("failed to send signal to process")]
     FailedToSendSignal,
