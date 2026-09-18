@@ -94,7 +94,7 @@ repos:
   # Spelling. Configured by Cargo.toml [workspace.metadata.typos].
   # ---------------------------------------------------------------------------
   - repo: https://github.com/crate-ci/typos
-    rev: v1.50.0
+    rev: v1.50.1
     hooks:
       - id: typos
         alias: spelling
@@ -113,7 +113,7 @@ repos:
   # .github/workflows/workflow-checks.yaml and is not redundant with it.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.29.0
+    rev: v1.30.1
     hooks:
       - id: zizmor
         alias: workflows
