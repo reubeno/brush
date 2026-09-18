@@ -56,12 +56,11 @@ mod terminal_database {
                 key!(ti, KeyCode::PageUp, cap::KeyPPage<'_>),
                 key!(ti, KeyCode::PageDown, cap::KeyNPage<'_>),
                 key!(ti, KeyCode::BackTab, cap::BackTab<'_>),
-                // It's not clear if these belong here, because they're not
-                // strictly "key" capabilities.
-                key!(ti, KeyCode::Up, cap::CursorUp<'_>),
-                key!(ti, KeyCode::Down, cap::CursorDown<'_>),
-                key!(ti, KeyCode::Left, cap::CursorLeft<'_>),
-                key!(ti, KeyCode::Right, cap::CursorRight<'_>),
+                // Only the `k*` capabilities describe what a key *sends*. The cursor
+                // movement capabilities (`cuu1` and friends) describe what the terminal
+                // *accepts*, and the two differ: under tmux and screen `cuu1` is `ESC M`,
+                // which as a key is Alt+M. Both forms of what the arrow keys send are in
+                // `DEFAULT_SEQUENCES`.
             ];
 
             for (key, v) in key_capabilities {

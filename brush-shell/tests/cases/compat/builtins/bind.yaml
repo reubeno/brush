@@ -452,3 +452,19 @@ cases:
           # bash's own listing binds something else.
           echo "[history keys]"
           bind -p | grep -E '^"(\\C-p|\\C-n)":' | sort
+
+  - name: "bind Meta key under a terminfo whose cursor-up output is ESC M"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    env:
+      TERM: tmux
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # tmux and screen describe cursor-up *output* (cuu1) as ESC M, which as a key is
+          # Meta-M. Binding it must not be taken for the up arrow, nor displace it. Spelled
+          # \eM rather than \M-M because bash lists the latter as its high-bit byte.
+          bind '"\eM": clear-screen'
+          bind -p | grep -E '^"(\\eM|\\e\[A)":' | sort
