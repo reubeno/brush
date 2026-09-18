@@ -112,6 +112,19 @@ cases:
       echo "2. compgen -W with expansion"
       myvar=value compgen -W '${myvar}'
 
+  - name: "compgen -W splits before expanding each word"
+    stdin: |
+      echo "[brace words after default splitting]"
+      compgen -W '{a,b} c'
+
+      echo "[IFS separator breaks brace syntax]"
+      IFS=,
+      compgen -W 'x{1,2}'
+
+      echo "[empty list fields are removed]"
+      IFS=:
+      compgen -W 'a::b'
+
   - name: "compgen -W does not pathname-expand"
     stdin: |
       touch foo.txt bar.txt baz.log

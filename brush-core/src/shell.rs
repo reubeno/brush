@@ -624,4 +624,28 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn unset_env_str_contract_is_independent_of_ifs_default() -> Result<(), error::Error> {
+        let mut shell = Shell::builder()
+            .profile(ProfileLoadBehavior::Skip)
+            .rc(RcLoadBehavior::Skip)
+            .build()
+            .await?;
+
+        shell.env.set_global(
+            "IFS",
+            crate::ShellVariable::new(crate::ShellValue::Unset(
+                crate::variables::ShellValueUnsetType::Untyped,
+            )),
+        )?;
+        assert_eq!(shell.env_str("IFS").as_deref(), Some(""));
+        assert_eq!(shell.ifs(), " \t\n");
+
+        shell.env.set_global("IFS", crate::ShellVariable::new(""))?;
+        assert_eq!(shell.env_str("IFS").as_deref(), Some(""));
+        assert_eq!(shell.ifs(), "");
+
+        Ok(())
+    }
 }

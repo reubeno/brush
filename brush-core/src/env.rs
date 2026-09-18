@@ -266,9 +266,6 @@ impl ShellEnvironment {
     /// Tries to retrieve the string value of the variable with the given name in the
     /// environment.
     ///
-    /// Returns `None` if the variable doesn't exist or if its value is unset.
-    /// See [`ShellValue::try_get_cow_str`] for details on string conversion.
-    ///
     /// # Arguments
     ///
     /// * `name` - The name of the variable to retrieve.
@@ -279,7 +276,7 @@ impl ShellEnvironment {
         shell: &Shell<SE>,
     ) -> Option<Cow<'_, str>> {
         self.get(name.as_ref())
-            .and_then(|(_, v)| v.value().try_get_cow_str(shell))
+            .map(|(_, v)| v.value().to_cow_str(shell))
     }
 
     /// Checks if a variable of the given name is set in the environment.

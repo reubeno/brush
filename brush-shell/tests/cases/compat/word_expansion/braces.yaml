@@ -209,6 +209,26 @@ cases:
       echo "Count: $#"
       for arg in "$@"; do echo "[$arg]"; done
 
+  - name: "Expansion with curly braces: empty array and positional elements survive"
+    stdin: |
+      IFS=:
+      arr=("" 2)
+      set -- ${arr[@]}{a,b}
+      echo "Array count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+      arr=(2 "")
+      set -- {a,b}${arr[@]}
+      echo "Trailing empty count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+      f() {
+        set -- $@{a,b}
+        echo "Positional count: $#"
+        for arg in "$@"; do echo "[$arg]"; done
+      }
+      f "" 2
+
   - name: "Expansion with curly braces: quoted $@ inside the list"
     stdin: |
       f() { set -- pre{"$@",z}; echo "Count: $#"; for arg in "$@"; do echo "[$arg]"; done; }
