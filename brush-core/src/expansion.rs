@@ -25,6 +25,8 @@ use crate::variables::ShellValueUnsetType;
 use crate::variables::ShellVariable;
 use crate::variables::{self, ShellValue};
 
+mod fieldsplit;
+
 /// Controls how the expander handles a backslash-escape sequence (`\X`)
 /// when it appears outside any explicit quoting (single, double, ANSI-C).
 /// Inside actual double-quoted text, the parser's own escape rules apply
@@ -896,7 +898,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         let basic_expansion = self.basic_expand(word).await?;
 
         // Then split.
-        let fields: Vec<WordField> = self.split_fields(basic_expansion);
+        let fields: Vec<WordField> = fieldsplit::split_fields(&self.shell.ifs(), basic_expansion);
 
         // Now expand pathnames if necessary. This also unquotes as a side effect.
         // We also know a length that the vector may be at minimally.
@@ -910,46 +912,6 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
 
         Ok(result)
-    }
-
-    fn split_fields(&self, expansion: Expansion) -> Vec<WordField> {
-        let ifs = self.shell.ifs();
-
-        let mut fields: Vec<WordField> = vec![];
-        let mut current_field = WordField::new();
-
-        // Go through the fields we have so far.
-        for existing_field in expansion.fields {
-            for piece in existing_field.0 {
-                match piece {
-                    ExpansionPiece::Unsplittable(_) => current_field.0.push(piece),
-                    ExpansionPiece::Splittable(s) => {
-                        for c in s.chars() {
-                            if ifs.contains(c) {
-                                if !current_field.0.is_empty() {
-                                    fields.push(std::mem::take(&mut current_field));
-                                }
-                            } else {
-                                match current_field.0.last_mut() {
-                                    Some(ExpansionPiece::Splittable(last)) => last.push(c),
-                                    Some(ExpansionPiece::Unsplittable(_)) | None => {
-                                        current_field
-                                            .0
-                                            .push(ExpansionPiece::Splittable(c.to_string()));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !current_field.0.is_empty() {
-                fields.push(std::mem::take(&mut current_field));
-            }
-        }
-
-        fields
     }
 
     fn expand_pathnames_in_field(&self, field: WordField) -> Result<Vec<String>, error::Error> {
@@ -2363,33 +2325,6 @@ mod tests {
         assert_eq!(expander.brace_expand_if_needed("a{}b")?, "a{}b");
         assert_eq!(expander.brace_expand_if_needed("a{ }b")?, "a{ }b");
         assert_eq!(expander.brace_expand_if_needed("{a,b{1,2}}")?, "a b1 b2");
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_field_splitting() -> Result<()> {
-        let mut shell = crate::shell::Shell::builder().build().await?;
-        let params = shell.default_exec_params();
-        let expander = WordExpander::new(&mut shell, &params);
-
-        let expansion = Expansion {
-            fields: vec![
-                WordField(vec![ExpansionPiece::Unsplittable("A".into())]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())]),
-            ],
-            ..Expansion::default()
-        };
-
-        let fields = expander.split_fields(expansion);
-
-        assert_eq!(
-            fields,
-            vec![
-                WordField(vec![ExpansionPiece::Unsplittable(String::from("A"))]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())])
-            ]
-        );
 
         Ok(())
     }

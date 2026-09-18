@@ -45,7 +45,6 @@ cases:
       echo $var
 
   - name: "IFS whitespace vs non-whitespace splitting"
-    known_failure: true
     stdin: |
       # Non-whitespace IFS chars create empty fields
       IFS=':'
@@ -74,7 +73,6 @@ cases:
       done
 
   - name: "Mixed IFS leading non-whitespace"
-    known_failure: true
     stdin: |
       IFS=': '
       var=":one: :two"
@@ -103,7 +101,6 @@ cases:
       echo "Args: $@"
 
   - name: "IFS only non-whitespace multiple chars"
-    known_failure: true
     stdin: |
       IFS=':,'
       var=":,one,:,two,:"
@@ -266,7 +263,6 @@ cases:
       echo "Args: $@"
 
   - name: "IFS non-whitespace sequence handling"
-    known_failure: true
     stdin: |
       IFS=':'
       var="a::::b"
@@ -383,7 +379,6 @@ cases:
       echo "a:b:c" | (read x y z; echo "x=[$x] y=[$y] z=[$z]")
 
   - name: "IFS whitespace before non-whitespace"
-    known_failure: true
     stdin: |
       IFS=' :'
       var=" :a"
@@ -394,7 +389,6 @@ cases:
       done
 
   - name: "IFS non-whitespace before whitespace"
-    known_failure: true
     stdin: |
       IFS=': '
       var=": a"
@@ -476,3 +470,65 @@ cases:
       unset p
       : ${p:=$*}
       echo "[$p]"
+
+  - name: "Run of non-whitespace delimiters yields empty fields"
+    stdin: |
+      IFS=:
+      var="a:b:::c"
+      set -- $var
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "Leading delimiter yields an empty field, trailing one does not"
+    stdin: |
+      IFS=:
+      for var in ":a" "a:" ":a:" ":" "::"; do
+        set -- $var
+        echo "$var -> $#"
+        for arg in "$@"; do
+          echo "  [$arg]"
+        done
+      done
+
+  - name: "Whitespace around a delimiter belongs to the same run"
+    stdin: |
+      IFS=': '
+      for var in "a : b" "a :: b" "a:  :b" "  a  b  "; do
+        set -- $var
+        echo "$var -> $#"
+        for arg in "$@"; do
+          echo "  [$arg]"
+        done
+      done
+
+  - name: "Carriage return, vertical tab and form feed split like whitespace"
+    stdin: |
+      for c in $'\r' $'\v' $'\f'; do
+        IFS="$c"
+        var="a${c}b${c}${c}c"
+        set -- $var
+        echo "count=$#"
+      done
+
+  - name: "A delimiter split across two expansions in one word"
+    stdin: |
+      IFS=:
+      a="1:"
+      b=":4"
+      set -- $a$b
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
+
+  - name: "Each field of an array expansion splits on its own"
+    stdin: |
+      IFS=:
+      arr=("a:b" "c::d")
+      set -- ${arr[@]}
+      echo "Count: $#"
+      for arg in "$@"; do
+        echo "[$arg]"
+      done
