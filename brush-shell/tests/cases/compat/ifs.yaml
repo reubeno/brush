@@ -350,7 +350,6 @@ cases:
       echo "[$result]"
 
   - name: "IFS first char empty IFS"
-    known_failure: true
     stdin: |
       set -- a b c
       IFS=''
@@ -796,3 +795,34 @@ cases:
       set -- ~/{x,y}
       echo "Count: $#"
       for arg in "$@"; do echo "[$arg]"; done
+
+  # `$*` and `${arr[*]}` join with the first character of IFS. An unset IFS
+  # means a space; an empty IFS means no separator at all.
+
+  - name: "Empty IFS joins \"$*\" with no separator"
+    stdin: |
+      set -- a b c
+      IFS=
+      echo "[$*]"
+      x="$*"
+      echo "[$x]"
+      arr=(1 2 3)
+      echo "[${arr[*]}]"
+      y=${arr[*]}
+      echo "[$y]"
+
+  - name: "Unset IFS joins \"$*\" with a space"
+    stdin: |
+      set -- a b c
+      unset IFS
+      echo "[$*]"
+      arr=(1 2 3)
+      echo "[${arr[*]}]"
+
+  - name: "Empty IFS join inside a larger double-quoted word"
+    stdin: |
+      set -- a b c
+      IFS=
+      echo "[<$*>]"
+      echo "[${#*}]"
+      case "$*" in abc) echo joined;; *) echo "not joined";; esac

@@ -11,8 +11,13 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     }
 
     /// Returns the first character of the IFS variable, or a space if it is not set.
-    pub(crate) fn get_ifs_first_char(&self) -> char {
-        self.ifs().chars().next().unwrap_or(' ')
+    /// Returns the separator that joins the fields of `$*` and `${arr[*]}`: the first
+    /// character of IFS, or nothing at all when IFS is empty (an unset IFS is a space).
+    pub(crate) fn ifs_joiner(&self) -> String {
+        self.ifs()
+            .chars()
+            .next()
+            .map_or_else(String::new, String::from)
     }
 
     /// Applies basic shell expansion to the provided string.

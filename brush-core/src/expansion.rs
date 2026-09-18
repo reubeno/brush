@@ -693,15 +693,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// `a b c` instead of bash's `a:b:c`.
     fn fields_to_string(&self, expansion: Expansion) -> String {
         let joiner = if expansion.concatenate {
-            self.shell.get_ifs_first_char()
+            self.shell.ifs_joiner()
         } else {
-            ' '
+            String::from(' ')
         };
         expansion
             .fields
             .into_iter()
             .map(String::from)
-            .join(joiner.to_string().as_str())
+            .join(joiner.as_str())
     }
 
     async fn basic_expand_opt_pattern(
@@ -1168,7 +1168,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         pieces: Vec<brush_parser::word::WordPieceWithSource>,
     ) -> Result<Vec<WordField>, error::Error> {
         let mut fields: Vec<WordField> = vec![];
-        let concatenation_joiner = self.shell.get_ifs_first_char();
+        let concatenation_joiner = self.shell.ifs_joiner();
 
         for piece in pieces {
             let Expansion {
@@ -1188,7 +1188,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             .collect()
                     })
                     .intersperse(vec![ExpansionPiece::Unsplittable(
-                        concatenation_joiner.to_string(),
+                        concatenation_joiner.clone(),
                     )])
                     .flatten()
                     .collect();
