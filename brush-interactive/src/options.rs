@@ -22,7 +22,7 @@ impl From<&UIOptions> for crate::InteractiveOptions {
     fn from(options: &UIOptions) -> Self {
         Self {
             terminal_shell_integration: options.terminal_shell_integration,
-            run_cmd_exec_funcs: options.zsh_style_hooks,
+            zsh_style_hooks: options.zsh_style_hooks,
         }
     }
 }

@@ -130,7 +130,7 @@ fn run_pipeline_interactively() -> anyhow::Result<()> {
 #[test]
 fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
     let mut session = start_shell_session_with(|cmd| {
-        cmd.arg0("-brush");
+        cmd.arg("--norc").arg0("-brush");
     })?;
 
     session.expect_prompt()?;
@@ -145,9 +145,10 @@ fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
 #[test]
 fn dash_s_with_positional_args_is_interactive() -> anyhow::Result<()> {
     // With `-s`, trailing words are positional parameters and commands still come from
-    // stdin -- so at a terminal the shell is interactive, and `PROMPT_COMMAND` runs.
+    // stdin -- so at a terminal the shell is interactive, and `PROMPT_COMMAND` and the
+    // zsh-style hooks (which are gated on that) run.
     let mut session = start_shell_session_with(|cmd| {
-        cmd.args(["-s", "myarg"]);
+        cmd.args(["--norc", "-s", "myarg"]);
     })?;
 
     session.expect_prompt()?;
@@ -167,6 +168,83 @@ fn dash_s_with_positional_args_is_interactive() -> anyhow::Result<()> {
     );
 
     session.exit()?;
+
+    Ok(())
+}
+
+#[test]
+fn zsh_style_hook_state_is_visible_to_rc_files() -> anyhow::Result<()> {
+    // The generic YAML harness always passes --norc, so this ordering check must use a PTY
+    // session that can load a dedicated rc file.
+    let rc_file = temp_script(
+        r#"echo "RC-GUARD[${bash_preexec_imported:-unset}] RC-ARRAYS[${precmd_functions[*]:-unset}|${preexec_functions[*]:-unset}]"
+rc_precmd() { echo RC-PRECMD; }
+precmd_functions+=(rc_precmd)
+"#,
+    )?;
+
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.arg("--enable-zsh-hooks")
+            .arg("--rcfile")
+            .arg(rc_file.path());
+    })?;
+
+    session.expect("RC-GUARD[defined] RC-ARRAYS[precmd|preexec]")?;
+    session.expect("RC-PRECMD")?;
+    session.expect_prompt()?;
+
+    let output = session.exec_output("echo trigger")?;
+    assert!(output.contains("RC-PRECMD"));
+
+    session.exit()?;
+
+    Ok(())
+}
+
+/// Terminal shell integration brackets each command with a matched pair of OSC 633 markers:
+/// `E`/`C` before it runs, `D` after. A `preexec` hook that exits the shell means the command
+/// never runs, so neither marker may be emitted -- a lone `D` desynchronizes a terminal's
+/// command tracking.
+#[test]
+fn osc_command_markers_stay_paired_when_preexec_exits() -> anyhow::Result<()> {
+    const COMMAND_STARTED: &str = "\x1b]633;C";
+    const COMMAND_FINISHED: &str = "\x1b]633;D";
+
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.args([
+            "--norc",
+            "--enable-zsh-hooks",
+            "--enable-terminal-integration",
+        ]);
+        // OSC 633 is emitted only for terminals known to understand it.
+        cmd.env("TERM_PROGRAM", "vscode");
+    })?;
+    session.expect_prompt()?;
+
+    // A command that does run gets the full pair. (`preexec` isn't defined yet when this line
+    // is dispatched, so the hook doesn't fire for it.)
+    session.send_line("preexec() { case $1 in stop) exit 5;; esac; }")?;
+    session
+        .expect(COMMAND_STARTED)
+        .context("no command-started marker for a command that ran")?;
+    session
+        .expect(COMMAND_FINISHED)
+        .context("no command-finished marker for a command that ran")?;
+    session.expect_prompt()?;
+
+    // The hook exits before this line runs, so it gets neither marker.
+    session.send_line("stop")?;
+    // `Eof` matches the whole remaining buffer, so the bytes seen since the last prompt are
+    // the match itself; `before()` would be empty.
+    let captures = session
+        .expect(expectrl::Eof)
+        .context("shell did not exit")?;
+    let tail = String::from_utf8_lossy(captures.as_bytes()).into_owned();
+
+    assert!(
+        !tail.contains(COMMAND_STARTED) && !tail.contains(COMMAND_FINISHED),
+        "a command that never ran emitted markers: {tail:?}"
+    );
 
     Ok(())
 }
@@ -205,10 +283,22 @@ impl SessionExt for ShellSession {
     }
 }
 
-fn start_shell_session() -> anyhow::Result<ShellSession> {
-    start_shell_session_with(|_| {})
+/// Writes `contents` to a temporary file that is deleted on drop.
+fn temp_script(contents: &str) -> anyhow::Result<tempfile::NamedTempFile> {
+    use std::io::Write as _;
+
+    let mut file = tempfile::NamedTempFile::new()?;
+    file.write_all(contents.as_bytes())?;
+    Ok(file)
 }
 
+fn start_shell_session() -> anyhow::Result<ShellSession> {
+    start_shell_session_with(|cmd| _ = cmd.arg("--norc"))
+}
+
+/// Starts a shell session at a pty. `configure` is the only place arguments and environment
+/// come from beyond the fixed set below, so a session says for itself what it wants -- notably
+/// `--norc`, or the `--rcfile` that a session wanting an rc file passes instead.
 fn start_shell_session_with(
     configure: impl FnOnce(&mut std::process::Command),
 ) -> anyhow::Result<ShellSession> {
@@ -217,7 +307,6 @@ fn start_shell_session_with(
 
     let mut cmd = std::process::Command::new(shell_path);
     cmd.args([
-        "--norc",
         "--noprofile",
         "--no-config",
         "--disable-bracketed-paste",
