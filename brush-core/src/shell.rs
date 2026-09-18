@@ -61,6 +61,13 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: SE::ErrorFormatter,
 
+    /// Injected spawner for external commands.
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "default_external_command_spawner")
+    )]
+    external_command_spawner: SE::ExternalCommandSpawner,
+
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
 
@@ -151,6 +158,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
             error_formatter: self.error_formatter.clone(),
+            external_command_spawner: self.external_command_spawner.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -214,6 +222,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             error_formatter: options.error_formatter,
+            external_command_spawner: options.external_command_spawner,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -374,6 +383,10 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         } else {
             keywords::KEYWORDS.contains(s)
         }
+    }
+
+    pub(crate) const fn external_command_spawner(&self) -> &SE::ExternalCommandSpawner {
+        &self.external_command_spawner
     }
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
@@ -592,6 +605,11 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_external_command_spawner<ECS: extensions::ExternalCommandSpawner>() -> ECS {
+    ECS::default()
 }
 
 #[cfg(test)]
