@@ -464,6 +464,8 @@ pub(crate) async fn basic_expand_pattern(
     // When expanding patterns, we do not want backslash removal to occur in unquoted
     // contexts, as that would interfere with pattern syntax.
     let options = ExpanderOptions {
+        // Bash performs no brace expansion in this context.
+        brace_expand: false,
         unquoted_backslash_handling: UnquotedBackslashHandling::Preserve,
         ..Default::default()
     };
@@ -505,6 +507,8 @@ pub(crate) async fn basic_expand_word(
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
+    // Bash performs no brace expansion in this context.
+    expander.disable_brace_expansion = true;
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
@@ -598,6 +602,8 @@ pub(crate) async fn basic_expand_assignment_word(
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
+    // Bash performs no brace expansion in this context.
+    expander.disable_brace_expansion = true;
     expander.parser_options.tilde_expansion_after_colon = true;
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
