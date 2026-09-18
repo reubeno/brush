@@ -505,8 +505,8 @@ cases:
 
   #
   # A shell binds the variable, with the kind the operand implies, before it tries the element
-  # assignment; the failure then abandons the remaining operands. The diagnostic is pinned through
-  # the pipeline; the second invocation's copy of it carries a line prefix, so stderr is ignored.
+  # assignment; the failure then abandons the remaining operands, so the sibling operand never
+  # creates its variable. The diagnostic carries a line prefix, so stderr is ignored.
   #
   - name: "declare refuses a list for an element, leaving the variable declared"
     ignore_stderr: true
@@ -514,7 +514,8 @@ cases:
       declare a[1]=(x y) later=1
       echo "status: $?"
       declare -p a
-      declare -p later 2>&1 | strip
+      declare -p later 2>/dev/null
+      echo "later: $?"
       echo after
 
   - name: "Assigning a list to an element of an unset variable fails"
