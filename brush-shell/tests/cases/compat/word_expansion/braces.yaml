@@ -218,3 +218,40 @@ cases:
     stdin: |
       f() { set -- {$*,z}; echo "Count: $#"; for arg in "$@"; do echo "[$arg]"; done; }
       f "p p" q
+
+  # An alternative that expands to nothing at all yields no word, exactly as an
+  # unquoted empty expansion would; it does not become an empty argument.
+
+  - name: "Expansion with curly braces: empty alternative yields no word"
+    stdin: |
+      set -- {a,}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      set -- {,}
+      echo "Count: $#"
+      set -- {,,}q
+      echo "Count: $#"
+
+  - name: "Expansion with curly braces: empty alternative with a prefix keeps the prefix"
+    stdin: |
+      set -- x{,}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: quoted empty string in the list survives"
+    stdin: |
+      set -- ""{,}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      set -- {"",a}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: empty alternative next to an empty expansion"
+    stdin: |
+      z=
+      set -- {,}$z
+      echo "Count: $#"
+      set -- {a,}$z
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done

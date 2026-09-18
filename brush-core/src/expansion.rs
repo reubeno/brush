@@ -898,9 +898,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
         tracing::debug!(target: trace_categories::EXPANSION, "Brace expansion pieces: {brace_expansion_pieces:?}");
 
+        // An alternative that expands to nothing yields no word at all (like any other
+        // unquoted empty expansion); `{a,}` is just `a`.
         let words = braceexpansion::generate_and_combine_brace_expansions(brace_expansion_pieces)
             .into_iter()
-            .map(|s| if s.is_empty() { "\"\"".into() } else { s })
+            .filter(|s| !s.is_empty())
             .collect();
 
         Ok(Some(words))
