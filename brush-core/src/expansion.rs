@@ -820,13 +820,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             &['$', '`', '\\', '\'', '\"', '~', '{']
         };
         if !word.contains(expansion_chars) {
-            return Ok(Expansion::from(Self::literal_piece(word.to_owned())));
+            return Ok(Expansion::from(ExpansionPiece::UnquotedLiteral(
+                word.to_owned(),
+            )));
         }
 
         // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
         // Bash performs it before every other expansion and each result is a word of its
         // own; that is what keeps the results separate when IFS lacks a space.
-        let Some(brace_words) = self.brace_expand_if_needed(word)? else {
+        let Some(brace_words) = self.brace_expand_if_needed(word) else {
             return self.expand_unbraced_word(word).await;
         };
 
@@ -917,32 +919,27 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(expansion)
     }
 
-    /// Yields the piece for a run of the word's own unquoted literal text.
-    const fn literal_piece(s: String) -> ExpansionPiece {
-        ExpansionPiece::UnquotedLiteral(s)
-    }
-
     /// Performs brace expansion on the word, yielding the resulting words, or `None` if
     /// the word contains no brace expression.
-    fn brace_expand_if_needed(&self, word: &str) -> Result<Option<Vec<String>>, error::Error> {
+    fn brace_expand_if_needed(&self, word: &str) -> Option<Vec<String>> {
         // We perform a non-authoritative check to see if the string *may* contain braces
         // to expand. There may be false positives, but must be no false negatives.
         if self.disable_brace_expansion
             || !self.shell.options().perform_brace_expansion
             || !may_contain_braces_to_expand(word)
         {
-            return Ok(None);
+            return None;
         }
 
-        let parse_result = brush_parser::word::parse_brace_expansions(word, &self.parser_options);
-        if parse_result.is_err() {
-            tracing::error!("failed to parse for brace expansion: {parse_result:?}");
-            return Ok(None);
-        }
-
-        let Some(brace_expansion_pieces) = parse_result? else {
-            return Ok(None);
-        };
+        let brace_expansion_pieces =
+            match brush_parser::word::parse_brace_expansions(word, &self.parser_options) {
+                Ok(Some(pieces)) => pieces,
+                Ok(None) => return None,
+                Err(err) => {
+                    tracing::error!("failed to parse for brace expansion: {err:?}");
+                    return None;
+                }
+            };
 
         tracing::debug!(target: trace_categories::EXPANSION, "Brace expansion pieces: {brace_expansion_pieces:?}");
 
@@ -953,7 +950,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             .filter(|s| !s.is_empty())
             .collect();
 
-        Ok(Some(words))
+        Some(words)
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -1026,7 +1023,9 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         word_piece: brush_parser::word::WordPiece,
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
-            brush_parser::word::WordPiece::Text(s) => Expansion::from(Self::literal_piece(s)),
+            brush_parser::word::WordPiece::Text(s) => {
+                Expansion::from(ExpansionPiece::UnquotedLiteral(s))
+            }
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
                 Expansion::from(ExpansionPiece::Unsplittable(s))
             }
@@ -2394,18 +2393,18 @@ mod tests {
         let expander = WordExpander::new(&mut shell, &params);
 
         let expand = |w| expander.brace_expand_if_needed(w);
-        assert_eq!(expand("abc")?, None);
-        assert_eq!(expand("a{,b}d")?, Some(vec!["ad".into(), "abd".into()]));
-        assert_eq!(expand("a{b,c}d")?, Some(vec!["abd".into(), "acd".into()]));
+        assert_eq!(expand("abc"), None);
+        assert_eq!(expand("a{,b}d"), Some(vec!["ad".into(), "abd".into()]));
+        assert_eq!(expand("a{b,c}d"), Some(vec!["abd".into(), "acd".into()]));
         assert_eq!(
-            expand("a{1..3}d")?,
+            expand("a{1..3}d"),
             Some(vec!["a1d".into(), "a2d".into(), "a3d".into()])
         );
-        assert_eq!(expand(r#""{a,b}""#)?, Some(vec![r#""{a,b}""#.into()]));
-        assert_eq!(expand("a{}b")?, Some(vec!["a{}b".into()]));
-        assert_eq!(expand("a{ }b")?, Some(vec!["a{ }b".into()]));
+        assert_eq!(expand(r#""{a,b}""#), Some(vec![r#""{a,b}""#.into()]));
+        assert_eq!(expand("a{}b"), Some(vec!["a{}b".into()]));
+        assert_eq!(expand("a{ }b"), Some(vec!["a{ }b".into()]));
         assert_eq!(
-            expand("{a,b{1,2}}")?,
+            expand("{a,b{1,2}}"),
             Some(vec!["a".into(), "b1".into(), "b2".into()])
         );
 

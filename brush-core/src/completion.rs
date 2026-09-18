@@ -346,9 +346,8 @@ impl Spec {
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
             let params = shell.default_exec_params();
-            let ifs = shell.ifs().into_owned();
-            let parser_options = shell.parser_options();
-            let unexpanded_words = split_completion_word_list(word_list, &ifs, &parser_options)?;
+            let unexpanded_words =
+                split_completion_word_list(word_list, &shell.ifs(), &shell.parser_options())?;
             let options = crate::expansion::ExpanderOptions {
                 pathname_expand: false,
                 ..Default::default()
