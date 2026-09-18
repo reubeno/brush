@@ -8,3 +8,4 @@ These documents serve as reference material for the `brush` project.
 * [Integration testing](integration-testing.md)
 * [Minimum Supported Rust Version (MSRV) policy](msrv-policy.md)
 * [Compatibility](compatibility.md)
+* [Key bindings and readline macros](key-bindings.md)

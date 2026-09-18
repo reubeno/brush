@@ -14,5 +14,5 @@ path = "test-results.xml"
 pty = { max-threads = 4 }
 
 [[profile.default.overrides]]
-filter = 'binary(pty_startup_tests) | binary(brush-interactive-tests) | binary(reedline_interactive_tests)'
+filter = 'binary(pty_startup_tests) | binary(pty_readline_macro_tests) | binary(brush-interactive-tests) | binary(reedline_interactive_tests)'
 test-group = 'pty'
