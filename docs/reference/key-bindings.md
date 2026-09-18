@@ -246,17 +246,18 @@ Because reedline's read loop is closed:
 
 IFS field splitting:
 
-- `shell-expand-line` splits on the shared execution splitter, which ends a field on any IFS
-  character and drops empty fields. bash runs IFS whitespace together into one delimiter and
-  lets every other IFS character delimit on its own, keeping the empty fields between. So
-  with `IFS=:` and `V=':x::y:'`, `$V` expands to `x y` here and to ` x  y` in bash; an IFS
-  that is all whitespace or empty, which is what the fzf and zoxide widgets run under,
-  matches. Separately, an empty IFS joins `"${a[*]}"` on a space rather than on nothing.
-  Both are the field-splitting gap tracked in #295, with a fix in flight as PR #1282;
-  `shell-expand-line` deliberately shares the splitter so that change corrects command
-  execution and `shell-expand-line` together. The cases are tabled in the pty tests for
-  `shell-expand-line`, checked against real bash there, and brush's current output is
-  asserted alongside so the fix cannot land without updating them.
+- `shell-expand-line` splits on the shared execution splitter, which does not yet treat an
+  unquoted array or positional expansion the way bash does: as its elements joined on the
+  first IFS character and then field-split. So under `IFS=' :'` bash drops an empty element
+  and folds a `:` beside an element boundary into it (`A=(aa '' bb)` and `A=(aa ':bb')`
+  both give `aa bb` in bash and `aa  bb` here), and under `IFS=:` a `:` ending an element
+  leaves an empty field (`A=('aa:' bb)` gives `aa  bb` in bash and `aa bb` here). Scalar
+  expansions split as bash does, which is all the fzf and zoxide widgets need. The
+  known-failure cases in `compat/ifs.yaml` pin the same gaps for command execution;
+  `shell-expand-line` deliberately shares the splitter so that one fix corrects both. The
+  cases are tabled in the pty tests for `shell-expand-line`, checked against real bash
+  there, and brush's current output is asserted alongside so the fix cannot land without
+  updating them.
 
 Listing:
 

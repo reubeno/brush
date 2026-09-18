@@ -654,15 +654,13 @@ pub async fn shell_expand_line<SE: extensions::ShellExtensions>(
         expansions.push(expansion);
     }
 
-    // Split on the same splitter command execution uses. That splitter drops the empty
-    // fields a non-whitespace IFS keeps (#295, fix in flight as PR #1282), so
-    // `shell-expand-line` shares the gap and is corrected with it; see the divergences in
-    // docs/reference/key-bindings.md.
-    Ok(expander
-        .split_fields(coalesce_expansions(expansions))
-        .into_iter()
-        .map(String::from)
-        .join(" "))
+    // Split on the same splitter command execution uses, so the two never disagree.
+    Ok(
+        fieldsplit::split_fields(&expander.shell.ifs(), coalesce_expansions(expansions))
+            .into_iter()
+            .map(String::from)
+            .join(" "),
+    )
 }
 
 /// Removes the backslash-newline line continuations that raw editor text still holds.
@@ -2420,21 +2418,23 @@ mod tests {
     use super::*;
     use anyhow::Result;
 
-    /// Cases where `shell-expand-line` does not yet match bash, because of the IFS
-    /// field-splitting gap tracked in #295 (fix in flight as PR #1282): the shared
-    /// `WordExpander::split_fields` drops the empty fields a non-whitespace IFS keeps, and
-    /// an empty IFS joins `"${a[*]}"` on a space (`Shell::get_ifs_first_char`) where bash
-    /// joins on nothing.
+    /// Cases where `shell-expand-line` does not yet match bash. bash treats an unquoted array
+    /// or positional expansion as its elements joined on the first IFS character and then
+    /// field-split, so a boundary next to an empty element or a delimiter behaves like that
+    /// character: under `IFS=' :'` empty elements vanish and a `:` beside a boundary folds
+    /// into it, and under `IFS=:` a `:` ending an element leaves an empty field. The shared
+    /// splitter instead keeps every empty element and splits each element on its own.
+    /// Command execution has the same gaps; the known-failure cases in `compat/ifs.yaml`
+    /// pin them there.
     ///
     /// Each case carries what bash 5.3 produces and what brush produces today, and asserts
-    /// the latter, so that the fix makes this test fail and get updated rather than leave
-    /// a stale ignored test behind. Once #295 is closed, assert the bash column and fold
-    /// these into the tests above.
+    /// the latter, so that a fix makes this test fail and get updated rather than leave a
+    /// stale ignored test behind. Once a case matches, assert its bash column and fold it
+    /// into the tests below.
     #[tokio::test]
     async fn shell_expand_line_ifs_gaps_are_known() -> Result<()> {
         let mut shell = Shell::builder().build().await?;
         let params = shell.default_exec_params();
-        shell.set_env_global("E", ShellVariable::new(""))?;
         shell.set_env_global(
             "A",
             ShellVariable::new(ShellValue::indexed_array_from_strs(&["aa", "", "bb"])),
@@ -2443,47 +2443,44 @@ mod tests {
             "L",
             ShellVariable::new(ShellValue::indexed_array_from_strs(&["aa", ":bb"])),
         )?;
+        shell.set_env_global(
+            "T",
+            ShellVariable::new(ShellValue::indexed_array_from_strs(&["aa:", "bb"])),
+        )?;
 
-        // (IFS, V, line, bash, brush today)
-        for (ifs, value, line, bash, today) in [
-            (":", ":x::y:", "$V", " x  y", "x y"),
-            (":", ":x::y:", "echo $V", "echo  x  y", "echo  x y"),
-            (":", ":x::y:", "a${V}b", "a x  y b", "a x y b"),
-            (":", ":x::y:", "$V$V", " x  y  x  y", "x y x y"),
-            (":", ":x::y:", "${V}$E", " x  y", "x y"),
-            (":", ":x::y:", "${V}\"\"", " x  y ", "x y "),
-            (" :\t\n", " : x :: y : ", "a${V}b", "a x  y b", "a x y b"),
+        // (IFS, line, bash, brush today)
+        for (ifs, line, bash, today) in [
+            // An empty element vanishes when the first IFS character is whitespace.
+            (
+                " :",
+                "echo ${A[@]} end",
+                "echo aa bb end",
+                "echo aa  bb end",
+            ),
+            (
+                " :",
+                "echo ${A[*]} end",
+                "echo aa bb end",
+                "echo aa  bb end",
+            ),
+            // A delimiter beside a boundary folds into it under the same IFS.
+            (
+                " :",
+                "echo ${L[@]} end",
+                "echo aa bb end",
+                "echo aa  bb end",
+            ),
+            // A delimiter ending an element leaves an empty field before the next one.
+            (":", "echo ${T[@]} end", "echo aa  bb end", "echo aa bb end"),
         ] {
             shell.set_env_global("IFS", ShellVariable::new(ifs))?;
-            shell.set_env_global("V", ShellVariable::new(value))?;
             assert_ne!(bash, today, "case no longer a gap: {line:?}");
             assert_eq!(
                 shell_expand_line(&mut shell, &params, line).await?,
                 today,
-                "IFS={ifs:?}, V={value:?}, line={line:?} (bash: {bash:?}); TODO(#295)"
+                "IFS={ifs:?}, line={line:?} (bash: {bash:?})"
             );
         }
-
-        shell.set_env_global("IFS", ShellVariable::new(":"))?;
-        for (line, bash, today) in [
-            ("echo ${L[@]} end", "echo aa  bb end", "echo aa bb end"),
-            ("echo ${A[@]} end", "echo aa  bb end", "echo aa bb end"),
-            ("echo ${A[*]} end", "echo aa  bb end", "echo aa bb end"),
-        ] {
-            assert_eq!(
-                shell_expand_line(&mut shell, &params, line).await?,
-                today,
-                "IFS=\":\", line={line:?} (bash: {bash:?}); TODO(#295)"
-            );
-        }
-
-        // An empty IFS joins a quoted concatenation on nothing in bash, on a space here.
-        shell.set_env_global("IFS", ShellVariable::new(""))?;
-        assert_eq!(
-            shell_expand_line(&mut shell, &params, "echo \"${A[*]}\" end").await?,
-            "echo aa  bb end",
-            "(bash: \"echo aabb end\"); TODO(#295)"
-        );
 
         Ok(())
     }
@@ -2609,9 +2606,9 @@ mod tests {
         let params = shell.default_exec_params();
         shell.set_env_global("E", ShellVariable::new(""))?;
 
-        // Cases where an IFS holding a non-whitespace character would matter are in
-        // `shell_expand_line_ifs_gaps_are_known`; the splitter shared with command
-        // execution does not implement that half of the rule.
+        // Checked against bash 5.3. IFS whitespace runs together and is dropped at either
+        // end; a non-whitespace IFS character delimits on its own, keeping the empty fields
+        // between.
         for (ifs, value, line, expected) in [
             (" \t\n", "  x  y  ", "$V", "x y"),
             (" \t\n", "  x  y  ", "echo $V", "echo  x y"),
@@ -2619,6 +2616,13 @@ mod tests {
             (" \t\n", "  x  y  ", "a${V}b", "a x y b"),
             (":", ":", "$V", ""),
             (":", ":", "echo $V", "echo "),
+            (":", ":x::y:", "$V", " x  y"),
+            (":", ":x::y:", "echo $V", "echo  x  y"),
+            (":", ":x::y:", "a${V}b", "a x  y b"),
+            (":", ":x::y:", "$V$V", " x  y  x  y"),
+            (":", ":x::y:", "${V}$E", " x  y"),
+            (":", ":x::y:", "${V}\"\"", " x  y "),
+            (" :\t\n", " : x :: y : ", "a${V}b", "a x  y b"),
             ("", " x:y ", "echo $V", "echo  x:y "),
         ] {
             shell.set_env_global("IFS", ShellVariable::new(ifs))?;
@@ -2643,13 +2647,14 @@ mod tests {
         )?;
 
         // An element that begins with a delimiter, next to the boundary before it. The
-        // `IFS=":"` case is in `shell_expand_line_ifs_gaps_are_known`.
+        // `IFS=" :"` case, where the boundary and the delimiter should fold into one, is in
+        // `shell_expand_line_ifs_gaps_are_known`, as is the `IFS=" :"` empty element below.
         shell.set_env_global(
             "L",
             ShellVariable::new(ShellValue::indexed_array_from_strs(&["aa", ":bb"])),
         )?;
         for (ifs, expected) in [
-            (" :", "echo aa bb end"),
+            (":", "echo aa  bb end"),
             (" \t\n", "echo aa :bb end"),
             ("", "echo aa :bb end"),
         ] {
@@ -2661,9 +2666,15 @@ mod tests {
             );
         }
 
-        // `IFS=":"` unquoted, and the empty-IFS `${A[*]}` join, are in
-        // `shell_expand_line_ifs_gaps_are_known`.
-        for (ifs, expected, quoted_star) in [(" \t\n", "echo aa bb end", "echo aa  bb end")] {
+        // Checked against bash 5.3: an empty element survives when the first IFS character
+        // is not whitespace, and `"${A[*]}"` joins on that character, on nothing when IFS is
+        // empty.
+        for (ifs, expected, quoted_star) in [
+            (" \t\n", "echo aa bb end", "echo aa  bb end"),
+            ("", "echo aa bb end", "echo aabb end"),
+            (":", "echo aa  bb end", "echo aa::bb end"),
+            (": ", "echo aa  bb end", "echo aa::bb end"),
+        ] {
             shell.set_env_global("IFS", ShellVariable::new(ifs))?;
             for line in ["echo ${A[@]} end", "echo ${A[*]} end"] {
                 assert_eq!(

@@ -44,12 +44,23 @@ const FIELD_BOUNDARY_CASES: &[(&str, &str, &str)] = &[
     // Boundaries between the fields an expansion already had.
     ("IFS=; A=(aa '' bb)", "echo ${A[@]}", "echo aa bb"),
     ("IFS=; A=(aa '' bb)", "echo \"${A[@]}\"", "echo aa  bb"),
-    ("IFS=' :'; A=(aa '' bb)", "echo ${A[@]}", "echo aa bb"),
-    ("IFS=' :'; A=(aa ':bb')", "echo ${A[@]}", "echo aa bb"),
-    ("IFS=' :'; A=(aa ':')", "echo ${A[@]}", "echo aa"),
-    ("IFS=' ,:'; A=(aa ' :bb')", "echo ${A[@]}", "echo aa bb"),
+    ("IFS=; A=(aa '' bb)", "echo \"${A[*]}\"", "echo aabb"),
+    ("IFS=:; A=(aa '' bb)", "echo ${A[@]}", "echo aa  bb"),
+    ("IFS=:; A=(aa '' bb)", "echo ${A[*]}", "echo aa  bb"),
+    ("IFS=:; set -- aa '' bb", "echo $@", "echo aa  bb"),
+    ("IFS=:; set -- aa '' bb", "echo $*", "echo aa  bb"),
+    (
+        "IFS=:; A=(aa '' bb); set -- aa '' bb",
+        "echo ${A[@]} ${A[*]} $@ $*",
+        "echo aa  bb aa  bb aa  bb aa  bb",
+    ),
+    ("IFS=:; A=(aa '' '')", "echo ${A[@]}", "echo aa "),
+    ("IFS=:; A=(aa ':bb')", "echo ${A[@]}", "echo aa  bb"),
+    ("IFS=': '; A=(aa '' bb)", "echo ${A[@]}", "echo aa  bb"),
+    ("IFS=' :'; A=('aa:' ':bb')", "echo ${A[@]}", "echo aa  bb"),
     // Splitting within one scalar expansion: IFS whitespace collapses and is dropped at
-    // either end.
+    // either end; a non-whitespace IFS character delimits on its own, keeping the empty
+    // fields between.
     ("IFS=$' \\t\\n'; V='  x  y  '", "$V", "x y"),
     ("IFS=$' \\t\\n'; V='  x  y  '", "echo $V", "echo  x y"),
     (
@@ -59,86 +70,65 @@ const FIELD_BOUNDARY_CASES: &[(&str, &str, &str)] = &[
     ),
     ("IFS=$' \\t\\n'; V='  x  y  '", "a${V}b", "a x y b"),
     ("IFS=:; V=:", "echo $V", "echo "),
+    ("IFS=:; V=':x::y:'", "$V", " x  y"),
+    ("IFS=:; V=':x::y:'", "echo $V", "echo  x  y"),
+    ("IFS=:; V=':x::y:'", "a${V}b", "a x  y b"),
+    ("IFS=:; V=':x::y:'", "$V$V", " x  y  x  y"),
+    ("IFS=:; V=':x::y:'; E=", "${V}$E", " x  y"),
+    ("IFS=:; V=':x::y:'", "${V}\"\"", " x  y "),
+    ("IFS=$' :\\t\\n'; V=' : x :: y : '", "a${V}b", "a x  y b"),
     ("IFS=; V=' x:y '", "echo $V", "echo  x:y "),
 ];
 
-/// Cases `shell-expand-line` does not yet match bash on, because of the IFS field-splitting
-/// gap tracked in #295 (fix in flight as PR #1282): the shared execution splitter drops the
-/// empty fields a non-whitespace IFS keeps, and (last case) an empty IFS joins `"${A[*]}"`
-/// on a space where bash joins on nothing.
+/// Cases `shell-expand-line` does not yet match bash on. bash treats an unquoted array or
+/// positional expansion as its elements joined on the first IFS character and then
+/// field-split, so a boundary next to an empty element or a delimiter behaves like that
+/// character: under `IFS=' :'` empty elements vanish and a `:` beside a boundary folds into
+/// it, and under `IFS=:` a `:` ending an element leaves an empty field. The shared execution
+/// splitter instead keeps every empty element and splits each element on its own. The
+/// known-failure cases in `compat/ifs.yaml` pin the same gaps for command execution.
 ///
 /// Columns: setup, line, what bash produces, what brush produces today. The bash column is
 /// checked against real bash by [`bash_shell_expand_line_field_boundaries`]; the brush
-/// column is asserted by [`shell_expand_line_ifs_gaps_are_known`], so the fix makes that
-/// test fail and get updated. Once #295 is closed, move each case into
-/// `FIELD_BOUNDARY_CASES` with its bash column.
+/// column is asserted by [`shell_expand_line_ifs_gaps_are_known`], so a fix makes that test
+/// fail and get updated. Once a case matches, move it into `FIELD_BOUNDARY_CASES` with its
+/// bash column.
 const IFS_GAP_CASES: &[(&str, &str, &str, &str)] = &[
     (
-        "IFS=:; A=(aa '' bb)",
+        "IFS=' :'; A=(aa '' bb)",
         "echo ${A[@]}",
-        "echo aa  bb",
         "echo aa bb",
+        "echo aa  bb",
     ),
     (
-        "IFS=:; A=(aa '' bb)",
-        "echo ${A[*]}",
-        "echo aa  bb",
-        "echo aa bb",
-    ),
-    (
-        "IFS=:; set -- aa '' bb",
+        "IFS=' :'; set -- aa '' bb",
         "echo $@",
-        "echo aa  bb",
         "echo aa bb",
+        "echo aa  bb",
     ),
     (
-        "IFS=:; set -- aa '' bb",
-        "echo $*",
-        "echo aa  bb",
+        "IFS=' :'; A=(aa ':bb')",
+        "echo ${A[@]}",
         "echo aa bb",
+        "echo aa  bb",
+    ),
+    (
+        "IFS=' :'; A=(aa ':')",
+        "echo ${A[@]}",
+        "echo aa",
+        "echo aa ",
+    ),
+    (
+        "IFS=' ,:'; A=(aa ' :bb')",
+        "echo ${A[@]}",
+        "echo aa bb",
+        "echo aa  bb",
     ),
     (
         "IFS=:; A=('aa:' bb)",
         "echo ${A[@]}",
         "echo aa  bb",
         "echo aa bb",
-    ),
-    (
-        "IFS=:; A=(aa ':bb')",
-        "echo ${A[@]}",
-        "echo aa  bb",
-        "echo aa bb",
-    ),
-    ("IFS=:; A=(aa '' '')", "echo ${A[@]}", "echo aa ", "echo aa"),
-    (
-        "IFS=' :'; A=('aa:' ':bb')",
-        "echo ${A[@]}",
-        "echo aa  bb",
-        "echo aa bb",
-    ),
-    (
-        "IFS=': '; A=(aa '' bb)",
-        "echo ${A[@]}",
-        "echo aa  bb",
-        "echo aa bb",
-    ),
-    ("IFS=:; V=':x::y:'", "$V", " x  y", "x y"),
-    ("IFS=:; V=':x::y:'", "echo $V", "echo  x  y", "echo  x y"),
-    ("IFS=:; V=':x::y:'", "a${V}b", "a x  y b", "a x y b"),
-    ("IFS=:; V=':x::y:'", "$V$V", " x  y  x  y", "x y x y"),
-    ("IFS=:; V=':x::y:'; E=", "${V}$E", " x  y", "x y"),
-    ("IFS=:; V=':x::y:'", "${V}\"\"", " x  y ", "x y "),
-    (
-        "IFS=$' :\\t\\n'; V=' : x :: y : '",
-        "a${V}b",
-        "a x  y b",
-        "a x y b",
-    ),
-    (
-        "IFS=; A=(aa '' bb)",
-        "echo \"${A[*]}\"",
-        "echo aabb",
-        "echo aa  bb",
     ),
 ];
 
@@ -191,7 +181,7 @@ fn shell_expand_line_tilde_prefix_matches_bash() -> anyhow::Result<()> {
 
 #[test]
 fn shell_expand_line_ifs_gaps_are_known() -> anyhow::Result<()> {
-    // TODO(#295): assert the bash column instead once PR #1282 lands.
+    // Asserts brush's current output; see `IFS_GAP_CASES` for what has to change.
     let today: Vec<_> = IFS_GAP_CASES
         .iter()
         .map(|&(setup, line, bash, today)| {
@@ -240,20 +230,6 @@ fn shell_expand_line_keeps_literal_ifs_delimiters() -> anyhow::Result<()> {
     session.send("\x1b\x05")?;
     expect_answering_queries(&mut session, "brush> echo a:b x y")?;
     inspect_and_exit(&mut session, "LINE=<echo a:b x y> POINT=<12>\r\n")
-}
-
-#[test]
-fn shell_expand_line_empty_array_and_positional_fields_gap_is_known() -> anyhow::Result<()> {
-    // TODO(#295): bash keeps the empty fields, giving "echo aa  bb aa  bb aa  bb aa  bb";
-    // brush drops them until PR #1282 lands. Asserted as it is so the fix updates this.
-    let mut session = start_shell("IFS=:; A=(aa '' bb); set -- aa '' bb")?;
-    session.send("echo ${A[@]} ${A[*]} $@ $*")?;
-    session.send("\x1b\x05")?;
-    expect_answering_queries(&mut session, "brush> echo aa bb aa bb aa bb aa bb")?;
-    inspect_and_exit(
-        &mut session,
-        "LINE=<echo aa bb aa bb aa bb aa bb> POINT=<28>\r\n",
-    )
 }
 
 #[test]
