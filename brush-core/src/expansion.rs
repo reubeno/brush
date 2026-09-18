@@ -301,19 +301,23 @@ impl Expansion {
                     let len_from_this_piece =
                         min(left, piece_char_count - desired_offset_into_this_piece);
 
+                    let slice = |s: &str| -> String {
+                        s.chars()
+                            .skip(desired_offset_into_this_piece)
+                            .take(len_from_this_piece)
+                            .collect()
+                    };
                     let new_piece = match piece {
-                        ExpansionPiece::Unsplittable(s) => ExpansionPiece::Unsplittable(
-                            s.chars()
-                                .skip(desired_offset_into_this_piece)
-                                .take(len_from_this_piece)
-                                .collect(),
-                        ),
-                        ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
-                            s.chars()
-                                .skip(desired_offset_into_this_piece)
-                                .take(len_from_this_piece)
-                                .collect(),
-                        ),
+                        ExpansionPiece::Unsplittable(s) => ExpansionPiece::Unsplittable(slice(s)),
+                        ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(slice(s)),
+                        ExpansionPiece::UnquotedLiteral(s) => {
+                            ExpansionPiece::UnquotedLiteral(slice(s))
+                        }
+                        ExpansionPiece::EmptyListElement { has_following } => {
+                            ExpansionPiece::EmptyListElement {
+                                has_following: *has_following,
+                            }
+                        }
                     };
 
                     pieces.push(new_piece);
@@ -382,15 +386,28 @@ impl From<String> for WordField {
 
 #[derive(Clone, Debug, PartialEq)]
 enum ExpansionPiece {
+    /// Quoted text: never field-split, never treated as a pattern.
     Unsplittable(String),
+    /// The unquoted result of a parameter expansion, command substitution or arithmetic
+    /// expansion: field-split on IFS, then treated as a pattern.
     Splittable(String),
+    /// Unquoted literal text of the word itself: never field-split (bash only splits the
+    /// results of expansions), but still treated as a pattern.
+    UnquotedLiteral(String),
+    /// An empty element of an unquoted array or positional-parameter expansion.
+    EmptyListElement {
+        /// Whether another element follows in the same list expansion.
+        has_following: bool,
+    },
 }
 
 impl From<ExpansionPiece> for String {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => s,
-            ExpansionPiece::Splittable(s) => s,
+            ExpansionPiece::Unsplittable(s)
+            | ExpansionPiece::Splittable(s)
+            | ExpansionPiece::UnquotedLiteral(s) => s,
+            ExpansionPiece::EmptyListElement { .. } => Self::new(),
         }
     }
 }
@@ -399,7 +416,8 @@ impl From<ExpansionPiece> for patterns::PatternPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Splittable(s) | ExpansionPiece::UnquotedLiteral(s) => Self::Pattern(s),
+            ExpansionPiece::EmptyListElement { .. } => Self::Literal(String::new()),
         }
     }
 }
@@ -408,7 +426,8 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Splittable(s) | ExpansionPiece::UnquotedLiteral(s) => Self::Pattern(s),
+            ExpansionPiece::EmptyListElement { .. } => Self::Literal(String::new()),
         }
     }
 }
@@ -416,22 +435,28 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
 impl ExpansionPiece {
     const fn as_str(&self) -> &str {
         match self {
-            Self::Unsplittable(s) => s.as_str(),
-            Self::Splittable(s) => s.as_str(),
+            Self::Unsplittable(s) | Self::Splittable(s) | Self::UnquotedLiteral(s) => s.as_str(),
+            Self::EmptyListElement { .. } => "",
         }
     }
 
     const fn len(&self) -> usize {
-        match self {
-            Self::Unsplittable(s) => s.len(),
-            Self::Splittable(s) => s.len(),
-        }
+        self.as_str().len()
     }
 
     fn make_unsplittable(self) -> Self {
         match self {
             Self::Unsplittable(_) => self,
-            Self::Splittable(s) => Self::Unsplittable(s),
+            Self::Splittable(s) | Self::UnquotedLiteral(s) => Self::Unsplittable(s),
+            Self::EmptyListElement { .. } => Self::Unsplittable(String::new()),
+        }
+    }
+
+    fn list_element(value: String, has_following: bool) -> Self {
+        if value.is_empty() {
+            Self::EmptyListElement { has_following }
+        } else {
+            Self::Splittable(value)
         }
     }
 }
@@ -457,6 +482,8 @@ pub(crate) async fn basic_expand_pattern(
     // When expanding patterns, we do not want backslash removal to occur in unquoted
     // contexts, as that would interfere with pattern syntax.
     let options = ExpanderOptions {
+        // Bash performs no brace expansion in this context.
+        brace_expand: false,
         unquoted_backslash_handling: UnquotedBackslashHandling::Preserve,
         ..Default::default()
     };
@@ -498,6 +525,8 @@ pub(crate) async fn basic_expand_word(
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
+    // Bash performs no brace expansion in this context.
+    expander.disable_brace_expansion = true;
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
 
@@ -591,6 +620,8 @@ pub(crate) async fn basic_expand_assignment_word(
     word_str: impl AsRef<str>,
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
+    // Bash performs no brace expansion in this context.
+    expander.disable_brace_expansion = true;
     expander.parser_options.tilde_expansion_after_colon = true;
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
@@ -693,15 +724,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// `a b c` instead of bash's `a:b:c`.
     fn fields_to_string(&self, expansion: Expansion) -> String {
         let joiner = if expansion.concatenate {
-            self.shell.get_ifs_first_char()
+            self.shell.ifs_joiner()
         } else {
-            ' '
+            String::from(' ')
         };
         expansion
             .fields
             .into_iter()
             .map(String::from)
-            .join(joiner.to_string().as_str())
+            .join(joiner.as_str())
     }
 
     async fn basic_expand_opt_pattern(
@@ -789,37 +820,56 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             &['$', '`', '\\', '\'', '\"', '~', '{']
         };
         if !word.contains(expansion_chars) {
-            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
+            return Ok(Expansion::from(ExpansionPiece::UnquotedLiteral(
+                word.to_owned(),
+            )));
         }
 
         // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
-        let brace_expanded = self.brace_expand_if_needed(word)?;
-        if tracing::enabled!(target: trace_categories::EXPANSION, tracing::Level::DEBUG)
-            && brace_expanded != word
-        {
-            tracing::debug!(target: trace_categories::EXPANSION, "  => brace expanded to '{brace_expanded}'");
+        // Bash performs it before every other expansion and each result is a word of its
+        // own; that is what keeps the results separate when IFS lacks a space.
+        let Some(brace_words) = self.brace_expand_if_needed(word) else {
+            return self.expand_unbraced_word(word).await;
+        };
+
+        tracing::debug!(target: trace_categories::EXPANSION, "  => brace expanded to {brace_words:?}");
+
+        // A single result (e.g. `{2..2}`) keeps the inner expansion's properties, such as
+        // the `concatenate` flag of "${arr[@]}". With several results each one contributes
+        // its fields and array semantics don't propagate.
+        if let [only] = brace_words.as_slice() {
+            return self.expand_unbraced_word(only).await;
         }
 
-        // Expand: tildes, parameters, command substitutions, arithmetic.
-        let pieces = if self.heredoc_mode {
-            // Heredoc mode only affects top-level parsing (literal quotes); recursive
-            // expansion of parameter words (e.g., ${var:-"default"}) uses normal semantics.
-            self.heredoc_mode = false;
+        let mut fields = vec![];
+        for brace_word in &brace_words {
+            fields.extend(self.expand_unbraced_word(brace_word).await?.fields);
+        }
 
-            brush_parser::word::parse_heredoc(brace_expanded.as_ref(), &self.parser_options)?
+        Ok(Expansion {
+            fields,
+            ..Expansion::default()
+        })
+    }
+
+    /// Apply tilde-expansion, parameter expansion, command substitution and arithmetic
+    /// expansion to a word that contains no brace expression (or is one result of one).
+    async fn expand_unbraced_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
+        // Heredoc mode only affects top-level parsing (literal quotes); recursive
+        // expansion of parameter words (e.g., ${var:-"default"}) uses normal semantics.
+        let pieces = if self.heredoc_mode {
+            self.heredoc_mode = false;
+            brush_parser::word::parse_heredoc(word, &self.parser_options)?
         } else {
-            brush_parser::word::parse(brace_expanded.as_ref(), &self.parser_options)?
+            brush_parser::word::parse(word, &self.parser_options)?
         };
 
         let mut expansions = Vec::with_capacity(pieces.len());
         for piece in pieces {
-            let piece_expansion = self.expand_word_piece(piece.piece).await?;
-            expansions.push(piece_expansion);
+            expansions.push(self.expand_word_piece(piece.piece).await?);
         }
 
-        let coalesced = coalesce_expansions(expansions);
-
-        Ok(coalesced)
+        Ok(coalesce_expansions(expansions))
     }
 
     /// Expand a word used inside a parameter expansion (like the word in ${param:+word}).
@@ -827,7 +877,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// (except those escaped in ways valid in double-quotes) but still expand parameters,
     /// command substitutions, and arithmetic.
     async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        if self.in_double_quotes {
+        let mut expansion = if self.in_double_quotes {
             // When inside double-quotes, we need to parse the word with double-quote semantics.
             // If the word already starts with a double-quote, we need to remove those quotes
             // and expand what's inside with normal (non-double-quote) semantics.
@@ -845,47 +895,62 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let result = self.basic_expand(inner).await;
                 self.in_double_quotes = previously_in_double_quotes;
 
-                result
+                result?
             } else {
                 // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
                 let wrapped = std::format!("\"{word}\"");
-                self.basic_expand(&wrapped).await
+                self.basic_expand(&wrapped).await?
             }
         } else {
             // When not inside double-quotes, perform normal expansion with quote removal
-            self.basic_expand(word).await
+            self.basic_expand(word).await?
+        };
+
+        // The word becomes part of the parameter expansion's result, which bash
+        // field-splits as a whole: `${x:-a:b}` under `IFS=:` is two fields.
+        for field in &mut expansion.fields {
+            for piece in &mut field.0 {
+                if let ExpansionPiece::UnquotedLiteral(s) = piece {
+                    *piece = ExpansionPiece::Splittable(std::mem::take(s));
+                }
+            }
         }
+
+        Ok(expansion)
     }
 
-    fn brace_expand_if_needed(&self, word: &'a str) -> Result<Cow<'a, str>, error::Error> {
+    /// Performs brace expansion on the word, yielding the resulting words, or `None` if
+    /// the word contains no brace expression.
+    fn brace_expand_if_needed(&self, word: &str) -> Option<Vec<String>> {
         // We perform a non-authoritative check to see if the string *may* contain braces
         // to expand. There may be false positives, but must be no false negatives.
         if self.disable_brace_expansion
             || !self.shell.options().perform_brace_expansion
             || !may_contain_braces_to_expand(word)
         {
-            return Ok(word.into());
+            return None;
         }
 
-        let parse_result = brush_parser::word::parse_brace_expansions(word, &self.parser_options);
-        if parse_result.is_err() {
-            tracing::error!("failed to parse for brace expansion: {parse_result:?}");
-            return Ok(word.into());
-        }
-
-        let brace_expansion_pieces = parse_result?;
-        let Some(brace_expansion_pieces) = brace_expansion_pieces else {
-            return Ok(word.into());
-        };
+        let brace_expansion_pieces =
+            match brush_parser::word::parse_brace_expansions(word, &self.parser_options) {
+                Ok(Some(pieces)) => pieces,
+                Ok(None) => return None,
+                Err(err) => {
+                    tracing::error!("failed to parse for brace expansion: {err:?}");
+                    return None;
+                }
+            };
 
         tracing::debug!(target: trace_categories::EXPANSION, "Brace expansion pieces: {brace_expansion_pieces:?}");
 
-        let result = braceexpansion::generate_and_combine_brace_expansions(brace_expansion_pieces)
+        // An alternative that expands to nothing yields no word at all (like any other
+        // unquoted empty expansion); `{a,}` is just `a`.
+        let words = braceexpansion::generate_and_combine_brace_expansions(brace_expansion_pieces)
             .into_iter()
-            .map(|s| if s.is_empty() { "\"\"".into() } else { s })
-            .join(" ");
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        Ok(result.into())
+        Some(words)
     }
 
     /// Apply tilde-expansion, parameter expansion, command substitution, and arithmetic expansion;
@@ -959,7 +1024,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
             brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
+                Expansion::from(ExpansionPiece::UnquotedLiteral(s))
             }
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
                 Expansion::from(ExpansionPiece::Unsplittable(s))
@@ -1148,7 +1213,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         pieces: Vec<brush_parser::word::WordPieceWithSource>,
     ) -> Result<Vec<WordField>, error::Error> {
         let mut fields: Vec<WordField> = vec![];
-        let concatenation_joiner = self.shell.get_ifs_first_char();
+        let concatenation_joiner = self.shell.ifs_joiner();
 
         for piece in pieces {
             let Expansion {
@@ -1168,7 +1233,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                             .collect()
                     })
                     .intersperse(vec![ExpansionPiece::Unsplittable(
-                        concatenation_joiner.to_string(),
+                        concatenation_joiner.clone(),
                     )])
                     .flatten()
                     .collect();
@@ -1928,13 +1993,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         }
                         other => other,
                     };
-                    let values = value.element_values(self.shell);
+                    let fields =
+                        list_element_fields(value.element_values(self.shell), value.is_array());
 
                     Ok(Expansion {
-                        fields: values
-                            .into_iter()
-                            .map(|value| WordField(vec![ExpansionPiece::Splittable(value)]))
-                            .collect(),
+                        fields,
                         concatenate: *concatenate,
                         kind: match value {
                             // Slicing addresses an indexed array by subscript, so it needs
@@ -1986,13 +2049,8 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     ) -> Expansion {
         match parameter {
             brush_parser::word::SpecialParameter::AllPositionalParameters { concatenate } => {
-                let args = self.shell.current_shell_args().iter();
-
                 Expansion {
-                    fields: args
-                        .into_iter()
-                        .map(|param| WordField(vec![ExpansionPiece::Splittable(param.to_owned())]))
-                        .collect(),
+                    fields: list_element_fields(self.shell.current_shell_args().to_vec(), true),
                     concatenate: *concatenate,
                     kind: ExpansionKind::ElementList,
                     undefined: false,
@@ -2151,6 +2209,22 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     }
 }
 
+fn list_element_fields(values: Vec<String>, preserve_empty_elements: bool) -> Vec<WordField> {
+    let value_count = values.len();
+    values
+        .into_iter()
+        .enumerate()
+        .map(|(i, value)| {
+            let piece = if preserve_empty_elements {
+                ExpansionPiece::list_element(value, i + 1 < value_count)
+            } else {
+                ExpansionPiece::Splittable(value)
+            };
+            WordField(vec![piece])
+        })
+        .collect()
+}
+
 fn coalesce_expansions(expansions: Vec<Expansion>) -> Expansion {
     expansions
         .into_iter()
@@ -2259,9 +2333,10 @@ mod tests {
             full_expand_and_split_word(&mut shell, &params, "\"\"").await?,
             vec![""]
         );
+        // Literal text is never field-split (the parser would not produce such a word).
         assert_eq!(
             full_expand_and_split_word(&mut shell, &params, "a b").await?,
-            vec!["a", "b"]
+            vec!["a b"]
         );
         assert_eq!(
             full_expand_and_split_word(&mut shell, &params, "ab").await?,
@@ -2317,14 +2392,21 @@ mod tests {
         let params = shell.default_exec_params();
         let expander = WordExpander::new(&mut shell, &params);
 
-        assert_eq!(expander.brace_expand_if_needed("abc")?, "abc");
-        assert_eq!(expander.brace_expand_if_needed("a{,b}d")?, "ad abd");
-        assert_eq!(expander.brace_expand_if_needed("a{b,c}d")?, "abd acd");
-        assert_eq!(expander.brace_expand_if_needed("a{1..3}d")?, "a1d a2d a3d");
-        assert_eq!(expander.brace_expand_if_needed(r#""{a,b}""#)?, r#""{a,b}""#);
-        assert_eq!(expander.brace_expand_if_needed("a{}b")?, "a{}b");
-        assert_eq!(expander.brace_expand_if_needed("a{ }b")?, "a{ }b");
-        assert_eq!(expander.brace_expand_if_needed("{a,b{1,2}}")?, "a b1 b2");
+        let expand = |w| expander.brace_expand_if_needed(w);
+        assert_eq!(expand("abc"), None);
+        assert_eq!(expand("a{,b}d"), Some(vec!["ad".into(), "abd".into()]));
+        assert_eq!(expand("a{b,c}d"), Some(vec!["abd".into(), "acd".into()]));
+        assert_eq!(
+            expand("a{1..3}d"),
+            Some(vec!["a1d".into(), "a2d".into(), "a3d".into()])
+        );
+        assert_eq!(expand(r#""{a,b}""#), Some(vec![r#""{a,b}""#.into()]));
+        assert_eq!(expand("a{}b"), Some(vec!["a{}b".into()]));
+        assert_eq!(expand("a{ }b"), Some(vec!["a{ }b".into()]));
+        assert_eq!(
+            expand("{a,b{1,2}}"),
+            Some(vec!["a".into(), "b1".into(), "b2".into()])
+        );
 
         Ok(())
     }

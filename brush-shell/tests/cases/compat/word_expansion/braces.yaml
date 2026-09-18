@@ -187,3 +187,144 @@ cases:
     stdin: |
       echo {-9223372036854775808..-9223372036854775806}
       echo {9223372036854775805..9223372036854775807}
+
+  - name: "Expansion with curly braces: unquoted array[@] inside the list"
+    stdin: |
+      arr=(1 2)
+      set -- x{${arr[@]},y}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: quoted array[@] inside the list"
+    stdin: |
+      arr=("1 1" 2)
+      set -- x{"${arr[@]}",y}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: empty array inside the list"
+    stdin: |
+      arr=()
+      set -- x{${arr[@]},y}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: empty array and positional elements survive"
+    stdin: |
+      IFS=:
+      arr=("" 2)
+      set -- ${arr[@]}{a,b}
+      echo "Array count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+      arr=(2 "")
+      set -- {a,b}${arr[@]}
+      echo "Trailing empty count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+      f() {
+        set -- $@{a,b}
+        echo "Positional count: $#"
+        for arg in "$@"; do echo "[$arg]"; done
+      }
+      f "" 2
+
+  - name: "Expansion with curly braces: quoted $@ inside the list"
+    stdin: |
+      f() { set -- pre{"$@",z}; echo "Count: $#"; for arg in "$@"; do echo "[$arg]"; done; }
+      f "p p" q
+
+  - name: "Expansion with curly braces: unquoted $* inside the list"
+    stdin: |
+      f() { set -- {$*,z}; echo "Count: $#"; for arg in "$@"; do echo "[$arg]"; done; }
+      f "p p" q
+
+  # An alternative that expands to nothing at all yields no word, exactly as an
+  # unquoted empty expansion would; it does not become an empty argument.
+
+  - name: "Expansion with curly braces: empty alternative yields no word"
+    stdin: |
+      set -- {a,}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      set -- {,}
+      echo "Count: $#"
+      set -- {,,}q
+      echo "Count: $#"
+
+  - name: "Expansion with curly braces: empty alternative with a prefix keeps the prefix"
+    stdin: |
+      set -- x{,}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: quoted empty string in the list survives"
+    stdin: |
+      set -- ""{,}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      set -- {"",a}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: empty alternative next to an empty expansion"
+    stdin: |
+      z=
+      set -- {,}$z
+      echo "Count: $#"
+      set -- {a,}$z
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  # Brace expansion is performed on command words (including redirection
+  # targets and `for` lists), but not in these scalar contexts.
+
+  - name: "No brace expansion in assignments"
+    stdin: |
+      x=a{b,c}
+      echo "[$x]"
+      x[0]={a,b}
+      echo "[${x[0]}]"
+      x+={c,d}
+      echo "[$x]"
+      declare -A m
+      m[{k,l}]=v
+      echo "${!m[@]}"
+      IFS=:
+      y=a{b,c}
+      echo "[$y]"
+
+  - name: "No brace expansion in here-strings"
+    stdin: |
+      cat <<< {a,b}
+      IFS=:
+      cat <<< {a,b}
+
+  - name: "No brace expansion in case words or patterns"
+    stdin: |
+      case {a,b} in
+        "{a,b}") echo "word literal";;
+        *) echo "word expanded";;
+      esac
+      case "{a,b}" in
+        {a,b}) echo "pattern literal";;
+        *) echo "pattern expanded";;
+      esac
+      case a in
+        {a,b}) echo "pattern matched a";;
+        *) echo "pattern is literal";;
+      esac
+
+  - name: "No brace expansion in [[ ]] operands"
+    stdin: |
+      [[ {a,b} == "{a,b}" ]] && echo "lhs literal" || echo "lhs expanded"
+      [[ "{a,b}" == {a,b} ]] && echo "rhs literal" || echo "rhs expanded"
+      [[ -n {a,} ]] && echo "unary literal" || echo "unary expanded"
+      [[ {a,b} =~ ^\{a,b\}$ ]] && echo "regex lhs literal" || echo "regex lhs expanded"
+
+  - name: "Brace expansion still applies in command words and for lists"
+    stdin: |
+      for w in {a,b}; do echo "[$w]"; done
+      printf '[%s]\n' x{1,2}
+      arr=({a,b}c)
+      echo "${#arr[@]}"

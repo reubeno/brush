@@ -47,6 +47,7 @@ pub(crate) async fn expand_prompt(
         // would also be escapable inside a double-quoted string.
         let options = expansion::ExpanderOptions {
             tilde_expand: false,
+            brace_expand: false,
             unquoted_backslash_handling: expansion::UnquotedBackslashHandling::DoubleQuoted,
             ..Default::default()
         };

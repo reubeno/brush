@@ -47,21 +47,32 @@ const fn is_ifs_whitespace(c: char) -> bool {
 
 /// Splits an expansion's fields on the characters in `ifs`, following bash's rules
 /// (see the module docs). Only [`ExpansionPiece::Splittable`] text is examined;
-/// unsplittable (quoted) text always stays in the field it is in.
+/// quoted text and the word's own literal text always stay in the field they are in.
 pub(super) fn split_fields(ifs: &str, expansion: Expansion) -> Vec<WordField> {
     let mut fields: Vec<WordField> = vec![];
     let mut current_field = WordField::new();
+    let has_hard_delimiter = ifs.chars().any(|c| !is_ifs_whitespace(c));
 
     // Each incoming field is split on its own, so a delimiter run never reaches across
     // the boundary between two of them (e.g. two elements of `${arr[@]}`).
     for existing_field in expansion.fields {
         let mut state = SplitState::AfterDelimiter;
+        let preserve_empty_list_element = matches!(
+            existing_field.0.as_slice(),
+            [ExpansionPiece::EmptyListElement {
+                has_following: true
+            }]
+        );
 
         for piece in existing_field.0 {
             match piece {
-                // Quoted text goes into the current field untouched, opening one if
-                // needed. That is what keeps `""` alive as an empty argument.
-                ExpansionPiece::Unsplittable(_) => {
+                ExpansionPiece::EmptyListElement { .. } => {}
+                // An empty word contributes nothing (unlike a quoted empty string).
+                ExpansionPiece::UnquotedLiteral(s) if s.is_empty() => {}
+                // Quoted text and the word's own literal text go into the current field
+                // untouched, opening one if needed. That is what keeps `""` alive as an
+                // empty argument.
+                ExpansionPiece::Unsplittable(_) | ExpansionPiece::UnquotedLiteral(_) => {
                     current_field.0.push(piece);
                     state = SplitState::InField;
                 }
@@ -115,6 +126,8 @@ pub(super) fn split_fields(ifs: &str, expansion: Expansion) -> Vec<WordField> {
         // trailing `:` never yields a trailing empty field.
         if matches!(state, SplitState::InField) {
             fields.push(std::mem::take(&mut current_field));
+        } else if preserve_empty_list_element && has_hard_delimiter {
+            fields.push(WordField::new());
         }
     }
 
@@ -133,6 +146,14 @@ mod tests {
 
     fn u(text: &str) -> ExpansionPiece {
         ExpansionPiece::Unsplittable(text.into())
+    }
+
+    fn l(text: &str) -> ExpansionPiece {
+        ExpansionPiece::UnquotedLiteral(text.into())
+    }
+
+    const fn e(has_following: bool) -> ExpansionPiece {
+        ExpansionPiece::EmptyListElement { has_following }
     }
 
     fn split(ifs: &str, fields: Pieces) -> Pieces {
@@ -187,6 +208,19 @@ mod tests {
                 vec![vec![], vec![], vec![s("a")]],
             ),
             (": ", vec![vec![s("a: ")]], vec![vec![s("a")]]),
+            // The word's own literal text is never split; it joins whatever field is
+            // open, and a delimiter that closed the previous field keeps it out.
+            (":", vec![vec![l("a:b")]], vec![vec![l("a:b")]]),
+            (
+                ":",
+                vec![vec![s("1:2"), l(":3")]],
+                vec![vec![s("1")], vec![s("2"), l(":3")]],
+            ),
+            (
+                ":",
+                vec![vec![s("1:"), l(":3")]],
+                vec![vec![s("1")], vec![l(":3")]],
+            ),
             // Quoted text is never split and keeps its own piece.
             (
                 ":",
@@ -243,5 +277,21 @@ mod tests {
             let actual = split(ifs, input.clone());
             assert_eq!(actual, expected, "ifs={ifs:?} input={input:?}");
         }
+    }
+
+    #[test]
+    fn preserves_non_trailing_empty_list_elements_with_hard_ifs() {
+        assert_eq!(
+            split(":", vec![vec![e(true)], vec![s("2")]]),
+            vec![vec![], vec![s("2")]]
+        );
+        assert_eq!(
+            split(":", vec![vec![s("2")], vec![e(false)]]),
+            vec![vec![s("2")]]
+        );
+        assert_eq!(
+            split(" ", vec![vec![e(true)], vec![s("2")]]),
+            vec![vec![s("2")]]
+        );
     }
 }

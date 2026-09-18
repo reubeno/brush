@@ -18,6 +18,47 @@ use crate::{
 };
 use brush_parser::unquote_str;
 
+// `compgen -W` splits unquoted literal IFS characters before expanding each resulting word.
+fn split_completion_word_list(
+    word_list: &str,
+    ifs: &str,
+    parser_options: &brush_parser::ParserOptions,
+) -> Result<Vec<String>, error::Error> {
+    let pieces = brush_parser::word::parse(word_list, parser_options)?;
+    let mut words = vec![];
+    let mut current_word = String::new();
+
+    for piece in pieces {
+        let source = word_list
+            .get(piece.start_index..piece.end_index)
+            .ok_or_else(|| {
+                error::ErrorKind::InternalError(String::from(
+                    "word parser returned an invalid source span",
+                ))
+            })?;
+
+        if matches!(piece.piece, brush_parser::word::WordPiece::Text(_)) {
+            for c in source.chars() {
+                if ifs.contains(c) {
+                    if !current_word.is_empty() {
+                        words.push(std::mem::take(&mut current_word));
+                    }
+                } else {
+                    current_word.push(c);
+                }
+            }
+        } else {
+            current_word.push_str(source);
+        }
+    }
+
+    if !current_word.is_empty() {
+        words.push(current_word);
+    }
+
+    Ok(words)
+}
+
 /// Type of action to take to generate completion candidates.
 #[derive(Clone, Debug, ValueEnum)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -305,16 +346,21 @@ impl Spec {
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
             let params = shell.default_exec_params();
-            // Per POSIX / bash docs, -W word list is subject to shell expansion
-            // and field splitting but NOT pathname expansion (globbing).
+            let unexpanded_words =
+                split_completion_word_list(word_list, &shell.ifs(), &shell.parser_options())?;
             let options = crate::expansion::ExpanderOptions {
                 pathname_expand: false,
                 ..Default::default()
             };
-            let words = crate::expansion::full_expand_and_split_word_with_options(
-                shell, &params, word_list, &options,
-            )
-            .await?;
+            let mut words = vec![];
+            for word in unexpanded_words {
+                words.extend(
+                    crate::expansion::full_expand_and_split_word_with_options(
+                        shell, &params, word, &options,
+                    )
+                    .await?,
+                );
+            }
             candidates.extend(
                 words
                     .into_iter()
