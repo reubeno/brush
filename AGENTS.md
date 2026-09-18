@@ -50,15 +50,20 @@ The project provides a `cargo xtask` command that centralizes common development
 # Run quick inner-loop checks (~7s warm): fmt, build, lint, unit tests
 cargo xtask ci quick
 
-# Run full pre-commit checks (~45s warm): quick + deps, schemas, integration tests
-cargo xtask ci pre-commit
+# Run the full workflow (~60s warm): quick + pre-commit hooks, schemas, integration tests
+cargo xtask ci full
 
 # Run with --continue-on-error to see all failures at once
-cargo xtask ci pre-commit -k
+cargo xtask ci full -k
 
 # Add -v for verbose output showing exact commands being run
-cargo xtask -v ci pre-commit
+cargo xtask -v ci full
 ```
+
+`cargo xtask ci quick` needs only the Rust toolchain. `cargo xtask ci full` also
+needs `prek` on `PATH` (see CONTRIBUTING.md for install commands). If `prek` is
+unavailable in your environment, run `cargo xtask ci full --no-hooks`; CI
+still runs the hooks.
 
 #### Individual Test Commands
 
@@ -89,10 +94,10 @@ For finer-grained control:
 
 #### Pre-Finish Quality Validation
 
-**Recommended:** Run the xtask pre-commit workflow:
+**Recommended:** Run the xtask full workflow:
 
 ```bash
-cargo xtask ci pre-commit
+cargo xtask ci full
 ```
 
 **Manual approach:** Before considering work complete, run these validation steps:
@@ -100,7 +105,7 @@ cargo xtask ci pre-commit
 - **Compatibility tests**: `cargo test --test brush-compat-tests`
 - **Linting**: `cargo clippy`
 - **Formatting**: `cargo fmt --check`
-- **Security/License audit**: `cargo deny check all`
+- **Pre-commit hooks** (spelling, links, workflows, dependency audit): `cargo xtask check hooks` (needs `prek`)
 - **Full test suite**: `cargo test --workspace`
 
 **When tests fail:**
@@ -221,15 +226,16 @@ The project uses several tools for code quality:
 The project provides a `cargo xtask` command that centralizes common development tasks:
 
 ```bash
-# Run all pre-commit checks (comprehensive)
-cargo xtask ci pre-commit
+# Run all checks (comprehensive)
+cargo xtask ci full
 
 # Individual checks
 cargo xtask check fmt      # Format check
 cargo xtask check lint     # Clippy
-cargo xtask check deps     # cargo-deny
 cargo xtask check build    # Compilation check
 cargo xtask check schemas  # Schema drift check
+cargo xtask check hooks  # prek hooks: file hygiene, typos, zizmor, lychee, cargo-deny
+cargo xtask check hooks deps  # One hook, by id or alias
 
 # Tests
 cargo xtask test unit        # Fast unit tests (excludes integration binaries)
@@ -247,19 +253,19 @@ cargo xtask analyze bench  # Run benchmarks
 **Command frequency guidelines:**
 
 - **Frequent (inner loop)**: `cargo xtask ci quick`, `cargo check`, `cargo test --package <pkg>`
-- **Regular (before commits)**: `cargo xtask ci pre-commit` or `cargo fmt` + `cargo clippy`
+- **Regular (before commits)**: `cargo xtask ci quick` or `cargo fmt` + `cargo clippy`
 - **Occasional (outer loop)**: `cargo xtask test integration` or `cargo test --workspace`
-- **Rare (pre-finish only)**: `cargo xtask check deps` or `cargo deny check`
+- **Rare (before opening a PR)**: `cargo xtask ci full`, which adds the pre-commit hooks, schemas, and integration tests
 
 **Pre-commit validation:**
 
-- Recommended: `cargo xtask ci pre-commit`
-- Quick check: `cargo xtask ci quick` for fast feedback
+- Recommended: `cargo xtask ci quick`
+- Before opening a PR: `cargo xtask ci full`
 - Manual: Run `cargo fmt` and `cargo clippy` before committing
 
 **Outer loop validation:**
 
-- `cargo deny check all` should pass (security/license auditing) - not for frequent use during development
+- `cargo xtask check hooks` should pass (file hygiene, typos, zizmor, lychee, cargo-deny) - not for frequent use during development; `cargo xtask ci full --no-hooks` skips it when `prek` is unavailable
 
 ## 6. Performance & Error Handling Patterns
 

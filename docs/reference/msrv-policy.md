@@ -84,8 +84,9 @@ which dependency forced it.
 
 ## Enforcement
 
-CI runs the source-code checks against both current stable and the workspace MSRV. On the MSRV leg,
-the build check runs as:
+CI runs the source-code checks against both the toolchain pinned in `rust-toolchain.toml` (which
+Dependabot keeps at the latest stable release) and the workspace MSRV. On the MSRV leg, the build
+check runs as:
 
 ```bash
 cargo xtask check build --workspace-msrv
@@ -95,7 +96,7 @@ Cargo refuses to build any package whose `rust-version` exceeds the active toolc
 application-tier crates cannot be part of that leg. The flag asks `cargo metadata` which workspace
 members declare a `rust-version` above the lowest one in the workspace and excludes exactly those.
 No list of crate names exists anywhere in the tooling, so moving a crate between tiers needs no
-change to it. Without the flag, every crate is checked, which is what the stable leg wants.
+change to it. Without the flag, every crate is checked, which is what the pinned-toolchain leg wants.
 
 ## Rationale
 

@@ -21,3 +21,25 @@ updates:
       cargo:
         patterns:
           - "*"
+
+  # .pre-commit-config.yaml is the single place typos, zizmor, lychee, and the
+  # file-hygiene hooks are pinned, so this is what keeps those linters current.
+  - package-ecosystem: "pre-commit"
+    cooldown:
+      default-days: 7
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      pre-commit:
+        patterns:
+          - "*"
+
+  # rust-toolchain.toml pins an exact toolchain so rustfmt and clippy behave the
+  # same everywhere; this keeps that pin at the latest stable release.
+  - package-ecosystem: "rust-toolchain"
+    cooldown:
+      default-days: 7
+    directory: "/"
+    schedule:
+      interval: "weekly"

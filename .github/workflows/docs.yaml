@@ -21,22 +21,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Check links in docs
-  check-links:
-    name: "Check links"
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Check repo-local links
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
-        with:
-          args: ". --offline --verbose --no-progress"
-          fail: true
-
   # Generate docs content
   generate-docs:
     name: "Generate usage docs"
@@ -48,9 +32,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up rust toolchain
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable
+        run: rustup toolchain install --profile minimal
 
       - name: Enable cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
