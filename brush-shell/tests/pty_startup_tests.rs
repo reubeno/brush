@@ -27,21 +27,12 @@
 #![allow(clippy::panic_in_result_fn)]
 
 use anyhow::Context;
-use std::time::Duration;
+use expectrl::Expect as _;
 
-use expectrl::{
-    Expect, Session,
-    process::unix::{PtyStream, UnixProcess},
-    stream::log::LogStream,
+mod pty_common;
+use pty_common::{
+    DEFAULT_PROMPT, PtySession, brush_command, expect_answering_queries, spawn_shell,
 };
-
-/// Bound on how long we wait for the shell to become responsive. A healthy shell prompts
-/// in well under a second; the generous margin only accommodates slow CI machines. Kept
-/// well under any outer test-harness timeout so a startup hang fails here, with a
-/// specific message, rather than stalling the harness.
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(8);
-
-const DEFAULT_PROMPT: &str = "brush> ";
 
 /// The shell invoked with no flags, as by `exec brush` or a terminal emulator configured
 /// with a bare command line; interactivity is inferred from stdin being a terminal.
@@ -116,41 +107,7 @@ fn login_shell_as_grandchild_starts_promptly() -> anyhow::Result<()> {
 // Helpers
 //
 
-type PtySession = Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>;
-
-/// Builds a hermetic brush invocation that, unlike the sessions in `interactive_tests.rs`,
-/// leaves the input backend at its default (reedline/crossterm) — the backend real
-/// terminal sessions use.
-fn brush_command(extra_args: &[&str]) -> std::process::Command {
-    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
-
-    let mut cmd = std::process::Command::new(shell_path);
-    cmd.args([
-        "--norc",
-        "--noprofile",
-        "--no-config",
-        "--disable-bracketed-paste",
-        "--disable-color",
-    ]);
-    cmd.args(extra_args);
-    cmd.env("PS1", DEFAULT_PROMPT);
-    cmd.env("TERM", "linux");
-
-    cmd
-}
-
-fn spawn_shell(cmd: std::process::Command) -> anyhow::Result<PtySession> {
-    let session = Session::spawn(cmd)?;
-    let mut session = expectrl::session::log(session, std::io::stdout())?;
-
-    // Enforce a bounded expect timeout so a startup hang fails fast with a clear error
-    // instead of relying on the outer test-harness timeout.
-    session.set_expect_timeout(Some(STARTUP_TIMEOUT));
-
-    Ok(session)
-}
-
-/// Asserts the shell comes up and responds to input within `STARTUP_TIMEOUT`.
+/// Asserts the shell comes up and responds to input within the expect timeout.
 fn expect_responsive_shell(mut session: PtySession, expect_prompt: bool) -> anyhow::Result<()> {
     if expect_prompt {
         expect_answering_queries(&mut session, DEFAULT_PROMPT)
@@ -162,31 +119,7 @@ fn expect_responsive_shell(mut session: PtySession, expect_prompt: bool) -> anyh
         .context("Shell did not respond to input within the startup timeout")?;
 
     session.send_line("exit")?;
-    session
-        .expect(expectrl::Eof)
-        .context("Shell did not exit cleanly")?;
+    expect_answering_queries(&mut session, expectrl::Eof).context("Shell did not exit cleanly")?;
 
     Ok(())
-}
-
-/// Waits for `needle`, answering any cursor-position (DSR) queries the shell's terminal
-/// backend emits along the way, as a real terminal emulator would. Without a response the
-/// default input backend fails on its own query timeout, which would mask whatever this
-/// test is actually trying to observe.
-fn expect_answering_queries(session: &mut PtySession, needle: &str) -> anyhow::Result<()> {
-    const CURSOR_POSITION_QUERY: &str = "\x1b[6n";
-
-    loop {
-        let captures = session.expect(expectrl::Any::boxed(vec![
-            Box::new(needle.to_owned()),
-            Box::new(CURSOR_POSITION_QUERY.to_owned()),
-        ]))?;
-
-        if captures.get(0) == Some(CURSOR_POSITION_QUERY.as_bytes()) {
-            // Report the cursor as being at row 1, column 1.
-            session.send("\x1b[1;1R")?;
-        } else {
-            return Ok(());
-        }
-    }
 }
