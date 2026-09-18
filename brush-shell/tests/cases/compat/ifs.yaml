@@ -216,7 +216,6 @@ cases:
       echo "After: [$IFS]"
 
   - name: "IFS does not affect for loop literal words"
-    known_failure: true
     stdin: |
       IFS=':'
       for word in a:b:c; do
@@ -246,7 +245,6 @@ cases:
       echo "Quoted: $var"
 
   - name: "IFS with partially quoted expansion"
-    known_failure: true
     stdin: |
       IFS=':'
       var="a:b:c"
@@ -305,7 +303,6 @@ cases:
       echo "[$1]"
 
   - name: "IFS with glob pattern literal"
-    known_failure: true
     stdin: |
       IFS=':'
       # Glob patterns as literals shouldn't split
@@ -826,3 +823,67 @@ cases:
       echo "[<$*>]"
       echo "[${#*}]"
       case "$*" in abc) echo joined;; *) echo "not joined";; esac
+
+  # Field splitting applies only to the results of parameter expansion, command
+  # substitution and arithmetic expansion. Literal text in the word is never
+  # split, even when it contains IFS characters, but it is still globbed.
+
+  - name: "Literal word text is not field-split"
+    stdin: |
+      IFS=:
+      set -- a:b
+      echo "Count: $#"
+      set -- {a:b,c}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      set -- a:$'b'
+      echo "Count: $#"
+
+  - name: "Literal word text still globs under a non-default IFS"
+    test_files:
+      - path: "a:1"
+      - path: "a:2"
+    stdin: |
+      IFS=:
+      set -- a:*
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      IFS='*'
+      set -- a:*
+      echo "Count: $#"
+
+  - name: "Expansion result adjacent to literal text"
+    stdin: |
+      IFS=:
+      x="1:2"
+      set -- $x:3
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      x="1:"
+      set -- $x:3
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+      set -- pre:$x
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Default and alternate value words are split like any expansion result"
+    stdin: |
+      IFS=:
+      x=
+      set -- ${x:-a:b}
+      echo "Count: $#"
+      set -- ${x:-"a:b"}
+      echo "Count: $#"
+      set -- ${x:=c:d}
+      echo "Count: $#"
+      echo "[$x]"
+      set -- ${x:+e:f}
+      echo "Count: $#"
+
+  - name: "compgen -W splits its word list on IFS"
+    stdin: |
+      IFS=:
+      compgen -W 'a:b c'
+      v="p:q"
+      compgen -W "$v"

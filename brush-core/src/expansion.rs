@@ -63,6 +63,10 @@ pub(crate) struct ExpanderOptions {
     /// How to handle backslash-escape sequences encountered outside of any
     /// explicit quoting. See [`UnquotedBackslashHandling`] for details.
     pub unquoted_backslash_handling: UnquotedBackslashHandling,
+    /// Whether to field-split the word's own unquoted literal text on IFS, and not
+    /// only the results of expansions as bash does for words. Used for strings that
+    /// bash documents as split on IFS themselves, such as a `compgen -W` word list.
+    pub field_split_literal_text: bool,
 }
 
 impl Default for ExpanderOptions {
@@ -73,6 +77,7 @@ impl Default for ExpanderOptions {
             execute_command_substitutions: true,
             pathname_expand: true,
             unquoted_backslash_handling: UnquotedBackslashHandling::default(),
+            field_split_literal_text: false,
         }
     }
 }
@@ -301,19 +306,18 @@ impl Expansion {
                     let len_from_this_piece =
                         min(left, piece_char_count - desired_offset_into_this_piece);
 
+                    let slice = |s: &str| -> String {
+                        s.chars()
+                            .skip(desired_offset_into_this_piece)
+                            .take(len_from_this_piece)
+                            .collect()
+                    };
                     let new_piece = match piece {
-                        ExpansionPiece::Unsplittable(s) => ExpansionPiece::Unsplittable(
-                            s.chars()
-                                .skip(desired_offset_into_this_piece)
-                                .take(len_from_this_piece)
-                                .collect(),
-                        ),
-                        ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(
-                            s.chars()
-                                .skip(desired_offset_into_this_piece)
-                                .take(len_from_this_piece)
-                                .collect(),
-                        ),
+                        ExpansionPiece::Unsplittable(s) => ExpansionPiece::Unsplittable(slice(s)),
+                        ExpansionPiece::Splittable(s) => ExpansionPiece::Splittable(slice(s)),
+                        ExpansionPiece::UnquotedLiteral(s) => {
+                            ExpansionPiece::UnquotedLiteral(slice(s))
+                        }
                     };
 
                     pieces.push(new_piece);
@@ -382,15 +386,22 @@ impl From<String> for WordField {
 
 #[derive(Clone, Debug, PartialEq)]
 enum ExpansionPiece {
+    /// Quoted text: never field-split, never treated as a pattern.
     Unsplittable(String),
+    /// The unquoted result of a parameter expansion, command substitution or arithmetic
+    /// expansion: field-split on IFS, then treated as a pattern.
     Splittable(String),
+    /// Unquoted literal text of the word itself: never field-split (bash only splits the
+    /// results of expansions), but still treated as a pattern.
+    UnquotedLiteral(String),
 }
 
 impl From<ExpansionPiece> for String {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
-            ExpansionPiece::Unsplittable(s) => s,
-            ExpansionPiece::Splittable(s) => s,
+            ExpansionPiece::Unsplittable(s)
+            | ExpansionPiece::Splittable(s)
+            | ExpansionPiece::UnquotedLiteral(s) => s,
         }
     }
 }
@@ -399,7 +410,7 @@ impl From<ExpansionPiece> for patterns::PatternPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Splittable(s) | ExpansionPiece::UnquotedLiteral(s) => Self::Pattern(s),
         }
     }
 }
@@ -408,7 +419,7 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
     fn from(piece: ExpansionPiece) -> Self {
         match piece {
             ExpansionPiece::Unsplittable(s) => Self::Literal(s),
-            ExpansionPiece::Splittable(s) => Self::Pattern(s),
+            ExpansionPiece::Splittable(s) | ExpansionPiece::UnquotedLiteral(s) => Self::Pattern(s),
         }
     }
 }
@@ -416,22 +427,18 @@ impl From<ExpansionPiece> for crate::regex::RegexPiece {
 impl ExpansionPiece {
     const fn as_str(&self) -> &str {
         match self {
-            Self::Unsplittable(s) => s.as_str(),
-            Self::Splittable(s) => s.as_str(),
+            Self::Unsplittable(s) | Self::Splittable(s) | Self::UnquotedLiteral(s) => s.as_str(),
         }
     }
 
     const fn len(&self) -> usize {
-        match self {
-            Self::Unsplittable(s) => s.len(),
-            Self::Splittable(s) => s.len(),
-        }
+        self.as_str().len()
     }
 
     fn make_unsplittable(self) -> Self {
         match self {
             Self::Unsplittable(_) => self,
-            Self::Splittable(s) => Self::Unsplittable(s),
+            Self::Splittable(s) | Self::UnquotedLiteral(s) => Self::Unsplittable(s),
         }
     }
 }
@@ -636,6 +643,8 @@ struct WordExpander<'a, SE: extensions::ShellExtensions> {
     in_double_quotes: bool,
     /// Whether to use heredoc expansion semantics (literal quotes, no brace expansion).
     heredoc_mode: bool,
+    /// Whether the word's own unquoted literal text is subject to field splitting.
+    split_literal_text: bool,
 }
 
 impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
@@ -651,6 +660,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             unquoted_backslash_handling: UnquotedBackslashHandling::Strip,
             in_double_quotes: false,
             heredoc_mode: false,
+            split_literal_text: false,
         }
     }
 
@@ -676,6 +686,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             unquoted_backslash_handling: options.unquoted_backslash_handling,
             in_double_quotes: false,
             heredoc_mode: false,
+            split_literal_text: options.field_split_literal_text,
         }
     }
 
@@ -789,7 +800,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             &['$', '`', '\\', '\'', '\"', '~', '{']
         };
         if !word.contains(expansion_chars) {
-            return Ok(Expansion::from(ExpansionPiece::Splittable(word.to_owned())));
+            return Ok(Expansion::from(self.literal_piece(word.to_owned())));
         }
 
         // Apply brace expansion first, before anything else (not applicable to heredoc bodies).
@@ -844,7 +855,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
     /// (except those escaped in ways valid in double-quotes) but still expand parameters,
     /// command substitutions, and arithmetic.
     async fn expand_parameter_word(&mut self, word: &str) -> Result<Expansion, error::Error> {
-        if self.in_double_quotes {
+        let mut expansion = if self.in_double_quotes {
             // When inside double-quotes, we need to parse the word with double-quote semantics.
             // If the word already starts with a double-quote, we need to remove those quotes
             // and expand what's inside with normal (non-double-quote) semantics.
@@ -862,15 +873,36 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let result = self.basic_expand(inner).await;
                 self.in_double_quotes = previously_in_double_quotes;
 
-                result
+                result?
             } else {
                 // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
                 let wrapped = std::format!("\"{word}\"");
-                self.basic_expand(&wrapped).await
+                self.basic_expand(&wrapped).await?
             }
         } else {
             // When not inside double-quotes, perform normal expansion with quote removal
-            self.basic_expand(word).await
+            self.basic_expand(word).await?
+        };
+
+        // The word becomes part of the parameter expansion's result, which bash
+        // field-splits as a whole: `${x:-a:b}` under `IFS=:` is two fields.
+        for field in &mut expansion.fields {
+            for piece in &mut field.0 {
+                if let ExpansionPiece::UnquotedLiteral(s) = piece {
+                    *piece = ExpansionPiece::Splittable(std::mem::take(s));
+                }
+            }
+        }
+
+        Ok(expansion)
+    }
+
+    /// Yields the piece for a run of the word's own unquoted literal text.
+    const fn literal_piece(&self, s: String) -> ExpansionPiece {
+        if self.split_literal_text {
+            ExpansionPiece::Splittable(s)
+        } else {
+            ExpansionPiece::UnquotedLiteral(s)
         }
     }
 
@@ -978,9 +1010,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         word_piece: brush_parser::word::WordPiece,
     ) -> Result<Expansion, error::Error> {
         let expansion: Expansion = match word_piece {
-            brush_parser::word::WordPiece::Text(s) => {
-                Expansion::from(ExpansionPiece::Splittable(s))
-            }
+            brush_parser::word::WordPiece::Text(s) => Expansion::from(self.literal_piece(s)),
             brush_parser::word::WordPiece::SingleQuotedText(s) => {
                 Expansion::from(ExpansionPiece::Unsplittable(s))
             }
@@ -2279,9 +2309,10 @@ mod tests {
             full_expand_and_split_word(&mut shell, &params, "\"\"").await?,
             vec![""]
         );
+        // Literal text is never field-split (the parser would not produce such a word).
         assert_eq!(
             full_expand_and_split_word(&mut shell, &params, "a b").await?,
-            vec!["a", "b"]
+            vec!["a b"]
         );
         assert_eq!(
             full_expand_and_split_word(&mut shell, &params, "ab").await?,

@@ -305,10 +305,11 @@ impl Spec {
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
             let params = shell.default_exec_params();
-            // Per POSIX / bash docs, -W word list is subject to shell expansion
-            // and field splitting but NOT pathname expansion (globbing).
+            // Per POSIX / bash docs, the -W word list is itself split on IFS and
+            // subject to shell expansion, but NOT pathname expansion (globbing).
             let options = crate::expansion::ExpanderOptions {
                 pathname_expand: false,
+                field_split_literal_text: true,
                 ..Default::default()
             };
             let words = crate::expansion::full_expand_and_split_word_with_options(
