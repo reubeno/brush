@@ -182,8 +182,10 @@ atuin's accept path works.
 ## Carrying input across reedline's read loop
 
 reedline's read loop returns a string for a bound command and accepts no events from
-outside. That string is either a plain command or a marker naming a deferred record the
-editor holds. The marker begins with a NUL, which no `bind -x` command can start with.
+outside. That string is either a plain command, a marker naming a deferred record the editor
+holds, or a marker naming a readline function the editor cannot carry out itself
+(`shell-expand-line`). The markers begin with a NUL, which no `bind -x` command can start
+with.
 
 When a read completes, the backend ends it on the editor with the record reedline returned,
 if any: that claims the record and drops the pending input and every unclaimed record in one
@@ -200,6 +202,21 @@ On the next read the backend resumes the stream against the bindings as they are
 - another bound command is returned, with what follows recorded again;
 - anything that needs reedline's read loop (menus, history search, completion, cursor keys)
   is dropped with a trace.
+
+## `shell-expand-line`
+
+readline's `\M-\C-e` expands the line in place; the fzf and zoxide widgets end their macros
+with it. It is bound as a host command naming the function; the backend carries it out itself
+and resumes the same read, so on success or failure no prompt hook or prompt substitution
+runs again. The expansion, in brush-core, applies parameter, command and arithmetic expansion
+with quote removal, expands a tilde prefix at the very start of the buffer (`~/x` but not
+`echo ~` or `a=~`, which is where bash's whole-line expansion finds one), preserves literal
+source text (whitespace and newlines included), joins backslash-newline continuations
+outside single quotes, replaces the whole edit buffer and leaves the cursor at the end. Only
+unquoted expansion results undergo IFS splitting, on the same splitter command execution
+uses, with fields joined by spaces. Inside a macro it stops resolution like any bound
+command, so what follows replays against the expanded line. bash also applies alias and
+history expansion here; brush does not yet.
 
 ## Known divergences from bash
 
@@ -226,6 +243,20 @@ Because reedline's read loop is closed:
   re-dispatched; readline aborts the whole sequence with a bell.
 - An accept-line inside a macro skips the validator, so an incomplete line is submitted as
   it stands.
+
+IFS field splitting:
+
+- `shell-expand-line` splits on the shared execution splitter, which ends a field on any IFS
+  character and drops empty fields. bash runs IFS whitespace together into one delimiter and
+  lets every other IFS character delimit on its own, keeping the empty fields between. So
+  with `IFS=:` and `V=':x::y:'`, `$V` expands to `x y` here and to ` x  y` in bash; an IFS
+  that is all whitespace or empty, which is what the fzf and zoxide widgets run under,
+  matches. Separately, an empty IFS joins `"${a[*]}"` on a space rather than on nothing.
+  Both are the field-splitting gap tracked in #295, with a fix in flight as PR #1282;
+  `shell-expand-line` deliberately shares the splitter so that change corrects command
+  execution and `shell-expand-line` together. The cases are tabled in the pty tests for
+  `shell-expand-line`, checked against real bash there, and brush's current output is
+  asserted alongside so the fix cannot land without updating them.
 
 Listing:
 
@@ -254,8 +285,11 @@ Not implemented: `bind -v` and `bind -V` report a fixed emacs keymap (no vi mode
   and paste ordering: `brush-interactive/src/reedline/edit_mode.rs`
   (needs `--features reedline`)
 - replay planning and settling: `brush-interactive/src/reedline/input_backend.rs`
+- line expansion and complete buffer replacement: `brush-core/src/expansion.rs`,
+  `brush-interactive/src/reedline/input_backend.rs`, and
+  `brush-shell/tests/pty_shell_expand_line_tests.rs`
 - real terminal and real bash: `brush-shell/tests/pty_readline_macro_tests.rs` and
   `brush-shell/tests/cases/compat/builtins/bind.yaml`; PTY coverage includes bracketed paste
   across held prefixes and host commands. The dropped-event divergence is pinned there by an
   active test, with the bash behavior as an ignored test next to it
-- real applications: `cargo xtask test e2e atuin`
+- real applications: `cargo xtask test e2e atuin` and `cargo xtask test e2e fzf`

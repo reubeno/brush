@@ -857,7 +857,7 @@ mod tests {
                 .get_mut(id)
                 .and_then(Option::take)
                 .ok_or_else(|| std::io::Error::other(std::format!("no deferred record {id}"))),
-            other @ HostCommand::Command(_) => Err(std::io::Error::other(std::format!(
+            other => Err(std::io::Error::other(std::format!(
                 "bound command is not a deferred record: {other:?}"
             ))),
         }
@@ -2609,6 +2609,50 @@ mod tests {
             matches!(&result, Err(err) if err.to_string().contains("history-search-forward")),
             "expected an error naming the function, got {result:?}"
         );
+    }
+
+    #[test]
+    fn shell_expand_line_binds_as_a_function() -> Result<(), std::io::Error> {
+        let mut bindings = new_bindings();
+        let seq = KeySequence::from(b"\x1b\x05".to_vec());
+        bindings.bind(
+            seq.clone(),
+            KeyAction::DoInputFunction(InputFunction::ShellExpandLine),
+        )?;
+
+        // It reaches the shell as a bound command the shell loop recognizes, but lists as
+        // the function it is, not as a `bind -x` command.
+        assert_eq!(
+            press(
+                &mut bindings,
+                KeyModifiers::ALT | KeyModifiers::CONTROL,
+                KeyCode::Char('e')
+            )?,
+            ReedlineEvent::ExecuteHostCommand(
+                HostCommand::InputFunction(InputFunction::ShellExpandLine).encode()
+            )
+        );
+        assert_eq!(
+            bindings.get_current().get(&seq),
+            Some(&KeyAction::DoInputFunction(InputFunction::ShellExpandLine))
+        );
+
+        // Inside a macro it stops resolution like any bound command, so what follows it is
+        // replayed once the expansion has happened (fzf's widgets rely on this).
+        let body = b"`cmd`\x1b\x05\r";
+        define(&mut bindings, control_key('g'), body)?;
+        let event = press_ctrl(&mut bindings, 'g')?;
+        assert_eq!(
+            deferred(&mut bindings, &event)?,
+            Deferred {
+                action: DeferredAction::RunCommand(HostCommand::InputFunction(
+                    InputFunction::ShellExpandLine
+                )),
+                replay: Some(replay(b"\r", body.len())),
+            }
+        );
+
+        Ok(())
     }
 
     #[test]

@@ -323,6 +323,25 @@ cases:
           echo "[bind -S]"
           bind -S
 
+  - name: "bind shell-expand-line"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          echo "[default binding]"
+          bind -p | grep shell-expand-line
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+          echo "[rebind]"
+          bind '"\C-x\C-e": shell-expand-line'
+          bind -p | grep shell-expand-line | sort
+          echo "bind -p result: ${PIPESTATUS[@]}"
+          bind -q shell-expand-line
+          echo "bind -q result: $?"
+
   - name: "bind listing escapes"
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]

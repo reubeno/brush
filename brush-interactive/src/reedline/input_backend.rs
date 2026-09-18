@@ -1,4 +1,4 @@
-use brush_core::trace_categories;
+use brush_core::{interfaces::InputFunction, trace_categories};
 use nu_ansi_term::Style;
 use reedline::MenuBuilder;
 use std::sync::Arc;
@@ -239,6 +239,52 @@ impl ReedlineInputBackend {
         }
     }
 
+    /// Carries out a readline function the editor cannot do on its own, on the buffer of
+    /// the read that is resuming. Every such function is one arm here and one in
+    /// [`super::events::translate_input_function_to_reedline_event`].
+    fn run_input_function(
+        &mut self,
+        function: InputFunction,
+        shell_ref: &refs::ShellRef<impl brush_core::ShellExtensions>,
+    ) {
+        match function {
+            InputFunction::ShellExpandLine => self.expand_line(shell_ref),
+            other => tracing::debug!(
+                target: trace_categories::INPUT,
+                "no host handling for input function: {other}"
+            ),
+        }
+    }
+
+    /// Expands the edit buffer in place, as readline's `shell-expand-line` does, leaving
+    /// the cursor at the end. A failed expansion reports the error and leaves the buffer as
+    /// it was; either way the caller resumes the same read, so no prompt hook runs again.
+    fn expand_line(&mut self, shell_ref: &refs::ShellRef<impl brush_core::ShellExtensions>) {
+        let Some((buffer, _cursor)) = self.get_read_buffer() else {
+            return;
+        };
+
+        let expanded = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let mut shell = shell_ref.lock().await;
+                let params = shell.default_exec_params();
+                match brush_core::expansion::shell_expand_line(&mut shell, &params, &buffer).await {
+                    Ok(expanded) => Some(expanded),
+                    Err(err) => {
+                        let mut stderr = shell.stderr();
+                        let _ = shell.display_error(&mut stderr, &err);
+                        None
+                    }
+                }
+            })
+        });
+
+        if let Some(expanded) = expanded {
+            let cursor = expanded.len(); // bytes
+            self.set_read_buffer(expanded, cursor);
+        }
+    }
+
     /// Applies macro bytes deferred from before the last bound command, resolving them
     /// against the bindings as they are *now*. Edits land in the editor buffer straight
     /// away; whatever comes after them is left for the read that follows. `None` means
@@ -343,6 +389,8 @@ enum Settled {
     /// Accept the buffer as it stands, as accept-line would, then replay these bytes on the
     /// read after.
     Accept(Option<DeferredReplay>),
+    /// Carry out a readline function the editor cannot, then resume the same read.
+    InputFunction(InputFunction),
     /// Nothing left to act on; prompt again. Reached only after a bookkeeping bug.
     Resume,
 }
@@ -356,10 +404,12 @@ enum ReplayStop {
     HostCommand(String),
 }
 
-/// What a host command reedline returned settles to: a command for the shell to run.
+/// What a host command reedline returned settles to: `shell-expand-line` is carried out on
+/// the buffer here; anything else is a command for the shell to run.
 fn settled_for(host_command: HostCommand) -> Settled {
     match host_command {
         HostCommand::Command(command) => Settled::Return(ReadResult::BoundCommand(command)),
+        HostCommand::InputFunction(function) => Settled::InputFunction(function),
         HostCommand::Deferred(id) => {
             // A record never names another record; one here is a bookkeeping bug.
             tracing::debug!(
@@ -425,7 +475,7 @@ impl InputBackend for ReedlineInputBackend {
     /// * `prompt` - The prompt to display to the user.
     fn read_line(
         &mut self,
-        _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         loop {
@@ -437,6 +487,8 @@ impl InputBackend for ReedlineInputBackend {
             match settled {
                 Settled::Return(result) => return Ok(result),
                 Settled::Accept(then) => return self.accept_then_replay(&prompt, then),
+                // The function edits the buffer and the read resumes on the same prompt.
+                Settled::InputFunction(function) => self.run_input_function(function, shell),
                 Settled::Resume => (),
             }
         }
@@ -491,6 +543,16 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
         reedline::KeyModifiers::CONTROL,
         reedline::KeyCode::Char('7'),
         reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::Undo]),
+    );
+
+    // Meta+Ctrl+E expands the line in place, as in readline; the fzf and zoxide widgets
+    // end their macros with it.
+    key_bindings.add_binding(
+        reedline::KeyModifiers::ALT | reedline::KeyModifiers::CONTROL,
+        reedline::KeyCode::Char('e'),
+        reedline::ReedlineEvent::ExecuteHostCommand(
+            HostCommand::InputFunction(InputFunction::ShellExpandLine).encode(),
+        ),
     );
 
     // Ctrl+J accepts the line, as in readline. In raw mode a newline byte arrives as Ctrl+J
@@ -821,6 +883,10 @@ mod tests {
         // reason to end the session.
         assert_eq!(settled_for(HostCommand::Deferred(3)), Settled::Resume);
         assert_eq!(
+            settled_for(HostCommand::InputFunction(InputFunction::ShellExpandLine)),
+            Settled::InputFunction(InputFunction::ShellExpandLine)
+        );
+        assert_eq!(
             settled_for(HostCommand::Command("echo hi".to_owned())),
             Settled::Return(ReadResult::BoundCommand("echo hi".to_owned()))
         );
@@ -1074,6 +1140,81 @@ mod tests {
         assert_ne!(
             after_prefix,
             reedline::ReedlineEvent::ExecuteHostCommand("raw".to_owned())
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shell_expand_line_settles_without_reaching_the_shell() -> Result<(), ShellError> {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        bindings.lock().await.define_macro(
+            control_key('g'),
+            KeyMacro::from(b"`cmd`\x1b\x05\r".to_vec()),
+        )?;
+
+        let mut backend = ReedlineInputBackend {
+            reedline: None,
+            bindings: bindings.clone(),
+            pending_replay: None,
+        };
+
+        // Bound directly: the marker reedline returns never reaches the shell as a command.
+        let settled = backend.settle(Ok(ReadResult::BoundCommand(
+            HostCommand::InputFunction(InputFunction::ShellExpandLine).encode(),
+        )))?;
+        assert_eq!(
+            settled,
+            Settled::InputFunction(InputFunction::ShellExpandLine)
+        );
+
+        // Reached through a macro: the same, with the rest of the macro pending.
+        let event = edit_mode::press(
+            &mut *bindings.lock().await,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('g'),
+        )?;
+        let reedline::ReedlineEvent::Multiple(events) = event else {
+            return Err(ShellError::UnexpectedInputFailure);
+        };
+        let Some(reedline::ReedlineEvent::ExecuteHostCommand(encoded)) = events.last().cloned()
+        else {
+            return Err(ShellError::UnexpectedInputFailure);
+        };
+        let settled = backend.settle(Ok(ReadResult::BoundCommand(encoded)))?;
+        assert_eq!(
+            settled,
+            Settled::InputFunction(InputFunction::ShellExpandLine)
+        );
+        assert_eq!(
+            backend.pending_replay.as_ref().map(DeferredReplay::bytes),
+            Some(b"\r".to_vec())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn shell_expand_line_is_bound_by_default() -> Result<(), ShellError> {
+        let mut bindings = shell_bindings();
+
+        assert_eq!(
+            edit_mode::press(
+                &mut bindings,
+                reedline::KeyModifiers::ALT | reedline::KeyModifiers::CONTROL,
+                reedline::KeyCode::Char('e')
+            )?,
+            reedline::ReedlineEvent::ExecuteHostCommand(
+                HostCommand::InputFunction(InputFunction::ShellExpandLine).encode()
+            )
+        );
+        assert_eq!(
+            bindings
+                .get_current()
+                .get(&KeySequence::from(b"\x1b\x05".to_vec())),
+            Some(&brush_core::interfaces::KeyAction::DoInputFunction(
+                brush_core::interfaces::InputFunction::ShellExpandLine
+            ))
         );
 
         Ok(())

@@ -21,7 +21,7 @@ pub(super) enum KeyError {
 
 /// What the string reedline hands back for a bound key stands for.
 ///
-/// reedline returns nothing but a string for a bound key, so our own meaning travels behind
+/// reedline returns nothing but a string for a bound key, so our own meanings travel behind
 /// a leading NUL. A `bind -x` command comes from a shell word, which cannot start with a NUL,
 /// so nothing else is ever read as a marker.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,13 +31,22 @@ pub(super) enum HostCommand {
     /// A point at which macro resolution stopped: the index of the `Deferred` record the
     /// editor holds for it.
     Deferred(usize),
+    /// A readline function the editor cannot carry out on its own because it needs the
+    /// shell (`shell-expand-line`).
+    InputFunction(InputFunction),
 }
 
 impl HostCommand {
+    const INPUT_FUNCTION: &str = "\0function ";
     const DEFERRED: &str = "\0deferred ";
 
     pub fn decode(host_command: &str) -> Self {
-        if let Some(id) = host_command
+        if let Some(function) = host_command
+            .strip_prefix(Self::INPUT_FUNCTION)
+            .and_then(|name| name.parse().ok())
+        {
+            Self::InputFunction(function)
+        } else if let Some(id) = host_command
             .strip_prefix(Self::DEFERRED)
             .and_then(|id| id.parse().ok())
         {
@@ -51,6 +60,7 @@ impl HostCommand {
         match self {
             Self::Command(command) => command.clone(),
             Self::Deferred(id) => std::format!("{}{id}", Self::DEFERRED),
+            Self::InputFunction(function) => std::format!("{}{function}", Self::INPUT_FUNCTION),
         }
     }
 }
@@ -161,6 +171,10 @@ fn translate_input_function_to_reedline_event(
         InputFunction::Complete => Some(ReedlineEvent::Edit(vec![EditCommand::Complete])),
         InputFunction::BrushAcceptHint => Some(ReedlineEvent::HistoryHintComplete),
         InputFunction::BrushAcceptHintWord => Some(ReedlineEvent::HistoryHintWordComplete),
+        // Needs the shell, so it goes back to the host rather than to the editor.
+        InputFunction::ShellExpandLine => Some(ReedlineEvent::ExecuteHostCommand(
+            HostCommand::InputFunction(func.clone()).encode(),
+        )),
         // reedline's Up/Down move a screen line in a multiline buffer and step through
         // history otherwise, so both readline names land on them; history is the one
         // `bind -p` lists, matching bash's default for these keys.
@@ -366,6 +380,7 @@ pub(super) fn translate_reedline_event_to_action(
         }
         reedline::ReedlineEvent::ExecuteHostCommand(cmd) => match HostCommand::decode(cmd) {
             HostCommand::Command(cmd) => Some(KeyAction::ShellCommand(cmd)),
+            HostCommand::InputFunction(function) => Some(KeyAction::DoInputFunction(function)),
             // Deferred records never live in the bindings; one here is a bug, not a binding.
             HostCommand::Deferred(_) => None,
         },
@@ -448,6 +463,8 @@ mod tests {
     fn host_command_encoding_round_trips() {
         for host_command in [
             HostCommand::Command("echo hi".to_owned()),
+            HostCommand::InputFunction(InputFunction::ShellExpandLine),
+            HostCommand::InputFunction(InputFunction::AcceptLine),
             HostCommand::Deferred(0),
             HostCommand::Deferred(7),
             HostCommand::Deferred(usize::MAX),
@@ -455,13 +472,15 @@ mod tests {
             assert_eq!(HostCommand::decode(&host_command.encode()), host_command);
         }
 
-        // A NUL followed by anything but the marker and a record index is not one.
+        // A NUL followed by anything but a record index or the marker is not one.
         for text in [
             "\0nonsense",
             "\0deferred ",
             "\0deferred zz",
             "\0deferred 1 2",
             "\0deferred -1",
+            "\0function ",
+            "\0function not-a-readline-function",
             "\0shell-expand-line",
         ] {
             assert_eq!(

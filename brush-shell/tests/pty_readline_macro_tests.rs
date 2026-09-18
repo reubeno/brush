@@ -345,6 +345,76 @@ fn readline_macro_nested_accept_line_runs_both_lines() -> anyhow::Result<()> {
 }
 
 #[test]
+fn shell_expand_line_expands_the_buffer_in_place() -> anyhow::Result<()> {
+    let mut session = start_shell()?;
+
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+    session.send_line(r#"bind -x '"\C-t": echo "LINE=[$READLINE_LINE]"'; echo BIND-READY"#)?;
+    expect_answering_queries(&mut session, "BIND-READY\r\n")?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    session.send(r#"echo $((6*7)) "$(echo A B)" 'q q'"#)?;
+    session.send("\x1b\x05")?; // \M-\C-e: shell-expand-line, bound by default
+    expect_answering_queries(&mut session, "brush> echo 42 A B q q")
+        .context("shell-expand-line did not repaint the expanded buffer")?;
+
+    // Only once the expansion has been painted: reedline drops keys that arrive in the same
+    // batch as a bound command.
+    session.send("\x14")?;
+    expect_answering_queries(&mut session, "LINE=[echo 42 A B q q]\r\n")
+        .context("the expanded buffer was not what the bound command saw")?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    // The expanded line is still in the buffer, as in bash; clear it before leaving.
+    session.send("\x15")?;
+    exit_shell(&mut session)
+}
+
+#[test]
+fn shell_expand_line_inside_a_macro_expands_before_the_rest_replays() -> anyhow::Result<()> {
+    // The shape of fzf's and zoxide's widgets: insert a command substitution, expand it in
+    // place, then accept the line.
+    let mut session = start_shell()?;
+
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+    session.send_line(r#"bind '"\C-g": "echo `echo WIDGET-RAN`\e\C-e\r"'; echo BIND-READY"#)?;
+    expect_answering_queries(&mut session, "BIND-READY\r\n")?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    session.send(ControlCode::Bell)?;
+    expect_answering_queries(&mut session, "WIDGET-RAN\r\n")
+        .context("macro with shell-expand-line did not expand and run")?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    exit_shell(&mut session)
+}
+
+#[test]
+fn shell_expand_line_failure_leaves_the_buffer_untouched() -> anyhow::Result<()> {
+    // An expansion that fails reports the error and leaves the line as it was, as in bash.
+    let mut session = start_shell()?;
+
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+    session.send_line(r#"bind -x '"\C-t": echo "LINE=[$READLINE_LINE]"'; echo BIND-READY"#)?;
+    expect_answering_queries(&mut session, "BIND-READY\r\n")?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    session.send("echo ${nope?boom} KEPT")?;
+    session.send("\x1b\x05")?; // \M-\C-e: shell-expand-line
+    expect_answering_queries(&mut session, "boom")
+        .context("the failed expansion was not reported")?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    session.send("\x14")?;
+    expect_answering_queries(&mut session, "LINE=[echo ${nope?boom} KEPT]\r\n")
+        .context("the buffer was changed by a failed expansion")?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    session.send("\x15")?;
+    exit_shell(&mut session)
+}
+
+#[test]
 fn event_needing_the_editor_is_dropped_after_a_bound_command() -> anyhow::Result<()> {
     // Pins a documented divergence (docs/reference/key-bindings.md): after a bound command,
     // macro bytes that need reedline's read loop (here \C-r, history search) are dropped,
