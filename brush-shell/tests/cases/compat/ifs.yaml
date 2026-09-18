@@ -753,3 +753,46 @@ cases:
       echo "Count: $#"
       for arg in "$@"; do echo "[$arg]"; done
 
+
+  # Brace expansion happens before field splitting and its results are separate
+  # words regardless of IFS; a non-whitespace IFS that stays set must not
+  # merge or re-split them.
+
+  - name: "Brace expansion stays separate under IFS=:"
+    stdin: |
+      IFS=:
+      set -- python3_{11..14}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Brace expansion stays separate under IFS=, (the list separator)"
+    stdin: |
+      IFS=,
+      set -- {a,b}{c,d}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Brace expansion under IFS=: still splits the expansions inside it"
+    stdin: |
+      IFS=:
+      v="1:2"
+      set -- {$v,x}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Brace expansion under IFS=: with quoted array[*] inside the list"
+    stdin: |
+      IFS=:
+      arr=(1 2)
+      set -- {"${arr[*]}",z}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Brace expansion under IFS=: with tilde prefix"
+    env:
+      HOME: /h
+    stdin: |
+      IFS=:
+      set -- ~/{x,y}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done

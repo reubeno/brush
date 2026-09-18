@@ -187,3 +187,34 @@ cases:
     stdin: |
       echo {-9223372036854775808..-9223372036854775806}
       echo {9223372036854775805..9223372036854775807}
+
+  - name: "Expansion with curly braces: unquoted array[@] inside the list"
+    stdin: |
+      arr=(1 2)
+      set -- x{${arr[@]},y}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: quoted array[@] inside the list"
+    stdin: |
+      arr=("1 1" 2)
+      set -- x{"${arr[@]}",y}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: empty array inside the list"
+    stdin: |
+      arr=()
+      set -- x{${arr[@]},y}
+      echo "Count: $#"
+      for arg in "$@"; do echo "[$arg]"; done
+
+  - name: "Expansion with curly braces: quoted $@ inside the list"
+    stdin: |
+      f() { set -- pre{"$@",z}; echo "Count: $#"; for arg in "$@"; do echo "[$arg]"; done; }
+      f "p p" q
+
+  - name: "Expansion with curly braces: unquoted $* inside the list"
+    stdin: |
+      f() { set -- {$*,z}; echo "Count: $#"; for arg in "$@"; do echo "[$arg]"; done; }
+      f "p p" q
