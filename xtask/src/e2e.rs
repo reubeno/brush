@@ -24,7 +24,8 @@ use crate::test::BinaryArgs;
 /// Arguments for containerized end-to-end tests.
 #[derive(Args, Clone)]
 pub struct E2eArgs {
-    /// Applications to test. Runs all adapters except blesh when omitted.
+    /// Applications to test. Runs all adapters except the opt-in ones (blesh, bash-tests) when
+    /// omitted.
     #[clap(value_name = "APP")]
     apps: Vec<String>,
 
@@ -597,12 +598,15 @@ fn read_junit_summary(
     Ok(summary)
 }
 
+/// Adapters that run only when named: ble.sh spends minutes on compatibility failures and
+/// timeouts, and bash-tests stays opt-in until it has shown itself reliable.
+const OPT_IN_ADAPTERS: &[&str] = &["blesh", "bash-tests"];
+
 fn discover_e2e_apps(e2e_dir: &Path, include_opt_in: bool) -> Result<Vec<String>> {
     let mut apps = Vec::new();
     for entry in fs::read_dir(e2e_dir).context("failed to read e2e adapter directory")? {
         let entry = entry?;
-        // ble.sh currently spends minutes on compatibility failures and timeouts; run it explicitly.
-        if !include_opt_in && entry.file_name() == "blesh" {
+        if !include_opt_in && OPT_IN_ADAPTERS.iter().any(|app| entry.file_name() == *app) {
             continue;
         }
         if entry.path().join("Dockerfile").is_file() {
@@ -809,10 +813,12 @@ mod tests {
         fs::write(temp.path().join("fzf/Dockerfile"), "FROM scratch\n")?;
         fs::create_dir_all(temp.path().join("blesh"))?;
         fs::write(temp.path().join("blesh/Dockerfile"), "FROM scratch\n")?;
+        fs::create_dir_all(temp.path().join("bash-tests"))?;
+        fs::write(temp.path().join("bash-tests/Dockerfile"), "FROM scratch\n")?;
         fs::create_dir_all(temp.path().join("lib"))?;
 
         anyhow::ensure!(discover_e2e_apps(temp.path(), false)? == ["fzf"]);
-        anyhow::ensure!(discover_e2e_apps(temp.path(), true)? == ["blesh", "fzf"]);
+        anyhow::ensure!(discover_e2e_apps(temp.path(), true)? == ["bash-tests", "blesh", "fzf"]);
         Ok(())
     }
 

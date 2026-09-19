@@ -397,3 +397,14 @@ cases:
       echo "before false"
       false
       echo "after false"
+
+  # Only the presence of escape sequences is compared, not the (differing) wording. The harness
+  # passes --disable-color by default, which would hide the behavior under test.
+  - name: "Error messages are uncolored when stderr is not a terminal"
+    known_failure: true # brush colors its error messages unless given --disable-color
+    removed_default_args: ["--disable-color"]
+    stdin: |
+      out=$(missing_command 2>&1)
+      [[ $out == *$'\e'* ]] && echo "command not found: colored" || echo "command not found: plain"
+      out=$(cd /no/such/dir 2>&1)
+      [[ $out == *$'\e'* ]] && echo "builtin error: colored" || echo "builtin error: plain"

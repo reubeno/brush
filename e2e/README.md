@@ -8,7 +8,7 @@ completion, history) that unit tests can't.
 ```bash
 cargo build
 cargo xtask test e2e fzf                     # one adapter against brush
-cargo xtask test e2e                         # default adapters (excludes blesh)
+cargo xtask test e2e                         # default adapters (excludes blesh, bash-tests)
 cargo xtask test e2e blesh                   # opt in to the slow ble.sh suite
 cargo xtask test e2e --baseline fzf          # baseline against Bash
 cargo xtask test e2e --shell /path/to/sh fzf # any other binary
@@ -52,6 +52,7 @@ need Docker and a built shell binary. `blesh` is excluded from the default selec
 because compatibility failures and timeouts make it take several minutes against
 brush. Run it explicitly with `cargo xtask test e2e blesh`, or select one file with
 `cargo xtask test e2e blesh -- util`. Its per-file timeout remains 180 seconds.
+`bash-tests` is likewise opt-in, until it has shown itself reliable.
 
 ## Adapter contract
 
@@ -143,6 +144,7 @@ what they would otherwise each reinvent:
 |-----|-------|
 | fzf | upstream `test/test_shell_integration.rb`, `TestBash` only; minitest + tmux, JUnit via `minitest-ci` |
 | atuin | our own suite in `atuin/tests/` (pytest + tmux), written to be upstreamable. atuin's bash integration is bash-preexec, so the adapter turns on brush's `zsh-hooks` through a config file to exercise the native hooks rather than the `DEBUG`-trap emulation |
+| bash-tests | bash's own regression suite (`tests/run-*`), from a bash-5.3 build that also provides its helper binaries and the `--baseline` shell; one pytest case per `run-*` script, which is sourced verbatim, on a terminal, with `diff` replaced by a function that captures the output for byte-exact comparison against the `.right` file. `PLATFORM_DIFFS` in `tests/test_bash.py` excuses the few differences bash itself shows on Linux. Failures report how many expected lines match, and `log.txt` ends with the total across the run. Args go to pytest: `-- -k alias`, `-- --subset minimal` for the scripts `run-minimal` runs, `-- --script-timeout 60` (default 30s per script) |
 | blesh | upstream `ble.sh --test`, one pytest case per test section with a process-group timeout (`BLESH_TEST_TIMEOUT`, default 180s); sections are read from ble.sh's own build output, so a section added upstream runs rather than being missed; full output and leftover per-section artifacts are retained; args select sections: `cargo xtask test e2e blesh -- util`. Every section is currently expected to fail: ble.sh gets far enough to emit no section summary at all |
 | mise | selected upstream bash activation tests (pytest), run directly against the shell under test |
 | nvm | upstream `test/fast/Listing versions` suite (urchin) plus interactive regression coverage for [#1173](https://github.com/reubeno/brush/issues/1173) |
