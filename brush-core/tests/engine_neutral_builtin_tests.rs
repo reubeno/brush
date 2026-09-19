@@ -171,8 +171,8 @@ async fn hand_parsed_builtin_reports_usage_errors() -> Result<()> {
 
 #[tokio::test]
 async fn hand_parsed_builtin_help_request_exits_with_usage_status() -> Result<()> {
-    // As in bash, a help request prints to stdout but still exits with the
-    // usage status.
+    // A help request is reported like a usage error: on stderr, with the usage
+    // status.
     assert_eq!(exit_code_of("count --help").await?, 2);
     Ok(())
 }
