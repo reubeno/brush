@@ -147,11 +147,11 @@ def run(script, cwd, env, timeout):
     chunks = []
 
     def drain():
-        # EIO once the last holder of the slave side has gone.
         try:
             while chunk := os.read(master, 65536):
                 chunks.append(chunk)
         except OSError:
+            # EIO once the last holder of the slave side has gone: the terminal's end of output.
             pass
 
     reader = threading.Thread(target=drain, daemon=True)
@@ -166,7 +166,7 @@ def run(script, cwd, env, timeout):
 
 def wait(process, timeout):
     try:
-        return process.communicate(timeout=timeout)[0]
+        process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         # The shell under test, and anything it started, is in the process group.
         os.killpg(process.pid, signal.SIGKILL)
