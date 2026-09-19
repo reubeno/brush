@@ -290,6 +290,9 @@ cases:
       declare -A m
       m[{k,l}]=v
       echo "${!m[@]}"
+      echo "[${m[{k,l}]}]"
+      unset "m[{k,l}]"
+      echo "${#m[@]}"
       IFS=:
       y=a{b,c}
       echo "[$y]"

@@ -2268,7 +2268,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         kind: ArrayKind,
     ) -> Result<String, error::Error> {
         match kind {
-            ArrayKind::Associative => self.basic_expand_to_str(index).await,
+            ArrayKind::Associative => {
+                // A subscript is never brace-expanded: `m[{k,l}]` names the key `{k,l}`.
+                let saved = std::mem::replace(&mut self.disable_brace_expansion, true);
+                let result = self.basic_expand_to_str(index).await;
+                self.disable_brace_expansion = saved;
+                result
+            }
             ArrayKind::Indexed => {
                 Ok(
                     arithmetic::expand_and_eval(self.shell, self.params, index, false)
