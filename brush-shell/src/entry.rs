@@ -74,6 +74,15 @@ impl CommandLineArgs {
         // Collect any args from after `--` (handled by try_parse_known) into
         // script_args, which become positional parameters ($0, $1, ...).
         if let Some(args) = script_args {
+            let mut args = args.peekable();
+
+            // Bash stops option parsing at the first non-option word: a script path
+            // or the `-c` command string. A `--` seen before either is the option
+            // terminator and is dropped (`bash -s -- a`, `bash -- script.sh`); one
+            // seen after is an ordinary positional (`bash script.sh -- a`).
+            if this.script_args.is_empty() && this.command.is_none() {
+                args.next_if(|a| a == "--");
+            }
             this.script_args.extend(args);
         }
 
@@ -767,21 +776,37 @@ mod tests {
         // -oc means -o with value "c", not -o flag + -c flag. The --
         // should NOT be treated as an option terminator for -c.
         let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-oc", "--", "echo"]))?;
-        // -o consumed "c" as its value; -- split the rest; no -c command.
+        // -o consumed "c" as its value; -- ended the options; no -c command.
         assert!(parsed_args.command.is_none());
-        assert_eq!(parsed_args.script_args, ["--", "echo"]);
+        assert_eq!(parsed_args.script_args, ["echo"]);
         Ok(())
     }
 
     #[test]
     fn parse_bool_flag_before_double_dash_not_transformed() -> Result<()> {
-        // -e is a boolean flag, not -c. The -- should NOT be removed;
-        // everything from -- onward becomes positional (including -c).
+        // -e is a boolean flag, not -c. The -- ends the options, so
+        // everything after it is positional (including -c).
         let parsed_args =
             CommandLineArgs::try_parse_from(args(&["brush", "-e", "--", "-c", "echo"]))?;
         assert!(parsed_args.command.is_none());
         assert!(parsed_args.exit_on_nonzero_command_exit);
-        assert_eq!(parsed_args.script_args, ["--", "-c", "echo"]);
+        assert_eq!(parsed_args.script_args, ["-c", "echo"]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_s_with_double_dash_separator() -> Result<()> {
+        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-s", "--", "--", "a"]))?;
+        assert!(parsed_args.read_commands_from_stdin);
+        assert_eq!(parsed_args.script_args, ["--", "a"]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_dash_before_script() -> Result<()> {
+        let parsed_args =
+            CommandLineArgs::try_parse_from(args(&["brush", "--", "script.sh", "--", "x"]))?;
+        assert_eq!(parsed_args.script_args, ["script.sh", "--", "x"]);
         Ok(())
     }
 
