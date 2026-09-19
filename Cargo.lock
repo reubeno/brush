@@ -375,10 +375,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "brush-builtin-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "brush-core",
+ "clap",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "brush-builtins"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "brush-builtin-utils",
  "brush-core",
  "brush-parser",
  "cfg-if",
@@ -411,7 +423,6 @@ dependencies = [
  "cfg-if",
  "check_elevation",
  "chrono",
- "clap",
  "color-print",
  "command-fds",
  "fancy-regex",
@@ -532,6 +543,7 @@ dependencies = [
 name = "brush-experimental-builtins"
 version = "0.1.0"
 dependencies = [
+ "brush-builtin-utils",
  "brush-core",
  "clap",
  "serde_json",
@@ -600,6 +612,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
+ "brush-builtin-utils",
  "brush-builtins",
  "brush-core",
  "brush-coreutils-builtins",
