@@ -151,7 +151,6 @@ cases:
       unset -f export
 
   - name: "Export rejects an array element target"
-    known_failure: true # TODO: export improvements required
     ignore_stderr: true
     stdin: |
       export 'ea[0]=1'
@@ -165,7 +164,6 @@ cases:
       declare -p wrapped
 
   - name: "export rejects dash-prefixed operands after a name"
-    known_failure: true # TODO(export): export does not validate names; now that options end at the first operand, as in bash, these words reach that path instead of failing as unknown options
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
       { export v -x; echo "export v -x: $?"; } 2>&1 | strip
