@@ -1,5 +1,8 @@
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/266b83a6-bacb-408c-afb7-2a2ddf37b272"/>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/extras/brand/brush-wordmark-white.svg">
+    <img src="docs/extras/brand/brush-wordmark-black.svg" alt="brush" width="380">
+  </picture>
 </div>
 
 <br/>
