@@ -80,6 +80,13 @@ impl ExportCommand {
                         writeln!(context.stderr(), "{s}: not a function")?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
+                } else if !brush_core::env::valid_variable_name(s) {
+                    writeln!(
+                        context.stderr(),
+                        "{}: `{s}': not a valid identifier",
+                        context.command_name
+                    )?;
+                    return Ok(ExecutionResult::general_error());
                 }
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
