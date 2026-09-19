@@ -3,7 +3,6 @@ pub use crate::sys::stubs::commands;
 pub(crate) use crate::sys::stubs::env;
 pub use crate::sys::stubs::fd;
 pub(crate) mod fs;
-pub use crate::sys::stubs::input;
 pub(crate) use crate::sys::stubs::network;
 pub(crate) use crate::sys::stubs::pipes;
 pub use crate::sys::stubs::poll;
