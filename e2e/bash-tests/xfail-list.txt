@@ -78,6 +78,9 @@ test_bash[trap]
 test_bash[type]
 test_bash[vredir]
 
+# brush writes U+FFFD where bash writes the raw, non-UTF-8 bytes that $'...' escapes produce.
+test_bash[nquote4]
+
 # Hang under brush until the 30s per-script timeout kills them.
 test_bash[getopts]
 test_bash[varenv]
