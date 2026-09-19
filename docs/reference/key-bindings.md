@@ -18,6 +18,25 @@ The other backends do not support `bind`.
 
 The shell holds the editor's bindings behind an interface; the builtin never sees reedline.
 
+## Public API migration
+
+This design intentionally replaces the previous exported key-binding representation:
+
+- `brush_core::interfaces::Key` and `KeyStroke` are removed. `KeySequence` now stores the
+  terminal bytes directly, and `KeyMacro` separately stores replayed macro bytes.
+- `KeyAction::Sequence` and `KeyBindings::get_untranslated` are removed. Macro expansion and
+  raw-sequence matching are responsibilities of the input backend.
+- `KeyBindings::get_current` and `get_macros` return ordered maps, and `define_macro` accepts
+  a `KeyMacro`.
+- `brush_parser::readline_binding::KeyStroke` and `key_sequence_to_strokes` are replaced by
+  `key_sequence_to_bytes` and `macro_sequence_to_bytes`.
+- `brush_core::sys::input` is removed. Terminal-specific key decoding now lives beside its
+  only consumer in `brush-interactive`.
+
+These are breaking changes for embedders using the old interfaces. Compatibility shims are
+not provided because the old stroke-based types cannot faithfully represent arbitrary byte
+sequences or distinguish binding triggers from macro bodies.
+
 ## Vocabulary
 
 - **Key sequence**: the bytes the terminal sends for a key sequence, as readline stores
