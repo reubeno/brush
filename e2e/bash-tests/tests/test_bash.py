@@ -207,6 +207,8 @@ def test_bash(script, tmp_path, request, record_property):
     matched = total = 0
     for captured in captures:
         right = captured.read_text().strip()
+        # The run scripts diff `<actual> <name>.right`; anything else means one changed shape.
+        assert right.endswith(".right"), f"run-{script} compared its output with {right!r}"
         expected = lines_of(read_lines(work / right))
         actual = normalize(read_lines(captured.with_suffix(".actual")))
         total += len(expected)

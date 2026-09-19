@@ -3,6 +3,9 @@
 # printenv, xcase) and a reference bash whose output matches the `.right` files, which is what
 # `--baseline` runs.
 FROM ubuntu:24.04
+# When bumping this (and the tag below), run `cargo xtask test e2e --baseline bash-tests` first: it
+# catches what brush runs cannot, such as a new test needing a locale or tool this image lacks.
+# Then run against brush and refresh xfail-list.txt; the runner flags new failures and stale entries.
 ARG BASH_REF=b8c60bc9ca365f8261fa97900b6fa939f6ebc303
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bsdextrautils build-essential ca-certificates git locales python3-pytest \
