@@ -1,4 +1,9 @@
-//! Example of implementing a custom builtin command for a brush-core based shell.
+//! Example of implementing a custom builtin command for a brush-core based shell,
+//! using clap via the adapter in `brush-builtin-utils`.
+//!
+//! `brush-core` itself does not depend on any argument parser. To use a
+//! different one, implement `brush_core::builtins::FromArgs` and
+//! `brush_core::builtins::HelpContent` directly instead of step 3's macro.
 //!
 //! This example demonstrates best practices for:
 //! - Creating a custom builtin command using the `Command` trait
@@ -9,7 +14,7 @@
 //!
 //! Run this example with:
 //! ```bash
-//! cargo run --package brush-core --example custom-builtin
+//! cargo run --package brush-builtin-utils --example custom-builtin
 //! ```
 
 use anyhow::Result;
@@ -77,18 +82,13 @@ struct GreetCommand {
 //
 // Step 3: Implement the Command trait
 // ==============================================
-// The `Command` trait requires implementing the `execute` method.
+// `clap_builtin!` wires up argument parsing and help from the clap derive;
+// the `Command` trait then requires implementing the `execute` method.
 //
 
+brush_builtin_utils::clap_builtin!(GreetCommand);
+
 impl builtins::Command for GreetCommand {
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
-    }
     // Specify the error type you will use; this will either be your custom type or
     // the default-provided `brush_core::Error` type.
     type Error = GreetError;

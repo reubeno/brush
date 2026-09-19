@@ -1,7 +1,6 @@
 //! Core implementation of the brush shell. Implements the shell's abstraction, its interpreter, and
 //! various facilities used internally by the shell.
 
-pub mod args;
 pub mod arithmetic;
 mod braceexpansion;
 pub mod builtins;

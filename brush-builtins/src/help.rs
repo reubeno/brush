@@ -22,6 +22,8 @@ pub(crate) struct HelpCommand {
     topic_patterns: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(HelpCommand);
+
 impl builtins::Command for HelpCommand {
     type Error = brush_core::Error;
 
@@ -48,15 +50,6 @@ impl builtins::Command for HelpCommand {
         } else {
             Ok(ExecutionResult::general_error())
         }
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }
 
@@ -128,10 +121,12 @@ impl HelpCommand {
         name: &str,
         registration: &builtins::Registration<SE>,
     ) -> Result<(), brush_core::Error> {
+        if self.man_page_style {
+            return brush_core::error::unimp("man page rendering is not yet implemented");
+        }
+
         let content_type = if self.short_description {
             builtins::ContentType::ShortDescription
-        } else if self.man_page_style {
-            builtins::ContentType::ManPage
         } else if self.short_usage {
             builtins::ContentType::ShortUsage
         } else {
@@ -144,11 +139,10 @@ impl HelpCommand {
         };
 
         // For now, we assume colorized output if stdout is a terminal.
-        let options = builtins::ContentOptions {
-            colorized: stdout.is_terminal(),
-        };
+        let mut options = builtins::ContentOptions::default();
+        options.colorized = stdout.is_terminal();
 
-        let content = (registration.content_func)(name, content_type, &options)?;
+        let content = (registration.content_func())(name, content_type, &options)?;
 
         write!(stdout, "{content}")?;
         stdout.flush()?;

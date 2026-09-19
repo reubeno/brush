@@ -10,6 +10,8 @@ pub(crate) struct ExitCommand {
     code: Option<i64>,
 }
 
+brush_builtin_utils::clap_builtin!(ExitCommand);
+
 impl builtins::Command for ExitCommand {
     type Error = brush_core::Error;
 
@@ -28,14 +30,5 @@ impl builtins::Command for ExitCommand {
         result.next_control_flow = ExecutionControlFlow::ExitShell;
 
         Ok(result)
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }

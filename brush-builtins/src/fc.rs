@@ -34,6 +34,8 @@ pub(crate) struct FcCommand {
     last: Option<String>,
 }
 
+brush_builtin_utils::clap_builtin!(FcCommand);
+
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;
 
@@ -50,15 +52,6 @@ impl builtins::Command for FcCommand {
         }
 
         error::unimp("fc editor mode is not yet implemented")
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }
 

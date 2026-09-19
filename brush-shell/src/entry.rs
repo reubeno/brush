@@ -25,6 +25,30 @@ static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceE
 type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<error_formatter::Formatter>;
 type BrushShell = brush_core::Shell<BrushShellExtensions>;
 
+/// Parses `args` with clap, but splits off `--` and everything after it first,
+/// working around clap's treatment of `--` as an ordinary value.
+/// See <https://github.com/clap-rs/clap/issues/5055>.
+///
+/// Returns the parsed value plus the `--` separator and the words that followed
+/// it, or `None` if no separator was present.
+fn try_parse_known<T: clap::Parser>(
+    args: impl IntoIterator<Item = String>,
+) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {
+    let mut args = args.into_iter();
+    let mut hyphen = None;
+    let args_before_hyphen = args.by_ref().take_while(|a| {
+        let is_hyphen = a == "--";
+        if is_hyphen {
+            hyphen = Some(a.clone());
+        }
+        !is_hyphen
+    });
+    let parsed_args = T::try_parse_from(args_before_hyphen)?;
+
+    let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
+    Ok((parsed_args, raw_args))
+}
+
 // WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
 // after the `use clap::Parser`
 impl CommandLineArgs {
@@ -32,7 +56,7 @@ impl CommandLineArgs {
     pub(crate) fn try_parse_from(
         itr: impl IntoIterator<Item = String>,
     ) -> Result<Self, clap::Error> {
-        let (mut this, script_args) = brush_core::builtins::try_parse_known::<Self>(itr)?;
+        let (mut this, script_args) = try_parse_known::<Self>(itr)?;
 
         // Collect any args from after `--` (handled by try_parse_known) into
         // script_args, which become positional parameters ($0, $1, ...).

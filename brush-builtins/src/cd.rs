@@ -30,6 +30,8 @@ pub(crate) struct CdCommand {
     target_dir: Option<PathBuf>,
 }
 
+brush_builtin_utils::clap_builtin!(CdCommand);
+
 impl builtins::Command for CdCommand {
     type Error = brush_core::Error;
 
@@ -93,14 +95,5 @@ impl builtins::Command for CdCommand {
         }
 
         Ok(ExecutionResult::success())
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }

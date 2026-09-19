@@ -9,11 +9,7 @@ pub(crate) struct BuiltinCommand {
     args: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for BuiltinCommand {
-    fn set_declarations(&mut self, args: Vec<brush_core::CommandArg>) {
-        self.args = args;
-    }
-}
+brush_builtin_utils::clap_builtin!(BuiltinCommand, raw_args = args);
 
 impl builtins::Command for BuiltinCommand {
     type Error = brush_core::Error;
@@ -22,33 +18,20 @@ impl builtins::Command for BuiltinCommand {
         &self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.args.is_empty() {
+        let Some((name, args)) = self.args.split_first() else {
             return Ok(ExecutionResult::success());
-        }
+        };
 
-        let args: Vec<_> = self.args.iter().skip(1).cloned().collect();
-        if args.is_empty() {
-            return Ok(ExecutionResult::success());
-        }
-
-        let builtin_name = args[0].to_string();
+        let builtin_name = name.to_string();
+        let args = args.to_vec();
 
         if let Some(builtin) = context.shell.builtins().get(&builtin_name)
             && !builtin.disabled
         {
             context.command_name = builtin_name;
-            (builtin.execute_func)(context, args).await
+            (builtin.execute_func())(context, args).await
         } else {
             Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
         }
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }

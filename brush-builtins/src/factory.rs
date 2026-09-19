@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use super::*;
 
 #[allow(unused_imports, reason = "not all builtins are used in all configs")]
-use brush_core::builtins::{self, builtin, decl_builtin, raw_arg_builtin, simple_builtin};
+use brush_core::builtins::{self, builtin};
 
 /// Identifies well-known sets of builtins.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -39,10 +39,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
         builtin::<break_::BreakCommand, SE>().special(),
     );
     #[cfg(feature = "builtin.colon")]
-    m.insert(
-        ":".into(),
-        simple_builtin::<colon::ColonCommand, SE>().special(),
-    );
+    m.insert(":".into(), builtin::<colon::ColonCommand, SE>().special());
     #[cfg(feature = "builtin.continue")]
     m.insert(
         "continue".into(),
@@ -59,7 +56,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(feature = "builtin.export")]
     m.insert(
         "export".into(),
-        decl_builtin::<export::ExportCommand, SE>().special(),
+        builtin::<export::ExportCommand, SE>().special(),
     );
     #[cfg(feature = "builtin.return")]
     m.insert(
@@ -84,7 +81,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(feature = "builtin.declare")]
     m.insert(
         "readonly".into(),
-        decl_builtin::<declare::DeclareCommand, SE>().special(),
+        builtin::<declare::DeclareCommand, SE>().special(),
     );
     #[cfg(feature = "builtin.times")]
     m.insert(
@@ -105,7 +102,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(feature = "builtin.command")]
     m.insert("command".into(), builtin::<command::CommandCommand, SE>());
     #[cfg(feature = "builtin.false")]
-    m.insert("false".into(), simple_builtin::<false_::FalseCommand, SE>());
+    m.insert("false".into(), builtin::<false_::FalseCommand, SE>());
     #[cfg(feature = "builtin.fg")]
     m.insert("fg".into(), builtin::<fg::FgCommand, SE>());
     #[cfg(feature = "builtin.getopts")]
@@ -119,16 +116,13 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(all(feature = "builtin.kill", unix))]
     m.insert("kill".into(), builtin::<kill::KillCommand, SE>());
     #[cfg(feature = "builtin.declare")]
-    m.insert(
-        "local".into(),
-        decl_builtin::<declare::DeclareCommand, SE>(),
-    );
+    m.insert("local".into(), builtin::<declare::DeclareCommand, SE>());
     #[cfg(feature = "builtin.pwd")]
     m.insert("pwd".into(), builtin::<pwd::PwdCommand, SE>());
     #[cfg(feature = "builtin.read")]
     m.insert("read".into(), builtin::<read::ReadCommand, SE>());
     #[cfg(feature = "builtin.true")]
-    m.insert("true".into(), simple_builtin::<true_::TrueCommand, SE>());
+    m.insert("true".into(), builtin::<true_::TrueCommand, SE>());
     #[cfg(feature = "builtin.type")]
     m.insert("type".into(), builtin::<type_::TypeCommand, SE>());
     #[cfg(all(feature = "builtin.ulimit", unix))]
@@ -145,15 +139,9 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
 
     if matches!(set, BuiltinSet::BashMode) {
         #[cfg(feature = "builtin.builtin")]
-        m.insert(
-            "builtin".into(),
-            raw_arg_builtin::<builtin_::BuiltinCommand, SE>(),
-        );
+        m.insert("builtin".into(), builtin::<builtin_::BuiltinCommand, SE>());
         #[cfg(feature = "builtin.declare")]
-        m.insert(
-            "declare".into(),
-            decl_builtin::<declare::DeclareCommand, SE>(),
-        );
+        m.insert("declare".into(), builtin::<declare::DeclareCommand, SE>());
         #[cfg(feature = "builtin.echo")]
         m.insert("echo".into(), builtin::<echo::EchoCommand, SE>());
         #[cfg(feature = "builtin.enable")]
@@ -177,10 +165,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
         #[cfg(feature = "builtin.test")]
         m.insert("[".into(), builtin::<test::TestCommand, SE>());
         #[cfg(feature = "builtin.declare")]
-        m.insert(
-            "typeset".into(),
-            decl_builtin::<declare::DeclareCommand, SE>(),
-        );
+        m.insert("typeset".into(), builtin::<declare::DeclareCommand, SE>());
 
         // Completion builtins
         #[cfg(feature = "builtin.complete")]

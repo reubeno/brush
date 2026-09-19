@@ -1251,7 +1251,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                                     .shell
                                     .builtins()
                                     .get(first_arg.as_str())
-                                    .is_some_and(|r| !r.disabled && r.declaration_builtin)
+                                    .is_some_and(|r| !r.disabled && r.declaration_builtin())
                             {
                                 command_takes_assignments = true;
                             }

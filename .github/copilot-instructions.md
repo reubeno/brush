@@ -35,7 +35,8 @@ When reviewing PRs, verify:
 brush/
 ├── brush-shell/        # CLI application & main entry point
 ├── brush-interactive/  # Interactive shell (readline, completion)
-├── brush-core/         # Core shell runtime & builtins
+├── brush-core/         # Core shell runtime & builtin contracts
+├── brush-builtin-utils/ # Helpers for implementing builtins (e.g., clap adapter)
 ├── brush-builtins/     # Shell builtin implementations
 ├── brush-parser/       # AST generation & parsing
 ├── xtask/             # Build automation tasks
@@ -316,7 +317,8 @@ GitHub Actions runs these checks (from `.github/workflows/`):
 3. Update `brush-shell/src/main.rs` if CLI changes needed
 
 ### Adding/Modifying Builtins
-1. Edit files in `brush-builtins/src/`
+1. Edit files in `brush-builtins/src/`; a clap-derived builtin gets its parsing
+   and help via `brush_builtin_utils::clap_builtin!`
 2. Register in `brush-builtins/src/factory.rs`
 3. Add test cases in `brush-shell/tests/cases/builtin/`
 

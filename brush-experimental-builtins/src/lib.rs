@@ -13,7 +13,7 @@
 mod save;
 
 #[allow(unused_imports, reason = "not all builtins are used in all configs")]
-use brush_core::builtins::{self, builtin, decl_builtin, raw_arg_builtin, simple_builtin};
+use brush_core::builtins::{self, builtin};
 
 /// Returns the set of experimental built-in commands.
 pub fn experimental_builtins<SE: brush_core::extensions::ShellExtensions>()
