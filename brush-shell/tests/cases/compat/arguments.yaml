@@ -175,6 +175,18 @@ cases:
     stdin: |
       echo "count=[$#] one=[$1] two=[$2] three=[$3] all=[$@] star=[$*]"
 
+  # A `--` in option position ends option parsing and is dropped, as in bash. Only the
+  # first one is the terminator; a second `--` is an ordinary positional.
+  - name: "-s with -- separator followed by literal --"
+    args: ["-s", "--", "--", "a"]
+    stdin: |
+      echo "count=[$#] one=[$1] two=[$2]"
+
+  - name: "-s -e with -- separator"
+    args: ["-s", "-e", "--", "a"]
+    stdin: |
+      echo "count=[$#] one=[$1]"
+
   - name: "-s with hyphen-leading positional args"
     args: ["-s", "a", "-2", "c"]
     stdin: |
@@ -335,19 +347,17 @@ cases:
       echo STDIN-SHOULD-NOT-RUN
 
   #
-  # `--` and `-` as end-of-options markers. brush presently keeps them as ordinary
-  # positional words instead of consuming them, so these are pinned as known failures
-  # -- they document the gap and will flag the day it gets fixed.
+  # `--` and `-` as end-of-options markers. brush consumes `--` but presently keeps `-`
+  # as an ordinary positional word, so the `-` cases are pinned as known failures --
+  # they document the gap and will flag the day it gets fixed.
   #
 
   - name: "-s with -- before positional args"
-    known_failure: true
     args: ["-s", "--", "myarg"]
     stdin: |
       echo "count=[$#] one=[$1] all=[$@]"
 
   - name: "-s with a lone --"
-    known_failure: true
     args: ["-s", "--"]
     stdin: |
       echo "count=[$#] one=[$1] all=[$@]"
@@ -359,9 +369,11 @@ cases:
       echo "count=[$#] one=[$1] all=[$@]"
 
   - name: "-- before a script path"
-    known_failure: true
-    ignore_stderr: true
     args: ["--", "announce.sh"]
+
+  # Once a script is named, a later `--` is that script's argument, not the shell's.
+  - name: "-- before a script path with a later --"
+    args: ["--", "script.sh", "--", "x"]
 
   - name: "- before a script path"
     known_failure: true
