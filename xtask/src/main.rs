@@ -1,7 +1,6 @@
 //! xtask-style command-line tool for building this project.
 
 mod analyze;
-#[cfg(unix)]
 mod check;
 mod ci;
 mod common;
