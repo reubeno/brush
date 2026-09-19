@@ -38,6 +38,16 @@ impl CommandExt for std::process::Command {
     }
 }
 
+/// Sets the arguments to be passed to the given command.
+///
+/// # Arguments
+///
+/// * `cmd` - The command to set arguments on.
+/// * `args` - The arguments to pass to the command.
+pub fn set_args<S: AsRef<OsStr>>(cmd: &mut std::process::Command, args: &[S]) {
+    cmd.args(args);
+}
+
 /// Extension trait for Unix-like exit status extensions.
 pub trait ExitStatusExt {
     /// Returns the signal that terminated the process, if any.
