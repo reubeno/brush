@@ -2,7 +2,6 @@
 
 mod analyze;
 #[cfg(unix)]
-mod bash_tests;
 mod check;
 mod ci;
 mod common;
