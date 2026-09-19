@@ -163,3 +163,11 @@ cases:
       value=world
       command export wrapped=$value
       declare -p wrapped
+
+  - name: "export rejects dash-prefixed operands after a name"
+    known_failure: true # TODO(export): export does not validate names; now that options end at the first operand, as in bash, these words reach that path instead of failing as unknown options
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export v -x; echo "export v -x: $?"; } 2>&1 | strip
+      { export -- -x; echo "export -- -x: $?"; } 2>&1 | strip
+      { export w=1 +r; echo "export w=1 +r: $?"; } 2>&1 | strip
