@@ -84,7 +84,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(feature = "builtin.declare")]
     m.insert(
         "readonly".into(),
-        decl_builtin::<declare::DeclareCommand, SE>().special(),
+        decl_builtin::<readonly::ReadonlyCommand, SE>().special(),
     );
     #[cfg(feature = "builtin.times")]
     m.insert(
@@ -119,10 +119,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
     #[cfg(all(feature = "builtin.kill", unix))]
     m.insert("kill".into(), builtin::<kill::KillCommand, SE>());
     #[cfg(feature = "builtin.declare")]
-    m.insert(
-        "local".into(),
-        decl_builtin::<declare::DeclareCommand, SE>(),
-    );
+    m.insert("local".into(), decl_builtin::<local::LocalCommand, SE>());
     #[cfg(feature = "builtin.pwd")]
     m.insert("pwd".into(), builtin::<pwd::PwdCommand, SE>());
     #[cfg(feature = "builtin.read")]

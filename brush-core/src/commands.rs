@@ -72,6 +72,20 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
+
+    /// Writes one extra `set -x` trace line on the builtin's own behalf; the interpreter already
+    /// traces the command itself. `export` and `readonly` use this to echo each assignment they
+    /// perform. Self-gating: this is a no-op when command tracing is off, so callers need not
+    /// check.
+    ///
+    /// # Arguments
+    ///
+    /// * `line` - The trace line, already quoted for display.
+    pub async fn trace_extra_line(&mut self, line: String) {
+        if self.shell.options().print_commands_and_arguments {
+            self.shell.trace_command(&self.params, line).await;
+        }
+    }
 }
 
 /// An argument to a command.
@@ -81,6 +95,9 @@ pub enum CommandArg {
     String(String),
     /// An assignment/declaration; typically treated as a string, but will
     /// be specially handled by a limited set of built-in commands.
+    ///
+    /// Its words are already expanded. Its subscripts are not yet resolved: only the declaration
+    /// builtin knows whether the target is an indexed or associative array.
     Assignment(ast::Assignment),
 }
 
@@ -106,20 +123,55 @@ impl From<&String> for CommandArg {
 }
 
 impl CommandArg {
+    /// Renders this argument as `set -x` trace text, quoting the whole argument if a shell would
+    /// need quoting to reproduce it.
     pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             Self::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
-            Self::Assignment(a) => {
-                let mut s = a.name.to_string();
-                let op = if a.append { "+=" } else { "=" };
-                s.push_str(op);
-                s.push_str(&escape::quote_if_needed(
-                    a.value.to_string().as_str(),
+            // A compound operand was already traced on its own line (see
+            // `compound_assignment_for_tracing`); the command line carries only its name.
+            Self::Assignment(ast::Assignment {
+                name,
+                value: ast::AssignmentValue::Array(_),
+                ..
+            }) => Cow::Owned(name.to_string()),
+            // Traced as one word: `x=a b` becomes `'x=a b'`, not `x='a b'`.
+            Self::Assignment(assignment) => Cow::Owned(
+                escape::quote_if_needed(
+                    assignment.to_string().as_str(),
                     escape::QuoteMode::SingleQuote,
-                ));
-                s.into()
-            }
+                )
+                .into_owned(),
+            ),
         }
+    }
+
+    /// Returns the standalone `set -x` line a shell traces for a compound assignment operand
+    /// (`name=(['k']='v' 'w')`, every key and value single-quoted) ahead of the command that
+    /// carries it; `None` for any other argument.
+    pub(crate) fn compound_assignment_for_tracing(&self) -> Option<String> {
+        let Self::Assignment(ast::Assignment {
+            name,
+            value: ast::AssignmentValue::Array(elements),
+            append,
+            ..
+        }) = self
+        else {
+            return None;
+        };
+
+        let quote =
+            |word: &ast::Word| escape::force_quote(&word.value, escape::QuoteMode::SingleQuote);
+        let elements = elements
+            .iter()
+            .map(|(key, value)| match key {
+                Some(key) => std::format!("[{}]={}", quote(key), quote(value)),
+                None => quote(value),
+            })
+            .join(" ");
+        let op = if *append { "+=" } else { "=" };
+
+        Some(std::format!("{name}{op}({elements})"))
     }
 }
 
@@ -253,15 +305,17 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     Ok(cmd)
 }
 
+/// Runs the pre-execution hooks for a command that is about to be executed. `source_text` is the
+/// command's text as it appeared in the source, before any expansion.
 pub(crate) async fn on_preexecute(
     cmd: &mut commands::SimpleCommand<'_, impl extensions::ShellExtensions>,
+    source_text: String,
 ) -> Result<(), error::Error> {
-    // Set BASH_COMMAND before invoking the DEBUG trap (and generally before
-    // executing commands).
-    let full_cmd = cmd.args.iter().map(|arg| arg.to_string()).join(" ");
+    // Set BASH_COMMAND before invoking the DEBUG trap (and generally before executing commands).
+    // It reports the command as written, not as expanded.
     cmd.shell.env_mut().update_or_add(
         "BASH_COMMAND",
-        variables::ShellValueLiteral::Scalar(full_cmd),
+        variables::ShellValueLiteral::Scalar(source_text),
         |_| Ok(()),
         env::EnvironmentLookup::Anywhere,
         env::EnvironmentScope::Global,
@@ -566,15 +620,13 @@ pub(crate) fn execute_external_command(
     argv0_override: Option<&str>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
-    // Filter out the args; we only want strings.
+    // An assignment-shaped argument reaching an external command is just text; render it. (This
+    // is only reachable if a declaration builtin was disabled after its arguments were prepared.)
     let cmd_args = args
         .iter()
-        .filter_map(|e| {
-            if let CommandArg::String(s) = e {
-                Some(s)
-            } else {
-                None
-            }
+        .map(|arg| match arg {
+            CommandArg::String(value) => Cow::Borrowed(OsStr::new(value)),
+            CommandArg::Assignment(assignment) => Cow::Owned(assignment.to_string().into()),
         })
         .collect::<Vec<_>>();
 
