@@ -269,17 +269,18 @@ fn lift_modified_key(bytes: &[u8]) -> Option<ReedlineKey> {
         _ => return None,
     };
     let key_code = key_from_default_sequence(&plain)?;
+    let modifiers = modifiers_from_parameter(modifier)?;
 
-    Some((modifiers_from_parameter(modifier), key_code))
+    Some((modifiers, key_code))
 }
 
-fn modifiers_from_parameter(parameter: u8) -> KeyModifiers {
-    let mask = parameter.saturating_sub(1);
+fn modifiers_from_parameter(parameter: u8) -> Option<KeyModifiers> {
+    let mask = parameter.checked_sub(1).filter(|mask| *mask <= 0b111)?;
     let mut modifiers = KeyModifiers::empty();
     modifiers.set(KeyModifiers::SHIFT, mask & 1 != 0);
     modifiers.set(KeyModifiers::ALT, mask & 2 != 0);
     modifiers.set(KeyModifiers::CONTROL, mask & 4 != 0);
-    modifiers
+    Some(modifiers)
 }
 
 const fn modifier_parameter(modifiers: KeyModifiers) -> u8 {
@@ -669,6 +670,8 @@ mod tests {
         );
         assert_eq!(lift_key(b"\x1b[1;5"), None);
         assert_eq!(lift_key(b"\x1b[9;5~"), None);
+        assert_eq!(lift_key(b"\x1b[1;0C"), None);
+        assert_eq!(lift_key(b"\x1b[1;9C"), None);
     }
 
     #[test]
