@@ -15,13 +15,13 @@ U+FFFD, and split on newlines only, so a missing final newline is a difference t
 """
 
 import difflib
+import fcntl
 import os
 import resource
 import shutil
 import signal
 import struct
 import subprocess
-import fcntl
 import termios
 import threading
 from pathlib import Path
@@ -51,7 +51,8 @@ soft, hard = resource.getrlimit(resource.RLIMIT_NPROC)
 if hard == resource.RLIM_INFINITY:
     hard = 1 << 20
     # RLIM_INFINITY is -1 here, so min() would keep it.
-    resource.setrlimit(resource.RLIMIT_NPROC, (hard if soft == resource.RLIM_INFINITY else min(soft, hard), hard))
+    soft = hard if soft == resource.RLIM_INFINITY else min(soft, hard)
+    resource.setrlimit(resource.RLIMIT_NPROC, (soft, hard))
 
 # `diff` as the run scripts call it: [flags] actual expected, numbered because run-dirstack makes
 # two. The `diff -a x x` probe some scripts make, to see whether -a is supported, compares a file
