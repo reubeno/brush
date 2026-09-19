@@ -29,6 +29,7 @@ pub trait InputBackend: Send {
 }
 
 /// Result of a read operation.
+#[derive(Debug, PartialEq, Eq)]
 pub enum ReadResult {
     /// The user entered a line of input.
     Input(String),

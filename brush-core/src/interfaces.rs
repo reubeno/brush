@@ -2,4 +2,4 @@
 
 mod keybindings;
 
-pub use keybindings::{InputFunction, Key, KeyAction, KeyBindings, KeySequence, KeyStroke};
+pub use keybindings::{InputFunction, KeyAction, KeyBindings, KeyMacro, KeySequence};

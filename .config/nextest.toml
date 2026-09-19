@@ -6,3 +6,13 @@ fail-fast = false
 
 [profile.default.junit]
 path = "test-results.xml"
+
+# Each of these binaries drives a real shell in a pseudo-terminal and waits on its output
+# with a fixed expect timeout. Run at full parallelism they starve each other and time
+# out; capped, they pass without retries.
+[test-groups]
+pty = { max-threads = 4 }
+
+[[profile.default.overrides]]
+filter = 'binary(pty_startup_tests) | binary(pty_readline_macro_tests) | binary(pty_shell_expand_line_tests) | binary(brush-interactive-tests) | binary(reedline_interactive_tests)'
+test-group = 'pty'

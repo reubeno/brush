@@ -20,7 +20,7 @@ default = []
 basic = ["dep:crossterm", "completion"]
 completion = []
 minimal = []
-reedline = ["dep:reedline", "dep:nu-ansi-term", "completion", "highlighting"]
+reedline = ["dep:reedline", "dep:nu-ansi-term", "dep:crossterm", "dep:terminfo", "completion", "highlighting"]
 highlighting = []
 
 [lints]
@@ -30,6 +30,12 @@ workspace = true
 bon = "3.9.1"
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 brush-core = { version = "^0.5.0", path = "../brush-core" }
+# The reedline backend reads raw key events through reedline's `ReedlineRawEvent`, which is
+# opaque except as a conversion to crossterm's `Event`; reedline re-exports only `KeyCode`
+# and `KeyModifiers`, not `Event` or `KeyEvent`. So this must resolve to the same crossterm
+# reedline builds against, or that conversion stops compiling. Bump the two together: when
+# `reedline` moves, check its Cargo.toml for the crossterm it depends on and move this line to
+# match in the same change.
 crossterm = { version = "0.29.0", features = ["serde"], optional = true }
 indexmap = "2.13.0"
 nu-ansi-term = { version = "0.50.3", optional = true }
@@ -39,5 +45,13 @@ thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["rt", "sync"] }
 tracing = "0.1.44"
 
+[target.'cfg(unix)'.dependencies]
+# Only the reedline backend reads the terminal's key sequences; `optional` keeps it out of
+# builds that do not enable that feature.
+terminfo = { version = "0.9.0", optional = true }
+
 [dev-dependencies]
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+# Enumerating every `InputFunction`, to check the two translation tables against each other.
+strum = "0.28.0"
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }

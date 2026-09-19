@@ -1,14 +1,22 @@
-use brush_core::trace_categories;
+use brush_core::{interfaces::InputFunction, trace_categories};
 use nu_ansi_term::Style;
 use reedline::MenuBuilder;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use super::{completer, edit_mode, highlighter, history, validator};
+use super::{
+    completer, edit_mode, events, events::HostCommand, highlighter, history,
+    pending::DeferredReplay, validator,
+};
 use crate::{InputBackend, ReadResult, ShellError, input_backend::InteractivePrompt, refs};
 
 /// Represents an interactive shell capable of taking commands from standard input
 /// and reporting results to standard output and standard error streams.
 pub struct ReedlineInputBackend {
     reedline: Option<reedline::Reedline>,
+    bindings: Arc<Mutex<edit_mode::UpdatableBindings>>,
+    /// Macro bytes to replay at the next read, left behind by the bound command just returned.
+    pending_replay: Option<DeferredReplay>,
 }
 
 const COMPLETION_MENU_NAME: &str = "completion_menu";
@@ -123,13 +131,323 @@ impl ReedlineInputBackend {
             tokio::runtime::Handle::current().block_on(shell_ref.lock())
         });
 
-        shell.set_key_bindings(Some(updatable_bindings));
+        shell.set_key_bindings(Some(updatable_bindings.clone()));
         drop(shell);
 
         Ok(Self {
             reedline: Some(reedline),
+            bindings: updatable_bindings,
+            pending_replay: None,
         })
     }
+
+    fn lock_bindings(&self) -> tokio::sync::MutexGuard<'_, edit_mode::UpdatableBindings> {
+        lock(&self.bindings)
+    }
+
+    /// Settles a read. The read is ended on the bindings, dropping any key held for a
+    /// sequence, whether the read succeeded or not. A stop reached through a macro comes back
+    /// from reedline as the index of a record saying what to do: a bound command is returned
+    /// as the command itself with the bytes after it as the pending replay, and an
+    /// accept-line asks for the buffer to be accepted now with those bytes replayed after.
+    fn settle(&mut self, result: Result<ReadResult, ShellError>) -> Result<Settled, ShellError> {
+        self.pending_replay = None;
+
+        // What reedline returned, if it was one of our own encodings rather than a command
+        // the user bound.
+        let host = match &result {
+            Ok(ReadResult::BoundCommand(command)) => Some(HostCommand::decode(command)),
+            _ => None,
+        };
+        // End the read whether or not it succeeded: claim the record it returned, if any,
+        // and drop the rest.
+        let claimed = self.lock_bindings().end_read(match &host {
+            Some(HostCommand::Deferred(id)) => Some(*id),
+            _ => None,
+        });
+        let result = result?;
+
+        let deferred = match host {
+            Some(HostCommand::Deferred(_)) => claimed,
+            Some(other) => return Ok(settled_for(other)),
+            None => return Ok(Settled::Return(result)),
+        };
+        let Some(deferred) = deferred else {
+            // A bookkeeping bug: the record was never recorded or was already claimed.
+            // Prompt again rather than end the session over it.
+            tracing::debug!(
+                target: trace_categories::INPUT,
+                "reedline returned a deferred record we no longer hold"
+            );
+            return Ok(Settled::Resume);
+        };
+
+        Ok(match deferred.action {
+            events::DeferredAction::RunCommand(command) => {
+                self.pending_replay = deferred.replay;
+                settled_for(command)
+            }
+            events::DeferredAction::AcceptLine => Settled::Accept(deferred.replay),
+        })
+    }
+
+    /// Reads a line and settles it.
+    fn read_and_settle(
+        &mut self,
+        prompt: &InteractivePrompt,
+        accept_immediately: bool,
+    ) -> Result<Settled, ShellError> {
+        let Some(signal) = self.read_line_from_reedline(prompt, accept_immediately) else {
+            return Ok(Settled::Return(ReadResult::Eof));
+        };
+
+        let result = match signal {
+            Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
+            Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
+            Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
+            Ok(reedline::Signal::ExternalBreak(_)) => Err(ShellError::UnexpectedInputFailure),
+            Ok(reedline::Signal::HostCommand(cmd)) => Ok(ReadResult::BoundCommand(cmd)),
+            Ok(_) => Err(ShellError::UnexpectedInputFailure),
+            Err(err) => Err(ShellError::InputError(err)),
+        };
+
+        self.settle(result)
+    }
+
+    /// Carries out an accept-line a macro asked for mid-body: a second, immediately
+    /// accepting read submits the buffer as it stands, and the rest of the macro is left
+    /// pending for the read after that.
+    fn accept_then_replay(
+        &mut self,
+        prompt: &InteractivePrompt,
+        replay: Option<DeferredReplay>,
+    ) -> Result<ReadResult, ShellError> {
+        let accepted = self.read_and_settle(prompt, true)?;
+        self.pending_replay = replay;
+        match accepted {
+            Settled::Return(result) => Ok(result),
+            // An immediately accepting read dispatches no key, so it cannot settle to
+            // anything else; if it does, treat it as an empty line rather than end the
+            // session.
+            other => {
+                tracing::debug!(
+                    target: trace_categories::INPUT,
+                    "an accepting read settled to {other:?}"
+                );
+                Ok(ReadResult::Input(String::new()))
+            }
+        }
+    }
+
+    /// Carries out a readline function the editor cannot do on its own, on the buffer of
+    /// the read that is resuming. Every such function is one arm here and one in
+    /// [`super::events::translate_input_function_to_reedline_event`].
+    fn run_input_function(
+        &mut self,
+        function: InputFunction,
+        shell_ref: &refs::ShellRef<impl brush_core::ShellExtensions>,
+    ) {
+        match function {
+            InputFunction::ShellExpandLine => self.expand_line(shell_ref),
+            other => tracing::debug!(
+                target: trace_categories::INPUT,
+                "no host handling for input function: {other}"
+            ),
+        }
+    }
+
+    /// Expands the edit buffer in place, as readline's `shell-expand-line` does, leaving
+    /// the cursor at the end. A failed expansion reports the error and leaves the buffer as
+    /// it was; either way the caller resumes the same read, so no prompt hook runs again.
+    fn expand_line(&mut self, shell_ref: &refs::ShellRef<impl brush_core::ShellExtensions>) {
+        let Some((buffer, _cursor)) = self.get_read_buffer() else {
+            return;
+        };
+
+        let expanded = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let mut shell = shell_ref.lock().await;
+                let params = shell.default_exec_params();
+                match brush_core::expansion::shell_expand_line(&mut shell, &params, &buffer).await {
+                    Ok(expanded) => Some(expanded),
+                    Err(err) => {
+                        let mut stderr = shell.stderr();
+                        let _ = shell.display_error(&mut stderr, &err);
+                        None
+                    }
+                }
+            })
+        });
+
+        if let Some(expanded) = expanded {
+            let cursor = expanded.len(); // bytes
+            self.set_read_buffer(expanded, cursor);
+        }
+    }
+
+    /// Applies macro bytes deferred from before the last bound command, resolving them
+    /// against the bindings as they are *now*. Edits land in the editor buffer straight
+    /// away; whatever comes after them is left for the read that follows. `None` means
+    /// nothing was pending, or nothing came of it, and the next read proceeds as usual.
+    fn apply_pending_replay(&mut self) -> Result<Option<Settled>, ShellError> {
+        let Some(replay) = self.pending_replay.take() else {
+            return Ok(None);
+        };
+        let Some(reedline) = self.reedline.as_mut() else {
+            return Ok(None);
+        };
+
+        // Resolving may hit another bound command, in which case the bytes after it are
+        // deferred again.
+        let event = lock(&self.bindings).resolve_replay(replay);
+        let (edits, stop) = plan_replay(event);
+        reedline.run_edit_commands(&edits);
+
+        match stop {
+            Some(ReplayStop::HostCommand(cmd)) => {
+                self.settle(Ok(ReadResult::BoundCommand(cmd))).map(Some)
+            }
+            Some(ReplayStop::Accept) => Ok(Some(Settled::Accept(None))),
+            None => Ok(None),
+        }
+    }
+
+    /// Runs reedline's line reader, having it accept the buffer immediately when a replayed
+    /// macro asked for that. The flag is a builder option, so the editor is briefly moved out
+    /// and back around the call; it is never out during the read itself, keeping the
+    /// panic-time handling in [`Drop`] intact.
+    fn read_line_from_reedline(
+        &mut self,
+        prompt: &InteractivePrompt,
+        accept_immediately: bool,
+    ) -> Option<std::io::Result<reedline::Signal>> {
+        self.set_immediately_accept(accept_immediately);
+        let signal = self
+            .reedline
+            .as_mut()
+            .map(|r| read_line_with_retries(r, prompt));
+        if accept_immediately {
+            self.set_immediately_accept(false);
+        }
+
+        signal
+    }
+
+    fn set_immediately_accept(&mut self, value: bool) {
+        if let Some(reedline) = self.reedline.take() {
+            self.reedline = Some(reedline.with_immediately_accept(value));
+        }
+    }
+}
+
+/// Reads one line, retrying a bounded number of times when reedline fails.
+///
+/// An error here is almost always transient. The prevalent case: reedline asks the terminal
+/// for the cursor position (DSR, `ESC [ 6 n`) before painting a prompt, and again after an
+/// external program (a `bind -x` command such as atuin's search UI, fzf, ...) hands the
+/// terminal back. crossterm waits a fixed 2s for the reply and then fails; a terminal busy
+/// repainting or a multiplexer briefly holding the reply is enough to trip it, and giving up
+/// would end the whole interactive session. That failure happens before any input is read,
+/// so re-issuing the read is safe; retry a bounded number of times before treating the
+/// failure as real. A terminal that never answers therefore fails after
+/// `MAX_READ_LINE_ATTEMPTS` x 2s rather than 2s.
+///
+/// The one known exception: reedline restores the terminal mode *after* computing its
+/// result, so if `disable_raw_mode` itself fails, a line that was already submitted is lost
+/// and the retry prompts afresh. That is a tcsetattr failure on a tty that just worked; the
+/// alternative -- exiting the shell -- loses the same line and everything else with it.
+fn read_line_with_retries(
+    reedline: &mut reedline::Reedline,
+    prompt: &InteractivePrompt,
+) -> std::io::Result<reedline::Signal> {
+    let mut attempt: u32 = 1;
+    loop {
+        match reedline.read_line(prompt) {
+            Err(err) if attempt < MAX_READ_LINE_ATTEMPTS => {
+                attempt += 1;
+                tracing::debug!(
+                    target: trace_categories::INPUT,
+                    "reedline read_line failed; retrying (attempt {attempt}/{MAX_READ_LINE_ATTEMPTS}): {err}"
+                );
+            }
+            result => return result,
+        }
+    }
+}
+
+fn lock(
+    bindings: &Arc<Mutex<edit_mode::UpdatableBindings>>,
+) -> tokio::sync::MutexGuard<'_, edit_mode::UpdatableBindings> {
+    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(bindings.lock()))
+}
+
+/// What a settled read asks the backend to do.
+#[derive(Debug, PartialEq, Eq)]
+enum Settled {
+    /// Hand this result to the shell.
+    Return(ReadResult),
+    /// Accept the buffer as it stands, as accept-line would, then replay these bytes on the
+    /// read after.
+    Accept(Option<DeferredReplay>),
+    /// Carry out a readline function the editor cannot, then resume the same read.
+    InputFunction(InputFunction),
+    /// Nothing left to act on; prompt again. Reached only after a bookkeeping bug.
+    Resume,
+}
+
+/// The event that cut a replay short, on which reedline would have returned to the host.
+#[derive(Debug, PartialEq, Eq)]
+enum ReplayStop {
+    /// An accept-line.
+    Accept,
+    /// A bound command, as reedline would have returned it, not yet settled.
+    HostCommand(String),
+}
+
+/// What a host command reedline returned settles to: `shell-expand-line` is carried out on
+/// the buffer here; anything else is a command for the shell to run.
+fn settled_for(host_command: HostCommand) -> Settled {
+    match host_command {
+        HostCommand::Command(command) => Settled::Return(ReadResult::BoundCommand(command)),
+        HostCommand::InputFunction(function) => Settled::InputFunction(function),
+        HostCommand::Deferred(id) => {
+            // A record never names another record; one here is a bookkeeping bug.
+            tracing::debug!(
+                target: trace_categories::INPUT,
+                "deferred record {id} nested in a bound command"
+            );
+            Settled::Resume
+        }
+    }
+}
+
+/// Splits a resolved macro event into the edits to apply now and the event, if any, that
+/// stops the replay there.
+///
+/// Anything reedline itself would have to drive (menus, history search, completion) can't
+/// be replayed from outside its read loop and is dropped; reedline exposes no way to queue
+/// events into the next read. Edits and accept-line cover what bound commands leave behind
+/// in practice.
+fn plan_replay(event: reedline::ReedlineEvent) -> (Vec<reedline::EditCommand>, Option<ReplayStop>) {
+    let mut edits = Vec::new();
+
+    for event in events::flatten(event) {
+        match event {
+            reedline::ReedlineEvent::Edit(commands) => edits.extend(commands),
+            reedline::ReedlineEvent::Enter => return (edits, Some(ReplayStop::Accept)),
+            reedline::ReedlineEvent::ExecuteHostCommand(cmd) => {
+                return (edits, Some(ReplayStop::HostCommand(cmd)));
+            }
+            other => {
+                tracing::debug!(
+                    target: brush_core::trace_categories::INPUT,
+                    "dropping unsupported deferred macro event: {other:?}"
+                );
+            }
+        }
+    }
+
+    (edits, None)
 }
 
 impl Drop for ReedlineInputBackend {
@@ -157,51 +475,21 @@ impl InputBackend for ReedlineInputBackend {
     /// * `prompt` - The prompt to display to the user.
     fn read_line(
         &mut self,
-        _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
-        let Some(reedline) = &mut self.reedline else {
-            return Ok(ReadResult::Eof);
-        };
-
-        let mut attempt: u32 = 1;
         loop {
-            match reedline.read_line(&prompt) {
-                Ok(reedline::Signal::Success(s)) => return Ok(ReadResult::Input(s)),
-                Ok(reedline::Signal::CtrlC) => return Ok(ReadResult::Interrupted),
-                Ok(reedline::Signal::CtrlD) => return Ok(ReadResult::Eof),
-                Ok(reedline::Signal::ExternalBreak(_)) => {
-                    return Err(ShellError::UnexpectedInputFailure);
-                }
-                Ok(reedline::Signal::HostCommand(cmd)) => return Ok(ReadResult::BoundCommand(cmd)),
-                Ok(_) => return Err(ShellError::UnexpectedInputFailure),
-                // An error here is almost always transient. The prevalent case:
-                // reedline asks the terminal for the cursor position (DSR,
-                // `ESC [ 6 n`) before painting a prompt, and again after an
-                // external program (a `bind -x` command such as atuin's search
-                // UI, fzf, ...) hands the terminal back. crossterm waits a fixed
-                // 2s for the reply and then fails; a terminal busy repainting or
-                // a multiplexer briefly holding the reply is enough to trip it,
-                // and giving up would end the whole interactive session. That
-                // failure happens before any input is read, so re-issuing the
-                // read is safe; retry a bounded number of times before treating
-                // the failure as real. A terminal that never answers therefore
-                // fails after MAX_READ_LINE_ATTEMPTS x 2s rather than 2s.
-                //
-                // The one known exception: reedline restores the terminal mode
-                // *after* computing its result, so if `disable_raw_mode` itself
-                // fails, a line that was already submitted is lost and the retry
-                // prompts afresh. That is a tcsetattr failure on a tty that just
-                // worked; the alternative -- exiting the shell -- loses the same
-                // line and everything else with it.
-                Err(err) if attempt < MAX_READ_LINE_ATTEMPTS => {
-                    attempt += 1;
-                    tracing::debug!(
-                        target: trace_categories::INPUT,
-                        "reedline read_line failed; retrying (attempt {attempt}/{MAX_READ_LINE_ATTEMPTS}): {err}"
-                    );
-                }
-                Err(err) => return Err(ShellError::InputError(err)),
+            let settled = match self.apply_pending_replay()? {
+                Some(settled) => settled,
+                None => self.read_and_settle(&prompt, false)?,
+            };
+
+            match settled {
+                Settled::Return(result) => return Ok(result),
+                Settled::Accept(then) => return self.accept_then_replay(&prompt, then),
+                // The function edits the buffer and the read resumes on the same prompt.
+                Settled::InputFunction(function) => self.run_input_function(function, shell),
+                Settled::Resume => (),
             }
         }
     }
@@ -218,8 +506,7 @@ impl InputBackend for ReedlineInputBackend {
     fn set_read_buffer(&mut self, buffer: String, cursor: usize) {
         if let Some(reedline) = &mut self.reedline {
             reedline.run_edit_commands(&[
-                reedline::EditCommand::MoveToStart { select: false },
-                reedline::EditCommand::ClearToLineEnd,
+                reedline::EditCommand::Clear,
                 reedline::EditCommand::InsertString(buffer),
                 reedline::EditCommand::MoveToPosition {
                     position: cursor,
@@ -250,14 +537,31 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
         reedline::ReedlineEvent::MenuPrevious,
     );
 
-    // Add undo.
-    // NOTE: To match readline, we bind Ctrl+_ to undo; in practice, the only way
-    // to get that to work out is to specify Ctrl+7 for the binding. It's not clear
-    // that this is terribly portable across terminals/environments.
+    // Add undo. readline binds it to Ctrl+_, which terminals send as 0x1f; crossterm reports
+    // that byte as Ctrl+7.
     key_bindings.add_binding(
         reedline::KeyModifiers::CONTROL,
         reedline::KeyCode::Char('7'),
         reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::Undo]),
+    );
+
+    // Meta+Ctrl+E expands the line in place, as in readline; the fzf and zoxide widgets
+    // end their macros with it.
+    key_bindings.add_binding(
+        reedline::KeyModifiers::ALT | reedline::KeyModifiers::CONTROL,
+        reedline::KeyCode::Char('e'),
+        reedline::ReedlineEvent::ExecuteHostCommand(
+            HostCommand::InputFunction(InputFunction::ShellExpandLine).encode(),
+        ),
+    );
+
+    // Ctrl+J accepts the line, as in readline. In raw mode a newline byte arrives as Ctrl+J
+    // rather than Enter, and macro bodies spell accept-line as `\n` at least as often as
+    // `\r`.
+    key_bindings.add_binding(
+        reedline::KeyModifiers::CONTROL,
+        reedline::KeyCode::Char('j'),
+        reedline::ReedlineEvent::Enter,
     );
 
     // Capitalize.
@@ -287,8 +591,634 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
 }
 
 #[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
+    use brush_core::interfaces::{KeyBindings as _, KeyMacro, KeySequence};
+
+    fn control_key(character: char) -> KeySequence {
+        KeySequence::from(vec![brush_parser::readline_binding::control_byte(
+            character as u8,
+        )])
+    }
+
+    fn shell_bindings() -> edit_mode::UpdatableBindings {
+        edit_mode::UpdatableBindings::new(compose_key_bindings(COMPLETION_MENU_NAME))
+    }
+
+    #[test]
+    fn every_binding_the_shell_lists_is_one_bind_accepts_back() {
+        // `bind -p` names a key's function by translating the event bound to it, and an
+        // inputrc built from that listing is fed straight back to `bind`. Any event we can
+        // name but not translate back would list a line `bind` then rejects.
+        let bindings = compose_key_bindings(COMPLETION_MENU_NAME);
+        for (key, event) in bindings.get_keybindings() {
+            let Some(action) = events::translate_reedline_event_to_action(event) else {
+                continue;
+            };
+            assert!(
+                events::translate_action_to_reedline_event(&action).is_some(),
+                "{key:?} lists as `{action}`, which `bind` does not accept"
+            );
+        }
+    }
+
+    #[test]
+    fn set_read_buffer_replaces_all_lines() {
+        for old_cursor in [0, 6, 14, usize::MAX] {
+            for (replacement, cursor) in [("new", 1), ("new\nlines\n", 4), ("", 0)] {
+                let mut backend = ReedlineInputBackend {
+                    reedline: Some(reedline::Reedline::create()),
+                    bindings: Arc::new(Mutex::new(shell_bindings())),
+                    pending_replay: None,
+                };
+                backend.set_read_buffer("first\nsecond\nthird".to_owned(), old_cursor);
+                backend.set_read_buffer(replacement.to_owned(), cursor);
+                assert_eq!(
+                    backend.get_read_buffer(),
+                    Some((replacement.to_owned(), cursor)),
+                    "old cursor {old_cursor}, replacement {replacement:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn set_read_buffer_preserves_byte_cursor_clamping() {
+        let replacement = "a\u{e9}\n\u{754c}z";
+        for (requested, expected) in [(0, 0), (2, 1), (3, 3), (5, 4), (8, 8), (usize::MAX, 8)] {
+            let mut backend = ReedlineInputBackend {
+                reedline: Some(reedline::Reedline::create()),
+                bindings: Arc::new(Mutex::new(shell_bindings())),
+                pending_replay: None,
+            };
+            backend.set_read_buffer("old\nbuffer".to_owned(), 4);
+            backend.set_read_buffer(replacement.to_owned(), requested);
+            assert_eq!(
+                backend.get_read_buffer(),
+                Some((replacement.to_owned(), expected)),
+                "requested byte offset {requested}"
+            );
+        }
+    }
+
+    #[test]
+    fn control_underscore_macro_undoes() -> Result<(), ShellError> {
+        let mut bindings = shell_bindings();
+        bindings.define_macro(control_key('g'), KeyMacro::from(b"\x1f".to_vec()))?;
+
+        assert_eq!(
+            edit_mode::press(
+                &mut bindings,
+                reedline::KeyModifiers::CONTROL,
+                reedline::KeyCode::Char('g')
+            )?,
+            reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::Undo])
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn tab_in_macro_completes() -> Result<(), ShellError> {
+        let mut bindings = shell_bindings();
+        bindings.define_macro(control_key('g'), KeyMacro::from(b"ab\t".to_vec()))?;
+
+        let tab = bindings
+            .get_current()
+            .get(&KeySequence::from(b"\t".to_vec()))
+            .cloned();
+        assert!(tab.is_some(), "tab should be listed as bound");
+
+        let event = edit_mode::press(
+            &mut bindings,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('g'),
+        )?;
+        let reedline::ReedlineEvent::Multiple(events) = event else {
+            return Err(ShellError::IoError(std::io::Error::other(std::format!(
+                "expected text followed by the tab binding, got {event:?}"
+            ))));
+        };
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0],
+            reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::InsertString(
+                "ab".to_owned()
+            )])
+        );
+        assert!(matches!(events[1], reedline::ReedlineEvent::UntilFound(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn insert_comment_binding_spliced_into_macro() -> Result<(), ShellError> {
+        // A base binding whose event is itself a `Multiple` (\M-# inserts a comment and
+        // accepts) nests inside the macro's events as-is.
+        let mut bindings = shell_bindings();
+        bindings.define_macro(control_key('g'), KeyMacro::from(b"ls\x1b#".to_vec()))?;
+
+        assert_eq!(
+            edit_mode::press(
+                &mut bindings,
+                reedline::KeyModifiers::CONTROL,
+                reedline::KeyCode::Char('g')
+            )?,
+            reedline::ReedlineEvent::Multiple(vec![
+                reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::InsertString(
+                    "ls".to_owned()
+                )]),
+                reedline::ReedlineEvent::Multiple(vec![
+                    reedline::ReedlineEvent::Edit(vec![
+                        reedline::EditCommand::MoveToStart { select: false },
+                        reedline::EditCommand::InsertChar('#'),
+                    ]),
+                    reedline::ReedlineEvent::Enter,
+                ]),
+            ])
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn accept_line_nested_in_a_bound_event_defers_the_rest() -> Result<(), ShellError> {
+        // \M-# is bound to a `Multiple` that ends in an accept-line. With bytes after it in
+        // the macro, resolution stops there like it would at a bare accept-line, keeping the
+        // edits before it and deferring what follows; bash runs both lines.
+        let mut bindings = shell_bindings();
+        bindings.define_macro(
+            control_key('g'),
+            KeyMacro::from(b"ls\x1b#echo b\r".to_vec()),
+        )?;
+
+        let event = edit_mode::press(
+            &mut bindings,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('g'),
+        )?;
+        let reedline::ReedlineEvent::Multiple(events) = &event else {
+            return Err(ShellError::IoError(std::io::Error::other(std::format!(
+                "expected text, the comment edit and a deferred record, got {event:?}"
+            ))));
+        };
+        assert_eq!(events.len(), 3);
+        assert_eq!(
+            events[0],
+            reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::InsertString(
+                "ls".to_owned()
+            )])
+        );
+        assert_eq!(
+            events[1],
+            reedline::ReedlineEvent::Edit(vec![
+                reedline::EditCommand::MoveToStart { select: false },
+                reedline::EditCommand::InsertChar('#'),
+            ])
+        );
+        let reedline::ReedlineEvent::ExecuteHostCommand(encoded) = &events[2] else {
+            return Err(ShellError::UnexpectedInputFailure);
+        };
+        let HostCommand::Deferred(id) = HostCommand::decode(encoded) else {
+            return Err(ShellError::UnexpectedInputFailure);
+        };
+        let deferred = bindings
+            .end_read(Some(id))
+            .ok_or(ShellError::UnexpectedInputFailure)?;
+        assert_eq!(deferred.action, events::DeferredAction::AcceptLine);
+        let replay = deferred.replay.ok_or(ShellError::UnexpectedInputFailure)?;
+        assert_eq!(replay.bytes(), b"echo b\r");
+
+        Ok(())
+    }
+
+    #[test]
+    fn plan_replay_applies_edits_then_accepts() {
+        let (edits, outcome) = plan_replay(reedline::ReedlineEvent::Multiple(vec![
+            reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::InsertString(
+                "echo".to_owned(),
+            )]),
+            reedline::ReedlineEvent::Enter,
+            reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::InsertString(
+                "dropped".to_owned(),
+            )]),
+        ]));
+
+        assert_eq!(
+            edits,
+            vec![reedline::EditCommand::InsertString("echo".to_owned())]
+        );
+        assert_eq!(outcome, Some(ReplayStop::Accept));
+    }
+
+    #[test]
+    fn plan_replay_stops_at_bound_command() {
+        let (edits, outcome) = plan_replay(reedline::ReedlineEvent::Multiple(vec![
+            reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::InsertString(
+                "pre".to_owned(),
+            )]),
+            reedline::ReedlineEvent::ExecuteHostCommand("bound".to_owned()),
+            reedline::ReedlineEvent::Enter,
+        ]));
+
+        assert_eq!(
+            edits,
+            vec![reedline::EditCommand::InsertString("pre".to_owned())]
+        );
+        assert_eq!(outcome, Some(ReplayStop::HostCommand("bound".to_owned())));
+    }
+
+    #[test]
+    fn plan_replay_flattens_nested_events_and_skips_unsupported_ones() {
+        let (edits, outcome) = plan_replay(reedline::ReedlineEvent::Multiple(vec![
+            reedline::ReedlineEvent::Multiple(vec![reedline::ReedlineEvent::Edit(vec![
+                reedline::EditCommand::InsertChar('a'),
+            ])]),
+            reedline::ReedlineEvent::SearchHistory,
+            reedline::ReedlineEvent::None,
+            reedline::ReedlineEvent::Edit(vec![reedline::EditCommand::InsertChar('b')]),
+        ]));
+
+        assert_eq!(
+            edits,
+            vec![
+                reedline::EditCommand::InsertChar('a'),
+                reedline::EditCommand::InsertChar('b'),
+            ]
+        );
+        assert_eq!(outcome, None);
+    }
+
+    #[test]
+    fn plan_replay_of_nothing_continues() {
+        let (edits, outcome) = plan_replay(reedline::ReedlineEvent::None);
+        assert!(edits.is_empty());
+        assert_eq!(outcome, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_unclaimable_deferred_record_resumes_without_pending_replay() {
+        // Nothing produces one: a record is claimed exactly once, by the read that returned
+        // its index. If our bookkeeping ever slips, the session must survive it.
+        let mut backend = ReedlineInputBackend {
+            reedline: None,
+            bindings: Arc::new(Mutex::new(shell_bindings())),
+            pending_replay: Some(DeferredReplay::new(
+                b"stale",
+                edit_mode::MAX_MACRO_REPLAY_BYTES,
+            )),
+        };
+        let settled = backend.settle(Ok(ReadResult::BoundCommand(
+            HostCommand::Deferred(usize::MAX).encode(),
+        )));
+
+        assert_eq!(settled.ok(), Some(Settled::Resume));
+        assert!(backend.pending_replay.is_none());
+    }
+
+    #[test]
+    fn a_record_nested_in_a_bound_command_resumes() {
+        // A record's action never names another record; one here would be a bug, not a
+        // reason to end the session.
+        assert_eq!(settled_for(HostCommand::Deferred(3)), Settled::Resume);
+        assert_eq!(
+            settled_for(HostCommand::InputFunction(InputFunction::ShellExpandLine)),
+            Settled::InputFunction(InputFunction::ShellExpandLine)
+        );
+        assert_eq!(
+            settled_for(HostCommand::Command("echo hi".to_owned())),
+            Settled::Return(ReadResult::BoundCommand("echo hi".to_owned()))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pending_replay_edits_the_buffer_and_leaves_accepting_to_reedline()
+    -> Result<(), ShellError> {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        bindings.lock().await.define_macro(
+            control_key('g'),
+            KeyMacro::from(b"echo replayed\r".to_vec()),
+        )?;
+
+        let mut backend = ReedlineInputBackend {
+            reedline: Some(reedline::Reedline::create()),
+            bindings: bindings.clone(),
+            pending_replay: None,
+        };
+
+        // Nothing pending: an ordinary read follows.
+        assert_eq!(backend.apply_pending_replay()?, None);
+
+        // Pending bytes that trigger a macro: its text lands in the buffer, and the accept
+        // is left for reedline to perform on the read that follows.
+        backend.pending_replay = Some(DeferredReplay::new(
+            b"\x07",
+            edit_mode::MAX_MACRO_REPLAY_BYTES,
+        ));
+        assert_eq!(backend.apply_pending_replay()?, Some(Settled::Accept(None)));
+        assert_eq!(
+            backend.get_read_buffer(),
+            Some(("echo replayed".to_owned(), 13))
+        );
+        assert!(backend.pending_replay.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pending_replay_returns_bound_command_and_defers_the_rest() -> Result<(), ShellError> {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        bindings.lock().await.bind(
+            control_key('t'),
+            brush_core::interfaces::KeyAction::ShellCommand("bound".to_owned()),
+        )?;
+
+        let mut backend = ReedlineInputBackend {
+            reedline: Some(reedline::Reedline::create()),
+            bindings: bindings.clone(),
+            pending_replay: Some(DeferredReplay::new(
+                b"pre\x14post",
+                edit_mode::MAX_MACRO_REPLAY_BYTES,
+            )),
+        };
+
+        assert_eq!(
+            backend.apply_pending_replay()?,
+            Some(Settled::Return(ReadResult::BoundCommand(
+                "bound".to_owned()
+            )))
+        );
+        assert_eq!(backend.get_read_buffer(), Some(("pre".to_owned(), 3)));
+
+        // The bytes after the command are now pending on the backend.
+        assert_eq!(
+            backend.pending_replay.as_ref().map(DeferredReplay::bytes),
+            Some(b"post".to_vec())
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pending_replay_without_an_editor_is_dropped() -> Result<(), ShellError> {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        bindings.lock().await.bind(
+            control_key('t'),
+            brush_core::interfaces::KeyAction::ShellCommand("bound".to_owned()),
+        )?;
+
+        let mut backend = ReedlineInputBackend {
+            reedline: None,
+            bindings: bindings.clone(),
+            pending_replay: Some(DeferredReplay::new(
+                b"\x14tail",
+                edit_mode::MAX_MACRO_REPLAY_BYTES,
+            )),
+        };
+
+        assert_eq!(backend.apply_pending_replay()?, None);
+        assert!(backend.pending_replay.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn read_results_other_than_bound_commands_drop_deferred_bytes() -> Result<(), ShellError>
+    {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        bindings.lock().await.bind(
+            control_key('t'),
+            brush_core::interfaces::KeyAction::ShellCommand("bound".to_owned()),
+        )?;
+        bindings
+            .lock()
+            .await
+            .define_macro(control_key('g'), KeyMacro::from(b"\x14tail".to_vec()))?;
+
+        let mut backend = ReedlineInputBackend {
+            reedline: Some(reedline::Reedline::create()),
+            bindings: bindings.clone(),
+            pending_replay: None,
+        };
+
+        // A macro press that reedline never turned into a bound command (say, because it
+        // was in history-search mode) must not leak its tail into a later read.
+        let _ = edit_mode::press(
+            &mut *bindings.lock().await,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('g'),
+        )?;
+        let settled = backend.settle(Ok(ReadResult::Input("typed".to_owned())))?;
+        assert!(matches!(settled, Settled::Return(ReadResult::Input(line)) if line == "typed"));
+        assert!(backend.pending_replay.is_none());
+
+        // Whereas the record reedline returns for the command maps back to the command
+        // itself, and its tail becomes pending.
+        let event = edit_mode::press(
+            &mut *bindings.lock().await,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('g'),
+        )?;
+        let reedline::ReedlineEvent::ExecuteHostCommand(encoded) = event else {
+            return Err(ShellError::IoError(std::io::Error::other(std::format!(
+                "expected a bound command, got {event:?}"
+            ))));
+        };
+        assert_ne!(encoded, "bound");
+        let settled = backend.settle(Ok(ReadResult::BoundCommand(encoded)))?;
+        assert!(
+            matches!(&settled, Settled::Return(ReadResult::BoundCommand(cmd)) if cmd == "bound"),
+            "unexpected settled result: {settled:?}"
+        );
+        assert_eq!(
+            backend.pending_replay.as_ref().map(DeferredReplay::bytes),
+            Some(b"tail".to_vec())
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accept_line_mid_macro_accepts_now_and_replays_the_rest_later() -> Result<(), ShellError>
+    {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        bindings.lock().await.define_macro(
+            control_key('g'),
+            KeyMacro::from(b"echo a\recho b\r".to_vec()),
+        )?;
+
+        let mut backend = ReedlineInputBackend {
+            reedline: Some(reedline::Reedline::create()),
+            bindings: bindings.clone(),
+            pending_replay: None,
+        };
+
+        let event = edit_mode::press(
+            &mut *bindings.lock().await,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('g'),
+        )?;
+        let reedline::ReedlineEvent::Multiple(events) = event else {
+            return Err(ShellError::IoError(std::io::Error::other(std::format!(
+                "unexpected event: {event:?}"
+            ))));
+        };
+        let Some(reedline::ReedlineEvent::ExecuteHostCommand(encoded)) = events.last().cloned()
+        else {
+            return Err(ShellError::IoError(std::io::Error::other(
+                "macro did not stop at accept-line",
+            )));
+        };
+
+        let settled = backend.settle(Ok(ReadResult::BoundCommand(encoded)))?;
+        assert!(
+            matches!(&settled, Settled::Accept(Some(replay)) if replay.bytes() == b"echo b\r"),
+            "unexpected settled result: {settled:?}"
+        );
+
+        // The same through a deferred replay: the outcome carries what to replay after the
+        // accept, so the accept read can't clear it.
+        backend.pending_replay = Some(DeferredReplay::new(
+            b"\x07",
+            edit_mode::MAX_MACRO_REPLAY_BYTES,
+        ));
+        let outcome = backend.apply_pending_replay()?;
+        assert!(
+            matches!(&outcome, Some(Settled::Accept(Some(replay))) if replay.bytes() == b"echo b\r"),
+            "unexpected outcome: {outcome:?}"
+        );
+        assert_eq!(backend.get_read_buffer(), Some(("echo a".to_owned(), 6)));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_failed_read_still_ends_the_read() -> Result<(), ShellError> {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        {
+            let mut bindings = bindings.lock().await;
+            bindings.bind(
+                control_key('t'),
+                brush_core::interfaces::KeyAction::ShellCommand("bound".to_owned()),
+            )?;
+            bindings.bind(
+                KeySequence::from(b"\x18\x12".to_vec()),
+                brush_core::interfaces::KeyAction::ShellCommand("raw".to_owned()),
+            )?;
+
+            // Leave a held prefix key behind, as a read that failed midway would.
+            let _ = edit_mode::press(
+                &mut bindings,
+                reedline::KeyModifiers::CONTROL,
+                reedline::KeyCode::Char('x'),
+            )?;
+            drop(bindings);
+        }
+
+        let mut backend = ReedlineInputBackend {
+            reedline: None,
+            bindings: bindings.clone(),
+            pending_replay: Some(DeferredReplay::new(
+                b"stale",
+                edit_mode::MAX_MACRO_REPLAY_BYTES,
+            )),
+        };
+
+        let settled = backend.settle(Err(ShellError::UnexpectedInputFailure));
+        assert!(matches!(settled, Err(ShellError::UnexpectedInputFailure)));
+        assert!(backend.pending_replay.is_none());
+
+        let mut bindings = bindings.lock().await;
+        let after_prefix = edit_mode::press(
+            &mut bindings,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('r'),
+        )?;
+        drop(bindings);
+
+        assert_ne!(
+            after_prefix,
+            reedline::ReedlineEvent::ExecuteHostCommand("raw".to_owned())
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shell_expand_line_settles_without_reaching_the_shell() -> Result<(), ShellError> {
+        let bindings = Arc::new(Mutex::new(shell_bindings()));
+        bindings.lock().await.define_macro(
+            control_key('g'),
+            KeyMacro::from(b"`cmd`\x1b\x05\r".to_vec()),
+        )?;
+
+        let mut backend = ReedlineInputBackend {
+            reedline: None,
+            bindings: bindings.clone(),
+            pending_replay: None,
+        };
+
+        // Bound directly: the marker reedline returns never reaches the shell as a command.
+        let settled = backend.settle(Ok(ReadResult::BoundCommand(
+            HostCommand::InputFunction(InputFunction::ShellExpandLine).encode(),
+        )))?;
+        assert_eq!(
+            settled,
+            Settled::InputFunction(InputFunction::ShellExpandLine)
+        );
+
+        // Reached through a macro: the same, with the rest of the macro pending.
+        let event = edit_mode::press(
+            &mut *bindings.lock().await,
+            reedline::KeyModifiers::CONTROL,
+            reedline::KeyCode::Char('g'),
+        )?;
+        let reedline::ReedlineEvent::Multiple(events) = event else {
+            return Err(ShellError::UnexpectedInputFailure);
+        };
+        let Some(reedline::ReedlineEvent::ExecuteHostCommand(encoded)) = events.last().cloned()
+        else {
+            return Err(ShellError::UnexpectedInputFailure);
+        };
+        let settled = backend.settle(Ok(ReadResult::BoundCommand(encoded)))?;
+        assert_eq!(
+            settled,
+            Settled::InputFunction(InputFunction::ShellExpandLine)
+        );
+        assert_eq!(
+            backend.pending_replay.as_ref().map(DeferredReplay::bytes),
+            Some(b"\r".to_vec())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn shell_expand_line_is_bound_by_default() -> Result<(), ShellError> {
+        let mut bindings = shell_bindings();
+
+        assert_eq!(
+            edit_mode::press(
+                &mut bindings,
+                reedline::KeyModifiers::ALT | reedline::KeyModifiers::CONTROL,
+                reedline::KeyCode::Char('e')
+            )?,
+            reedline::ReedlineEvent::ExecuteHostCommand(
+                HostCommand::InputFunction(InputFunction::ShellExpandLine).encode()
+            )
+        );
+        assert_eq!(
+            bindings
+                .get_current()
+                .get(&KeySequence::from(b"\x1b\x05".to_vec())),
+            Some(&brush_core::interfaces::KeyAction::DoInputFunction(
+                brush_core::interfaces::InputFunction::ShellExpandLine
+            ))
+        );
+
+        Ok(())
+    }
 
     #[test]
     fn history_hint_style_is_theme_adaptive() {

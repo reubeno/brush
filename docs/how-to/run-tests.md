@@ -35,6 +35,14 @@ To run all workspace tests:
 cargo test --workspace
 ```
 
+Note that `brush-interactive` enables no features by default, so its reedline-specific
+unit tests only compile when that feature is on. Workspace runs get it via `brush-shell`;
+a crate-scoped run needs it spelled out:
+
+```bash
+cargo test -p brush-interactive --features reedline
+```
+
 To run just bash compatibility tests:
 
 ```bash
