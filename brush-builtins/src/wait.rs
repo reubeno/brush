@@ -23,6 +23,8 @@ pub(crate) struct WaitCommand {
     ids: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(WaitCommand);
+
 impl builtins::Command for WaitCommand {
     type Error = brush_core::Error;
 
@@ -75,14 +77,5 @@ impl builtins::Command for WaitCommand {
         }
 
         Ok(result)
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }

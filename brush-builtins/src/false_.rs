@@ -1,26 +1,41 @@
-use brush_core::{ExecutionResult, builtins, error};
+use brush_core::{ExecutionResult, builtins};
 
 /// Return exit code 1.
 pub(crate) struct FalseCommand {}
 
-impl builtins::SimpleCommand for FalseCommand {
-    fn get_content(
-        _name: &str,
-        content_type: builtins::ContentType,
-        _options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::Error> {
-        match content_type {
-            builtins::ContentType::DetailedHelp => Ok("Returns a failure exit status.".into()),
-            builtins::ContentType::ShortUsage => Ok("false".into()),
-            builtins::ContentType::ShortDescription => Ok("false - fail".into()),
-            builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
-        }
+impl builtins::HelpContent for FalseCommand {
+    fn synopsis(_name: &str) -> String {
+        "false".into()
     }
 
-    fn execute<SE: brush_core::ShellExtensions, I: Iterator<Item = S>, S: AsRef<str>>(
+    fn description(_name: &str) -> String {
+        "fail".into()
+    }
+
+    fn detailed_help(
+        _name: &str,
+        _options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok("Returns a failure exit status.".into())
+    }
+}
+
+impl builtins::FromArgs for FalseCommand {
+    fn from_args(
+        _name: &str,
+        _args: Vec<brush_core::CommandArg>,
+    ) -> Result<Self, builtins::ArgsError> {
+        Ok(Self {})
+    }
+}
+
+impl builtins::Command for FalseCommand {
+    type Error = brush_core::Error;
+
+    async fn execute<SE: brush_core::ShellExtensions>(
+        &self,
         _context: brush_core::ExecutionContext<'_, SE>,
-        _args: I,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         Ok(ExecutionResult::general_error())
     }
 }

@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use brush_core::ExecutionExitCode;
-use brush_core::builtins::{BoxFuture, ContentOptions, ContentType, Registration};
+use brush_core::builtins::{self, BoxFuture, Registration};
 use brush_core::commands::{self, CommandArg, ExecutionContext};
 use brush_core::extensions::ShellExtensions;
 
@@ -151,27 +151,27 @@ fn self_exe() -> Option<&'static PathBuf> {
         .as_ref()
 }
 
-/// Help/usage content provider for the shim builtin. brush calls this for
-/// `help <name>`, `type <name>`, etc.
-#[allow(
-    clippy::needless_pass_by_value,
-    clippy::unnecessary_wraps,
-    reason = "signature dictated by brush_core::builtins::CommandContentFunc"
-)]
-fn shim_content(
-    name: &str,
-    content_type: ContentType,
-    _options: &ContentOptions,
-) -> Result<String, brush_core::Error> {
-    match content_type {
-        ContentType::ShortDescription => Ok(format!("{name} - bundled command")),
-        ContentType::DetailedHelp => Ok(format!(
+/// Help for every bundled command. The bundled utility documents itself
+/// (`brush <DISPATCH_FLAG> <name> --help` or equivalent); this only identifies
+/// the name as a bundled command.
+struct ShimHelp;
+
+impl builtins::HelpContent for ShimHelp {
+    fn synopsis(name: &str) -> String {
+        name.to_owned()
+    }
+
+    fn description(_name: &str) -> String {
+        "bundled command".to_owned()
+    }
+
+    fn detailed_help(
+        name: &str,
+        _options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!(
             "{name} - bundled command (executes via `brush {DISPATCH_FLAG} {name}`)\n"
-        )),
-        // A bundled command never contributes its own short-usage or man page
-        // through this path; detailed help comes from the bundled utility
-        // itself (`brush <DISPATCH_FLAG> <name> --help` or equivalent).
-        ContentType::ShortUsage | ContentType::ManPage => Ok(String::new()),
+        ))
     }
 }
 
@@ -230,16 +230,16 @@ fn shim_execute<SE: ShellExtensions>(
         // Build the argv for the spawned brush. `SimpleCommand::args[0]` is
         // dropped by the external-execution path (argv[0] of the spawned
         // process comes from `cmd.argv0` below), so a placeholder suffices;
-        // args[1..] become the spawned process's argv[1..]. The caller's
-        // `args[0]` is the bundled name by builtin-dispatch convention — we
-        // replace it with an explicit `<name>` after `DISPATCH_FLAG` so the
-        // child's dispatcher sees it in a fixed slot.
+        // args[1..] become the spawned process's argv[1..]. Builtins receive
+        // only the words after their own name, so we insert the bundled name
+        // explicitly after `DISPATCH_FLAG`, where the child's dispatcher
+        // expects it.
         let bundled_name = context.command_name.clone();
         let mut child_args: Vec<CommandArg> = Vec::with_capacity(args.len() + 2);
         child_args.push(CommandArg::String(String::new())); // args[0], dropped
         child_args.push(CommandArg::String(DISPATCH_FLAG.into()));
         child_args.push(CommandArg::String(bundled_name.clone()));
-        child_args.extend(args.into_iter().skip(1));
+        child_args.extend(args);
 
         let mut cmd = commands::SimpleCommand::new(
             commands::ShellForCommand::ParentShell(context.shell),
@@ -265,13 +265,7 @@ fn shim_execute<SE: ShellExtensions>(
 /// registration value can be reused for every bundled name; per-name
 /// dispatch happens via `context.command_name` at execution time.
 fn shim_registration<SE: ShellExtensions>() -> Registration<SE> {
-    Registration {
-        execute_func: shim_execute::<SE>,
-        content_func: shim_content,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: false,
-    }
+    Registration::new::<ShimHelp>(shim_execute::<SE>)
 }
 
 /// Registers a shim builtin for every name in the installed bundled-command
