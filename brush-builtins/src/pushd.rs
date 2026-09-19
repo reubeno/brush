@@ -15,6 +15,8 @@ pub(crate) struct PushdCommand {
     // TODO(pushd): implement +N and -N
 }
 
+brush_builtin_utils::clap_builtin!(PushdCommand);
+
 impl builtins::Command for PushdCommand {
     type Error = brush_core::Error;
 
@@ -41,14 +43,5 @@ impl builtins::Command for PushdCommand {
         dirs_cmd.execute(context).await?;
 
         Ok(ExecutionResult::success())
-    }
-
-    fn get_content(
-        name: &str,
-        content_type: builtins::ContentType,
-        options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::error::Error> {
-        // N.B. Transitional: help still rendered from clap-derived metadata.
-        builtins::clap_content::<Self>(name, &content_type, options)
     }
 }
