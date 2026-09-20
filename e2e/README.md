@@ -16,6 +16,7 @@ cargo xtask test e2e fzf -- -n /ctrl_r/      # adapter-specific arguments
 cargo xtask test --release e2e fzf           # use target/release/brush
 cargo xtask test e2e --verbose fzf           # stream the runner's own output
 cargo xtask test e2e --timeout 600 fzf      # bound each adapter (default 1800s)
+cargo xtask test e2e --summary-output e2e.md # also write the run as a Markdown dashboard
 ```
 
 A run reports one line per adapter and a summary, read back from the JUnit
@@ -47,12 +48,17 @@ On a terminal, statuses are green for clean passes, yellow for passes with expec
 failures, and red for failures. Redirected output, `TERM=dumb`, and a nonempty
 `NO_COLOR` disable color.
 
-These suites are diagnostic tools, not gates: nothing in CI runs them, and they
-need Docker and a built shell binary. `blesh` is excluded from the default selection
+They need Docker and a built shell binary. CI runs the default selection on every
+PR (the `e2e-tests` job in `ci.yaml`, against the release binary the build job
+produced) and posts the `--summary-output` dashboard to the PR comment, alongside
+the coverage and benchmark reports, with each failing adapter's `log.txt` in the
+job log and every run directory in the `e2e-logs` artifact. Because the `xfail-list.txt`
+files are the committed baseline, a PR that fixes or breaks a test shows it in its own
+diff; no run against `main` is needed. `blesh` is excluded from the default selection
 because compatibility failures and timeouts make it take several minutes against
 brush. Run it explicitly with `cargo xtask test e2e blesh`, or select one file with
 `cargo xtask test e2e blesh -- util`. Its per-file timeout remains 180 seconds.
-`bash-tests` is likewise opt-in, until it has shown itself reliable.
+`bash-tests` is likewise opt-in, until it has shown itself reliable. Neither runs in CI.
 
 ## Adapter contract
 
@@ -82,6 +88,13 @@ context is `e2e/`, so it can `COPY shim /e2e/bin`) whose entrypoint:
 
 The container runs as the host user with `HOME=/tmp`, so `chmod` anything
 the tests write into.
+
+## Reproducing a failure
+
+The dashboard names each failing test with the command that runs it alone, built from the
+adapter's `select-args.txt`: the adapter arguments that select one test, with `{test}` standing
+for its name (fzf: `-n /{test}/`). Adapters without the file are assumed to take pytest's
+`-k {test}`, since that is what every adapter's own tests use.
 
 ## Tracking known failures
 

@@ -666,6 +666,75 @@ jobs:
           path: |
             test-results-bash-completion.md
 
+  # Run real applications' own shell-integration suites (e2e/) against the release binary.
+  # The default adapter set only: blesh and bash-tests are opt-in (see e2e/README.md).
+  e2e-tests:
+    name: "External tests / e2e suites"
+    runs-on: ubuntu-24.04
+    needs: build
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download prebuilt brush binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: "binaries-x86_64-linux"
+          path: "binaries"
+
+      - name: Setup downloads
+        run: chmod +x binaries/*
+
+      - name: Set up rust toolchain
+        run: rustup toolchain install --profile minimal
+
+      - name: Enable cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Run e2e suites
+        run: |
+          cargo xtask test --brush-path "${GITHUB_WORKSPACE}/binaries/brush" \
+              e2e --timeout 600 --results-dir e2e-results --summary-output e2e-results/dashboard.md
+
+      # The dashboard goes to the run page as well as the PR comment; failing adapters' logs go
+      # to the job log, so the comment stays short and the details are one click away.
+      - name: Publish dashboard
+        if: always()
+        run: |
+          dashboard=e2e-results/dashboard.md
+          [[ -f "${dashboard}" ]] || exit 0
+          # The blank line ends the last <details> block; without it the link stays raw HTML.
+          printf '\n📎 [Run logs](%s/%s/actions/runs/%s) · artifact `e2e-logs`\n' \
+              "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}" >> "${dashboard}"
+          cat "${dashboard}" >> "${GITHUB_STEP_SUMMARY}"
+          cp "${dashboard}" test-results-e2e.md
+          for log in e2e-results/run-*/*/log.txt; do
+            app=$(basename "$(dirname "${log}")")
+            if grep -qE "^\| (❌|💥) \| ${app} \|" "${dashboard}"; then
+              echo "::group::${app} log.txt"
+              cat "${log}"
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Upload dashboard
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-reports-e2e
+          path: test-results-e2e.md
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-logs
+          path: e2e-results/
+          retention-days: 7
+
   # Test release binary on a variety of OS platforms.
   os-tests:
     strategy:
