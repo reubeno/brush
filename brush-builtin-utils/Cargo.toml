@@ -27,8 +27,10 @@ clap = { version = "4.6.0", features = ["derive", "wrap_help"], optional = true 
 
 [dev-dependencies]
 anyhow = "1.0.102"
+clap = { version = "4.6.0", features = ["derive"] }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "rt", "rt-multi-thread"] }
+trybuild = "1.0.114"
 
 [[example]]
 name = "clap-builtin"

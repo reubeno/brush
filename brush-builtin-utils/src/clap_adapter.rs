@@ -236,21 +236,20 @@ fn help_command<T: clap::Parser>(name: &str) -> clap::Command {
 /// Declares that a builtin uses clap, wiring up its argument parsing and its
 /// help content. Expects the type to derive [`clap::Parser`].
 ///
-/// By default every argument is flattened to a string and parsed by clap. One
-/// option changes how arguments reach the type:
+/// # Forms
 ///
-/// * `trailing_args = field` takes the first `--` and every word after it
-///   verbatim, appending them to `field` (a `Vec<String>`) instead of letting
-///   clap consume the separator. `echo`, `test`, `set`, and `getopts` need this.
-/// * `declarations = field` parses only the leading options with clap and
-///   stores the operands after them in `field` (a `Vec<CommandArg>`, marked
-///   `#[clap(skip)]`), keeping assignments intact. Also sets
-///   [`FromArgs::TAKES_DECLARATIONS`](brush_core::builtins::FromArgs::TAKES_DECLARATIONS).
-///   For `declare`, `export`, and similar builtins.
-/// * `raw_args = field` does no parsing at all, storing every argument in
-///   `field` (a `Vec<CommandArg>`) of a `Default` instance, with
-///   `TAKES_DECLARATIONS` set. For builtins such as `builtin` that forward
-///   their arguments to another command; clap supplies only the help.
+/// Exactly one of these forms is used per type; the options are mutually
+/// exclusive, and any other option is a compile error naming the accepted
+/// forms.
+///
+/// | Form | Parsing |
+/// |---|---|
+/// | `clap_builtin!(Type)` | Every argument is flattened to a string and parsed by clap. |
+/// | `clap_builtin!(Type, trailing_args = field)` | As above, but the first `--` and every word after it are taken verbatim and appended to `field` (a `Vec<String>`) instead of letting clap consume the separator. For `echo`, `test`, `set`, `getopts`. |
+/// | `clap_builtin!(Type, declarations = field)` | Only the leading options are parsed by clap; the operands after them are stored in `field` (a `Vec<CommandArg>`, marked `#[clap(skip)]`) with assignments intact, and [`FromArgs::TAKES_DECLARATIONS`](brush_core::builtins::FromArgs::TAKES_DECLARATIONS) is set. For `declare`, `export`, and similar. |
+///
+/// A builtin that parses nothing at all does not need clap; see
+/// [`crate::verbatim_builtin`].
 ///
 /// # Examples
 ///
@@ -281,25 +280,27 @@ fn help_command<T: clap::Parser>(name: &str) -> clap::Command {
 ///
 /// brush_builtin_utils::clap_builtin!(ExportCommand, declarations = declarations);
 /// ```
+///
+/// Misuse is rejected with a message naming the accepted forms:
+///
+/// ```compile_fail
+/// # #[derive(clap::Parser)]
+/// # struct T { a: Vec<String>, #[clap(skip)] b: Vec<brush_core::CommandArg> }
+/// brush_builtin_utils::clap_builtin!(T, trailing_args = a, declarations = b);
+/// ```
 #[macro_export]
 macro_rules! clap_builtin {
-    (@help $t:ty) => {
-        impl $crate::__brush_core::builtins::HelpContent for $t {
-            fn synopsis(name: &str) -> ::std::string::String {
-                $crate::clap_adapter::synopsis::<Self>(name)
-            }
-
-            fn description(name: &str) -> ::std::string::String {
-                $crate::clap_adapter::description::<Self>(name)
-            }
-
-            fn detailed_help(
+    ($t:ty $(,)?) => {
+        impl $crate::__brush_core::builtins::FromArgs for $t {
+            fn from_args(
                 name: &str,
-                options: &$crate::__brush_core::builtins::ContentOptions,
-            ) -> ::std::result::Result<::std::string::String, $crate::__brush_core::Error> {
-                $crate::clap_adapter::detailed_help::<Self>(name, options)
+                args: ::std::vec::Vec<$crate::__brush_core::CommandArg>,
+            ) -> ::std::result::Result<Self, $crate::__brush_core::builtins::ArgsError> {
+                $crate::clap_adapter::parse::<Self>(name, args)
             }
         }
+
+        $crate::__clap_builtin_help!($t);
     };
 
     ($t:ty, trailing_args = $field:ident $(,)?) => {
@@ -315,7 +316,7 @@ macro_rules! clap_builtin {
             }
         }
 
-        $crate::clap_builtin!(@help $t);
+        $crate::__clap_builtin_help!($t);
     };
 
     ($t:ty, declarations = $field:ident $(,)?) => {
@@ -333,42 +334,87 @@ macro_rules! clap_builtin {
             }
         }
 
-        $crate::clap_builtin!(@help $t);
+        $crate::__clap_builtin_help!($t);
     };
 
-    ($t:ty, raw_args = $field:ident $(,)?) => {
-        impl $crate::__brush_core::builtins::FromArgs for $t {
-            const TAKES_DECLARATIONS: bool = true;
+    // Everything below rejects misuse with a message naming the accepted forms.
+    ($t:ty, trailing_args = $a:ident, declarations = $($rest:tt)*) => {
+        ::std::compile_error!(
+            "clap_builtin!: `trailing_args` and `declarations` are mutually exclusive; \
+             a builtin is parsed in one mode. Accepted forms: `clap_builtin!(Type)`, \
+             `clap_builtin!(Type, trailing_args = field)`, \
+             `clap_builtin!(Type, declarations = field)`"
+        );
+    };
+    ($t:ty, declarations = $a:ident, trailing_args = $($rest:tt)*) => {
+        ::std::compile_error!(
+            "clap_builtin!: `trailing_args` and `declarations` are mutually exclusive; \
+             a builtin is parsed in one mode. Accepted forms: `clap_builtin!(Type)`, \
+             `clap_builtin!(Type, trailing_args = field)`, \
+             `clap_builtin!(Type, declarations = field)`"
+        );
+    };
+    ($t:ty, raw_args = $($rest:tt)*) => {
+        ::std::compile_error!(
+            "clap_builtin!: `raw_args` was removed; a builtin that stores its arguments \
+             verbatim does not need clap. Use `verbatim_builtin!(Type, args = field, \
+             synopsis = ..., description = ...)` instead"
+        );
+    };
+    ($t:ty, trailing_args = $($rest:tt)*) => {
+        ::std::compile_error!(
+            "clap_builtin!: `trailing_args` takes a field name, as in \
+             `clap_builtin!(Type, trailing_args = field)`, where `field` is a `Vec<String>`"
+        );
+    };
+    ($t:ty, declarations = $($rest:tt)*) => {
+        ::std::compile_error!(
+            "clap_builtin!: `declarations` takes a field name, as in \
+             `clap_builtin!(Type, declarations = field)`, where `field` is a \
+             `Vec<brush_core::CommandArg>` marked `#[clap(skip)]`"
+        );
+    };
+    ($t:ty, $option:ident = $($rest:tt)*) => {
+        ::std::compile_error!(::std::concat!(
+            "clap_builtin!: unknown option `",
+            ::std::stringify!($option),
+            "`. Accepted forms: `clap_builtin!(Type)`, \
+             `clap_builtin!(Type, trailing_args = field)`, \
+             `clap_builtin!(Type, declarations = field)`"
+        ));
+    };
+    ($($rest:tt)*) => {
+        ::std::compile_error!(
+            "clap_builtin!: expected a type that derives `clap::Parser`, optionally followed \
+             by one option. Accepted forms: `clap_builtin!(Type)`, \
+             `clap_builtin!(Type, trailing_args = field)`, \
+             `clap_builtin!(Type, declarations = field)`"
+        );
+    };
+}
 
-            #[allow(
-                clippy::needless_update,
-                reason = "the type may have no fields besides the raw arguments"
-            )]
-            fn from_args(
-                _name: &str,
-                args: ::std::vec::Vec<$crate::__brush_core::CommandArg>,
-            ) -> ::std::result::Result<Self, $crate::__brush_core::builtins::ArgsError> {
-                Ok(Self {
-                    $field: args,
-                    ..::std::default::Default::default()
-                })
+/// Implements [`HelpContent`](brush_core::builtins::HelpContent) for a
+/// clap-derived type. Internal to [`clap_builtin!`]; not part of the API.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __clap_builtin_help {
+    ($t:ty) => {
+        impl $crate::__brush_core::builtins::HelpContent for $t {
+            fn synopsis(name: &str) -> ::std::string::String {
+                $crate::clap_adapter::synopsis::<Self>(name)
             }
-        }
 
-        $crate::clap_builtin!(@help $t);
-    };
+            fn description(name: &str) -> ::std::string::String {
+                $crate::clap_adapter::description::<Self>(name)
+            }
 
-    ($t:ty $(,)?) => {
-        impl $crate::__brush_core::builtins::FromArgs for $t {
-            fn from_args(
+            fn detailed_help(
                 name: &str,
-                args: ::std::vec::Vec<$crate::__brush_core::CommandArg>,
-            ) -> ::std::result::Result<Self, $crate::__brush_core::builtins::ArgsError> {
-                $crate::clap_adapter::parse::<Self>(name, args)
+                options: &$crate::__brush_core::builtins::ContentOptions,
+            ) -> ::std::result::Result<::std::string::String, $crate::__brush_core::Error> {
+                $crate::clap_adapter::detailed_help::<Self>(name, options)
             }
         }
-
-        $crate::clap_builtin!(@help $t);
     };
 }
 
@@ -666,27 +712,5 @@ mod tests {
         assert!(!parsed.export);
         assert_eq!(crate::args::into_words(parsed.declarations), ["a", "-x"]);
         const { assert!(<DeclArgs as FromArgs>::TAKES_DECLARATIONS) };
-    }
-
-    #[derive(Parser, Debug, Default)]
-    struct RawArgs {
-        #[clap(skip)]
-        args: Vec<CommandArg>,
-    }
-
-    crate::clap_builtin!(RawArgs, raw_args = args);
-
-    #[test]
-    #[allow(clippy::panic)]
-    fn raw_args_are_stored_without_parsing() {
-        // Nothing here is a valid option for `RawArgs`, and none is parsed.
-        let parsed = RawArgs::from_args("builtin", strings(&["declare", "--bogus", "a=1"]))
-            .unwrap_or_else(|e| panic!("construction should succeed: {e}"));
-
-        assert_eq!(
-            crate::args::into_words(parsed.args),
-            ["declare", "--bogus", "a=1"]
-        );
-        const { assert!(<RawArgs as FromArgs>::TAKES_DECLARATIONS) };
     }
 }
