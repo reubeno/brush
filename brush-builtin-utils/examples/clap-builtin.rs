@@ -1,20 +1,24 @@
-//! Example of implementing a custom builtin command for a brush-core based shell,
-//! using clap via the adapter in `brush-builtin-utils`.
+//! Example of implementing a custom builtin command using clap, via the
+//! adapter in `brush-builtin-utils`.
 //!
-//! `brush-core` itself does not depend on any argument parser. To use a
-//! different one, implement `brush_core::builtins::FromArgs` and
-//! `brush_core::builtins::HelpContent` directly instead of step 3's macro.
+//! How this differs from `brush-core`'s `custom-builtin` example: that one
+//! interprets its arguments and writes its help text by hand, which is the
+//! whole contract a builtin has to satisfy and the smallest way to satisfy it.
+//! This one hands both jobs to clap: the `clap_builtin!` macro in step 3
+//! implements the same two traits from a `clap::Parser` derive, so the builtin
+//! gets option parsing, validation, and rendered help for free. It also shows
+//! a custom error type mapped to exit codes. Start with the core example to
+//! learn the contract; use this one as the template for a real builtin.
 //!
-//! This example demonstrates best practices for:
-//! - Creating a custom builtin command using the `Command` trait
+//! This example demonstrates:
+//! - Parsing command-line arguments with `clap` via `clap_builtin!`
 //! - Defining custom error types with `thiserror`
-//! - Parsing command-line arguments with `clap`
 //! - Implementing proper error handling and exit code conversion
 //! - Using the execution context to interact with shell state and I/O streams
 //!
 //! Run this example with:
 //! ```bash
-//! cargo run --package brush-builtin-utils --example custom-builtin
+//! cargo run --package brush-builtin-utils --example clap-builtin
 //! ```
 
 use anyhow::Result;
@@ -126,12 +130,10 @@ impl builtins::Command for GreetCommand {
 // This example shows how to register and use your custom builtin.
 //
 
-type SE = brush_core::extensions::DefaultShellExtensions;
-
 async fn run_example() -> Result<()> {
-    // Create a shell instance with custom builtin registered.
+    // Create a shell instance with the custom builtin registered.
     let mut shell = brush_core::Shell::builder()
-        .builtin("greet", brush_core::builtins::builtin::<GreetCommand, SE>())
+        .command::<GreetCommand>("greet")
         .build()
         .await?;
 

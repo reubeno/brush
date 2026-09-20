@@ -209,7 +209,7 @@ When changing public APIs in `brush-core` (see section 3 for breaking change pol
 
 Examples should:
 
-- Be self-contained and runnable with `cargo run --package brush-core --example <name>`
+- Be self-contained and runnable with `cargo run --package <crate> --example <name>` (e.g., `cargo run --package brush-core --example custom-builtin`)
 - Include comprehensive error handling
 - Demonstrate both basic and advanced usage patterns
 - Include output examples in comments when helpful
