@@ -3,31 +3,12 @@ use brush_core::{ExecutionResult, builtins};
 /// Return exit code 1.
 pub(crate) struct FalseCommand {}
 
-impl builtins::HelpContent for FalseCommand {
-    fn synopsis(_name: &str) -> String {
-        "false".into()
-    }
-
-    fn description(_name: &str) -> String {
-        "fail".into()
-    }
-
-    fn detailed_help(
-        _name: &str,
-        _options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::Error> {
-        Ok("Returns a failure exit status.".into())
-    }
-}
-
-impl builtins::FromArgs for FalseCommand {
-    fn from_args(
-        _name: &str,
-        _args: Vec<brush_core::CommandArg>,
-    ) -> Result<Self, builtins::ArgsError> {
-        Ok(Self {})
-    }
-}
+brush_builtin_utils::verbatim_builtin!(
+    FalseCommand,
+    synopsis = "false",
+    description = "fail",
+    help = "Returns a failure exit status.\n",
+);
 
 impl builtins::Command for FalseCommand {
     type Error = brush_core::Error;
