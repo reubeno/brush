@@ -5,234 +5,156 @@
   </picture>
 </div>
 
-<br/>
+<p align="center"><em>Bash-compatible. Embeddable. Extensible.</em></p>
 
-<!-- Primary badges -->
 <p align="center">
-  <!-- crates.io version badge -->
-  <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/v/brush-shell?style=flat-square"/></a>
-  <!-- msrv badge -->
-  <img src="https://img.shields.io/crates/msrv/brush-shell"/>
-  <!-- license badge -->
-  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
-  <br/>
-  <!-- crates.io download badge -->
-  <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/d/brush-shell?style=flat-square"/></a>
-  <!-- compat tests badge -->
-  <img src="https://img.shields.io/badge/compat_tests-1389-brightgreen?style=flat-square" alt="1389 compatibility tests"/>
-  <!-- Packaging badges -->
-  <a href="https://repology.org/project/brush/versions">
-    <img src="https://repology.org/badge/tiny-repos/brush.svg" alt="Packaging status"/>
-  </a>
-  <!-- Social badges -->
-  <a href="https://discord.gg/kPRgC9j3Tj">
-    <img src="https://dcbadge.limes.pink/api/server/https://discord.gg/kPRgC9j3Tj?compact=true&style=flat" alt="Discord invite"/>
-  </a>
+  <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/v/brush-shell?style=flat-square" alt="crates.io version"/></a>
+  <a href="https://crates.io/crates/brush-shell"><img src="https://img.shields.io/crates/d/brush-shell?style=flat-square" alt="crates.io downloads"/></a>
+  <a href="https://github.com/reubeno/brush/actions/workflows/ci.yaml"><img src="https://img.shields.io/github/actions/workflow/status/reubeno/brush/ci.yaml?branch=main&style=flat-square&label=CI" alt="CI status"/></a>
+  <a href="brush-shell/tests/cases"><img src="https://img.shields.io/badge/compat_tests-2%2C500%2B-0d9488?style=flat-square" alt="2,500+ compatibility tests"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0d9488?style=flat-square" alt="MIT license"/></a>
+  <a href="https://discord.gg/kPRgC9j3Tj"><img src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"/></a>
 </p>
 
-<a href="https://repology.org/project/brush/versions">
-</a>
-
+<p align="center">
+  <a href="https://brush.sh">Website</a> ·
+  <a href="https://brush.sh/getting-started/install/">Install</a> ·
+  <a href="https://brush.sh/reference/compatibility/">Compatibility</a> ·
+  <a href="https://brush.sh/releases/">Release notes</a> ·
+  <a href="https://discord.gg/kPRgC9j3Tj">Discord</a>
 </p>
 
 <hr/>
 
-`brush` (**B**o(u)rn(e) **RU**sty **SH**ell) is a modern [bash-](https://www.gnu.org/software/bash/) and [POSIX-](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) compatible shell written in Rust. Run your existing scripts and `.bashrc` unchanged -- with syntax highlighting and auto-suggestions built in.
+[brush](https://brush.sh) is a Bash-compatible shell written in Rust.
 
-## At a glance
+**Run it as your everyday shell.** It loads your existing `.bashrc`, aliases, functions, and completions, runs the scripts you already have, and adds the amenities of a modern shell: history-based suggestions and live syntax highlighting.
 
-✅ Your existing `.bashrc` just works—aliases, functions, completions, all of it.<br/>
-✨ Syntax highlighting and auto-suggestions built in.<br/>
-🧪 Validated against bash with [~1700 compatibility tests](brush-shell/tests/cases).<br/>
-🧩 Easily embeddable in your Rust apps using `brush_core::Shell`.<br/>
+**Build with it.** [`brush-core`](https://docs.rs/brush-core) is a tested implementation of Bash semantics that your own Rust software can embed and extend. [`brush-parser`](https://docs.rs/brush-parser), which turns shell source into a syntax tree, is used on its own by other projects, including [Zed](https://github.com/zed-industries/zed), [Vite+](https://github.com/voidzero-dev/vite-plus), and [oh-my-pi](https://github.com/can1357/oh-my-pi), to parse shell commands.
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52" width="80%"/>
+  <img src="https://github.com/user-attachments/assets/0e64d1b9-7e4e-43be-8593-6c1b9607ac52" alt="brush in action: bash-completion, job control, and shell functions" width="80%"/>
 </p>
 
-> ⚠️ **Not everything works yet:** `select` and some edge cases aren't supported. See the [Compatibility Reference](docs/reference/compatibility.md) for details.
+## Why brush
 
-### Quick start:
+Bash is the shell most of us already know. It's in our fingers, our scripts, and our team's runbooks. brush keeps that behavior as it is, and adds suggestions, highlighting, and the other conveniences of a modern interactive shell for those who want them. Keeping that promise means being faithful, so every change is tested against Bash itself.
 
-```console
-$ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/reubeno/brush/main/scripts/install/install.sh | sh
-$ cargo binstall brush-shell         # using cargo-binstall
-$ brew install brush                 # using Homebrew
-$ pacman -S brush                    # Arch Linux
-$ cargo install --locked brush-shell # Build from sources
+The brush shell and its libraries are the same code. Embedding brush-core gives your software the behavior the shell has, and an improvement to one is an improvement to the other. brush is written in Rust with extension points designed in: custom builtins already plug in alongside the standard ones, and we intend to open more of the shell's internals the same way, so that tools can observe and extend it natively.
+
+## Get started
+
+Install the latest release on Linux or macOS:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://brush.sh/install.sh | sh
 ```
 
-`brush` is ready for use as a daily driver. We test every change against `bash` to keep it that way.
+Or with Homebrew or cargo:
 
-More detailed installation instructions are available below.
-
-## ✨ Features
-
-### 🐚 `bash` Compatibility
-
-| | Feature | Description |
-|--|---------|-------------|
-| ✅ | **50+ builtins** | `echo`, `declare`, `read`, `complete`, `trap`, `ulimit`, ... |
-| ✅ | **Full expansions** | brace, parameter, arithmetic, command/process substitution, globs, `extglob`, `globstar` |
-| ✅ | **Control flow** | `if`/`for`/`while`/`until`/`case`, `&&`/`\|\|`, subshells, pipelines, etc. |
-| ✅ | **Redirection** | here docs, here strings, fd duplication, process substitution redirects |
-| ✅ | **Arrays & variables** | indexed/associative arrays, dynamic variables, standard well-known variables, etc. |
-| ✅ | **Programmable completion** | Works with [bash-completion](https://github.com/scop/bash-completion) out of the box |
-| ✅ | **Job control** | background jobs, suspend/resume, `fg`/`bg`/`jobs` |
-| 🔷 | **Traps & options** | `DEBUG`/`ERR`/`EXIT` traps work; signal traps and options in progress |
-
-### ⌨️ User Experience
-
-| | Feature | Description |
-|--|---------|-------------|
-| ✅ | **Syntax highlighting** | Real-time as you type ([reedline](https://github.com/nushell/reedline)) |
-| ✅ | **Auto-suggestions** | History-based hints as you type ([reedline](https://github.com/nushell/reedline)) |
-| ✅ | **Rich prompts** | `PS1`/`PROMPT_COMMAND`, right prompts, [starship](https://starship.rs) compatible |
-| ✅ | **TOML config** | `~/.config/brush/config.toml` for persistent settings |
-| 🧪 | **Extras** | `fzf`/`atuin` support, zsh-style `precmd`/`preexec` hooks (experimental), VS Code terminal integration |
-
-## Installation
-
-_When you run `brush`, it should look exactly as `bash` does on your system: it processes your `.bashrc` and
-other standard configuration. If you'd like to distinguish the look of `brush` from the other shells
-on your system, you may author a `~/.brushrc` file._
-
-<details>
-<summary>🍺 <b>Installing using Homebrew</b> (macOS/Linux)</summary>
-
-Homebrew users can install using [the `brush` formula](https://formulae.brew.sh/formula/brush):
-
-```bash
-brew install brush
+```sh
+brew install brush                    # Homebrew, on macOS or Linux
+cargo install --locked brush-shell    # build from crates.io
+cargo binstall brush-shell            # prebuilt, via cargo-binstall
 ```
 
-</details>
+Packagers have also brought brush to [Homebrew](https://formulae.brew.sh/formula/brush), [Arch Linux](https://archlinux.org/packages/extra/x86_64/brush/), [Fedora via Terra](https://terrapkg.com/), [MSYS2](https://packages.msys2.org/base/mingw-w64-brush), [Nix](https://search.nixos.org/packages?channel=unstable&query=brush), and [more](https://repology.org/project/brush/versions). See [all install options](https://brush.sh/getting-started/install/) for details.
 
-<details>
-<summary><img src="https://archlinux.org/favicon.ico" width="16" height="16" style="vertical-align: middle;"> <b>Installing on Arch Linux</b></summary>
+Then run `brush`. It reads the same startup files Bash does, so it picks up your Bash setup as it is. To give brush a look of its own, add a `~/.brushrc`.
 
-Arch Linux users can install `brush` from the official [extra repository](https://archlinux.org/packages/extra/x86_64/brush/):
+## Use the shell
 
-```bash
-pacman -S brush
+- **Your configuration comes with you.** `.bashrc`, `.bash_profile`, aliases, functions, `PS1`, `PROMPT_COMMAND`, and prompt tools like [starship](https://starship.rs) all work as they do in Bash.
+- **Programmable completion.** Works with the [bash-completion](https://github.com/scop/bash-completion) package you already have installed, so `git`, `docker`, `systemctl`, and the rest complete as usual.
+- **Job control.** Background jobs, suspend and resume, `fg`, `bg`, and `jobs`.
+- **Auto-suggestions.** History-based hints as you type, on by default.
+- **Syntax highlighting.** Live, as you type, one setting away: `brush --enable-highlighting` or `syntax-highlighting = true` in brush's [TOML config file](https://brush.sh/reference/config-files/).
+- **Scripts, too.** The builtins, expansions, arrays, redirections, traps, and options your scripts already use, with `set -e`, `pipefail`, `extglob`, `globstar`, and friends.
+- **Experimental extras.** zsh-style `precmd` and `preexec` hooks, and terminal shell integration for VS Code, iTerm2, and other supporting terminals. Both are off by default; see [experimental features](https://brush.sh/reference/experimental/).
+
+> Not everything is there yet. `select`, `wait -n`, `disown`, and a set of edge cases are still missing. The [compatibility reference](https://brush.sh/reference/compatibility/) lists what works, what's partial, and what isn't implemented.
+
+## Build with the engine
+
+The same implementation that runs the shell is available as a set of crates. Create a shell, run Bash-compatible code in it, and inspect the result:
+
+```rust
+let mut shell = brush_core::Shell::builder().build().await?;
+
+let result = shell
+    .run_string(
+        r#"greet() { echo "Hello, $1!"; }; greet world"#,
+        &brush_core::SourceInfo::default(),
+        &shell.default_exec_params(),
+    )
+    .await?;
+
+assert!(result.is_success());
 ```
 
-</details>
+For more, see the examples: [register a builtin written in Rust](brush-core/examples/custom-builtin.rs) alongside the standard ones, [call a shell function from Rust](brush-core/examples/call-func.rs) with control over its I/O, or [parse a script and serialize its syntax tree](brush-parser/examples/serde.rs). The [examples guide](docs/reference/examples.md) describes each one and when it's useful.
 
-<details>
-<summary><img src="https://packages.msys2.org/static/images/logo.svg" alt="icon" width="20" height="20" style="vertical-align: middle;"> <b>Installing on MSYS2</b></summary>
+| Crate | API docs | What it provides |
+|---|---|---|
+| [`brush-core`](brush-core) | [docs.rs](https://docs.rs/brush-core) | The shell runtime: expansion, execution, jobs, completion, and the `Shell` API. Start here to embed. |
+| [`brush-parser`](brush-parser) | [docs.rs](https://docs.rs/brush-parser) | Tokenizer and parser for Bash and POSIX shell syntax, with an optional `serde` AST. |
+| [`brush-builtins`](brush-builtins) | [docs.rs](https://docs.rs/brush-builtins) | The standard builtins, usable as a set. |
+| [`brush-interactive`](brush-interactive) | [docs.rs](https://docs.rs/brush-interactive) | Line editing, highlighting, suggestions, and completion UI, built on [reedline](https://github.com/nushell/reedline). |
+| [`brush-shell`](brush-shell) | [docs.rs](https://docs.rs/brush-shell) | The `brush` binary and its command line. |
 
-MSYS2 users can install `brush` from the [repository](https://packages.msys2.org/base/mingw-w64-brush):
+Optional crates add bundled [coreutils builtins](brush-coreutils-builtins) and [experimental builtins](brush-experimental-builtins).
 
-```bash
-pacman -S mingw-w64-ucrt-x86_64-brush # or mingw-w64-clang-x86_64-brush or mingw-w64-clang-aarch64-brush
-```
+## How we test it
 
-</details>
+- **Compatibility suite.** More than 2,500 [test cases](brush-shell/tests/cases) run the same script under brush and Bash 5.3 and compare stdout, stderr, exit status, and filesystem side effects. Every pull request runs them on Linux (x86_64 and aarch64), macOS, and Windows, and inside Arch Linux, Debian, Fedora, NixOS, openSUSE, and Azure Linux containers.
+- **Real tools, real tests.** [End-to-end suites](e2e) exercise brush with the tools people pair with a shell: [fzf](https://github.com/junegunn/fzf), [atuin](https://github.com/atuinsh/atuin), [starship](https://github.com/starship/starship), [zoxide](https://github.com/ajeetdsouza/zoxide), [mise](https://github.com/jdx/mise), and [nvm](https://github.com/nvm-sh/nvm). Where a project has its own shell-integration tests, those run against brush; where it doesn't, we wrote them.
+- **Everything else.** CodeQL, dependency auditing, and benchmarks on every pull request, plus fuzz targets for the parser and the highlighter.
+- **Verifiable releases.** Binaries are built by the release workflow with signed build provenance. The install script checks each download's SHA-256 checksum and, when the GitHub CLI is available, its attestation.
 
-<details>
-<summary>🚀 <b>Installing prebuilt binaries via `cargo binstall`</b></summary>
+## Platforms
 
-You may use [cargo binstall](https://github.com/cargo-bins/cargo-binstall) to install pre-built `brush` binaries. Once you've installed `cargo-binstall` you can run:
+| Tier | Platforms | What that means |
+|---|---|---|
+| **Supported** | Linux x86_64 and aarch64 (glibc and musl), macOS x86_64 and aarch64 | Prebuilt binaries for every release, the full test suite on every pull request, and daily-driver quality. |
+| **Experimental** | Windows x86_64 and aarch64, WASI 0.2 | Windows is tested in CI, and prebuilt binaries are on the way; parts of the shell are still missing or limited, and it pairs well with Microsoft's [coreutils for Windows](https://github.com/microsoft/coreutils). WASI builds run under wasmtime in CI, and we know they still have a number of holes. |
+| **Builds only** | wasm32 for the browser, Android, FreeBSD, NetBSD, OpenBSD | Cross-compiled in CI so they keep compiling. No tests, no binaries. |
 
-```bash
-cargo binstall brush-shell
-```
+## Community and contributing
 
-</details>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/extras/brand/mascot/turtle-dark.png">
+  <img src="docs/extras/brand/mascot/turtle-light.png" alt="" width="110" align="right" hspace="24" vspace="8">
+</picture>
 
-<details>
-<summary>🚀 <b>Installing prebuilt binaries from GitHub</b></summary>
+brush started as a curiosity-driven project, and that curiosity is still what drives it. Most contributors arrived the same way: tried brush, hit something that didn't match Bash, and helped fix it. However much time you have, there's a way in.
 
-We publish prebuilt binaries of `brush` for Linux (x86_64, aarch64) and macOS (x86_64, aarch64) to GitHub for official [releases](https://github.com/reubeno/brush/releases). The simplest way to install one is with our install script, which installs `brush` to `~/.local/bin`:
+- **Try it and tell us what you find.** A script or command that behaves differently in Bash is the most useful report we get. [File a compatibility bug](https://github.com/reubeno/brush/issues/new?template=compatibility-bug.yml), or a [feature request](https://github.com/reubeno/brush/issues/new?template=feature-request.yml) if brush could do more for you.
+- **Say hello on [Discord](https://discord.gg/kPRgC9j3Tj)**, whether you have a question, an idea, or a shell setup you'd like to see work.
+- **Pick up an issue.** [good first issue](https://github.com/reubeno/brush/labels/good%20first%20issue) is kept ready for newcomers, and [help wanted](https://github.com/reubeno/brush/labels/help%20wanted) marks the places where an extra pair of hands would matter most. Draft pull requests are welcome; we'll take an early look before you polish.
+- **Read the [contribution guidelines](CONTRIBUTING.md)** for the workflow, and the [technical docs](docs/README.md) for how brush is built and tested. Everyone here is expected to follow the [code of conduct](CODE_OF_CONDUCT.md).
 
-```bash
-curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/reubeno/brush/main/scripts/install/install.sh | sh
-```
+A star, a mention in your own project's README, or a post about brush all help too. Curious how brush relates to other shells? See [related projects](docs/reference/related-projects.md).
 
-The script checks the download against its published SHA-256 checksum, which guards against a corrupted download but not a compromised release (the checksum comes from the same release). If an authenticated [GitHub CLI](https://cli.github.com/) is available, it also verifies the archive's build provenance attestation, confirming it was built by this repository's release workflow; pass `--require-attestation` to fail rather than proceed when that check can't be performed. See the comments at the top of [`scripts/install/install.sh`](scripts/install/install.sh) for all options. Alternatively, you can manually download and extract the `brush` binary from one of the archives published there, or otherwise use the GitHub CLI to download it, e.g.:
+### Contributors
 
-```bash
-gh release download --repo reubeno/brush --pattern "brush-x86_64-unknown-linux-gnu.*"
-```
+brush is shaped by everyone who has given it their time: bug reports with a reproducer, reviews that caught what we missed, packages for distributions we'd never touched, and a good deal of patient chat. Thank you, all of you. It's appreciated more than a line in a README can say.
 
-After downloading the archive for your platform, you may verify its authenticity using the [GitHub CLI](https://cli.github.com/), e.g.:
+<a href="https://github.com/reubeno/brush/graphs/contributors"><img src="https://contrib.rocks/image?repo=reubeno/brush" alt="brush contributors"/></a>
 
-```bash
-gh attestation verify brush-x86_64-unknown-linux-gnu.tar.gz --repo reubeno/brush
-```
+There's room here for you, too.
 
-</details>
+## Credits
 
-<details>
-<summary>🐧 <b>Installing using Nix</b></summary>
+brush stands on excellent open source work, including:
 
-If you are a Nix user, you can use the registered version:
-
-```bash
-nix run 'github:NixOS/nixpkgs/nixpkgs-unstable#brush' -- --version
-```
-
-</details>
-
-<details>
-<summary>📦 <b>Installing on Fedora (community package)</b></summary>
-
-`brush` isn't packaged in Fedora's official repositories, but a community-maintained `brush-shell` package is available from [Terra](https://terrapkg.com/), a separately maintained, third-party repository for Fedora and its derivatives.
-
-Once you've enabled the Terra repository:
-
-```bash
-dnf install brush-shell
-```
-
-</details>
-
-<details>
-<summary> 🔨 <b>Building from sources</b></summary>
-
-To build from sources, first install a working (and recent) `rust` toolchain; we recommend installing it via [`rustup`](https://rustup.rs/). Then run:
-
-```bash
-cargo install --locked brush-shell
-```
-
-</details>
-
-## Community & Contributing
-
-This project started out of curiosity and a desire to learn—we're keeping that attitude. If something doesn't work the way you'd expect, [let us know](https://github.com/reubeno/brush/issues)!
-
-* [Discord server](https://discord.gg/kPRgC9j3Tj) — chat with the community
-* [Building from source](docs/how-to/build.md) — development workflow
-* [Contribution guidelines](CONTRIBUTING.md) — how to submit changes
-* [Technical docs](docs/README.md) — architecture and reference
-
-## Related Projects
-
-Other POSIX-ish shells implemented in non-C/C++ languages:
-
-* [`nushell`](https://www.nushell.sh/) — modern Rust shell (provides `reedline`)
-* [`fish`](https://fishshell.com) — user-friendly shell ([Rust port in 4.0](https://fishshell.com/blog/rustport/))
-* [`Oils`](https://github.com/oils-for-unix/oils) — bash-compatible with new Oil language
-* [`mvdan/sh`](https://github.com/mvdan/sh) — Go implementation
-* [`rusty_bash`](https://github.com/shellgei/rusty_bash) — another Rust bash-like shell
-
-<details>
-<summary><b>🙏 Credits</b></summary>
-
-This project relies on many excellent OSS crates:
-
-* [`reedline`](https://github.com/nushell/reedline) — readline-like input and interactive features
-* [`clap`](https://github.com/clap-rs/clap) — command-line parsing
-* [`fancy-regex`](https://github.com/fancy-regex/fancy-regex) — regex support
-* [`tokio`](https://github.com/tokio-rs/tokio) — async runtime
-* [`nix`](https://github.com/nix-rust/nix) — Unix/POSIX APIs
-* [`criterion.rs`](https://github.com/bheisler/criterion.rs) — benchmarking
-* [`bash-completion`](https://github.com/scop/bash-completion) — completion test suite
-
-</details>
+- [reedline](https://github.com/nushell/reedline) for line editing and interactive features
+- [clap](https://github.com/clap-rs/clap) for command-line parsing
+- [fancy-regex](https://github.com/fancy-regex/fancy-regex) for regular expressions
+- [tokio](https://github.com/tokio-rs/tokio) as the async runtime
+- [nix](https://github.com/nix-rust/nix) for Unix and POSIX APIs
+- [criterion.rs](https://github.com/bheisler/criterion.rs) for benchmarking
+- [bash-completion](https://github.com/scop/bash-completion) for its completion test suite
 
 ---
 
-Licensed under the [MIT license](LICENSE).
+Open source under the [MIT license](LICENSE). Built in the open by the [brush community](https://github.com/reubeno/brush/graphs/contributors).

@@ -3,7 +3,7 @@
 # Installs brush from official GitHub releases of reubeno/brush.
 #
 # Usage:
-#   curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/reubeno/brush/main/scripts/install/install.sh | sh
+#   curl --proto '=https' --tlsv1.2 -fsSL https://brush.sh/install.sh | sh
 #
 # To pass options, use `sh -s --`, e.g.:
 #   curl ... | sh -s -- --version 0.4.0 --require-attestation

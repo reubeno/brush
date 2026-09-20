@@ -1,12 +1,13 @@
 # brush documentation
 
-The docs are grouped into:
+User-facing documentation lives at [brush.sh](https://brush.sh): [installation](https://brush.sh/getting-started/install/), the [compatibility](https://brush.sh/reference/compatibility/), [configuration](https://brush.sh/reference/config-files/), and [command-line](https://brush.sh/reference/usage/) references, and [release notes](https://brush.sh/releases/). The reference pages are generated from this directory at each release.
 
-* [How-to guides](how-to/README.md)
-* [Tutorials](tutorials/README.md)
-* [Reference material](reference/README.md)
+The docs here are for people working on brush itself:
 
-If you're just getting started building this project, you should consult the [How to Build](how-to/build.md) guide.
+* [How-to guides](how-to/README.md) for building, testing, benchmarking, and releasing
+* [Reference material](reference/README.md) for compatibility, configuration, experimental features, and project policies
+
+If you're just getting started with the codebase, start with the [How to build](how-to/build.md) guide and [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
