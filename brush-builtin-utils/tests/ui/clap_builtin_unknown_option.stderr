@@ -1,0 +1,7 @@
+error: clap_builtin!: unknown option `trailing`. Accepted forms: `clap_builtin!(Type)`, `clap_builtin!(Type, trailing_args = field)`, `clap_builtin!(Type, declarations = field)`
+ --> tests/ui/clap_builtin_unknown_option.rs:6:1
+  |
+6 | brush_builtin_utils::clap_builtin!(Command, trailing = args);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `brush_builtin_utils::clap_builtin` (in Nightly builds, run with -Z macro-backtrace for more info)
