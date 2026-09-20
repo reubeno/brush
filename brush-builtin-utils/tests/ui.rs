@@ -6,6 +6,10 @@
 #![cfg(test)]
 
 #[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "the diagnostics are platform-independent; one platform is enough for a slow build"
+)]
 fn macro_misuse_reports_clear_errors() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
