@@ -6,6 +6,7 @@ The docs here are for people working on brush itself:
 
 * [How-to guides](how-to/README.md) for building, testing, benchmarking, and releasing
 * [Reference material](reference/README.md) for compatibility, configuration, experimental features, and project policies
+* [Migration guides](migrations/README.md) for moving between versions of the published crates
 
 If you're just getting started with the codebase, start with the [How to build](how-to/build.md) guide and [CONTRIBUTING.md](../CONTRIBUTING.md).
 
