@@ -58,7 +58,7 @@ impl builtins::Command for EnableCommand {
         if !self.names.is_empty() {
             for name in &self.names {
                 if let Some(builtin) = context.shell.builtin_mut(name) {
-                    builtin.disabled = self.disable;
+                    builtin.set_disabled(self.disable);
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
                     result = ExecutionResult::general_error();
@@ -74,20 +74,20 @@ impl builtins::Command for EnableCommand {
 
             for (builtin_name, builtin) in builtins {
                 if self.disable {
-                    if !builtin.disabled {
+                    if !builtin.is_disabled() {
                         continue;
                     }
                 } else if self.print_list {
-                    if builtin.disabled {
+                    if builtin.is_disabled() {
                         continue;
                     }
                 }
 
-                if self.special_only && !builtin.special_builtin {
+                if self.special_only && !builtin.is_special() {
                     continue;
                 }
 
-                let prefix = if builtin.disabled { "-n " } else { "" };
+                let prefix = if builtin.is_disabled() { "-n " } else { "" };
 
                 writeln!(context.stdout(), "enable {prefix}{builtin_name}")?;
             }

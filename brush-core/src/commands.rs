@@ -364,7 +364,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         if self.shell.options().posix_mode
             && builtin
                 .as_ref()
-                .is_some_and(|r| !r.disabled && r.special_builtin)
+                .is_some_and(|r| !r.is_disabled() && r.is_special())
         {
             #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
             let builtin = builtin.unwrap();
@@ -384,7 +384,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // If we haven't yet resolved the command name and found a builtin that's not disabled,
         // then invoke it.
         if let Some(builtin) = builtin {
-            if !builtin.disabled {
+            if !builtin.is_disabled() {
                 return self.execute_via_builtin(builtin).await;
             }
         }
@@ -680,7 +680,7 @@ async fn execute_builtin_command<SE: extensions::ShellExtensions>(
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
     // In POSIX mode, special builtins that return errors are to be treated as fatal.
-    let mark_errors_fatal = builtin.special_builtin && context.shell.options().posix_mode;
+    let mark_errors_fatal = builtin.is_special() && context.shell.options().posix_mode;
 
     // The invoked name arrives as args[0] but is already carried by
     // `context.command_name`; builtins receive only what followed it.

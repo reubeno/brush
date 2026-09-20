@@ -1109,7 +1109,7 @@ impl Execute for ast::FunctionDefinition {
             && shell
                 .builtins()
                 .get(&func_name)
-                .is_some_and(|r| r.special_builtin)
+                .is_some_and(|r| r.is_special())
         {
             return Err(
                 error::Error::from(error::ErrorKind::FunctionNameShadowsSpecialBuiltin {
@@ -1251,7 +1251,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                                     .shell
                                     .builtins()
                                     .get(first_arg.as_str())
-                                    .is_some_and(|r| !r.disabled && r.declaration_builtin())
+                                    .is_some_and(|r| !r.is_disabled() && r.takes_declarations())
                             {
                                 command_takes_assignments = true;
                             }

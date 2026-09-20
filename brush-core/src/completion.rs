@@ -522,14 +522,14 @@ impl Spec {
                 }
                 CompleteAction::Disabled => {
                     for (name, registration) in shell.builtins() {
-                        if registration.disabled && name.starts_with(token) {
+                        if registration.is_disabled() && name.starts_with(token) {
                             candidates.push(name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Enabled => {
                     for (name, registration) in shell.builtins() {
-                        if !registration.disabled && name.starts_with(token) {
+                        if !registration.is_disabled() && name.starts_with(token) {
                             candidates.push(name.to_owned());
                         }
                     }
@@ -1332,7 +1332,7 @@ fn command_completions(
         shell
             .builtins()
             .iter()
-            .filter(|(_, registration)| !registration.disabled)
+            .filter(|(_, registration)| !registration.is_disabled())
             .map(|(name, _)| name)
             .sorted(),
         prefix,

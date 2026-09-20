@@ -152,15 +152,15 @@ pub struct Registration<SE: extensions::ShellExtensions> {
     content_func: CommandContentFunc,
 
     /// Has this registration been disabled?
-    pub disabled: bool,
+    disabled: bool,
 
     /// Is the builtin classified as "special" by specification?
-    pub special_builtin: bool,
+    special: bool,
 
     /// Whether the builtin takes specially handled declarations. Read during
     /// word expansion, before the builtin runs, to decide whether `name=value`
     /// words become [`CommandArg::Assignment`]; `execute_func` must expect that.
-    declaration_builtin: bool,
+    takes_declarations: bool,
 }
 
 impl<SE: extensions::ShellExtensions> Registration<SE> {
@@ -176,8 +176,8 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
             execute_func,
             content_func: render_content::<H>,
             disabled: false,
-            special_builtin: false,
-            declaration_builtin: false,
+            special: false,
+            takes_declarations: false,
         }
     }
 
@@ -192,15 +192,34 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
     }
 
     /// Returns whether the builtin takes specially handled declarations.
-    pub const fn declaration_builtin(&self) -> bool {
-        self.declaration_builtin
+    pub const fn takes_declarations(&self) -> bool {
+        self.takes_declarations
+    }
+
+    /// Returns whether the registration has been disabled (see `enable`).
+    pub const fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+
+    /// Enables or disables the registration.
+    ///
+    /// # Arguments
+    ///
+    /// * `disabled` - Whether the builtin should be disabled.
+    pub const fn set_disabled(&mut self, disabled: bool) {
+        self.disabled = disabled;
+    }
+
+    /// Returns whether the builtin is classified as "special" by specification.
+    pub const fn is_special(&self) -> bool {
+        self.special
     }
 
     /// Updates the given registration to mark it for a special builtin.
     #[must_use]
     pub const fn special(self) -> Self {
         Self {
-            special_builtin: true,
+            special: true,
             ..self
         }
     }
@@ -211,7 +230,7 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
 pub const fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> Registration<SE>
 {
     Registration {
-        declaration_builtin: B::TAKES_DECLARATIONS,
+        takes_declarations: B::TAKES_DECLARATIONS,
         ..Registration::new::<B>(exec_builtin::<B, SE>)
     }
 }
