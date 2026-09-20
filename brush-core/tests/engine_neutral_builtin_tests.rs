@@ -194,22 +194,17 @@ async fn assignments_stay_strings_unless_the_builtin_takes_declarations() -> Res
 }
 
 #[test]
-fn shell_frames_short_help_forms() -> Result<()> {
+fn registration_exposes_help_forms() -> Result<()> {
     let registration = builtins::builtin::<CountCommand, SE>();
-    let render = |content_type| {
-        (registration.content_func())("count", content_type, &builtins::ContentOptions::default())
-    };
 
     assert_eq!(
-        render(builtins::ContentType::ShortUsage)?,
-        "count: count [-n scale] [operand...]\n"
+        registration.synopsis("count"),
+        "count [-n scale] [operand...]"
     );
+    assert_eq!(registration.description("count"), "count operands");
+    // The default detailed help is composed from the two short forms.
     assert_eq!(
-        render(builtins::ContentType::ShortDescription)?,
-        "count - count operands\n"
-    );
-    assert_eq!(
-        render(builtins::ContentType::DetailedHelp)?,
+        registration.detailed_help("count", &builtins::ContentOptions::default())?,
         "count: count [-n scale] [operand...]\n    count operands\n"
     );
     Ok(())
