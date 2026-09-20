@@ -5,95 +5,28 @@ use std::io::Write;
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
-use strum::IntoEnumIterator;
+use strum::VariantNames;
 
-/// Returns the name `-A` takes for `action`. The single source of these names:
-/// parsing, `help`, error messages, and `complete -p` all derive from it.
-const fn action_name(action: &CompleteAction) -> &'static str {
-    match action {
-        CompleteAction::Alias => "alias",
-        CompleteAction::ArrayVar => "arrayvar",
-        CompleteAction::Binding => "binding",
-        CompleteAction::Builtin => "builtin",
-        CompleteAction::Command => "command",
-        CompleteAction::Directory => "directory",
-        CompleteAction::Disabled => "disabled",
-        CompleteAction::Enabled => "enabled",
-        CompleteAction::Export => "export",
-        CompleteAction::File => "file",
-        CompleteAction::Function => "function",
-        CompleteAction::Group => "group",
-        CompleteAction::HelpTopic => "helptopic",
-        CompleteAction::HostName => "hostname",
-        CompleteAction::Job => "job",
-        CompleteAction::Keyword => "keyword",
-        CompleteAction::Running => "running",
-        CompleteAction::Service => "service",
-        CompleteAction::SetOpt => "setopt",
-        CompleteAction::ShOpt => "shopt",
-        CompleteAction::Signal => "signal",
-        CompleteAction::Stopped => "stopped",
-        CompleteAction::User => "user",
-        CompleteAction::Variable => "variable",
-    }
-}
-
-/// Returns the name `-o` takes for `option`. The single source of these names,
-/// as with [`action_name`].
-const fn option_name(option: &CompleteOption) -> &'static str {
-    match option {
-        CompleteOption::BashDefault => "bashdefault",
-        CompleteOption::Default => "default",
-        CompleteOption::DirNames => "dirnames",
-        CompleteOption::FileNames => "filenames",
-        CompleteOption::NoQuote => "noquote",
-        CompleteOption::NoSort => "nosort",
-        CompleteOption::NoSpace => "nospace",
-        CompleteOption::PlusDirs => "plusdirs",
-    }
-}
-
-/// Returns a clap value parser accepting the names `name_of` gives each variant
-/// of `T`. clap lists those names in help and in errors.
-fn named_variant_parser<T>(
-    name_of: fn(&T) -> &'static str,
-) -> impl clap::builder::TypedValueParser<Value = T>
+/// Returns a clap value parser for an enum that parses from, and lists, its
+/// strum variant names (the names `-A` and `-o` take). clap lists those names
+/// in help and in errors.
+fn named_variant_parser<T>() -> impl clap::builder::TypedValueParser<Value = T>
 where
-    T: IntoEnumIterator + Clone + Send + Sync + 'static,
+    T: VariantNames + std::str::FromStr<Err = strum::ParseError> + Clone + Send + Sync + 'static,
 {
     use clap::builder::TypedValueParser as _;
 
-    clap::builder::PossibleValuesParser::new(T::iter().map(|variant| name_of(&variant))).try_map(
-        move |name| {
-            T::iter()
-                .find(|variant| name_of(variant) == name)
-                .ok_or("unrecognized name")
-        },
-    )
-}
-
-/// Returns whether `option` is enabled in `options`.
-const fn option_enabled(options: &completion::GenerationOptions, option: &CompleteOption) -> bool {
-    match option {
-        CompleteOption::BashDefault => options.bash_default,
-        CompleteOption::Default => options.default,
-        CompleteOption::DirNames => options.dir_names,
-        CompleteOption::FileNames => options.file_names,
-        CompleteOption::NoQuote => options.no_quote,
-        CompleteOption::NoSort => options.no_sort,
-        CompleteOption::NoSpace => options.no_space,
-        CompleteOption::PlusDirs => options.plus_dirs,
-    }
+    clap::builder::PossibleValuesParser::new(T::VARIANTS).try_map(|name| name.parse::<T>())
 }
 
 #[derive(Parser)]
 struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
-    #[arg(short = 'o', value_parser = named_variant_parser(option_name))]
+    #[arg(short = 'o', value_parser = named_variant_parser::<CompleteOption>())]
     options: Vec<CompleteOption>,
 
     /// Actions to apply to generate completions.
-    #[arg(short = 'A', value_parser = named_variant_parser(action_name))]
+    #[arg(short = 'A', value_parser = named_variant_parser::<CompleteAction>())]
     actions: Vec<CompleteAction>,
 
     /// File glob pattern to be expanded to generate completions.
@@ -210,16 +143,7 @@ impl CommonCompleteCommandArgs {
         };
 
         for option in &self.options {
-            match option {
-                CompleteOption::BashDefault => spec.options.bash_default = true,
-                CompleteOption::Default => spec.options.default = true,
-                CompleteOption::DirNames => spec.options.dir_names = true,
-                CompleteOption::FileNames => spec.options.file_names = true,
-                CompleteOption::NoQuote => spec.options.no_quote = true,
-                CompleteOption::NoSort => spec.options.no_sort = true,
-                CompleteOption::NoSpace => spec.options.no_space = true,
-                CompleteOption::PlusDirs => spec.options.plus_dirs = true,
-            }
+            spec.options.set(*option, true);
         }
 
         spec
@@ -414,14 +338,12 @@ impl CompleteCommand {
 
             match short_flag {
                 Some(flag) => s.push_str(flag),
-                None => write!(s, "-A {}", action_name(action))?,
+                None => write!(s, "-A {action}")?,
             }
         }
 
-        for option in CompleteOption::iter() {
-            if option_enabled(&spec.options, &option) {
-                write!(s, " -o {}", option_name(&option))?;
-            }
+        for option in spec.options.enabled() {
+            write!(s, " -o {option}")?;
         }
 
         if let Some(glob_pattern) = &spec.glob_pattern {
@@ -597,9 +519,9 @@ pub(crate) struct CompOptCommand {
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o', value_name = "OPT", value_parser = named_variant_parser(option_name))]
+    #[arg(short = 'o', value_name = "OPT", value_parser = named_variant_parser::<CompleteOption>())]
     enabled_options: Vec<CompleteOption>,
-    #[arg(long = concat!("+o"), hide = true, value_parser = named_variant_parser(option_name))]
+    #[arg(long = concat!("+o"), hide = true, value_parser = named_variant_parser::<CompleteOption>())]
     disabled_options: Vec<CompleteOption>,
 
     /// If specified, scopes updates to completions of the named commands.
@@ -618,10 +540,10 @@ impl builtins::Command for CompOptCommand {
         let mut options =
             HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
         for option in &self.disabled_options {
-            options.insert(option.clone(), false);
+            options.insert(*option, false);
         }
         for option in &self.enabled_options {
-            options.insert(option.clone(), true);
+            options.insert(*option, true);
         }
 
         if !self.names.is_empty() {
@@ -690,16 +612,7 @@ impl CompOptCommand {
         I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
     {
         for (option, value) in options {
-            match option {
-                CompleteOption::BashDefault => target_options.bash_default = *value,
-                CompleteOption::Default => target_options.default = *value,
-                CompleteOption::DirNames => target_options.dir_names = *value,
-                CompleteOption::FileNames => target_options.file_names = *value,
-                CompleteOption::NoQuote => target_options.no_quote = *value,
-                CompleteOption::NoSort => target_options.no_sort = *value,
-                CompleteOption::NoSpace => target_options.no_space = *value,
-                CompleteOption::PlusDirs => target_options.plus_dirs = *value,
-            }
+            target_options.set(*option, *value);
         }
     }
 }
@@ -713,24 +626,20 @@ mod tests {
 
     #[test]
     fn every_action_name_parses_to_its_action() -> Result<()> {
-        for action in CompleteAction::iter() {
-            let args = CommonCompleteCommandArgs::try_parse_from([
-                "complete",
-                "-A",
-                action_name(&action),
-            ])?;
-            let parsed: Vec<_> = args.actions.iter().map(action_name).collect();
-            assert_eq!(parsed, [action_name(&action)]);
+        for name in CompleteAction::VARIANTS {
+            let args = CommonCompleteCommandArgs::try_parse_from(["complete", "-A", name])?;
+            let parsed: Vec<_> = args.actions.iter().map(ToString::to_string).collect();
+            assert_eq!(parsed, [*name]);
         }
         Ok(())
     }
 
     #[test]
     fn every_option_name_parses_to_its_option() -> Result<()> {
-        for option in CompleteOption::iter() {
-            let name = option_name(&option);
+        for name in CompleteOption::VARIANTS {
+            let option: CompleteOption = name.parse()?;
             let args = CommonCompleteCommandArgs::try_parse_from(["complete", "-o", name])?;
-            assert_eq!(args.options, std::slice::from_ref(&option));
+            assert_eq!(args.options, [option]);
 
             let args = CompOptCommand::try_parse_from(["compopt", "--+o", name])?;
             assert_eq!(args.disabled_options, [option]);
