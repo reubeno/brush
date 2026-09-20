@@ -125,14 +125,6 @@ impl HelpCommand {
             return brush_core::error::unimp("man page rendering is not yet implemented");
         }
 
-        let content_type = if self.short_description {
-            builtins::ContentType::ShortDescription
-        } else if self.short_usage {
-            builtins::ContentType::ShortUsage
-        } else {
-            builtins::ContentType::DetailedHelp
-        };
-
         let Some(mut stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
             // If there's no stdout, nothing to do.
             return Ok(());
@@ -142,7 +134,13 @@ impl HelpCommand {
         let mut options = builtins::ContentOptions::default();
         options.colorized = stdout.is_terminal();
 
-        let content = (registration.content_func())(name, content_type, &options)?;
+        let content = if self.short_description {
+            format!("{name} - {}\n", registration.description(name))
+        } else if self.short_usage {
+            format!("{name}: {}\n", registration.synopsis(name))
+        } else {
+            registration.detailed_help(name, &options)?
+        };
 
         write!(stdout, "{content}")?;
         stdout.flush()?;
