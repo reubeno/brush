@@ -26,7 +26,7 @@ impl builtins::Command for BuiltinCommand {
         let args = args.to_vec();
 
         if let Some(builtin) = context.shell.builtins().get(&builtin_name)
-            && !builtin.disabled
+            && !builtin.is_disabled()
         {
             context.command_name = builtin_name;
             (builtin.execute_func())(context, args).await
