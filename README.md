@@ -106,7 +106,7 @@ Optional crates add bundled [coreutils builtins](brush-coreutils-builtins) and [
 
 ## How we test it
 
-- **Compatibility suite.** More than 2,500 [test cases](brush-shell/tests/cases) run the same script under brush and Bash 5.3 and compare stdout, stderr, exit status, and filesystem side effects. Every pull request runs them on Linux (x86_64 and aarch64), macOS, and Windows, and inside Arch Linux, Debian, Fedora, NixOS, openSUSE, and Azure Linux containers.
+- **Compatibility suite.** More than 2,500 [test cases](brush-shell/tests/cases) run the same script under brush and Bash and compare stdout, stderr, exit status, and filesystem side effects. Every pull request runs them on Linux (x86_64 and aarch64), macOS, and Windows, and inside Arch Linux, Debian, Fedora, NixOS, openSUSE, and Azure Linux containers.
 - **Real tools, real tests.** [End-to-end suites](e2e) exercise brush with the tools people pair with a shell: [fzf](https://github.com/junegunn/fzf), [atuin](https://github.com/atuinsh/atuin), [starship](https://github.com/starship/starship), [zoxide](https://github.com/ajeetdsouza/zoxide), [mise](https://github.com/jdx/mise), and [nvm](https://github.com/nvm-sh/nvm). Where a project has its own shell-integration tests, those run against brush; where it doesn't, we wrote them.
 - **Everything else.** CodeQL, dependency auditing, and benchmarks on every pull request, plus fuzz targets for the parser and the highlighter.
 - **Verifiable releases.** Binaries are built by the release workflow with signed build provenance. The install script checks each download's SHA-256 checksum and, when the GitHub CLI is available, its attestation.
@@ -115,7 +115,7 @@ Optional crates add bundled [coreutils builtins](brush-coreutils-builtins) and [
 
 | Tier | Platforms | What that means |
 |---|---|---|
-| **Supported** | Linux x86_64 and aarch64 (glibc and musl), macOS x86_64 and aarch64 | Prebuilt binaries for every release, the full test suite on every pull request, and daily-driver quality. |
+| **Supported** | Linux x86_64 and aarch64 (glibc and musl), macOS x86_64 and aarch64 | Prebuilt binaries for every release, the full test suite on Linux x86_64 and aarch64 (glibc) and macOS aarch64, build checks for Linux musl and macOS x86_64, and daily-driver quality. |
 | **Experimental** | Windows x86_64 and aarch64, WASI 0.2 | Windows is tested in CI, and prebuilt binaries are on the way; parts of the shell are still missing or limited, and it pairs well with Microsoft's [coreutils for Windows](https://github.com/microsoft/coreutils). WASI builds run under wasmtime in CI, and we know they still have a number of holes. |
 | **Builds only** | wasm32 for the browser, Android, FreeBSD, NetBSD, OpenBSD | Cross-compiled in CI so they keep compiling. No tests, no binaries. |
 

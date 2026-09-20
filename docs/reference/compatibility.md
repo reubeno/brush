@@ -189,7 +189,7 @@ Some complex alias expansion scenarios differ from `bash` (see GitHub issues [#5
 
 - **Total test cases:** 2,500+ (plus a small set of `brush`-specific cases)
 - **Known failures:** ~470, marked `known_failure` in the case files so a fix that makes one pass is reported rather than absorbed
-- **Largest groups of known failures:** `declare` edge cases, `BASH_COMMAND` inside traps, signal handling, `wait` with job specs, and alias expansion
+- **Largest groups of known failures:** nameref behavior, `declare` edge cases, `BASH_COMMAND` inside traps, signal handling, `wait` with job specs, and alias expansion
 
 The test suite runs on every PR and compares behavior against `bash` as an oracle.
 
