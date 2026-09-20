@@ -19,11 +19,11 @@ impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderSta
         // `brushctl` and `brushinfo` names. It will behave identically across the two.
         self.builtin(
             "brushctl",
-            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
+            brush_core::builtins::builtin::<BrushCtlCommand, _>(),
         )
         .builtin(
             "brushinfo",
-            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
+            brush_core::builtins::builtin::<BrushCtlCommand, _>(),
         )
     }
 }
