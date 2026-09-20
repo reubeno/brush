@@ -74,7 +74,7 @@ impl HelpCommand {
         for i in 0..items_per_column {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
-                    let prefix = if builtin.disabled { "*" } else { " " };
+                    let prefix = if builtin.is_disabled() { "*" } else { " " };
                     write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
                     // column width
                 }
