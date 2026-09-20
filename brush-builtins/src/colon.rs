@@ -3,31 +3,12 @@ use brush_core::{ExecutionResult, builtins};
 /// No-op command.
 pub(crate) struct ColonCommand {}
 
-impl builtins::HelpContent for ColonCommand {
-    fn synopsis(_name: &str) -> String {
-        ":".into()
-    }
-
-    fn description(_name: &str) -> String {
-        "Null command".into()
-    }
-
-    fn detailed_help(
-        _name: &str,
-        _options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::Error> {
-        Ok("Null command; always returns success.".into())
-    }
-}
-
-impl builtins::FromArgs for ColonCommand {
-    fn from_args(
-        _name: &str,
-        _args: Vec<brush_core::CommandArg>,
-    ) -> Result<Self, builtins::ArgsError> {
-        Ok(Self {})
-    }
-}
+brush_builtin_utils::verbatim_builtin!(
+    ColonCommand,
+    synopsis = ":",
+    description = "Null command",
+    help = "Null command; always returns success.\n",
+);
 
 impl builtins::Command for ColonCommand {
     type Error = brush_core::Error;
