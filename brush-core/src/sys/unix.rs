@@ -3,7 +3,6 @@ pub mod commands;
 pub(crate) mod env;
 pub mod fd;
 pub mod fs;
-pub mod input;
 pub(crate) mod network;
 pub mod poll;
 use crate::error;

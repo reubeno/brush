@@ -887,3 +887,53 @@ cases:
       compgen -W 'a:b c'
       v="p:q"
       compgen -W "$v"
+
+  # bash treats an unquoted array or positional expansion as its elements joined on the
+  # first IFS character and then field-split; the cases below pin what follows from that.
+
+  - name: "Empty array and positional elements survive a non-whitespace IFS"
+    stdin: |
+      IFS=:
+      arr=(aa '' bb)
+      set -- aa '' bb
+      printf '[%s]' ${arr[@]}; echo
+      printf '[%s]' ${arr[*]}; echo
+      printf '[%s]' $@; echo
+      printf '[%s]' $*; echo
+      arr=(aa '' '')
+      printf '[%s]' ${arr[@]}; echo
+      IFS=': '
+      arr=(aa '' bb)
+      printf '[%s]' ${arr[@]}; echo
+
+  - name: "Delimiter ending an array element leaves an empty field"
+    known_failure: true
+    stdin: |
+      IFS=:
+      arr=('aa:' bb)
+      printf '[%s]' ${arr[@]}; echo
+
+  - name: "IFS whitespace beside a delimiter at an array element boundary is one delimiter"
+    known_failure: true
+    stdin: |
+      IFS=' :'
+      arr=(aa ':bb')
+      printf '[%s]' ${arr[@]}; echo
+      arr=(aa ':')
+      printf '[%s]' ${arr[@]}; echo
+      IFS=' ,:'
+      arr=(aa ' :bb')
+      printf '[%s]' ${arr[@]}; echo
+
+  - name: "Empty array and positional elements vanish when IFS starts with whitespace"
+    known_failure: true
+    stdin: |
+      IFS=' :'
+      arr=(aa '' bb)
+      set -- aa '' bb
+      printf '[%s]' ${arr[@]}; echo
+      printf '[%s]' ${arr[*]}; echo
+      printf '[%s]' $@; echo
+      printf '[%s]' $*; echo
+      arr=('' aa '' '' bb)
+      printf '[%s]' ${arr[@]}; echo

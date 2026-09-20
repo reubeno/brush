@@ -6,8 +6,8 @@ use tokio::sync::Mutex;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
-    interfaces::{self, InputFunction, KeyAction, KeySequence},
-    sys, trace_categories,
+    interfaces::{self, InputFunction, KeyAction, KeyMacro, KeySequence},
+    trace_categories,
 };
 
 /// Identifier for a keymap
@@ -28,14 +28,6 @@ enum BindKeyMap {
 impl BindKeyMap {
     const fn is_vi(&self) -> bool {
         matches!(self, Self::ViCommand | Self::ViInsert)
-    }
-
-    #[expect(dead_code)]
-    const fn is_emacs(&self) -> bool {
-        matches!(
-            self,
-            Self::EmacsStandard | Self::EmacsMeta | Self::EmacsCtlx
-        )
     }
 }
 
@@ -102,8 +94,9 @@ pub(crate) enum BindError {
     #[error("unimplemented: {0}")]
     Unimplemented(&'static str),
 
-    /// An I/O error occurred.
-    #[error("I/O error occurred")]
+    /// The editor could not apply the binding (an unsupported function, say), or an I/O
+    /// error occurred.
+    #[error("{0}")]
     IoError(#[from] std::io::Error),
 
     /// A binding parse error occurred.
@@ -175,6 +168,7 @@ impl BindCommand {
             let options = &context.shell.completion_config().fallback_options;
 
             // For now we'll just display a few items and show defaults.
+            writeln!(context.stdout(), "keymap is set to `emacs'")?;
             writeln!(
                 context.stdout(),
                 "mark-directories is set to `{}'",
@@ -191,6 +185,7 @@ impl BindCommand {
             let options = &context.shell.completion_config().fallback_options;
 
             // For now we'll just display a few items and show defaults.
+            writeln!(context.stdout(), "set keymap emacs")?;
             writeln!(
                 context.stdout(),
                 "set mark-directories {}",
@@ -278,9 +273,8 @@ fn parse_key_sequence(input: &str) -> Result<interfaces::KeySequence, BindError>
     let input = input.trim();
 
     let parsed = brush_parser::readline_binding::parse_key_sequence(input)?;
-    let abstract_seq = key_sequence_to_abstract_strokes(&parsed)?;
 
-    Ok(abstract_seq)
+    key_sequence_bytes(&parsed)
 }
 
 fn parse_key_sequence_and_shell_command(
@@ -296,16 +290,14 @@ fn parse_key_sequence_and_shell_command(
     // This should be something of the form:
     //     "KEY-SEQUENCE": SHELL-COMMAND
     let binding = brush_parser::readline_binding::parse_key_sequence_shell_cmd_binding(input)?;
-    let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
-    Ok((abstract_seq, binding.shell_cmd))
+    Ok((key_sequence_bytes(&binding.seq)?, binding.shell_cmd))
 }
 
 #[derive(Debug)]
-#[allow(dead_code, reason = "not all variants implemented yet")]
 enum BindableReadlineTarget {
     Function(interfaces::InputFunction),
-    Macro(interfaces::KeySequence),
+    Macro(KeyMacro),
 }
 
 fn parse_key_sequence_and_readline_target(
@@ -322,7 +314,7 @@ fn parse_key_sequence_and_readline_target(
     //     "KEY-SEQUENCE":function-name
     //     "KEY-SEQUENCE":readline-command
     let binding = brush_parser::readline_binding::parse_key_sequence_readline_binding(input)?;
-    let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
+    let abstract_seq = key_sequence_bytes(&binding.seq)?;
 
     match binding.target {
         brush_parser::readline_binding::ReadlineTarget::Function(func_name) => {
@@ -332,8 +324,12 @@ fn parse_key_sequence_and_readline_target(
         brush_parser::readline_binding::ReadlineTarget::Macro(target_seq_str) => {
             let parsed_target =
                 brush_parser::readline_binding::parse_key_sequence(&target_seq_str)?;
-            let abstract_target = key_sequence_to_abstract_strokes(&parsed_target)?;
-            Ok((abstract_seq, BindableReadlineTarget::Macro(abstract_target)))
+            let target_bytes =
+                brush_parser::readline_binding::macro_sequence_to_bytes(&parsed_target)?;
+            Ok((
+                abstract_seq,
+                BindableReadlineTarget::Macro(KeyMacro::from(target_bytes)),
+            ))
         }
     }
 }
@@ -382,54 +378,12 @@ fn bind_key_sequence_to_readline_target(
     }
 }
 
-fn key_sequence_to_abstract_strokes(
+fn key_sequence_bytes(
     seq: &brush_parser::readline_binding::KeySequence,
 ) -> Result<interfaces::KeySequence, BindError> {
-    let phys_strokes = brush_parser::readline_binding::key_sequence_to_strokes(seq)?;
-
-    // Lift from key codes to abstract keys.
-    let mut abstract_strokes = vec![];
-    let mut key_code_bytes = vec![];
-    let mut uninterpretable = false;
-    for mut phys_stroke in phys_strokes {
-        let mut key = sys::input::try_get_key_from_key_code(phys_stroke.key_code.as_slice());
-
-        // If we couldn't interpret it directly but we see it starts with the escape character,
-        // try to see if we can parse it as an Alt+<key> sequence.
-        if key.is_none() && phys_stroke.key_code.len() > 1 && phys_stroke.key_code[0] == b'\x1b' {
-            key = sys::input::try_get_key_from_key_code(&phys_stroke.key_code[1..]);
-            if key.is_some() {
-                phys_stroke.meta = true;
-            }
-        }
-
-        // When storing as bytes, apply control modifier to the key code.
-        let mut raw_bytes = phys_stroke.key_code.clone();
-        if phys_stroke.control {
-            for byte in &mut raw_bytes {
-                // Control characters are computed by ANDing with 0x1F
-                *byte &= 0x1F;
-            }
-        }
-        key_code_bytes.push(raw_bytes);
-
-        if let Some(key) = key {
-            abstract_strokes.push(interfaces::KeyStroke {
-                alt: phys_stroke.meta,
-                control: phys_stroke.control,
-                shift: false,
-                key,
-            });
-        } else {
-            uninterpretable = true;
-        }
-    }
-
-    if uninterpretable {
-        Ok(interfaces::KeySequence::Bytes(key_code_bytes))
-    } else {
-        Ok(interfaces::KeySequence::Strokes(abstract_strokes))
-    }
+    Ok(interfaces::KeySequence::from(
+        brush_parser::readline_binding::key_sequence_to_bytes(seq)?,
+    ))
 }
 
 fn parse_readline_function(func_name: &str) -> Result<interfaces::InputFunction, BindError> {
@@ -533,15 +487,7 @@ mod tests {
         let (key_seq, target) =
             parse_key_sequence_and_readline_target(r#""\C-a":beginning-of-line"#).unwrap();
 
-        assert_eq!(
-            key_seq,
-            interfaces::KeySequence::Strokes(vec![interfaces::KeyStroke {
-                alt: false,
-                control: true,
-                shift: false,
-                key: interfaces::Key::Character('a'),
-            }])
-        );
+        assert_eq!(key_seq, interfaces::KeySequence::from(vec![0x01]));
 
         assert_matches!(
             target,
@@ -550,19 +496,63 @@ mod tests {
     }
 
     #[test]
+    fn parse_macro_target_control_question_is_del() {
+        let (_key_seq, target) =
+            parse_key_sequence_and_readline_target(r#""\C-g": "a\C-?""#).unwrap();
+
+        assert_matches!(target, BindableReadlineTarget::Macro(m) if m.as_bytes() == b"a\x7f");
+    }
+
+    #[test]
+    fn macro_listing_round_trips_every_byte() {
+        for byte in 0..=u8::MAX {
+            assert_macro_round_trip(vec![byte]);
+        }
+        assert_macro_round_trip((0..=u8::MAX).collect());
+        assert_macro_round_trip((0..=u8::MAX).rev().collect());
+        assert_macro_round_trip(Vec::new());
+    }
+
+    fn assert_macro_round_trip(bytes: Vec<u8>) {
+        let key = KeySequence::from(bytes.clone());
+        let original = KeyMacro::from(bytes);
+        let listing = std::format!(r#""{key}": "{original}""#);
+        let (actual_key, target) = parse_key_sequence_and_readline_target(&listing).unwrap();
+
+        assert_eq!(actual_key, key);
+        assert_matches!(target, BindableReadlineTarget::Macro(actual) if actual == original);
+    }
+
+    #[test]
+    fn macro_body_preserves_literal_utf8() {
+        let text = "\u{e9}\u{1f600}\u{10d}";
+        let (_, target) =
+            parse_key_sequence_and_readline_target(&std::format!(r#""\C-g": "{text}""#)).unwrap();
+
+        assert_matches!(
+            target,
+            BindableReadlineTarget::Macro(actual) if actual.as_bytes() == text.as_bytes()
+        );
+        assert_macro_round_trip(text.as_bytes().to_vec());
+    }
+
+    #[test]
+    fn parse_multi_stroke_key_sequence_control_question_is_del() {
+        let (key_seq, _target) =
+            parse_key_sequence_and_readline_target(r#""\C-x\C-?A0": "text""#).unwrap();
+
+        assert_eq!(
+            key_seq,
+            interfaces::KeySequence::from(b"\x18\x7fA0".to_vec())
+        );
+    }
+
+    #[test]
     fn parse_escape_char_key_binding() {
         let (key_seq, target) =
             parse_key_sequence_and_readline_target(r#""\er":transpose-chars"#).unwrap();
 
-        assert_eq!(
-            key_seq,
-            interfaces::KeySequence::Strokes(vec![interfaces::KeyStroke {
-                alt: true,
-                control: false,
-                shift: false,
-                key: interfaces::Key::Character('r'),
-            }])
-        );
+        assert_eq!(key_seq, interfaces::KeySequence::from(b"\x1br".to_vec()));
 
         assert_matches!(
             target,

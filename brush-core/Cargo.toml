@@ -76,7 +76,6 @@ nix = { version = "0.31.2", features = [
     "term",
     "user",
 ] }
-terminfo = "0.9.0"
 uzers = "0.12.2"
 
 [target.wasm32-unknown-unknown.dependencies]

@@ -158,3 +158,305 @@ cases:
           echo "[bind -S]"
           bind -S | grep "${key_to_bind}"
           echo "bind -S result: ${PIPESTATUS[@]}"
+
+  - name: "bind macro listing"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    min_oracle_version: "5.3" # -X output changed in 5.3
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # A macro takes over its key: it shows up under -s/-S only, and any function or
+          # command previously on the key disappears from -p/-X.
+          echo "[bind -p (pre)]"
+          bind -p | grep '"\\C-l"'
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+          echo "[bind macro on \\C-l]"
+          bind '"\C-l": "text"'
+          echo "bind macro result: $?"
+
+          echo "[bind -p]"
+          bind -p | grep '"\\C-l"'
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+          echo "[bind -s]"
+          bind -s
+          echo "bind -s result: $?"
+
+          echo "[bind -S]"
+          bind -S
+          echo "bind -S result: $?"
+
+          # Rebinding the key to a function drops the macro again.
+          echo "[bind function on \\C-l]"
+          bind '"\C-l": clear-screen'
+          echo "bind function result: $?"
+          bind -s
+          echo "bind -s result: $?"
+          bind -p | grep '"\\C-l"'
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+  - name: "bind macro chain listing"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    min_oracle_version: "5.3" # -X output changed in 5.3
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # The shape of bindings atuin installs: a key bound to a macro whose body
+          # triggers a bound shell command and an intermediate (empty) macro.
+          bind -x '"\C-x\C-_A1\C-g": echo ATUIN-RAN'
+          bind '"\C-x\C-_A0\C-g": ""'
+          bind '"\C-r": "\C-x\C-_A1\C-g\C-x\C-_A0\C-g"'
+
+          echo "[bind -X]"
+          bind -X
+          echo "bind -X result: $?"
+
+          echo "[bind -s]"
+          bind -s | sort
+          echo "bind -s result: ${PIPESTATUS[@]}"
+
+          echo "[bind -p]"
+          bind -p | grep '"\\C-r"'
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+          # Rebind the intermediate sequence, as atuin's accept path does.
+          bind '"\C-x\C-_A0\C-g": accept-line'
+          echo "[bind -s (after rebind)]"
+          bind -s | sort
+          echo "bind -s result: ${PIPESTATUS[@]}"
+          echo "[bind -X (after rebind)]"
+          bind -X
+          echo "bind -X result: $?"
+
+  - name: "bind macro display escapes"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind '"\C-g": "a\C-?b\x41\"c\\\\d\e\C-a\C-_ \177"'
+          echo "bind macro result: $?"
+
+          echo "[bind -s]"
+          bind -s
+          echo "[bind -S]"
+          bind -S
+
+          # A macro on a multi-key sequence.
+          bind '"\C-xq": "\t\n"'
+          echo "[bind -s (multi-key)]"
+          bind -s | sort
+
+  - name: "bind -v/-V keymap"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Only the keymap line is compared: the other variables differ by design.
+          echo "[bind -v]"
+          bind -v | grep keymap
+          echo "bind -v result: ${PIPESTATUS[@]}"
+
+          echo "[bind -V]"
+          bind -V | grep keymap
+          echo "bind -V result: ${PIPESTATUS[@]}"
+
+  - name: "bind modified cursor keys"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # The .inputrc staples: ctrl-arrow word movement and ctrl-delete.
+          bind '"\e[1;5C": forward-word'
+          bind '"\e[1;5D": backward-word'
+          bind '"\e[3;5~": kill-word'
+          echo "bind result: $?"
+
+          # Only the keys bound above are compared: bash and brush differ in which
+          # modified keys they bind by default.
+          echo "[bind -p]"
+          for key in '"\e[1;5C"' '"\e[1;5D"' '"\e[3;5~"'; do
+            bind -p | grep -F "$key"
+            echo "bind -p $key result: ${PIPESTATUS[@]}"
+          done
+
+          echo "[bind -r]"
+          bind -r '\e[1;5C'
+          bind -p | grep -F '"\e[1;5C"'
+          echo "bind -p (after -r) result: ${PIPESTATUS[@]}"
+
+  - name: "bind listing order"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    min_oracle_version: "5.3" # -X output changed in 5.3
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Listings are in key order, not whatever order a hash map yields.
+          bind -x '"\C-x\C-r": echo second'
+          bind -x '"\C-t": echo first'
+          bind -x '"\C-x\C-a": echo third'
+          bind '"\C-x\C-y": "macro-b"'
+          bind '"\C-g": "macro-a"'
+
+          echo "[bind -X]"
+          bind -X
+          echo "[bind -s]"
+          bind -s
+          echo "[bind -S]"
+          bind -S
+
+  - name: "bind shell-expand-line"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          echo "[default binding]"
+          bind -p | grep shell-expand-line
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+          echo "[rebind]"
+          bind '"\C-x\C-e": shell-expand-line'
+          bind -p | grep shell-expand-line | sort
+          echo "bind -p result: ${PIPESTATUS[@]}"
+          bind -q shell-expand-line
+          echo "bind -q result: $?"
+
+  - name: "bind listing escapes"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    min_oracle_version: "5.3" # -X output changed in 5.3
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Control punctuation, high bytes (a UTF-8 é and a bare \200) and a single quote,
+          # in a macro body and in a bound key.
+          bind '"\C-g": "a'"'"'b\303\251\200\C-\\\C-]\C-^\C-_\C-?\e"'
+          bind -x '"\C-t\C-@\C-\\\C-]": echo x'
+
+          echo "[bind -s]"
+          bind -s
+          echo "[bind -S]"
+          bind -S
+          echo "[bind -X]"
+          bind -X
+
+  - name: "bind macro listing and stable round trip"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Readline versions disagree on whether reloading a high byte from bind -s
+          # preserves it or turns its \M- spelling into an escape prefix. Check the
+          # stable listing here, and round-trip only the portable meta forms below.
+          bind '"\C-g": "\303\251\200\377\C-a\C-\\\C-]\C-^\C-_\C-?\"\\\e"'
+          before=$(bind -s)
+          printf 'before: %s\n' "$before"
+
+          bind '"\C-g": "\M-f\M-\C-e\ef"'
+          before=$(bind -s)
+          bind "$before"
+          test "$before" = "$(bind -s)"
+          echo "meta round trip: $?"
+
+          bind "\"\\C-g\": \"$(printf '\303\251\360\237\230\200')\""
+          before=$(bind -s)
+          printf 'UTF-8: %s\n' "$before"
+
+          bind -r '\C-g'
+          bind '"\303\251": "\303\251"'
+          before=$(bind -s)
+          printf 'UTF-8 trigger: %s\n' "$before"
+
+  - name: "bind unknown escapes"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # readline drops the backslash of an escape it does not recognize and keeps the
+          # character, on both sides of a binding. `\C`, `\M` and `\x` with no digits after
+          # it are unknown escapes too, since only `\C-`, `\M-` and `\x<hex>` are known.
+          bind '"\C-g": "a\zb"'
+          bind '"\C-h": "\C\M\x"'
+          bind '"\z": "unknown-trigger"'
+          bind -s
+
+  - name: "bind macro octal escapes"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # readline masks an octal escape to a byte; \401 and \777 are \001 and \377.
+          bind '"\C-g": "\401\777x"'
+          echo "bind result: $?"
+          bind -s | grep '"\\C-g"'
+          echo "bind -s result: ${PIPESTATUS[@]}"
+
+  - name: "bind -p output is accepted back by bind"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # Whatever the shell lists as a binding, it has to accept as one; this is the
+          # path an inputrc-from-`bind -p` reload takes. Only rejections are printed, so
+          # the two shells agree as long as neither rejects its own listing.
+          bind -p | while read -r line; do
+              case "${line}" in ''|'#'*) continue ;; esac
+              bind "${line}" 2>/dev/null || echo "REJECTED: ${line}"
+          done
+          echo "done"
+
+          # And it has to name the functions bash names, or an inputrc written against
+          # bash's own listing binds something else.
+          echo "[history keys]"
+          bind -p | grep -E '^"(\\C-p|\\C-n)":' | sort
+
+  - name: "bind Meta key under a terminfo whose cursor-up output is ESC M"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    env:
+      TERM: tmux
+    test_files:
+      - path: "run.sh"
+        contents: |
+          # tmux and screen describe cursor-up *output* (cuu1) as ESC M, which as a key is
+          # Meta-M. Binding it must not be taken for the up arrow, nor displace it. Spelled
+          # \eM rather than \M-M because bash lists the latter as its high-bit byte.
+          bind '"\eM": clear-screen'
+          bind -p | grep -E '^"(\\eM|\\e\[A)":' | sort
