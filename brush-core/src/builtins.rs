@@ -22,17 +22,6 @@ pub type CommandExecuteFunc<SE: extensions::ShellExtensions> =
         Vec<commands::CommandArg>,
     ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>;
 
-/// Type of a function to retrieve help content for a built-in command. Content
-/// is returned ready to print; see [`ContentType`] for each form's shape.
-///
-/// # Arguments
-///
-/// * `name` - The name of the command.
-/// * `content_type` - The type of content to retrieve.
-/// * `options` - Additional options for content retrieval.
-pub type CommandContentFunc =
-    fn(&str, ContentType, &ContentOptions) -> Result<String, error::Error>;
-
 /// Trait implemented by built-in shell commands.
 pub trait Command: FromArgs + HelpContent {
     /// The error type returned by the command. See [`Command::execute`] for when
@@ -77,9 +66,10 @@ pub trait Command: FromArgs + HelpContent {
 
 /// Trait yielding a built-in command's help text.
 ///
-/// The short forms are structured: the shell frames them uniformly (as
-/// `name: synopsis` and `name - description`), so implementations return only
-/// the part that differs. Detailed help is free-form and printed verbatim.
+/// The short forms are structured: `help -s` and `help -d` frame them
+/// uniformly (as `name: synopsis` and `name - description`), so implementations
+/// return only the part that differs. Detailed help is free-form and printed
+/// verbatim.
 pub trait HelpContent {
     /// Returns the command's synopsis, e.g. `cd [-L|-P] [dir]`. Includes the
     /// command's own name, but no `name: ` prefix and no trailing newline.
@@ -117,18 +107,6 @@ pub trait HelpContent {
     }
 }
 
-/// Type of help content, typically associated with a built-in command.
-#[derive(Clone, Copy)]
-#[non_exhaustive]
-pub enum ContentType {
-    /// Detailed help content for the command, as the implementation renders it.
-    DetailedHelp,
-    /// Short usage information, framed as `name: synopsis` with a newline.
-    ShortUsage,
-    /// Short description, framed as `name - description` with a newline.
-    ShortDescription,
-}
-
 /// Options for retrieving built-in command content.
 #[derive(Default)]
 #[non_exhaustive]
@@ -148,8 +126,10 @@ pub struct Registration<SE: extensions::ShellExtensions> {
     /// Function to execute the builtin.
     execute_func: CommandExecuteFunc<SE>,
 
-    /// Function to retrieve the builtin's content/help text.
-    content_func: CommandContentFunc,
+    /// Functions yielding the builtin's help text; see [`HelpContent`].
+    synopsis_func: fn(&str) -> String,
+    description_func: fn(&str) -> String,
+    detailed_help_func: fn(&str, &ContentOptions) -> Result<String, error::Error>,
 
     /// Has this registration been disabled?
     disabled: bool,
@@ -174,7 +154,9 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
     pub const fn new<H: HelpContent>(execute_func: CommandExecuteFunc<SE>) -> Self {
         Self {
             execute_func,
-            content_func: render_content::<H>,
+            synopsis_func: H::synopsis,
+            description_func: H::description,
+            detailed_help_func: H::detailed_help,
             disabled: false,
             special: false,
             takes_declarations: false,
@@ -186,9 +168,41 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
         self.execute_func
     }
 
-    /// Returns the function that retrieves the builtin's help content.
-    pub const fn content_func(&self) -> CommandContentFunc {
-        self.content_func
+    /// Returns the builtin's synopsis; see [`HelpContent::synopsis`].
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin was invoked under.
+    pub fn synopsis(&self, name: &str) -> String {
+        (self.synopsis_func)(name)
+    }
+
+    /// Returns the builtin's one-line description; see
+    /// [`HelpContent::description`].
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin was invoked under.
+    pub fn description(&self, name: &str) -> String {
+        (self.description_func)(name)
+    }
+
+    /// Returns the builtin's full help; see [`HelpContent::detailed_help`].
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin was invoked under.
+    /// * `options` - Options controlling how the content is rendered.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the help cannot be rendered.
+    pub fn detailed_help(
+        &self,
+        name: &str,
+        options: &ContentOptions,
+    ) -> Result<String, error::Error> {
+        (self.detailed_help_func)(name, options)
     }
 
     /// Returns whether the builtin takes specially handled declarations.
@@ -232,20 +246,6 @@ pub const fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>(
     Registration {
         takes_declarations: B::TAKES_DECLARATIONS,
         ..Registration::new::<B>(exec_builtin::<B, SE>)
-    }
-}
-
-/// Renders help content from a [`HelpContent`] implementation, applying the
-/// shell's framing to the short forms.
-fn render_content<H: HelpContent>(
-    name: &str,
-    content_type: ContentType,
-    options: &ContentOptions,
-) -> Result<String, error::Error> {
-    match content_type {
-        ContentType::DetailedHelp => H::detailed_help(name, options),
-        ContentType::ShortUsage => Ok(format!("{name}: {}\n", H::synopsis(name))),
-        ContentType::ShortDescription => Ok(format!("{name} - {}\n", H::description(name))),
     }
 }
 
