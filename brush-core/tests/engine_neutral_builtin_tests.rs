@@ -136,8 +136,8 @@ impl builtins::Command for DeclCountCommand {
 
 async fn exit_code_of(command: &str) -> Result<u8> {
     let mut shell = brush_core::Shell::builder()
-        .builtin("count", builtins::builtin::<CountCommand, SE>())
-        .builtin("declcount", builtins::builtin::<DeclCountCommand, SE>())
+        .command::<CountCommand>("count")
+        .command::<DeclCountCommand>("declcount")
         .build()
         .await?;
 

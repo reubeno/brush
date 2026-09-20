@@ -21,7 +21,7 @@ pub fn experimental_builtins<SE: brush_core::extensions::ShellExtensions>()
     let mut m = std::collections::HashMap::<String, builtins::Registration<SE>>::new();
 
     #[cfg(feature = "builtin.save")]
-    m.insert("save".into(), builtin::<save::SaveCommand, SE>());
+    m.insert("save".into(), builtin::<save::SaveCommand, _>());
 
     m
 }
