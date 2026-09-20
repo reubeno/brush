@@ -706,7 +706,9 @@ jobs:
         run: |
           dashboard=e2e-results/dashboard.md
           [[ -f "${dashboard}" ]] || exit 0
-          echo "📎 [Run logs](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) · artifact \`e2e-logs\`" >> "${dashboard}"
+          # The blank line ends the last <details> block; without it the link stays raw HTML.
+          printf '\n📎 [Run logs](%s/%s/actions/runs/%s) · artifact `e2e-logs`\n' \
+              "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}" >> "${dashboard}"
           cat "${dashboard}" >> "${GITHUB_STEP_SUMMARY}"
           cp "${dashboard}" test-results-e2e.md
           for log in e2e-results/run-*/*/log.txt; do

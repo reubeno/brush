@@ -89,6 +89,13 @@ context is `e2e/`, so it can `COPY shim /e2e/bin`) whose entrypoint:
 The container runs as the host user with `HOME=/tmp`, so `chmod` anything
 the tests write into.
 
+## Reproducing a failure
+
+The dashboard names each failing test with the command that runs it alone, built from the
+adapter's `select-args.txt`: the adapter arguments that select one test, with `{test}` standing
+for its name (fzf: `-n /{test}/`). Adapters without the file are assumed to take pytest's
+`-k {test}`, since that is what every adapter's own tests use.
+
 ## Tracking known failures
 
 Two lists per adapter, both optional, both `#`-commented, one test name per line.
