@@ -8,7 +8,8 @@ This guide helps AI agents work efficiently on the `brush` codebase by providing
 
 The brush project is organized into several key crates:
 
-- **`brush-core/`**: Core shell functionality, builtins, and runtime
+- **`brush-core/`**: Core shell runtime and the engine-neutral contracts builtins implement
+- **`brush-builtin-utils/`**: Helpers for implementing builtins (e.g., the clap adapter and `clap_builtin!` macro)
 - **`brush-parser/`**: Shell script parsing (AST generation)
 - **`brush-builtins/`**: Implementation of shell builtins (e.g., echo, cd)
 - **`brush-interactive/`**: Interactive shell interfaces (readline, etc.)
@@ -210,7 +211,7 @@ When changing public APIs in `brush-core` (see section 3 for breaking change pol
 
 Examples should:
 
-- Be self-contained and runnable with `cargo run --package brush-core --example <name>`
+- Be self-contained and runnable with `cargo run --package <crate> --example <name>` (e.g., `cargo run --package brush-core --example custom-builtin`)
 - Include comprehensive error handling
 - Demonstrate both basic and advanced usage patterns
 - Include output examples in comments when helpful
