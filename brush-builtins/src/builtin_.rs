@@ -1,15 +1,17 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
-#[derive(Default, Parser)]
 pub(crate) struct BuiltinCommand {
-    #[clap(skip)]
     args: Vec<brush_core::CommandArg>,
 }
 
-brush_builtin_utils::clap_builtin!(BuiltinCommand, raw_args = args);
+brush_builtin_utils::verbatim_builtin!(
+    BuiltinCommand,
+    args = args,
+    synopsis = "builtin [shell-builtin [arg ...]]",
+    description = "Execute shell builtins",
+    help = "Execute SHELL-BUILTIN with arguments ARGs without performing command lookup.\n",
+);
 
 impl builtins::Command for BuiltinCommand {
     type Error = brush_core::Error;
