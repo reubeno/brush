@@ -59,7 +59,13 @@ fn split_completion_word_list(
 }
 
 /// Type of action to take to generate completion candidates.
-#[derive(Clone, Debug, strum_macros::EnumIter)]
+///
+/// Displays and parses as the name `complete -A` uses for it (e.g. `arrayvar`);
+/// `VARIANTS` lists those names.
+#[derive(
+    Clone, Copy, Debug, strum_macros::Display, strum_macros::EnumString, strum_macros::VariantNames,
+)]
+#[strum(serialize_all = "lowercase")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteAction {
     /// Complete with valid aliases.
@@ -113,7 +119,22 @@ pub enum CompleteAction {
 }
 
 /// Options influencing how command completions are generated.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, strum_macros::EnumIter)]
+///
+/// Displays and parses as the name `complete -o` uses for it (e.g. `nospace`);
+/// `VARIANTS` lists those names.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    strum_macros::EnumString,
+    strum_macros::VariantNames,
+)]
+#[strum(serialize_all = "lowercase")]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
     BashDefault,
@@ -197,6 +218,52 @@ pub struct GenerationOptions {
     pub no_space: bool,
     /// Also complete with directory names.
     pub plus_dirs: bool,
+}
+
+impl GenerationOptions {
+    /// Returns whether `option` is enabled.
+    ///
+    /// # Arguments
+    ///
+    /// * `option` - The option to query.
+    pub const fn is_enabled(&self, option: CompleteOption) -> bool {
+        match option {
+            CompleteOption::BashDefault => self.bash_default,
+            CompleteOption::Default => self.default,
+            CompleteOption::DirNames => self.dir_names,
+            CompleteOption::FileNames => self.file_names,
+            CompleteOption::NoQuote => self.no_quote,
+            CompleteOption::NoSort => self.no_sort,
+            CompleteOption::NoSpace => self.no_space,
+            CompleteOption::PlusDirs => self.plus_dirs,
+        }
+    }
+
+    /// Enables or disables `option`.
+    ///
+    /// # Arguments
+    ///
+    /// * `option` - The option to update.
+    /// * `enabled` - Whether the option should be enabled.
+    pub const fn set(&mut self, option: CompleteOption, enabled: bool) {
+        let flag = match option {
+            CompleteOption::BashDefault => &mut self.bash_default,
+            CompleteOption::Default => &mut self.default,
+            CompleteOption::DirNames => &mut self.dir_names,
+            CompleteOption::FileNames => &mut self.file_names,
+            CompleteOption::NoQuote => &mut self.no_quote,
+            CompleteOption::NoSort => &mut self.no_sort,
+            CompleteOption::NoSpace => &mut self.no_space,
+            CompleteOption::PlusDirs => &mut self.plus_dirs,
+        };
+        *flag = enabled;
+    }
+
+    /// Returns the enabled options, in the order `complete -p` lists them.
+    pub fn enabled(&self) -> impl Iterator<Item = CompleteOption> + '_ {
+        use strum::IntoEnumIterator as _;
+        CompleteOption::iter().filter(move |option| self.is_enabled(*option))
+    }
 }
 
 /// Encapsulates a command completion specification; provides policy for how to
