@@ -116,7 +116,7 @@ Optional crates add bundled [coreutils builtins](brush-coreutils-builtins) and [
 | Tier | Platforms | What that means |
 |---|---|---|
 | **Supported** | Linux x86_64 and aarch64 (glibc and musl), macOS x86_64 and aarch64 | Prebuilt binaries for every release, the full test suite on Linux x86_64 and aarch64 (glibc) and macOS aarch64, build checks for Linux musl and macOS x86_64, and daily-driver quality. |
-| **Experimental** | Windows x86_64 and aarch64, WASI 0.2 | Windows is tested in CI, and prebuilt binaries are on the way; parts of the shell are still missing or limited, and it pairs well with Microsoft's [coreutils for Windows](https://github.com/microsoft/coreutils). WASI builds run under wasmtime in CI, and we know they still have a number of holes. |
+| **Experimental** | Windows x86_64 and aarch64, WASI 0.2 | Windows receives build and static checks in CI, and prebuilt binaries are on the way; parts of the shell are still missing or limited, and it pairs well with Microsoft's [coreutils for Windows](https://github.com/microsoft/coreutils). WASI builds run under wasmtime in CI, and we know they still have a number of holes. |
 | **Builds only** | wasm32 for the browser, Android, FreeBSD, NetBSD, OpenBSD | Cross-compiled in CI so they keep compiling. No tests, no binaries. |
 
 ## Community and contributing
