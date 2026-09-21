@@ -1,6 +1,6 @@
 # Related projects
 
-Other shells and shell tooling worth a look:
+Other POSIX-ish or modern shells implemented in Rust and other non-C/C++ languages:
 
 * [nushell](https://www.nushell.sh/)
 * [fish](https://fishshell.com)

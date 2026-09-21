@@ -4,7 +4,7 @@ This document details `brush`'s compatibility with `bash`, including supported f
 
 ## Overview
 
-`brush` aims for high compatibility with `bash`. We validate this through **2,500+ compatibility test cases** that compare behavior against `bash` as an oracle, plus [end-to-end suites](../../e2e/README.md) that run other tools' own shell-integration tests (fzf, atuin, starship, etc.) against `brush`.
+`brush` aims for high compatibility with `bash`. We validate this through **2,500+ compatibility test cases** that compare behavior against `bash` as an oracle, plus [end-to-end suites](../../e2e/README.md) that test popular shell tools (e.g., fzf, atuin, starship, etc.) with `brush`.
 
 **Compatibility snapshot:** Production-ready for most use cases. Your `.bashrc`, aliases, functions, and completions should "just work."
 
