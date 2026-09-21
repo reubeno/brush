@@ -1,7 +1,6 @@
 name: "Nameref variables"
 cases:
   - name: "Nameref basic read"
-    known_failure: true
     stdin: |
       target="hello world"
       declare -n ref=target
@@ -9,7 +8,6 @@ cases:
       echo "target: $target"
 
   - name: "Nameref write through reference"
-    known_failure: true
     stdin: |
       target="original"
       declare -n ref=target
@@ -19,7 +17,6 @@ cases:
       echo "ref: $ref"
 
   - name: "Nameref append with +="
-    known_failure: true
     stdin: |
       target="hello"
       declare -n ref=target
@@ -28,7 +25,6 @@ cases:
       echo "ref: $ref"
 
   - name: "Nameref to unset variable"
-    known_failure: true
     stdin: |
       declare -n ref=nonexistent
       echo "ref: '${ref}'"
@@ -38,7 +34,6 @@ cases:
       echo "nonexistent: $nonexistent"
 
   - name: "Nameref reassignment - change target"
-    known_failure: true
     stdin: |
       var1="first"
       var2="second"
@@ -51,7 +46,6 @@ cases:
       echo "ref -> var2: $ref"
 
   - name: "Nameref chained (A -> B -> C)"
-    known_failure: true
     stdin: |
       ultimate="final_value"
       declare -n middle=ultimate
@@ -62,7 +56,6 @@ cases:
       echo "ultimate: $ultimate"
 
   - name: "Nameref circular reference"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n a=b
@@ -71,7 +64,6 @@ cases:
       echo "done"
 
   - name: "Nameref self-reference"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n self=self
@@ -79,7 +71,6 @@ cases:
       echo "done"
 
   - name: "Nameref in function - pass by reference"
-    known_failure: true
     stdin: |
       modify_var() {
           local -n ref=$1
@@ -92,7 +83,6 @@ cases:
       echo "after: $myvar"
 
   - name: "Nameref in function scope - local nameref to outer var"
-    known_failure: true
     stdin: |
       outer="outer_value"
       inner_func() {
@@ -105,7 +95,6 @@ cases:
       echo "after: $outer"
 
   - name: "Nameref in function - multiple namerefs (swap)"
-    known_failure: true
     stdin: |
       swap() {
           local -n x=$1
@@ -128,7 +117,6 @@ cases:
       declare -p target | grep -o 'x' | head -1 || echo "no export flag"
 
   - name: "Nameref unset through ref removes target"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -140,7 +128,6 @@ cases:
       declare -p target 2>/dev/null || echo "target is gone"
 
   - name: "Nameref unset target directly"
-    known_failure: true
     stdin: |
       target="exists"
       declare -n ref=target
@@ -149,7 +136,6 @@ cases:
       echo "ref after unset: '${ref}'"
 
   - name: "Nameref array append with +="
-    known_failure: true
     stdin: |
       target=(a b)
       declare -n ref=target
@@ -159,7 +145,6 @@ cases:
       declare -p target
 
   - name: "Nameref array element unset"
-    known_failure: true
     stdin: |
       target=(a b c d)
       declare -n ref=target
@@ -167,7 +152,6 @@ cases:
       declare -p target
 
   - name: "Nameref array slicing"
-    known_failure: true
     stdin: |
       target=(a b c d e)
       declare -n ref=target
@@ -176,7 +160,6 @@ cases:
       echo "count: ${#ref[@]}"
 
   - name: "Nameref to array element"
-    known_failure: true
     stdin: |
       arr=(zero one two three)
       declare -n ref='arr[2]'
@@ -185,7 +168,6 @@ cases:
       echo "arr[2]: ${arr[2]}"
 
   - name: "Nameref in subshell"
-    known_failure: true
     stdin: |
       target="original"
       declare -n ref=target
@@ -193,7 +175,6 @@ cases:
       echo "outside: $target"
 
   - name: "Nameref in command substitution"
-    known_failure: true
     stdin: |
       target="original"
       declare -n ref=target
@@ -202,7 +183,6 @@ cases:
       echo "target: $target"
 
   - name: "Nameref with integer attribute"
-    known_failure: true
     stdin: |
       target=0
       declare -ni ref=target
@@ -214,7 +194,6 @@ cases:
       declare -p target
 
   - name: "Nameref with set -u and unset target"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       set -u
@@ -231,7 +210,6 @@ cases:
       echo "done"
 
   - name: "Multiple namerefs to same target"
-    known_failure: true
     stdin: |
       target="initial"
       declare -n ref1=target
@@ -244,7 +222,6 @@ cases:
       echo "target: $target"
 
   - name: "Circular reference in assignment context"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n a=b
@@ -261,7 +238,6 @@ cases:
       echo "prefix: ${!ref_@}"
 
   - name: "Nameref with local in nested functions"
-    known_failure: true
     stdin: |
       outer() {
           local myval="outer_value"
@@ -276,7 +252,6 @@ cases:
       outer
 
   - name: "Nameref for-in loop changes target"
-    known_failure: true
     stdin: |
       var1="a"
       var2="b"
@@ -288,7 +263,6 @@ cases:
       echo "var1=$var1 var2=$var2 var3=$var3"
 
   - name: "Nameref to array element - arithmetic increment"
-    known_failure: true
     stdin: |
       arr=(10 20 30 40)
       declare -n ref='arr[2]'
@@ -298,7 +272,6 @@ cases:
       echo "arr[2]: ${arr[2]}"
 
   - name: "Nameref to array element - arithmetic compound assign"
-    known_failure: true
     stdin: |
       arr=(100 200 300)
       declare -n ref='arr[1]'
@@ -308,7 +281,6 @@ cases:
       echo "arr[1]: ${arr[1]}"
 
   - name: "Nameref to array element - arithmetic expression"
-    known_failure: true
     stdin: |
       arr=(100 200 300)
       declare -n ref='arr[2]'
@@ -316,7 +288,6 @@ cases:
       echo "arr[2]: ${arr[2]}"
 
   - name: "Nameref to array element - string append"
-    known_failure: true
     stdin: |
       arr=(hello world)
       declare -n ref='arr[0]'
@@ -324,14 +295,12 @@ cases:
       echo "arr[0]: ${arr[0]}"
 
   - name: "Nameref to array element - length"
-    known_failure: true
     stdin: |
       arr=("short" "a longer string here" "x")
       declare -n ref='arr[1]'
       echo "len: ${#ref}"
 
   - name: "Nameref to array element - parameter transformations"
-    known_failure: true
     stdin: |
       arr=("hello world" "foo")
       declare -n ref='arr[0]'
@@ -339,14 +308,12 @@ cases:
       echo "Q: ${ref@Q}"
 
   - name: "Nameref to array element - substring"
-    known_failure: true
     stdin: |
       arr=("abcdefgh" "xyz")
       declare -n ref='arr[0]'
       echo "sub: ${ref:1:3}"
 
   - name: "Nameref to array element - pattern substitution"
-    known_failure: true
     stdin: |
       arr=("hello world hello" "x")
       declare -n ref='arr[0]'
@@ -354,21 +321,18 @@ cases:
       echo "all: ${ref//hello/bye}"
 
   - name: "Nameref to array element - default value"
-    known_failure: true
     stdin: |
       arr=("" "val")
       declare -n ref='arr[0]'
       echo "default: ${ref:-fallback}"
 
   - name: "Nameref to array element - negative index"
-    known_failure: true
     stdin: |
       arr=(a b c d e)
       declare -n ref='arr[-1]'
       echo "ref: $ref"
 
   - name: "Nameref to associative array element"
-    known_failure: true
     stdin: |
       declare -A map=([foo]=bar [baz]=qux)
       declare -n ref='map[foo]'
@@ -377,7 +341,6 @@ cases:
       echo "map_foo: ${map[foo]}"
 
   - name: "Nameref to array element - unset through ref"
-    known_failure: true
     stdin: |
       arr=(a b c d)
       declare -n ref='arr[2]'
@@ -385,7 +348,6 @@ cases:
       declare -p arr
 
   - name: "Nameref chain 4 levels"
-    known_failure: true
     stdin: |
       final="deep"
       declare -n c=final
@@ -396,7 +358,6 @@ cases:
       echo "final: $final"
 
   - name: "Nameref 3-level chain to array element"
-    known_failure: true
     stdin: |
       arr=(A B C)
       declare -n mid='arr[1]'
@@ -406,7 +367,6 @@ cases:
       echo "arr[1]: ${arr[1]}"
 
   - name: "Nameref to associative array - keys and values"
-    known_failure: true
     stdin: |
       declare -A map=([x]=1 [y]=2)
       declare -n ref=map
@@ -423,7 +383,6 @@ cases:
       declare -p target
 
   - name: "Nameref - test -v follows nameref"
-    known_failure: true
     stdin: |
       declare -n ref=nonesuch
       [[ -v ref ]] && echo "set" || echo "unset"
@@ -431,7 +390,6 @@ cases:
       [[ -v ref ]] && echo "set" || echo "unset"
 
   - name: "Nameref to array - length and keys"
-    known_failure: true
     stdin: |
       arr=(a b c d e)
       declare -n ref=arr
@@ -440,14 +398,12 @@ cases:
       echo "elem0len: ${#ref}"
 
   - name: "Nameref with printf -v"
-    known_failure: true
     stdin: |
       declare -n ref=formatted
       printf -v ref "num=%d" 42
       echo "formatted: $formatted"
 
   - name: "Nameref - declare +n removes attribute"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -457,7 +413,6 @@ cases:
       declare -p ref
 
   - name: "Nameref to IFS"
-    known_failure: true
     stdin: |
       declare -n ref=IFS
       saved="$IFS"
@@ -466,14 +421,12 @@ cases:
       IFS="$saved"
 
   - name: "Nameref to array - whole array assignment"
-    known_failure: true
     stdin: |
       declare -n ref=myarr
       ref=(x y z)
       declare -p myarr
 
   - name: "Nameref local -n recursive function"
-    known_failure: true
     stdin: |
       count_down() {
           local v=$1
@@ -487,28 +440,24 @@ cases:
       echo "result: $result"
 
   - name: "Nameref to array - negative index access"
-    known_failure: true
     stdin: |
       arr=(a b c d e)
       declare -n ref=arr
       echo "last: ${ref[-1]}"
 
   - name: "Nameref in eval"
-    known_failure: true
     stdin: |
       target="eval_val"
       declare -n ref=target
       eval 'echo "eval: $ref"'
 
   - name: "Nameref in here-string"
-    known_failure: true
     stdin: |
       target="here_data"
       declare -n ref=target
       cat <<< "$ref"
 
   - name: "Nameref in extended test operators"
-    known_failure: true
     stdin: |
       target="abc"
       declare -n ref=target
@@ -517,7 +466,6 @@ cases:
       [[ $ref < bcd ]] && echo "lt ok"
 
   - name: "Nameref to sparse array"
-    known_failure: true
     stdin: |
       declare -a arr
       arr[5]=five
@@ -528,7 +476,6 @@ cases:
       echo "elem5: ${ref[5]}"
 
   - name: "Nameref concurrent writes through two refs"
-    known_failure: true
     stdin: |
       target="init"
       declare -n r1=target
@@ -544,7 +491,6 @@ cases:
       echo "ternary: $(( ref ? 100 : 200 ))"
 
   - name: "Nameref chain to assoc array element"
-    known_failure: true
     stdin: |
       declare -A map=([k]=v)
       declare -n mid='map[k]'
@@ -552,7 +498,6 @@ cases:
       echo "top: $top"
 
   - name: "Nameref to array element - set test"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[1]'
@@ -561,7 +506,6 @@ cases:
       echo "unset: ${ref+SET}"
 
   - name: "Nameref local -n overrides outer nameref"
-    known_failure: true
     stdin: |
       a="A"
       b="B"
@@ -574,7 +518,6 @@ cases:
       echo "outer: $ref"
 
   - name: "Nameref target lowercase transform"
-    known_failure: true
     stdin: |
       declare -l target=""
       declare -n ref=target
@@ -582,7 +525,6 @@ cases:
       echo "target: $target"
 
   - name: "Nameref export -n unexports target"
-    known_failure: true
     stdin: |
       export target="val"
       declare -n ref=target
@@ -590,7 +532,6 @@ cases:
       env | grep "^target=" | head -1 || echo "not exported"
 
   - name: "Nameref to array - push via index"
-    known_failure: true
     stdin: |
       arr=(a b)
       declare -n ref=arr
@@ -609,7 +550,6 @@ cases:
       echo "target: $target"
 
   - name: "Nameref - declare -a through nameref applies to target"
-    known_failure: true
     stdin: |
       declare -n ref=myarr
       declare -a ref
@@ -617,7 +557,6 @@ cases:
       declare -p myarr 2>/dev/null || echo "not found"
 
   - name: "Nameref - declare -A through nameref applies to target"
-    known_failure: true
     stdin: |
       declare -n ref=mymap
       declare -A ref
@@ -626,7 +565,6 @@ cases:
       echo "b: ${mymap[b]}"
 
   - name: "Nameref to array element - test -v treats resolved name literally"
-    known_failure: true
     stdin: |
       # In bash, [[ -v ref ]] where ref→arr[2] looks for a variable literally
       # named "arr[2]", not array element arr at index 2. So it's always unset.
@@ -638,21 +576,18 @@ cases:
       [[ -v ref ]] && echo "set" || echo "unset"
 
   - name: "Nameref to array element - test -v with nonexistent index"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[5]'
       [[ -v ref ]] && echo "set" || echo "unset"
 
   - name: "Nameref to arr[@] expands all elements"
-    known_failure: true
     stdin: |
       arr=(x y z)
       declare -n ref='arr[@]'
       echo "ref: $ref"
 
   - name: "Nameref circular with 3 nodes"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n c1=c2
@@ -662,7 +597,6 @@ cases:
       echo "exit: $?"
 
   - name: "Nameref in case pattern"
-    known_failure: true
     stdin: |
       target="hello"
       declare -n ref=target
@@ -672,7 +606,6 @@ cases:
       esac
 
   - name: "Nameref local shadowing in nested functions"
-    known_failure: true
     stdin: |
       a="A"
       b="B"
@@ -690,7 +623,6 @@ cases:
       echo "a=$a b=$b"
 
   - name: "Nameref to special variable RANDOM"
-    known_failure: true
     stdin: |
       declare -n ref=RANDOM
       r1=$ref
@@ -698,7 +630,6 @@ cases:
       [[ "$r1" != "$r2" ]] && echo "different (dynamic)" || echo "same"
 
   - name: "Nameref for-in loop retargets through iteration"
-    known_failure: true
     stdin: |
       var1="A"
       var2="B"
@@ -714,7 +645,6 @@ cases:
   #
 
   - name: "Nameref declared without value - bare declare -n"
-    known_failure: true
     stdin: |
       declare -n ref
       echo "ref: '${ref}'"
@@ -731,7 +661,6 @@ cases:
       echo "length: ${#ref}"
 
   - name: "Nameref to numeric-only target name"
-    known_failure: true
 
     ignore_stderr: true
     stdin: |
@@ -741,7 +670,6 @@ cases:
       echo "done"
 
   - name: "Nameref to name with special characters"
-    known_failure: true
 
     ignore_stderr: true
     stdin: |
@@ -754,7 +682,6 @@ cases:
       echo "done"
 
   - name: "Nameref to name with spaces"
-    known_failure: true
 
     ignore_stderr: true
     stdin: |
@@ -763,7 +690,6 @@ cases:
       echo "done"
 
   - name: "Nameref to positional parameter name"
-    known_failure: true
 
     ignore_stderr: true
     stdin: |
@@ -772,7 +698,6 @@ cases:
       echo "done"
 
   - name: "Nameref to @ or *"
-    known_failure: true
 
     ignore_stderr: true
     stdin: |
@@ -787,7 +712,6 @@ cases:
   #
 
   - name: "Nameref assignment writes to target not retargets"
-    known_failure: true
     stdin: |
       var1="first"
       var2="second"
@@ -803,7 +727,6 @@ cases:
   #
 
   - name: "Unset -n on non-nameref variable"
-    known_failure: true
     stdin: |
       var="value"
       unset -n var
@@ -811,7 +734,6 @@ cases:
       declare -p var 2>/dev/null || echo "var is gone"
 
   - name: "Unset vs unset -n on same nameref"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -822,7 +744,6 @@ cases:
       echo "target restored: ref=$ref"
 
   - name: "Unset -n then recreate nameref"
-    known_failure: true
     stdin: |
       target="hello"
       declare -n ref=target
@@ -834,7 +755,6 @@ cases:
       echo "recreated: $ref"
 
   - name: "Unset nameref where target is already unset"
-    known_failure: true
     stdin: |
       declare -n ref=nonexistent
       unset ref
@@ -842,7 +762,6 @@ cases:
       declare -p ref 2>/dev/null && echo "ref still exists" || echo "ref gone"
 
   - name: "Unset -n nameref where target is already unset"
-    known_failure: true
     stdin: |
       declare -n ref=nonexistent
       unset -n ref
@@ -850,7 +769,6 @@ cases:
       declare -p ref 2>/dev/null || echo "ref gone"
 
   - name: "Unset -v on nameref removes target"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -860,7 +778,6 @@ cases:
       declare -p target 2>/dev/null || echo "target gone"
 
   - name: "Unset nameref in function scope"
-    known_failure: true
     stdin: |
       target="global"
       f() {
@@ -876,7 +793,6 @@ cases:
   #
 
   - name: "Nameref with uppercase attribute -u"
-    known_failure: true
     stdin: |
       declare -u target
       declare -n ref=target
@@ -885,7 +801,6 @@ cases:
       echo "ref: $ref"
 
   - name: "Nameref combined -nx export"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -nx ref=MYVAR
@@ -895,7 +810,6 @@ cases:
       declare -p MYVAR 2>/dev/null
 
   - name: "Nameref combined -na conflict"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -na ref=target
@@ -903,7 +817,6 @@ cases:
       declare -p ref 2>/dev/null
 
   - name: "Nameref combined -nA conflict"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -nA ref=target
@@ -911,7 +824,6 @@ cases:
       declare -p ref 2>/dev/null
 
   - name: "Declare -rn readonly nameref"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="val"
@@ -928,7 +840,6 @@ cases:
   #
 
   - name: "Readonly nameref - cannot unset -n"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n ref=target
@@ -938,7 +849,6 @@ cases:
       declare -p ref
 
   - name: "Make target readonly through nameref"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="value"
@@ -953,7 +863,6 @@ cases:
   #
 
   - name: "Export through nameref - child sees it"
-    known_failure: true
     stdin: |
       declare -n ref=MY_EXPORT
       ref="exported_value"
@@ -961,7 +870,6 @@ cases:
       bash -c 'echo "child: $MY_EXPORT"'
 
   - name: "Unexport through nameref with declare +x"
-    known_failure: true
     stdin: |
       export target="was_exported"
       declare -n ref=target
@@ -974,7 +882,6 @@ cases:
   #
 
   - name: "Nameref with := assign default creates target"
-    known_failure: true
     stdin: |
       declare -n ref=brand_new
       echo "before: '${brand_new}'"
@@ -991,14 +898,12 @@ cases:
       echo "outer continues"
 
   - name: "Nameref with @E escape"
-    known_failure: true
     stdin: |
       target='hello\tworld\n'
       declare -n ref=target
       echo "E: ${ref@E}"
 
   - name: "Nameref substring with negatives"
-    known_failure: true
     stdin: |
       target="abcdefghij"
       declare -n ref=target
@@ -1008,7 +913,6 @@ cases:
       echo "negative offset len: ${ref: -3:2}"
 
   - name: "Nameref with case modification operators"
-    known_failure: true
     stdin: |
       target="hello world"
       declare -n ref=target
@@ -1018,7 +922,6 @@ cases:
       echo ",,: ${ref,,}"
 
   - name: "Nameref with pattern removal prefix and suffix anchors"
-    known_failure: true
     stdin: |
       target="hello hello hello"
       declare -n ref=target
@@ -1030,7 +933,6 @@ cases:
   #
 
   - name: "Nameref indirection on chain"
-    known_failure: true
     stdin: |
       ultimate="deep_value"
       declare -n middle=ultimate
@@ -1040,7 +942,6 @@ cases:
       echo "top: $top"
 
   - name: "Nameref indirection - ${!ref} on non-nameref"
-    known_failure: true
     stdin: |
       target="value"
       ref=target
@@ -1049,14 +950,12 @@ cases:
       echo "!nref (nameref): ${!nref}"
 
   - name: "Nameref indirection with array nameref keys"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref=arr
       echo "!ref[@]: ${!ref[@]}"
 
   - name: "Nameref indirection on nameref to array element"
-    known_failure: true
     stdin: |
       arr=(x y z)
       declare -n ref='arr[1]'
@@ -1082,7 +981,6 @@ cases:
       echo "expr2: $(( ref * ref ))"
 
   - name: "Nameref array element in arithmetic for loop"
-    known_failure: true
     stdin: |
       arr=(0)
       declare -n ref='arr[0]'
@@ -1091,7 +989,6 @@ cases:
       done
 
   - name: "Nameref in arithmetic assignment chain"
-    known_failure: true
     stdin: |
       a=0
       b=0
@@ -1105,7 +1002,6 @@ cases:
   #
 
   - name: "Nameref in pipe components"
-    known_failure: true
     stdin: |
       target="pipe_test"
       declare -n ref=target
@@ -1113,7 +1009,6 @@ cases:
       echo "$ref" | { read line; echo "pipe read: $line"; }
 
   - name: "Nameref in trap handler"
-    known_failure: true
     stdin: |
       target="before_trap"
       declare -n ref=target
@@ -1121,7 +1016,6 @@ cases:
       ref="after_trap"
 
   - name: "Nameref in brace group"
-    known_failure: true
     stdin: |
       target="brace"
       declare -n ref=target
@@ -1129,7 +1023,6 @@ cases:
       echo "outside: $target"
 
   - name: "Nameref in while loop"
-    known_failure: true
     stdin: |
       target=0
       declare -n ref=target
@@ -1140,7 +1033,6 @@ cases:
       echo "final target: $target"
 
   - name: "Nameref in until loop"
-    known_failure: true
     stdin: |
       target=3
       declare -n ref=target
@@ -1151,7 +1043,6 @@ cases:
       echo "final target: $target"
 
   - name: "Nameref in here-doc"
-    known_failure: true
     stdin: |
       target="heredoc_value"
       declare -n ref=target
@@ -1161,7 +1052,6 @@ cases:
       EOF
 
   - name: "Nameref in condition of if statement"
-    known_failure: true
     stdin: |
       target=5
       declare -n ref=target
@@ -1173,7 +1063,6 @@ cases:
       fi
 
   - name: "Nameref in background job"
-    known_failure: true
     stdin: |
       target="bg_test"
       declare -n ref=target
@@ -1186,7 +1075,6 @@ cases:
   #
 
   - name: "Nameref in function - target name same as local in caller"
-    known_failure: true
     stdin: |
       f() {
           local val="inner"
@@ -1200,7 +1088,6 @@ cases:
       f
 
   - name: "Nameref scope - same name different targets in nested calls"
-    known_failure: true
     stdin: |
       a="A"
       b="B"
@@ -1219,7 +1106,6 @@ cases:
       echo "a=$a b=$b"
 
   - name: "Nameref in function - ref to caller local"
-    known_failure: true
     stdin: |
       wrapper() {
           local secret="hidden"
@@ -1234,7 +1120,6 @@ cases:
       wrapper
 
   - name: "Nameref in function - local var shadows nameref target"
-    known_failure: true
     stdin: |
       target="global_target"
       f() {
@@ -1248,7 +1133,6 @@ cases:
       echo "global target: $target"
 
   - name: "Nameref - return value pattern via nameref"
-    known_failure: true
     stdin: |
       compute() {
           local -n _result=$1
@@ -1259,7 +1143,6 @@ cases:
       echo "answer: $answer"
 
   - name: "Nameref - multiple out params via namerefs"
-    known_failure: true
     stdin: |
       divide() {
           local -n _quotient=$1
@@ -1273,7 +1156,6 @@ cases:
       echo "17/5 = $q remainder $r"
 
   - name: "Nameref with declare -g in function"
-    known_failure: true
     stdin: |
       f() {
           declare -gn ref=global_target
@@ -1284,7 +1166,6 @@ cases:
       declare -p ref 2>/dev/null && echo "ref exists globally"
 
   - name: "Nameref global pointing to local"
-    known_failure: true
     stdin: |
       declare -n gref=local_var
       f() {
@@ -1299,7 +1180,6 @@ cases:
   #
 
   - name: "Circular nameref - 4 node cycle"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n a=b
@@ -1310,7 +1190,6 @@ cases:
       echo "done"
 
   - name: "Chain where intermediate target is unset"
-    known_failure: true
     stdin: |
       declare -n top=middle
       declare -n middle=bottom
@@ -1337,14 +1216,12 @@ cases:
       echo "done"
 
   - name: "Nameref self-reference - declare -p"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n self=self
       declare -p self
 
   - name: "Circular nameref - write attempt"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n x=y
@@ -1364,7 +1241,6 @@ cases:
       echo "type check: $(( ref >= 0 ? 1 : 0 ))"
 
   - name: "Nameref to FUNCNAME in function"
-    known_failure: true
     stdin: |
       f() {
           local -n ref=FUNCNAME
@@ -1373,7 +1249,6 @@ cases:
       f
 
   - name: "Nameref to BASH_REMATCH"
-    known_failure: true
     stdin: |
       [[ "hello123world" =~ ([0-9]+) ]]
       declare -n ref=BASH_REMATCH
@@ -1381,14 +1256,12 @@ cases:
       echo "group1: ${ref[1]}"
 
   - name: "Nameref to REPLY"
-    known_failure: true
     stdin: |
       declare -n ref=REPLY
       read ref <<< "input_data"
       echo "REPLY: $REPLY"
 
   - name: "Nameref to OPTIND"
-    known_failure: true
     stdin: |
       OPTIND=1
       declare -n ref=OPTIND
@@ -1401,7 +1274,6 @@ cases:
   #
 
   - name: "Nameref -v with nameref chain"
-    known_failure: true
     stdin: |
       val="exists"
       declare -n mid=val
@@ -1420,7 +1292,6 @@ cases:
       [[ -R nonexistent ]] && echo "is nameref" || echo "not nameref"
 
   - name: "Nameref in test -z / -n"
-    known_failure: true
     stdin: |
       target=""
       declare -n ref=target
@@ -1435,14 +1306,12 @@ cases:
   #
 
   - name: "Nameref compound array assignment to nonexistent"
-    known_failure: true
     stdin: |
       declare -n ref=newarray
       ref=(alpha beta gamma)
       declare -p newarray
 
   - name: "Nameref compound assignment replaces"
-    known_failure: true
     stdin: |
       target=(old1 old2 old3)
       declare -n ref=target
@@ -1450,7 +1319,6 @@ cases:
       declare -p target
 
   - name: "Nameref += integer append on integer var"
-    known_failure: true
     stdin: |
       declare -i target=10
       declare -n ref=target
@@ -1464,7 +1332,6 @@ cases:
   #
 
   - name: "Nameref to array - copy array"
-    known_failure: true
     stdin: |
       src=(1 2 3)
       declare -n ref=src
@@ -1486,7 +1353,6 @@ cases:
       declare -p map
 
   - name: "Nameref to array - string operations on element 0"
-    known_failure: true
     stdin: |
       arr=("hello world" "foo")
       declare -n ref=arr
@@ -1495,7 +1361,6 @@ cases:
       echo "sub: ${ref:0:5}"
 
   - name: "Nameref to array - append to specific index"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref=arr
@@ -1503,7 +1368,6 @@ cases:
       declare -p arr
 
   - name: "Nameref to associative array - delete key"
-    known_failure: true
     stdin: |
       declare -A map=([x]=1 [y]=2 [z]=3)
       declare -n ref=map
@@ -1511,7 +1375,6 @@ cases:
       for k in "${!ref[@]}"; do echo "$k=${ref[$k]}"; done | sort
 
   - name: "Nameref to associative array - key existence"
-    known_failure: true
     stdin: |
       declare -A map=([x]=1 [y]="")
       declare -n ref=map
@@ -1520,7 +1383,6 @@ cases:
       echo "z set: ${ref[z]+yes}"
 
   - name: "Nameref to array element - computed index"
-    known_failure: true
     stdin: |
       arr=(10 20 30 40 50)
       i=3
@@ -1530,7 +1392,6 @@ cases:
       echo "arr[3]: ${arr[3]}"
 
   - name: "Nameref to array element - out of bounds"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[10]'
@@ -1539,7 +1400,6 @@ cases:
       declare -p arr
 
   - name: "Nameref to assoc array - missing key then assign"
-    known_failure: true
     stdin: |
       declare -A map=([x]=1)
       declare -n ref='map[missing]'
@@ -1548,7 +1408,6 @@ cases:
       echo "map[missing]: ${map[missing]}"
 
   - name: "Nameref to arr[@] - write attempt"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       arr=(a b c)
@@ -1558,7 +1417,6 @@ cases:
       declare -p arr
 
   - name: "Nameref to arr[*] expansion"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[*]'
@@ -1569,7 +1427,6 @@ cases:
   #
 
   - name: "Declare -i through nameref adds integer to target"
-    known_failure: true
     stdin: |
       declare -n ref=myvar
       declare -i ref
@@ -1580,7 +1437,6 @@ cases:
       declare -p myvar
 
   - name: "Declare -u through nameref adds uppercase to target"
-    known_failure: true
     stdin: |
       declare -n ref=myvar
       declare -u ref
@@ -1589,7 +1445,6 @@ cases:
       declare -p myvar
 
   - name: "Declare -x through nameref exports target"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -1601,7 +1456,6 @@ cases:
   #
 
   - name: "Typeset -n creates nameref"
-    known_failure: true
     stdin: |
       target="typeset_val"
       typeset -n ref=target
@@ -1609,7 +1463,6 @@ cases:
       declare -p ref
 
   - name: "Typeset +n removes nameref attribute"
-    known_failure: true
     stdin: |
       target="value"
       typeset -n ref=target
@@ -1623,7 +1476,6 @@ cases:
   #
 
   - name: "For loop nameref - modify each target"
-    known_failure: true
     stdin: |
       a=1
       b=2
@@ -1639,7 +1491,6 @@ cases:
   #
 
   - name: "Nameref to variable with empty string value"
-    known_failure: true
     stdin: |
       target=""
       declare -n ref=target
@@ -1649,7 +1500,6 @@ cases:
       echo "nocolon default: ${ref-NOCOLON}"
 
   - name: "Nameref to variable with newline value"
-    known_failure: true
     stdin: |
       target=$'line1\nline2'
       declare -n ref=target
@@ -1662,7 +1512,6 @@ cases:
   #
 
   - name: "Nameref to set empty var with set -u"
-    known_failure: true
     stdin: |
       set -u
       target=""
@@ -1671,7 +1520,6 @@ cases:
       echo "survived"
 
   - name: "Nameref with set -u and default expansion"
-    known_failure: true
     stdin: |
       set -u
       declare -n ref=missing
@@ -1679,7 +1527,6 @@ cases:
       echo "survived"
 
   - name: "Nameref with set -u - ${ref+x} does not error"
-    known_failure: true
     stdin: |
       set -u
       declare -n ref=missing
@@ -1691,7 +1538,6 @@ cases:
   #
 
   - name: "Nameref multiple declare -n retargets"
-    known_failure: true
     stdin: |
       a="A"
       b="B"
@@ -1708,7 +1554,6 @@ cases:
       echo "arr[ref]: ${arr[$ref]}"
 
   - name: "Two namerefs to same target - unset via one access via other"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref1=target
@@ -1718,7 +1563,6 @@ cases:
       echo "target: '${target}'"
 
   - name: "Nameref with word splitting"
-    known_failure: true
     stdin: |
       target="one two three"
       declare -n ref=target
@@ -1727,14 +1571,12 @@ cases:
       for word in "$ref"; do echo "word: $word"; done
 
   - name: "Nameref to _ (underscore variable)"
-    known_failure: true
     stdin: |
       _="test_value"
       declare -n ref=_
       echo "ref: $ref"
 
   - name: "Nameref preserves target type across reassignment"
-    known_failure: true
     stdin: |
       declare -a arr=(x y)
       declare -n ref=arr
@@ -1742,14 +1584,12 @@ cases:
       declare -p arr
 
   - name: "Nameref with command in value is literal"
-    known_failure: true
     stdin: |
       target='$(echo injected)'
       declare -n ref=target
       echo "ref: $ref"
 
   - name: "Nameref target created by assignment"
-    known_failure: true
     stdin: |
       declare -n ref=brand_new_var
       ref="created"
@@ -1757,7 +1597,6 @@ cases:
       declare -p brand_new_var
 
   - name: "Nameref array index assignment"
-    known_failure: true
     stdin: |
       declare -a arr=(a b c)
       declare -n ref=arr
@@ -1766,7 +1605,6 @@ cases:
       declare -p arr
 
   - name: "Nameref assoc array assignment"
-    known_failure: true
     stdin: |
       declare -A map
       declare -n ref=map
@@ -1775,7 +1613,6 @@ cases:
       for k in "${!map[@]}"; do echo "$k=${map[$k]}"; done | sort
 
   - name: "Nameref in source command"
-    known_failure: true
     stdin: |
       tmp=$(mktemp)
       echo 'declare -n ref=target; ref="from_source"' > "$tmp"
@@ -1785,7 +1622,6 @@ cases:
       rm "$tmp"
 
   - name: "Nameref to integer variable - arithmetic coercion"
-    known_failure: true
     stdin: |
       declare -i num=10
       declare -n ref=num
@@ -1795,7 +1631,6 @@ cases:
       echo "num after expr: $num"
 
   - name: "Nameref with declare giving value"
-    known_failure: true
     stdin: |
       declare -n ref=target
       declare ref="value"
@@ -1804,21 +1639,18 @@ cases:
       declare -p ref
 
   - name: "Read -r into nameref"
-    known_failure: true
     stdin: |
       declare -n ref=result
       read -r ref <<< 'hello\tworld'
       echo "result: $result"
 
   - name: "Nameref in process substitution"
-    known_failure: true
     stdin: |
       target="proc_sub"
       declare -n ref=target
       cat <(echo "$ref")
 
   - name: "Nameref in environment prefix assignment"
-    known_failure: true
     stdin: |
       target="old"
       declare -n ref=target
@@ -1826,7 +1658,6 @@ cases:
       echo "target after: $target"
 
   - name: "Local non-nameref shadows outer nameref"
-    known_failure: true
     stdin: |
       f() {
           local -n ref=target
@@ -1842,7 +1673,6 @@ cases:
       echo "target: $target"
 
   - name: "Local -n referencing same-scope local"
-    known_failure: true
     stdin: |
       f() {
           local target="local_val"
@@ -1854,7 +1684,6 @@ cases:
       f
 
   - name: "Nameref with array slice reassignment"
-    known_failure: true
     stdin: |
       arr=(1 2 3)
       declare -n ref=arr
@@ -1875,7 +1704,6 @@ cases:
   #
 
   - name: "Integer variable evaluates arithmetic on assignment"
-    known_failure: true
     stdin: |
       declare -i x
       x=20+5
@@ -1888,7 +1716,6 @@ cases:
       echo "x: $x"
 
   - name: "Integer variable with variable references in expression"
-    known_failure: true
     stdin: |
       declare -i x
       y=10
@@ -1898,7 +1725,6 @@ cases:
       echo "x: $x"
 
   - name: "Integer variable += with arithmetic"
-    known_failure: true
     stdin: |
       declare -i x=10
       x+=5
@@ -1907,7 +1733,6 @@ cases:
       echo "x: $x"
 
   - name: "Integer variable through nameref evaluates arithmetic"
-    known_failure: true
     stdin: |
       declare -i num=10
       declare -n ref=num
@@ -1941,7 +1766,6 @@ cases:
   #
 
   - name: "Nameref retarget to self after creation is rejected"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="val"
@@ -1953,7 +1777,6 @@ cases:
       declare -p ref
 
   - name: "Circular via retarget"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n a=b
@@ -1970,7 +1793,6 @@ cases:
   #
 
   - name: "Self-reference by adding -n to existing var"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       x=x
@@ -1980,7 +1802,6 @@ cases:
       echo "val: '${x}'"
 
   - name: "Array assignment through nameref-to-subscript errors"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       arr=(1 2 3)
@@ -1990,7 +1811,6 @@ cases:
       declare -p arr
 
   - name: "Integer array element via nameref with +="
-    known_failure: true
     stdin: |
       declare -ia arr=(10 20 30)
       declare -n ref='arr[1]'
@@ -2010,19 +1830,16 @@ cases:
       }
 
   - name: "Nameref to LINENO"
-    known_failure: true
     stdin: |
       declare -n ref=LINENO
       echo "ref: $ref"
 
   - name: "Nameref to BASH_SOURCE"
-    known_failure: true
     stdin: |
       declare -n ref=BASH_SOURCE
       echo "ref0: '${ref[0]}'"
 
   - name: "Compound array append through subscripted nameref errors"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       arr=(a b c)
@@ -2032,7 +1849,6 @@ cases:
       echo "arr: ${arr[@]}"
 
   - name: "Readonly propagates through 2-level nameref chain"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       target="original"
@@ -2049,7 +1865,6 @@ cases:
       echo "target: $target"
 
   - name: "Export -n (remove export) through nameref"
-    known_failure: true
     stdin: |
       target="exported_value"
       export target
@@ -2059,7 +1874,6 @@ cases:
       env | grep '^target=' || echo "target no longer exported"
 
   - name: "Declare -n with invalid target name containing spaces"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n ref='a b' 2>/dev/null
@@ -2069,7 +1883,6 @@ cases:
       echo "done"
 
   - name: "Declare -n with invalid target name special chars"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n ref='a+b' 2>/dev/null
@@ -2079,7 +1892,6 @@ cases:
       echo "done"
 
   - name: "Env var lookup through subscripted nameref"
-    known_failure: true
     stdin: |
       arr=(zero one two three)
       declare -n ref='arr[2]'
@@ -2087,7 +1899,6 @@ cases:
       echo "ref length: ${#ref}"
 
   - name: "Subscripted nameref with [@] returns empty"
-    known_failure: true
     stdin: |
       arr=(zero one two three)
       declare -n ref='arr[2]'
@@ -2095,7 +1906,6 @@ cases:
       echo "count: ${#ref[@]}"
 
   - name: "Subscripted nameref with explicit subscript returns empty"
-    known_failure: true
     stdin: |
       arr=(zero one two three)
       declare -n ref='arr[2]'
@@ -2103,14 +1913,12 @@ cases:
       echo "ref[1]: '${ref[1]}'"
 
   - name: "Subscripted nameref - member keys returns empty"
-    known_failure: true
     stdin: |
       arr=(zero one two three)
       declare -n ref='arr[2]'
       echo "keys: '${!ref[@]}'"
 
   - name: "Let assignment through subscripted nameref"
-    known_failure: true
     stdin: |
       arr=(10 20 30)
       declare -n ref='arr[1]'
@@ -2120,7 +1928,6 @@ cases:
       echo "arr[1]: ${arr[1]}"
 
   - name: "Arithmetic (( )) with subscripted nameref"
-    known_failure: true
     stdin: |
       arr=(100 200 300)
       declare -n ref='arr[0]'
@@ -2129,14 +1936,12 @@ cases:
       echo "expr: $(( ref * 2 ))"
 
   - name: "String length through subscripted nameref"
-    known_failure: true
     stdin: |
       arr=("short" "a longer string here" "x")
       declare -n ref='arr[1]'
       echo "len: ${#ref}"
 
   - name: "Long nameref chain (8 levels - at bash max)"
-    known_failure: true
     stdin: |
       final_target="deep_value"
       declare -n c8=final_target
@@ -2152,7 +1957,6 @@ cases:
       echo "final_target: $final_target"
 
   - name: "Nameref chain exceeds max depth"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       final_target="deep_value"
@@ -2169,7 +1973,6 @@ cases:
       echo "done"
 
   - name: "Declare -x through subscripted nameref applies to base"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[2]'
@@ -2187,7 +1990,6 @@ cases:
       bash -c 'echo "target: $target"'
 
   - name: "Subscripted nameref with set -u when element is set"
-    known_failure: true
     stdin: |
       set -u
       arr=(a b c)
@@ -2195,7 +1997,6 @@ cases:
       echo "ref: $ref"
 
   - name: "Subscripted nameref with set -u when element is unset"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       set -u
@@ -2205,7 +2006,6 @@ cases:
       echo "should not print"
 
   - name: "Nameref with := default creates target through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=new_var
       echo "before: '${new_var:-}'"
@@ -2214,7 +2014,6 @@ cases:
       echo "new_var: $new_var"
 
   - name: "Nameref with := default when target exists but is empty"
-    known_failure: true
     stdin: |
       target=""
       declare -n ref=target
@@ -2223,7 +2022,6 @@ cases:
       echo "target: $target"
 
   - name: "Readonly nameref in for-in loop fails"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       declare -n ref=var1
@@ -2235,7 +2033,6 @@ cases:
       echo "done"
 
   - name: "Circular nameref with set -e does not abort script"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       set -e
@@ -2245,7 +2042,6 @@ cases:
       echo "script continues"
 
   - name: "Nameref to unset variable with set -eu errors and exits"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       set -eu
@@ -2254,9 +2050,6 @@ cases:
       echo "should not print"
 
   - name: "Export through subscripted nameref is rejected by bash"
-    # In bash, `export ref` where ref→arr[1] passes the literal "arr[1]" to
-    # export, which rejects it as an invalid identifier. Brush instead resolves
-    # the nameref to the base variable and exports it.
     ignore_stderr: true
     stdin: |
       arr=(a b c)
@@ -2266,10 +2059,6 @@ cases:
       declare -p arr | grep -o 'x' | head -1 || echo "no export"
 
   - name: "Readonly through subscripted nameref makes base readonly"
-    # In bash, `readonly ref` where ref→arr[1] does NOT make the base array
-    # readonly. Brush currently resolves the nameref to the base variable and
-    # applies readonly there. The fix would be to have resolve_nameref_for_declaration
-    # in declare.rs handle subscripted nameref targets specially.
     ignore_stderr: true
     stdin: |
       arr=(a b c)
@@ -2280,9 +2069,118 @@ cases:
       echo "exit: $?"
 
   - name: "Declare -p on subscripted nameref shows nameref itself"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[1]'
       declare -p ref
       echo "ref value: $ref"
+
+  - name: "Circular nameref - unset treats as not found"
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      unset a
+      echo "exit: $?"
+      declare -p a 2>/dev/null && echo "a still exists" || echo "a gone"
+      declare -p b 2>/dev/null && echo "b still exists" || echo "b gone"
+
+  - name: "Circular nameref - unset -n removes the nameref itself"
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      unset -n a
+      echo "exit: $?"
+      declare -p a 2>/dev/null && echo "a exists" || echo "a gone"
+      declare -p b 2>/dev/null && echo "b exists" || echo "b gone"
+
+  - name: "Nameref combined -ni conflict"
+    ignore_stderr: true
+    stdin: |
+      declare -ni ref=target
+      echo "exit: $?"
+      declare -p ref 2>/dev/null
+
+  - name: "Nameref combined -nu does not conflict"
+    stdin: |
+      target="hello"
+      declare -nu ref=target
+      ref="world"
+      echo "target: $target"
+      declare -p ref
+
+  - name: "Nameref combined -nl does not conflict"
+    stdin: |
+      target="HELLO"
+      declare -nl ref=target
+      ref="WORLD"
+      echo "target: $target"
+      declare -p ref
+
+  - name: "Subscripted nameref with explicit subscript assignment"
+    ignore_stderr: true
+    stdin: |
+      arr=(a b c d e)
+      declare -n ref='arr[2]'
+      ref[4]=x
+      echo "arr[2]: ${arr[2]}"
+      echo "arr[4]: ${arr[4]}"
+      declare -p arr
+
+  #
+  # Subscripted nameref edge cases — length and arithmetic
+  #
+
+  - name: "Subscripted nameref - length of element vs array"
+    stdin: |
+      arr=(a b c d e)
+      declare -n ref='arr[2]'
+      echo "element len: ${#ref}"
+      echo "array len: ${#ref[@]}"
+      echo "star len: ${#ref[*]}"
+
+  - name: "Subscripted nameref in arithmetic - explicit subscript"
+    # In bash, $((ref[0])) where ref→arr[2] treats the explicit subscript on a
+    # subscripted nameref as unset (returns 0). Brush currently resolves the
+    # nameref to the base array and applies the explicit subscript, yielding
+    # arr[0]=10 instead of 0. The fix belongs in arithmetic.rs deref_lvalue.
+    known_failure: true
+    stdin: |
+      arr=(10 20 30 40 50)
+      declare -n ref='arr[2]'
+      echo "ref value: $((ref))"
+      echo "ref[0]: $((ref[0]))"
+      echo "ref[3]: $((ref[3]))"
+
+  #
+  # For-in vs arithmetic-for nameref asymmetry
+  # These two forms have INTENTIONALLY DIFFERENT nameref behavior in bash:
+  # - for-in writes to the nameref variable itself (retargets it)
+  # - arithmetic for writes through the nameref (resolves it)
+  #
+
+  - name: "Nameref asymmetry: for-in retargets, arithmetic for resolves"
+    stdin: |
+      target=0
+      declare -n ref=target
+      # for-in writes to ref itself, changing what it points to
+      for ref in x y z; do :; done
+      echo "ref value after for-in: $ref"
+      echo "target unchanged: $target"
+      # reset ref to point to target again
+      declare -n ref=target
+      # arithmetic for writes THROUGH the nameref to target
+      for ((ref=1; ref<4; ref++)); do :; done
+      echo "target after arith-for: $target"
+
+  - name: "Readonly nameref in for-in loop fails"
+    ignore_stderr: true
+    stdin: |
+      declare -n ref=var1
+      readonly ref
+      for ref in a b c; do
+          echo "iter: $ref"
+      done
+      echo "exit: $?"
+      echo "done"

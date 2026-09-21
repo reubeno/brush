@@ -44,34 +44,40 @@ fn needs_more_input_locked(shell: &Shell<impl brush_core::ShellExtensions>, inpu
         // A bad token at a specific position stays bad no matter what follows it.
         Err(_) => false,
         // Parsed cleanly. One catch: a trailing backslash-newline is a line
-        // continuation, which the tokenizer drops silently at end of input. Ask again
-        // with the newline removed; the tokenizer reports an unterminated escape only
-        // if that backslash was really escaping something.
-        Ok(_) => ends_with_line_continuation(shell, input),
+        // continuation, and a lone trailing backslash means more input is
+        // expected. Probe the tokenizer directly rather than going through
+        // `parse_string`: the tokenizer is shared by all parser implementations,
+        // whereas e.g. the string-based winnow parser never produces lexical
+        // errors for these inputs.
+        Ok(_) => ends_with_live_trailing_backslash(shell, input),
     }
 }
 
-/// Returns whether the given input ends with a backslash-newline acting as a line
+/// Returns whether the given input ends with a backslash acting as a line
+/// continuation (`\`+newline), or dangling at the end of input awaiting
 /// continuation.
-fn ends_with_line_continuation(
+///
+/// The backslash must be "live": unquoted, unescaped, and outside comments.
+fn ends_with_live_trailing_backslash(
     shell: &Shell<impl brush_core::ShellExtensions>,
     input: &str,
 ) -> bool {
-    let Some(truncated) = input.strip_suffix('\n') else {
-        return false;
-    };
+    // When the input ends with a newline, a `\` just before it can only be a
+    // continuation if removing the newline leaves the backslash escaping
+    // something; tokenize the stripped text and let the tokenizer tell us.
+    let candidate = input.strip_suffix('\n').unwrap_or(input);
 
-    // Keeps the extra parse off the common path.
-    if !truncated.ends_with('\\') {
+    // Keeps the extra tokenize off the common path.
+    if !candidate.ends_with('\\') {
         return false;
     }
 
     matches!(
-        shell.parse_string(truncated),
-        Err(brush_parser::ParseError::Tokenizing {
-            inner: brush_parser::TokenizerError::UnterminatedEscapeSequence,
-            position: _,
-        })
+        brush_parser::tokenize_str_with_options(
+            candidate,
+            &shell.parser_options().tokenizer_options(),
+        ),
+        Err(brush_parser::TokenizerError::UnterminatedEscapeSequence)
     )
 }
 
@@ -79,81 +85,154 @@ fn ends_with_line_continuation(
 mod tests {
     use super::*;
 
-    async fn test_shell() -> Shell<brush_core::extensions::DefaultShellExtensions> {
-        brush_core::Shell::builder().build().await.unwrap()
+    // The winnow parser variant exists whenever brush-parser is built with its
+    // default features, as is the case for every in-tree consumer.
+    const PARSER_IMPLS: &[brush_parser::ParserImpl] = &[
+        brush_parser::ParserImpl::Peg,
+        brush_parser::ParserImpl::Winnow,
+    ];
+
+    async fn test_shell(
+        parser_impl: brush_parser::ParserImpl,
+    ) -> Shell<brush_core::extensions::DefaultShellExtensions> {
+        brush_core::Shell::builder()
+            .parser(parser_impl)
+            .build()
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
     async fn treats_trailing_line_continuation_as_incomplete() {
-        let shell = test_shell().await;
+        for parser_impl in PARSER_IMPLS {
+            let shell = test_shell(*parser_impl).await;
 
-        assert!(needs_more_input_locked(&shell, "echo a\\\n"));
-        assert!(needs_more_input_locked(&shell, "printf '%s' \\\n"));
-        assert!(needs_more_input_locked(&shell, "echo \"quoted\" \\\n"));
-        // A backslash at the very end, with no newline yet.
-        assert!(needs_more_input_locked(&shell, "echo a\\"));
+            assert!(
+                needs_more_input_locked(&shell, "echo a\\\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                needs_more_input_locked(&shell, "printf '%s' \\\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                needs_more_input_locked(&shell, "echo \"quoted\" \\\n"),
+                "{parser_impl:?}"
+            );
+            // A backslash at the very end, with no newline yet.
+            assert!(
+                needs_more_input_locked(&shell, "echo a\\"),
+                "{parser_impl:?}"
+            );
+        }
     }
 
     #[tokio::test]
     async fn treats_complete_programs_as_complete() {
-        let shell = test_shell().await;
+        for parser_impl in PARSER_IMPLS {
+            let shell = test_shell(*parser_impl).await;
 
-        assert!(!needs_more_input_locked(&shell, "echo a\n"));
-        assert!(!needs_more_input_locked(&shell, ""));
-        // An escaped backslash is a literal backslash, not an escape of the newline.
-        assert!(!needs_more_input_locked(&shell, "echo a\\\\\n"));
-        // A continuation that isn't at the end has already been joined.
-        assert!(!needs_more_input_locked(&shell, "echo a\\\nb\n"));
-        // A backslash followed by a space escapes the space, not the newline.
-        assert!(!needs_more_input_locked(&shell, "echo a\\ \n"));
-        assert!(!needs_more_input_locked(&shell, "echo a\\\t\n"));
+            assert!(!needs_more_input_locked(&shell, "echo a\n"));
+            assert!(!needs_more_input_locked(&shell, ""));
+            // An escaped backslash is a literal backslash, not an escape of the newline.
+            assert!(
+                !needs_more_input_locked(&shell, "echo a\\\\\n"),
+                "{parser_impl:?}"
+            );
+            // A continuation that isn't at the end has already been joined.
+            assert!(
+                !needs_more_input_locked(&shell, "echo a\\\nb\n"),
+                "{parser_impl:?}"
+            );
+            // A backslash followed by a space escapes the space, not the newline.
+            assert!(!needs_more_input_locked(&shell, "echo a\\ \n"));
+            assert!(!needs_more_input_locked(&shell, "echo a\\\t\n"));
+        }
     }
 
     #[tokio::test]
     async fn ignores_backslashes_that_do_not_escape() {
-        let shell = test_shell().await;
+        for parser_impl in PARSER_IMPLS {
+            let shell = test_shell(*parser_impl).await;
 
-        // Backslashes are literal inside single quotes...
-        assert!(!needs_more_input_locked(&shell, "echo 'a\\'\n"));
-        // ...and inside comments, which end at the newline regardless.
-        assert!(!needs_more_input_locked(&shell, "echo hi # trailing\\\n"));
-        assert!(!needs_more_input_locked(&shell, "# whole-line comment\\\n"));
+            // Backslashes are literal inside single quotes...
+            assert!(
+                !needs_more_input_locked(&shell, "echo 'a\\'\n"),
+                "{parser_impl:?}"
+            );
+            // ...and inside comments, which end at the newline regardless.
+            assert!(
+                !needs_more_input_locked(&shell, "echo hi # trailing\\\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                !needs_more_input_locked(&shell, "# whole-line comment\\\n"),
+                "{parser_impl:?}"
+            );
+        }
     }
 
     #[tokio::test]
     async fn honors_quoting_context() {
-        let shell = test_shell().await;
+        for parser_impl in PARSER_IMPLS {
+            let shell = test_shell(*parser_impl).await;
 
-        // A `#` inside quotes doesn't start a comment, so these really are continuations.
-        assert!(needs_more_input_locked(
-            &shell,
-            "echo \"# not a comment\" \\\n"
-        ));
-        assert!(needs_more_input_locked(
-            &shell,
-            "echo '# not a comment' \\\n"
-        ));
-        // A `#` mid-word doesn't start a comment either.
-        assert!(needs_more_input_locked(&shell, "echo a#b \\\n"));
+            // A `#` inside quotes doesn't start a comment, so these really are continuations.
+            assert!(
+                needs_more_input_locked(&shell, "echo \"# not a comment\" \\\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                needs_more_input_locked(&shell, "echo '# not a comment' \\\n"),
+                "{parser_impl:?}"
+            );
+            // A `#` mid-word doesn't start a comment either.
+            assert!(
+                needs_more_input_locked(&shell, "echo a#b \\\n"),
+                "{parser_impl:?}"
+            );
+        }
     }
 
     #[tokio::test]
     async fn treats_bad_syntax_as_complete_even_with_a_trailing_continuation() {
-        let shell = test_shell().await;
+        for parser_impl in PARSER_IMPLS {
+            let shell = test_shell(*parser_impl).await;
 
-        // More input can't repair a bad token, so don't sit waiting for it.
-        assert!(!needs_more_input_locked(&shell, "echo ;;\n"));
-        assert!(!needs_more_input_locked(&shell, "echo ;; \\\n"));
+            // More input can't repair a bad token, so don't sit waiting for it.
+            assert!(!needs_more_input_locked(&shell, "echo ;;\n"));
+            assert!(
+                !needs_more_input_locked(&shell, "echo ;; \\\n"),
+                "{parser_impl:?}"
+            );
+        }
     }
 
     #[tokio::test]
     async fn treats_unfinished_constructs_as_incomplete() {
-        let shell = test_shell().await;
+        for parser_impl in PARSER_IMPLS {
+            let shell = test_shell(*parser_impl).await;
 
-        assert!(needs_more_input_locked(&shell, "if true\n"));
-        assert!(needs_more_input_locked(&shell, "f() {\n"));
-        assert!(needs_more_input_locked(&shell, "cat <<EOF\n"));
-        assert!(needs_more_input_locked(&shell, "echo 'unterminated\n"));
-        assert!(needs_more_input_locked(&shell, "true &&\n"));
+            assert!(
+                needs_more_input_locked(&shell, "if true\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                needs_more_input_locked(&shell, "f() {\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                needs_more_input_locked(&shell, "cat <<EOF\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                needs_more_input_locked(&shell, "echo 'unterminated\n"),
+                "{parser_impl:?}"
+            );
+            assert!(
+                needs_more_input_locked(&shell, "true &&\n"),
+                "{parser_impl:?}"
+            );
+        }
     }
 }

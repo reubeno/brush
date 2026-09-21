@@ -887,3 +887,12 @@ cases:
       compgen -W 'a:b c'
       v="p:q"
       compgen -W "$v"
+
+  - name: "IFS characters in literal command names do not split them"
+    stdin: |
+      # perl-functions.eclass sets an exotic IFS; a literal command name that
+      # happens to contain one of its characters must still be one word (POSIX
+      # field splitting applies to expansion results, not to literal word text).
+      IFS="\\n"
+      einfo() { echo "called: [$*]"; }
+      einfo hi

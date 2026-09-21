@@ -456,7 +456,6 @@ cases:
       echo "OPTIND: ${OPTIND}"
 
   - name: "getopts writes through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=result
       getopts "a:b" ref -a value
@@ -466,7 +465,6 @@ cases:
       echo "OPTARG: ${OPTARG}"
 
   - name: "getopts writes through subscripted nameref"
-    known_failure: true
     stdin: |
       arr=(x x x)
       declare -n ref='arr[1]'

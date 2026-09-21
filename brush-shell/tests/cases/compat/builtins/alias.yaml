@@ -268,3 +268,10 @@ cases:
       alias
       alias -p
       alias q1 q3
+
+  - name: "Alias with dynamically-expanded assignment word"
+    stdin: |
+      shopt -s expand_aliases
+      n=greet
+      alias ${n}='echo hello'
+      greet

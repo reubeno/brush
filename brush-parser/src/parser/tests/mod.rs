@@ -14,6 +14,9 @@ mod pipelines;
 mod redirections;
 mod simple_commands;
 
+#[cfg(feature = "winnow-parser")]
+mod winnow_issues;
+
 use crate::ast::Program;
 use crate::error::ParseError;
 use crate::parser::{Parser, ParserImpl, ParserOptions};
@@ -110,6 +113,14 @@ fn normalize_source_span(value: &mut Value) {
 #[allow(clippy::expect_used)]
 fn normalize_ast(program: &Program) -> Value {
     let mut value = serde_json::to_value(program).expect("Failed to serialize Program to JSON");
+    // `Program.comments` is only populated by the winnow parser (the PEG parser
+    // always leaves it empty). Drop the field so dual-parser AST comparison is
+    // not poisoned by that intentional asymmetry — and so the location-redaction
+    // pass does not treat the comments vec as a "tuple with trailing SourceSpan"
+    // and pop its last element.
+    if let Value::Object(map) = &mut value {
+        map.remove("comments");
+    }
     redact_locations(&mut value);
     value
 }
@@ -234,6 +245,17 @@ pub fn test_with_snapshot(input: &str) -> Result<Program> {
     }
 
     Ok(peg_result)
+}
+
+/// Parse with Winnow parser only (for features not yet implemented in PEG).
+#[cfg(feature = "winnow-parser")]
+pub fn test_with_winnow(input: &str) -> Result<Program> {
+    let config = ParserConfig {
+        name: "winnow",
+        parser_impl: ParserImpl::Winnow,
+    };
+    parse_with_config(input, &config)
+        .map_err(|e| anyhow::anyhow!("Winnow parser failed: {e}\nInput: {input}"))
 }
 
 #[cfg(test)]

@@ -24,6 +24,8 @@ pub(crate) struct WaitCommand {
 }
 
 impl builtins::Command for WaitCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -45,7 +47,6 @@ impl builtins::Command for WaitCommand {
         if !self.ids.is_empty() {
             for id in &self.ids {
                 if id.starts_with('%') {
-                    // It's a job spec.
                     if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
                         job.wait().await?;
                     } else {
@@ -59,17 +60,23 @@ impl builtins::Command for WaitCommand {
                         result = ExecutionExitCode::GeneralError.into();
                     }
                 } else {
-                    // It's a process ID.
                     return error::unimp("wait with process IDs");
                 }
             }
         } else {
-            // Wait for all jobs.
             let jobs = context.shell.jobs_mut().wait_all().await?;
 
             if context.shell.options().enable_job_control {
+                let mut output = Vec::new();
                 for job in jobs {
-                    writeln!(context.stdout(), "{job}")?;
+                    writeln!(output, "{job}")?;
+                }
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
                 }
             }
         }

@@ -28,3 +28,22 @@ cases:
         declare -p first second
       }
       myfunc
+
+  - name: "Local with dynamically-expanded assignment word"
+    stdin: |
+      f() {
+        local v=LVAR
+        local ${v}="lval"
+        echo "inside=[${LVAR}]"
+      }
+      f
+      echo "outside=[${LVAR-unset}]"
+
+  - name: "Local with dynamic name and command substitution value"
+    stdin: |
+      f() {
+        local var=OUT
+        local ${var}="$(echo computed)"
+        echo "OUT=[$OUT]"
+      }
+      f

@@ -491,7 +491,6 @@ cases:
       declare -p target
 
   - name: "Nameref declare -n with initial value"
-    known_failure: true
     stdin: |
       target="original"
       declare -n ref=target
@@ -499,7 +498,6 @@ cases:
       echo "target: $target"
 
   - name: "Nameref remove attribute with +n"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -509,7 +507,6 @@ cases:
       declare -p ref
 
   - name: "Nameref to array via declare"
-    known_failure: true
     stdin: |
       arr=(one two three)
       declare -n ref=arr
@@ -519,7 +516,6 @@ cases:
       echo "ref[*]: ${ref[*]}"
 
   - name: "Nameref array modification via declare"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref=arr
@@ -528,7 +524,6 @@ cases:
       echo "ref[1]: ${ref[1]}"
 
   - name: "Nameref to associative array via declare"
-    known_failure: true
     stdin: |
       declare -A assoc=(["key1"]="val1" ["key2"]="val2")
       declare -n ref=assoc
@@ -536,7 +531,6 @@ cases:
       echo "ref[key2]: ${ref[key2]}"
 
   - name: "Nameref array iteration in function via local -n"
-    known_failure: true
     stdin: |
       print_array() {
           local -n arr=$1
@@ -550,7 +544,6 @@ cases:
       print_array myarr
 
   - name: "Nameref get keys via declare"
-    known_failure: true
     stdin: |
       declare -A assoc=(["a"]=1 ["b"]=2 ["c"]=3)
       declare -n ref=assoc
@@ -558,7 +551,6 @@ cases:
       echo "count: ${#ref[@]}"
 
   - name: "Nameref array length via declare"
-    known_failure: true
     stdin: |
       arr=(one two three four five)
       declare -n ref=arr
@@ -574,34 +566,29 @@ cases:
       declare -p -n 2>/dev/null | sort
 
   - name: "Single-quoted scalar assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'x=hello'
       echo "$x"
 
   - name: "Single-quoted scalar with dollar sign preserved"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare 'x=$Y'
       echo "$x"
 
   - name: "Double-quoted scalar assignment expands"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare "x=$Y"
       echo "$x"
 
   - name: "Single-quoted array assignment with -a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a 'arr=(1 2 3)'
       echo "${arr[@]}"
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment with deferred expansion"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a 'arr=(${X})'
@@ -609,7 +596,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment with IFS splitting"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a,b"
       IFS=, declare -a 'arr=(${X})'
@@ -617,7 +603,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Double-quoted compound assignment with escaped expansion"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a "arr=(\${X})"
@@ -625,7 +610,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Variable-generated compound assignment syntax"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       value='(${X})'
@@ -634,7 +618,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Command-substitution-generated compound assignment syntax"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a b"
       declare -a "arr=$(printf '(%s)' '${X}')"
@@ -650,13 +633,11 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment without -a is scalar"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr=(1 2 3)'
       declare -p arr
 
   - name: "Single-quoted array assignment Gentoo rpm.eclass pattern"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       RPM_COMPRESS_TYPE="lzma zstd"
       IFS=, declare -a 'types=(${RPM_COMPRESS_TYPE})'
@@ -664,7 +645,6 @@ cases:
       echo "${#types[@]}"
 
   - name: "local -a single-quoted array assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       f() {
         X="a b"
@@ -674,7 +654,6 @@ cases:
       f
 
   - name: "Single-quoted indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[0]=hello'
       declare -p arr
@@ -746,7 +725,6 @@ cases:
       declare -p arr
 
   - name: "Quoted local declaration does not inherit global array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(global)
       f() {
@@ -763,7 +741,6 @@ cases:
       declare -p arr
 
   - name: "Single-quoted indexed element append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a arr=([0]=one)
       declare 'arr[0]+=two'
@@ -827,7 +804,6 @@ cases:
       declare -p map
 
   - name: "Single-quoted append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'text=one'
       declare 'text+=two' 2>/dev/null
@@ -842,7 +818,6 @@ cases:
       declare -p arr
 
   - name: "Cannot remove indexed array attribute with +a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a arr=(1 2)
       declare +a arr 2>/dev/null
@@ -887,7 +862,6 @@ cases:
       f
 
   - name: "Function shadowing declare is reached through command"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare() { echo "shadow declare: [$*]"; }
       command declare cx=1
@@ -910,7 +884,6 @@ cases:
       declare -p arr
 
   - name: "Temporary IFS does split a quoted compound declare operand"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       X="a,b"
       IFS=, declare -a 'arr=(${X})'
@@ -969,7 +942,6 @@ cases:
   # like a subscript.
   #
   - name: "Assignment value ending in a bracket is not a subscripted name"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       v='[a]'
       declare "x=$v"
@@ -990,7 +962,6 @@ cases:
   # Regression coverage: `+a`/`+A` report why they refuse to remove an array attribute.
   #
   - name: "Removing array attribute reports an error"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -a arr=(1 2)
@@ -999,7 +970,6 @@ cases:
       declare -p arr
 
   - name: "Removing array attribute from a declared but unset array fails"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -a arr
@@ -1008,7 +978,6 @@ cases:
       declare -p arr
 
   - name: "Removing associative array attribute fails"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -A map=([k]=v)
@@ -1074,7 +1043,6 @@ cases:
   - name: "Compound value assigned to an array element targets the whole array"
     # A shell drops the subscript and applies the compound assignment to the whole array; brush
     # stores the compound text as the element's literal value.
-    known_failure: true
     stdin: |
       declare -a n=(1)
       declare -a 'n[0]=(9 8)'
@@ -1199,3 +1167,229 @@ cases:
       f() { :; }
       declare -ft f
       declare -F
+
+  - name: "Assoc array roundtrip via declare -p scalar"
+    stdin: |
+      declare -A orig=([key1]="val1" [key2]="val2")
+      def="$(declare -p orig)"
+      declare -A copy="${def#*=}"
+      echo "[key1]=${copy[key1]}"
+      echo "[key2]=${copy[key2]}"
+      echo "count=${#copy[@]}"
+
+  - name: "Assoc array roundtrip via declare -p scalar (local)"
+    stdin: |
+      f() {
+          declare -A orig=([a]="apple" [b]="banana")
+          local def="$(declare -p orig)"
+          local -A copy="${def#*=}"
+          echo "[a]=${copy[a]}"
+          echo "[b]=${copy[b]}"
+          echo "count=${#copy[@]}"
+      }
+      f
+
+  - name: "Assoc array roundtrip with special chars in values"
+    min_oracle_version: 5.2
+    stdin: |
+      declare -A orig=([nl]=$'line1\nline2' [sp]="hello world")
+      def="$(declare -p orig)"
+      declare -A copy="${def#*=}"
+      echo "[nl]=${copy[nl]}"
+      echo "[sp]=${copy[sp]}"
+
+  - name: "Declare -f round-trips a brace group with a trailing fd-duplication redirect"
+    # Reduced from sys-libs/glibc's run_locale_gen: `{ cmd; } 3>&1` needs a
+    # separator between the brace group's closing `}` (a reserved word) and
+    # the redirect that follows it — `}3>&1` lexes as a single token, not
+    # `}` followed by the redirect, and fails to re-parse. The printer used
+    # to write a compound command's trailing redirect list with no space
+    # at all.
+    stdin: |
+      myfunc() {
+      	{ out=$(echo hi 1>&2); } 2>&1
+      	echo "$out"
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a case statement whose last branch has no explicit separator before ;;"
+    # Reduced from Gentoo's multilib.eclass (multilib_env): idiomatic bash
+    # never writes a redundant `;` before `;;`, but the printer used to
+    # rely on `CompoundList`'s last-item separator omission (correct before
+    # a keyword like `}`/`fi`/`done`, wrong before `;;`), dropping the
+    # statement/`;;` boundary entirely on re-serialization.
+    stdin: |
+      myfunc() {
+      	case "$1" in
+      	arm*)
+      		: "${DEFAULT_ABI=arm64}"
+      		;;
+      	*)
+      		echo other
+      		;;
+      	esac
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc arm64
+      echo "DEFAULT_ABI=${DEFAULT_ABI}"
+
+  - name: "Declare -f round-trips a for loop with no in-clause (implicit positional params)"
+    # Reduced from python-utils-r1.eclass's _python_export: `for var; do`
+    # implicitly iterates "$@". The printer used to always write `in `,
+    # collapsing this into `for var in ; do` (an explicit empty list),
+    # silently turning the loop body into a no-op.
+    stdin: |
+      myfunc() {
+      	for var; do
+      		echo "got: $var"
+      	done
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc a b c
+
+  - name: "Declare -f round-trips a function containing a heredoc"
+    stdin: |
+      myfunc() {
+      	cat <<-EOF
+      	content line
+      	EOF
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a function containing a heredoc with a quoted delimiter"
+    stdin: |
+      myfunc() {
+      	cat <<-'EOF'
+      	no $expansion here
+      	EOF
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a function containing a heredoc with a trailing redirect"
+    stdin: |
+      myfunc() {
+      	echo "before"
+      	cat <<-EOF > "${TMPDIR:-/tmp}/declare_f_heredoc_test.txt"
+      	content line
+      	EOF
+      	echo "after"
+      	cat "${TMPDIR:-/tmp}/declare_f_heredoc_test.txt"
+      	rm -f "${TMPDIR:-/tmp}/declare_f_heredoc_test.txt"
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a function with a command after a heredoc"
+    # No trailing redirect at all here — the gap this covers is a plain
+    # `;`/sequence separator ending up on its own line right after a
+    # heredoc's closing delimiter (bash never emits one there; the
+    # delimiter line already ends the statement), which broke regardless of
+    # whether anything followed the heredoc operator on its own line.
+    stdin: |
+      myfunc() {
+      	cat <<-EOF
+      	content line
+      	EOF
+      	echo "after"
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc
+
+  - name: "Declare -f round-trips a multi-line command substitution inside a case item"
+    # Reduced from python-utils-r1.eclass's _python_export (the
+    # PYTHON_STDLIB branch): a `$( ... )` command substitution spanning
+    # several physical lines is stored as raw text in the AST, not as a
+    # separately-indented nested program. The printer's generic
+    # `write_indented` used to inject its own prefix after every embedded
+    # newline inside that raw text (since it can't tell "recursive Display
+    # call" from "literal newline in a string"), corrupting the
+    # substitution's own heredoc — its body and closing delimiter picked up
+    # extra leading spaces they were never meant to have, breaking the
+    # `<<-` tab-only stripping rule and leaving the heredoc unterminated.
+    stdin: |
+      myfunc() {
+      	case "$1" in
+      	go)
+      		out=$(
+      			cat <<-EOF
+      				first
+      				second
+      			EOF
+      		)
+      		echo "$out"
+      		;;
+      	esac
+      }
+      dump="$(declare -f myfunc)"
+      unset -f myfunc
+      eval "$dump"
+      myfunc go
+
+  - name: "Nameref unset target"
+    stdin: |
+      target="exists"
+      declare -n ref=target
+      echo "ref: $ref"
+      unset target
+      echo "ref after unset: '${ref}'"
+
+  - name: "Declare with dynamically-expanded assignment word"
+    stdin: |
+      v=MYVAR
+      declare ${v}="dyn"
+      echo "MYVAR=[$MYVAR]"
+
+  - name: "Declare -i with dynamically-expanded assignment word"
+    stdin: |
+      v=NUM
+      declare -i ${v}=4+3
+      echo "NUM=[$NUM]"
+
+  - name: "Declare append via dynamically-expanded word"
+    stdin: |
+      v=ACC
+      ACC=a
+      declare ${v}+=b
+      echo "ACC=[$ACC]"
+
+  - name: "Declare array via quoted dynamically-expanded word"
+    stdin: |
+      v=ARR
+      declare -a "${v}=(one two)"
+      echo "ARR1=[${ARR[1]}]"
+
+  - name: "Declare -i with literal assignment evaluates arithmetic"
+    stdin: |
+      declare -i NUM=4+3
+      echo "NUM=[$NUM]"
+      NUM+=10
+      echo "NUM2=[$NUM]"
+
+  - name: "Declare append with literal assignment"
+    stdin: |
+      declare ACC=a
+      declare ACC+=b
+      echo "ACC=[$ACC]"
+
+  - name: "Typeset with dynamically-expanded assignment word"
+    stdin: |
+      v=TVAR
+      typeset ${v}="tval"
+      echo "TVAR=[$TVAR]"

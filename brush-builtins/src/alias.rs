@@ -19,6 +19,8 @@ pub(crate) struct AliasCommand {
 }
 
 impl builtins::Command for AliasCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
@@ -26,11 +28,13 @@ impl builtins::Command for AliasCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
         if self.print || self.aliases.is_empty() {
             // Aliases are stored unordered; bash lists them sorted by name.
             for (name, value) in context.shell.aliases().iter().sorted() {
-                write_alias_definition(context.stdout(), name, value)?;
+                write_alias_definition(&mut output, name, value)?;
             }
         } else {
             for alias in &self.aliases {
@@ -42,16 +46,32 @@ impl builtins::Command for AliasCommand {
                         .aliases_mut()
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else if let Some(value) = context.shell.aliases().get(alias) {
-                    write_alias_definition(context.stdout(), alias, value)?;
+                    write_alias_definition(&mut output, alias, value)?;
                 } else {
                     writeln!(
-                        context.stderr(),
+                        stderr_output,
                         "{}: {alias}: not found",
                         context.command_name
                     )?;
                     exit_code = ExecutionResult::general_error();
                 }
             }
+        }
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
         }
 
         Ok(exit_code)

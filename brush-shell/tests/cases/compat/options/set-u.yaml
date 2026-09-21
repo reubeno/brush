@@ -517,7 +517,6 @@ cases:
       echo "should not print"
 
   - name: "Nameref to set variable with set -u"
-    known_failure: true
     stdin: |
       set -u
       target="value"
@@ -525,7 +524,6 @@ cases:
       echo "$ref"
 
   - name: "Nameref to unset variable with set -u errors"
-    known_failure: true
     ignore_stderr: true
     stdin: |
       set -u

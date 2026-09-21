@@ -388,7 +388,6 @@ cases:
       printf '~%q\n' ''
 
   - name: "printf -v through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=target
       printf -v ref "formatted %d" 42
@@ -442,3 +441,9 @@ cases:
     stdin: |
       printf '<%#q>\n' 'foo'
       printf '<%#12q>\n' 'foo bar'
+
+  - name: "printf -v with dynamically-expanded variable name"
+    stdin: |
+      v=DEST
+      printf -v ${v} '%s-%s' a b
+      echo "DEST=[$DEST]"

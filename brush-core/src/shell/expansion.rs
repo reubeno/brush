@@ -7,9 +7,13 @@ use crate::{error, expansion, extensions, interp::ExecutionParameters};
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the current value of the IFS variable, or the default value if it is not set.
     pub fn ifs(&self) -> Cow<'_, str> {
+        // Only an IFS holding no value at all falls back to the default; one explicitly
+        // set to the empty string disables field splitting. `value_str` is `None` for
+        // exactly the first case, so it is what decides here (unlike `env_str`, which
+        // reports an existing-but-valueless variable as `Some("")`).
         self.env_var("IFS")
-            .filter(|var| var.value().is_set())
-            .map_or_else(|| " \t\n".into(), |var| var.value().to_cow_str(self))
+            .and_then(|var| var.value_str(self))
+            .unwrap_or_else(|| " \t\n".into())
     }
 
     /// Returns the separator that joins the fields of `$*` and `${arr[*]}`: the first
