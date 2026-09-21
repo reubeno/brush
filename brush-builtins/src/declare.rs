@@ -740,6 +740,7 @@ impl DeclareCommand {
     }
 
     #[expect(clippy::type_complexity)]
+    #[expect(clippy::too_many_lines)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
     ) -> Result<

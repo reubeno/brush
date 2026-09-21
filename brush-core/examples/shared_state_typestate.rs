@@ -23,6 +23,10 @@ impl builtins::Command for TempCommand {
     type SharedState = Counter;
     type Error = brush_core::Error;
 
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait method is async; this example's body has nothing to await"
+    )]
     async fn execute<SE: brush_core::extensions::ShellExtensions>(
         &self,
         _ctx: ExecutionContext<'_, SE>,

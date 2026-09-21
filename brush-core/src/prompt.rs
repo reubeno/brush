@@ -15,7 +15,7 @@ pub(crate) async fn expand_prompt(
     spec: &str,
 ) -> Result<String, error::Error> {
     // Parse the prompt spec into its pieces.
-    let prompt_pieces = parse_prompt(&spec, shell.parser_options().parser_impl)?;
+    let prompt_pieces = parse_prompt(spec, shell.parser_options().parser_impl)?;
 
     // Now, render each piece.
     let mut formatted_prompt = String::new();
