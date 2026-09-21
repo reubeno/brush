@@ -31,6 +31,8 @@ pub(crate) struct ShoptCommand {
     options: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(ShoptCommand);
+
 impl builtins::Command for ShoptCommand {
     type Error = brush_core::Error;
 

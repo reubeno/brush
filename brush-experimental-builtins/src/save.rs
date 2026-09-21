@@ -8,6 +8,8 @@ use std::io::Write;
 #[derive(Parser)]
 pub(crate) struct SaveCommand {}
 
+brush_builtin_utils::clap_builtin!(SaveCommand);
+
 impl builtins::Command for SaveCommand {
     type Error = brush_core::Error;
 

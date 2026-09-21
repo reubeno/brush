@@ -133,58 +133,9 @@ pub(crate) struct SetCommand {
     positional_args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(SetCommand, trailing_args = positional_args);
+
 impl builtins::Command for SetCommand {
-    fn takes_plus_options() -> bool {
-        true
-    }
-
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(set): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        //
-        // TODO(set): This is getting pretty messy; we need to see how to avoid this -- handling
-        // from leaking into too many commands' custom parsing.
-        //
-
-        // Apply the same workaround from the default implementation of Command::new to handle '+'
-        // args.
-        let mut updated_args = vec![];
-        let mut now_parsing_positional_args = false;
-        let mut next_arg_is_option_value = false;
-        for (i, arg) in args.into_iter().enumerate() {
-            if now_parsing_positional_args || next_arg_is_option_value {
-                updated_args.push(arg);
-
-                next_arg_is_option_value = false;
-                continue;
-            }
-
-            if arg == "-" || arg == "--" || (i > 0 && !arg.starts_with(['-', '+'])) {
-                now_parsing_positional_args = true;
-            }
-
-            if let Some(plus_options) = arg.strip_prefix("+") {
-                next_arg_is_option_value = plus_options.ends_with('o');
-                for c in plus_options.chars() {
-                    updated_args.push(format!("--+{c}"));
-                }
-            } else {
-                next_arg_is_option_value = arg.starts_with('-') && arg.ends_with('o');
-                updated_args.push(arg);
-            }
-        }
-
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(updated_args)?;
-        if let Some(args) = rest_args {
-            this.positional_args.extend(args);
-        }
-        Ok(this)
-    }
-
     type Error = brush_core::Error;
 
     #[expect(clippy::too_many_lines)]

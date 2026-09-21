@@ -14,6 +14,8 @@ pub(crate) struct DotCommand {
     script_args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(DotCommand);
+
 impl builtins::Command for DotCommand {
     type Error = brush_core::Error;
 

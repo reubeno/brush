@@ -9,6 +9,8 @@ pub(crate) struct CallerCommand {
     expr: Option<usize>,
 }
 
+brush_builtin_utils::clap_builtin!(CallerCommand);
+
 impl builtins::Command for CallerCommand {
     type Error = brush_core::Error;
 

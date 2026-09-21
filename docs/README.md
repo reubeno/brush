@@ -5,6 +5,7 @@ The docs are grouped into:
 * [How-to guides](how-to/README.md)
 * [Tutorials](tutorials/README.md)
 * [Reference material](reference/README.md)
+* [Migration guides](migrations/README.md)
 
 If you're just getting started building this project, you should consult the [How to Build](how-to/build.md) guide.
 

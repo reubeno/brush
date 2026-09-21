@@ -15,6 +15,8 @@ pub(crate) struct PushdCommand {
     // TODO(pushd): implement +N and -N
 }
 
+brush_builtin_utils::clap_builtin!(PushdCommand);
+
 impl builtins::Command for PushdCommand {
     type Error = brush_core::Error;
 

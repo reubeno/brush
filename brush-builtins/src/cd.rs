@@ -30,6 +30,8 @@ pub(crate) struct CdCommand {
     target_dir: Option<PathBuf>,
 }
 
+brush_builtin_utils::clap_builtin!(CdCommand);
+
 impl builtins::Command for CdCommand {
     type Error = brush_core::Error;
 

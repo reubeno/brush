@@ -1,10 +1,9 @@
 //! Implements programmable command completion support.
 
-use clap::ValueEnum;
 use itertools::Itertools;
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
 };
 use strum::IntoEnumIterator;
@@ -60,109 +59,100 @@ fn split_completion_word_list(
 }
 
 /// Type of action to take to generate completion candidates.
-#[derive(Clone, Debug, ValueEnum)]
+///
+/// Displays and parses as the name `complete -A` uses for it (e.g. `arrayvar`);
+/// `VARIANTS` lists those names.
+#[derive(
+    Clone, Copy, Debug, strum_macros::Display, strum_macros::EnumString, strum_macros::VariantNames,
+)]
+#[strum(serialize_all = "lowercase")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteAction {
     /// Complete with valid aliases.
-    #[clap(name = "alias")]
     Alias,
     /// Complete with names of array shell variables.
-    #[clap(name = "arrayvar")]
     ArrayVar,
     /// Complete with names of key bindings.
-    #[clap(name = "binding")]
     Binding,
     /// Complete with names of shell builtins.
-    #[clap(name = "builtin")]
     Builtin,
     /// Complete with names of executable commands.
-    #[clap(name = "command")]
     Command,
     /// Complete with directory names.
-    #[clap(name = "directory")]
     Directory,
     /// Complete with names of disabled shell builtins.
-    #[clap(name = "disabled")]
     Disabled,
     /// Complete with names of enabled shell builtins.
-    #[clap(name = "enabled")]
     Enabled,
     /// Complete with names of exported shell variables.
-    #[clap(name = "export")]
     Export,
     /// Complete with filenames.
-    #[clap(name = "file")]
     File,
     /// Complete with names of shell functions.
-    #[clap(name = "function")]
     Function,
     /// Complete with valid user groups.
-    #[clap(name = "group")]
     Group,
     /// Complete with names of valid shell help topics.
-    #[clap(name = "helptopic")]
     HelpTopic,
     /// Complete with the system's hostname(s).
-    #[clap(name = "hostname")]
     HostName,
     /// Complete with the command names of shell-managed jobs.
-    #[clap(name = "job")]
     Job,
     /// Complete with valid shell keywords.
-    #[clap(name = "keyword")]
     Keyword,
     /// Complete with the command names of running shell-managed jobs.
-    #[clap(name = "running")]
     Running,
     /// Complete with names of system services.
-    #[clap(name = "service")]
     Service,
     /// Complete with the names of options settable via shopt.
-    #[clap(name = "setopt")]
     SetOpt,
     /// Complete with the names of options settable via set -o.
-    #[clap(name = "shopt")]
     ShOpt,
     /// Complete with the names of trappable signals.
-    #[clap(name = "signal")]
     Signal,
     /// Complete with the command names of stopped shell-managed jobs.
-    #[clap(name = "stopped")]
     Stopped,
     /// Complete with valid usernames.
-    #[clap(name = "user")]
     User,
     /// Complete with names of shell variables.
-    #[clap(name = "variable")]
     Variable,
 }
 
 /// Options influencing how command completions are generated.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
+///
+/// Displays and parses as the name `complete -o` uses for it (e.g. `nospace`);
+/// `VARIANTS` lists those names.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    strum_macros::Display,
+    strum_macros::EnumString,
+    strum_macros::VariantNames,
+)]
+#[strum(serialize_all = "lowercase")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
-    #[clap(name = "bashdefault")]
     BashDefault,
     /// Use default filename completion if no completions are generated.
-    #[clap(name = "default")]
     Default,
     /// Treat completions as directory names.
-    #[clap(name = "dirnames")]
     DirNames,
     /// Treat completions as filenames.
-    #[clap(name = "filenames")]
     FileNames,
     /// Suppress default auto-quotation of completions.
-    #[clap(name = "noquote")]
     NoQuote,
     /// Do not sort completions.
-    #[clap(name = "nosort")]
     NoSort,
     /// Do not append a trailing space to completions at the end of the input line.
-    #[clap(name = "nospace")]
     NoSpace,
     /// Also generate directory completions.
-    #[clap(name = "plusdirs")]
     PlusDirs,
 }
 
@@ -208,29 +198,9 @@ impl Default for FallbackOptions {
     }
 }
 
-/// Options for generating completions.
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GenerationOptions {
-    //
-    // Options
-    /// Perform rest of default completions if no completions are generated.
-    pub bash_default: bool,
-    /// Use default readline-style filename completion if no completions are generated.
-    pub default: bool,
-    /// Treat completions as directory names.
-    pub dir_names: bool,
-    /// Treat completions as filenames.
-    pub file_names: bool,
-    /// Do not add usual quoting for completions.
-    pub no_quote: bool,
-    /// Do not sort completions.
-    pub no_sort: bool,
-    /// Do not append typical space to a completion at the end of the input line.
-    pub no_space: bool,
-    /// Also complete with directory names.
-    pub plus_dirs: bool,
-}
+/// The options enabled for generating completions. Iterates in the order
+/// `complete -p` lists them.
+pub type GenerationOptions = BTreeSet<CompleteOption>;
 
 /// Encapsulates a command completion specification; provides policy for how to
 /// generate completions for a given input.
@@ -449,13 +419,15 @@ impl Spec {
         };
 
         let mut processing_options = ProcessingOptions {
-            treat_as_filenames: options.file_names,
-            no_autoquote_filenames: options.no_quote,
-            no_trailing_space_at_end_of_line: options.no_space,
+            treat_as_filenames: options.contains(&CompleteOption::FileNames),
+            no_autoquote_filenames: options.contains(&CompleteOption::NoQuote),
+            no_trailing_space_at_end_of_line: options.contains(&CompleteOption::NoSpace),
         };
 
         // plusdirs always adds directory names; dirnames only does so when nothing else matched.
-        if options.plus_dirs || (options.dir_names && candidates.is_empty()) {
+        if options.contains(&CompleteOption::PlusDirs)
+            || (options.contains(&CompleteOption::DirNames) && candidates.is_empty())
+        {
             let mut dir_candidates = get_file_completions(
                 shell,
                 context.token_to_complete,
@@ -474,7 +446,7 @@ impl Spec {
 
         // If we still have no candidates, and bashdefault completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.bash_default {
+        if candidates.is_empty() && options.contains(&CompleteOption::BashDefault) {
             // TODO(completions): it's not clear what default "bash" completions means. From basic
             // testing, this doesn't seem to include basic file and directory name
             // completion.
@@ -483,10 +455,10 @@ impl Spec {
 
         // If we still have no candidates, and default completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.default {
+        if candidates.is_empty() && options.contains(&CompleteOption::Default) {
             // N.B. We approximate "default" readline completion behavior by getting file and
             // dir completions.
-            let must_be_dir = options.dir_names;
+            let must_be_dir = options.contains(&CompleteOption::DirNames);
 
             let mut default_candidates =
                 get_file_completions(shell, context.token_to_complete, must_be_dir).await;
@@ -498,7 +470,7 @@ impl Spec {
         }
 
         // Sort, unless blocked by options.
-        if !self.options.no_sort {
+        if !self.options.contains(&CompleteOption::NoSort) {
             candidates.sort();
         }
 
@@ -575,14 +547,14 @@ impl Spec {
                 }
                 CompleteAction::Disabled => {
                     for (name, registration) in shell.builtins() {
-                        if registration.disabled && name.starts_with(token) {
+                        if registration.is_disabled() && name.starts_with(token) {
                             candidates.push(name.to_owned());
                         }
                     }
                 }
                 CompleteAction::Enabled => {
                     for (name, registration) in shell.builtins() {
-                        if !registration.disabled && name.starts_with(token) {
+                        if !registration.is_disabled() && name.starts_with(token) {
                             candidates.push(name.to_owned());
                         }
                     }
@@ -1390,7 +1362,7 @@ fn add_command_completions(
 
     // Add built-in commands.
     for (name, registration) in shell.builtins() {
-        if !registration.disabled && name.starts_with(prefix) {
+        if !registration.is_disabled() && name.starts_with(prefix) {
             candidates.push(name.to_owned());
         }
     }

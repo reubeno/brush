@@ -9,6 +9,8 @@ pub(crate) struct UnimplementedCommand {
     args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(UnimplementedCommand);
+
 impl builtins::Command for UnimplementedCommand {
     type Error = brush_core::Error;
 

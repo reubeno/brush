@@ -26,6 +26,8 @@ pub(crate) struct KillCommand {
     args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(KillCommand);
+
 impl builtins::Command for KillCommand {
     type Error = brush_core::Error;
 

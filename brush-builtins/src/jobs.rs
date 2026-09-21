@@ -31,6 +31,8 @@ pub(crate) struct JobsCommand {
     job_specs: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(JobsCommand);
+
 impl builtins::Command for JobsCommand {
     type Error = brush_core::Error;
 

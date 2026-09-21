@@ -11,6 +11,8 @@ pub(crate) struct LetCommand {
     exprs: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(LetCommand);
+
 impl builtins::Command for LetCommand {
     type Error = brush_core::Error;
 

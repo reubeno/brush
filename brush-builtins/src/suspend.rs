@@ -11,6 +11,8 @@ pub(crate) struct SuspendCommand {
     force: bool,
 }
 
+brush_builtin_utils::clap_builtin!(SuspendCommand);
+
 impl builtins::Command for SuspendCommand {
     type Error = brush_core::Error;
 

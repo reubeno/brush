@@ -119,6 +119,8 @@ impl From<&BindError> for brush_core::ExecutionExitCode {
     }
 }
 
+brush_builtin_utils::clap_builtin!(BindCommand);
+
 impl builtins::Command for BindCommand {
     type Error = BindError;
 

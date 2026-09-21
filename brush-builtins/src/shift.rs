@@ -9,6 +9,8 @@ pub(crate) struct ShiftCommand {
     n: Option<i32>,
 }
 
+brush_builtin_utils::clap_builtin!(ShiftCommand);
+
 impl builtins::Command for ShiftCommand {
     type Error = brush_core::Error;
 

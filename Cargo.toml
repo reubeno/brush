@@ -5,6 +5,7 @@ members = [
     "brush-shell",
     "brush-parser",
     "brush-core",
+    "brush-builtin-utils",
     "brush-builtins",
     "brush-coreutils-builtins",
     "brush-experimental-builtins",
@@ -101,6 +102,9 @@ extend-ignore-re = [
 ]
 
 [workspace.metadata.typos.default.extend-words]
+# The project spells this the American way.
+"behaviour" = "behavior"
+
 # These show up in tests.
 "abd" = "abd"
 "hel" = "hel"

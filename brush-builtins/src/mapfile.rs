@@ -44,6 +44,8 @@ pub(crate) struct MapFileCommand {
     array_var_name: String,
 }
 
+brush_builtin_utils::clap_builtin!(MapFileCommand);
+
 impl builtins::Command for MapFileCommand {
     type Error = brush_core::Error;
 

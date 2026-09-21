@@ -10,6 +10,8 @@ pub(crate) struct BreakCommand {
     which_loop: i8,
 }
 
+brush_builtin_utils::clap_builtin!(BreakCommand);
+
 impl builtins::Command for BreakCommand {
     type Error = brush_core::Error;
 

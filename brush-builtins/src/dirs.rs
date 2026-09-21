@@ -47,6 +47,8 @@ pub(crate) struct DirsCommand {
     // TODO(dirs): implement +N and -N
 }
 
+brush_builtin_utils::clap_builtin!(DirsCommand);
+
 impl builtins::Command for DirsCommand {
     type Error = brush_core::Error;
 

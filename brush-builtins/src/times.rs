@@ -7,6 +7,8 @@ use brush_core::{ExecutionResult, builtins, timing};
 #[derive(Parser)]
 pub(crate) struct TimesCommand {}
 
+brush_builtin_utils::clap_builtin!(TimesCommand);
+
 impl builtins::Command for TimesCommand {
     type Error = brush_core::Error;
 

@@ -98,7 +98,7 @@ pub(crate) struct DeclareCommand {
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
+    // N.B. Skipped by clap; `clap_builtin!` stores the operands after the options here.
     #[clap(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
@@ -110,17 +110,9 @@ enum DeclareVerb {
     Readonly,
 }
 
-impl builtins::DeclarationCommand for DeclareCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
-}
+brush_builtin_utils::clap_builtin!(DeclareCommand, declarations = declarations);
 
 impl builtins::Command for DeclareCommand {
-    fn takes_plus_options() -> bool {
-        true
-    }
-
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

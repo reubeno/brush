@@ -34,6 +34,8 @@ pub(crate) struct TypeCommand {
     names: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(TypeCommand);
+
 impl builtins::Command for TypeCommand {
     type Error = brush_core::Error;
 

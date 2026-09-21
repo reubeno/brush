@@ -20,6 +20,8 @@ pub(crate) struct UmaskCommand {
     mode: Option<String>,
 }
 
+brush_builtin_utils::clap_builtin!(UmaskCommand);
+
 impl builtins::Command for UmaskCommand {
     type Error = brush_core::Error;
 

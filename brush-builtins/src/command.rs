@@ -132,6 +132,8 @@ impl CommandCommand {
     }
 }
 
+brush_builtin_utils::clap_builtin!(CommandCommand);
+
 impl builtins::Command for CommandCommand {
     type Error = brush_core::Error;
 

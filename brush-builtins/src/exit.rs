@@ -10,6 +10,8 @@ pub(crate) struct ExitCommand {
     code: Option<i64>,
 }
 
+brush_builtin_utils::clap_builtin!(ExitCommand);
+
 impl builtins::Command for ExitCommand {
     type Error = brush_core::Error;
 

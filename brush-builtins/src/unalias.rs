@@ -14,6 +14,8 @@ pub(crate) struct UnaliasCommand {
     aliases: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(UnaliasCommand);
+
 impl builtins::Command for UnaliasCommand {
     type Error = brush_core::Error;
 
