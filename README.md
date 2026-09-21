@@ -72,7 +72,7 @@ Then run `brush`. It reads the same startup files Bash does, so it picks up your
 - **Scripts, too.** The builtins, expansions, arrays, redirections, and options your scripts already use, with `set -e`, `pipefail`, `extglob`, `globstar`, and friends.
 - **Experimental extras.** zsh-style `precmd` and `preexec` hooks, and terminal shell integration for VS Code, iTerm2, and other supporting terminals. Both are off by default; see [experimental features](https://brush.sh/reference/experimental/).
 
-> Not everything is there yet. Most notably, `select`, `wait -n`, `disown`, some traps, and a set of edge cases are still missing. The [compatibility reference](https://brush.sh/reference/compatibility/) lists what works, what's partial, and what isn't implemented. If you spot something that doesn't look right, please let us know via filed issues.
+> Not everything is there yet. Most notably, `select`, `wait -n`, `disown`, some traps, and a set of edge cases are still missing. The [compatibility reference](https://brush.sh/reference/compatibility/) lists what works, what's partial, and what isn't implemented. If you spot something that doesn't look right, please let us know by filing an issue.
 
 ## Build with the engine
 
