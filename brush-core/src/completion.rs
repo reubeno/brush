@@ -3,7 +3,7 @@
 use itertools::Itertools;
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
 };
 use strum::IntoEnumIterator;
@@ -128,13 +128,15 @@ pub enum CompleteAction {
     Debug,
     Eq,
     Hash,
+    Ord,
     PartialEq,
+    PartialOrd,
     strum_macros::Display,
-    strum_macros::EnumIter,
     strum_macros::EnumString,
     strum_macros::VariantNames,
 )]
 #[strum(serialize_all = "lowercase")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
     BashDefault,
@@ -196,75 +198,9 @@ impl Default for FallbackOptions {
     }
 }
 
-/// Options for generating completions.
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GenerationOptions {
-    //
-    // Options
-    /// Perform rest of default completions if no completions are generated.
-    pub bash_default: bool,
-    /// Use default readline-style filename completion if no completions are generated.
-    pub default: bool,
-    /// Treat completions as directory names.
-    pub dir_names: bool,
-    /// Treat completions as filenames.
-    pub file_names: bool,
-    /// Do not add usual quoting for completions.
-    pub no_quote: bool,
-    /// Do not sort completions.
-    pub no_sort: bool,
-    /// Do not append typical space to a completion at the end of the input line.
-    pub no_space: bool,
-    /// Also complete with directory names.
-    pub plus_dirs: bool,
-}
-
-impl GenerationOptions {
-    /// Returns whether `option` is enabled.
-    ///
-    /// # Arguments
-    ///
-    /// * `option` - The option to query.
-    pub const fn is_enabled(&self, option: CompleteOption) -> bool {
-        match option {
-            CompleteOption::BashDefault => self.bash_default,
-            CompleteOption::Default => self.default,
-            CompleteOption::DirNames => self.dir_names,
-            CompleteOption::FileNames => self.file_names,
-            CompleteOption::NoQuote => self.no_quote,
-            CompleteOption::NoSort => self.no_sort,
-            CompleteOption::NoSpace => self.no_space,
-            CompleteOption::PlusDirs => self.plus_dirs,
-        }
-    }
-
-    /// Enables or disables `option`.
-    ///
-    /// # Arguments
-    ///
-    /// * `option` - The option to update.
-    /// * `enabled` - Whether the option should be enabled.
-    pub const fn set(&mut self, option: CompleteOption, enabled: bool) {
-        let flag = match option {
-            CompleteOption::BashDefault => &mut self.bash_default,
-            CompleteOption::Default => &mut self.default,
-            CompleteOption::DirNames => &mut self.dir_names,
-            CompleteOption::FileNames => &mut self.file_names,
-            CompleteOption::NoQuote => &mut self.no_quote,
-            CompleteOption::NoSort => &mut self.no_sort,
-            CompleteOption::NoSpace => &mut self.no_space,
-            CompleteOption::PlusDirs => &mut self.plus_dirs,
-        };
-        *flag = enabled;
-    }
-
-    /// Returns the enabled options, in the order `complete -p` lists them.
-    pub fn enabled(&self) -> impl Iterator<Item = CompleteOption> + '_ {
-        use strum::IntoEnumIterator as _;
-        CompleteOption::iter().filter(move |option| self.is_enabled(*option))
-    }
-}
+/// The options enabled for generating completions. Iterates in the order
+/// `complete -p` lists them.
+pub type GenerationOptions = BTreeSet<CompleteOption>;
 
 /// Encapsulates a command completion specification; provides policy for how to
 /// generate completions for a given input.
@@ -483,13 +419,15 @@ impl Spec {
         };
 
         let mut processing_options = ProcessingOptions {
-            treat_as_filenames: options.file_names,
-            no_autoquote_filenames: options.no_quote,
-            no_trailing_space_at_end_of_line: options.no_space,
+            treat_as_filenames: options.contains(&CompleteOption::FileNames),
+            no_autoquote_filenames: options.contains(&CompleteOption::NoQuote),
+            no_trailing_space_at_end_of_line: options.contains(&CompleteOption::NoSpace),
         };
 
         // plusdirs always adds directory names; dirnames only does so when nothing else matched.
-        if options.plus_dirs || (options.dir_names && candidates.is_empty()) {
+        if options.contains(&CompleteOption::PlusDirs)
+            || (options.contains(&CompleteOption::DirNames) && candidates.is_empty())
+        {
             let mut dir_candidates = get_file_completions(
                 shell,
                 context.token_to_complete,
@@ -508,7 +446,7 @@ impl Spec {
 
         // If we still have no candidates, and bashdefault completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.bash_default {
+        if candidates.is_empty() && options.contains(&CompleteOption::BashDefault) {
             // TODO(completions): it's not clear what default "bash" completions means. From basic
             // testing, this doesn't seem to include basic file and directory name
             // completion.
@@ -517,10 +455,10 @@ impl Spec {
 
         // If we still have no candidates, and default completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.default {
+        if candidates.is_empty() && options.contains(&CompleteOption::Default) {
             // N.B. We approximate "default" readline completion behavior by getting file and
             // dir completions.
-            let must_be_dir = options.dir_names;
+            let must_be_dir = options.contains(&CompleteOption::DirNames);
 
             let mut default_candidates =
                 get_file_completions(shell, context.token_to_complete, must_be_dir).await;
@@ -532,7 +470,7 @@ impl Spec {
         }
 
         // Sort, unless blocked by options.
-        if !self.options.no_sort {
+        if !self.options.contains(&CompleteOption::NoSort) {
             candidates.sort();
         }
 
