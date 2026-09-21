@@ -129,8 +129,8 @@ impl CommonCompleteCommandArgs {
             None
         };
 
-        let mut spec = completion::Spec {
-            options: completion::GenerationOptions::default(),
+        completion::Spec {
+            options: self.options.iter().copied().collect(),
             actions: self.resolve_actions(),
             glob_pattern: self.glob_pattern.clone(),
             word_list: self.word_list.clone(),
@@ -140,13 +140,7 @@ impl CommonCompleteCommandArgs {
             filter_pattern_excludes,
             prefix: self.prefix.clone(),
             suffix: self.suffix.clone(),
-        };
-
-        for option in &self.options {
-            spec.options.set(*option, true);
         }
-
-        spec
     }
 
     fn resolve_actions(&self) -> Vec<CompleteAction> {
@@ -342,7 +336,7 @@ impl CompleteCommand {
             }
         }
 
-        for option in spec.options.enabled() {
+        for option in &spec.options {
             write!(s, " -o {option}")?;
         }
 
@@ -457,7 +451,7 @@ impl builtins::Command for CompGenCommand {
         let mut spec = self
             .common_args
             .create_spec(context.shell.options().extended_globbing);
-        spec.options.no_sort = true;
+        spec.options.insert(CompleteOption::NoSort);
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
@@ -612,7 +606,11 @@ impl CompOptCommand {
         I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
     {
         for (option, value) in options {
-            target_options.set(*option, *value);
+            if *value {
+                target_options.insert(*option);
+            } else {
+                target_options.remove(option);
+            }
         }
     }
 }

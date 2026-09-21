@@ -314,8 +314,20 @@ actions: Vec<CompleteAction>,
 ```
 
 `use strum::VariantNames;` and `use clap::builder::TypedValueParser;` are
-required for `VARIANTS` and `try_map`. Additive: `GenerationOptions` gained
-`is_enabled(option)`, `set(option, bool)`, and `enabled()`.
+required for `VARIANTS` and `try_map`.
+
+`GenerationOptions` is now `BTreeSet<CompleteOption>` rather than a struct of
+bools. Detection: `grep -rn "options\.\(no_space\|file_names\|dir_names\|plus_dirs\|no_quote\|no_sort\|bash_default\|default\)\b"`.
+
+```rust
+// Before
+if spec.options.no_space { ... }
+spec.options.file_names = true;
+
+// After
+if spec.options.contains(&CompleteOption::NoSpace) { ... }
+spec.options.insert(CompleteOption::FileNames);
+```
 
 ### 10. CONDITIONAL — `clap` must be a direct dependency
 
