@@ -129,6 +129,39 @@ cases:
       - "echo"
       - "hi"
 
+  - name: "-c with option before command"
+    args:
+      - "-c"
+      - "-u"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - "1"
+      - "-2"
+      - "3"
+
+  - name: "-c with value-taking option before command"
+    args:
+      - "-c"
+      - "-o"
+      - "errexit"
+      - 'echo \"$0\" \"$1\" \"$@\"'
+      - "1"
+      - "2"
+
+  - name: "-c with option before command and no command"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - "-u"
+
+  - name: "-c with option then -- separator"
+    args:
+      - "-c"
+      - "-u"
+      - "--"
+      - 'echo \"$0\" \"$1\" \"$@\"'
+      - "1"
+      - "2"
+
   - name: "-ec with -- separator and command"
     args:
       - "-ec"

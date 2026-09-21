@@ -76,8 +76,15 @@ pub struct CommandLineArgs {
     #[arg(short = 'C', help_heading = HEADING_STANDARD_OPTIONS)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
 
-    /// Execute the provided command and then exit.
-    #[arg(short = 'c', value_name = "COMMAND", help_heading = HEADING_STANDARD_OPTIONS)]
+    /// Execute the command given as the first operand and then exit.
+    #[arg(short = 'c', help_heading = HEADING_STANDARD_OPTIONS)]
+    pub command_mode: bool,
+
+    /// The command string to run, taken from the first operand when `-c` is
+    /// given. Bash parses options first and only then takes the command from
+    /// the first operand, so options may sit between the two, as in
+    /// `bash -c -l 'echo hi'`.
+    #[arg(skip)]
     pub command: Option<String>,
 
     /// Enable error-on-exit behavior.
