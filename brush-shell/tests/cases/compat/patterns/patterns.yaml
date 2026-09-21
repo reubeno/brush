@@ -290,3 +290,22 @@ cases:
           echo done
       }
       f
+
+  - name: "Pattern matching: a bare / is never part of a bracket expression"
+    stdin: |
+      # Pathname expansion splits on '/' into components before bracket
+      # expressions are parsed, so a '/' can never appear inside one. Treating
+      # such a word as a real (unmatched) glob would abort an EAPI 6+ ebuild
+      # under failglob; these are real EPYTEST_DESELECT entries.
+      shopt -s failglob
+      echo a[b/c]
+      echo "test_path_to_uri[test.mp3-file:///test.mp3]"
+      deselect=(test_path_to_uri[test.mp3-file:///test.mp3])
+      echo "${deselect[@]}"
+
+  - name: "Pattern matching: failglob still rejects a genuinely unmatched bracket glob"
+    ignore_stderr: true # bash and brush word the "no match" error differently
+    stdin: |
+      shopt -s failglob
+      ( echo a[bc]x )
+      echo "status: $?"
