@@ -68,7 +68,7 @@ Then run `brush`. It reads the same startup files Bash does, so it picks up your
 - **Programmable completion.** Works with the [bash-completion](https://github.com/scop/bash-completion) package you already have installed, so `git`, `docker`, `systemctl`, and the rest complete as usual.
 - **Job control.** Background jobs, suspend and resume, `fg`, `bg`, and `jobs`.
 - **Auto-suggestions.** History-based hints as you type, on by default. Powered by [reedline](https://github.com/nushell/reedline).
-- **Syntax highlighting.** Live, as you type, one setting away: `brush --enable-highlighting` or `syntax-highlighting = true` in brush's [TOML config file](https://brush.sh/reference/config-files/).
+- **Syntax highlighting.** Live, as you type, one setting away: `brush --enable-highlighting` or `syntax-highlighting = true` under `[ui]` in brush's [TOML config file](https://brush.sh/reference/config-files/).
 - **Scripts, too.** The builtins, expansions, arrays, redirections, and options your scripts already use, with `set -e`, `pipefail`, `extglob`, `globstar`, and friends.
 - **Experimental extras.** zsh-style `precmd` and `preexec` hooks, and terminal shell integration for VS Code, iTerm2, and other supporting terminals. Both are off by default; see [experimental features](https://brush.sh/reference/experimental/).
 
