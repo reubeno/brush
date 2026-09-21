@@ -3,7 +3,7 @@
 # Installs brush from official GitHub releases of reubeno/brush.
 #
 # Usage:
-#   curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/reubeno/brush/main/scripts/install/install.sh | sh
+#   curl --proto '=https' --tlsv1.2 -fsSL https://brush.sh/install.sh | sh
 #
 # To pass options, use `sh -s --`, e.g.:
 #   curl ... | sh -s -- --version 0.4.0 --require-attestation
@@ -225,7 +225,7 @@ install_binary() {
     chmod 755 "${staged_binary}"
 
     installed_version="$("${staged_binary}" --version)" ||
-        die "the ${target} build failed to run on this system; see https://github.com/${REPO}#installation for other ways to install"
+        die "the ${target} build failed to run on this system; see https://brush.sh/getting-started/install/ for other ways to install"
 
     mv -f "${staged_binary}" "${install_dir}/brush" || die "cannot write to ${install_dir}"
     say "installed ${installed_version} to ${install_dir}/brush"
