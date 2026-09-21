@@ -526,6 +526,12 @@ pub(super) fn compound_command<'a>(
             dispatch! {peek_char();
                 '{' => brace_group(ctx, tracker).map(ast::CompoundCommand::BraceGroup),
                 '(' => super::arithmetic::paren_compound(ctx, tracker),  // Handles both (( )) arithmetic and ( ) subshell
+                // `[[ ... ]]` is a compound command like any other, so it can stand
+                // alone as a brace-less function body -- real usage in Portage's
+                // bin/eapi.sh: `___eapi_has_pkg_pretend() [[ ${1-${EAPI-0}} != [0-3] ]]`.
+                '[' if !ctx.options.posix_mode && !ctx.options.sh_mode =>
+                    super::extended_test::extended_test_command(ctx, tracker)
+                        .map(ast::CompoundCommand::ExtendedTest),
                 'c' => case_or_coproc(ctx, tracker),  // Handles both case and coproc
                 'f' => for_or_arithmetic_for(ctx, tracker),  // Handles both for (( )) and for name in
                 'i' => if_clause(ctx, tracker).map(ast::CompoundCommand::IfClause),

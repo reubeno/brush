@@ -10,13 +10,13 @@ ParseResult(
         CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
-              ExtendedTest(ExtendedTestExprCommand(
+              Compound(ExtendedTest(ExtendedTestExprCommand(
                 expr: UnaryTest(StringHasZeroLength, Word(
                   value: "\"\"",
                   loc: "[location]",
                 )),
                 loc: "[location]",
-              ), None),
+              )), None),
             ],
           ),
           additional: [
@@ -43,13 +43,13 @@ ParseResult(
         CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
-              ExtendedTest(ExtendedTestExprCommand(
+              Compound(ExtendedTest(ExtendedTestExprCommand(
                 expr: UnaryTest(StringHasNonZeroLength, Word(
                   value: "\"text\"",
                   loc: "[location]",
                 )),
                 loc: "[location]",
-              ), None),
+              )), None),
             ],
           ),
           additional: [

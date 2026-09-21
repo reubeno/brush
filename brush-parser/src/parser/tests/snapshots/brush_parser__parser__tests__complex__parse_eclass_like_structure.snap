@@ -15,13 +15,13 @@ ParseResult(
                   CompoundListItem(AndOrList(
                     first: Pipeline(
                       seq: [
-                        ExtendedTest(ExtendedTestExprCommand(
+                        Compound(ExtendedTest(ExtendedTestExprCommand(
                           expr: UnaryTest(StringHasZeroLength, Word(
                             value: "${_FOO_ECLASS}",
                             loc: "[location]",
                           )),
                           loc: "[location]",
-                        ), None),
+                        )), None),
                       ],
                     ),
                   ), Sequence),
@@ -328,7 +328,7 @@ ParseResult(
                                         CompoundListItem(AndOrList(
                                           first: Pipeline(
                                             seq: [
-                                              ExtendedTest(ExtendedTestExprCommand(
+                                              Compound(ExtendedTest(ExtendedTestExprCommand(
                                                 expr: BinaryTest(ArithmeticGreaterThanOrEqualTo, Word(
                                                   value: "${BASH_VERSINFO[0]}",
                                                   loc: "[location]",
@@ -337,7 +337,7 @@ ParseResult(
                                                   loc: "[location]",
                                                 )),
                                                 loc: "[location]",
-                                              ), None),
+                                              )), None),
                                             ],
                                           ),
                                         ), Sequence),
@@ -346,7 +346,7 @@ ParseResult(
                                         CompoundListItem(AndOrList(
                                           first: Pipeline(
                                             seq: [
-                                              ExtendedTest(ExtendedTestExprCommand(
+                                              Compound(ExtendedTest(ExtendedTestExprCommand(
                                                 expr: BinaryTest(StringExactlyMatchesPattern, Word(
                                                   value: "${COMPAT@a}",
                                                   loc: "[location]",
@@ -355,7 +355,7 @@ ParseResult(
                                                   loc: "[location]",
                                                 )),
                                                 loc: "[location]",
-                                              ), None),
+                                              )), None),
                                             ],
                                           ),
                                         ), Sequence),
@@ -366,7 +366,7 @@ ParseResult(
                                             CompoundListItem(AndOrList(
                                               first: Pipeline(
                                                 seq: [
-                                                  ExtendedTest(ExtendedTestExprCommand(
+                                                  Compound(ExtendedTest(ExtendedTestExprCommand(
                                                     expr: BinaryTest(StringExactlyMatchesPattern, Word(
                                                       value: "$(declare -p COMPAT)",
                                                       loc: "[location]",
@@ -375,7 +375,7 @@ ParseResult(
                                                       loc: "[location]",
                                                     )),
                                                     loc: "[location]",
-                                                  ), None),
+                                                  )), None),
                                                 ],
                                               ),
                                             ), Sequence),
@@ -395,7 +395,7 @@ ParseResult(
                                         CompoundListItem(AndOrList(
                                           first: Pipeline(
                                             seq: [
-                                              ExtendedTest(ExtendedTestExprCommand(
+                                              Compound(ExtendedTest(ExtendedTestExprCommand(
                                                 expr: BinaryTest(ArithmeticNotEqualTo, Word(
                                                   value: "${?}",
                                                   loc: "[location]",
@@ -404,7 +404,7 @@ ParseResult(
                                                   loc: "[location]",
                                                 )),
                                                 loc: "[location]",
-                                              ), None),
+                                              )), None),
                                             ],
                                           ),
                                         ), Sequence),

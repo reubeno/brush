@@ -15,7 +15,7 @@ ParseResult(
                   CompoundListItem(AndOrList(
                     first: Pipeline(
                       seq: [
-                        ExtendedTest(ExtendedTestExprCommand(
+                        Compound(ExtendedTest(ExtendedTestExprCommand(
                           expr: BinaryTest(ArithmeticGreaterThanOrEqualTo, Word(
                             value: "${BASH_VERSINFO[0]}",
                             loc: "[location]",
@@ -24,7 +24,7 @@ ParseResult(
                             loc: "[location]",
                           )),
                           loc: "[location]",
-                        ), None),
+                        )), None),
                       ],
                     ),
                   ), Sequence),
@@ -33,7 +33,7 @@ ParseResult(
                   CompoundListItem(AndOrList(
                     first: Pipeline(
                       seq: [
-                        ExtendedTest(ExtendedTestExprCommand(
+                        Compound(ExtendedTest(ExtendedTestExprCommand(
                           expr: BinaryTest(StringExactlyMatchesPattern, Word(
                             value: "${FOO@a}",
                             loc: "[location]",
@@ -42,7 +42,7 @@ ParseResult(
                             loc: "[location]",
                           )),
                           loc: "[location]",
-                        ), None),
+                        )), None),
                       ],
                     ),
                   ), Sequence),
@@ -53,7 +53,7 @@ ParseResult(
                       CompoundListItem(AndOrList(
                         first: Pipeline(
                           seq: [
-                            ExtendedTest(ExtendedTestExprCommand(
+                            Compound(ExtendedTest(ExtendedTestExprCommand(
                               expr: BinaryTest(StringExactlyMatchesPattern, Word(
                                 value: "$(declare -p FOO)",
                                 loc: "[location]",
@@ -62,7 +62,7 @@ ParseResult(
                                 loc: "[location]",
                               )),
                               loc: "[location]",
-                            ), None),
+                            )), None),
                           ],
                         ),
                       ), Sequence),

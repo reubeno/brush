@@ -249,7 +249,6 @@ cases:
       echo "${y%%[^<{}()]}"
 
   - name: "Literal close bracket in bracket expression"
-    known_failure: true
     stdin: |
       y='hello]'
       echo "${y%%[]]}"

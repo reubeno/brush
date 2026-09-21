@@ -125,6 +125,34 @@ mod unimp;
 pub use builder::ShellExt;
 pub use factory::{BuiltinSet, register_default_builtins};
 
+/// Writes everything buffered for stdout so far and empties the buffer.
+///
+/// Builtins that collect their standard output in a `Vec` (so it can be written
+/// asynchronously in one go) must call this before writing a diagnostic to
+/// stderr: otherwise the two streams come out in the wrong order under `2>&1`.
+#[cfg(any(feature = "builtin.command", feature = "builtin.type"))]
+async fn flush_buffered_stdout<SE: brush_core::ShellExtensions>(
+    context: &brush_core::ExecutionContext<'_, SE>,
+    output: &mut Vec<u8>,
+) -> Result<(), brush_core::Error> {
+    use std::io::Write;
+
+    if output.is_empty() {
+        return Ok(());
+    }
+
+    if let Some(mut stdout) = context.stdout_async() {
+        stdout.write_all(output).await?;
+        stdout.flush().await?;
+    } else {
+        context.stdout().write_all(output)?;
+        context.stdout().flush()?;
+    }
+
+    output.clear();
+    Ok(())
+}
+
 /// Writes an alias definition in the reusable form printed by `alias` and `command -v`.
 #[cfg(any(feature = "builtin.alias", feature = "builtin.command"))]
 fn write_alias_definition(

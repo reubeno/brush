@@ -160,12 +160,12 @@ impl builtins::Command for DeclareCommand {
                         result = ExecutionResult::general_error();
                     }
                 } else {
-                    let ok = if self.make_associative_array.is_some()
+                    let ok = if self.make_associative_array.to_bool() == Some(true)
                         && Self::is_scalar_compound_assign(declaration)
                     {
                         self.lift_scalar_assoc_array(&mut context, declaration, verb)
                             .await?
-                    } else if self.make_indexed_array.is_some()
+                    } else if self.make_indexed_array.to_bool() == Some(true)
                         && Self::is_string_array_assignment(declaration)
                     {
                         self.lift_string_array_assignment(&mut context, declaration, verb)
@@ -379,15 +379,21 @@ impl DeclareCommand {
         // environment mutably.
         let initial_value = match initial_value {
             Some(ShellValueLiteral::Scalar(expr)) => {
+                let existing_is_integer_or_readonly =
+                    context.shell.env().get(name.as_str()).map(|resolved| {
+                        (
+                            resolved.base_var().is_treated_as_integer(),
+                            resolved.base_var().is_readonly(),
+                        )
+                    });
                 let integer_now = match self.make_integer.to_bool() {
                     Some(explicit) => explicit,
-                    None => context
-                        .shell
-                        .env()
-                        .get(name.as_str())
-                        .is_some_and(|resolved| resolved.base_var().is_treated_as_integer()),
+                    None => existing_is_integer_or_readonly.is_some_and(|(is_int, _)| is_int),
                 };
-                if integer_now {
+                // A readonly target rejects the assignment before its value is
+                // examined, so the expression's side effects must not run either.
+                let target_is_readonly = existing_is_integer_or_readonly.is_some_and(|(_, ro)| ro);
+                if integer_now && !target_is_readonly {
                     let parsed = brush_parser::arithmetic::parse_with(
                         expr.as_str(),
                         context.shell.parser_options().parser_impl,
@@ -506,6 +512,27 @@ impl DeclareCommand {
                 matches!(var.value(), brush_core::ShellValue::Dynamic { .. })
                     .then(|| var.resolve_value(context.shell))
             });
+
+        // bash refuses to take the array attribute back off an existing array
+        // ("cannot destroy array variables in this way") rather than quietly
+        // turning it into a scalar, with or without a new value.
+        if (self.make_indexed_array.to_bool() == Some(false)
+            || self.make_associative_array.to_bool() == Some(false))
+            && context
+                .shell
+                .env()
+                .lookup(&resolved_name)
+                .in_scope(lookup)
+                .get_direct()
+                .is_some_and(|(_, var)| var.value().is_array())
+        {
+            writeln!(
+                context.stderr(),
+                "{}: {name}: cannot destroy array variables in this way",
+                context.command_name
+            )?;
+            return Ok(false);
+        }
 
         // Look up the variable.
         if let Some((_, var)) = context
@@ -653,10 +680,16 @@ impl DeclareCommand {
 
         let source_info = brush_core::SourceInfo::from("declare-array-literal");
         let params = context.params.clone();
-        context
+        // The lifted declaration is the real one: if it failed (say the target is
+        // readonly), so did this command.
+        if !context
             .shell
             .run_string(script, &source_info, &params)
-            .await?;
+            .await?
+            .is_success()
+        {
+            return Ok(false);
+        }
 
         // Apply any further attributes (readonly, export, etc.) that were on the original
         // declaration by re-processing just the variable name (no initial value).
@@ -691,10 +724,16 @@ impl DeclareCommand {
 
         let source_info = brush_core::SourceInfo::from("declare-string-array");
         let params = context.params.clone();
-        context
+        // The lifted declaration is the real one: if it failed (say the target is
+        // readonly), so did this command.
+        if !context
             .shell
             .run_string(script, &source_info, &params)
-            .await?;
+            .await?
+            .is_success()
+        {
+            return Ok(false);
+        }
 
         let name_only = brush_core::CommandArg::String(var_name.to_owned());
         self.process_declaration(context, &name_only, verb)

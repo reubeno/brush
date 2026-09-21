@@ -849,9 +849,10 @@ impl ShellEnvironment {
     /// Retrieves the string value of a variable, resolving namerefs and subscripts
     /// correctly.
     ///
-    /// Convenience shorthand for `self.get(name)?.value_str(shell)`. Prefer
-    /// [`ResolvedVarRef::value_str`] when you already have a resolved reference,
-    /// or when you also need to inspect the variable's type/attributes.
+    /// `None` means only that no such variable exists: a variable that exists but
+    /// holds no value (e.g. after a bare `declare x`) yields `Some("")`, the same
+    /// string `${x}` expands to. Callers that need to tell those apart should use
+    /// [`ResolvedVarRef::value_str`], which returns `None` for an unset value.
     ///
     /// # Arguments
     ///
@@ -862,7 +863,8 @@ impl ShellEnvironment {
         name: S,
         shell: &Shell<SE>,
     ) -> Option<Cow<'_, str>> {
-        self.get(name)?.value_str(shell)
+        let resolved = self.get(name)?;
+        Some(resolved.value_str(shell).unwrap_or(Cow::Borrowed("")))
     }
 
     /// Checks if a variable of the given name is set in the environment,

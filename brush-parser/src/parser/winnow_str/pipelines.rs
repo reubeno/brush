@@ -65,14 +65,6 @@ fn add_redirect_to_command(cmd: &mut ast::Command, redirect: ast::IoRedirect) {
                 func.body.1 = Some(ast::RedirectList(vec![redirect]));
             }
         }
-        ast::Command::ExtendedTest(_, rlist) => {
-            // Add redirect to extended test
-            if let Some(rlist) = rlist {
-                rlist.0.push(redirect);
-            } else {
-                *rlist = Some(ast::RedirectList(vec![redirect]));
-            }
-        }
     }
 }
 

@@ -60,6 +60,8 @@ impl CommandCommand {
                 .next()
             else {
                 if self.print_verbose_description {
+                    // Keep the two streams in loop order when they're merged (`2>&1`).
+                    crate::flush_buffered_stdout(context, &mut output).await?;
                     writeln!(context.stderr(), "command: {name}: not found")?;
                 }
                 continue;
@@ -99,15 +101,7 @@ impl CommandCommand {
             }
         }
 
-        if !output.is_empty() {
-            if let Some(mut stdout) = context.stdout_async() {
-                stdout.write_all(&output).await?;
-                stdout.flush().await?;
-            } else {
-                context.stdout().write_all(&output)?;
-                context.stdout().flush()?;
-            }
-        }
+        crate::flush_buffered_stdout(context, &mut output).await?;
 
         if any_found {
             Ok(ExecutionResult::success())

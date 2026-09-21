@@ -750,9 +750,6 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) {
         }
         ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
         ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
-        // The PEG grammar never produces a bare `[[ ... ]]` command (only the
-        // winnow grammar does), but the redirect attaches the same way.
-        ast::Command::ExtendedTest(_, l) => add_to_redirect_list(l, r),
     }
 }
 

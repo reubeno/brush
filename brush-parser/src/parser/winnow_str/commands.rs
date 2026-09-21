@@ -474,7 +474,9 @@ pub(super) fn command<'a>(
                         extended_test_command(ctx, tracker),
                         optional_redirects(ctx, tracker),
                     )
-                        .map(|(cmd, r)| ast::Command::ExtendedTest(cmd, r))
+                        .map(|(cmd, r)| {
+                            ast::Command::Compound(ast::CompoundCommand::ExtendedTest(cmd), r)
+                        })
                         .parse_next(input)
                 } else {
                     // Single [ is the test command (simple command)

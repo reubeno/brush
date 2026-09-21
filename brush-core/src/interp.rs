@@ -691,28 +691,6 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                 .execute(&mut pipeline_context.shell, &params)
                 .await?
                 .into()),
-            Self::ExtendedTest(e, redirects) => {
-                // Set up any additional redirects.
-                if let Some(redirects) = redirects {
-                    for redirect in &redirects.0 {
-                        setup_redirect(&mut pipeline_context.shell, &mut params, redirect).await?;
-                    }
-                }
-
-                // Evaluate the extended test expression.
-                let result = if extendedtests::eval_extended_test_expr(
-                    &e.expr,
-                    &mut pipeline_context.shell,
-                    &params,
-                )
-                .await?
-                {
-                    0
-                } else {
-                    1
-                };
-                Ok(ExecutionResult::new(result).into())
-            }
         }
     }
 }
@@ -756,21 +734,6 @@ impl Execute for ast::Command {
                 compound.execute(shell, &params).await
             }
             Self::Function(func) => func.execute(shell, params).await,
-            Self::ExtendedTest(e, redirects) => {
-                let mut params = params.clone();
-                if let Some(redirects) = redirects {
-                    for redirect in &redirects.0 {
-                        setup_redirect(shell, &mut params, redirect).await?;
-                    }
-                }
-                let result =
-                    if extendedtests::eval_extended_test_expr(&e.expr, shell, &params).await? {
-                        0
-                    } else {
-                        1
-                    };
-                Ok(ExecutionResult::new(result))
-            }
         }
     }
 }

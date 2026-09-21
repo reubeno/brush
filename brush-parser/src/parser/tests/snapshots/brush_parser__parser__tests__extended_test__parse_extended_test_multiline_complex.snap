@@ -10,7 +10,7 @@ ParseResult(
         CompoundListItem(AndOrList(
           first: Pipeline(
             seq: [
-              ExtendedTest(ExtendedTestExprCommand(
+              Compound(ExtendedTest(ExtendedTestExprCommand(
                 expr: And(And(And(UnaryTest(StringHasZeroLength, Word(
                   value: "${a}",
                   loc: "[location]",
@@ -25,7 +25,7 @@ ParseResult(
                   loc: "[location]",
                 ))),
                 loc: "[location]",
-              ), None),
+              )), None),
             ],
           ),
         ), Sequence),

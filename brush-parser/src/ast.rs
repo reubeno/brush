@@ -468,8 +468,6 @@ pub enum Command {
     Compound(CompoundCommand, Option<RedirectList>),
     /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
-    /// A command that evaluates an extended test expression.
-    ExtendedTest(ExtendedTestExprCommand, Option<RedirectList>),
 }
 
 impl Node for Command {}
@@ -485,7 +483,6 @@ impl SourceLocation for Command {
                 }
             }
             Self::Function(f) => f.location(),
-            Self::ExtendedTest(e, _) => e.location(),
         }
     }
 }
@@ -499,11 +496,9 @@ impl Command {
     fn ends_in_heredoc(&self) -> bool {
         match self {
             Self::Simple(simple_command) => simple_command.ends_in_heredoc(),
-            Self::Compound(_, redirect_list) | Self::ExtendedTest(_, redirect_list) => {
-                redirect_list
-                    .as_ref()
-                    .is_some_and(RedirectList::ends_in_heredoc)
-            }
+            Self::Compound(_, redirect_list) => redirect_list
+                .as_ref()
+                .is_some_and(RedirectList::ends_in_heredoc),
             Self::Function(function_definition) => function_definition
                 .body
                 .1
@@ -530,13 +525,6 @@ impl Display for Command {
                 Ok(())
             }
             Self::Function(function_definition) => write!(f, "{function_definition}"),
-            Self::ExtendedTest(extended_test_expr, redirect_list) => {
-                write!(f, "[[ {extended_test_expr} ]]")?;
-                if let Some(redirect_list) = redirect_list {
-                    write!(f, " {redirect_list}")?;
-                }
-                Ok(())
-            }
         }
     }
 }
@@ -1090,22 +1078,10 @@ impl Display for CaseItem {
         writeln!(f, ")")?;
 
         if let Some(cmd) = &self.cmd {
+            // Like bash, no `;` is written before the `;;`: the newline that
+            // follows already terminates the last statement, and both of our
+            // grammars accept that.
             write_indented(f, cmd)?;
-            // `CompoundList`'s own `Display` omits the last item's `;` when
-            // it's a bare `Sequence` separator — correct right before a
-            // keyword like `}`/`fi`/`done` that already implies statement
-            // termination, but wrong here: what follows is `;;`, which
-            // (unlike real bash, which accepts a bare newline there too)
-            // our own parser requires an explicit separator before. Restore
-            // it — unless the last item already ends in a here-document,
-            // whose own closing delimiter line must never be followed by a
-            // `;` in this position either (see `ends_in_heredoc`).
-            if let Some(last) = cmd.0.last()
-                && matches!(last.1, SeparatorOperator::Sequence)
-                && !last.0.ends_in_heredoc()
-            {
-                write!(f, ";")?;
-            }
         }
         writeln!(f)?;
         write!(f, "{}", self.post_action)

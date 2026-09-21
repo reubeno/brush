@@ -51,14 +51,15 @@ impl builtins::Command for TypeCommand {
             path_dirs: None,
         };
         let mut output = Vec::new();
-        let mut stderr_output = Vec::new();
 
         for name in &self.names {
             let resolved_types = lookup::resolve(context.shell, name, &options);
 
             if resolved_types.is_empty() {
                 if !self.type_only && !self.force_path_search && !self.show_path_only {
-                    writeln!(stderr_output, "type: {name}: not found")?;
+                    // Keep the two streams in loop order when they're merged (`2>&1`).
+                    crate::flush_buffered_stdout(&context, &mut output).await?;
+                    writeln!(context.stderr(), "type: {name}: not found")?;
                 }
 
                 result = ExecutionResult::general_error();
@@ -110,22 +111,7 @@ impl builtins::Command for TypeCommand {
             }
         }
 
-        // Write output async
-        if !output.is_empty() {
-            if let Some(mut stdout) = context.stdout_async() {
-                stdout.write_all(&output).await?;
-                stdout.flush().await?;
-            } else {
-                context.stdout().write_all(&output)?;
-                context.stdout().flush()?;
-            }
-        }
-
-        // Write stderr
-        if !stderr_output.is_empty() {
-            context.stderr().write_all(&stderr_output)?;
-            context.stderr().flush()?;
-        }
+        crate::flush_buffered_stdout(&context, &mut output).await?;
 
         Ok(result)
     }

@@ -920,11 +920,26 @@ peg::parser! {
         rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
             is_true(in_command) extglob_pattern() /
             is_true(in_command) subshell_command() /
-            is_true(in_command) !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`' | '#'] {} /
+            is_true(in_command) !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() !comment_start() [^'\'' | '\"' | '$' | '`'] {} /
             is_false(in_command) !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
 
         rule enabled_tilde_expr_after_colon() -> WordPiece =
             tilde_exprs_after_colon_enabled() last_char_is_colon() piece:tilde_expression_piece() { piece }
+
+        // A '#' only opens a comment at the start of a word, so `echo a#b` keeps its
+        // '#' as ordinary text while `echo one # note` does not.
+        rule comment_start() = last_char_is_blank_or_start() "#" {}
+
+        rule last_char_is_blank_or_start() = #{|input, pos| {
+            if pos == 0 {
+                peg::RuleResult::Matched(pos, ())
+            } else {
+                match input.as_bytes()[pos - 1] {
+                    b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'(' => peg::RuleResult::Matched(pos, ()),
+                    _ => peg::RuleResult::Failed,
+                }
+            }
+        }}
 
         rule last_char_is_colon() = #{|input, pos| {
             if pos == 0 {

@@ -687,42 +687,23 @@ impl ReadCommand {
         let mut line = String::new();
         let mut pending_backslash = false;
         let mut buf = [0u8; 1];
+        // Bytes of a multi-byte UTF-8 sequence seen so far, and the characters a
+        // malformed sequence still owes the caller (one per byte, as the blocking
+        // reader does). `read` counts and delimits characters, not bytes.
+        let mut utf8_buf: Vec<u8> = Vec::new();
+        let mut pending_chars: std::collections::VecDeque<char> = std::collections::VecDeque::new();
 
         // Set up timeout if specified
         let deadline = timeout.map(|t| Instant::now() + t);
 
         loop {
-            // Check timeout before attempting read
-            if let Some(deadline) = deadline {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    if pending_backslash {
-                        line.push(BACKSLASH);
-                    }
-                    return Ok(ReadResult::TimedOut(if line.is_empty() {
-                        None
-                    } else {
-                        Some(line)
-                    }));
-                }
-
-                // Use tokio::time::timeout for async read with deadline
-                match tokio::time::timeout(remaining, input.read(&mut buf)).await {
-                    Ok(Ok(0)) => {
-                        // EOF
-                        return Ok(ReadResult::Eof(if line.is_empty() {
-                            None
-                        } else {
-                            Some(line)
-                        }));
-                    }
-                    Ok(Ok(1)) => {
-                        // Got a byte
-                    }
-                    Ok(Ok(_)) => unreachable!("read can only return 0, 1, or error"),
-                    Ok(Err(e)) => return Err(e.into()),
-                    Err(_) => {
-                        // Timeout
+            let ch = if let Some(ch) = pending_chars.pop_front() {
+                ch
+            } else {
+                // Check timeout before attempting read
+                if let Some(deadline) = deadline {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() {
                         if pending_backslash {
                             line.push(BACKSLASH);
                         }
@@ -732,26 +713,86 @@ impl ReadCommand {
                             Some(line)
                         }));
                     }
-                }
-            } else {
-                // No timeout - direct async read
-                match input.read(&mut buf).await {
-                    Ok(0) => {
-                        return Ok(ReadResult::Eof(if line.is_empty() {
-                            None
-                        } else {
-                            Some(line)
-                        }));
-                    }
-                    Ok(1) => {
-                        // Got a byte
-                    }
-                    Ok(_) => unreachable!("read can only return 0, 1, or error"),
-                    Err(e) => return Err(e.into()),
-                }
-            }
 
-            let ch = buf[0] as char;
+                    // Use tokio::time::timeout for async read with deadline
+                    match tokio::time::timeout(remaining, input.read(&mut buf)).await {
+                        Ok(Ok(0)) => {
+                            // EOF with a partial sequence still buffered: hand its
+                            // bytes back one at a time, as the blocking reader does.
+                            line.extend(utf8_buf.iter().copied().map(char::from));
+                            return Ok(ReadResult::Eof(if line.is_empty() {
+                                None
+                            } else {
+                                Some(line)
+                            }));
+                        }
+                        Ok(Ok(1)) => {
+                            // Got a byte
+                        }
+                        Ok(Ok(_)) => unreachable!("read can only return 0, 1, or error"),
+                        Ok(Err(e)) => return Err(e.into()),
+                        Err(_) => {
+                            // Timeout
+                            if pending_backslash {
+                                line.push(BACKSLASH);
+                            }
+                            return Ok(ReadResult::TimedOut(if line.is_empty() {
+                                None
+                            } else {
+                                Some(line)
+                            }));
+                        }
+                    }
+                } else {
+                    // No timeout - direct async read
+                    match input.read(&mut buf).await {
+                        Ok(0) => {
+                            // EOF with a partial sequence still buffered: hand its
+                            // bytes back one at a time, as the blocking reader does.
+                            line.extend(utf8_buf.iter().copied().map(char::from));
+                            return Ok(ReadResult::Eof(if line.is_empty() {
+                                None
+                            } else {
+                                Some(line)
+                            }));
+                        }
+                        Ok(1) => {
+                            // Got a byte
+                        }
+                        Ok(_) => unreachable!("read can only return 0, 1, or error"),
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+
+                utf8_buf.push(buf[0]);
+                match std::str::from_utf8(&utf8_buf) {
+                    Ok(decoded) => {
+                        // A complete sequence; `from_utf8` on at most four bytes that
+                        // end a sequence yields exactly one character.
+                        let ch = decoded
+                            .chars()
+                            .next()
+                            .unwrap_or(char::REPLACEMENT_CHARACTER);
+                        utf8_buf.clear();
+                        ch
+                    }
+                    // More bytes are still owed to this sequence.
+                    Err(e) if e.error_len().is_none() && utf8_buf.len() < 4 => continue,
+                    Err(_) => {
+                        // Not valid UTF-8. Hand the bytes back one at a time, like the
+                        // blocking reader does.
+                        //
+                        // TODO(utf-8): `line` is a `String`, so an invalid byte can't
+                        // round-trip; bash preserves it verbatim, we re-encode it.
+                        pending_chars.extend(utf8_buf.iter().copied().map(char::from));
+                        utf8_buf.clear();
+                        match pending_chars.pop_front() {
+                            Some(ch) => ch,
+                            None => continue,
+                        }
+                    }
+                }
+            };
 
             // Handle control characters
             match ch {
@@ -780,8 +821,9 @@ impl ReadCommand {
 
                     line.push(ch);
 
+                    // `-n`/`-N` count characters, not bytes.
                     if let Some(limit) = char_limit
-                        && line.len() >= limit
+                        && line.chars().count() >= limit
                     {
                         return Ok(ReadResult::Line(line));
                     }
@@ -808,8 +850,9 @@ impl ReadCommand {
 
             line.push(ch);
 
+            // `-n`/`-N` count characters, not bytes.
             if let Some(limit) = char_limit
-                && line.len() >= limit
+                && line.chars().count() >= limit
             {
                 return Ok(ReadResult::Line(line));
             }
