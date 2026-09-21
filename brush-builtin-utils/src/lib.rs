@@ -5,7 +5,7 @@
 //! those contracts easy to satisfy with a particular engine. Each engine sits
 //! behind its own feature; [`verbatim`], which parses nothing, needs none.
 
-pub mod args;
+mod args;
 #[cfg(feature = "clap")]
 pub mod clap_adapter;
 pub mod verbatim;

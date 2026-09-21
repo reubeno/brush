@@ -108,6 +108,9 @@ pub trait HelpContent {
 }
 
 /// Options for retrieving built-in command content.
+///
+/// Non-exhaustive so options can be added without breaking implementors:
+/// construct with [`ContentOptions::default`] and set the fields you need.
 #[derive(Default)]
 #[non_exhaustive]
 pub struct ContentOptions {

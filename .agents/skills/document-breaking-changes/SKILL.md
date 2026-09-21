@@ -1,6 +1,6 @@
 ---
 name: document-breaking-changes
-description: How to document a breaking API or behaviour change to a published brush crate: the migration guide pair (crate-shipped agent guide plus human walkthrough), the commit footer, rustdoc notes, and tests. Use whenever a change removes, renames, or re-types public API in a library-tier crate, changes a convention that compiles unchanged, or changes observable shell behaviour that embedders or scripts could depend on.
+description: How to document a breaking API or behavior change to a published brush crate: the migration guide pair (crate-shipped agent guide plus human walkthrough), the commit footer, rustdoc notes, and tests. Use whenever a change removes, renames, or re-types public API in a library-tier crate, changes a convention that compiles unchanged, or changes observable shell behavior that embedders or scripts could depend on.
 ---
 
 # Documenting breaking changes
@@ -22,7 +22,7 @@ Go through the diff and list each incompatible change as one of:
   kind: a changed argument convention, a changed default, a field that means
   something else. Call these out separately and give a verification step a
   reader can run.
-- **BEHAVIOUR**: no API change, but scripts or embedders can observe a
+- **BEHAVIOR**: no API change, but scripts or embedders can observe a
   difference (an error now reported, output framed differently).
 
 If you are unsure whether something is breaking, it is: any change to an item
@@ -60,7 +60,7 @@ Body, in this order:
      is a substring of another.
    - *Verify* (SILENT and CONDITIONAL entries): a command or check that
      proves the fix took.
-5. **Additive APIs** (no action) and **Behaviour changes** (no code change;
+5. **Additive APIs** (no action) and **Behavior changes** (no code change;
    check tests).
 6. **VERIFY**: a build command and one grep over all removed identifiers that
    must print nothing.
@@ -75,7 +75,7 @@ Location: `docs/migrations/<crate>/<from>-to-<to>.md`. Add it to the table in
 
 Contents: what changed and why (two or three paragraphs), a quick summary, then
 steps for the two or three cases most users hit, with before/after snippets,
-then behaviour changes, then how to verify. Link to the agent guide for the
+then behavior changes, then how to verify. Link to the agent guide for the
 exhaustive list. SILENT changes get their own step with the word "silent" in
 it.
 
@@ -88,7 +88,7 @@ it.
 - Rustdoc: on the item that replaces a removed one, and on any item whose
   convention changed silently, add a short note ("Since <to>, …") so someone
   who lands there from a compile error sees the migration without searching.
-- Tests: BEHAVIOUR changes get a compat YAML case under
+- Tests: BEHAVIOR changes get a compat YAML case under
   `brush-shell/tests/cases/`; removed macro forms get a compile-fail case with
   a clear message where a macro is involved.
 

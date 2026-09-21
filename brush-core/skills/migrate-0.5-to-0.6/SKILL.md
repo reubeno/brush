@@ -156,7 +156,7 @@ Action, by case:
 | `Default` clap type + `impl DeclarationCommand` + `raw_arg_builtin::<T, SE>()` | delete the impl and the derive; `verbatim_builtin!(T, args = field, synopsis = "...", description = "...");` register with `builtin::<T, _>()` |
 | hand-written type | in `impl FromArgs`, add `const TAKES_DECLARATIONS: bool = true;` and take the operands out of `args` yourself |
 
-Behaviour: the shell no longer splits options from operands for you. The
+Behavior: the shell no longer splits options from operands for you. The
 adapter's `declarations` mode applies bash's rule (options are the leading
 words starting with `-` or `+`; the first operand or a `--` ends them). The old
 core splitter treated every dash-prefixed word as an option regardless of
@@ -338,10 +338,9 @@ example is `cargo run --package brush-builtin-utils --example clap-builtin`.
 - `ShellBuilder::command::<T>(name)`: shorthand for
   `.builtin(name, builtins::builtin::<T, _>())`.
 - `builtins::builtin::<T, SE>()` is `const`; `SE` is inferable, write `_`.
-- `brush_builtin_utils::args::{into_words, split_leading_options}`.
 - `brush_builtin_utils::verbatim_builtin!`.
 
-## Behaviour changes (no code change; check tests)
+## Behavior changes (no code change; check tests)
 
 - `declare`, `typeset`, `local`, `readonly`, `export`: options end at the first
   operand, as in bash. `declare a=1 -x` now treats `-x` as a name.

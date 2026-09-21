@@ -74,8 +74,9 @@ pub fn parse_with_trailing<T: clap::Parser>(
 /// Like [`parse`], but parses only the leading options with clap.
 ///
 /// Returns the operands after them untouched, so declarations keep their
-/// assignment form. See [`crate::args::split_leading_options`] for where options
-/// end, and [`crate::clap_builtin`]'s `declarations` option.
+/// assignment form. Options are the leading words that begin with `-` or `+`;
+/// the first other word ends them, as does `--`, which is dropped. See
+/// [`crate::clap_builtin`]'s `declarations` option.
 ///
 /// # Arguments
 ///
