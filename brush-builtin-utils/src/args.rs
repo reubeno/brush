@@ -7,7 +7,7 @@
 use brush_core::CommandArg;
 
 /// Flattens arguments into plain words. Assignments render as `name=value`.
-pub fn into_words(args: Vec<CommandArg>) -> Vec<String> {
+pub(crate) fn into_words(args: Vec<CommandArg>) -> Vec<String> {
     args.into_iter()
         .map(|arg| match arg {
             CommandArg::String(s) => s,
@@ -26,7 +26,7 @@ pub fn into_words(args: Vec<CommandArg>) -> Vec<String> {
 ///
 /// Assumes no option takes its value as a separate argument, which holds for
 /// every declaration builtin.
-pub fn split_leading_options(mut args: Vec<CommandArg>) -> (Vec<String>, Vec<CommandArg>) {
+pub(crate) fn split_leading_options(mut args: Vec<CommandArg>) -> (Vec<String>, Vec<CommandArg>) {
     let end = args
         .iter()
         .position(|arg| match arg {
