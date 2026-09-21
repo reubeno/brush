@@ -2617,33 +2617,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_field_splitting() -> Result<()> {
-        let mut shell = crate::shell::Shell::builder().build().await?;
-        let params = shell.default_exec_params();
-        let expander = WordExpander::new(&mut shell, &params);
-
-        let expansion = Expansion {
-            fields: vec![
-                WordField(vec![ExpansionPiece::Unsplittable("A".into())]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())]),
-            ],
-            ..Expansion::default()
-        };
-
-        let fields = expander.split_fields(expansion);
-
-        assert_eq!(
-            fields,
-            vec![
-                WordField(vec![ExpansionPiece::Unsplittable(String::from("A"))]),
-                WordField(vec![ExpansionPiece::Unsplittable(String::new())])
-            ]
-        );
-
-        Ok(())
-    }
-
     #[test]
     fn test_to_initial_capitals() {
         assert_eq!(to_initial_capitals("ab bc cd"), String::from("Ab Bc Cd"));

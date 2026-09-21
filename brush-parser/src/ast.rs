@@ -468,6 +468,8 @@ pub enum Command {
     Compound(CompoundCommand, Option<RedirectList>),
     /// A command whose side effect is to define a shell function.
     Function(FunctionDefinition),
+    /// A command that evaluates an extended test expression.
+    ExtendedTest(ExtendedTestExprCommand, Option<RedirectList>),
 }
 
 impl Node for Command {}
@@ -483,6 +485,7 @@ impl SourceLocation for Command {
                 }
             }
             Self::Function(f) => f.location(),
+            Self::ExtendedTest(e, _) => e.location(),
         }
     }
 }

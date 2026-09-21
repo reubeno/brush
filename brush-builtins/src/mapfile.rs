@@ -68,8 +68,8 @@ impl builtins::Command for MapFileCommand {
             }
         }
 
-        if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
-            if var.value().is_associative_array() {
+        if let Some(resolved) = context.shell.env().get(&self.array_var_name) {
+            if resolved.base_var().value().is_associative_array() {
                 writeln!(
                     context.stderr(),
                     "{}: {}: not an indexed array",
