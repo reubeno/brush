@@ -1,7 +1,7 @@
 # Environment for running fzf's bash shell-integration tests. Package list derived from
 # fzf's Dockerfile (https://github.com/junegunn/fzf/blob/master/Dockerfile, MIT license),
 # trimmed to what the bash tests need. fzf itself is cloned at build time, pinned below.
-FROM rubylang/ruby:3.4.1-noble
+FROM rubylang/ruby:4.0.7-noble
 ARG FZF_REF=52f4319a72c17e123396cc3a2e6abf2e96e9d753
 RUN apt-get update && apt-get install -y --no-install-recommends git make golang tmux ca-certificates \
     && rm -rf /var/lib/apt/lists/*

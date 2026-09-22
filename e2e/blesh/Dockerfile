@@ -2,7 +2,7 @@
 # `make check` runs; see https://github.com/akinomyoga/ble.sh/blob/master/.github/workflows/test.yml,
 # BSD-3-Clause). Build needs git, GNU make and gawk (per upstream README). ble.sh is cloned and
 # built at image build time, pinned below. less: the pager test expects it; procps: ps for hang diagnostics.
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 ARG BLESH_REF=63c23e99f1f7133ae57b79f87b16d1f68cd39884
 RUN apt-get update && apt-get install -y --no-install-recommends git make gawk less procps ca-certificates \
         python3 python3-pytest \
