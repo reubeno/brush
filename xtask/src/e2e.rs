@@ -24,10 +24,14 @@ use crate::test::BinaryArgs;
 /// Arguments for containerized end-to-end tests.
 #[derive(Args, Clone)]
 pub struct E2eArgs {
-    /// Applications to test. Runs all adapters except the opt-in ones (blesh, bash-tests) when
-    /// omitted.
+    /// Applications to test. Runs all adapters except the opt-in ones (blesh, bash-tests,
+    /// bash-completion) when omitted.
     #[clap(value_name = "APP")]
     apps: Vec<String>,
+
+    /// Add an opt-in adapter to the default selection. May be repeated.
+    #[clap(long = "with", value_name = "APP", conflicts_with = "apps")]
+    with: Vec<String>,
 
     /// Test the applications against Bash instead of brush.
     #[clap(long, conflicts_with = "shell")]
@@ -138,6 +142,9 @@ pub fn run(binary_args: &BinaryArgs, args: &E2eArgs, verbose: bool) -> Result<()
             read_junit_summary(&results, expected, args.adapter_args.is_empty()),
         );
         report.select_args = read_select_args(&e2e_dir.join(app))?;
+        if e2e_dir.join(app).join(REPORT_ONLY).is_file() {
+            report.make_report_only();
+        }
         eprintln!("{}", report.line(color));
         reports.push(report);
     }
@@ -153,7 +160,7 @@ pub fn run(binary_args: &BinaryArgs, args: &E2eArgs, verbose: bool) -> Result<()
 
 /// The run as a Markdown dashboard: a one-line verdict, a table with one row per adapter, then a
 /// collapsible list of names for each thing worth acting on. A clean run is the verdict and the
-/// table alone. Emoji match `scripts/summarize-pytest-results.py`, which shares the PR comment.
+/// table alone.
 fn render_markdown(reports: &[AdapterReport], elapsed: Duration) -> String {
     use std::fmt::Write as _;
 
@@ -172,24 +179,26 @@ fn render_markdown(reports: &[AdapterReport], elapsed: Duration) -> String {
     }
 
     // Known gaps keep a pass from reading as all clear, as the terminal's yellow does.
-    let verdict = |failed: bool, xfailed: usize| {
+    let verdict = |failed: bool, gaps: bool| {
         if failed {
             "❌"
-        } else if xfailed > 0 {
+        } else if gaps {
             "🟡"
         } else {
             "✅"
         }
     };
+    let excused = reports.iter().any(AdapterReport::has_excused_failures);
     let mut md = String::from("## 🧪 End-to-end suites\n\n");
     let _ = write!(
         md,
-        "**{} {}/{} adapters passed** · {} tests · {} ✅",
-        verdict(failed > 0, totals.xfailed),
+        "**{} {}/{} adapters passed** · {} tests · {} ✅ ({})",
+        verdict(failed > 0, totals.xfailed > 0 || excused),
         reports.len() - failed,
         reports.len(),
         totals.tests,
         totals.passed(),
+        totals.pass_rate(),
     );
     for (n, emoji) in [
         (totals.failures.len(), "❌"),
@@ -202,13 +211,18 @@ fn render_markdown(reports: &[AdapterReport], elapsed: Duration) -> String {
     }
     let _ = writeln!(md, " · ⏱ {}\n", format_duration(elapsed));
 
-    md.push_str("|    | adapter | ✅ pass | ❌ fail | ❎ xfail | ⏩ skip | ⏱ time |\n");
-    md.push_str("|:--:|---------|--------:|--------:|---------:|--------:|--------:|\n");
+    md.push_str("|    | adapter | % pass | ✅ pass | ❌ fail | ❎ xfail | ⏩ skip | ⏱ time |\n");
+    md.push_str("|:--:|---------|-------:|--------:|--------:|---------:|--------:|--------:|\n");
     for report in reports {
         let (status, cells) = match &report.summary {
             Some(summary) => (
-                verdict(report.failed, summary.xfailed),
+                if report.has_excused_failures() {
+                    "📊"
+                } else {
+                    verdict(report.failed, summary.xfailed > 0)
+                },
                 [
+                    summary.pass_rate(),
                     cell(summary.passed()),
                     cell(summary.failures.len()),
                     cell(summary.xfailed),
@@ -219,12 +233,13 @@ fn render_markdown(reports: &[AdapterReport], elapsed: Duration) -> String {
         };
         let _ = writeln!(
             md,
-            "| {status} | {} | {} | {} | {} | {} | {} |",
+            "| {status} | {} | {} | {} | {} | {} | {} | {} |",
             report.app,
             cells[0],
             cells[1],
             cells[2],
             cells[3],
+            cells[4],
             format_duration(report.elapsed)
         );
     }
@@ -288,8 +303,9 @@ fn render_markdown_details(md: &mut String, report: &AdapterReport) {
     if let Some(summary) = &report.summary {
         let list = format!("e2e/{app}/xfail-list.txt");
         for (open, heading, entries) in [
+            // A report-only suite's failures are its expected state, and can run to hundreds.
             (
-                true,
+                !report.report_only,
                 format!("❌ {app} · {} failed", summary.failures.len()),
                 &summary.failures,
             ),
@@ -337,18 +353,22 @@ fn render_markdown_details(md: &mut String, report: &AdapterReport) {
 
 /// The adapters to run, rejecting a selection this runner cannot honor.
 fn select_e2e_apps(e2e_dir: &Path, args: &E2eArgs) -> Result<Vec<String>> {
-    let available = discover_e2e_apps(e2e_dir, !args.apps.is_empty())?;
-    let apps = if args.apps.is_empty() {
-        available
-    } else {
-        for app in &args.apps {
-            if !available.contains(app) {
-                anyhow::bail!(
-                    "unknown e2e adapter '{app}'; available adapters: {}",
-                    available.join(", ")
-                );
-            }
+    let available = discover_e2e_apps(e2e_dir, true)?;
+    for app in args.apps.iter().chain(&args.with) {
+        if !available.contains(app) {
+            anyhow::bail!(
+                "unknown e2e adapter '{app}'; available adapters: {}",
+                available.join(", ")
+            );
         }
+    }
+    let apps = if args.apps.is_empty() {
+        let mut apps = discover_e2e_apps(e2e_dir, false)?;
+        apps.extend(args.with.iter().cloned());
+        apps.sort();
+        apps.dedup();
+        apps
+    } else {
         args.apps.clone()
     };
 
@@ -453,6 +473,11 @@ fn report_e2e_results(reports: &[AdapterReport], elapsed: Duration, color: bool)
 struct AdapterReport {
     app: String,
     failed: bool,
+    /// Test failures are reported but excused (see [`REPORT_ONLY`]).
+    report_only: bool,
+    /// The adapter never ran to completion: its image did not build, docker would not start, or
+    /// it timed out. Nothing excuses that.
+    fatal: bool,
     /// Why the run itself went wrong: the adapter could not be run (image build failed, docker
     /// missing), its container exited non-zero, or its report could not be read.
     error: Option<String>,
@@ -502,6 +527,8 @@ impl AdapterReport {
         Self {
             app,
             failed,
+            report_only: false,
+            fatal,
             error,
             elapsed,
             summary,
@@ -510,11 +537,31 @@ impl AdapterReport {
         }
     }
 
+    /// Applies the [`REPORT_ONLY`] policy: failing tests, and the non-zero exit they cause, no
+    /// longer fail the adapter. A run that left no results still does.
+    const fn make_report_only(&mut self) {
+        self.report_only = true;
+        self.failed = self.fatal || self.summary.is_none();
+    }
+
+    /// Whether this report-only adapter had test failures that were excused.
+    fn has_excused_failures(&self) -> bool {
+        self.report_only && self.summary.as_ref().is_some_and(JunitSummary::is_failure)
+    }
+
     /// The command that runs one of this adapter's tests on its own.
     fn reproduce(&self, test: &str) -> String {
+        // A name kept qualified is ambiguous alone; pytest's `-k` takes the class alongside it.
+        let test = match test.rsplit_once("::") {
+            Some((class, name)) => {
+                let class = class.rsplit_once('.').map_or(class, |(_, class)| class);
+                format!("{class} and {name}")
+            }
+            None => test.to_owned(),
+        };
         let args = self
             .select_args
-            .replace(TEST_PLACEHOLDER, &shell_quote(test));
+            .replace(TEST_PLACEHOLDER, &shell_quote(&test));
         format!("cargo xtask test e2e {} -- {args}", self.app)
     }
 
@@ -524,10 +571,11 @@ impl AdapterReport {
             color,
             if self.failed {
                 AnsiColor::Red
-            } else if self
-                .summary
-                .as_ref()
-                .is_some_and(JunitSummary::has_expectations)
+            } else if self.has_excused_failures()
+                || self
+                    .summary
+                    .as_ref()
+                    .is_some_and(JunitSummary::has_expectations)
             {
                 AnsiColor::Yellow
             } else {
@@ -636,6 +684,9 @@ struct JunitSummary {
     /// Cases listed in `xfail-list.txt` that passed anyway: the gap they track is closed, and the
     /// entry has to go. Reported as a failure so a fix cannot land unnoticed.
     unexpected_passes: Vec<String>,
+    /// How many cases carry each bare name. Suites that reuse names across classes
+    /// (bash-completion's `test_1` in every file) need the class to tell failures apart.
+    name_counts: BTreeMap<String, usize>,
     /// Entries in `xfail-list.txt` matching no test that actually ran, so the list has gone
     /// stale: the test was renamed, removed, or moved to `skip-list.txt`.
     stale_expectations: Vec<String>,
@@ -672,6 +723,16 @@ impl JunitSummary {
     /// runner puts in each field differs.
     fn record(&mut self, case: junit_parser::TestCase, expected: &BTreeSet<String>) {
         self.tests += 1;
+        *self
+            .name_counts
+            .entry(case.original_name.clone())
+            .or_default() += 1;
+        // Qualified for now; `shorten_names` drops the class where the bare name is unambiguous.
+        let qualified = if case.classname.as_deref().is_some_and(|c| !c.is_empty()) {
+            case.name.clone()
+        } else {
+            case.original_name.clone()
+        };
         let expected_to_fail =
             expected.contains(&case.original_name) || expected.contains(&case.name);
         match case.status {
@@ -691,9 +752,8 @@ impl JunitSummary {
                         message
                     };
                     self.failure_messages
-                        .insert(case.original_name.clone(), message.clone());
-                    // The bare name; `case.name` is prefixed with the class name.
-                    self.failures.push(case.original_name);
+                        .insert(qualified.clone(), message.clone());
+                    self.failures.push(qualified);
                 }
             }
             junit_parser::TestStatus::Success => {
@@ -702,13 +762,41 @@ impl JunitSummary {
                 }
             }
             _ if is_declared_xfail(&case.status) => self.xfailed += 1,
-            junit_parser::TestStatus::Skipped(_) => self.skips.push(case.original_name),
+            junit_parser::TestStatus::Skipped(_) => self.skips.push(qualified),
         }
     }
 
     /// Cases that ran and passed, including any that `xfail-list.txt` said would not.
     const fn passed(&self) -> usize {
         self.tests - self.failures.len() - self.xfailed - self.skips.len()
+    }
+
+    /// Names each failure and skip by its bare name where that is unique in the suite, keeping
+    /// the `classname::name` form only where it is needed to tell cases apart.
+    fn shorten_names(&mut self) {
+        for name in self.failures.iter_mut().chain(&mut self.skips) {
+            let Some((_, bare)) = name.rsplit_once("::") else {
+                continue;
+            };
+            if self.name_counts.get(bare) == Some(&1) {
+                let bare = bare.to_owned();
+                if let Some(message) = self.failure_messages.remove(name) {
+                    self.failure_messages.insert(bare.clone(), message);
+                }
+                *name = bare;
+            }
+        }
+    }
+
+    /// Share of the tests that ran which passed, to one decimal place; blank when none ran.
+    fn pass_rate(&self) -> String {
+        let ran = self.tests - self.skips.len();
+        if ran == 0 {
+            return String::new();
+        }
+        // In integers, rounded: tenths of a percent.
+        let rate = (self.passed() * 1000 + ran / 2) / ran;
+        format!("{}.{}%", rate / 10, rate % 10)
     }
 
     /// Whether a test this adapter's `xfail-list.txt` predicted did fail, which is why the suite
@@ -862,12 +950,19 @@ fn read_junit_summary(
         summary.stale_expectations = expected.difference(&seen).cloned().collect();
     }
     anyhow::ensure!(summary.tests > 0, "JUnit reports contain no test cases");
+    summary.shorten_names();
     Ok(summary)
 }
 
 /// Adapters that run only when named: ble.sh spends minutes on compatibility failures and
 /// timeouts, and bash-tests stays opt-in until it has shown itself reliable.
-const OPT_IN_ADAPTERS: &[&str] = &["blesh", "bash-tests"];
+/// bash-completion's ~2000 tests take several minutes; CI adds it with `--with`.
+const OPT_IN_ADAPTERS: &[&str] = &["blesh", "bash-tests", "bash-completion"];
+
+/// Marks an adapter whose test failures are reported (with a pass rate) but do not fail the run;
+/// only a run that could not produce results does. For suites tracked by pass rate rather than
+/// an `xfail-list.txt`.
+const REPORT_ONLY: &str = "report-only";
 
 fn discover_e2e_apps(e2e_dir: &Path, include_opt_in: bool) -> Result<Vec<String>> {
     let mut apps = Vec::new();
@@ -1089,6 +1184,29 @@ mod tests {
         Ok(())
     }
 
+    /// A report-only adapter passes despite failing tests, but not when it never ran.
+    #[test]
+    fn a_report_only_adapter_excuses_test_failures_only() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        write_report(temp.path())?;
+        let report = |outcome| -> Result<bool> {
+            let mut report = AdapterReport::new(
+                "example".to_owned(),
+                temp.path().to_path_buf(),
+                Duration::ZERO,
+                outcome,
+                read_junit_summary(temp.path(), &BTreeSet::new(), true),
+            );
+            anyhow::ensure!(report.failed);
+            report.make_report_only();
+            Ok(report.failed)
+        };
+
+        anyhow::ensure!(!report(Ok(Some("container exited non-zero".to_owned())))?);
+        anyhow::ensure!(report(Err(anyhow::anyhow!("container timed out")))?);
+        Ok(())
+    }
+
     /// A row per adapter, blank cells for zero, and a collapsible per thing to act on: failures
     /// open, plain skips closed, and a run error only when no test failure explains the failure.
     #[test]
@@ -1138,18 +1256,31 @@ mod tests {
                 Err(anyhow::anyhow!("container build failed")),
                 Err(anyhow::anyhow!("no JUnit reports")),
             ),
+            report(
+                "bash-completion",
+                300,
+                Ok(Some("container exited non-zero".to_owned())),
+                Ok(JunitSummary {
+                    tests: 10,
+                    xfailed: 1,
+                    failures: vec!["test_1".to_owned()],
+                    ..Default::default()
+                }),
+            ),
         ];
         reports[1].select_args = "-n /{test}/".to_owned();
+        reports[3].make_report_only();
         let expected = "\
 ## 🧪 End-to-end suites
 
-**❌ 1/3 adapters passed** · 39 tests · 33 ✅ · 1 ❌ · 4 ❎ · 1 ⏩ · ⏱ 1m43.0s
+**❌ 2/4 adapters passed** · 49 tests · 41 ✅ (85.4%) · 2 ❌ · 5 ❎ · 1 ⏩ · ⏱ 1m43.0s
 
-|    | adapter | ✅ pass | ❌ fail | ❎ xfail | ⏩ skip | ⏱ time |
-|:--:|---------|--------:|--------:|---------:|--------:|--------:|
-| 🟡 | atuin | 4 |  | 1 |  | 7.0s |
-| ❌ | fzf | 29 | 1 | 3 | 1 | 1m35.0s |
-| 💥 | nvm | — | — | — | — | 1.0s |
+|    | adapter | % pass | ✅ pass | ❌ fail | ❎ xfail | ⏩ skip | ⏱ time |
+|:--:|---------|-------:|--------:|--------:|---------:|--------:|--------:|
+| 🟡 | atuin | 80.0% | 4 |  | 1 |  | 7.0s |
+| ❌ | fzf | 87.9% | 29 | 1 | 3 | 1 | 1m35.0s |
+| 💥 | nvm | — | — | — | — | — | 1.0s |
+| 📊 | bash-completion | 80.0% | 8 | 1 | 1 |  | 5m00.0s |
 
 <details open><summary>❌ fzf · 1 failed</summary>
 
@@ -1176,6 +1307,11 @@ mod tests {
 ```
 container build failed
 ```
+</details>
+
+<details><summary>❌ bash-completion · 1 failed</summary>
+
+- `test_1`
 </details>
 ";
         let actual = render_markdown(&reports, Duration::from_secs(103));
@@ -1212,6 +1348,7 @@ container build failed
 
         let summary = read_junit_summary(temp.path(), &BTreeSet::new(), true)?;
         anyhow::ensure!(summary.tests == 6, "tests: {}", summary.tests);
+        // Unique names are reported bare, even with a class name.
         anyhow::ensure!(summary.skips == ["left out"], "{}", summary.counts());
         anyhow::ensure!(summary.xfailed == 1, "xfailed: {}", summary.xfailed);
         anyhow::ensure!(summary.failures == ["broken", "also broken"]);
@@ -1220,6 +1357,36 @@ container build failed
             summary.counts() == "6 tests, 2 failed, 1 xfailed, 1 skipped",
             "{}",
             summary.counts()
+        );
+        Ok(())
+    }
+
+    /// A name repeated across classes keeps its class, and reproduces through it.
+    #[test]
+    fn repeated_failure_names_stay_qualified() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        fs::create_dir_all(temp.path().join("junit"))?;
+        fs::write(
+            temp.path().join("junit/r.xml"),
+            r#"<testsuite name="s">
+              <testcase classname="t.test_ls.TestLs" name="test_1"><failure message="m"/></testcase>
+              <testcase classname="t.test_cd.TestCd" name="test_1"/>
+            </testsuite>"#,
+        )?;
+
+        let summary = read_junit_summary(temp.path(), &BTreeSet::new(), true)?;
+        anyhow::ensure!(summary.failures == ["t.test_ls.TestLs::test_1"]);
+        anyhow::ensure!(summary.failure_messages["t.test_ls.TestLs::test_1"] == "m");
+        let report = AdapterReport::new(
+            "example".to_owned(),
+            temp.path().to_path_buf(),
+            Duration::ZERO,
+            Ok(None),
+            Ok(summary),
+        );
+        anyhow::ensure!(
+            report.reproduce("t.test_ls.TestLs::test_1")
+                == "cargo xtask test e2e example -- -k 'TestLs and test_1'"
         );
         Ok(())
     }
@@ -1366,6 +1533,8 @@ container build failed
         let mut report = AdapterReport {
             app: "example".to_owned(),
             failed: false,
+            report_only: false,
+            fatal: false,
             error: None,
             elapsed: Duration::from_secs(1),
             summary: Some(JunitSummary::default()),

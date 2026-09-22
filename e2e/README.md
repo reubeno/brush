@@ -8,7 +8,8 @@ completion, history) that unit tests can't.
 ```bash
 cargo build
 cargo xtask test e2e fzf                     # one adapter against brush
-cargo xtask test e2e                         # default adapters (excludes blesh, bash-tests)
+cargo xtask test e2e                         # default adapters (excludes blesh, bash-tests, bash-completion)
+cargo xtask test e2e --with bash-completion  # default adapters plus an opt-in one
 cargo xtask test e2e blesh                   # opt in to the slow ble.sh suite
 cargo xtask test e2e --baseline fzf          # baseline against Bash
 cargo xtask test e2e --shell /path/to/sh fzf # any other binary
@@ -59,6 +60,8 @@ because compatibility failures and timeouts make it take several minutes against
 brush. Run it explicitly with `cargo xtask test e2e blesh`, or select one file with
 `cargo xtask test e2e blesh -- util`. Its per-file timeout remains 180 seconds.
 `bash-tests` is likewise opt-in, until it has shown itself reliable. Neither runs in CI.
+`bash-completion` is opt-in because its ~2000 tests take several minutes; CI adds it with
+`--with bash-completion`, and it is report-only (below), so it cannot fail the job on test results.
 
 ## Adapter contract
 
@@ -97,6 +100,16 @@ for its name (fzf: `-n /{test}/`). Adapters without the file are assumed to take
 `-k {test}`, since that is what every adapter's own tests use.
 
 ## Tracking known failures
+
+Every dashboard row shows the pass rate: passed tests over those that ran (skips excluded, xfails
+included).
+
+An adapter containing a `report-only` file (a comment saying why) is tracked by that rate alone:
+its failing tests are listed, collapsed, and its row is marked 📊, but they do not fail the
+adapter; nor does the non-zero exit they cause. A run that produced no results still fails it: an
+image that does not build, a timeout, or missing JUnit. Such a suite needs no `xfail-list.txt`;
+the runner's own expected failures (`@pytest.mark.xfail`) are counted as xfailed as usual.
+Everything below applies to the other adapters.
 
 Two lists per adapter, both optional, both `#`-commented, one test name per line.
 
@@ -158,6 +171,7 @@ what they would otherwise each reinvent:
 | fzf | upstream `test/test_shell_integration.rb`, `TestBash` only; minitest + tmux, JUnit via `minitest-ci` |
 | atuin | our own suite in `atuin/tests/` (pytest + tmux), written to be upstreamable. atuin's bash integration is bash-preexec, so the adapter turns on brush's `zsh-hooks` through a config file to exercise the native hooks rather than the `DEBUG`-trap emulation |
 | bash-tests | bash's own regression suite (`tests/run-*`), from a bash-5.3 build that also provides its helper binaries and the `--baseline` shell; one pytest case per `run-*` script, which is sourced verbatim, on a terminal, with `diff` replaced by a function that captures the output for byte-exact comparison against the `.right` file. `PLATFORM_DIFFS` in `tests/test_bash.py` excuses the few differences bash itself shows on Linux. Failures report how many expected lines match, and `log.txt` ends with the total across the run. Args go to pytest: `-- -k alias`, `-- --subset minimal` for the scripts `run-minimal` runs, `-- --script-timeout 60` (default 30s per script) |
+| bash-completion | upstream's `test/t` pytest suite (tag 2.18.0), in upstream's own rolling `fedoradev` test image, which has the commands under test installed; built with `make` as upstream's CI does, and run under `xvfb-run`. Report-only: upstream's `xfail` markers are its only expectations. Args go to pytest: `-- -k test_ls` |
 | blesh | upstream `ble.sh --test`, one pytest case per test section with a process-group timeout (`BLESH_TEST_TIMEOUT`, default 180s); sections are read from ble.sh's own build output, so a section added upstream runs rather than being missed; full output and leftover per-section artifacts are retained; args select sections: `cargo xtask test e2e blesh -- util`. Every section is currently expected to fail: ble.sh gets far enough to emit no section summary at all |
 | mise | selected upstream bash activation tests (pytest), run directly against the shell under test |
 | nvm | upstream `test/fast/Listing versions` suite (urchin) plus interactive regression coverage for [#1173](https://github.com/reubeno/brush/issues/1173) |

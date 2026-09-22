@@ -43,3 +43,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # Base images of the e2e adapters (e2e/*/Dockerfile). The applications they test are pinned
+  # by ARGs with checksums, which Dependabot cannot update.
+  - package-ecosystem: "docker"
+    cooldown:
+      default-days: 7
+    directories:
+      - "/e2e/*"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Upstream's rolling test image, deliberately unpinned (see e2e/bash-completion/Dockerfile).
+      - dependency-name: "ghcr.io/scop/bash-completion/test"
+    groups:
+      e2e-docker:
+        patterns:
+          - "*"

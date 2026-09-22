@@ -3,6 +3,7 @@
 # it identically: JUnit and a full log under /results, and the run's own exit status.
 #
 # Sourced by an entrypoint, which then calls `e2e_run_pytest <report name> [pytest args...]`.
+# Tests are collected from `$E2E_TESTS`, default `/e2e/tests`, for suites that live elsewhere.
 
 e2e_run_pytest() {
     local report=$1
@@ -14,6 +15,6 @@ e2e_run_pytest() {
     # Appended: an adapter may already have logged an earlier phase of its run (nvm).
     python3 -m pytest -q -p no:cacheprovider -p e2e_skip -o junit_logging=all \
         --log-file="/results/$report.log" --log-file-level=INFO --log-file-format='%(message)s' \
-        --junitxml="/results/junit/$report.xml" "$@" /e2e/tests 2>&1 | tee -a /results/log.txt
+        --junitxml="/results/junit/$report.xml" "$@" "${E2E_TESTS:-/e2e/tests}" 2>&1 | tee -a /results/log.txt
     return "${PIPESTATUS[0]}"
 }

@@ -22,6 +22,7 @@ pub enum BuildProfile {
 
 impl BuildProfile {
     /// Returns the target subdirectory name for this profile.
+    #[cfg(unix)]
     #[must_use]
     pub const fn target_dir_name(self) -> &'static str {
         match self {
@@ -52,6 +53,7 @@ pub fn find_workspace_root() -> Result<PathBuf> {
 /// If `override_path` is provided, it is used directly (after validation).
 /// Otherwise, the binary is located in the workspace's target directory
 /// based on the specified profile.
+#[cfg(unix)]
 pub fn find_brush_binary(
     override_path: Option<&PathBuf>,
     profile: BuildProfile,
@@ -88,6 +90,7 @@ pub fn find_brush_binary(
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn test_profile_dir_names() {
         assert_eq!(BuildProfile::Debug.target_dir_name(), "debug");
