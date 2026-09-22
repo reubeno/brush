@@ -78,6 +78,17 @@ cases:
 
       compgen -A function
 
+  - name: "compgen -A function only returns functions matching the prefix"
+    stdin: |
+      zzfa() { :; }
+      zzfb() { :; }
+      totally_unrelated() { :; }
+
+      compgen -A function zzf
+      echo "[$?]"
+      compgen -A function nomatch
+      echo "[$?]"
+
   - name: "compgen -A command is sorted by name"
     stdin: |
       zzfe() { :; }
