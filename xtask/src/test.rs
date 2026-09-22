@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use xshell::{Shell, cmd};
 
-use crate::common::{BuildProfile, find_brush_binary, find_workspace_root};
+use crate::common::{BuildProfile, find_workspace_root};
 
 /// Integration test binaries that are excluded from unit tests.
 /// These tests execute the brush binary and are slower.
@@ -66,8 +66,9 @@ impl BinaryArgs {
     }
 
     /// Find the brush binary using these arguments.
+    #[cfg(unix)]
     pub fn find_brush_binary(&self) -> Result<PathBuf> {
-        find_brush_binary(self.brush_path.as_ref(), self.effective_profile())
+        crate::common::find_brush_binary(self.brush_path.as_ref(), self.effective_profile())
     }
 }
 
