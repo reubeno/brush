@@ -208,6 +208,15 @@ pub struct BashCompletionArgs {
     /// Use -j 1 to disable parallel execution.
     #[clap(long, short = 'j', default_value_t = 128)]
     jobs: u32,
+
+    /// Run the suite inside this container image (via `docker`) instead of on
+    /// the host, e.g. one of bash-completion's own test images
+    /// (`ghcr.io/scop/bash-completion/test:fedoradev`), which have the
+    /// commands under test installed. The checkout is copied into the
+    /// container and built there (`autoreconf && configure && make`), so it
+    /// is left untouched.
+    #[clap(long)]
+    container_image: Option<String>,
 }
 
 /// Run a test command.
@@ -558,25 +567,26 @@ fn run_tests_with_coverage(
     Ok(())
 }
 
+/// Test targets to pass to pytest: the requested files, or all tests.
+fn test_targets(args: &BashCompletionArgs) -> Vec<String> {
+    if args.file.is_empty() {
+        return vec!["./t".to_string()];
+    }
+    args.file
+        .iter()
+        .map(|f| {
+            if f.starts_with("./t/") || f.starts_with("t/") {
+                f.clone()
+            } else {
+                format!("./t/{f}")
+            }
+        })
+        .collect()
+}
+
 /// List available bash-completion tests without running them.
 fn list_bash_completion_tests(sh: &Shell, args: &BashCompletionArgs, verbose: bool) -> Result<()> {
     eprintln!("Collecting bash-completion tests...");
-
-    // Determine test targets - specific files or all tests
-    let test_targets: Vec<String> = if args.file.is_empty() {
-        vec!["./t".to_string()]
-    } else {
-        args.file
-            .iter()
-            .map(|f| {
-                if f.starts_with("./t/") || f.starts_with("t/") {
-                    f.clone()
-                } else {
-                    format!("./t/{f}")
-                }
-            })
-            .collect()
-    };
 
     let mut pytest_args = vec!["--collect-only".to_string(), "-q".to_string()];
 
@@ -587,7 +597,7 @@ fn list_bash_completion_tests(sh: &Shell, args: &BashCompletionArgs, verbose: bo
     }
 
     // Add test targets
-    pytest_args.extend(test_targets);
+    pytest_args.extend(test_targets(args));
 
     if verbose {
         eprintln!("Running: pytest {}", pytest_args.join(" "));
@@ -597,6 +607,65 @@ fn list_bash_completion_tests(sh: &Shell, args: &BashCompletionArgs, verbose: bo
     cmd!(sh, "pytest").args(&pytest_args).run()?;
 
     Ok(())
+}
+
+/// Script run inside the container: build a private copy of the (read-only)
+/// bash-completion checkout, make sure pytest-json-report is available, then
+/// run pytest with the given arguments. Mirrors upstream's
+/// `test/docker/entrypoint.sh`.
+const CONTAINER_SCRIPT: &str = r#"set -e
+cp -a /src /work
+cd /work
+(autoreconf -i && ./configure && make -j) >/tmp/build.log 2>&1 || { cat /tmp/build.log; exit 1; }
+if ! python3 -c 'import pytest_jsonreport' 2>/dev/null; then
+    python3 -m ensurepip >/dev/null
+    python3 -m pip install -q --root-user-action=ignore pytest-json-report
+fi
+cd test
+exec xvfb-run -a pytest -p no:cacheprovider "$@"
+"#;
+
+/// Runs pytest inside `image`, returning whether it failed.
+fn run_pytest_in_container(
+    sh: &Shell,
+    image: &str,
+    args: &BashCompletionArgs,
+    brush_path: &Path,
+    pytest_args: &[String],
+) -> Result<bool> {
+    let src = args
+        .bash_completion_path
+        .canonicalize()
+        .context("bash-completion path not found")?;
+    let out_dir = match args.output.as_ref().and_then(|p| p.parent()) {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    sh.create_dir(&out_dir)?;
+    let out_dir = out_dir.canonicalize()?;
+
+    let mounts = [
+        format!("{}:/src:ro", src.display()),
+        format!("{}:/brush:ro", brush_path.display()),
+        format!("{}:/out", out_dir.display()),
+    ];
+    let test_bash =
+        "BASH_COMPLETION_TEST_BASH=/brush --noprofile --no-config --input-backend=basic";
+
+    Ok(cmd!(sh, "docker run --rm")
+        .args(mounts.iter().flat_map(|m| ["--volume", m.as_str()]))
+        .args([
+            "--env",
+            test_bash,
+            image,
+            "bash",
+            "-c",
+            CONTAINER_SCRIPT,
+            "bash",
+        ])
+        .args(pytest_args)
+        .run()
+        .is_err())
 }
 
 /// Run the bash-completion project's test suite against brush.
@@ -643,22 +712,6 @@ fn run_bash_completion_tests(
     eprintln!("Running bash-completion test suite...");
     eprintln!("Using brush binary: {}", brush_path.display());
 
-    // Determine test targets - specific files or all tests
-    let test_targets: Vec<String> = if args.file.is_empty() {
-        vec!["./t".to_string()]
-    } else {
-        args.file
-            .iter()
-            .map(|f| {
-                if f.starts_with("./t/") || f.starts_with("t/") {
-                    f.clone()
-                } else {
-                    format!("./t/{f}")
-                }
-            })
-            .collect()
-    };
-
     // Build pytest args
     let mut pytest_args: Vec<String> = Vec::new();
 
@@ -668,11 +721,18 @@ fn run_bash_completion_tests(
         pytest_args.push(args.jobs.to_string());
     }
 
-    // Add JSON report if output is requested (requires pytest-json-report)
+    // Add JSON report if output is requested (requires pytest-json-report).
+    // In a container, the report is written to a mounted directory.
     let json_output = args.output.as_ref().map(|p| p.display().to_string());
-    if let Some(ref output) = json_output {
+    if let Some(output) = &args.output {
+        let report_path = if args.container_image.is_some() {
+            let file_name = output.file_name().context("invalid --output path")?;
+            format!("/out/{}", file_name.to_string_lossy())
+        } else {
+            output.display().to_string()
+        };
         pytest_args.push("--json-report".to_string());
-        pytest_args.push(format!("--json-report-file={output}"));
+        pytest_args.push(format!("--json-report-file={report_path}"));
     }
 
     // Add optional flags
@@ -688,14 +748,18 @@ fn run_bash_completion_tests(
     }
 
     // Add test targets at the end
-    pytest_args.extend(test_targets);
+    pytest_args.extend(test_targets(args));
 
     if verbose {
         eprintln!("Running: pytest {}", pytest_args.join(" "));
     }
 
     // Run pytest - pass stdout/stderr through directly, capture whether it failed.
-    let pytest_failed = cmd!(sh, "pytest").args(&pytest_args).run().is_err();
+    let pytest_failed = if let Some(image) = &args.container_image {
+        run_pytest_in_container(sh, image, args, &brush_path, &pytest_args)?
+    } else {
+        cmd!(sh, "pytest").args(&pytest_args).run().is_err()
+    };
 
     if pytest_failed {
         eprintln!("Some tests failed, but continuing to generate reports...");

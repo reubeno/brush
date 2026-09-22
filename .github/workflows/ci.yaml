@@ -624,7 +624,7 @@ jobs:
         with:
           persist-credentials: false
           repository: "scop/bash-completion"
-          ref: "2.16.0"
+          ref: "2.18.0"
           path: "bash-completion"
 
       - name: Download prebuilt brush binaries
@@ -638,24 +638,23 @@ jobs:
           chmod +x binaries/*
           ls -l binaries
 
-      - name: Install prerequisites for running tests
-        run: |
-          set -x
-          sudo apt-get update -y
-          sudo apt-get install -y python3
-          python3 -m pip install --user pytest pytest-xdist pytest-md-report pytest-json-report
-
       - name: Set up rust toolchain
         run: rustup toolchain install --profile minimal
         working-directory: brush
 
       - name: "Run test suite (brush)"
         working-directory: brush
+        env:
+          # bash-completion's own test image (Fedora rawhide), which has the
+          # commands under test installed. Deliberately unpinned to track
+          # upstream; results may shift slightly when it is rebuilt.
+          BASH_COMPLETION_TEST_IMAGE: "ghcr.io/scop/bash-completion/test:fedoradev"
         run: |
           cargo xtask test \
               --brush-path $GITHUB_WORKSPACE/binaries/brush \
               external bash-completion \
               --bash-completion-path $GITHUB_WORKSPACE/bash-completion \
+              --container-image "${BASH_COMPLETION_TEST_IMAGE}" \
               --output $GITHUB_WORKSPACE/test-results-bash-completion.json \
               --summary-output $GITHUB_WORKSPACE/test-results-bash-completion.md || true
 
