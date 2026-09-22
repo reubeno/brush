@@ -52,11 +52,11 @@ impl CommandLineArgs {
         // With `-c`, bash takes the command string from the first operand; the
         // operands after it keep their usual meaning, so the next one sets `$0`
         // and the rest become positional parameters.
-        if this.command_mode {
+        if this.command_string_mode {
             if this.script_args.is_empty() {
                 return Err(Self::command().error(
-                    clap::error::ErrorKind::InvalidValue,
-                    "a value is required for '-c <COMMAND>' but none was supplied",
+                    clap::error::ErrorKind::MissingRequiredArgument,
+                    "-c: option requires an argument",
                 ));
             }
             this.command = Some(this.script_args.remove(0));
@@ -813,11 +813,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_c_combined_with_other_flags() -> Result<()> {
+        // `-c` groups with other short flags in any order, as in `brush -cl "echo hi"`.
+        for argv in [
+            &["brush", "-cl", "echo hi", "name"][..],
+            &["brush", "-lc", "echo hi", "name"][..],
+            &["brush", "-c", "-l", "echo hi", "name"][..],
+        ] {
+            let parsed_args = CommandLineArgs::try_parse_from(args(argv))?;
+            assert!(parsed_args.login, "for {argv:?}");
+            assert_eq!(
+                parsed_args.command,
+                Some("echo hi".to_string()),
+                "for {argv:?}"
+            );
+            assert_eq!(parsed_args.script_args, ["name"], "for {argv:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_c_without_command_string() {
+        assert!(CommandLineArgs::try_parse_from(args(&["brush", "-c"])).is_err());
+    }
+
+    #[test]
+    fn parse_c_with_empty_command_string() -> Result<()> {
+        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-c", ""]))?;
+        assert_eq!(parsed_args.command, Some(String::new()));
+        Ok(())
+    }
+
+    #[test]
     fn parse_o_with_double_dash_is_not_transformed() {
         // Unlike -c, bash's -o consumes -- as its literal value (invalid option
-        // name), not as an option terminator. Verify we don't transform it.
+        // name), not as an option terminator.
         let result = CommandLineArgs::try_parse_from(args(&["brush", "-o", "--"]));
-        // Here, try_parse_from / try_parse_known splits at --, so -o ends up
+        // try_parse_known splits at --, so -o ends up
         // without a value and parsing correctly fails. The key assertion is
         // that we MUST NOT reinterpret -- as an option terminator for -o and
         // then take any later argument as its value.
@@ -825,9 +857,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_oc_not_treated_as_pending_c() -> Result<()> {
-        // -oc means -o with value "c", not -o flag + -c flag. The --
-        // should NOT be treated as an option terminator for -c.
+    fn parse_oc_is_o_with_an_attached_value() -> Result<()> {
+        // To brush's parser, -oc is -o with attached value "c", not -o flag + -c
+        // flag, so the -- is an ordinary option terminator here. NOTE: bash instead
+        // takes the *next* word as -o's option name; see the known-failure compat
+        // case "-oc with -- takes its option name from the next word".
         let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-oc", "--", "echo"]))?;
         // -o consumed "c" as its value; -- ended the options; no -c command.
         assert!(parsed_args.command.is_none());
@@ -879,11 +913,11 @@ mod tests {
         // `-C` is a different flag, and `-oc` is `-o` with the value "c", so
         // neither puts the shell in command mode.
         let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-C", "script.sh"]))?;
-        assert!(!parsed_args.command_mode);
+        assert!(!parsed_args.command_string_mode);
         assert!(parsed_args.command.is_none());
 
         let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-oc", "script.sh"]))?;
-        assert!(!parsed_args.command_mode);
+        assert!(!parsed_args.command_string_mode);
         assert_eq!(parsed_args.enabled_options, ["c"]);
         Ok(())
     }
