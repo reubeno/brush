@@ -129,6 +129,39 @@ cases:
       - "echo"
       - "hi"
 
+  - name: "-c with option before command"
+    args:
+      - "-c"
+      - "-u"
+      - 'echo \"$0\" \"$1\" \"$2\" \"$@\"'
+      - "1"
+      - "-2"
+      - "3"
+
+  - name: "-c with value-taking option before command"
+    args:
+      - "-c"
+      - "-o"
+      - "errexit"
+      - 'echo \"$0\" \"$1\" \"$@\"'
+      - "1"
+      - "2"
+
+  - name: "-c with option before command and no command"
+    ignore_stderr: true
+    args:
+      - "-c"
+      - "-u"
+
+  - name: "-c with option then -- separator"
+    args:
+      - "-c"
+      - "-u"
+      - "--"
+      - 'echo \"$0\" \"$1\" \"$@\"'
+      - "1"
+      - "2"
+
   - name: "-ec with -- separator and command"
     args:
       - "-ec"
@@ -138,11 +171,62 @@ cases:
       - "-2"
       - "3"
 
+  # `-c` is a flag, not a value-taking option: the command string is the first
+  # non-option argument, so flags may be grouped with it.
+  - name: "-c grouped with a later flag"
+    args:
+      - "-cf"
+      - 'echo * \"$0\" \"$1\"'
+      - "name"
+      - "1"
+
+  - name: "-c with no command string"
+    ignore_stderr: true
+    args:
+      - "-c"
+
+  - name: "-c with an empty command string"
+    args:
+      - "-c"
+      - ""
+      - "name"
+      - "1"
+
+  # Only the first `--` is the option terminator; a later one is an ordinary positional.
+  - name: "-c with -- separator and a later --"
+    args:
+      - "-c"
+      - "--"
+      - 'echo \"$0\" \"$1\" \"$@\"'
+      - "--"
+      - "more"
+
+  # `--` after a boolean flag ends option parsing, so a following `-c` is a script path,
+  # not a flag.
+  - name: "-c after -- is a script path, not a flag"
+    ignore_stderr: true
+    args:
+      - "-e"
+      - "--"
+      - "-c"
+      - "echo hi"
+
   - name: "-o with -- is not an option terminator"
     ignore_stderr: true
     args:
       - "-o"
       - "--"
+
+  # bash does not honor an attached value for `-o`: it takes the *next* word as the
+  # option name, so this fails with "--: invalid option name" (exit 2). brush's parser
+  # instead accepts "c" as the attached value, then treats `echo` as a script path.
+  - name: "-oc with -- takes its option name from the next word"
+    known_failure: true
+    ignore_stderr: true
+    args:
+      - "-oc"
+      - "--"
+      - "echo"
 
   #
   # Where the shell takes its commands from, and what the leftover words become.
@@ -381,13 +465,11 @@ cases:
     args: ["-", "announce.sh"]
 
   # After the `-c` command string, every remaining word is a positional parameter --
-  # even one that looks like an option. brush still parses these as options.
+  # even one that looks like an option.
   - name: "-c with an option-like word as $0"
-    known_failure: true
     args: ["-c", 'echo "0=[$0] 1=[$1]"', "-s"]
 
   - name: "-c with -i as $0"
-    known_failure: true
     ignore_stderr: true
     args: ["-c", 'echo "0=[$0] 1=[$1]"', "-i"]
 
