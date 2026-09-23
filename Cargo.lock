@@ -403,6 +403,7 @@ name = "brush-builtins"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "brush-builtin-usage",
  "brush-builtin-utils",
  "brush-core",
  "brush-parser",
@@ -419,6 +420,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "usage-rs",
  "utf8-chars",
  "uucore",
 ]

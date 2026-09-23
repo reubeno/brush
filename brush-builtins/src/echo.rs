@@ -1,30 +1,35 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, escape};
+use usage::Cli;
 
 /// Echo text to standard output.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(Cli)]
+#[usage(
+    bin = "echo",
+    unknown_flags = "value",
+    disable_help_flag,
+    disable_version_flag
+)]
 pub(crate) struct EchoCommand {
     /// Suppress the trailing newline from the output.
-    #[arg(short = 'n')]
+    #[usage(short = 'n')]
     no_trailing_newline: bool,
 
     /// Interpret backslash escapes in the provided text.
-    #[arg(short = 'e')]
+    #[usage(short = 'e')]
     interpret_backslash_escapes: bool,
 
     /// Do not interpret backslash escapes in the provided text.
-    #[arg(short = 'E')]
+    #[usage(short = 'E')]
     no_interpret_backslash_escapes: bool,
 
     /// Tokens to echo to standard output.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(arg, trailing_var_arg)]
     args: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(EchoCommand, trailing_args = args);
+brush_builtin_usage::usage_builtin!(EchoCommand, trailing_args = args);
 
 impl builtins::Command for EchoCommand {
     type Error = brush_core::Error;
