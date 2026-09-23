@@ -1,6 +1,6 @@
 # Environment for nvm's upstream version-listing tests. The suite is pinned to
 # nvm v0.40.7; its runner is pinned to the version used by nvm itself.
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 ARG NVM_REF=f0b0c6bb0b281ceeb106c8cf9ab8fde141215092
 # Bump this together with the urchin version in the URL below; it is the sha256 of the
 # npm tarball, cross-checked against the registry's own sha512 integrity field.

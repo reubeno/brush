@@ -2,7 +2,7 @@
 # to the bash-5.3 release: the build provides the helper binaries the suite needs (recho, zecho,
 # printenv, xcase) and a reference bash whose output matches the `.right` files, which is what
 # `--baseline` runs.
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 # When bumping this (and the tag below), run `cargo xtask test e2e --baseline bash-tests` first: it
 # catches what brush runs cannot, such as a new test needing a locale or tool this image lacks.
 # Then run against brush and refresh xfail-list.txt; the runner flags new failures and stale entries.

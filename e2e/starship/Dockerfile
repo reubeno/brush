@@ -1,6 +1,6 @@
 # starship has no upstream shell-integration suite, so this image installs a pinned
 # release and runs the small PTY-driven shell-integration suite in tests/.
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 ARG STARSHIP_VERSION=1.26.0
 # Bump these together with STARSHIP_VERSION; they are the release's own .tar.gz.sha256 entries.
 ARG STARSHIP_SHA256_X86_64=b7c232b0e8249d8e55a40beb79c5c43a7d370f3f9408bd215deb0170daeaadf3

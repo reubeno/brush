@@ -2,7 +2,7 @@
 # downloads are run. MISE_REF must stay the commit that tag v$MISE_VERSION points at, so the
 # tests and the binary under them come from one release; check with
 # `git ls-remote --tags https://github.com/jdx/mise 'v<version>^{}'` when bumping.
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 ARG MISE_VERSION=2026.9.1
 ARG MISE_REF=8fe6385de7f73908ab5a6c9789f477a322eda3a5
 # Bump these together with MISE_VERSION; they are the release's own SHASUMS256.txt entries.

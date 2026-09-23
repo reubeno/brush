@@ -1,6 +1,6 @@
 # Environment for running atuin's bash shell-integration tests (see tests/). atuin itself is
 # a pinned release binary; the test suite is our own, written to be upstreamable.
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 ARG ATUIN_VERSION=18.21.0
 # Bump these together with ATUIN_VERSION; they are the release's own .tar.gz.sha256 entries.
 ARG ATUIN_SHA256_X86_64=434d82b4c5f691b6f0423f30a4b931df4afded19b05a795a280192fdf8a61a2d
