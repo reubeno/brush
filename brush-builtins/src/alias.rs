@@ -1,24 +1,25 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
+use usage::Cli;
 
 use brush_core::{ExecutionResult, builtins};
 
 use crate::write_alias_definition;
 
 /// Manage aliases within the shell.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "alias", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct AliasCommand {
     /// Print all defined aliases in a reusable format.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print: bool,
 
     /// List of aliases to display or update.
-    #[arg(name = "name[=value]")]
+    #[usage(name = "name[=value]")]
     aliases: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(AliasCommand);
+brush_builtin_usage::usage_builtin!(AliasCommand);
 
 impl builtins::Command for AliasCommand {
     type Error = brush_core::Error;

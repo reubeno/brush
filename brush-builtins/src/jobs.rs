@@ -1,29 +1,30 @@
-use clap::Parser;
 use std::io::Write;
+use usage::Cli;
 
 use brush_core::{ExecutionResult, builtins, error, jobs};
 
 /// Manage jobs.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "jobs", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct JobsCommand {
     /// Also show process IDs.
-    #[arg(short = 'l')]
+    #[usage(short = 'l')]
     also_show_pids: bool,
 
     /// List only jobs that have changed status since the last notification.
-    #[arg(short = 'n')]
+    #[usage(short = 'n')]
     list_changed_only: bool,
 
     /// Show only process IDs.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     show_pids_only: bool,
 
     /// Show only running jobs.
-    #[arg(short = 'r')]
+    #[usage(short = 'r')]
     running_jobs_only: bool,
 
     /// Show only stopped jobs.
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     stopped_jobs_only: bool,
 
     /// Job specs to list.
@@ -31,7 +32,7 @@ pub(crate) struct JobsCommand {
     job_specs: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(JobsCommand);
+brush_builtin_usage::usage_builtin!(JobsCommand);
 
 impl builtins::Command for JobsCommand {
     type Error = brush_core::Error;

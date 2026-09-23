@@ -1,26 +1,27 @@
 use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
-use clap::Parser;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 use nix::sys::stat::Mode;
 use std::io::Write;
+use usage::Cli;
 
 /// Manage the process umask.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "umask", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct UmaskCommand {
     /// If MODE is omitted, output in a form that may be reused as input.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print_roundtrippable: bool,
 
     /// Makes the output symbolic; otherwise an octal number is given.
-    #[arg(short = 'S')]
+    #[usage(short = 'S')]
     symbolic_output: bool,
 
     /// Mode mask.
     mode: Option<String>,
 }
 
-brush_builtin_utils::clap_builtin!(UmaskCommand);
+brush_builtin_usage::usage_builtin!(UmaskCommand);
 
 impl builtins::Command for UmaskCommand {
     type Error = brush_core::Error;

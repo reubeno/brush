@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{
@@ -6,14 +5,20 @@ use brush_core::{
 };
 
 /// Evaluate test expression.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(usage::Cli)]
+#[usage(
+    bin = "test",
+    unknown_flags = "value",
+    args_override_self = false,
+    disable_help_flag,
+    disable_version_flag
+)]
 pub(crate) struct TestCommand {
-    #[clap(allow_hyphen_values = true)]
+    #[usage(arg)]
     args: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(TestCommand, trailing_args = args);
+brush_builtin_usage::usage_builtin!(TestCommand, trailing_args = args);
 
 impl builtins::Command for TestCommand {
     type Error = brush_core::Error;

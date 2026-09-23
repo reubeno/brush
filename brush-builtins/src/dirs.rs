@@ -1,5 +1,5 @@
-use clap::Parser;
 use std::io::Write;
+use usage::Cli;
 
 use brush_core::{ExecutionResult, builtins};
 
@@ -26,28 +26,29 @@ impl From<&DirError> for brush_core::ExecutionExitCode {
 impl brush_core::BuiltinError for DirError {}
 
 /// Manage the current directory stack.
-#[derive(Default, Parser)]
+#[derive(Default, Cli)]
+#[usage(bin = "dirs", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct DirsCommand {
     /// Clear the directory stack.
-    #[arg(short = 'c')]
+    #[usage(short = 'c')]
     clear: bool,
 
     /// Don't tilde-shorten paths.
-    #[arg(short = 'l')]
+    #[usage(short = 'l')]
     tilde_long: bool,
 
     /// Print one directory per line instead of all on one line.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print_one_per_line: bool,
 
     /// Print one directory per line with its index.
-    #[arg(short = 'v')]
+    #[usage(short = 'v')]
     print_one_per_line_with_index: bool,
     //
     // TODO(dirs): implement +N and -N
 }
 
-brush_builtin_utils::clap_builtin!(DirsCommand);
+brush_builtin_usage::usage_builtin!(DirsCommand);
 
 impl builtins::Command for DirsCommand {
     type Error = brush_core::Error;

@@ -1,24 +1,25 @@
-use clap::Parser;
 use std::io::Write;
+use usage::Cli;
 
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionResult, builtins};
 
 /// Manage signal traps.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "trap", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct TrapCommand {
     /// List all signal names.
-    #[arg(short = 'l')]
+    #[usage(short = 'l')]
     list_signals: bool,
 
     /// Print registered trap commands.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print_trap_commands: bool,
 
     args: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(TrapCommand);
+brush_builtin_usage::usage_builtin!(TrapCommand);
 
 impl builtins::Command for TrapCommand {
     type Error = brush_core::Error;

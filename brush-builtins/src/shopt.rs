@@ -1,37 +1,38 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
+use usage::Cli;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Manage shopt-style options.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "shopt", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct ShoptCommand {
     /// Manage set -o options.
-    #[arg(short = 'o')]
+    #[usage(short = 'o')]
     set_o_names_only: bool,
 
     /// Print options' current values.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print: bool,
 
     /// Suppress typical output.
-    #[arg(short = 'q')]
+    #[usage(short = 'q')]
     quiet: bool,
 
     /// Set the specified options.
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     set: bool,
 
     /// Unset the specified options.
-    #[arg(short = 'u')]
+    #[usage(short = 'u')]
     unset: bool,
 
     /// Names of options to operate on.
     options: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(ShoptCommand);
+brush_builtin_usage::usage_builtin!(ShoptCommand);
 
 impl builtins::Command for ShoptCommand {
     type Error = brush_core::Error;

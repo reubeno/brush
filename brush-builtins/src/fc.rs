@@ -1,40 +1,43 @@
 use brush_core::{ExecutionResult, builtins, error, history};
-use clap::Parser;
 use std::io::Write;
+use usage::Cli;
 
 /// Process command history list.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "fc", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct FcCommand {
     /// List commands instead of editing them.
-    #[arg(short = 'l')]
+    #[usage(short = 'l')]
     list: bool,
 
     /// Suppress line numbers when listing.
-    #[arg(short = 'n', requires = "list")]
+    #[usage(short = 'n', requires("-l"))]
     no_line_numbers: bool,
 
     /// Reverse the order of commands.
-    #[arg(short = 'r')]
+    #[usage(short = 'r')]
     reverse: bool,
 
     /// Re-execute command after substitution (old=new format).
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     substitute: bool,
 
     /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
+    #[usage(short = 'e', value_name = "ENAME")]
     editor: Option<String>,
 
     /// First command in range (number or string prefix).
-    #[arg(value_name = "FIRST", allow_hyphen_values = true)]
+    // `allow_negative_numbers` accepts `-N` offsets, not arbitrary hyphen-leading prefixes.
+    #[usage(value_name = "FIRST", allow_negative_numbers)]
     first: Option<String>,
 
     /// Last command in range (number or string prefix).
-    #[arg(value_name = "LAST", allow_hyphen_values = true)]
+    // `allow_negative_numbers` accepts `-N` offsets, not arbitrary hyphen-leading prefixes.
+    #[usage(value_name = "LAST", allow_negative_numbers)]
     last: Option<String>,
 }
 
-brush_builtin_utils::clap_builtin!(FcCommand);
+brush_builtin_usage::usage_builtin!(FcCommand);
 
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;

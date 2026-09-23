@@ -1,43 +1,44 @@
 use brush_core::ExecutionResult;
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
+use usage::Cli;
 
 use brush_core::builtins;
 use brush_core::error;
 
 /// Enable, disable, or display built-in commands.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "enable", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct EnableCommand {
     /// Print a list of built-in commands.
-    #[arg(short = 'a')]
+    #[usage(short = 'a')]
     print_list: bool,
 
     /// Disables the specified built-in commands.
-    #[arg(short = 'n')]
+    #[usage(short = 'n')]
     disable: bool,
 
     /// Print a list of built-in commands with reusable output.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print_reusably: bool,
 
     /// Only operate on special built-in commands.
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     special_only: bool,
 
     /// Path to a shared object from which built-in commands will be loaded.
-    #[arg(short = 'f', value_name = "PATH")]
+    #[usage(short = 'f', value_name = "PATH")]
     shared_object_path: Option<String>,
 
     /// Remove the built-in commands loaded from the indicated object path.
-    #[arg(short = 'd')]
+    #[usage(short = 'd')]
     remove_loaded_builtin: bool,
 
     /// Names of built-in commands to operate on.
     names: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(EnableCommand);
+brush_builtin_usage::usage_builtin!(EnableCommand);
 
 impl builtins::Command for EnableCommand {
     type Error = brush_core::Error;

@@ -409,7 +409,6 @@ dependencies = [
  "brush-parser",
  "cfg-if",
  "chrono",
- "clap",
  "fancy-regex",
  "itertools 0.14.0",
  "nix 0.31.3",
@@ -558,10 +557,11 @@ dependencies = [
 name = "brush-experimental-builtins"
 version = "0.1.0"
 dependencies = [
+ "brush-builtin-usage",
  "brush-builtin-utils",
  "brush-core",
- "clap",
  "serde_json",
+ "usage-rs",
 ]
 
 [[package]]

@@ -1,16 +1,17 @@
-use clap::Parser;
+use usage::Cli;
 
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Breaks out of a control-flow loop.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "break", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct BreakCommand {
     /// If specified, indicates which nested loop to break out of.
-    #[clap(default_value_t = 1)]
+    #[usage(default = "1")]
     which_loop: i8,
 }
 
-brush_builtin_utils::clap_builtin!(BreakCommand);
+brush_builtin_usage::usage_builtin!(BreakCommand);
 
 impl builtins::Command for BreakCommand {
     type Error = brush_core::Error;

@@ -36,3 +36,4 @@ AI agents working on this repository follow.
 | Crate | Versions | People | Agents |
 |---|---|---|---|
 | brush-core | 0.5 → 0.6 | [walkthrough](brush-core/0.5-to-0.6.md) | [SKILL.md](../../brush-core/skills/migrate-0.5-to-0.6/SKILL.md) |
+| brush-builtins | 0.2 → 0.3 | [walkthrough](brush-builtins/0.2-to-0.3.md) | [SKILL.md](../../brush-builtins/skills/migrate-0.2-to-0.3/SKILL.md) |
