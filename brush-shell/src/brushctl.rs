@@ -1,6 +1,6 @@
 use brush_core::{ExecutionResult, sys};
-use clap::{Parser, Subcommand};
 use std::io::Write;
+use usage::Cli;
 
 use crate::events;
 
@@ -29,89 +29,117 @@ impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderSta
 }
 
 /// Configure the running brush shell.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "brushctl", disable_help_flag, disable_version_flag)]
 pub(crate) struct BrushCtlCommand {
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     command_group: CommandGroup,
 }
 
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum CommandGroup {
-    #[clap(subcommand)]
-    Complete(CompleteCommand),
-    #[clap(subcommand)]
-    Call(CallCommand),
-    #[clap(subcommand)]
-    Events(EventsCommand),
-    #[clap(subcommand)]
-    Process(ProcessCommand),
+    Complete(CompleteGroup),
+    Call(CallGroup),
+    Events(EventsGroup),
+    Process(ProcessGroup),
+}
+
+#[derive(usage::Args)]
+struct CompleteGroup {
+    #[usage(subcommand)]
+    command: CompleteCommand,
+}
+
+#[derive(usage::Args)]
+struct CallGroup {
+    #[usage(subcommand)]
+    command: CallCommand,
+}
+
+#[derive(usage::Args)]
+struct EventsGroup {
+    #[usage(subcommand)]
+    command: EventsCommand,
+}
+
+#[derive(usage::Args)]
+struct ProcessGroup {
+    #[usage(subcommand)]
+    command: ProcessCommand,
 }
 
 /// Commands for inspecting call state.
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum CallCommand {
     /// Display the current call stack.
-    #[clap(name = "stack")]
-    ShowCallStack {
-        /// Whether to show more details.
-        #[clap(short = 'd', long = "detailed")]
-        detailed: bool,
-    },
+    #[usage(name = "stack")]
+    ShowCallStack(ShowCallStack),
+}
+
+/// Arguments for `brushctl call stack`.
+#[derive(usage::Args)]
+struct ShowCallStack {
+    /// Whether to show more details.
+    #[usage(short = 'd', long = "detailed")]
+    detailed: bool,
 }
 
 /// Commands for generating completions.
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum CompleteCommand {
     /// Generate completions for an input line.
-    #[clap(name = "line")]
-    Line {
-        /// The 0-indexed cursor position for generation.
-        #[arg(long = "cursor", short = 'c')]
-        cursor_index: Option<usize>,
+    #[usage(name = "line")]
+    Line(CompleteLine),
+}
 
-        /// The input line to generate completions for.
-        line: String,
-    },
+/// Arguments for `brushctl complete line`.
+#[derive(usage::Args)]
+struct CompleteLine {
+    /// The 0-indexed cursor position for generation.
+    #[usage(long = "cursor", short = 'c')]
+    cursor_index: Option<usize>,
+
+    /// The input line to generate completions for.
+    line: String,
 }
 
 /// Commands for configuring tracing events.
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum EventsCommand {
     /// Display status of enabled events.
     Status,
-
     /// Enable event.
-    Enable {
-        /// Event to enable.
-        event: events::TraceEvent,
-    },
-
+    Enable(EventName),
     /// Disable event.
-    Disable {
-        /// Event to disable.
-        event: events::TraceEvent,
-    },
+    Disable(EventName),
+}
+
+/// The event named by `brushctl events enable` and `disable`.
+#[derive(usage::Args)]
+struct EventName {
+    /// Event to enable or disable.
+    event: events::TraceEvent,
 }
 
 /// Commands for inspecting process state.
 #[expect(clippy::enum_variant_names)]
-#[derive(Subcommand)]
+#[derive(usage::Subcommands)]
 enum ProcessCommand {
     /// Display process ID.
-    #[clap(name = "pid")]
+    #[usage(name = "pid")]
     ShowProcessId,
     /// Display process group ID.
-    #[clap(name = "pgid")]
+    #[usage(name = "pgid")]
     ShowProcessGroupId,
     /// Display foreground process ID.
-    #[clap(name = "fgpid")]
+    #[usage(name = "fgpid")]
     ShowForegroundProcessId,
     /// Display parent process ID.
-    #[clap(name = "ppid")]
+    #[usage(name = "ppid")]
     ShowParentProcessId,
 }
 
-brush_builtin_utils::clap_builtin!(BrushCtlCommand);
+brush_builtin_usage::usage_builtin!(BrushCtlCommand);
 
 impl brush_core::builtins::Command for BrushCtlCommand {
     type Error = brush_core::Error;
@@ -121,10 +149,12 @@ impl brush_core::builtins::Command for BrushCtlCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         match &self.command_group {
-            CommandGroup::Call(call) => call.execute(&context),
-            CommandGroup::Complete(complete) => complete.execute(&mut context).await,
-            CommandGroup::Events(events) => events.execute(&context),
-            CommandGroup::Process(process) => process.execute(&context),
+            CommandGroup::Call(CallGroup { command }) => command.execute(&context),
+            CommandGroup::Complete(CompleteGroup { command }) => {
+                command.execute(&mut context).await
+            }
+            CommandGroup::Events(EventsGroup { command }) => command.execute(&context),
+            CommandGroup::Process(ProcessGroup { command }) => command.execute(&context),
         }
     }
 }
@@ -135,7 +165,7 @@ impl CallCommand {
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
-            Self::ShowCallStack { detailed } => {
+            Self::ShowCallStack(ShowCallStack { detailed }) => {
                 let stack = context.shell.call_stack();
                 let format_options = brush_core::callstack::FormatOptions {
                     show_args: *detailed,
@@ -156,7 +186,7 @@ impl CompleteCommand {
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
-            Self::Line { cursor_index, line } => {
+            Self::Line(CompleteLine { cursor_index, line }) => {
                 let completions = context
                     .shell
                     .complete(line, cursor_index.unwrap_or(line.len()))
@@ -191,8 +221,8 @@ impl EventsCommand {
                         writeln!(context.stdout(), "{event}")?;
                     }
                 }
-                Self::Enable { event } => event_config.enable(*event)?,
-                Self::Disable { event } => event_config.disable(*event)?,
+                Self::Enable(EventName { event }) => event_config.enable(*event)?,
+                Self::Disable(EventName { event }) => event_config.disable(*event)?,
             }
 
             Ok(brush_core::ExecutionResult::success())

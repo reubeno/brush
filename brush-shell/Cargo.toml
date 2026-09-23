@@ -92,11 +92,11 @@ workspace = true
 
 [dependencies]
 brush-core = { version = "^0.5.0", path = "../brush-core" }
-brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils" }
+brush-builtin-usage = { version = "^0.1.0", path = "../brush-builtin-usage" }
+brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils", default-features = false }
 brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
 brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
 brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
-clap = { version = "4.6.0", features = ["derive", "env"] }
 color-print = "0.3.7"
 etcetera = "0.11.0"
 schemars = { version = "1.2.1", optional = true }
@@ -109,6 +109,7 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 human-panic = "2.0.6"
+usage = { package = "usage-rs", version = "6.11.1", features = ["completions"] }
 
 [target.'cfg(not(any(unix, windows)))'.dependencies]
 brush-interactive = { version = "^0.4.0", path = "../brush-interactive", features = [
@@ -130,11 +131,16 @@ uuid = { version = "1.23.1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
+# The compat and integration harnesses parse their own options with clap.
+# The brush binary does not depend on it.
+clap = { version = "4.6.0", features = ["derive"] }
 tempfile = "3.27.0"
-# Used by the `gen` example.
-clap-markdown = "0.1.5"
-clap_complete = "4.6.4"
-clap_mangen = "0.3.0"
+# Renders the `gen` example's man page and markdown from the usage spec.
+# Renamed because its library is also called `usage`, like usage-rs above.
+usage_lib = { package = "usage-lib", version = "6.11.1", default-features = false, features = [
+    "manpage",
+    "markdown",
+] }
 # Also a regular optional dependency, enabled by `experimental-load`. The `gen`
 # example needs it without that feature, so it's listed here too.
 serde_json = "1.0.149"
