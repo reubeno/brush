@@ -45,3 +45,10 @@ cases:
         echo "After eval'd break (outer loop)"
       done
       echo "After outer loop"
+
+  - name: "Eval of code with syntax error"
+    known_failure: true # TODO(eval): a tokenizer error in eval'd code aborts the script instead of returning 2
+    ignore_stderr: true
+    stdin: |
+      eval 'echo "a'
+      echo "rc=$?"

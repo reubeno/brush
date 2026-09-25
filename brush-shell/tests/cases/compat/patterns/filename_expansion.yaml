@@ -375,3 +375,11 @@ cases:
       echo "./* : " ./*
       echo ".*  : " .*
       echo "./.*: " ./.*
+
+  - name: "Pathname expansion: extglob containing parameter expansion"
+    known_failure: true # TODO(patterns): extglobs containing an expansion never match
+    stdin: |
+      shopt -s extglob
+      touch x
+      u=x
+      echo @($u) @(a|$u) @(a|${u:-y}) @(a|${v:-x})

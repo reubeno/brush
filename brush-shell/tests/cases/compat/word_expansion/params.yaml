@@ -789,3 +789,20 @@ cases:
       echo "${#var}"
       var="테스트"
       echo "${#var}"
+
+  - name: "Extglob-like text in parameter expansion default"
+    known_failure: true # TODO(tokenizer): '@(' inside '${...}' is taken as the start of an extglob
+    stdin: |
+      shopt -s extglob
+      echo ${u:-a@(}
+
+  - name: "Doubled dollar sign before brace"
+    known_failure: true # TODO(tokenizer): '$${' is taken as '$' followed by '${' instead of '$$' followed by '{'
+    stdin: |
+      echo $${u | sed "s/$$/PID/g"
+      echo "rc=$?"
+
+  - name: "Here-doc operator as parameter expansion default"
+    stdin: |
+      echo ${u:-<<} ${u:-<<-}
+      echo "${u:-<<}" "${u:-<<-}"

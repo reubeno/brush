@@ -281,3 +281,114 @@ cases:
       EOF
       )
       echo $var
+
+  - name: "Here doc with unpaired double quote in command substitution (#1066)"
+    stdin: |
+      echo "$(cat <<'EOF'
+      she said "hello
+      EOF
+      )"
+
+  - name: "Here doc with all three unmatched delimiters in command substitution (#1066)"
+    stdin: |
+      echo "$(cat <<'EOF'
+      `hello "world it's
+      EOF
+      )"
+
+  - name: "Here doc with quoted parens and backticks in command substitution (#1066)"
+    stdin: |
+      printf '%s\n' "$(cat <<'EOF'
+      a (b's c) `touch pwned` d's
+      EOF
+      )"
+
+  - name: "Here doc with unpaired close paren in command substitution"
+    stdin: |
+      echo "$(cat <<END
+      This one: “)”
+      END
+      )"
+
+  - name: "Here doc body starting with close paren in command substitution"
+    stdin: |
+      x=$(cat <<END
+      )
+      END
+      )
+      echo "x=$x"
+      echo $(cat <<END
+      ) two
+      END
+      )
+      cat <<OUTER
+      $(cat <<END
+      ) three
+      END
+      )
+      OUTER
+
+  - name: "Here doc in command substitution in parameter default"
+    stdin: |
+      echo "${unset_var:-$(cat <<'EOF'
+      she said "hello ) it's
+      EOF
+      )}"
+
+  - name: "Multiple here docs with unbalanced quotes in command substitution"
+    stdin: |
+      echo "$(cat <<A <<'B'
+      a "1
+      A
+      b )2 it's
+      B
+      )"
+
+  - name: "Tab-stripped here doc with unbalanced quotes in command substitution"
+    stdin: |
+      echo "$(cat <<-'EOF'
+      	tab "stripped )
+      	EOF
+      )"
+
+  - name: "Here doc body containing command substitution with its own here doc"
+    stdin: |
+      cat <<EOF
+      body $(cat <<'INNER'
+      inner "quote ) it's
+      INNER
+      ) end
+      EOF
+
+  - name: "Eval of here doc with unbalanced quotes in command substitution"
+    stdin: |
+      eval 'echo "$(cat <<EOF
+      ev "al )
+      EOF
+      )"'
+
+  - name: "Here doc with unterminated expansions"
+    known_failure: true # TODO(expansion): #540: unterminated '${' or '$(' is silently treated as literal text
+    ignore_stderr: true
+    stdin: |
+      cat <<EOF
+      a ${USER b
+      EOF
+      echo "rc=$?"
+      cat <<EOF
+      a $(echo hi b
+      EOF
+      echo "rc=$?"
+
+  - name: "Here doc with command substitution that never closes"
+    known_failure: true # TODO(expansion): #540: unterminated '$(' is silently treated as literal text
+    ignore_stderr: true
+    stdin: |
+      cat <<EOF
+      a $(echo 'b) c
+      EOF
+      echo "rc=$?"
+      cat <<EOF
+      a $(echo b # c)
+      EOF
+      echo "rc=$?"

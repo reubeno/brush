@@ -36,3 +36,10 @@ cases:
       echo "Before subshell"
       (exec cat <<<"Hello from exec in subshell")
       echo "After subshell"
+
+  - name: "Nested subshells on one line"
+    known_failure: true # TODO(parser): #1040: '( (' is parsed as the start of an arithmetic command
+    stdin: |
+      ( (echo hi) )
+      x=$( ( (echo hi) ) )
+      echo "x=$x"
