@@ -239,7 +239,8 @@ download_canary_archive() {
 
 # Verifies the archive's build provenance attestation, when that's possible here.
 # The attestation must come from the official release workflow, running on
-# GitHub-hosted runners, for this release's tag (or, for canary builds, main).
+# GitHub-hosted runners, for this release's tag (or, for canary builds, main,
+# and with --commit, that exact commit).
 verify_attestation() {
     skip_reason=""
 
@@ -249,10 +250,12 @@ verify_attestation() {
         skip_reason="GitHub CLI (gh) is too old (2.68 or newer is needed)"
     else
         gh_status=0
+        # Left unquoted so it vanishes without --commit; parse_args made sure it's plain hex.
         gh attestation verify "${tmp_dir}/${archive}" \
             --repo "${REPO}" \
             --signer-workflow "${RELEASE_WORKFLOW}" \
             --source-ref "${source_ref}" \
+            ${commit:+--source-digest ${commit}} \
             --deny-self-hosted-runners \
             >/dev/null 2>"${tmp_dir}/gh.err" || gh_status=$?
 

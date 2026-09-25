@@ -8,10 +8,12 @@ Usage: python3 -m pytest scripts/install/tests
 (Set GH_TOKEN, e.g. to `$(gh auth token)`, to also verify a real build attestation.)
 """
 
+import json
 import os
 import platform
 import shutil
 import subprocess
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -53,6 +55,14 @@ SHIMS = {
         [[ $* == *--help ]] && { echo "--source-ref"; exit 0; }
         echo "To get started with GitHub CLI, please run:  gh auth login" >&2
         exit 4
+        """,
+    ),
+    # Accepts every attestation, recording its arguments in $GH_ARGS_FILE.
+    "gh-records-args": (
+        "gh",
+        """
+        [[ $* == *--help ]] && { echo "--source-ref"; exit 0; }
+        echo "$*" >"${GH_ARGS_FILE}"
         """,
     ),
     # e.g. the gh shipped by Ubuntu 24.04 and Debian 12: no `attestation` subcommand at all.
@@ -263,6 +273,29 @@ def test_verifies_real_canary_attestation(install, tmp_path):
     result = install("--canary", "--dir", tmp_path, "--require-attestation")
     assert_succeeded(result)
     assert "verified GitHub build attestation" in result.stdout
+
+
+def newest_canary_commit():
+    """Returns the commit of the newest canary build, from its manifest on ghcr.io."""
+    package = "reubeno/brush-canary"
+    with urllib.request.urlopen(f"https://ghcr.io/token?scope=repository:{package}:pull") as response:
+        token = json.load(response)["token"]
+    # Every build publishes all targets, so any target's tag names the same commit.
+    request = urllib.request.Request(
+        f"https://ghcr.io/v2/{package}/manifests/x86_64-unknown-linux-musl",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.oci.image.manifest.v1+json"},
+    )
+    with urllib.request.urlopen(request) as response:
+        return json.load(response)["annotations"]["org.opencontainers.image.revision"]
+
+
+def test_pinned_canary_attestation_checks_commit(install, tmp_path):
+    commit = newest_canary_commit()
+    args_file = tmp_path / "gh-args"
+    result = install("--commit", commit, "--dir", tmp_path / "bin", shims=["gh-records-args"], GH_ARGS_FILE=args_file)
+    assert_succeeded(result)
+    assert f"--source-digest {commit}" in args_file.read_text()
+    assert f"(git:{commit[:7]}" in brush_version(tmp_path / "bin" / "brush")
 
 
 def test_unset_home_without_dir(install):
