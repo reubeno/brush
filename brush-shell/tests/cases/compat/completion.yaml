@@ -1,0 +1,102 @@
+name: "Interactive completion"
+incompatible_configs: ["sh"]
+cases:
+  # Like readline, `compgen` in a completion function dequotes a word it was passed (other
+  # than the one being completed) a second time if *anything* on the line up to the cursor
+  # is quoted, not just the word being completed.
+  - name: "compgen dequotes again after a quoted word earlier on the line"
+    pty: true
+    ignore_stdout: true
+    test_files:
+      - path: "a\\b1"
+      - path: "ab2"
+    stdin: |
+      #expect-prompt
+      _f() { COMPREPLY=($(compgen -f -- 'a\\b')); }; complete -F _f zz; zz() { printf '<%s>\n' "$@"; }
+      #send:Enter
+      #expect-prompt
+      zz 'q' x
+      #send:Tab
+      #send:Enter
+      #expect:<ab2>
+      #expect-prompt
+      zz "q" x
+      #send:Tab
+      #send:Enter
+      #expect:<ab2>
+      #expect-prompt
+      #send:Ctrl+D
+
+  # Like bash's default completion, a word starting with `~` and no `/` completes to user
+  # names, and a user name to its home directory.
+  - name: "Default completion of a tilde prefix completes user names"
+    known_failure: true # TODO(completions): needs all user names (#475)
+    pty: true
+    timeout_in_seconds: 3 # Fail fast, rather than waiting on the expectation that fails.
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      printf '<%s>\n' ~roo
+      #send:Tab
+       | sed "s|^<$(echo ~root)|<R|"
+      #send:Enter
+      #expect:<R/>
+      #expect-prompt
+      #send:Ctrl+D
+
+  # A bare `~` is a user name prefix too, so it doesn't complete to $HOME (or to other
+  # paths starting with it).
+  - name: "Default completion of a bare tilde does not complete $HOME"
+    pty: true
+    ignore_stdout: true
+    home_dir: . # Not HOME=...: macOS (Homebrew) bash expands ~ from the environment's HOME.
+    env:
+      HISTFILE: "history-file.txt" # Rather than a different default name per shell.
+    stdin: |
+      #expect-prompt
+      printf '<%s>\n' ~
+      #send:Tab
+       | sed "s|^<$HOME|<H|"
+      #send:Enter
+      #expect:<H>
+      #expect-prompt
+      #send:Ctrl+D
+
+  # A completion function that returns 124 restarts completion, which uses the specs as
+  # the function left them, including the special ones (e.g. a `-D` loader replacing
+  # itself).
+  - name: "Restarted completion uses the specs the completion function registered"
+    min_oracle_version: 5.3 # bash 5.2 doesn't restart with a replaced -D spec
+    pty: true
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      _load() { complete -D -W loaded; return 124; }; complete -D -F _load; zz() { printf '<%s>\n' "$@"; }
+      #send:Enter
+      #expect-prompt
+      zz l
+      #send:Tab
+      #send:Enter
+      #expect:<loaded>
+      #expect-prompt
+      #send:Ctrl+D
+
+  # Like bash, a completion function that asks for a restart doesn't leave its `COMPREPLY`
+  # behind, even when the restart uses a spec that isn't a function.
+  - name: "Restarted completion discards the COMPREPLY the function set"
+    pty: true
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      _f() { COMPREPLY=(leak); complete -W word zz; return 124; }; complete -F _f zz; zz() { :; }
+      #send:Enter
+      #expect-prompt
+      zz w
+      #send:Tab
+      #send:Enter
+      #expect-prompt
+      [[ -v COMPREPLY ]] && echo "<leak""ed>" || echo "<un""set>"
+      #send:Enter
+      #expect:<unset>
+      #expect-prompt
+      #send:Ctrl+D

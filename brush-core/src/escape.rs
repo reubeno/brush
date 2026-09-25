@@ -347,6 +347,12 @@ pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
     quote(s, &options)
 }
 
+/// Returns whether `s` needs quoting to be a shell word that expands to just `s` (i.e.,
+/// whether [`quote_if_needed`] would change it).
+pub(crate) fn needs_quoting(s: &str) -> bool {
+    quote_if_needed(s, QuoteMode::BackslashEscape) != s
+}
+
 fn backslash_escape(s: &str) -> Cow<'_, str> {
     if s.is_empty() {
         // An empty string must be represented as '' to be a valid shell word.
@@ -403,12 +409,19 @@ pub fn single_quote(s: &str) -> Cow<'_, str> {
 }
 
 fn double_quote(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
+    double_quote_leaving(s, &[])
+}
+
+/// Double-quotes `s`, escaping the chars that are special in double quotes (`$`, `` ` ``,
+/// `"`, and `\`) -- except those in `live`, which keep their meaning. E.g., with `$` live,
+/// parameters in `s` still expand.
+pub(crate) fn double_quote_leaving(s: &str, live: &[char]) -> String {
+    let mut result = String::with_capacity(s.len() + 2);
 
     result.push('"');
 
     for c in s.chars() {
-        if matches!(c, '$' | '`' | '"' | '\\') {
+        if matches!(c, '$' | '`' | '"' | '\\') && !live.contains(&c) {
             result.push('\\');
         }
 

@@ -9,10 +9,7 @@ impl super::LineReader for NonTermLineReader {
         _completion_handler: impl FnMut(
             &str,
             usize,
-        ) -> Result<
-            brush_core::completion::Completions,
-            crate::ShellError,
-        >,
+        ) -> Result<crate::completion::Offers, crate::ShellError>,
     ) -> Result<crate::ReadResult, crate::ShellError> {
         let mut input = String::new();
         let bytes_read = std::io::stdin()

@@ -231,7 +231,7 @@ async fn run_async(
 
         #[cfg(feature = "basic")]
         InputBackendType::Basic => {
-            let mut input_backend = brush_interactive::BasicInputBackend;
+            let mut input_backend = brush_interactive::BasicInputBackend::new(&ui_options);
             run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
         #[cfg(not(feature = "basic"))]

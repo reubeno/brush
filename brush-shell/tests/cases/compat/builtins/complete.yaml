@@ -105,6 +105,53 @@ cases:
 
       complete -p
 
+  - name: "complete -p with no such completion spec fails"
+    stdin: |
+      strip() { sed 's/^.*complete:/complete:/'; }
+
+      complete -p mycmd 2>err; echo "rc=$?"; strip <err
+      for flag in -D -E -I; do
+        complete -p $flag 2>err; echo "rc=$?"; strip <err
+      done
+      rm err
+
+  - name: "complete -p lists every spec, including -D, -E, and -I"
+    stdin: |
+      complete -W b bcmd
+      complete -D -W x
+      complete -E -F f
+      complete -I -o nospace -W y
+      complete -W a acmd
+      # bash lists specs in its hash table's order, so sort them.
+      complete -p | sort
+      echo ---
+      complete | sort
+      echo ---
+      complete -p -D
+      complete -p -E
+      complete -p -I
+      complete -p _DefaultCmD_
+
+  - name: "complete -p prints options, actions, and arguments in bash's order"
+    stdin: |
+      complete -v -o nospace -A function -a -o default -F fn -G '*.c' -W 'w1 w2' -X '!*.x' -P pre -S suf -C cmd mycmd
+      complete -p mycmd
+      complete -A signal -A arrayvar -b -a -A builtin other
+      complete -p other
+      complete -X '*.y' -W x 'a b'
+      complete -p 'a b'
+
+  - name: "complete -p output round-trips"
+    stdin: |
+      complete -o filenames -A function -X '!*.x' -P pre -W 'w1 w2' mycmd
+      complete -D -X '*.y' -F fn
+      before=$(complete -p mycmd; complete -p -D)
+      complete -r
+      eval "$before"
+      after=$(complete -p mycmd; complete -p -D)
+      echo "$after"
+      [[ $before == "$after" ]] && echo "round-tripped"
+
   - name: "compgen -W preserves duplicates"
     stdin: |
       compgen -W "a b a c b"

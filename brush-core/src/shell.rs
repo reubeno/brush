@@ -119,8 +119,8 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Directory stack used by pushd et al.
     directory_stack: Vec<PathBuf>,
 
-    /// Completion configuration.
-    completion_config: crate::completion::Config,
+    /// Programmable completion state.
+    completion: crate::completion::State,
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -175,7 +175,10 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
                 cs
             },
             directory_stack: self.directory_stack.clone(),
-            completion_config: self.completion_config.clone(),
+            // A subshell of a completion function (e.g. `$(compgen ...)`) is in that
+            // completion too. Like a forked subshell in bash, it changes only its own copy
+            // (e.g. with `compopt`), which its parent doesn't see.
+            completion: self.completion.clone(),
             builtins: self.builtins.clone(),
             program_location_cache: self.program_location_cache.clone(),
             last_stopwatch_time: self.last_stopwatch_time,
@@ -493,12 +496,12 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns the shell's completion configuration.
     pub fn completion_config(&self) -> &crate::completion::Config {
-        &self.completion_config
+        &self.completion.config
     }
 
     /// Returns a mutable reference to the shell's completion configuration.
     pub fn completion_config_mut(&mut self) -> &mut crate::completion::Config {
-        &mut self.completion_config
+        &mut self.completion.config
     }
 
     /// Returns the shell's open files.
