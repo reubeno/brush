@@ -1,13 +1,16 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
+use usage::Cli;
 
 /// Evaluate the given string as script.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "eval", unknown_flags = "value", args_override_self = false)]
 pub(crate) struct EvalCommand {
     /// The script to evaluate.
-    #[clap(allow_hyphen_values = true)]
+    #[usage(trailing_var_arg, allow_hyphen_values)]
     args: Vec<String>,
 }
+
+brush_builtin_usage::usage_builtin!(EvalCommand);
 
 impl builtins::Command for EvalCommand {
     type Error = brush_core::Error;

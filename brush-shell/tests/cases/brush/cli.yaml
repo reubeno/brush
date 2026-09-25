@@ -25,6 +25,18 @@ cases:
     expected_exit_code: 0
     # Note: can't easily check stdout content as it varies
 
+  - name: "Version goes to stdout and names the shell"
+    stdin: |
+      "$BASH" --version 2>/dev/null | cut -d' ' -f1
+    expected_exit_code: 0
+    expected_stdout: "brush\n"
+
+  - name: "Completion script callback answers from the CLI spec"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "reedline\n"
+
   - name: "Help flag succeeds"
     args:
       - "--help"

@@ -1,38 +1,41 @@
 use std::io::Write;
 
-use clap::Parser;
+use usage::Cli;
 
 use brush_core::{ExecutionResult, builtins};
 
 use crate::lookup::{self, Resolved};
 
 /// Inspect the type of a named shell item.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "type", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct TypeCommand {
     /// Display all locations of the specified name, not just the first.
-    #[arg(short = 'a')]
+    #[usage(short = 'a')]
     all_locations: bool,
 
     /// Don't consider functions when resolving the name.
-    #[arg(short = 'f')]
+    #[usage(short = 'f')]
     suppress_func_lookup: bool,
 
     /// Force searching by file path, even if the name is an alias, built-in
     /// command, or shell function.
-    #[arg(short = 'P')]
+    #[usage(short = 'P')]
     force_path_search: bool,
 
     /// Show file path only.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     show_path_only: bool,
 
     /// Only display the type of the specified name.
-    #[arg(short = 't')]
+    #[usage(short = 't')]
     type_only: bool,
 
     /// Names to search for.
     names: Vec<String>,
 }
+
+brush_builtin_usage::usage_builtin!(TypeCommand);
 
 impl builtins::Command for TypeCommand {
     type Error = brush_core::Error;

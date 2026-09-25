@@ -1,0 +1,37 @@
+[package]
+name = "brush-builtin-utils"
+description = "Utilities for implementing builtins for brush, a POSIX/bash shell"
+version = "0.1.0"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+bench = false
+
+[features]
+default = ["clap"]
+# Adapts clap-derived argument types to brush-core's builtin contracts.
+clap = ["dep:clap"]
+
+[lints]
+workspace = true
+
+[dependencies]
+brush-core = { version = "^0.5.0", path = "../brush-core" }
+clap = { version = "4.6.0", features = ["derive", "wrap_help"], optional = true }
+
+[dev-dependencies]
+anyhow = "1.0.102"
+clap = { version = "4.6.0", features = ["derive"] }
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["macros", "rt", "rt-multi-thread"] }
+trybuild = "1.0.114"
+
+[[example]]
+name = "clap-builtin"
+required-features = ["clap"]

@@ -1,34 +1,36 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins, error};
+use usage::Cli;
 
 /// Change the current shell working directory.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "cd", unknown_flags = "error")]
 pub(crate) struct CdCommand {
     /// Force following symlinks.
-    #[arg(short = 'L', overrides_with = "use_physical_dir")]
+    #[usage(short = 'L', overrides("-P"))]
     force_follow_symlinks: bool,
 
     /// Use physical dir structure without following symlinks.
-    #[arg(short = 'P', overrides_with = "force_follow_symlinks")]
+    #[usage(short = 'P', overrides("-L"))]
     use_physical_dir: bool,
 
     /// Exit with non zero exit status if current working directory resolution fails.
-    #[arg(short = 'e')]
+    #[usage(short = 'e')]
     exit_on_failed_cwd_resolution: bool,
 
     /// Show file with extended attributes as a dir with extended
     /// attributes.
-    #[arg(short = '@')]
+    #[usage(short = '@')]
     file_with_xattr_as_dir: bool,
 
     /// By default it is the value of the HOME shell variable. If `TARGET_DIR` is "-", it is
     /// converted to $OLDPWD.
     target_dir: Option<PathBuf>,
 }
+
+brush_builtin_usage::usage_builtin!(CdCommand);
 
 impl builtins::Command for CdCommand {
     type Error = brush_core::Error;

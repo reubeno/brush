@@ -8,7 +8,9 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+# usage-rs requires rustc 1.91. The workspace MSRV stays 1.88; this crate
+# follows the dependency.
+rust-version = "1.91"
 
 [lib]
 bench = false
@@ -128,16 +130,18 @@ default = [
 workspace = true
 
 [dependencies]
+brush-builtin-usage = { version = "^0.1.0", path = "../brush-builtin-usage" }
+brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils", default-features = false }
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
 chrono = "0.4.44"
-clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
 fancy-regex = "0.19.0"
 itertools = "0.14.0"
 strum = "0.28.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
+usage = { package = "usage-rs", version = "6.11.1" }
 utf8-chars = "3.0.6"
 
 [target.'cfg(target_family = "wasm")'.dependencies]

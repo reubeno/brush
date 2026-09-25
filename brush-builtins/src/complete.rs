@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
@@ -6,90 +5,134 @@ use std::io::Write;
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
 
-#[derive(Parser)]
+// `CompleteAction` and `CompleteOption` live in brush-core, which does not depend
+// on usage, so they cannot derive `usage::ValueEnum`. `choices` lists their strum
+// names (`serialize_all = "lowercase"`); `FromStr` parses them.
+
+#[derive(usage::Args)]
 struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
-    #[arg(short = 'o')]
+    #[usage(
+        short = 'o',
+        choices(
+            "bashdefault",
+            "default",
+            "dirnames",
+            "filenames",
+            "noquote",
+            "nosort",
+            "nospace",
+            "plusdirs",
+        )
+    )]
     options: Vec<CompleteOption>,
 
     /// Actions to apply to generate completions.
-    #[arg(short = 'A')]
+    #[usage(
+        short = 'A',
+        choices(
+            "alias",
+            "arrayvar",
+            "binding",
+            "builtin",
+            "command",
+            "directory",
+            "disabled",
+            "enabled",
+            "export",
+            "file",
+            "function",
+            "group",
+            "helptopic",
+            "hostname",
+            "job",
+            "keyword",
+            "running",
+            "service",
+            "setopt",
+            "shopt",
+            "signal",
+            "stopped",
+            "user",
+            "variable",
+        )
+    )]
     actions: Vec<CompleteAction>,
 
     /// File glob pattern to be expanded to generate completions.
-    #[arg(short = 'G', allow_hyphen_values = true, value_name = "GLOB")]
+    #[usage(short = 'G', allow_hyphen_values, value_name = "GLOB")]
     glob_pattern: Option<String>,
 
     /// List of words that will be considered as completions.
-    #[arg(short = 'W', allow_hyphen_values = true)]
+    #[usage(short = 'W', allow_hyphen_values)]
     word_list: Option<String>,
 
     /// Name of a shell function to invoke to generate completions.
-    #[arg(short = 'F', allow_hyphen_values = true, value_name = "FUNC_NAME")]
+    #[usage(short = 'F', allow_hyphen_values, value_name = "FUNC_NAME")]
     function_name: Option<String>,
 
     /// Command to execute to generate completions.
-    #[arg(short = 'C', allow_hyphen_values = true)]
+    #[usage(short = 'C', allow_hyphen_values)]
     command: Option<String>,
 
     /// Pattern used as filter for completions.
-    #[arg(short = 'X', allow_hyphen_values = true, value_name = "PATTERN")]
+    #[usage(short = 'X', allow_hyphen_values, value_name = "PATTERN")]
     filter_pattern: Option<String>,
 
     /// Prefix pattern used as filter for completions.
-    #[arg(short = 'P', allow_hyphen_values = true)]
+    #[usage(short = 'P', allow_hyphen_values)]
     prefix: Option<String>,
 
     /// Suffix pattern used as filter for completions.
-    #[arg(short = 'S', allow_hyphen_values = true)]
+    #[usage(short = 'S', allow_hyphen_values)]
     suffix: Option<String>,
 
     /// Complete with valid aliases.
-    #[arg(short = 'a')]
+    #[usage(short = 'a')]
     action_alias: bool,
 
     /// Complete with names of shell builtins.
-    #[arg(short = 'b')]
+    #[usage(short = 'b')]
     action_builtin: bool,
 
     /// Complete with names of executable commands.
-    #[arg(short = 'c')]
+    #[usage(short = 'c')]
     action_command: bool,
 
     /// Complete with directory names.
-    #[arg(short = 'd')]
+    #[usage(short = 'd')]
     action_directory: bool,
 
     /// Complete with names of exported shell variables.
-    #[arg(short = 'e')]
+    #[usage(short = 'e')]
     action_exported: bool,
 
     /// Complete with filenames.
-    #[arg(short = 'f')]
+    #[usage(short = 'f')]
     action_file: bool,
 
     /// Complete with valid user groups.
-    #[arg(short = 'g')]
+    #[usage(short = 'g')]
     action_group: bool,
 
     /// Complete with job specs.
-    #[arg(short = 'j')]
+    #[usage(short = 'j')]
     action_job: bool,
 
     /// Complete with keywords.
-    #[arg(short = 'k')]
+    #[usage(short = 'k')]
     action_keyword: bool,
 
     /// Complete with names of system services.
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     action_service: bool,
 
     /// Complete with valid usernames.
-    #[arg(short = 'u')]
+    #[usage(short = 'u')]
     action_user: bool,
 
     /// Complete with names of shell variables.
-    #[arg(short = 'v')]
+    #[usage(short = 'v')]
     action_variable: bool,
 }
 
@@ -116,8 +159,8 @@ impl CommonCompleteCommandArgs {
             None
         };
 
-        let mut spec = completion::Spec {
-            options: completion::GenerationOptions::default(),
+        completion::Spec {
+            options: self.options.iter().copied().collect(),
             actions: self.resolve_actions(),
             glob_pattern: self.glob_pattern.clone(),
             word_list: self.word_list.clone(),
@@ -127,22 +170,7 @@ impl CommonCompleteCommandArgs {
             filter_pattern_excludes,
             prefix: self.prefix.clone(),
             suffix: self.suffix.clone(),
-        };
-
-        for option in &self.options {
-            match option {
-                CompleteOption::BashDefault => spec.options.bash_default = true,
-                CompleteOption::Default => spec.options.default = true,
-                CompleteOption::DirNames => spec.options.dir_names = true,
-                CompleteOption::FileNames => spec.options.file_names = true,
-                CompleteOption::NoQuote => spec.options.no_quote = true,
-                CompleteOption::NoSort => spec.options.no_sort = true,
-                CompleteOption::NoSpace => spec.options.no_space = true,
-                CompleteOption::PlusDirs => spec.options.plus_dirs = true,
-            }
         }
-
-        spec
     }
 
     fn resolve_actions(&self) -> Vec<CompleteAction> {
@@ -172,33 +200,36 @@ impl CommonCompleteCommandArgs {
 }
 
 /// Configure programmable command completion.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "complete", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct CompleteCommand {
     /// Display registered completion settings.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     print: bool,
 
     /// Remove the completion settings associated with the given command.
-    #[arg(short = 'r')]
+    #[usage(short = 'r')]
     remove: bool,
 
     /// Apply these settings to the default completion scenario.
-    #[arg(short = 'D')]
+    #[usage(short = 'D')]
     use_as_default: bool,
 
     /// Apply these settings to completion of empty lines.
-    #[arg(short = 'E')]
+    #[usage(short = 'E')]
     use_for_empty_line: bool,
 
     /// Apply these settings to completion of the initial word of the input line.
-    #[arg(short = 'I')]
+    #[usage(short = 'I')]
     use_for_initial_word: bool,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     common_args: CommonCompleteCommandArgs,
 
     names: Vec<String>,
 }
+
+brush_builtin_usage::usage_builtin!(CompleteCommand);
 
 impl builtins::Command for CompleteCommand {
     type Error = brush_core::Error;
@@ -298,7 +329,6 @@ impl CompleteCommand {
         }
     }
 
-    #[expect(clippy::too_many_lines)]
     fn display_spec(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         special_name: Option<&str>,
@@ -315,59 +345,30 @@ impl CompleteCommand {
         for action in &spec.actions {
             s.push(' ');
 
-            let action_str = match action {
-                CompleteAction::Alias => "-a",
-                CompleteAction::ArrayVar => "-A arrayvar",
-                CompleteAction::Binding => "-A binding",
-                CompleteAction::Builtin => "-b",
-                CompleteAction::Command => "-c",
-                CompleteAction::Directory => "-d",
-                CompleteAction::Disabled => "-A disabled",
-                CompleteAction::Enabled => "-A enabled",
-                CompleteAction::Export => "-e",
-                CompleteAction::File => "-f",
-                CompleteAction::Function => "-A function",
-                CompleteAction::Group => "-g",
-                CompleteAction::HelpTopic => "-A helptopic",
-                CompleteAction::HostName => "-A hostname",
-                CompleteAction::Job => "-j",
-                CompleteAction::Keyword => "-k",
-                CompleteAction::Running => "-A running",
-                CompleteAction::Service => "-s",
-                CompleteAction::SetOpt => "-A setopt",
-                CompleteAction::ShOpt => "-A shopt",
-                CompleteAction::Signal => "-A signal",
-                CompleteAction::Stopped => "-A stopped",
-                CompleteAction::User => "-u",
-                CompleteAction::Variable => "-v",
+            let short_flag = match action {
+                CompleteAction::Alias => Some("-a"),
+                CompleteAction::Builtin => Some("-b"),
+                CompleteAction::Command => Some("-c"),
+                CompleteAction::Directory => Some("-d"),
+                CompleteAction::Export => Some("-e"),
+                CompleteAction::File => Some("-f"),
+                CompleteAction::Group => Some("-g"),
+                CompleteAction::Job => Some("-j"),
+                CompleteAction::Keyword => Some("-k"),
+                CompleteAction::Service => Some("-s"),
+                CompleteAction::User => Some("-u"),
+                CompleteAction::Variable => Some("-v"),
+                _ => None,
             };
 
-            s.push_str(action_str);
+            match short_flag {
+                Some(flag) => s.push_str(flag),
+                None => write!(s, "-A {action}")?,
+            }
         }
 
-        if spec.options.bash_default {
-            s.push_str(" -o bashdefault");
-        }
-        if spec.options.default {
-            s.push_str(" -o default");
-        }
-        if spec.options.dir_names {
-            s.push_str(" -o dirnames");
-        }
-        if spec.options.file_names {
-            s.push_str(" -o filenames");
-        }
-        if spec.options.no_quote {
-            s.push_str(" -o noquote");
-        }
-        if spec.options.no_sort {
-            s.push_str(" -o nosort");
-        }
-        if spec.options.no_space {
-            s.push_str(" -o nospace");
-        }
-        if spec.options.plus_dirs {
-            s.push_str(" -o plusdirs");
+        for option in &spec.options {
+            write!(s, " -o {option}")?;
         }
 
         if let Some(glob_pattern) = &spec.glob_pattern {
@@ -460,14 +461,17 @@ impl CompleteCommand {
 }
 
 /// Generate command completions.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "compgen", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct CompGenCommand {
-    #[clap(flatten)]
+    #[usage(flatten)]
     common_args: CommonCompleteCommandArgs,
 
     // N.B. The word can only start with a hyphen if it's after a --.
     word: Option<String>,
 }
+
+brush_builtin_usage::usage_builtin!(CompGenCommand);
 
 impl builtins::Command for CompGenCommand {
     type Error = brush_core::Error;
@@ -479,7 +483,7 @@ impl builtins::Command for CompGenCommand {
         let mut spec = self
             .common_args
             .create_spec(context.shell.options().extended_globbing);
-        spec.options.no_sort = true;
+        spec.options.insert(CompleteOption::NoSort);
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
@@ -526,29 +530,58 @@ impl builtins::Command for CompGenCommand {
 }
 
 /// Set programmable command completion options.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(bin = "compopt", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct CompOptCommand {
     /// Update the default completion settings.
-    #[arg(short = 'D')]
+    #[usage(short = 'D')]
     update_default: bool,
 
     /// Update the completion settings for empty lines.
-    #[arg(short = 'E')]
+    #[usage(short = 'E')]
     update_empty: bool,
 
     /// Update the completion settings for the initial word of the input line.
-    #[arg(short = 'I')]
+    #[usage(short = 'I')]
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o', value_name = "OPT")]
+    #[usage(
+        short = 'o',
+        value_name = "OPT",
+        choices(
+            "bashdefault",
+            "default",
+            "dirnames",
+            "filenames",
+            "noquote",
+            "nosort",
+            "nospace",
+            "plusdirs",
+        )
+    )]
     enabled_options: Vec<CompleteOption>,
-    #[arg(long = concat!("+o"), hide = true)]
+    #[usage(
+        long = "+o",
+        hide,
+        choices(
+            "bashdefault",
+            "default",
+            "dirnames",
+            "filenames",
+            "noquote",
+            "nosort",
+            "nospace",
+            "plusdirs",
+        )
+    )]
     disabled_options: Vec<CompleteOption>,
 
     /// If specified, scopes updates to completions of the named commands.
     names: Vec<String>,
 }
+
+brush_builtin_usage::usage_builtin!(CompOptCommand);
 
 impl builtins::Command for CompOptCommand {
     type Error = brush_core::Error;
@@ -560,10 +593,10 @@ impl builtins::Command for CompOptCommand {
         let mut options =
             HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
         for option in &self.disabled_options {
-            options.insert(option.clone(), false);
+            options.insert(*option, false);
         }
         for option in &self.enabled_options {
-            options.insert(option.clone(), true);
+            options.insert(*option, true);
         }
 
         if !self.names.is_empty() {
@@ -632,16 +665,79 @@ impl CompOptCommand {
         I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
     {
         for (option, value) in options {
-            match option {
-                CompleteOption::BashDefault => target_options.bash_default = *value,
-                CompleteOption::Default => target_options.default = *value,
-                CompleteOption::DirNames => target_options.dir_names = *value,
-                CompleteOption::FileNames => target_options.file_names = *value,
-                CompleteOption::NoQuote => target_options.no_quote = *value,
-                CompleteOption::NoSort => target_options.no_sort = *value,
-                CompleteOption::NoSpace => target_options.no_space = *value,
-                CompleteOption::PlusDirs => target_options.plus_dirs = *value,
+            if *value {
+                target_options.insert(*option);
+            } else {
+                target_options.remove(option);
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use brush_core::CommandArg;
+    use brush_core::builtins::FromArgs;
+    use strum::VariantNames;
+
+    fn arg(word: &str) -> CommandArg {
+        CommandArg::String(word.to_owned())
+    }
+
+    #[test]
+    fn every_action_name_parses_to_its_action() -> Result<()> {
+        for name in CompleteAction::VARIANTS {
+            let args = CompleteCommand::from_args("complete", vec![arg("-A"), arg(name)])?;
+            let parsed: Vec<_> = args
+                .common_args
+                .actions
+                .iter()
+                .map(ToString::to_string)
+                .collect();
+            assert_eq!(parsed, [*name]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn every_option_name_parses_to_its_option() -> Result<()> {
+        for name in CompleteOption::VARIANTS {
+            let option: CompleteOption = name.parse()?;
+            let args = CompleteCommand::from_args("complete", vec![arg("-o"), arg(name)])?;
+            assert_eq!(args.common_args.options, [option]);
+
+            let args = CompOptCommand::from_args("compopt", vec![arg("--+o"), arg(name)])?;
+            assert_eq!(args.disabled_options, [option]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_names_list_the_accepted_ones() {
+        let Err(err) = CompleteCommand::from_args("complete", vec![arg("-A"), arg("bogus")]) else {
+            unreachable!("`bogus` is not an action name");
+        };
+        let message = err.to_string();
+        assert!(
+            message.contains("possible values") && message.contains("arrayvar"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn help_lists_accepted_names() {
+        let help = CompleteCommand::render_help_styled(
+            CompleteCommand::command(),
+            true,
+            usage::help::Style::PLAIN,
+        )
+        .unwrap_or_default();
+        assert!(
+            help.contains("arrayvar") && help.contains("nospace"),
+            "{help}"
+        );
     }
 }

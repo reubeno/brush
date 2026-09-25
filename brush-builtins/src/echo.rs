@@ -1,45 +1,38 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, escape};
+use usage::Cli;
 
 /// Echo text to standard output.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(Cli)]
+#[usage(
+    bin = "echo",
+    unknown_flags = "value",
+    disable_help_flag,
+    disable_version_flag
+)]
 pub(crate) struct EchoCommand {
     /// Suppress the trailing newline from the output.
-    #[arg(short = 'n')]
+    #[usage(short = 'n')]
     no_trailing_newline: bool,
 
     /// Interpret backslash escapes in the provided text.
-    #[arg(short = 'e')]
+    #[usage(short = 'e')]
     interpret_backslash_escapes: bool,
 
     /// Do not interpret backslash escapes in the provided text.
-    #[arg(short = 'E')]
+    #[usage(short = 'E')]
     no_interpret_backslash_escapes: bool,
 
     /// Tokens to echo to standard output.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(arg, trailing_var_arg)]
     args: Vec<String>,
 }
 
+brush_builtin_usage::usage_builtin!(EchoCommand, trailing_args = args);
+
 impl builtins::Command for EchoCommand {
     type Error = brush_core::Error;
-
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(echo): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
-    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

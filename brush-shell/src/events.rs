@@ -8,41 +8,65 @@ use tracing_subscriber::{
 };
 
 /// Type of event to trace.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, usage::ValueEnum)]
+#[usage(rename_all = "lowercase")]
 pub enum TraceEvent {
     /// Traces parsing and evaluation of arithmetic expressions.
-    #[clap(name = "arithmetic")]
     Arithmetic,
     /// Traces command execution.
-    #[clap(name = "commands")]
     Commands,
     /// Traces command completion generation.
-    #[clap(name = "complete")]
     Complete,
     /// Traces word expansion.
-    #[clap(name = "expand")]
     Expand,
     /// Traces functions.
-    #[clap(name = "functions")]
     Functions,
     /// Traces input controls.
-    #[clap(name = "input")]
     Input,
     /// Traces job management.
-    #[clap(name = "jobs")]
     Jobs,
     /// Traces the process of parsing tokens into an abstract syntax tree.
-    #[clap(name = "parse")]
     Parse,
     /// Traces pattern matching.
-    #[clap(name = "pattern")]
     Pattern,
     /// Traces the process of tokenizing input text.
-    #[clap(name = "tokenize")]
     Tokenize,
     /// Traces usage of unimplemented functionality.
-    #[clap(name = "unimplemented", alias = "unimp")]
+    #[usage(alias = "unimp")]
     Unimplemented,
+}
+
+/// An event name that is not one of the known tracing classes.
+#[derive(Debug, Clone, Copy)]
+pub struct UnknownEventName;
+
+impl std::fmt::Display for UnknownEventName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("unknown event")
+    }
+}
+
+impl std::error::Error for UnknownEventName {}
+
+impl std::str::FromStr for TraceEvent {
+    type Err = UnknownEventName;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "arithmetic" => Ok(Self::Arithmetic),
+            "commands" => Ok(Self::Commands),
+            "complete" => Ok(Self::Complete),
+            "expand" => Ok(Self::Expand),
+            "functions" => Ok(Self::Functions),
+            "input" => Ok(Self::Input),
+            "jobs" => Ok(Self::Jobs),
+            "parse" => Ok(Self::Parse),
+            "pattern" => Ok(Self::Pattern),
+            "tokenize" => Ok(Self::Tokenize),
+            "unimplemented" | "unimp" => Ok(Self::Unimplemented),
+            _ => Err(UnknownEventName),
+        }
+    }
 }
 
 impl Display for TraceEvent {

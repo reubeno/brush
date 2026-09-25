@@ -1,13 +1,16 @@
-use clap::Parser;
+use usage::Cli;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Shift positional arguments.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "shift", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct ShiftCommand {
     /// Number of positions to shift the arguments by (defaults to 1).
     n: Option<i32>,
 }
+
+brush_builtin_usage::usage_builtin!(ShiftCommand);
 
 impl builtins::Command for ShiftCommand {
     type Error = brush_core::Error;
