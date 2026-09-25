@@ -7,12 +7,12 @@ TokenizerResult(
   result: [
     Word("$( (:) )", SourceSpan(
       start: SourcePosition(
-        index: 0,
+        offset: 0,
         line: 1,
         column: 1,
       ),
       end: SourcePosition(
-        index: 8,
+        offset: 8,
         line: 1,
         column: 9,
       ),
