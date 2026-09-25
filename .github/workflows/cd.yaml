@@ -13,7 +13,7 @@
 #
 
 name: CD # Continuous Deployment
-run-name: CD${{ github.event_name == 'release' && ' (release)' || ' (dry run)' }}
+run-name: CD${{ github.event_name == 'release' && ' (release)' || (github.event_name == 'push' && github.repository == 'reubeno/brush') && ' (canary)' || ' (dry run)' }}
 
 on:
   release:
