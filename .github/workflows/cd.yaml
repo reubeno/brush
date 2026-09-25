@@ -8,6 +8,9 @@
 # gnu build only on glibc 2.34+ and the musl build otherwise). Changing any of these breaks the
 # install script for new releases; update it (and its tests) to match.
 #
+# Pushes to `main` also publish canary builds to ghcr.io/reubeno/brush-canary (see the
+# publish-canary job), which `install.sh --canary` installs from.
+#
 
 name: CD # Continuous Deployment
 run-name: CD${{ github.event_name == 'release' && ' (release)' || ' (dry run)' }}
@@ -24,7 +27,7 @@ on:
   pull_request:
     branches: ["main"]
 
-  # Run on pushes into `main` as a way to have "nightly"-ish binaries.
+  # Run on pushes into `main` to publish canary builds.
   push:
     branches: ["main"]
 
@@ -185,6 +188,11 @@ jobs:
       - name: "Build and upload binaries to release"
         uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
         id: upload-release
+        env:
+          # Canary builds of `main` say so in `brush --version`.
+          BRUSH_VERSION_SUFFIX: ${{ github.event_name == 'push' && '+canary' || '' }}
+          # cross only forwards environment variables it's told about into its build container.
+          CROSS_BUILD_ENV_PASSTHROUGH: BRUSH_VERSION_SUFFIX
         with:
           dry-run: ${{ github.event_name != 'release' || matrix.force_dry_run }}
           bin: brush
@@ -197,7 +205,8 @@ jobs:
           include: "LICENSE,THIRD_PARTY_LICENSES.html"
 
       - name: "Generate artifact attestation"
-        if: github.event_name == 'release' && !matrix.force_dry_run
+        # Canary builds (pushes to `main`) are attested too, for `install.sh --canary` to verify.
+        if: (github.event_name == 'release' && !matrix.force_dry_run) || (github.event_name == 'push' && github.repository == 'reubeno/brush')
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "${{ steps.upload-release.outputs.archive }}.*"
@@ -208,3 +217,94 @@ jobs:
         with:
           name: brush-${{ matrix.target }}
           path: "${{ steps.upload-release.outputs.archive }}.*"
+
+  # Publishes builds of `main` to ghcr.io/reubeno/brush-canary, where `install.sh --canary` finds
+  # them. Each target's archive is pushed as a single-file OCI artifact tagged `<target>-<commit>`
+  # and then, once every target's archive is in place, `<target>` (always the newest build).
+  #
+  # N.B. install.sh depends on the package name, the tags, and each manifest having the archive
+  # as its only layer.
+  publish-canary:
+    name: "Publish canary builds"
+    needs: upload-assets
+
+    permissions:
+      packages: write
+
+    if: github.event_name == 'push' && github.repository == 'reubeno/brush'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: "Download build artifacts"
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          # brush-<target>, but not brush-docs.
+          pattern: brush-*-*
+          merge-multiple: true
+
+      - name: "Install ORAS"
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+
+      - name: "Push to ghcr.io"
+        env:
+          PACKAGE: ghcr.io/reubeno/brush-canary
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          oras login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin <<<"${REGISTRY_TOKEN}"
+
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          targets=()
+          for archive in brush-*.tar.gz brush-*.zip; do
+            target="${archive#brush-}"
+            target="${target%.tar.gz}"
+            target="${target%.zip}"
+            case "${archive}" in
+              *.zip) media_type="application/zip" ;;
+              *) media_type="application/gzip" ;;
+            esac
+
+            oras push "${PACKAGE}:${target}-${GITHUB_SHA}" \
+              --artifact-type "application/vnd.reubeno.brush.canary.v1" \
+              --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.created=${created}" \
+              --annotation "org.opencontainers.image.description=Unreleased builds of brush from main; they may break. Install with: curl --proto '=https' --tlsv1.2 -fsSL https://brush.sh/install.sh | sh -s -- --canary" \
+              "${archive}:${media_type}"
+            targets+=("${target}")
+          done
+
+          # Only now move each `<target>` tag, so it never points at a partially published build.
+          for target in "${targets[@]}"; do
+            oras tag "${PACKAGE}:${target}-${GITHUB_SHA}" "${target}"
+          done
+
+  # Deletes old canary builds. Kept apart from publish-canary so that nothing here can push builds.
+  prune-canary:
+    name: "Prune old canary builds"
+    needs: publish-canary
+
+    permissions:
+      packages: write
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: "Delete all but the newest ~100 builds"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          versions="/users/${GITHUB_REPOSITORY_OWNER}/packages/container/brush-canary/versions"
+
+          # Each build adds one version per target (8 of them), so keeping the newest 800 versions
+          # keeps about 100 builds. Versions still tagged with a bare `<target>` (the newest build
+          # of that target) are never deleted.
+          gh api --paginate --slurp "${versions}?per_page=100" |
+            jq -r 'add | sort_by(.created_at) | reverse | .[800:][]
+                   | select(.metadata.container.tags | all(test("-[0-9a-f]{40}$")))
+                   | .id' |
+            while read -r id; do
+              # GitHub refuses to delete public versions with over 5,000 downloads; don't fail over that.
+              gh api --method DELETE "${versions}/${id}" || echo "::warning::could not delete ${versions}/${id}"
+            done
