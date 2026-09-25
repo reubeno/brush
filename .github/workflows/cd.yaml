@@ -269,7 +269,7 @@ jobs:
               --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
               --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
               --annotation "org.opencontainers.image.created=${created}" \
-              --annotation "org.opencontainers.image.description=Unreleased builds of brush from main; they may break. Install with: curl --proto '=https' --tlsv1.2 -fsSL https://brush.sh/install.sh | sh -s -- --canary" \
+              --annotation "org.opencontainers.image.description=Unreleased, unstable builds of brush from main." \
               "${archive}:${media_type}"
             targets+=("${target}")
           done
