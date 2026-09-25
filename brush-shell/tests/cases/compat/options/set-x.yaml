@@ -64,7 +64,6 @@ cases:
       echo "After function call"
 
   - name: "declaration assignments show expanded values"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       value=world
       set -x
@@ -134,7 +133,6 @@ cases:
       set +x
 
   - name: "wrappers trace the full invocation for declaration targets"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       value=world
       set -x
@@ -146,7 +144,6 @@ cases:
       set +x
 
   - name: "export and readonly echo assignments but not bare names"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       set -x
       export a=1 b=2
@@ -158,7 +155,6 @@ cases:
       set +x
 
   - name: "export and readonly echo assignments recognized from strings"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       set -x
       readonly 'q=1'
@@ -166,7 +162,6 @@ cases:
       set +x
 
   - name: "assignment operands are traced as single quoted words"
-    known_failure: true # TODO: xtrace improvements required
     stdin: |
       v="a b"
       set -x
@@ -191,8 +186,7 @@ cases:
 
   - name: "compound assignment operands are traced as two lines"
     # A shell traces a compound assignment operand as a standalone assignment line followed by the
-    # declaration command carrying only the variable name; brush emits a single combined line.
-    known_failure: true
+    # declaration command carrying only the variable name.
     stdin: |
       set -x
       declare -a b=(1 2)
@@ -210,3 +204,34 @@ cases:
       x=1
       echo done
       trap - DEBUG
+
+  - name: "compound operand traces quote every element and key"
+    stdin: |
+      set -x
+      declare -a k1=([2]=a [5]="b c")
+      declare -a k2=()
+      declare -a k1+=(z "it's")
+      declare -A k3=([k]=v ['x y']=1 [n]="")
+      X=1 declare -a k4=(1) k5=2
+      declare -a 'k6=(1 2)' k7=(3)
+      f() { local l=(1 2) m=v; }
+      f
+      set +x
+
+  - name: "compound assignment statements are traced as written"
+    stdin: |
+      x=5
+      set -x
+      a=($x "$x y" [1+1]=z)
+      a+=("$x")
+      b[1+1]=$x
+      declare -A c
+      c=([k]="$x")
+      set +x
+
+  - name: "compound operand traces escape single quotes in keys and values"
+    stdin: |
+      set -x
+      declare -a q=("a'b" [3]="c'd")
+      declare -A r=(["it's"]="x'y" [k]="")
+      set +x

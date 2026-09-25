@@ -79,38 +79,269 @@ cases:
       }
       f
 
-  - name: "local -I inherits from enclosing scope"
+  #
+  # An inheriting local reaches past the local scope it creates in, so the array kind governing
+  # its subscripts has to come from the variable it inherits -- not from the not-yet-created
+  # local, which would default to indexed and arithmetically evaluate an associative key to 0.
+  #
+  - name: "local -I resolves an associative subscript against the inherited variable"
     stdin: |
-      g=global-value
-      f() {
-          local -I g
-          echo "[$g]"
-      }
+      declare -A m=([foo]=x)
+      f() { local -I 'm[foo]+=y'; declare -p m; }
       f
-      echo "[$g]"
+      declare -p m
 
-  - name: "local -I with append"
+  - name: "local -I assigns an associative key without arithmetic evaluation"
     stdin: |
-      v=base
-      f() {
-          local -I v+=" +more"
-          echo "[$v]"
-      }
-      f
-      echo "[$v]"
+      declare -A n=([bar]=1)
+      g() { local -I 'n[bar]=2'; declare -p n; }
+      g
 
-  - name: "local -I combined flags (-Ix)"
+  - name: "local -I resolves an associative subscript in a parsed operand"
     stdin: |
+      declare -A p=([k]=a)
+      h() { local -I p[k]+=b; declare -p p; }
+      h
+
+  - name: "local -I still evaluates arithmetic for an inherited indexed array"
+    stdin: |
+      declare -a a=(zero one two)
+      i=1
+      f() { local -I "a[i+1]=X"; declare -p a; }
+      f
+
+  - name: "local -I with a matching explicit array kind inherits value and attributes"
+    stdin: |
+      declare -ax a=(one two)
+      declare -A m=([k]=v)
       f() {
-          local -Ix e
-          declare -p e
+          local -I -a a; declare -p a
+          local -I -A m; declare -p m
       }
       f
 
-  - name: "local -I without an enclosing variable falls through to normal creation"
+  - name: "local -I with a conflicting array kind fails"
     stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -a x=(one two)
+      f() { local -I -A x; echo "status=$?"; }
+      f
+      declare -A y=([k]=v)
+      g() { local -I -a y; echo "status=$?"; }
+      g
+      declare -p x y
+      strip <err.txt; rm err.txt
+
+  - name: "local -I with an array kind over a scalar starts empty but keeps attributes"
+    stdin: |
+      declare -x s=hello
       f() {
-          local -I nosuch="fresh"
-          echo "[$nosuch]"
+          local -I -a s; declare -p s
+          s+=(z); declare -p s
       }
       f
+      declare -p s
+      t=world
+      g() { local -I -A t; declare -p t; }
+      g
+
+  - name: "local -I when a same-name local already exists updates it in place"
+    stdin: |
+      v=outer
+      f() { local v=first; local -I v+=suffix; declare -p v; }
+      f
+      declare -p v
+
+  - name: "local -I with a conflicting kind over a same-scope local fails"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      f() { local -a w=(one); local -I -A w; echo "status=$?"; declare -p w; }
+      f
+      strip <err.txt; rm err.txt
+
+  - name: "local -I failed conversion still creates a local shielding the outer variable"
+    # The inherited (unconverted) local is kept after the failed conversion, so later writes
+    # in the function land on it rather than leaking to the enclosing variable.
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -A z=([k]=v)
+      f() { local -I -a z; echo "status=$?"; z[0]=inner; }
+      f
+      declare -p z
+      strip <err.txt; rm err.txt
+
+  - name: "local without -I does not inherit the enclosing array kind"
+    stdin: |
+      declare -A m=([foo]=x)
+      f() { local m[foo]=y; declare -p m; }
+      f
+      declare -p m
+
+  #
+  # `set -a` gives every variable a declaration creates or modifies the export attribute.
+  # That includes a `local -I` that updates a same-name local already in the current scope.
+  #
+  - name: "local -I over a same-scope local honors set -a auto-export"
+    stdin: |
+      v=outer
+      f() { local v=first; set -a; local -I v+=suffix; declare -p v; }
+      f
+
+  #
+  # A declared-but-unset inheritee stays declared-but-unset when `local -I` retypes it to an
+  # array kind.
+  #
+  - name: "local -I with an array kind over a declared-but-unset variable stays unset"
+    stdin: |
+      declare x
+      f() { local -I -a x; declare -p x; }
+      f
+      declare y
+      g() { local -I -A y; declare -p y; }
+      g
+
+  #
+  # `+a` cannot remove the array attribute the new local is about to inherit; the guard has to
+  # look past the local scope being created, like every other `-I` lookup.
+  #
+  - name: "local -I +a over an enclosing array is refused"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -a a1=(1 2)
+      f() { local -I +a a1; echo "status=$?"; }
+      f
+      strip <err.txt; rm err.txt
+
+  #
+  # An operand that implies an indexed array (a subscripted target, an appended array literal,
+  # or a bare subscripted name) reconciles the inherited kind exactly like an explicit `-a`:
+  # a non-array inheritee's value is not inherited.
+  #
+  - name: "local -I with a subscripted operand over a scalar does not inherit the scalar"
+    stdin: |
+      x=hello
+      f() { local -I 'x[1]=v'; declare -p x; }
+      f
+      declare -p x
+
+  - name: "local -I with a bare subscripted operand converts a scalar to an empty array"
+    stdin: |
+      y=hello
+      f() { local -I 'y[0]'; declare -p y; }
+      f
+
+  - name: "local -I with an appended array literal over a scalar does not inherit the scalar"
+    stdin: |
+      z=hello
+      f() { local -I z+=(a b); declare -p z; }
+      f
+
+  #
+  # Dynamic variables (DIRSTACK and friends) resolve to real values when inherited. The element
+  # count is compared to its own pre-inheritance value rather than pinned; the count itself is
+  # covered separately (see "DIRSTACK includes the current directory").
+  #
+  - name: "local -I -a over a dynamic variable inherits its resolved contents"
+    stdin: |
+      mkdir sub
+      pushd sub > /dev/null
+      before=${#DIRSTACK[@]}
+      f() { local -I -a DIRSTACK; echo "inherited_all=$(( ${#DIRSTACK[@]} == before ))"; }
+      f
+
+  #
+  # A readonly inheritee refuses `local -I` outright: status 1 and no local is created, whatever
+  # the kinds involved.
+  #
+  - name: "local -I over a readonly enclosing variable is refused"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      readonly -a arr=(1 2)
+      f() { local -I -a arr; echo "status=$?"; }
+      f
+      readonly r=x
+      g() { local -I r; echo "scalar_status=$?"; }
+      g
+      strip <err.txt; rm err.txt
+
+  #
+  # `local -I` over a nameref drops the nameref attribute: the local is a plain scalar holding
+  # the nameref's target string, so writes to the local do not reach the nameref's target.
+  #
+  - name: "local -I over a nameref drops the nameref attribute"
+    stdin: |
+      t=hello
+      declare -n ref=t
+      f() { local -I ref; declare -p ref; ref=changed; }
+      f
+      declare -p t ref
+
+  #
+  # A failed kind conversion on one operand still leaves the remaining operands processed.
+  #
+  - name: "a failed -I conversion does not abort the remaining operands"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      exec 2>err.txt
+      declare -a cx=(one)
+      f() { local -I -A cx cy=z; echo "status=$?"; declare -p cy; }
+      f
+      strip <err.txt; rm err.txt
+
+  #
+  # `-I` starts the local from the nearest same-name variable, wherever it lives -- here the
+  # command-scope temp variable (`x=tempy local ...`) rather than the same-name local already in
+  # scope. The scalar temp variable does not fit the subscripted operand, so the local starts as
+  # an empty indexed array that keeps the temp variable's export attribute.
+  #
+  - name: "local -I with a command-scope temp variable of the same name"
+    stdin: |
+      f() { local -A x=([k]=v); x=tempy local -I 'x[j]=w'; declare -p x; }
+      f
+
+  #
+  # `local -g` declares into the global scope instead of the function's own, the way `declare -g`
+  # does. brush's `local` always creates a local, so `-g` is silently ignored: the variable
+  # disappears when the function returns, and a same-name local is written instead of the global.
+  #
+  - name: "local -g creates a global rather than a local"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() { local -g g=1; }
+      f
+      declare -p g
+
+  - name: "local -g updates the global while a same-name local shadows it"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      h=outer
+      f() {
+          local h=inner
+          local -g h=global
+          echo "inside: $h"
+      }
+      f
+      echo "outside: $h"
+
+  - name: "local -g carries its attributes and array kind to the global"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() {
+          local -gx s=str
+          local -g -a arr=(x y)
+      }
+      f
+      declare -p s arr
+
+  - name: "local -g with a bare name declares an unset global"
+    known_failure: true # TODO(local): `local -g` is ignored; the declaration is always local
+    stdin: |
+      f() { local -g bare; }
+      f
+      declare -p bare
+      echo "status=$?"

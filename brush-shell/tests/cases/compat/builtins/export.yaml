@@ -37,14 +37,12 @@ cases:
       declare -p result
 
   - name: "Export generated assignment does not expand its value again"
-    known_failure: true # TODO: export improvements required
     stdin: |
       assignment='result=$(printf expanded)'
       export "$assignment"
       declare -p result
 
   - name: "Export indexed array with arithmetic key"
-    known_failure: true # TODO: export improvements required
     stdin: |
       export arr=([2+2]=value)
       declare -p arr
@@ -151,15 +149,259 @@ cases:
       unset -f export
 
   - name: "Export rejects an array element target"
-    known_failure: true # TODO: export improvements required
     ignore_stderr: true
     stdin: |
       export 'ea[0]=1'
       echo "status: $?"
 
+  # A rejected element target is rejected as written: its subscript is never evaluated, so it
+  # has no arithmetic side effects and cannot raise an arithmetic error in place of the
+  # identifier diagnostic.
+  - name: "Export does not evaluate the subscript of a rejected element target"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      i=0
+      export "ea2[i++]=1" 2>/dev/null
+      echo "status: $? i=$i"
+      export "ea3[1/0]=1" 2>/dev/null
+      echo "status: $?"
+      { export "ea2[i++]=1"; export "ea3[1/0]=1"; } 2>&1 | strip
+
+  - name: "export -f with an assignment operand reports not a function"
+    stdin: |
+      f() { :; }
+      export -f "f=1" 2>/dev/null
+      echo "status: $?"
+      declare -p f 2>/dev/null
+      echo "declare_status: $?"
+
+  - name: "Export identifier failure inside a pipeline exits with bash's status"
+    # A shell's declaration builtins report an invalid identifier with status 4 when run
+    # directly as a pipeline element; only at top level is it status 1.
+    known_failure: true # TODO: pipeline-element status for an invalid identifier is 1, not 4
+    stdin: |
+      export "e[0]=1" 2>/dev/null | cat
+      echo "pipeline: ${PIPESTATUS[0]}"
+      export "e[0]=1" 2>/dev/null
+      echo "direct: $?"
+
   - name: "Export recognizes an assignment produced through command"
-    known_failure: true # TODO: export improvements required
     stdin: |
       value=world
       command export wrapped=$value
       declare -p wrapped
+
+  #
+  # `export` accepts the array attribute options of its declaration siblings (issue #1132:
+  # `mise activate bash` emits `export -a chpwd_functions` on every startup).
+  #
+  # Note what a shell actually does with `-a`, since it is easy to over-apply: the array
+  # attribute is set only when the operand carries an assignment. A bare name gets the export
+  # attribute alone, which is why the scalar assignment below stays a scalar rather than becoming
+  # element 0 of an array.
+  #
+  - name: "export -a on a bare name marks it exported without making it an array"
+    stdin: |
+      export -a foo
+      declare -p foo
+
+  - name: "export -a on a bare name leaves a later scalar assignment scalar"
+    stdin: |
+      export -a bar
+      bar=val
+      declare -p bar
+
+  - name: "export -a with an assignment creates an exported indexed array"
+    stdin: |
+      export -a baz=hello
+      declare -p baz
+
+  - name: "export -A is accepted but does not make the variable associative"
+    stdin: |
+      export -A m
+      m[k]=v
+      declare -p m
+
+  - name: "export -a then array append keeps the export attribute"
+    stdin: |
+      export -a hooks
+      hooks+=(h1)
+      declare -p hooks
+
+  - name: "export -a with an assignment converts an existing scalar"
+    stdin: |
+      s=old
+      export -a s=new
+      declare -p s
+
+  - name: "export -a with an assignment refuses an associative array without aborting siblings"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -A aa=([k]=v)
+      { export -a aa=x other=1; } 2>&1 | strip
+      export -a aa=x other=1 2>/dev/null
+      echo "status: $?"
+      declare -p aa other
+
+  - name: "export -A with a quoted compound value creates an associative array"
+    stdin: |
+      export -A "am=([k]=v)"
+      export -a "ia=(1 2)"
+      declare -p am ia
+
+  - name: "export -aA on a bare name only exports it"
+    stdin: |
+      export -aA both
+      echo "status: $?"
+      declare -p both
+
+  - name: "export treats a plus option as an invalid identifier operand"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export +x zz_plus=1; } 2>&1 | strip
+      export +x zz_plus=1 2>/dev/null
+      echo "status=$?"
+      declare -p zz_plus
+
+  - name: "export -a and -A together with an assignment makes an indexed array"
+    # Given both, a shell lets -a win, whichever order they come in.
+    stdin: |
+      export -aA both_a=1
+      export -Aa both_b=2
+      export -aA 'both_c=([k]=v)'
+      declare -p both_a both_b both_c
+
+  - name: "export rejects attribute options other than -a and -A"
+    stdin: |
+      for opt in -i -r -u -x -t -g; do
+        export $opt v=1 2>/dev/null
+        echo "$opt: $?"
+      done
+      declare -p v 2>/dev/null
+      echo "declare_status: $?"
+
+  - name: "export -p prints declarations in declare -p form"
+    stdin: |
+      export zz_plain="a b"
+      export zz_quote="it's \$1"
+      export zz_arr=(x y)
+      export -p | grep "zz_"
+
+  - name: "export -n on a missing variable creates nothing"
+    stdin: |
+      export -n nosuch_n
+      echo "status: $?"
+      declare -p nosuch_n 2>/dev/null
+      echo "declare_status: $?"
+
+  - name: "export on a missing variable creates it exported and unset"
+    stdin: |
+      export nosuch_v
+      declare -p nosuch_v
+
+  - name: "export -f lists exported functions with their attributes"
+    stdin: |
+      zz_a() { echo a; }
+      zz_b() { echo b; }
+      export -f zz_b
+      export -f | grep zz_
+      export -pf | grep zz_
+      export -nf zz_b
+      export -f | grep -c zz_
+
+  - name: "export -f with a missing function reports it"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export -f nosuchfn; } 2>&1 | strip
+      export -f nosuchfn 2>/dev/null
+      echo "status: $?"
+
+  - name: "export -a on a readonly variable is refused with the readonly diagnostic"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -r ro=1
+      { export -a ro=2; } 2>&1 | strip
+      export ro 2>/dev/null
+      echo "bare_status: $?"
+      declare -p ro
+
+  - name: "export -n with an assignment creates the variable unexported"
+    stdin: |
+      export -n zz_n=5
+      echo "status: $?"
+      declare -p zz_n
+      export -n zz_n2+=x
+      declare -p zz_n2
+
+  - name: "set -a does not export what export -n assigns"
+    # `set -a` outranks `declare +x`, but not `export -n`.
+    stdin: |
+      set -a
+      export -n zz_na=1
+      declare +x zz_nb=2
+      set +a
+      declare -p zz_na zz_nb
+
+  - name: "export -n with no operands lists exported variables but no functions"
+    stdin: |
+      export zz_v=1
+      zz_f() { :; }
+      export -f zz_f
+      export -n | grep -c '^declare -x zz_v'
+      export -n | grep -c zz_f
+      export -nf | grep -c zz_f
+
+  - name: "export with no operands lists in declare -p form"
+    stdin: |
+      export zz_v=1
+      export | grep zz_
+
+  - name: "plain export and readonly report a readonly variable without naming the builtin"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      readonly zz_ro=1
+      { export zz_ro=5; } 2>&1 | strip
+      { export -n zz_ro=5; } 2>&1 | strip
+      { readonly zz_ro=5; } 2>&1 | strip
+      { export -a zz_ro=5; } 2>&1 | strip
+      { declare -x zz_ro=5; } 2>&1 | strip
+      declare -p zz_ro
+
+  #
+  # A conversion failure is a builtin error for a scalar or quoted operand -- reported under the
+  # builtin's name, with the export attribute still granted -- but an assignment error for an
+  # unquoted compound operand: reported bare, nothing granted, and the command list abandoned.
+  #
+  - name: "export -a conversion failure on a scalar or quoted operand still exports"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -A s=([k]=v) q=([k]=v)
+      { export -a s=x; } 2>&1 | strip
+      { export -a 'q=(1)'; } 2>&1 | strip
+      export -a s=x 2>/dev/null
+      echo "status: $?"
+      declare -p s q
+
+  - name: "export -a conversion failure on an unquoted compound operand is an assignment error"
+    ignore_stderr: true
+    stdin: |
+      declare -A u=([k]=v)
+      export -a u=(1); echo "same list"
+      echo "status: $?"
+      declare -p u
+      readonly r=1
+      export r=(1); echo "same list"
+      echo "status: $?"
+      declare -p r
+
+  - name: "export -n outranks set -a"
+    stdin: |
+      set -a
+      v=1
+      export -n v=2
+      declare -p v
+      w=1
+      export -n w
+      declare -p w
+      export -n nv=3
+      declare -p nv

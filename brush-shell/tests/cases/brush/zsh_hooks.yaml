@@ -187,9 +187,9 @@ cases:
       AFTER[6]
       LATER-RAN
     expected_stderr: |
-      error: cannot mutate readonly variable
-      error: cannot mutate readonly variable
-      error: cannot mutate readonly variable
+      error: ro: readonly variable
+      error: ro: readonly variable
+      error: ro: readonly variable
       exit
 
   - name: "zsh preexec failures are non-fatal"
@@ -201,7 +201,7 @@ cases:
     expected_stdout: |
       STILL-RAN
     expected_stderr: |
-      error: cannot mutate readonly variable
+      error: ro: readonly variable
       exit
 
   # A name that resolves to nothing is quiet, so a hook may be registered before it is
