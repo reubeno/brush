@@ -1,6 +1,7 @@
 #!/bin/sh
 #
-# Installs brush from official GitHub releases of reubeno/brush.
+# Installs brush from official GitHub releases of reubeno/brush, or (with --canary) from the
+# canary builds that CI publishes for every push to its main branch.
 #
 # Usage:
 #   curl --proto '=https' --tlsv1.2 -fsSL https://brush.sh/install.sh | sh
@@ -10,13 +11,18 @@
 #
 # Options:
 #   --version <version>     Version to install (e.g. "0.4.0"); defaults to the latest release.
+#   --canary                Install the newest canary build of main instead of a release. Canary
+#                           builds are unreleased and may break.
+#   --commit <sha>          Install the canary build of this commit of main (a full 40-character
+#                           hash); builds of the last ~100 pushes are kept.
 #   --dir <dir>             Directory to install into; defaults to $XDG_BIN_HOME, or ~/.local/bin.
 #   --require-attestation   Fail if the build attestation can't be verified.
 #
 # The downloaded archive is always checked against its published SHA-256 checksum.
 # If the GitHub CLI (gh) is installed and authenticated, the archive's build
 # provenance attestation is also verified, confirming it was built by the official
-# repository's release workflow for that release's tag.
+# repository's release workflow for that release's tag (or, for canary builds, for
+# its main branch).
 #
 # This script sticks to POSIX sh, so it runs under dash, busybox ash, bash, and zsh.
 #
@@ -25,6 +31,8 @@ set -eu
 
 REPO="reubeno/brush"
 RELEASE_WORKFLOW="${REPO}/.github/workflows/cd.yaml"
+# Where the release workflow publishes canary builds, on ghcr.io.
+CANARY_PACKAGE="reubeno/brush-canary"
 
 say() {
     echo "brush-install: $*" >&2
@@ -65,6 +73,8 @@ cleanup() {
 
 parse_args() {
     version=""
+    canary=""
+    commit=""
     install_dir=""
     require_attestation=""
 
@@ -73,6 +83,15 @@ parse_args() {
             --version)
                 [ -n "${2:-}" ] || die "--version requires a value"
                 version="$2"
+                shift
+                ;;
+            --canary)
+                canary=1
+                ;;
+            --commit)
+                [ -n "${2:-}" ] || die "--commit requires a value"
+                commit="$2"
+                canary=1
                 shift
                 ;;
             --dir)
@@ -84,11 +103,22 @@ parse_args() {
                 require_attestation=1
                 ;;
             *)
-                die "unknown option: $1 (options: --version <version>, --dir <dir>, --require-attestation)"
+                die "unknown option: $1 (options: --version <version>, --canary, --commit <sha>, --dir <dir>, --require-attestation)"
                 ;;
         esac
         shift
     done
+
+    if [ -n "${canary}" ] && [ -n "${version}" ]; then
+        die "--version can't be combined with --canary or --commit"
+    fi
+    # The hash becomes part of a URL, so accept nothing but a full, lowercase commit hash.
+    if [ -n "${commit}" ]; then
+        case "${commit}" in
+            *[!0-9a-f]*) commit="" ;; # fails the length check below
+        esac
+        [ "${#commit}" -eq 40 ] || die "--commit needs a full 40-character commit hash (see \`git rev-parse\`)"
+    fi
 
     # ~/.local/bin is where the XDG base directory spec puts user executables. The spec
     # has no variable for it, but XDG_BIN_HOME is a common extension (uv, among others).
@@ -140,10 +170,11 @@ detect_target() {
     esac
 }
 
-# Sets `tag` to the git tag of the release to install.
+# Sets `tag` to the git tag of the release to install, and `source_ref` to its full ref.
 resolve_release_tag() {
     if [ -n "${version}" ]; then
         tag="brush-shell-v${version#v}"
+        source_ref="refs/tags/${tag}"
         return
     fi
 
@@ -156,6 +187,7 @@ resolve_release_tag() {
         brush-shell-v*) ;;
         *) die "could not determine latest release" ;;
     esac
+    source_ref="refs/tags/${tag}"
 }
 
 # Downloads the release archive into `tmp_dir` and checks it against its
@@ -172,9 +204,42 @@ download_archive() {
     say "verified SHA-256 checksum"
 }
 
+# Downloads the newest canary build (or the one for `commit`) into `tmp_dir`, and checks it
+# against its digest in the registry, which is the SHA-256 of its content.
+download_canary_archive() {
+    archive="brush-${target}.tar.gz"
+    image_tag="${target}${commit:+-${commit}}"
+    registry="https://ghcr.io/v2/${CANARY_PACKAGE}"
+    source_ref="refs/heads/main"
+
+    # Even public packages need a token to download, but an anonymous one does. ghcr.io refuses
+    # one for a package that doesn't exist or isn't public.
+    token="$(fetch "https://ghcr.io/token?scope=repository:${CANARY_PACKAGE}:pull" |
+        sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+    [ -n "${token}" ] || die "could not access canary builds at ghcr.io/${CANARY_PACKAGE}"
+
+    manifest="$(fetch -H "Authorization: Bearer ${token}" \
+        -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+        "${registry}/manifests/${image_tag}")" ||
+        die "no canary build of brush found for ${target}${commit:+ at commit ${commit}}"
+
+    # The archive is the manifest's only layer.
+    digest="$(printf '%s' "${manifest}" | tr -d ' \t\r\n' |
+        sed -n 's/.*"layers":\[{[^}]*"digest":"sha256:\([0-9a-f]\{64\}\)".*/\1/p')"
+    [ -n "${digest}" ] || die "unexpected manifest for ghcr.io/${CANARY_PACKAGE}:${image_tag}"
+
+    say "downloading ghcr.io/${CANARY_PACKAGE}:${image_tag} (${archive})"
+    fetch -H "Authorization: Bearer ${token}" -o "${tmp_dir}/${archive}" \
+        "${registry}/blobs/sha256:${digest}" || die "failed to download ${archive}"
+
+    echo "${digest}  ${archive}" >"${tmp_dir}/${archive}.sha256"
+    (cd "${tmp_dir}" && sha256sum -c "${archive}.sha256" >/dev/null) || die "checksum mismatch for ${archive}"
+    say "verified SHA-256 checksum"
+}
+
 # Verifies the archive's build provenance attestation, when that's possible here.
 # The attestation must come from the official release workflow, running on
-# GitHub-hosted runners, for this release's tag.
+# GitHub-hosted runners, for this release's tag (or, for canary builds, main).
 verify_attestation() {
     skip_reason=""
 
@@ -187,7 +252,7 @@ verify_attestation() {
         gh attestation verify "${tmp_dir}/${archive}" \
             --repo "${REPO}" \
             --signer-workflow "${RELEASE_WORKFLOW}" \
-            --source-ref "refs/tags/${tag}" \
+            --source-ref "${source_ref}" \
             --deny-self-hosted-runners \
             >/dev/null 2>"${tmp_dir}/gh.err" || gh_status=$?
 
@@ -247,7 +312,9 @@ check_path() {
 main() {
     parse_args "$@"
     detect_target
-    resolve_release_tag
+    if [ -z "${canary}" ]; then
+        resolve_release_tag
+    fi
 
     staged_binary=""
     tmp_dir="$(mktemp -d)"
@@ -259,7 +326,11 @@ main() {
     trap 'exit 130' INT
     trap 'exit 143' TERM
 
-    download_archive
+    if [ -n "${canary}" ]; then
+        download_canary_archive
+    else
+        download_archive
+    fi
     verify_attestation
     install_binary
     check_path

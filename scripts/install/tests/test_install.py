@@ -1,4 +1,5 @@
-"""Tests for scripts/install/install.sh, run against real GitHub releases (requires network access).
+"""Tests for scripts/install/install.sh, run against real GitHub releases and canary builds on ghcr.io (requires
+network access).
 
 Each test pipes the installer into `sh -s --` (and `bash -s --`), just like `curl ... | sh` would. Failure modes
 are simulated with shims for curl, gh, tar, and getconf placed ahead of the real tools on PATH.
@@ -249,6 +250,21 @@ def test_no_path_note_when_dir_is_in_path_via_symlink(install, tmp_path):
     assert not [line for line in result.stdout.splitlines() if "note:" in line and "attestation" not in line]
 
 
+def test_latest_canary(install, tmp_path):
+    result = install("--canary", "--dir", tmp_path)
+    assert_succeeded(result)
+    assert "ghcr.io/reubeno/brush-canary:" in result.stdout
+    assert "+canary " in brush_version(tmp_path / "brush")
+
+
+@pytest.mark.skipif(not GH_INSTALLED, reason="gh is not installed")
+@pytest.mark.skipif(not os.environ.get("GH_TOKEN") and not os.environ.get("CI"), reason="GH_TOKEN is not set")
+def test_verifies_real_canary_attestation(install, tmp_path):
+    result = install("--canary", "--dir", tmp_path, "--require-attestation")
+    assert_succeeded(result)
+    assert "verified GitHub build attestation" in result.stdout
+
+
 def test_unset_home_without_dir(install):
     assert_failed(install("--version", VERSION, HOME=None, XDG_BIN_HOME=None), "HOME is not set")
 
@@ -259,8 +275,13 @@ def test_unset_home_without_dir(install):
         (["--bogus"], "unknown option: --bogus"),
         (["--version"], "--version requires a value"),
         (["--dir"], "--dir requires a value"),
+        (["--commit"], "--commit requires a value"),
+        (["--commit", "739a15d"], "--commit needs a full 40-character commit hash"),
+        (["--commit", "0" * 39 + "g"], "--commit needs a full 40-character commit hash"),
+        (["--canary", "--version", VERSION], "--version can't be combined with --canary or --commit"),
     ],
-    ids=["unknown-option", "missing-version", "missing-dir"],
+    ids=["unknown-option", "missing-version", "missing-dir", "missing-commit", "short-commit", "non-hex-commit",
+         "canary-and-version"],
 )
 def test_bad_arguments(install, args, message):
     assert_failed(install(*args), message)
@@ -271,6 +292,9 @@ def test_bad_arguments(install, args, message):
     [
         pytest.param(
             ["--version", "0.0.0"], [], "failed to download", id="nonexistent-version"
+        ),
+        pytest.param(
+            ["--commit", "0" * 40], [], "no canary build of brush found", id="nonexistent-commit"
         ),
         pytest.param(
             ["--version", VERSION], ["bad-checksum"], "checksum mismatch", id="bad-checksum"
