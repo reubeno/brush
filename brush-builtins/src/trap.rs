@@ -71,6 +71,23 @@ impl TrapCommand {
         for (signal, _) in context.shell.traps().iter_handlers() {
             Self::display_handlers_for(context, signal)?;
         }
+
+        // Report any signals that were ignored when the shell started (e.g.,
+        // `SIGRTMIN` in some environments), mirroring bash's `trap -p` output.
+        // Registered handlers take precedence and are displayed above.
+        for signal_number in context.shell.traps().iter_signals_ignored_on_entry() {
+            let has_handler = TrapSignal::try_from(signal_number)
+                .ok()
+                .is_some_and(|signal| context.shell.traps().get_handler(signal).is_some());
+            if !has_handler {
+                writeln!(
+                    context.stdout(),
+                    "trap -- '' {}",
+                    brush_core::traps::signal_name_for_number(signal_number)
+                )?;
+            }
+        }
+
         Ok(())
     }
 
@@ -84,6 +101,18 @@ impl TrapCommand {
                 "trap -- '{}' {signal_type}",
                 handler.command
             )?;
+        } else if let Ok(signal_number) = i32::try_from(signal_type) {
+            if context
+                .shell
+                .traps()
+                .is_signal_ignored_on_entry(signal_number)
+            {
+                writeln!(
+                    context.stdout(),
+                    "trap -- '' {}",
+                    brush_core::traps::signal_name_for_number(signal_number)
+                )?;
+            }
         }
         Ok(())
     }
