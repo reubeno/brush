@@ -46,6 +46,23 @@ cases:
     stdin: |
       echo `echo \\`
 
+  - name: "Backtick command substitution with trailing backslashes"
+    stdin: |
+      y=`printf %s \\`
+      printf 'two: <%s> len=%s\n' "$y" "${#y}"
+      y=`printf %s \\\\`
+      printf 'four: <%s> len=%s\n' "$y" "${#y}"
+      y=`printf %s \\\\\\`
+      printf 'six: <%s> len=%s\n' "$y" "${#y}"
+
+  - name: "Backtick command substitution escape rules"
+    stdin: |
+      HOME=abc
+      echo `echo \$HOME`
+      echo `echo \\$HOME`
+      echo `echo e\
+      cho`
+
   - name: "Backtick command substitution in double quotes"
     stdin: |
       echo "`echo First line`"
