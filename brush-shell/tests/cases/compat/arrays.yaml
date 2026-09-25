@@ -391,3 +391,12 @@ cases:
     stdin: |
       declare -a myarray=(
       )
+
+  - name: "Parenthesized arithmetic in array index assignment"
+    known_failure: true # TODO(tokenizer): #1211: '(' inside an assignment's subscript is tokenized as an operator
+    stdin: |
+      c[(1)]=x
+      declare -p c
+      i=1
+      d[(i+1)*2]=y
+      declare -p d

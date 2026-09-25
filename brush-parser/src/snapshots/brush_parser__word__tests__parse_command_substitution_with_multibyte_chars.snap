@@ -1,0 +1,24 @@
+---
+source: brush-parser/src/word.rs
+expression: "test_parse(\"é$(echo “ü”)ñ\")?"
+---
+ParseTestResults(
+  input: "é$(echo “ü”)ñ",
+  result: [
+    WordPieceWithSource(
+      piece: Text("é"),
+      start_index: 0,
+      end_index: 2,
+    ),
+    WordPieceWithSource(
+      piece: CommandSubstitution("echo “ü”"),
+      start_index: 2,
+      end_index: 18,
+    ),
+    WordPieceWithSource(
+      piece: Text("ñ"),
+      start_index: 18,
+      end_index: 20,
+    ),
+  ],
+)

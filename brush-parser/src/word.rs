@@ -732,7 +732,7 @@ peg::parser! {
         pub(crate) rule unexpanded_word() -> Vec<WordPieceWithSource> = traced(<word(<![_]>)>)
 
         rule word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
-            tilde:tilde_expr_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>, false /*in_command*/)* {
+            tilde:tilde_expr_prefix_with_source()? pieces:word_piece_with_source(<stop_condition()>)* {
                 let mut all_pieces = Vec::new();
                 if let Some(tilde) = tilde {
                     all_pieces.push(tilde);
@@ -756,7 +756,7 @@ peg::parser! {
 
         // Parses text that is not considered to contain a brace expression.
         rule non_brace_expr_text<T>(stop_condition: rule<T>) -> () =
-            !"{" word_piece(<['{'] {} / stop_condition() {}>, false) {} /
+            !"{" word_piece(<['{'] {} / stop_condition() {}>) {} /
             !brace_expr() !stop_condition() "{" {}
 
         // Parses a complete brace expression, with no prefix or suffix.
@@ -844,7 +844,7 @@ peg::parser! {
             // This branch matches any standard piece of a word, stopping as soon as we reach
             // either the overall stop condition *OR* an opening parenthesis. We add this latter
             // condition to ensure that *we* handle matching parentheses.
-            !"(" word_piece(<param_rule_or_open_paren(<stop_condition()>)>, false /*in_command*/) {}
+            !"(" word_piece(<param_rule_or_open_paren(<stop_condition()>)>) {}
 
         // This is a helper rule that matches either the provided stop condition or an opening parenthesis.
         rule param_rule_or_open_paren<T>(stop_condition: rule<T>) -> () =
@@ -855,12 +855,12 @@ peg::parser! {
         rule arithmetic_word_plus_right_paren() =
             arithmetic_word(<[')']>) ")"
 
-        rule word_piece_with_source<T>(stop_condition: rule<T>, in_command: bool) -> WordPieceWithSource =
-            start_index:position!() piece:word_piece(<stop_condition()>, in_command) end_index:position!() {
+        rule word_piece_with_source<T>(stop_condition: rule<T>) -> WordPieceWithSource =
+            start_index:position!() piece:word_piece(<stop_condition()>) end_index:position!() {
                 WordPieceWithSource { piece, start_index, end_index }
             }
 
-        rule word_piece<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
+        rule word_piece<T>(stop_condition: rule<T>) -> WordPiece =
             // Rules that match quoted text.
             s:double_quoted_sequence() { WordPiece::DoubleQuotedSequence(s) } /
             s:single_quoted_literal_text() { WordPiece::SingleQuotedText(s.to_owned()) } /
@@ -873,7 +873,7 @@ peg::parser! {
             // Allow tilde expression to be matched as a word piece (for tilde-after-colon expansion)
             enabled_tilde_expr_after_colon() /
             // Finally, match unquoted literal text.
-            unquoted_literal_text(<stop_condition()>, in_command)
+            unquoted_literal_text(<stop_condition()>)
 
         rule dollar_sign_word_piece() -> WordPiece =
             arithmetic_expansion() /
@@ -910,13 +910,10 @@ peg::parser! {
         rule ansi_c_quoted_text() -> &'input str =
             r"$'" inner:$((r"\\" / r"\'" / [^'\''])*) r"'" { inner }
 
-        rule unquoted_literal_text<T>(stop_condition: rule<T>, in_command: bool) -> WordPiece =
-            s:$(unquoted_literal_text_piece(<stop_condition()>, in_command)+) { WordPiece::Text(s.to_owned()) }
+        rule unquoted_literal_text<T>(stop_condition: rule<T>) -> WordPiece =
+            s:$(unquoted_literal_text_piece(<stop_condition()>)+) { WordPiece::Text(s.to_owned()) }
 
-        // TODO(parser): Find a way to remove the special-case logic for extglob + subshell commands
-        rule unquoted_literal_text_piece<T>(stop_condition: rule<T>, in_command: bool) =
-            is_true(in_command) extglob_pattern() /
-            is_true(in_command) subshell_command() /
+        rule unquoted_literal_text_piece<T>(stop_condition: rule<T>) =
             !stop_condition() !normal_escape_sequence() !enabled_tilde_expr_after_colon() [^'\'' | '\"' | '$' | '`'] {}
 
         rule enabled_tilde_expr_after_colon() -> WordPiece =
@@ -935,17 +932,6 @@ peg::parser! {
                 }
             }
         }}
-
-        rule is_true(value: bool) = &[_] {? if value { Ok(()) } else { Err("not true") } }
-
-        rule extglob_pattern() =
-            ("@" / "!" / "?" / "+" / "*") "(" extglob_body_piece()* ")" {}
-
-        rule extglob_body_piece() =
-            word_piece(<[')']>, true /*in_command*/) {}
-
-        rule subshell_command() =
-            "(" command() ")" {}
 
         rule double_quoted_text() -> WordPiece =
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
@@ -1172,16 +1158,19 @@ peg::parser! {
             $(!['0'..='9'] ['_' | '0'..='9' | 'a'..='z' | 'A'..='Z']+)
 
         pub(crate) rule command_substitution() -> WordPiece =
-            "$(" c:command() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
+            "$(" c:command_substitution_body() ")" { WordPiece::CommandSubstitution(c.to_owned()) } /
             "`" c:backquoted_command() "`" { WordPiece::BackquotedCommandSubstitution(c) }
 
-        pub(crate) rule command() -> &'input str =
-            $(command_piece()*)
-
-        pub(crate) rule command_piece() -> () =
-            word_piece(<[')']>, true /*in_command*/) {} /
-            ([' ' | '\t'])+ {} /
-            ['\'' | '`'] {}
+        // The tokenizer already has the logic to find where the command ends (e.g., skipping
+        // over here-doc bodies), so we leverage it here. `pos` and `body.len()` are both
+        // byte offsets.
+        rule command_substitution_body() -> &'input str = #{|input, pos| {
+            let rest = input.split_at(pos).1;
+            match crate::tokenizer::command_substitution_body(rest, &parser_options.tokenizer_options()) {
+                Ok(body) => peg::RuleResult::Matched(pos + body.len(), body),
+                Err(_) => peg::RuleResult::Failed,
+            }
+        }}
 
         rule backquoted_command() -> String =
             chars:(backquoted_char()*) { chars.into_iter().collect() }
@@ -1380,9 +1369,6 @@ mod tests {
 
     #[test]
     fn parse_command_substitution() -> Result<()> {
-        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
-        super::expansion_parser::command_piece("hi", &ParserOptions::default())?;
-        super::expansion_parser::command("echo hi", &ParserOptions::default())?;
         super::expansion_parser::command_substitution("$(echo hi)", &ParserOptions::default())?;
 
         assert_ron_snapshot!(test_parse("$(echo hi)")?);
@@ -1392,15 +1378,18 @@ mod tests {
 
     #[test]
     fn parse_command_substitution_with_embedded_quotes() -> Result<()> {
-        super::expansion_parser::command_piece("echo", &ParserOptions::default())?;
-        super::expansion_parser::command_piece(r#""hi""#, &ParserOptions::default())?;
-        super::expansion_parser::command(r#"echo "hi""#, &ParserOptions::default())?;
         super::expansion_parser::command_substitution(
             r#"$(echo "hi")"#,
             &ParserOptions::default(),
         )?;
 
         assert_ron_snapshot!(test_parse(r#"$(echo "hi")"#)?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_command_substitution_with_multibyte_chars() -> Result<()> {
+        assert_ron_snapshot!(test_parse("é$(echo “ü”)ñ")?);
         Ok(())
     }
 

@@ -546,6 +546,40 @@ pub fn uncached_tokenize_str(
     Ok(tokens)
 }
 
+/// Given the text following the `$(` that opens a command substitution, returns the
+/// command's text up to (but not including) the `)` that closes it. The command is
+/// tokenized to find that `)`, so quoting, nested constructs, and here-document bodies
+/// are skipped over exactly as they are when tokenizing a full script.
+///
+/// # Errors
+///
+/// Returns an error if the closing `)` can't be found: either the input ends first
+/// ([`TokenizerError::UnterminatedExpansion`]), or tokenizing the command fails before
+/// reaching it (e.g., an unterminated quote or here-document). This is not a syntax
+/// check of the command itself; it's parsed separately, when it is executed.
+pub(crate) fn command_substitution_body<'a>(
+    input: &'a str,
+    options: &TokenizerOptions,
+) -> Result<&'a str, TokenizerError> {
+    let mut reader = input.as_bytes();
+    let mut tokenizer = Tokenizer::new(&mut reader, options);
+
+    // Consume tokens through the `)` that balances the implied opening `(`. This returns
+    // early with an error in exactly the cases documented above. We don't need the token
+    // text collected in `state`: it's a normalized rendering, not a slice of `input`.
+    let mut state = TokenParseState::new(&tokenizer.cross_state.cursor);
+    tokenizer.consume_nested_construct(&mut state, ')', "(", 1)?;
+
+    // The cursor counts characters (not bytes) consumed, the last being the closing `)`;
+    // convert the characters before it to a byte length.
+    let body_len = input
+        .chars()
+        .take(tokenizer.cross_state.cursor.index - 1)
+        .map(char::len_utf8)
+        .sum();
+    Ok(input.split_at(body_len).0)
+}
+
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Self {
         Tokenizer {
@@ -689,6 +723,179 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         Ok(())
     }
 
+    /// Consumes a `$` or backquote (`c`, the next char) and whatever construct it begins
+    /// (e.g., `$(...)`, `${...}`, `` `...` ``), appending all of it to `state`'s token.
+    #[allow(clippy::unwrap_in_result)]
+    #[expect(clippy::too_many_lines)]
+    fn consume_dollar_or_backquote(
+        &mut self,
+        state: &mut TokenParseState,
+        c: char,
+    ) -> Result<(), TokenizerError> {
+        if c == '$' {
+            // Consume the '$' so we can peek beyond.
+            self.consume_char()?;
+
+            // Now peek beyond to see what we have.
+            let char_after_dollar_sign = self.peek_char()?;
+            match char_after_dollar_sign {
+                Some('(') => {
+                    // Add the '$' we already consumed to the token.
+                    state.append_char('$');
+
+                    // Consume the '(' and add it to the token.
+                    state.append_char(self.next_char()?.unwrap());
+
+                    // Check to see if this is possibly an arithmetic expression
+                    // (i.e., one that starts with `$((`).
+                    let (initial_nesting, is_arithmetic) = if matches!(self.peek_char()?, Some('('))
+                    {
+                        // Consume the second '(' and add it to the token.
+                        state.append_char(self.next_char()?.unwrap());
+                        (2, true)
+                    } else {
+                        (1, false)
+                    };
+
+                    if is_arithmetic {
+                        self.cross_state.arithmetic_expansion = true;
+                    }
+
+                    self.consume_nested_construct(state, ')', "(", initial_nesting)?;
+
+                    if is_arithmetic {
+                        self.cross_state.arithmetic_expansion = false;
+                    }
+                }
+
+                Some('[') => {
+                    // Add the '$' we already consumed to the token.
+                    state.append_char('$');
+
+                    // Consume the '[' and add it to the token.
+                    state.append_char(self.next_char()?.unwrap());
+
+                    // Keep track that we're in an arithmetic expression, since
+                    // some text will be interpreted differently as a result.
+                    self.cross_state.arithmetic_expansion = true;
+
+                    self.consume_nested_construct(state, ']', "[", 1)?;
+
+                    self.cross_state.arithmetic_expansion = false;
+                }
+
+                Some('{') => {
+                    // Add the '$' we already consumed to the token.
+                    state.append_char('$');
+
+                    // Consume the '{' and add it to the token.
+                    state.append_char(self.next_char()?.unwrap());
+
+                    let mut pending_here_doc_tokens = vec![];
+                    let mut drain_here_doc_tokens = false;
+
+                    loop {
+                        let cur_token =
+                            if drain_here_doc_tokens && !pending_here_doc_tokens.is_empty() {
+                                if pending_here_doc_tokens.len() == 1 {
+                                    drain_here_doc_tokens = false;
+                                }
+
+                                pending_here_doc_tokens.remove(0)
+                            } else {
+                                let cur_token = self
+                                    .next_token_until(Some('}'), false /* include space? */)?;
+
+                                // See if this is a here-document-related token we need to hold
+                                // onto until after we've seen all the tokens that need to show
+                                // up before we get to the body.
+                                if matches!(
+                                    cur_token.reason,
+                                    TokenEndReason::HereDocumentBodyStart
+                                        | TokenEndReason::HereDocumentBodyEnd
+                                        | TokenEndReason::HereDocumentEndTag
+                                ) {
+                                    pending_here_doc_tokens.push(cur_token);
+                                    continue;
+                                }
+
+                                cur_token
+                            };
+
+                        if matches!(cur_token.reason, TokenEndReason::UnescapedNewLine)
+                            && !pending_here_doc_tokens.is_empty()
+                        {
+                            pending_here_doc_tokens.push(cur_token);
+                            drain_here_doc_tokens = true;
+                            continue;
+                        }
+
+                        if let Some(cur_token_value) = cur_token.token {
+                            state.append_str(cur_token_value.to_str());
+                        }
+
+                        match cur_token.reason {
+                            TokenEndReason::HereDocumentBodyStart => {
+                                state.append_char('\n');
+                            }
+                            TokenEndReason::NonNewLineBlank => state.append_char(' '),
+                            TokenEndReason::SpecifiedTerminatingChar => {
+                                // We hit the end brace we were looking for but did not
+                                // yet consume it. Do so now.
+                                state.append_char(self.next_char()?.unwrap());
+                                break;
+                            }
+                            TokenEndReason::EndOfInput => {
+                                return Err(TokenizerError::UnterminatedVariable);
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                _ => {
+                    // This is either a different character, or else the end of the string.
+                    // Either way, add the '$' we already consumed to the token.
+                    state.append_char('$');
+                }
+            }
+        } else {
+            // We look for the terminating backquote. First disable normal consumption and
+            // consume the starting backquote.
+            let backquote_pos = self.cross_state.cursor.clone();
+            self.consume_char()?;
+
+            // Add the opening backquote to the token.
+            state.append_char(c);
+
+            // Now continue until we see an unescaped backquote.
+            let mut escaping_enabled = false;
+            let mut done = false;
+            while !done {
+                // Read (and consume) the next char.
+                let next_char_in_backquote = self.next_char()?;
+                if let Some(cib) = next_char_in_backquote {
+                    // Include it in the token no matter what.
+                    state.append_char(cib);
+
+                    // Watch out for escaping.
+                    if !escaping_enabled && cib == '\\' {
+                        escaping_enabled = true;
+                    } else {
+                        // Look for an unescaped backquote to terminate.
+                        if !escaping_enabled && cib == '`' {
+                            done = true;
+                        }
+                        escaping_enabled = false;
+                    }
+                } else {
+                    return Err(TokenizerError::UnterminatedBackquote(backquote_pos));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Returns the next token from the input stream, optionally stopping early when a specified
     /// terminating character is encountered.
     ///
@@ -797,9 +1004,15 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     }
                 }
             //
-            // Look for the specially specified terminating char.
+            // Look for the specially specified terminating char. A newline operator in progress
+            // (which may start a here-doc body) is delimited first, below, so that its token
+            // doesn't carry this terminating char as its end reason. Other operators must not
+            // take that path: it would start a here-doc for the `<<` in `${x:-<<}`.
             //
-            } else if state.unquoted() && terminating_char == Some(c) {
+            } else if state.unquoted()
+                && !(state.in_operator() && state.is_newline())
+                && terminating_char == Some(c)
+            {
                 result = state.delimit_current_token(
                     TokenEndReason::SpecifiedTerminatingChar,
                     &mut self.cross_state,
@@ -916,169 +1129,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 && (c == '$' || c == '`')
             {
                 // TODO(tokenizer): handle quoted $ or ` in a double quote
-                if c == '$' {
-                    // Consume the '$' so we can peek beyond.
-                    self.consume_char()?;
-
-                    // Now peek beyond to see what we have.
-                    let char_after_dollar_sign = self.peek_char()?;
-                    match char_after_dollar_sign {
-                        Some('(') => {
-                            // Add the '$' we already consumed to the token.
-                            state.append_char('$');
-
-                            // Consume the '(' and add it to the token.
-                            state.append_char(self.next_char()?.unwrap());
-
-                            // Check to see if this is possibly an arithmetic expression
-                            // (i.e., one that starts with `$((`).
-                            let (initial_nesting, is_arithmetic) =
-                                if matches!(self.peek_char()?, Some('(')) {
-                                    // Consume the second '(' and add it to the token.
-                                    state.append_char(self.next_char()?.unwrap());
-                                    (2, true)
-                                } else {
-                                    (1, false)
-                                };
-
-                            if is_arithmetic {
-                                self.cross_state.arithmetic_expansion = true;
-                            }
-
-                            self.consume_nested_construct(&mut state, ')', "(", initial_nesting)?;
-
-                            if is_arithmetic {
-                                self.cross_state.arithmetic_expansion = false;
-                            }
-                        }
-
-                        Some('[') => {
-                            // Add the '$' we already consumed to the token.
-                            state.append_char('$');
-
-                            // Consume the '[' and add it to the token.
-                            state.append_char(self.next_char()?.unwrap());
-
-                            // Keep track that we're in an arithmetic expression, since
-                            // some text will be interpreted differently as a result.
-                            self.cross_state.arithmetic_expansion = true;
-
-                            self.consume_nested_construct(&mut state, ']', "[", 1)?;
-
-                            self.cross_state.arithmetic_expansion = false;
-                        }
-
-                        Some('{') => {
-                            // Add the '$' we already consumed to the token.
-                            state.append_char('$');
-
-                            // Consume the '{' and add it to the token.
-                            state.append_char(self.next_char()?.unwrap());
-
-                            let mut pending_here_doc_tokens = vec![];
-                            let mut drain_here_doc_tokens = false;
-
-                            loop {
-                                let cur_token = if drain_here_doc_tokens
-                                    && !pending_here_doc_tokens.is_empty()
-                                {
-                                    if pending_here_doc_tokens.len() == 1 {
-                                        drain_here_doc_tokens = false;
-                                    }
-
-                                    pending_here_doc_tokens.remove(0)
-                                } else {
-                                    let cur_token = self.next_token_until(
-                                        Some('}'),
-                                        false, /* include space? */
-                                    )?;
-
-                                    // See if this is a here-document-related token we need to hold
-                                    // onto until after we've seen all the tokens that need to show
-                                    // up before we get to the body.
-                                    if matches!(
-                                        cur_token.reason,
-                                        TokenEndReason::HereDocumentBodyStart
-                                            | TokenEndReason::HereDocumentBodyEnd
-                                            | TokenEndReason::HereDocumentEndTag
-                                    ) {
-                                        pending_here_doc_tokens.push(cur_token);
-                                        continue;
-                                    }
-
-                                    cur_token
-                                };
-
-                                if matches!(cur_token.reason, TokenEndReason::UnescapedNewLine)
-                                    && !pending_here_doc_tokens.is_empty()
-                                {
-                                    pending_here_doc_tokens.push(cur_token);
-                                    drain_here_doc_tokens = true;
-                                    continue;
-                                }
-
-                                if let Some(cur_token_value) = cur_token.token {
-                                    state.append_str(cur_token_value.to_str());
-                                }
-
-                                match cur_token.reason {
-                                    TokenEndReason::HereDocumentBodyStart => {
-                                        state.append_char('\n');
-                                    }
-                                    TokenEndReason::NonNewLineBlank => state.append_char(' '),
-                                    TokenEndReason::SpecifiedTerminatingChar => {
-                                        // We hit the end brace we were looking for but did not
-                                        // yet consume it. Do so now.
-                                        state.append_char(self.next_char()?.unwrap());
-                                        break;
-                                    }
-                                    TokenEndReason::EndOfInput => {
-                                        return Err(TokenizerError::UnterminatedVariable);
-                                    }
-                                    _ => (),
-                                }
-                            }
-                        }
-                        _ => {
-                            // This is either a different character, or else the end of the string.
-                            // Either way, add the '$' we already consumed to the token.
-                            state.append_char('$');
-                        }
-                    }
-                } else {
-                    // We look for the terminating backquote. First disable normal consumption and
-                    // consume the starting backquote.
-                    let backquote_pos = self.cross_state.cursor.clone();
-                    self.consume_char()?;
-
-                    // Add the opening backquote to the token.
-                    state.append_char(c);
-
-                    // Now continue until we see an unescaped backquote.
-                    let mut escaping_enabled = false;
-                    let mut done = false;
-                    while !done {
-                        // Read (and consume) the next char.
-                        let next_char_in_backquote = self.next_char()?;
-                        if let Some(cib) = next_char_in_backquote {
-                            // Include it in the token no matter what.
-                            state.append_char(cib);
-
-                            // Watch out for escaping.
-                            if !escaping_enabled && cib == '\\' {
-                                escaping_enabled = true;
-                            } else {
-                                // Look for an unescaped backquote to terminate.
-                                if !escaping_enabled && cib == '`' {
-                                    done = true;
-                                }
-                                escaping_enabled = false;
-                            }
-                        } else {
-                            return Err(TokenizerError::UnterminatedBackquote(backquote_pos));
-                        }
-                    }
-                }
+                self.consume_dollar_or_backquote(&mut state, c)?;
             }
             //
             // [Extension]
@@ -1098,25 +1149,54 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 state.append_char(c);
 
                 let mut paren_depth = 1;
-                let mut in_escape = false;
+                // The char that closes the current quote, and whether backslash
+                // escapes within it (it doesn't in '...', but does in "..." and $'...').
+                let mut quote: Option<(char, bool)> = None;
+                let mut after_dollar = false;
 
-                // Keep consuming until we see the matching end ')'.
+                // Keep consuming until we see the matching end ')'. Parens inside
+                // quotes are literal pattern characters, not delimiters. As in bash,
+                // `$(...)` and `${...}` are only nested constructs inside double
+                // quotes; elsewhere their parens simply count toward the nesting.
                 while paren_depth > 0 {
-                    if let Some(extglob_char) = self.next_char()? {
-                        // Include it in the token.
-                        state.append_char(extglob_char);
-
-                        match extglob_char {
-                            _ if in_escape => in_escape = false,
-                            '\\' => in_escape = true,
-                            '(' => paren_depth += 1,
-                            ')' => paren_depth -= 1,
-                            _ => (),
-                        }
-                    } else {
+                    let Some(extglob_char) = self.peek_char()? else {
                         return Err(TokenizerError::UnterminatedExtendedGlob(
                             self.cross_state.cursor.clone(),
                         ));
+                    };
+                    let was_after_dollar = std::mem::take(&mut after_dollar);
+
+                    let starts_nested_construct = match quote {
+                        None => extglob_char == '`',
+                        Some(('"', _)) => matches!(extglob_char, '`' | '$'),
+                        Some(_) => false,
+                    };
+                    if starts_nested_construct {
+                        self.consume_dollar_or_backquote(&mut state, extglob_char)?;
+                        continue;
+                    }
+
+                    // Include it in the token.
+                    self.consume_char()?;
+                    state.append_char(extglob_char);
+
+                    match extglob_char {
+                        // Take the escaped char as-is. If the input ends instead, the next
+                        // iteration reports the unterminated extglob.
+                        '\\' if quote.is_none_or(|(_, escapes)| escapes) => {
+                            if let Some(escaped_char) = self.next_char()? {
+                                state.append_char(escaped_char);
+                            }
+                        }
+                        c if quote.is_some_and(|(close, _)| close == c) => quote = None,
+                        _ if quote.is_some() => (),
+                        '\'' => quote = Some(('\'', was_after_dollar)),
+                        '"' => quote = Some(('"', true)),
+                        // `$$` is a parameter, not a `$` that could start `$'`.
+                        '$' => after_dollar = !was_after_dollar,
+                        '(' => paren_depth += 1,
+                        ')' => paren_depth -= 1,
+                        _ => (),
                     }
                 }
             //
@@ -1626,6 +1706,56 @@ HERE2
     }
 
     #[test]
+    fn command_substitution_body_stops_at_closing_paren() -> Result<()> {
+        let options = TokenizerOptions::default();
+        assert_eq!(
+            command_substitution_body("echo hi) rest", &options)?,
+            "echo hi"
+        );
+        assert_eq!(
+            command_substitution_body(r#"echo ")" (a)) rest"#, &options)?,
+            r#"echo ")" (a)"#
+        );
+        assert_eq!(
+            command_substitution_body("cat <<'EOF'\n\"it's ) `\nEOF\n) rest", &options)?,
+            "cat <<'EOF'\n\"it's ) `\nEOF\n"
+        );
+        // A `)` right after the newline that starts a here-doc body belongs to the body.
+        assert_eq!(
+            command_substitution_body("cat <<E\n)\nE\n) rest", &options)?,
+            "cat <<E\n)\nE\n"
+        );
+        assert_eq!(
+            command_substitution_body("cat <<E\n)\nE\necho after) rest", &options)?,
+            "cat <<E\n)\nE\necho after"
+        );
+        // A quoted `)` in an extglob closes neither the pattern nor the command.
+        assert_eq!(
+            command_substitution_body(r#"printf "%s" @(")")) rest"#, &options)?,
+            r#"printf "%s" @(")")"#
+        );
+        // Multi-byte characters inside and after the command.
+        assert_eq!(
+            command_substitution_body("echo “é”) ü", &options)?,
+            "echo “é”"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn command_substitution_body_unterminated() {
+        let options = TokenizerOptions::default();
+        assert_matches!(
+            command_substitution_body("echo hi", &options),
+            Err(TokenizerError::UnterminatedExpansion)
+        );
+        assert_matches!(
+            command_substitution_body("echo 'hi)", &options),
+            Err(TokenizerError::UnterminatedSingleQuote(_))
+        );
+    }
+
+    #[test]
     fn tokenize_unterminated_arithmetic_expansion() {
         assert_matches!(
             tokenize_str("$(("),
@@ -1657,6 +1787,66 @@ HERE2
     fn tokenize_command_substitution_containing_extglob() -> Result<()> {
         assert_ron_snapshot!(test_tokenizer("echo $(echo !(x))")?);
         Ok(())
+    }
+
+    #[test]
+    fn tokenize_extglob_with_quotes_and_escapes() -> Result<()> {
+        for (input, expected) in [
+            // Quoted parens don't close the pattern.
+            (r#"@(")") y"#, [r#"@(")")"#, "y"]),
+            (r"@(a|')'|b)x y", [r"@(a|')'|b)x", "y"]),
+            (r#"@("(") y"#, [r#"@("(")"#, "y"]),
+            // Escaped quote inside double quotes doesn't end the quoting.
+            (r#"@("\")") y"#, [r#"@("\")")"#, "y"]),
+            // Backslash is literal inside single quotes.
+            (r"@('\')x y", [r"@('\')x", "y"]),
+            // Escaped quote outside quotes doesn't start quoting.
+            (r#"@(\") y"#, [r#"@(\")"#, "y"]),
+            (r"@(\)) y", [r"@(\))", "y"]),
+            // Backslash escapes a quote inside ANSI-C quotes, but not inside `\$'...'`.
+            (r"@($'\'')x y", [r"@($'\'')x", "y"]),
+            (r"@($'a\')'|b) y", [r"@($'a\')'|b)", "y"]),
+            (r"@(\$'a\')x y", [r"@(\$'a\')x", "y"]),
+            // `$$` is a parameter, so a quote after it is ANSI-C only if a third `$` follows.
+            (r"@($$'a\')x y", [r"@($$'a\')x", "y"]),
+            (r"@($$$'\'')x y", [r"@($$$'\'')x", "y"]),
+            // Backquotes are a region of their own: quotes inside them don't nest.
+            (r"@(}`'`)x y", [r"@(}`'`)x", "y"]),
+            (r#"@(`echo \\"`)x y"#, [r#"@(`echo \\"`)x"#, "y"]),
+            (r"@(`$'\'`)x y", [r"@(`$'\'`)x", "y"]),
+            (r#"@(`echo ")"`)x y"#, [r#"@(`echo ")"`)x"#, "y"]),
+            // Inside double quotes, `$(...)` and backquotes are nested constructs.
+            (r#"@("$(echo ")")")x y"#, [r#"@("$(echo ")")")x"#, "y"]),
+            (r#"@("`echo "\)"`")x y"#, [r#"@("`echo "\)"`")x"#, "y"]),
+            (r#"@("${u:-"}"}")x y"#, [r#"@("${u:-"}"}")x"#, "y"]),
+            (r#"@($")")x y"#, [r#"@($")")x"#, "y"]),
+            // Nesting still counts unquoted parens; each quote kind hides the other.
+            (r#"+(a|@(b|")")|'"') y"#, [r#"+(a|@(b|")")|'"')"#, "y"]),
+        ] {
+            let tokens = tokenize_str(input)?;
+            let token_strs: Vec<_> = tokens.iter().map(Token::to_str).collect();
+            assert_eq!(token_strs, expected, "input: {input}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_unterminated_construct_in_extglob() {
+        // Each of these leaves a quote, backquote, or `$(` inside the extglob open.
+        for input in [r#"@("$(\$"\))x"#, r#"@($"$(\)")x"#, r"@(`)x", r#"@("`)")x"#] {
+            assert!(tokenize_str(input).is_err(), "input: {input}");
+        }
+    }
+
+    #[test]
+    fn tokenize_unterminated_extglob() {
+        for input in [r"@(a", r#"@(")""#, r"@(')'", r"@(\)"] {
+            assert_matches!(
+                tokenize_str(input),
+                Err(TokenizerError::UnterminatedExtendedGlob(_)),
+                "input: {input}"
+            );
+        }
     }
 
     #[test]
