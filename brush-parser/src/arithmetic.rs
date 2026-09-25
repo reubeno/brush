@@ -9,11 +9,6 @@ use crate::error;
 ///
 /// * `input` - The arithmetic expression to parse, in string form.
 pub fn parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseError> {
-    cacheable_parse(input)
-}
-
-#[cached::macros::cached(max_size = 64, key = "String", convert = r#"{ input.to_owned() }"#)]
-fn cacheable_parse(input: &str) -> Result<ast::ArithmeticExpr, error::WordParseError> {
     tracing::debug!(target: "arithmetic", "parsing arithmetic expression: '{input}'");
     arithmetic::full_expression(input)
         .map_err(|e| error::WordParseError::ArithmeticExpression(e.into()))
