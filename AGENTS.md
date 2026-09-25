@@ -4,15 +4,14 @@ This guide helps AI agents work efficiently on the `brush` codebase by providing
 
 ## 1. Architecture Overview & Navigation
 
-### Project Structure
+### Architecture
 
-The brush project is organized into several key crates:
-
-- **`brush-core/`**: Core shell functionality, builtins, and runtime
-- **`brush-parser/`**: Shell script parsing (AST generation)
-- **`brush-builtins/`**: Implementation of shell builtins (e.g., echo, cd)
-- **`brush-interactive/`**: Interactive shell interfaces (readline, etc.)
-- **`brush-shell/`**: Main CLI application and entry point
+[docs/explanation/architecture.md](docs/explanation/architecture.md) is the definition of
+brush's architecture: its crates, how they depend on each other, how `brush-core` is
+structured, and the layering principles that decide which crate code belongs in (e.g.
+what `brush-core` owns vs. the interactive front end). Read it before adding a crate,
+moving code between crates, or changing a public API's shape, and keep it up to date when
+the architecture changes.
 
 ### Key Files & Entry Points
 
@@ -22,19 +21,7 @@ The brush project is organized into several key crates:
 - `brush-core/src/lib.rs` - Public API exports
 - `brush-shell/src/main.rs` - CLI application entry point
 
-**Architecture patterns:**
-
-- Shell instances are created via `Shell::builder()`
-- The project uses builder patterns for type-safe configuration
-- We try to keep platform-specific code in `brush-core` under the `sys` module
-- Follows Rust 2024 edition standards
-
-### Module Dependencies
-
-```text
-brush-shell → brush-interactive → brush-core → brush-parser
-            ↘ brush-builtins ↗
-```
+The code follows Rust 2024 edition standards.
 
 ## 2. Testing Strategy
 

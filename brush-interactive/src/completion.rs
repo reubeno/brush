@@ -1,17 +1,45 @@
-use std::path::{Path, PathBuf};
+//! Offers the completions the shell generates to the user, like readline: completing to the
+//! candidates' common prefix first, if that changes the line, or else offering each of them.
+//! The shell makes each candidate an edit of the line; this just chooses which to offer, and
+//! how to show them.
 
-use brush_core::escape;
+use brush_core::completion::{CandidateKind, Completions, Edit};
 
-#[allow(dead_code)]
+/// What to offer the user when they ask for completion.
+#[derive(Debug, Default)]
+pub(crate) struct Offers {
+    /// An edit to make right away: the only candidate's, or the candidates' common prefix.
+    pub edit: Option<Edit>,
+    /// The candidates to list: if there are several and no edit to make first -- or, like
+    /// readline's `show-all-if-ambiguous`, even if there is.
+    pub list: Vec<Offer>,
+}
+
+/// A candidate to offer the user.
+#[derive(Debug)]
+pub(crate) struct Offer {
+    /// The edit of the line that makes the completion.
+    pub edit: Edit,
+    /// How to list the completion among others.
+    pub display: String,
+    /// Whether it completes a directory's name.
+    pub is_dir: bool,
+}
+
+#[allow(
+    dead_code,
+    reason = "used only by the input backends, which may not be enabled"
+)]
 pub(crate) async fn complete_async(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     line: &str,
     pos: usize,
-) -> brush_core::completion::Completions {
-    let working_dir = shell.working_dir().to_path_buf();
+    show_all_if_ambiguous: bool,
+) -> Offers {
+    // For now, the shell stores the line editor's preferences, as `bind` sets them.
+    let prefs = shell.completion_config().edit_prefs.clone();
 
-    // Intentionally ignore any errors that arise.
-    let completion_future = shell.complete(line, pos);
+    let completion_future = shell.complete(line, pos, &prefs);
     tokio::pin!(completion_future);
 
     // Wait for the completions to come back or interruption, whichever happens first.
@@ -24,100 +52,77 @@ pub(crate) async fn complete_async(
         },
     };
 
-    let mut completions = result.unwrap_or_else(|_| brush_core::completion::Completions {
-        insertion_index: pos,
-        delete_count: 0,
-        candidates: Vec::new(),
-        options: brush_core::completion::ProcessingOptions::default(),
-    });
+    // Intentionally ignore any errors that arise: there's then nothing to complete with.
+    result.map_or_else(
+        |_| Offers::default(),
+        |completions| offers(completions, prefs.mark_directories, show_all_if_ambiguous),
+    )
+}
 
-    // Look at the line up to 'pos' to check if we're in an unterminated
-    // single or double quote string.
-    let mut quote_char: Option<char> = None;
-    let mut escaped = false;
-    for (i, c) in line.char_indices() {
-        if i >= pos {
-            break;
-        }
-
-        if escaped {
-            escaped = false;
-            continue;
-        }
-
-        if let Some(q) = quote_char {
-            if c == q {
-                quote_char = None;
-            }
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '\'' || c == '\"' {
-            quote_char = Some(c);
-        }
-    }
-
-    let completing_end_of_line = pos == line.len();
-
-    // Deduplicate the candidates (retaining order), then postprocess them.
-    completions.candidates = completions
+/// Returns what to offer from `completions`: like readline, the only candidate, or else their
+/// common prefix if there's one to complete to, or else each candidate to list -- and with
+/// `show_all_if_ambiguous`, both the common prefix and the candidates. Directories are
+/// listed with a trailing slash if `mark_directories`.
+fn offers(completions: Completions, mark_directories: bool, show_all_if_ambiguous: bool) -> Offers {
+    let mut list: Vec<Offer> = completions
         .candidates
         .into_iter()
-        .collect::<indexmap::IndexSet<_>>()
-        .into_iter()
-        .map(|candidate| {
-            postprocess_completion_candidate(
-                candidate,
-                &completions.options,
-                working_dir.as_ref(),
-                completing_end_of_line,
-                quote_char,
-            )
+        .map(|candidate| Offer {
+            display: display(&candidate.value, candidate.kind, mark_directories),
+            is_dir: candidate.kind == CandidateKind::FileName { is_dir: true },
+            edit: candidate.edit,
         })
         .collect();
 
-    completions
+    if list.len() == 1 {
+        let edit = list.pop().map(|offer| offer.edit);
+        return Offers { edit, list };
+    }
+
+    let edit = completions.common_prefix;
+    if edit.is_some() && !show_all_if_ambiguous {
+        list.clear();
+    }
+    Offers { edit, list }
 }
 
-#[allow(dead_code)]
-fn postprocess_completion_candidate(
-    mut candidate: String,
-    options: &brush_core::completion::ProcessingOptions,
-    working_dir: &Path,
-    completing_end_of_line: bool,
-    quote_char: Option<char>,
-) -> String {
-    if options.treat_as_filenames {
-        // Check if it's a directory.
-        if !brush_core::sys::fs::ends_with_path_separator(&candidate) {
-            let candidate_path = Path::new(&candidate);
-            let abs_candidate_path = if candidate_path.is_absolute() {
-                PathBuf::from(candidate_path)
-            } else {
-                working_dir.join(candidate_path)
-            };
-
-            if abs_candidate_path.is_dir() {
-                // Use forward slash: backslash is the shell escape character.
-                candidate.push('/');
-            }
-        }
-
-        if !options.no_autoquote_filenames {
-            let quote_mode = match quote_char {
-                Some('\'') => escape::QuoteMode::SingleQuote,
-                Some('\"') => escape::QuoteMode::DoubleQuote,
-                _ => escape::QuoteMode::BackslashEscape,
-            };
-
-            candidate = escape::quote_if_needed(&candidate, quote_mode).to_string();
-        }
-    }
-    if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
-        if !options.treat_as_filenames || !brush_core::sys::fs::ends_with_path_separator(&candidate)
-        {
-            candidate.push(' ');
-        }
+/// Returns how to list a candidate with the given value and kind: like readline, as is, but
+/// for a file name, just its last component, marked with a trailing slash if it's a
+/// directory and `mark_directories`.
+fn display(value: &str, kind: CandidateKind, mark_directories: bool) -> String {
+    if !matches!(kind, CandidateKind::FileName { .. }) {
+        return value.to_owned();
     }
 
-    candidate
+    let trimmed = brush_core::sys::fs::strip_path_separator_suffix(value);
+    let mut display = brush_core::sys::fs::rfind_path_separator(trimmed)
+        .and_then(|index| value.get(index + 1..))
+        .unwrap_or(value)
+        .to_owned();
+
+    if matches!(kind, CandidateKind::FileName { is_dir: true })
+        && mark_directories
+        && !brush_core::sys::fs::ends_with_path_separator(&display)
+    {
+        display.push('/');
+    }
+    display
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_names_are_listed_by_last_component() {
+        let file = CandidateKind::FileName { is_dir: false };
+        let dir = CandidateKind::FileName { is_dir: true };
+
+        assert_eq!(display("dir/a b", file, true), "a b");
+        assert_eq!(display("~/Docs/", dir, true), "Docs/");
+        assert_eq!(display("dir/sub", dir, true), "sub/");
+        assert_eq!(display("dir/sub", dir, false), "sub");
+        // Anything else is listed as is.
+        assert_eq!(display("a/b", CandidateKind::Other, true), "a/b");
+    }
 }

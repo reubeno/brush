@@ -558,7 +558,6 @@ dependencies = [
  "brush-core",
  "brush-parser",
  "crossterm",
- "indexmap",
  "nu-ansi-term",
  "pretty_assertions",
  "radix_trie",
@@ -566,6 +565,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -625,7 +625,6 @@ dependencies = [
  "glob",
  "human-panic",
  "indent",
- "indexmap",
  "junit-report",
  "nix 0.31.3",
  "os-release",

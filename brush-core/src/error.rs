@@ -292,6 +292,10 @@ pub enum ErrorKind {
     #[error("internal shell error: {0}")]
     InternalError(String),
 
+    /// A position to complete at isn't a char boundary in the line being completed.
+    #[error("completion position {0} isn't a char boundary in the input line")]
+    InvalidCompletionPosition(usize),
+
     /// Attempted to perform an operation that requires an interactive session.
     #[error("operation requires an interactive session")]
     NotInInteractiveSession,

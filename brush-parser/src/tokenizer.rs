@@ -1338,24 +1338,35 @@ const fn is_quoting_char(c: char) -> bool {
     matches!(c, '\\' | '\'' | '\"')
 }
 
-/// Return a string with all the quoting removed.
+/// Returns `s` with its quoting removed, as the shell's quote removal does.
+///
+/// Removes quote chars that open or close a quote, and backslashes that escape the char
+/// after them. As in the shell, a backslash is literal in single quotes, and in double
+/// quotes it escapes only `$`, `` ` ``, `"`, `\`, and newline. Unlike the shell's line
+/// continuation, an escaped newline is kept. Nothing is expanded, and `$'...'` and
+/// `$"..."` aren't treated specially.
 ///
 /// # Arguments
 ///
 /// * `s` - The string to unquote.
 pub fn unquote_str(s: &str) -> String {
-    let mut result = String::new();
+    let mut result = String::with_capacity(s.len());
+    // The quote (`'` or `"`) the next char is in, if any.
+    let mut quote = None;
+    let mut chars = s.chars().peekable();
 
-    let mut in_escape = false;
-    for c in s.chars() {
-        match c {
-            c if in_escape => {
-                result.push(c);
-                in_escape = false;
+    while let Some(c) = chars.next() {
+        match (c, quote) {
+            ('\\', None) => result.extend(chars.next()),
+            ('\\', Some('"')) => {
+                if !matches!(chars.peek(), Some('$' | '`' | '"' | '\\' | '\n')) {
+                    result.push(c);
+                }
+                result.extend(chars.next());
             }
-            '\\' => in_escape = true,
-            c if is_quoting_char(c) => (),
-            c => result.push(c),
+            (_, Some(q)) if c == q => quote = None,
+            ('\'' | '"', None) => quote = Some(c),
+            _ => result.push(c),
         }
     }
 
@@ -1757,6 +1768,31 @@ HERE2
         assert_eq!(unquote_str(r#""hello""#), "hello");
         assert_eq!(unquote_str(r"'hello'"), "hello");
         assert_eq!(unquote_str(r#""hel\"lo""#), r#"hel"lo"#);
-        assert_eq!(unquote_str(r"'hel\'lo'"), r"hel'lo");
+        assert_eq!(unquote_str(r"hel\'lo"), r"hel'lo");
+        assert_eq!(unquote_str(r"a\ b\\c"), r"a b\c");
+
+        // Quotes open and close anywhere, and each kind is literal in the other.
+        assert_eq!(unquote_str(r#"a'b c'd"e f"g"#), "ab cde fg");
+        assert_eq!(unquote_str(r#"'a"b'"c'd""#), r#"a"bc'd"#);
+
+        // A backslash is literal in single quotes, so it can't escape the closing quote.
+        assert_eq!(unquote_str(r"'a\b'"), r"a\b");
+        assert_eq!(unquote_str(r"'a\'b"), r"a\b");
+
+        // In double quotes, a backslash escapes only chars that are special there.
+        assert_eq!(unquote_str(r#""a\$b\`c\"d\\e""#), r#"a$b`c"d\e"#);
+        assert_eq!(unquote_str(r#""a\b\'c""#), r"a\b\'c");
+        assert_eq!(unquote_str("\"a\\\nb\""), "a\nb");
+        assert_eq!(unquote_str("a\\\nb"), "a\nb");
+
+        // A trailing backslash is removed, unless it's literal (in quotes).
+        assert_eq!(unquote_str(r"a\"), "a");
+        assert_eq!(unquote_str(r#""a\"#), r"a\");
+        assert_eq!(unquote_str(r"'a\"), r"a\");
+
+        // An unclosed quote is removed; nothing is expanded.
+        assert_eq!(unquote_str(r#""a b"#), "a b");
+        assert_eq!(unquote_str(r#"$HOME'~'"$x""#), "$HOME~$x");
+        assert_eq!(unquote_str(""), "");
     }
 }

@@ -70,6 +70,162 @@ fn bound_key_runs_command_and_shell_survives() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Like readline, completion sees the whole line, not just the text before the cursor:
+/// e.g. `COMP_WORDS` includes words after it.
+#[test]
+fn completion_sees_text_after_cursor() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+
+    session.send_line(
+        r#"_f() { echo "WORDS""=<${COMP_WORDS[*]}> CWORD=$COMP_CWORD" >&2; }; complete -F _f mycmd"#,
+    )?;
+    expect_next_prompt(&mut session, 0)?;
+
+    // Type the line, move the cursor back before `b`, and press Tab.
+    session.send("mycmd a b")?;
+    session.send("\x1b[D\t")?;
+    session
+        .expect("WORDS=<mycmd a b> CWORD=2")
+        .context("completion did not see the whole line")?;
+
+    Ok(())
+}
+
+/// Completing a file name in an open quote keeps the quote and, like readline, closes it
+/// -- except after a directory, so completion can continue into it.
+#[test]
+fn completion_closes_open_quote() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("sp ace"), "")?;
+    std::fs::write(dir.path().join("q$x"), "")?;
+    std::fs::create_dir(dir.path().join("sub"))?;
+    std::fs::write(dir.path().join("sub").join("x"), "")?;
+
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.current_dir(dir.path());
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    // Each word is completed, then the line is run; `[%s]` keeps the echoed input from
+    // matching.
+    for (word, then_typed, expected) in [
+        ("'sp", "", "[sp ace]"),
+        ("\"q", "", "[q$x]"),
+        // The quote stays open after a directory, so finishing the word by hand works.
+        ("'su", "x'", "[sub/x]"),
+    ] {
+        session.send(format!("printf '[%s]\\n' {word}\t"))?;
+        answer_cursor_query(&mut session)?;
+        session.send_line(then_typed)?;
+        session
+            .expect(expected)
+            .with_context(|| format!("completing {word:?}"))?;
+        expect_next_prompt(&mut session, 0)?;
+    }
+
+    Ok(())
+}
+
+/// Like readline, completing a file name that needs quoting just before a closing quote the
+/// user already typed replaces that quote with its own, putting a directory's slash after
+/// it. Expected lines were captured from bash 5.3.
+#[test]
+fn completion_replaces_typed_closing_quote() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::create_dir(dir.path().join("dir with space"))?;
+    std::fs::write(dir.path().join("it's"), "")?;
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.current_dir(dir.path());
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    bind_show_line(&mut session)?;
+
+    for (typed, expected) in [
+        (r#"echo "di" x"#, r#"LINE=<echo "dir with space"/ x>"#),
+        (r#"echo "it" x"#, r#"LINE=<echo "it's" x>"#),
+    ] {
+        // Type the line, move the cursor back to just before the closing quote, and press
+        // Tab.
+        expect_completed_line(
+            &mut session,
+            &format!("{typed}\x1b[D\x1b[D\x1b[D\t"),
+            expected,
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Like readline, several candidates are first completed to their longest common prefix.
+/// Expected lines were captured from bash 5.3.
+#[test]
+fn completion_inserts_common_prefix() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("item1"), "")?;
+    std::fs::write(dir.path().join("item2"), "")?;
+    std::fs::create_dir(dir.path().join("dir a"))?;
+    std::fs::create_dir(dir.path().join("dir b"))?;
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.current_dir(dir.path());
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    bind_show_line(&mut session)?;
+
+    for (typed, expected) in [
+        ("echo ite", "LINE=<echo item>"),
+        (r#"echo "di"#, r#"LINE=<echo "dir >"#),
+    ] {
+        expect_completed_line(&mut session, &format!("{typed}\t"), expected)?;
+    }
+
+    Ok(())
+}
+
+/// Like readline, completing a variable whose value is a directory appends a `/`.
+#[test]
+#[ignore = "TODO(completions): mark variables naming directories with a trailing slash"]
+fn completing_directory_variable_appends_slash() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.env("DIRVAR", dir.path());
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    bind_show_line(&mut session)?;
+
+    // Type a variable reference and press Tab.
+    expect_completed_line(&mut session, "echo $DIRV\t", "LINE=<echo $DIRVAR/>")?;
+
+    Ok(())
+}
+
+/// Like readline, completing a file name under a `~` or `$VAR` directory keeps the
+/// directory as typed, quoting the rest so the directory still expands. Expected lines were
+/// captured from bash 5.3.
+#[test]
+fn completing_under_tilde_or_variable_keeps_directory() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    std::fs::create_dir(home.path().join("Docs dir"))?;
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.env("HOME", home.path());
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    bind_show_line(&mut session)?;
+
+    for (typed, expected) in [
+        ("echo ~/Do", r"LINE=<echo ~/Docs\ dir/>"),
+        ("echo $HOME/Do", r#"LINE=<echo "$HOME/Docs dir"/>"#),
+    ] {
+        expect_completed_line(&mut session, &format!("{typed}\t"), expected)?;
+    }
+
+    Ok(())
+}
+
 /// `preexec` fires for lines the user typed, not for a command a key binding ran. The
 /// hooks exist to observe what the user is about to run; bash-preexec has the same split,
 /// because a `bind -x` command runs from readline rather than from the command line.
@@ -214,6 +370,42 @@ fn expect_next_prompt(session: &mut ShellSession, mut withhold: usize) -> anyhow
             .context("no prompt after answered query")?;
         return Ok(());
     }
+}
+
+/// Binds Ctrl-T to show the line being edited, as `LINE=<...>`, for
+/// [`expect_completed_line`].
+fn bind_show_line(session: &mut ShellSession) -> anyhow::Result<()> {
+    session.send_line(r#"bind -x '"\C-t": echo "LINE""=<$READLINE_LINE>"'"#)?;
+    expect_next_prompt(session, 0)
+}
+
+/// Types `keys`, which press Tab to complete, then shows the line being edited (see
+/// [`bind_show_line`]) and expects it to be `expected`, then clears the line.
+fn expect_completed_line(
+    session: &mut ShellSession,
+    keys: &str,
+    expected: &str,
+) -> anyhow::Result<()> {
+    session.send(keys)?;
+    answer_cursor_query(session)?;
+    session.send("\x14")?;
+    session
+        .expect(expected)
+        .with_context(|| format!("completing {keys:?}"))?;
+    // Clear the whole line for the next case, once reedline has redrawn it.
+    answer_cursor_query(session)?;
+    session.send("\x05\x15")?;
+    Ok(())
+}
+
+/// Answers the cursor-position query reedline sends when it completes (e.g. on Tab).
+/// Left unanswered, reedline waits ~2s for the answer before it carries on.
+fn answer_cursor_query(session: &mut ShellSession) -> anyhow::Result<()> {
+    session
+        .expect(DSR_QUERY)
+        .context("no cursor-position query on completion")?;
+    session.send(DSR_REPLY)?;
+    Ok(())
 }
 
 fn start_reedline_session() -> anyhow::Result<ShellSession> {
