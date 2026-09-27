@@ -14,6 +14,10 @@ test_alt_c_symlink
 # https://github.com/reubeno/brush/issues/738
 test_ctrl_r_multiline
 
+# A no-match directory completion opens an empty Reedline menu.
+# https://github.com/reubeno/brush/issues/1413
+test_dir_completion
+
 # Completion does not trigger for the second command of a `;` sequence.
 test_completion_in_command_sequence
 
