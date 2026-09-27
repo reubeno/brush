@@ -23,7 +23,7 @@ struct HideEmptyCompletionMenu {
 }
 
 impl HideEmptyCompletionMenu {
-    fn new(inner: reedline::ColumnarMenu) -> Self {
+    const fn new(inner: reedline::ColumnarMenu) -> Self {
         Self { inner }
     }
 
