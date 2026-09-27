@@ -31,6 +31,7 @@ impl HideEmptyCompletionMenu {
         if self.inner.is_active()
             && self.inner.get_values().is_empty()
             && !self.inner.results_are_provisional()
+            && !self.inner.is_awaiting_first_answer()
         {
             self.inner.menu_event(reedline::MenuEvent::Deactivate);
         }
@@ -433,6 +434,16 @@ mod tests {
         update_menu(&mut menu, &mut completer);
 
         assert!(!menu.is_active());
+    }
+
+    #[test]
+    fn completion_menu_stays_open_before_first_answer() {
+        let mut menu = active_completion_menu();
+
+        assert!(menu.is_awaiting_first_answer());
+        menu.deactivate_if_settled_empty();
+
+        assert!(menu.is_active());
     }
 
     #[test]
