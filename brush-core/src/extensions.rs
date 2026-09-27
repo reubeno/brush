@@ -21,9 +21,7 @@ pub struct ShellExtensionsImpl<
     CF: CmdExecFilter = NoOpCmdExecFilter,
     SF: SourceFilter = NoOpSourceFilter,
 > {
-    error_formatter: EF,
-    cmd_exec_filter: CF,
-    source_filter: SF,
+    _marker: std::marker::PhantomData<(EF, CF, SF)>,
 }
 
 impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter> ShellExtensions
@@ -32,23 +30,6 @@ impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter> ShellExtensions
     type ErrorFormatter = EF;
     type CmdExecFilter = CF;
     type SourceFilter = SF;
-}
-
-impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter> ShellExtensionsImpl<EF, CF, SF> {
-    /// Returns a reference to the error formatter.
-    pub const fn error_formatter(&self) -> &EF {
-        &self.error_formatter
-    }
-
-    /// Returns a reference to the command execution filter.
-    pub const fn cmd_exec_filter(&self) -> &CF {
-        &self.cmd_exec_filter
-    }
-
-    /// Returns a reference to the source filter.
-    pub const fn source_filter(&self) -> &SF {
-        &self.source_filter
-    }
 }
 
 /// Default shell extensions implementation.
@@ -78,3 +59,12 @@ pub trait ErrorFormatter: Clone + Default + Send + Sync + 'static {
 pub struct DefaultErrorFormatter;
 
 impl ErrorFormatter for DefaultErrorFormatter {}
+
+/// Trait for placeholder behavior (stub for future extension).
+pub trait PlaceholderBehavior: Clone + Default + Send + Sync + 'static {}
+
+/// Default placeholder implementation.
+#[derive(Clone, Default)]
+pub struct DefaultPlaceholder;
+
+impl PlaceholderBehavior for DefaultPlaceholder {}

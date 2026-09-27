@@ -16,7 +16,7 @@ use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
     extensions::{self, ShellExtensions},
-    filter::{CmdExecFilter as _, ExternalCmdParams, ExternalCommand, SimpleCmdParams},
+    filter::{CmdExecFilter as _, SimpleCmdParams},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
@@ -317,6 +317,13 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
 }
 
 impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
+    /// Runs command cleanup after a pre-hook short-circuit.
+    pub(crate) fn complete_without_execution(&mut self) {
+        if let Some(post_execute) = self.post_execute.take() {
+            let _ = post_execute(&mut self.shell);
+        }
+    }
+
     /// Creates a new `SimpleCommand` instance.
     ///
     /// # Arguments
@@ -356,25 +363,30 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         clippy::missing_panics_doc,
         reason = "these unwrap calls should not panic"
     )]
-    pub async fn execute(self) -> Result<ExecutionSpawnResult, error::Error> {
-        // Create filter params with lazy arg conversion - no allocation unless filter inspects args
+    pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+        // Defer argument conversion until a filter requests it.
         let filter_params = SimpleCmdParams::from_command_args(
             &*self.shell,
             self.command_name.as_str(),
             &self.args,
         );
 
-        crate::with_filter!(
-            self.shell,
-            cmd_exec_filter,
-            pre_simple_cmd,
-            post_simple_cmd,
-            filter_params,
-            self.execute_impl().await
-        )
+        let filter = self.shell.cmd_exec_filter().clone();
+        match filter.pre_simple_cmd(filter_params).await {
+            crate::filter::PreFilterResult::Continue(_) => {
+                let result = self.execute_impl().await;
+                let crate::filter::PostFilterResult::Return(result) =
+                    filter.post_simple_cmd(result).await;
+                result
+            }
+            crate::filter::PreFilterResult::Return(result) => {
+                self.complete_without_execution();
+                result
+            }
+        }
     }
 
-    /// Internal implementation of command execution (called after pre-filter).
+    /// Runs a command after its pre-hook.
     async fn execute_impl(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
@@ -421,7 +433,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             };
 
             if let Some(path) = path {
-                self.execute_via_external(&path).await
+                self.execute_via_external(&path)
             } else {
                 // Bash updates $_ even when the command is not found, so mirror
                 // that here before reporting the error.
@@ -436,7 +448,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             }
         } else {
             let command_name = PathBuf::from(self.command_name.clone());
-            self.execute_via_external(command_name.as_path()).await
+            self.execute_via_external(command_name.as_path())
         }
     }
 
@@ -549,67 +561,33 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         result
     }
 
-    async fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
-        // Build an ExternalCommand for the filter to inspect/modify.
-        let mut ext_cmd = ExternalCommand::new(path);
-        for arg in &self.args[1..] {
-            if let CommandArg::String(s) = arg {
-                ext_cmd.arg(s);
-            }
+    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
+        let mut shell = self.shell;
+        let last_arg = Self::take_last_arg(&self.args);
+
+        let cmd_context = ExecutionContext {
+            shell: &mut shell,
+            command_name: self.command_name,
+            params: self.params,
+        };
+
+        let resolved_path = path.to_string_lossy();
+        let result = execute_external_command(
+            cmd_context,
+            resolved_path.as_ref(),
+            self.process_group_id,
+            self.argv0.as_deref(),
+            &self.args[1..],
+        );
+
+        // Update $_ after command execution.
+        shell.update_last_arg_variable(last_arg);
+
+        if let Some(post_execute) = self.post_execute {
+            let _ = post_execute(&mut shell);
         }
 
-        // Extract fields from self before creating params (which borrows shell).
-        let last_arg = Self::take_last_arg(&self.args);
-        let mut shell = self.shell;
-        let command_name = self.command_name;
-        let params = self.params;
-        let process_group_id = self.process_group_id;
-        let argv0 = self.argv0;
-        let post_execute = self.post_execute;
-
-        // Create filter params.
-        let filter_params = ExternalCmdParams::new(&shell, ext_cmd);
-
-        crate::with_filter!(
-            shell,
-            cmd_exec_filter,
-            pre_external_cmd,
-            post_external_cmd,
-            filter_params,
-            p => {
-                // Extract the (possibly modified) command info.
-                let ext_cmd = p.command;
-                let new_path = PathBuf::from(ext_cmd.program());
-                let new_args: Vec<CommandArg> = ext_cmd
-                    .args()
-                    .iter()
-                    .map(|a| CommandArg::String(a.to_string_lossy().to_string()))
-                    .collect();
-
-                let cmd_context = ExecutionContext {
-                    shell: &mut shell,
-                    command_name,
-                    params,
-                };
-
-                let resolved_path = new_path.to_string_lossy();
-                execute_external_command(
-                    cmd_context,
-                    resolved_path.as_ref(),
-                    process_group_id,
-                    argv0.as_deref(),
-                    &new_args,
-                )
-            },
-            finally {
-                // Update $_ after command execution.
-                shell.update_last_arg_variable(last_arg);
-
-                if let Some(post_execute) = post_execute {
-                    let _ = post_execute(&mut shell);
-                }
-            }
-        )
+        result
     }
 }
 
