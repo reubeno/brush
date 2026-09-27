@@ -79,6 +79,73 @@ pub type ExternalCmdOutput = Result<ExecutionSpawnResult, error::Error>;
 /// Output type for script sourcing.
 pub type SourceScriptOutput = Result<ExecutionResult, error::Error>;
 
+/// The access requested by a shell-originated file open.
+///
+/// Call sites supply this explicitly; policy never infers rights from an
+/// opaque `std::fs::OpenOptions` value or its debug representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FileOpenAccess {
+    /// Read existing contents.
+    Read,
+    /// Write, create, truncate, or append contents.
+    Write,
+    /// Both read and write contents.
+    ReadWrite,
+}
+
+/// Parameters for a shell-originated file open, before any file or fd effect.
+#[non_exhaustive]
+pub struct FileOpenParams<'a, SE: ShellExtensions> {
+    /// The shell requesting the open.
+    pub shell: &'a Shell<SE>,
+    /// Original path spelling, before resolution or platform-specific aliases.
+    pub requested_path: &'a Path,
+    /// Absolute path, including special paths such as `/dev/null` and `/dev/fd/3`.
+    /// This is not canonicalized: the policy can apply its own symlink rules.
+    pub path: &'a Path,
+    /// Rights requested by the operation.
+    pub access: FileOpenAccess,
+}
+
+impl<'a, SE: ShellExtensions> FileOpenParams<'a, SE> {
+    /// Creates parameters for the requested file open.
+    pub const fn new(
+        shell: &'a Shell<SE>,
+        requested_path: &'a Path,
+        path: &'a Path,
+        access: FileOpenAccess,
+    ) -> Self {
+        Self {
+            shell,
+            requested_path,
+            path,
+            access,
+        }
+    }
+}
+
+/// Static policy for shell-originated file opens.
+///
+/// The hook runs synchronously before ordinary files, special devices, or fd
+/// aliases are opened. It covers shell opens, not file access performed by an
+/// external process; embedders must enforce that boundary separately.
+pub trait FileOpenFilter: Clone + Default + Send + Sync + 'static {
+    /// Authorize the requested open, or return an error without performing it.
+    fn pre_open_file<SE: ShellExtensions>(
+        &self,
+        _params: FileOpenParams<'_, SE>,
+    ) -> Result<(), error::Error> {
+        Ok(())
+    }
+}
+
+/// Default file-open filter, allowing the shell's ordinary behavior.
+#[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct NoOpFileOpenFilter;
+
+impl FileOpenFilter for NoOpFileOpenFilter {}
+
 //
 // Filter parameter types
 //
@@ -185,12 +252,37 @@ pub struct ExternalCmdParams<'a, SE: ShellExtensions> {
     pub shell: &'a Shell<SE>,
     /// The external command builder (introspectable and modifiable).
     pub command: ExternalCommand,
+    original_command: std::ffi::OsString,
 }
 
 impl<'a, SE: ShellExtensions> ExternalCmdParams<'a, SE> {
     /// Creates new external command parameters.
-    pub const fn new(shell: &'a Shell<SE>, command: ExternalCommand) -> Self {
-        Self { shell, command }
+    pub fn new(shell: &'a Shell<SE>, command: ExternalCommand) -> Self {
+        let original_command = command.program().to_owned();
+        Self {
+            shell,
+            command,
+            original_command,
+        }
+    }
+
+    /// Creates parameters retaining the command spelling before path resolution.
+    pub fn with_original_command(
+        shell: &'a Shell<SE>,
+        original_command: impl AsRef<std::ffi::OsStr>,
+        command: ExternalCommand,
+    ) -> Self {
+        Self {
+            shell,
+            command,
+            original_command: original_command.as_ref().to_owned(),
+        }
+    }
+
+    /// Returns the original command spelling, independently of the resolved program
+    /// and the argument zero supplied to the child.
+    pub fn original_command(&self) -> &std::ffi::OsStr {
+        &self.original_command
     }
 }
 
@@ -234,6 +326,52 @@ impl<'a, SE: ShellExtensions> SourceScriptParams<'a, SE> {
 // External command builder (introspectable)
 //
 
+/// An explicitly owned descriptor capability delegated to one Unix child.
+///
+/// This does not open a path or expose an ambient descriptor: the caller must
+/// already own the source. Standard streams retain the shell's redirections.
+#[cfg(unix)]
+#[derive(Clone, Debug)]
+pub struct DelegatedFd {
+    target: crate::ShellFd,
+    source: std::sync::Arc<std::fs::File>,
+}
+
+#[cfg(unix)]
+impl DelegatedFd {
+    /// Owns a source descriptor for delegation to a child descriptor above stderr.
+    pub fn new(target: crate::ShellFd, source: std::os::fd::OwnedFd) -> Result<Self, error::Error> {
+        if target <= crate::openfiles::OpenFiles::STDERR_FD || target == crate::ShellFd::MAX {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "delegated descriptor target must be above stderr and below the mapping sentinel",
+            )
+            .into());
+        }
+        // OwnedFd by itself does not imply CLOEXEC (for example, dup() clears
+        // it). Its safe clone operation atomically creates a CLOEXEC descriptor;
+        // close the original before returning so unrelated spawns cannot inherit
+        // an ambient source retained by this capability.
+        let private_source = source.try_clone()?;
+        drop(source);
+        Ok(Self {
+            target,
+            source: std::sync::Arc::new(private_source.into()),
+        })
+    }
+
+    /// Returns the descriptor number requested in the child.
+    pub const fn target(&self) -> crate::ShellFd {
+        self.target
+    }
+
+    /// Borrows the owned source capability for final policy inspection.
+    pub fn source(&self) -> std::os::fd::BorrowedFd<'_> {
+        use std::os::fd::AsFd as _;
+        self.source.as_fd()
+    }
+}
+
 /// An introspectable command builder for external process execution.
 ///
 /// Unlike `std::process::Command`, this type allows inspection of all
@@ -251,10 +389,13 @@ impl<'a, SE: ShellExtensions> SourceScriptParams<'a, SE> {
 #[derive(Debug, Clone)]
 pub struct ExternalCommand {
     program: std::ffi::OsString,
+    argv0: Option<std::ffi::OsString>,
     args: Vec<std::ffi::OsString>,
     envs: Vec<(std::ffi::OsString, std::ffi::OsString)>,
     current_dir: Option<std::path::PathBuf>,
     env_clear: bool,
+    #[cfg(unix)]
+    delegated_fds: Vec<DelegatedFd>,
 }
 
 impl ExternalCommand {
@@ -262,16 +403,31 @@ impl ExternalCommand {
     pub fn new(program: impl AsRef<std::ffi::OsStr>) -> Self {
         Self {
             program: program.as_ref().to_owned(),
+            argv0: None,
             args: Vec::new(),
             envs: Vec::new(),
             current_dir: None,
             env_clear: false,
+            #[cfg(unix)]
+            delegated_fds: Vec::new(),
         }
     }
 
     /// Returns the program path.
     pub fn program(&self) -> &std::ffi::OsStr {
         &self.program
+    }
+
+    /// Returns the requested argument zero. Unix honors this independently of the
+    /// program; platforms without argument-zero overrides use their native behavior.
+    pub fn argv0(&self) -> &std::ffi::OsStr {
+        self.argv0.as_deref().unwrap_or(&self.program)
+    }
+
+    /// Overrides argument zero on platforms that support it.
+    pub fn set_argv0(&mut self, argv0: impl AsRef<std::ffi::OsStr>) -> &mut Self {
+        self.argv0 = Some(argv0.as_ref().to_owned());
+        self
     }
 
     /// Returns the arguments.
@@ -318,8 +474,9 @@ impl ExternalCommand {
     }
 
     /// Clears the environment.
-    pub const fn clear_env(&mut self) -> &mut Self {
+    pub fn clear_env(&mut self) -> &mut Self {
         self.env_clear = true;
+        self.envs.clear();
         self
     }
 
@@ -329,8 +486,29 @@ impl ExternalCommand {
         key: impl AsRef<std::ffi::OsStr>,
         val: impl AsRef<std::ffi::OsStr>,
     ) -> &mut Self {
-        self.envs
-            .push((key.as_ref().to_owned(), val.as_ref().to_owned()));
+        #[cfg(windows)]
+        {
+            // Windows treats environment keys case-insensitively. Let the
+            // standard command builder normalize them so final authorization
+            // sees exactly the same effective entries as the child process.
+            // Constructing this builder performs no process or file effects.
+            let mut command = std::process::Command::new(&self.program);
+            command.envs(self.envs.iter().map(|(name, value)| (name, value)));
+            command.env(key, val);
+            self.envs = command
+                .get_envs()
+                .filter_map(|(name, value)| value.map(|value| (name.to_owned(), value.to_owned())))
+                .collect();
+        }
+        #[cfg(not(windows))]
+        {
+            if let Some((_, value)) = self.envs.iter_mut().find(|(name, _)| name == key.as_ref()) {
+                val.as_ref().clone_into(value);
+            } else {
+                self.envs
+                    .push((key.as_ref().to_owned(), val.as_ref().to_owned()));
+            }
+        }
         self
     }
 
@@ -340,10 +518,49 @@ impl ExternalCommand {
         self
     }
 
+    /// Delegates an already-owned descriptor to this child only.
+    ///
+    /// The final authorization hook sees every delegation. Duplicate targets
+    /// and collisions with shell redirections fail before the child is spawned.
+    #[cfg(unix)]
+    pub fn delegate_fd(&mut self, descriptor: DelegatedFd) -> Result<&mut Self, error::Error> {
+        if self
+            .delegated_fds
+            .iter()
+            .any(|fd| fd.target == descriptor.target)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "duplicate delegated descriptor target",
+            )
+            .into());
+        }
+        self.delegated_fds.push(descriptor);
+        Ok(self)
+    }
+
+    /// Returns the exact descriptor capabilities proposed for the child.
+    #[cfg(unix)]
+    pub fn delegated_fds(&self) -> &[DelegatedFd] {
+        &self.delegated_fds
+    }
+
     /// Converts this into a `std::process::Command`.
-    #[must_use]
-    pub fn into_std_command(self) -> std::process::Command {
+    pub fn into_std_command(self) -> Result<std::process::Command, error::Error> {
+        self.to_std_command_with_fds(std::iter::empty())
+    }
+
+    pub(crate) fn to_std_command_with_fds(
+        &self,
+        open_files: impl Iterator<Item = (crate::ShellFd, crate::openfiles::OpenFile)>,
+    ) -> Result<std::process::Command, error::Error> {
+        use crate::sys::commands::CommandExt as _;
+        use crate::sys::commands::CommandFdInjectionExt as _;
         let mut cmd = std::process::Command::new(&self.program);
+
+        if let Some(argv0) = &self.argv0 {
+            cmd.arg0(argv0);
+        }
 
         if self.env_clear {
             cmd.env_clear();
@@ -359,7 +576,29 @@ impl ExternalCommand {
             cmd.current_dir(dir);
         }
 
-        cmd
+        #[cfg(unix)]
+        let open_files = {
+            let mut mappings = open_files.collect::<Vec<_>>();
+            for delegated in &self.delegated_fds {
+                if mappings
+                    .iter()
+                    .any(|(target, _)| *target == delegated.target)
+                {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "delegated descriptor collides with a shell redirection",
+                    )
+                    .into());
+                }
+                mappings.push((
+                    delegated.target,
+                    crate::openfiles::OpenFile::File(delegated.source.clone()),
+                ));
+            }
+            mappings.into_iter()
+        };
+        cmd.inject_fds(open_files)?;
+        Ok(cmd)
     }
 }
 
@@ -375,8 +614,8 @@ impl ExternalCommand {
 /// # Hook Semantics
 ///
 /// - `pre_simple_cmd` / `post_simple_cmd`: Called for ALL commands (builtins, functions,
-///   external). Use for observation, modification, or short-circuiting. When using the
-///   `$p =>` form of [`with_filter!`], returned params are captured and can be used.
+///   external). Use for observation, short-circuiting, or result transformation.
+///   The shell does not apply changes to the simple-command observation fields.
 ///
 /// - `pre_external_cmd` / `post_external_cmd`: Called only for external process spawning.
 ///   The [`ExternalCommand`] in params can be modified and changes will be applied.
@@ -391,13 +630,13 @@ impl ExternalCommand {
 pub trait CmdExecFilter: Clone + Default + Send + Sync + 'static {
     /// Called before a simple command is executed.
     ///
-    /// Can inspect and modify the command parameters, or short-circuit execution by returning
+    /// Can inspect the command parameters, or short-circuit execution by returning
     /// `PreFilterResult::Return`. This hook is called for ALL command types
     /// (builtins, shell functions, external commands).
     ///
-    /// When returning `Continue(params)` with the `$p =>` form of [`with_filter!`], the
-    /// returned params are captured and used. For external command modification specifically,
-    /// prefer `pre_external_cmd` which provides the introspectable [`ExternalCommand`] builder.
+    /// Changes to these observation fields do not rewrite the shell command.
+    /// For external command modification, use `pre_external_cmd`, which provides
+    /// the introspectable [`ExternalCommand`] builder.
     #[allow(unused_variables)]
     fn pre_simple_cmd<'a, SE: ShellExtensions>(
         &self,
@@ -431,6 +670,35 @@ pub trait CmdExecFilter: Clone + Default + Send + Sync + 'static {
         Output = PreFilterResult<ExternalCmdParams<'a, SE>, ExternalCmdOutput>,
     > + Send {
         async { PreFilterResult::Continue(params) }
+    }
+
+    /// Authorizes the final external command after every pre-filter has finished
+    /// rewriting it, immediately before spawning or replacing the process image.
+    ///
+    /// This immutable phase sees the exact program, arguments, environment, and
+    /// working directory that will be passed to the operating system. Security
+    /// policies should decide here so later rewrites cannot invalidate a decision.
+    /// The hook must perform no process effects; an error prevents execution.
+    fn authorize_external_cmd<SE: ShellExtensions>(
+        &self,
+        _params: &ExternalCmdParams<'_, SE>,
+    ) -> impl std::future::Future<Output = Result<(), error::Error>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Observes a successfully spawned child and the exact authorized command.
+    ///
+    /// The child can already run, but its spawn result is not exposed until this
+    /// hook completes. A failure terminates and reaps that child, then propagates
+    /// as a terminating shell error. Embedders may use this to register a scoped
+    /// capability before answering requests from the child. This is not called
+    /// for failed spawns or successful `exec`, which replaces the shell itself.
+    fn external_cmd_spawned(
+        &self,
+        _command: &ExternalCommand,
+        _pid: Option<u32>,
+    ) -> impl std::future::Future<Output = Result<(), error::Error>> + Send {
+        async { Ok(()) }
     }
 
     /// Called after an external command is spawned.
@@ -490,6 +758,7 @@ pub trait SourceFilter: Clone + Default + Send + Sync + 'static {
 /// Passes through all operations unchanged. This is the default filter
 /// and incurs zero runtime overhead due to monomorphization.
 #[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NoOpCmdExecFilter;
 
 impl CmdExecFilter for NoOpCmdExecFilter {}
@@ -498,6 +767,7 @@ impl CmdExecFilter for NoOpCmdExecFilter {}
 ///
 /// Passes through all operations unchanged.
 #[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct NoOpSourceFilter;
 
 impl SourceFilter for NoOpSourceFilter {}
@@ -534,6 +804,7 @@ impl SourceFilter for NoOpSourceFilter {}
 /// // 5. LoggingFilter::post_simple_cmd (logs "completed")
 /// ```
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FilterStack<First, Second> {
     /// The first (outer) filter in the stack.
     pub first: First,
@@ -568,7 +839,39 @@ impl<First: Default, Second: Default> Default for FilterStack<First, Second> {
     }
 }
 
+impl<First: FileOpenFilter, Second: FileOpenFilter> FileOpenFilter for FilterStack<First, Second> {
+    fn pre_open_file<SE: ShellExtensions>(
+        &self,
+        params: FileOpenParams<'_, SE>,
+    ) -> Result<(), error::Error> {
+        self.first.pre_open_file(FileOpenParams::new(
+            params.shell,
+            params.requested_path,
+            params.path,
+            params.access,
+        ))?;
+        self.second.pre_open_file(params)
+    }
+}
+
 impl<First: CmdExecFilter, Second: CmdExecFilter> CmdExecFilter for FilterStack<First, Second> {
+    async fn external_cmd_spawned(
+        &self,
+        command: &ExternalCommand,
+        pid: Option<u32>,
+    ) -> Result<(), error::Error> {
+        self.second.external_cmd_spawned(command, pid).await?;
+        self.first.external_cmd_spawned(command, pid).await
+    }
+
+    async fn authorize_external_cmd<SE: ShellExtensions>(
+        &self,
+        params: &ExternalCmdParams<'_, SE>,
+    ) -> Result<(), error::Error> {
+        self.first.authorize_external_cmd(params).await?;
+        self.second.authorize_external_cmd(params).await
+    }
+
     async fn pre_simple_cmd<'a, SE: ShellExtensions>(
         &self,
         params: SimpleCmdParams<'a, SE>,
@@ -766,16 +1069,69 @@ macro_rules! with_filter {
                 $finally
                 __r
             }
-            $crate::filter::PreFilterResult::Return(__r) => __r,
+            $crate::filter::PreFilterResult::Return(__r) => {
+                $finally
+                __r
+            },
         }
     }};
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unused_async_trait_impl,
+    reason = "test filter hooks intentionally defer effects until their futures are polled"
+)]
 mod tests {
     use super::*;
     use crate::Shell;
     use crate::extensions::DefaultShellExtensions;
+
+    #[cfg(windows)]
+    #[test]
+    fn external_command_environment_matches_windows_key_identity() {
+        let mut command = ExternalCommand::new("fixture");
+        command
+            .clear_env()
+            .env("Path", "first")
+            .env("PATH", "second");
+
+        assert_eq!(command.envs().len(), 1);
+        assert_eq!(command.envs()[0].1, "second");
+
+        let mut expected = std::process::Command::new("fixture");
+        expected
+            .env_clear()
+            .env("Path", "first")
+            .env("PATH", "second");
+        let actual = command.into_std_command().unwrap();
+        assert_eq!(
+            actual.get_envs().collect::<Vec<_>>(),
+            expected.get_envs().collect::<Vec<_>>()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_command_environment_preserves_distinct_unix_key_case() {
+        let mut command = ExternalCommand::new("fixture");
+        command
+            .clear_env()
+            .env("Path", "first")
+            .env("PATH", "second");
+
+        assert_eq!(command.envs().len(), 2);
+        let actual = command.into_std_command().unwrap();
+        let mut expected = std::process::Command::new("fixture");
+        expected
+            .env_clear()
+            .env("Path", "first")
+            .env("PATH", "second");
+        assert_eq!(
+            actual.get_envs().collect::<Vec<_>>(),
+            expected.get_envs().collect::<Vec<_>>()
+        );
+    }
 
     /// Test that the basic form of `with_filter!` compiles and works correctly
     /// with the no-op filter (zero-cost case).
@@ -887,6 +1243,7 @@ mod tests {
         type ErrorFormatter = crate::extensions::DefaultErrorFormatter;
         type CmdExecFilter = TrackingCmdExecFilter;
         type SourceFilter = NoOpSourceFilter;
+        type FileOpenFilter = NoOpFileOpenFilter;
     }
 
     /// Test that a custom filter's pre/post methods are actually called.
@@ -954,6 +1311,7 @@ mod tests {
         type ErrorFormatter = crate::extensions::DefaultErrorFormatter;
         type CmdExecFilter = ShortCircuitFilter;
         type SourceFilter = NoOpSourceFilter;
+        type FileOpenFilter = NoOpFileOpenFilter;
     }
 
     /// Test short-circuit behavior.
@@ -1214,6 +1572,7 @@ mod tests {
         type ErrorFormatter = crate::extensions::DefaultErrorFormatter;
         type CmdExecFilter = ErrorReturningFilter;
         type SourceFilter = NoOpSourceFilter;
+        type FileOpenFilter = NoOpFileOpenFilter;
     }
 
     /// Test that errors returned from filters propagate correctly.
@@ -1277,6 +1636,7 @@ mod tests {
         type ErrorFormatter = crate::extensions::DefaultErrorFormatter;
         type CmdExecFilter = StatefulFilter;
         type SourceFilter = NoOpSourceFilter;
+        type FileOpenFilter = NoOpFileOpenFilter;
     }
 
     /// Test that stateful filters with Arc<Mutex> work correctly and

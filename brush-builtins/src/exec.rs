@@ -3,7 +3,7 @@ use std::{borrow::Cow, os::unix::process::CommandExt};
 
 use brush_core::{
     ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands,
-    filter::{CmdExecFilter as _, ExternalCmdParams, ExternalCommand, PreFilterResult},
+    filter::{CmdExecFilter as _, ExternalCmdParams, PreFilterResult},
     results::ExecutionWaitResult,
 };
 
@@ -81,19 +81,29 @@ impl builtins::Command for ExecCommand {
             .as_deref()
             .unwrap_or_else(|| std::path::Path::new(self.args[0].as_str()));
 
-        let mut ext_cmd = ExternalCommand::new(program);
-        for arg in &self.args[1..] {
-            ext_cmd.arg(arg);
-        }
-
-        let filter_params = ExternalCmdParams::new(context.shell, ext_cmd);
+        let ext_cmd = commands::compose_external_command(
+            context.shell,
+            program,
+            argv0.as_str(),
+            &self.args[1..],
+            self.empty_environment,
+        );
+        let filter_params =
+            ExternalCmdParams::with_original_command(context.shell, &self.args[0], ext_cmd);
         let ext_cmd = match context
             .shell
             .cmd_exec_filter()
             .pre_external_cmd(filter_params)
             .await
         {
-            PreFilterResult::Continue(params) => params.command,
+            PreFilterResult::Continue(params) => {
+                context
+                    .shell
+                    .cmd_exec_filter()
+                    .authorize_external_cmd(&params)
+                    .await?;
+                params.command
+            }
             // A filter short-circuited. A denial is the `Err` case and is the point of this
             // hook; an `Ok` spawn result is unusual here but is honored rather than dropped.
             PreFilterResult::Return(output) => {
@@ -116,20 +126,7 @@ impl builtins::Command for ExecCommand {
             }
         };
 
-        let program_to_launch = ext_cmd.program().to_string_lossy().into_owned();
-        let filtered_args: Vec<String> = ext_cmd
-            .args()
-            .iter()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-
-        let mut cmd = commands::compose_std_command(
-            &context,
-            program_to_launch.as_str(),
-            argv0.as_str(),
-            filtered_args.as_slice(),
-            self.empty_environment,
-        )?;
+        let mut cmd = commands::compose_filtered_std_command(&context, ext_cmd)?;
 
         let exec_error = cmd.exec();
 

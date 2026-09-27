@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use brush_core::extensions::DefaultErrorFormatter;
 use brush_core::extensions::ShellExtensionsImpl;
-use brush_core::filter::{CmdExecFilter, ExternalCmdParams, NoOpSourceFilter, PreFilterResult};
+use brush_core::filter::{CmdExecFilter, ExternalCmdParams, NoOpSourceFilter};
 
 /// Set on the child to the scratch directory it should work in.
 const CHILD_DIR_ENV: &str = "BRUSH_EXEC_INTERCEPTOR_CHILD_DIR";
@@ -44,14 +44,18 @@ struct RecordingDenier {
 type DenyingExtensions =
     ShellExtensionsImpl<DefaultErrorFormatter, RecordingDenier, NoOpSourceFilter>;
 
+#[allow(
+    clippy::unused_async_trait_impl,
+    reason = "Test hooks defer their effects until polled"
+)]
 impl CmdExecFilter for RecordingDenier {
-    async fn pre_external_cmd<'a, SE: brush_core::extensions::ShellExtensions>(
+    async fn authorize_external_cmd<SE: brush_core::extensions::ShellExtensions>(
         &self,
-        params: ExternalCmdParams<'a, SE>,
-    ) -> PreFilterResult<ExternalCmdParams<'a, SE>, brush_core::filter::ExternalCmdOutput> {
+        params: &ExternalCmdParams<'_, SE>,
+    ) -> Result<(), brush_core::Error> {
         *self.seen.lock().unwrap() += 1;
         let line = format!(
-            "{}\t{}\n",
+            "{}\t{}\t{}\t{}\n",
             params.command.program().to_string_lossy(),
             params
                 .command
@@ -59,20 +63,22 @@ impl CmdExecFilter for RecordingDenier {
                 .iter()
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect::<Vec<_>>()
-                .join(" ")
+                .join(" "),
+            params.original_command().to_string_lossy(),
+            params.command.argv0().to_string_lossy(),
         );
         // Append, so a second (unexpected) consultation is visible to the parent.
         let existing = std::fs::read_to_string(&self.record).unwrap_or_default();
         std::fs::write(&self.record, existing + &line).unwrap();
 
-        PreFilterResult::Return(Err(brush_core::ErrorKind::FailedToExecuteCommand(
+        Err(brush_core::ErrorKind::FailedToExecuteCommand(
             params.command.program().to_string_lossy().into_owned(),
             std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "denied by test policy",
             ),
         )
-        .into()))
+        .into())
     }
 }
 
@@ -197,14 +203,7 @@ fn denied_exec_builtin_does_not_replace_the_process() -> Result<()> {
     Ok(())
 }
 
-/// A bare name reaches the filter already resolved.
-///
-/// N.B. The filter cannot also see the spelling the user typed: `ExternalCmdParams` carries
-/// only an `ExternalCommand` (program, args, envs, cwd), with no `command_name` and no
-/// `argv0`. So a policy cannot distinguish `exec /usr/bin/touch` from
-/// `exec -a impostor /usr/bin/touch`, and cannot match on what was written. Tests for those
-/// two distinctions were dropped from this port because the mechanism does not expose them
-/// -- that is feedback for #972, not something to assert around.
+/// A bare name retains its original spelling independently of path resolution.
 #[test]
 fn exec_request_separates_command_name_from_resolved_program() -> Result<()> {
     let run = run_in_child("exec touch @MARKER@")?;
@@ -219,6 +218,19 @@ fn exec_request_separates_command_name_from_resolved_program() -> Result<()> {
         "the filter should see the resolved absolute executable, got {:?}",
         entry[0]
     );
+    assert_eq!(entry[2], "touch");
+    assert_eq!(entry[3], "touch");
+    Ok(())
+}
+
+/// Argument-zero overrides must not conceal the executable's identity.
+#[test]
+fn exec_argument_zero_is_visible_to_final_authorization() -> Result<()> {
+    let run = run_in_child("exec -a impostor -l touch @MARKER@")?;
+    assert!(!run.marker().exists());
+    assert_eq!(run.consultations, 1);
+    assert_eq!(run.record[0][2], "touch");
+    assert_eq!(run.record[0][3], "-impostor");
     Ok(())
 }
 

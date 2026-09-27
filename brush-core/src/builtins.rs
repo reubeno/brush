@@ -94,27 +94,37 @@ pub trait Command: clap::Parser {
         content_type: ContentType,
         options: &ContentOptions,
     ) -> Result<String, error::Error> {
-        let mut clap_command = Self::command()
-            .styles(brush_help_styles())
-            .next_line_help(false);
-        clap_command.set_bin_name(name);
-
-        let s = match content_type {
-            ContentType::DetailedHelp => {
-                let rendered = clap_command.render_help();
-                if options.colorized {
-                    rendered.ansi().to_string()
-                } else {
-                    rendered.to_string()
-                }
-            }
-            ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
-            ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
-            ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
-        };
-
-        Ok(s)
+        get_parser_content::<Self>(name, content_type, options)
     }
+}
+
+/// Renders standard builtin help for a Clap parser, including builtins whose
+/// execution callback needs constraints beyond the generic [`Command`] trait.
+pub fn get_parser_content<T: clap::CommandFactory>(
+    name: &str,
+    content_type: ContentType,
+    options: &ContentOptions,
+) -> Result<String, error::Error> {
+    let mut clap_command = T::command()
+        .styles(brush_help_styles())
+        .next_line_help(false);
+    clap_command.set_bin_name(name);
+
+    let s = match content_type {
+        ContentType::DetailedHelp => {
+            let rendered = clap_command.render_help();
+            if options.colorized {
+                rendered.ansi().to_string()
+            } else {
+                rendered.to_string()
+            }
+        }
+        ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
+        ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
+        ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
+    };
+
+    Ok(s)
 }
 
 /// Trait implemented by built-in shell commands that take specially handled declarations
@@ -129,6 +139,7 @@ pub trait DeclarationCommand: Command {
 }
 
 /// Type of help content, typically associated with a built-in command.
+#[derive(Clone, Copy)]
 pub enum ContentType {
     /// Detailed help content for the command.
     DetailedHelp,

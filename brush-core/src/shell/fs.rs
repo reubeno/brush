@@ -7,7 +7,9 @@ use normalize_path::NormalizePath as _;
 use crate::{
     ExecutionParameters, ShellFd,
     env::{EnvironmentLookup, EnvironmentScope},
-    error, openfiles, pathsearch,
+    error,
+    filter::{FileOpenAccess, FileOpenFilter as _, FileOpenParams},
+    openfiles, pathsearch,
     sys::users,
     variables,
 };
@@ -211,28 +213,39 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// # Arguments
     ///
     /// * `options` - The options to use opening the file.
+    /// * `access` - Typed access matching the requested options.
     /// * `path` - The path to the file to open; may be relative to the shell's working directory.
     /// * `params` - Execution parameters.
     pub(crate) fn open_file(
         &self,
         options: &std::fs::OpenOptions,
+        access: FileOpenAccess,
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
-    ) -> Result<openfiles::OpenFile, std::io::Error> {
+    ) -> Result<openfiles::OpenFile, error::Error> {
+        let path = path.as_ref();
+        let path_to_open = self.absolute_path(path);
+        self.file_open_filter().pre_open_file(FileOpenParams::new(
+            self,
+            path,
+            &path_to_open,
+            access,
+        ))?;
+
         // Give platform-specific code a chance to handle special files
         // (e.g. /dev/null on Windows, which needs to open NUL instead).
-        // This is checked before absolute_path so that paths like /dev/null
-        // are intercepted on platforms where they aren't valid native paths.
-        if let Some(result) = crate::sys::fs::try_open_special_file(path.as_ref()) {
-            return result.map(openfiles::OpenFile::from);
+        // Windows needs the resolved drive-qualified path here: `/dev/null`
+        // alone is rooted but not absolute there. Policy has already seen both
+        // the original spelling and this resolved path before any special open.
+        if let Some(result) = crate::sys::fs::try_open_special_file(&path_to_open) {
+            return result.map(openfiles::OpenFile::from).map_err(Into::into);
         }
-
-        let path_to_open = self.absolute_path(path.as_ref());
 
         // See if this is a reference to a file descriptor. These paths should
         // reflect the shell's current execution fds, which can differ from the
         // host process fds after redirections like here-docs.
-        if let Some(fd_num) = shell_fd_path_to_fd(&path_to_open)
+        if let Some(fd_num) =
+            shell_fd_path_to_fd(path).or_else(|| shell_fd_path_to_fd(&path_to_open))
             && let Some(open_file) = params.try_fd(self, fd_num)
         {
             return Ok(open_file);

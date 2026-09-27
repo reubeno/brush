@@ -105,8 +105,21 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         options.read(true);
 
         let opened_file: openfiles::OpenFile = self
-            .open_file(&options, path, params)
-            .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
+            .open_file(&options, crate::filter::FileOpenAccess::Read, path, params)
+            .map_err(|e| {
+                if e.is_terminating() {
+                    e
+                } else {
+                    let kind = e
+                        .as_io_error()
+                        .map_or(std::io::ErrorKind::Other, std::io::Error::kind);
+                    error::ErrorKind::FailedSourcingFile(
+                        path.to_owned(),
+                        std::io::Error::new(kind, e),
+                    )
+                    .into()
+                }
+            })?;
 
         if opened_file.is_dir() {
             return Err(error::ErrorKind::FailedSourcingFile(
@@ -213,8 +226,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         self.end_command_string_mode()?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Ordinary exit-hook errors do not replace the result; explicit
+        // termination must still be visible to the caller.
+        if let Err(error) = self.on_exit().await
+            && error.is_terminating()
+        {
+            return Err(error);
+        }
 
         Ok(result)
     }
@@ -244,8 +262,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             )
             .await?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Ordinary exit-hook errors do not replace the result; explicit
+        // termination must still be visible to the caller.
+        if let Err(error) = self.on_exit().await
+            && error.is_terminating()
+        {
+            return Err(error);
+        }
 
         Ok(result)
     }
@@ -269,6 +292,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // Report any errors.
         match result {
             Ok(result) => Ok(result),
+            Err(err) if err.is_terminating() => Err(err),
             Err(err) => {
                 let _ = self.display_error(&mut params.stderr(self), &err);
 

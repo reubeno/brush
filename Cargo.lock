@@ -428,6 +428,7 @@ dependencies = [
  "rand 0.10.2",
  "rpds",
  "serde",
+ "serde_json",
  "strum",
  "strum_macros",
  "tempfile",
@@ -535,7 +536,10 @@ version = "0.1.0"
 dependencies = [
  "brush-core",
  "clap",
+ "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

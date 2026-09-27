@@ -55,19 +55,31 @@ pub use state::ShellState;
 /// * `SE` - The shell extensions implementation to use. These extensions are statically injected
 ///   into the shell at compile time to provide custom behavior. When unspecified, defaults to
 ///   `DefaultShellExtensions`, which provide standard behavior.
+///
+/// With `serde`, a shell is serializable only when its installed policy types
+/// are serializable. Snapshots retain those policies; snapshots lacking them
+/// are rejected rather than restoring permissive defaults.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "SE::CmdExecFilter: serde::Serialize, SE::SourceFilter: serde::Serialize, SE::FileOpenFilter: serde::Serialize",
+        deserialize = "SE::CmdExecFilter: serde::Deserialize<'de>, SE::SourceFilter: serde::Deserialize<'de>, SE::FileOpenFilter: serde::Deserialize<'de>"
+    ))
+)]
 pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExtensions> {
     /// Injected error behavior.
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: SE::ErrorFormatter,
 
     /// Command execution filter.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_cmd_exec_filter"))]
     cmd_exec_filter: SE::CmdExecFilter,
 
     /// Source filter.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_source_filter"))]
     source_filter: SE::SourceFilter,
+
+    /// File-open filter.
+    file_open_filter: SE::FileOpenFilter,
 
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
@@ -161,6 +173,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             error_formatter: self.error_formatter.clone(),
             cmd_exec_filter: self.cmd_exec_filter.clone(),
             source_filter: self.source_filter.clone(),
+            file_open_filter: self.file_open_filter.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -226,6 +239,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             error_formatter: options.error_formatter,
             cmd_exec_filter: options.cmd_exec_filter,
             source_filter: options.source_filter,
+            file_open_filter: options.file_open_filter,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -396,6 +410,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Returns the source filter.
     pub const fn source_filter(&self) -> &SE::SourceFilter {
         &self.source_filter
+    }
+
+    /// Returns the file-open filter.
+    pub const fn file_open_filter(&self) -> &SE::FileOpenFilter {
+        &self.file_open_filter
     }
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
@@ -614,16 +633,6 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
-}
-
-#[cfg(feature = "serde")]
-fn default_cmd_exec_filter<CF: crate::filter::CmdExecFilter>() -> CF {
-    CF::default()
-}
-
-#[cfg(feature = "serde")]
-fn default_source_filter<SF: crate::filter::SourceFilter>() -> SF {
-    SF::default()
 }
 
 #[cfg(test)]

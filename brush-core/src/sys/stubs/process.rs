@@ -21,6 +21,18 @@ impl Child {
         self.inner.wait()
     }
 
+    /// Requests termination without waiting for the child to exit.
+    pub fn start_kill(&mut self) -> std::io::Result<()> {
+        self.inner.kill()
+    }
+
+    /// Terminates and reaps the child.
+    pub async fn kill(&mut self) -> std::io::Result<()> {
+        self.inner.kill()?;
+        self.inner.wait()?;
+        Ok(())
+    }
+
     /// Asynchronously waits for the child process to exit and collects its
     /// output.
     pub async fn wait_with_output(self) -> std::io::Result<Output> {

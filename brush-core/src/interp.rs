@@ -216,6 +216,7 @@ impl Execute for ast::Program {
             // errors.
             match command.execute(shell, params).await {
                 Ok(exec_result) => result = exec_result,
+                Err(err) if err.is_terminating() => return Err(err),
                 Err(err) => {
                     // Display the error and convert to an execution result.
                     let _ = shell.display_error(&mut params.stderr(shell), &err);
@@ -684,6 +685,7 @@ impl Execute for ast::CompoundCommand {
                 // from propagating to the parent shell.
                 let subshell_result = match list.execute(&mut subshell, params).await {
                     Ok(result) => result,
+                    Err(error) if error.is_terminating() => return Err(error),
                     Err(error) => {
                         // Display the error to stderr, but prevent fatal error propagation
                         let mut stderr = params.stderr(shell);
@@ -1180,6 +1182,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
                     if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
                     {
+                        if e.is_terminating() {
+                            return Err(e);
+                        }
                         writeln!(params.stderr(&context.shell), "error: {e}")?;
                         return Ok(ExecutionResult::general_error().into());
                     }
@@ -1305,6 +1310,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
 
             match execute_command(context, params, cmd_name, &assignments, &args).await {
                 Ok(result) => Ok(result),
+                Err(err) if err.is_terminating() => Err(err),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
 
@@ -1395,8 +1401,14 @@ async fn execute_command<T: Into<String>>(
     // Arrange to pop off that ephemeral environment scope.
     cmd.post_execute = Some(|shell| shell.env_mut().pop_scope(EnvironmentScope::Command));
 
-    // Run through any pre-execution hooks as best effort.
-    let _ = commands::on_preexecute(&mut cmd).await;
+    // Ordinary hook errors remain best effort; an explicit terminating error
+    // prevents dispatch and must still release the command environment scope.
+    if let Err(error) = commands::on_preexecute(&mut cmd).await
+        && error.is_terminating()
+    {
+        cmd.complete_without_execution();
+        return Err(error);
+    }
 
     // Execute
     // TODO(jobs): do we need to move self back to foreground on error here?
@@ -1706,8 +1718,8 @@ pub(crate) async fn setup_redirect(
                         return Err(error::ErrorKind::InvalidRedirection.into());
                     }
 
-                    let expanded_file_path: PathBuf =
-                        shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
+                    let requested_file_path = PathBuf::from(expanded_fields.remove(0));
+                    let expanded_file_path = shell.absolute_path(&requested_file_path);
 
                     let default_fd_if_unspecified = get_default_fd_for_redirect_kind(kind);
                     match kind {
@@ -1758,13 +1770,33 @@ pub(crate) async fn setup_redirect(
 
                     let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
 
+                    let access = match kind {
+                        ast::IoFileRedirectKind::Read | ast::IoFileRedirectKind::DuplicateInput => {
+                            crate::filter::FileOpenAccess::Read
+                        }
+                        ast::IoFileRedirectKind::ReadAndWrite => {
+                            crate::filter::FileOpenAccess::ReadWrite
+                        }
+                        ast::IoFileRedirectKind::Write
+                        | ast::IoFileRedirectKind::Append
+                        | ast::IoFileRedirectKind::Clobber
+                        | ast::IoFileRedirectKind::DuplicateOutput => {
+                            crate::filter::FileOpenAccess::Write
+                        }
+                    };
+
                     let opened_file = shell
-                        .open_file(&options, &expanded_file_path, params)
+                        .open_file(&options, access, &requested_file_path, params)
                         .map_err(|err| {
-                            error::ErrorKind::RedirectionFailure(
-                                expanded_file_path.to_string_lossy().to_string(),
-                                err.to_string(),
-                            )
+                            if err.is_terminating() {
+                                err
+                            } else {
+                                error::ErrorKind::RedirectionFailure(
+                                    expanded_file_path.to_string_lossy().to_string(),
+                                    err.to_string(),
+                                )
+                                .into()
+                            }
                         })?;
 
                     params.open_files.set_fd(fd_num, opened_file);
@@ -1928,12 +1960,22 @@ fn setup_redirect_output_and_error_to(
         .append(append);
 
     let stdout_file = shell
-        .open_file(&file_options, &abs_file_path, params)
+        .open_file(
+            &file_options,
+            crate::filter::FileOpenAccess::Write,
+            file_path,
+            params,
+        )
         .map_err(|err| {
-            error::ErrorKind::RedirectionFailure(
-                abs_file_path.to_string_lossy().to_string(),
-                err.to_string(),
-            )
+            if err.is_terminating() {
+                err
+            } else {
+                error::ErrorKind::RedirectionFailure(
+                    abs_file_path.to_string_lossy().to_string(),
+                    err.to_string(),
+                )
+                .into()
+            }
         })?;
 
     let stderr_file = stdout_file.clone();

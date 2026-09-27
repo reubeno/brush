@@ -50,7 +50,21 @@ Hooks for command execution at two levels:
 | `pre_simple_cmd` | All commands (builtins, functions, externals) | Observation/short-circuit only |
 | `post_simple_cmd` | After any command | Result transformation |
 | `pre_external_cmd` | External process spawning only | Full modification via `ExternalCommand` |
+| `authorize_external_cmd` | Final external spawn or `exec` request | Immutable allow/error decision after every rewrite |
 | `post_external_cmd` | After external spawn | Result transformation |
+
+Security policies should authorize in `authorize_external_cmd`. Every member of
+a `FilterStack` sees the same final immutable command after all pre-filters have
+run. The runtime executes that command directly: its program, arguments,
+explicit environment, and working directory are not reconstructed afterward.
+`original_command()` retains the spelling before path resolution;
+`command.program()` is the executable and `command.argv0()` is the requested
+argument zero. Argument-zero overrides use native platform support (Unix).
+
+The `exec` builtin uses the same pre-filter and final authorization phases.
+A successful `exec` replaces the process image, so no returning post-hook runs.
+Embedders that must keep a worker protocol alive should omit that builtin.
+Short-circuits still clean up temporary command environment scopes.
 
 **Execution Flow:**
 ```
@@ -67,6 +81,9 @@ Resolve command type (builtin/function/external)
     ├─[Function]─► Execute function
     └─[External]─┬► pre_external_cmd ──[Return]──► Short-circuit
                  │      │ [Continue]
+                 │      ▼
+                 │  authorize_external_cmd ──[Error]──► Refuse
+                 │      │ [Ok]
                  │      ▼
                  │  Spawn process
                  │      │
@@ -88,6 +105,29 @@ Hooks for script sourcing (`.` and `source` builtins):
 |------|---------|
 | `pre_source_script` | Observe/modify path and args, or block sourcing |
 | `post_source_script` | Transform execution result |
+
+### FileOpenFilter
+
+`pre_open_file` synchronously authorizes shell-originated file opens. Its
+`FileOpenParams` provide the shell, original path spelling, resolved path, and
+typed `FileOpenAccess::{Read, Write, ReadWrite}`. The call site supplies access;
+it is not inferred from `OpenOptions` debug output. Redirections, sourced
+scripts, and history reads pass through the hook before native opens, special
+device handling, or `/dev/fd` alias resolution.
+
+Returning an error refuses the open. A policy that must stop the current run
+can mark that error with `into_terminating()`. The default `NoOpFileOpenFilter`
+preserves ordinary behavior, and `FilterStack` checks policies in order until
+one refuses. This hook does not mediate filesystem operations inside external
+processes or direct filesystem operations outside `Shell::open_file` (for
+example, writing the history store); the embedder must enforce that boundary
+separately.
+
+Terminating errors stop the current evaluation through loops, functions,
+subshells, and sourced/evaluated scripts. Process substitutions run as separate
+tasks: their denial prevents the child operation, but their result is not joined
+into the parent status. Embedders must not treat a successful parent status as
+proof that every asynchronous substitution succeeded.
 
 ## Filter Result Types
 
@@ -162,7 +202,7 @@ impl CmdExecFilter for AuditingFilter {
 
 ```rust
 use brush_core::extensions::{ShellExtensions, DefaultErrorFormatter};
-use brush_core::filter::{NoOpSourceFilter};
+use brush_core::filter::{NoOpSourceFilter, NoOpFileOpenFilter};
 
 #[derive(Clone, Default)]
 struct MyExtensions {
@@ -173,6 +213,7 @@ impl ShellExtensions for MyExtensions {
     type ErrorFormatter = DefaultErrorFormatter;
     type CmdExecFilter = MyCustomFilter;
     type SourceFilter = NoOpSourceFilter;
+    type FileOpenFilter = NoOpFileOpenFilter;
 }
 ```
 
@@ -194,6 +235,16 @@ Filters must implement `Clone + Send + Sync + 'static`:
 - **'static**: Filters live as long as the shell
 
 For shared mutable state, use `Arc<Mutex<T>>` or `Arc<RwLock<T>>`. The `Arc` ensures state is shared across shell clones (subshells).
+
+## Policy Serialization
+
+With the `serde` feature, shell snapshots preserve installed command, source,
+and file-open policy values. A shell implements serialization only when those
+policy types implement the corresponding serde traits. Unsupported policies
+cannot be silently replaced with defaults. Deserializing a snapshot missing
+any policy field fails; older snapshots without policy state must be rebuilt
+with an explicit policy. Default no-op filters and serializable filter stacks
+can round-trip normally.
 
 ## Panic Safety
 
@@ -217,7 +268,6 @@ See `docs/todo/` for planned filter types:
 
 - **ExpansionFilter**: Word expansion hooks
 - **EnvFilter**: Variable mutation hooks
-- **RedirectionFilter**: File open hooks
 - **IoFilter**: Per-I/O operation hooks
 
 ## Future Considerations
@@ -244,7 +294,8 @@ The following considerations apply to planned filter types and may influence the
 
 ### Synchronous vs Asynchronous Hooks
 
-Current filters are async-only. Future high-frequency filters may benefit from sync paths:
+Command and source filters are asynchronous; file-open policy is synchronous.
+Future high-frequency filters may also benefit from sync paths:
 
 - EnvFilter read hooks could be synchronous for common cases
 - IoFilter sync hooks could reduce overhead for small I/O operations
@@ -259,3 +310,36 @@ Future filters face granularity tradeoffs:
 - Current `CmdExecFilter` uses fine granularity (`pre_simple_cmd` + `pre_external_cmd`)
 - Recommendation: Start fine-grained, compose via `FilterStack` for coarser needs
 
+## Explicit descriptor delegation
+
+On Unix, `ExternalCommand` may carry `DelegatedFd` values: an already-owned
+source descriptor and an explicit child target above stderr. Filters can inspect
+`delegated_fds()` during final authorization. The runtime merges these with the
+shell's existing descriptor mappings and rejects duplicate targets or collisions
+with redirections before spawning. Descriptor delegation does not change the
+command's arguments, environment, working directory, or standard streams.
+`into_std_command()` is fallible so descriptor-duplication errors are reported.
+Admission normalizes the owned source to close-on-exec; unrelated children do
+not inherit a retained source descriptor. Filter code correlating capabilities
+by their source descriptor must inspect the admitted `DelegatedFd`, since its
+descriptor number may differ from the caller's original source.
+
+The static `external_cmd_spawned` hook receives the exact authorized command and
+the spawned process ID before Brush exposes the spawn result. This allows an
+embedder to register a specific process against its delegated capability,
+without relying on pipeline ordering or a shared last-command slot. The child
+may already be running: a broker must withhold replies until registration is
+acknowledged. If the hook refuses registration, Brush terminates and reaps the
+child and propagates a terminating error. Failed spawns and successful `exec`
+replacement do not call this hook. Cancellation while registration is pending
+terminates the child even when ordinary shell children would survive a dropped
+waiter. Successful registration restores the configured lifecycle policy;
+worker embedders should enable `kill_external_commands_on_drop` for subsequent
+execution as well.
+
+A private broker can use this mechanism without granting a new filesystem path
+or network destination. Possession of a transport endpoint is not permission to
+sign arbitrary data: the parent must still validate invocation identity,
+canonical payloads, sequence, and actual transaction results. Windows requires
+an equivalent owned-handle mapping through an explicit handle list; this Unix
+API does not claim to provide that Windows transport.

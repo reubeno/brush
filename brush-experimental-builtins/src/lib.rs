@@ -12,18 +12,26 @@
 #[cfg(feature = "builtin.save")]
 mod save;
 
-#[allow(unused_imports, reason = "not all builtins are used in all configs")]
-use brush_core::builtins::{self, builtin, decl_builtin, raw_arg_builtin, simple_builtin};
+use brush_core::builtins;
 
 /// Returns the set of experimental built-in commands.
+///
+/// Saving a shell requires serializable installed policies; unsupported policy
+/// types cannot register a save operation that silently discards their state.
+#[cfg(feature = "builtin.save")]
+pub fn experimental_builtins<SE: brush_core::extensions::ShellExtensions>()
+-> std::collections::HashMap<String, builtins::Registration<SE>>
+where
+    brush_core::Shell<SE>: serde::Serialize,
+{
+    std::collections::HashMap::from([("save".into(), save::registration::<SE>())])
+}
+
+/// Returns no registrations when no experimental builtins are enabled.
+#[cfg(not(feature = "builtin.save"))]
 pub fn experimental_builtins<SE: brush_core::extensions::ShellExtensions>()
 -> std::collections::HashMap<String, builtins::Registration<SE>> {
-    let mut m = std::collections::HashMap::<String, builtins::Registration<SE>>::new();
-
-    #[cfg(feature = "builtin.save")]
-    m.insert("save".into(), builtin::<save::SaveCommand, SE>());
-
-    m
+    std::collections::HashMap::new()
 }
 
 /// Extension trait that simplifies adding experimental builtins to a shell builder.
@@ -33,10 +41,22 @@ pub trait ShellBuilderExt {
     fn experimental_builtins(self) -> Self;
 }
 
+#[cfg(feature = "builtin.save")]
+impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderState> ShellBuilderExt
+    for brush_core::ShellBuilder<SE, S>
+where
+    brush_core::Shell<SE>: serde::Serialize,
+{
+    fn experimental_builtins(self) -> Self {
+        self.builtins(crate::experimental_builtins())
+    }
+}
+
+#[cfg(not(feature = "builtin.save"))]
 impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderState> ShellBuilderExt
     for brush_core::ShellBuilder<SE, S>
 {
     fn experimental_builtins(self) -> Self {
-        self.builtins(crate::experimental_builtins())
+        self
     }
 }
