@@ -252,6 +252,13 @@ cases:
       $($(:))
       echo "exit code: $?"
 
+  - name: "Syntax error inside command substitution"
+    known_failure: true # TODO(parser): the substituted command isn't parsed until it runs, so bash's syntax error (which ends the script) becomes a failed substitution
+    ignore_stderr: true
+    stdin: |
+      x="[$(if)]"
+      echo "rc=$? x=$x"
+
   - name: "Case statement with unparenthesized pattern in command substitution"
     known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
     stdin: |
@@ -289,10 +296,15 @@ cases:
       echo $(echo @(`echo ")"`)x)
 
   - name: "Extglob containing parameter expansion with blanks in quotes"
-    known_failure: true # TODO(tokenizer): unquoted blanks inside '${...}' in double quotes are collapsed to one space
     stdin: |
       shopt -s extglob
       case 'a  b' in @("${u:-a  b}")) echo match;; *) echo no match;; esac
+
+  - name: "Extglob containing dollar and single quote in double quotes"
+    stdin: |
+      shopt -s extglob
+      v="\$'x'"
+      case "$v" in @("$'x'")) echo match;; *) echo no match;; esac
 
   - name: "Escaped backslash in backquoted command"
     known_failure: true # TODO(expansion): '\\' inside backquotes isn't reduced to '\' before the command runs
@@ -326,7 +338,6 @@ cases:
       echo "not reached"
 
   - name: "Single quote after escaped or doubled dollar sign"
-    known_failure: true # TODO(tokenizer): a quote after any '$' is taken as ANSI-C quoting, even after '\$' or '$$'
     stdin: |
       echo \$'a\'x
       echo $$'a\'x | sed "s/$$/PID/g"

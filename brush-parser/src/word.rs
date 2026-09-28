@@ -838,8 +838,8 @@ peg::parser! {
             // into us, because if we see an opening parenthesis then we *must* find its closing
             // partner.
             "(" arithmetic_word_plus_right_paren() {} /
-            // This branch handles the case where we have an array element name with square brackets,
-            // which may (legitimately) contain the stop condition.
+            // An array subscript may contain the stop condition. Other brackets are left
+            // as text, so malformed arithmetic doesn't fall back to command substitution.
             array_element_name() {} /
             // This branch matches any standard piece of a word, stopping as soon as we reach
             // either the overall stop condition *OR* an opening parenthesis. We add this latter
@@ -1184,7 +1184,17 @@ peg::parser! {
             "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
 
         rule legacy_arithmetic_expansion() -> WordPiece =
-            "$[" e:$(arithmetic_word(<"]">)) "]" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+            "$[" e:legacy_arithmetic_expansion_body() "]" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+
+        // Reuse the tokenizer's iterative bracket counting rather than recursively parsing
+        // each bracket in the expression. As with command substitutions, preserve the source.
+        rule legacy_arithmetic_expansion_body() -> &'input str = #{|input, pos| {
+            let rest = input.split_at(pos).1;
+            match crate::tokenizer::legacy_arithmetic_expansion_body(rest, &parser_options.tokenizer_options()) {
+                Ok(body) => peg::RuleResult::Matched(pos + body.len(), body),
+                Err(_) => peg::RuleResult::Failed,
+            }
+        }}
 
         rule substring_offset() -> ast::UnexpandedArithmeticExpr =
             s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
@@ -1456,6 +1466,58 @@ mod tests {
     #[test]
     fn parse_arithmetic_expansion_with_parens() -> Result<()> {
         assert_ron_snapshot!(test_parse("$((((1+2)*3)))")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion_with_unmatched_brackets() -> Result<()> {
+        // Invalid arithmetic must stay arithmetic, rather than fall back to executing
+        // the expression as a command substitution.
+        for expr in ["echo unexpected [", "1[", "a[1", "[ ["] {
+            let word = std::format!("$(({expr}))");
+            let parsed = super::parse(&word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr,
+                "for {word:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion_with_deep_brackets() -> Result<()> {
+        // Brackets in the expression must not grow the word parser's call stack.
+        // Arithmetic evaluation can reject this expression after its boundaries are found.
+        let expr = std::format!("{}1{}", "[".repeat(15_000), "]".repeat(15_000));
+        for (open, close) in [("$((", "))"), ("$[", "]")] {
+            let word = std::format!("{open}{expr}{close}");
+            let parsed = super::parse(&word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_legacy_arithmetic_expansion_with_array_subscripts() -> Result<()> {
+        for (word, expr) in [
+            ("$[a[1]]", "a[1]"),
+            ("$[ a[1] + 1 ]", " a[1] + 1 "),
+            ("$[ a[ a[0] ] ]", " a[ a[0] ] "),
+            ("$[ a[$[1]] + $(printf 2) ]", " a[$[1]] + $(printf 2) "),
+            ("$[ 'é]' ]", " 'é]' "),
+            ("$[ \\] ]", " \\] "),
+        ] {
+            let parsed = super::parse(word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr,
+                "for {word:?}"
+            );
+        }
         Ok(())
     }
 

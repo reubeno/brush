@@ -360,3 +360,48 @@ cases:
       (( ref += 5 ))
       echo "after +=5: $counter"
       echo "expr: $(( ref * 2 ))"
+
+  - name: "Legacy arithmetic expansion with array subscripts"
+    stdin: |
+      a=(5 6)
+      echo $[ a[1] + 1 ] $[a[a[0]-4]*2] $[ a[1]*a[0] ]
+
+  - name: "Unmatched bracket in arithmetic expansion does not execute commands"
+    ignore_stderr: true # arithmetic error wording differs
+    stdin: |
+      echo $((echo unexpected [))
+      echo "not reached"
+
+  - name: "Legacy arithmetic expansion containing nested expansions"
+    stdin: |
+      a=(5 6)
+      echo $[ ${a[1]} + 1 ] $[ ${#a[@]} ] $[ $[1] + 1 ] $[ a[$[1]] ]
+
+  - name: "Blanks inside array subscripts in arithmetic"
+    known_failure: true # TODO(arithmetic): the arithmetic parser rejects blanks inside a subscript's brackets
+    stdin: |
+      a=(1 2)
+      echo $(( a[ 1 ] )) $(( a[ a[0] ] ))
+
+  - name: "Double quotes inside legacy arithmetic expansion in double quotes"
+    known_failure: true # TODO(tokenizer): in double quotes, bash doesn't nest quotes inside '$[...]', so the '$[' is left unclosed (a bad substitution); brush expands it
+    ignore_stderr: true # error wording differs
+    stdin: |
+      echo "[$[ "1" + 2 ]]"
+      echo "rc=$?"
+
+  - name: "Shift after nested parentheses in arithmetic command"
+    stdin: |
+      (( y = (1 + (2)) << 2 )); echo "$y"
+      (( y = ((1)) << 2 )); echo "$y"
+      x=$( (( ((1)) << 2 )); echo ok ); echo "$x"
+      (( ((1)) << 2 )); cat <<EOF
+      body
+      EOF
+
+  - name: "Nested subshell starting with double parentheses"
+    known_failure: true # TODO(parser): '((' is always taken as an arithmetic command; bash runs nested subshells when it isn't closed by '))'
+    ignore_stderr: true
+    stdin: |
+      ((echo a) )
+      echo "rc=$?"
