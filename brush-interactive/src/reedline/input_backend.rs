@@ -186,13 +186,8 @@ impl ReedlineInputBackend {
             shell: shell_ref.clone(),
         };
 
-        // Set up completion menu. Set an empty marker to avoid the
-        // line's text horizontally shifting around during/after completion.
-        // We set a max column count of 10 to ensure it's larger than the
-        // hard-coded default (4 last we checked); if there's not enough
-        // horizontal space in the terminal to fit that many columns, given
-        // the actual text to be displayed, it will get effectively dereased
-        // anyhow.
+        // Use no marker so completion does not shift the input line.
+        // Ten columns is an upper bound; terminal width reduces it as needed.
         let completion_menu = Box::new(HideEmptyCompletionMenu::new(
             reedline::ColumnarMenu::default()
                 .with_name(COMPLETION_MENU_NAME)
