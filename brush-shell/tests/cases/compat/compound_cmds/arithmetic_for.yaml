@@ -19,13 +19,107 @@ cases:
     echo "Result: $?"
 
   - name: "Arithmetic for loop with ;;"
-    known_failure: true
     stdin: |
       for ((;;)); do
         echo "In loop; status: $?"
         break
       done
     echo "Result: $?"
+
+  - name: "Arithmetic for loop with initializer and ;;"
+    stdin: |
+      for ((i = 0;;)); do
+        echo "i=$i"
+        break
+      done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;; and updater"
+    stdin: |
+      for ((;;i++)); do
+        echo "i=$i"
+        if ((i >= 2)); then break; fi
+      done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with initializer, ;; and updater"
+    stdin: |
+      for ((i = 0;;i++)); do
+        echo "i=$i"
+        if ((i >= 2)); then break; fi
+      done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;; and spaces around it"
+    stdin: |
+      for (( i = 0 ;; i++ )); do
+        echo "i=$i"
+        if ((i >= 2)); then break; fi
+      done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with parenthesized parts and ;;"
+    stdin: |
+      for (((i = 0);;(i++))); do
+        echo "i=$i"
+        if ((i >= 2)); then break; fi
+      done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;; and do on the next line"
+    stdin: |
+      for ((;;))
+      do
+        echo "In loop"
+        break
+      done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;; and alternate syntax"
+    stdin: |
+      for ((;;)) { echo "In loop"; break; }
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;; and a newline before the closing parens"
+    stdin: |
+      for ((i = 0;;
+      )); do
+        echo "i=$i"
+        break
+      done
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;; inside a case item"
+    stdin: |
+      case x in
+        x) for ((i = 0;;)); do echo "i=$i"; break; done;;
+        *) echo "no match";;
+      esac
+      echo "Result: $?"
+
+  - name: "Arithmetic for loop with ;; right after the condition"
+    ignore_stderr: true
+    stdin: |
+      for ((i = 0; i < 3;;)); do echo "Should not run"; break; done
+      echo "After syntax error"
+
+  - name: "Arithmetic for loop with three semicolons"
+    ignore_stderr: true
+    stdin: |
+      for ((;;;)); do echo "Should not run"; break; done
+      echo "After syntax error"
+
+  - name: "Arithmetic for loop with four semicolons"
+    ignore_stderr: true
+    stdin: |
+      for ((;;;;)); do echo "Should not run"; break; done
+      echo "After syntax error"
+
+  - name: "Arithmetic for loop with ;; in the updater position"
+    ignore_stderr: true
+    stdin: |
+      for ((i = 0; i < 3; ;;)); do echo "Should not run"; break; done
+      echo "After syntax error"
 
   - name: "Break in arithmetic for loop"
     stdin: |
