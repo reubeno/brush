@@ -367,21 +367,24 @@ cases:
       EOF
       )"'
 
-  - name: "Here doc with unterminated expansions"
-    known_failure: true # TODO(expansion): #540: unterminated '${' or '$(' is silently treated as literal text
+  - name: "Here doc with unterminated command substitution"
+    ignore_stderr: true
+    stdin: |
+      cat <<EOF
+      a $(echo hi b
+      EOF
+      echo "rc=$?"
+
+  - name: "Here doc with unterminated parameter expansion"
+    known_failure: true # TODO(expansion): #540: unterminated '${' is silently treated as literal text
     ignore_stderr: true
     stdin: |
       cat <<EOF
       a ${USER b
       EOF
       echo "rc=$?"
-      cat <<EOF
-      a $(echo hi b
-      EOF
-      echo "rc=$?"
 
   - name: "Here doc with command substitution that never closes"
-    known_failure: true # TODO(expansion): #540: unterminated '$(' is silently treated as literal text
     ignore_stderr: true
     stdin: |
       cat <<EOF
@@ -390,6 +393,18 @@ cases:
       echo "rc=$?"
       cat <<EOF
       a $(echo b # c)
+      EOF
+      echo "rc=$?"
+
+  - name: "Here doc with unterminated arithmetic expansions"
+    ignore_stderr: true
+    stdin: |
+      cat <<EOF
+      a $((1 + b
+      EOF
+      echo "rc=$?"
+      cat <<EOF
+      a $[1 + b
       EOF
       echo "rc=$?"
 

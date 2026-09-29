@@ -823,3 +823,30 @@ cases:
     stdin: |
       echo ${u:-<<} ${u:-<<-}
       echo "${u:-<<}" "${u:-<<-}"
+
+  - name: "Bad substitution in braced parameter expansion"
+    known_failure: true # TODO(expansion): #540: a malformed '${...}' is silently treated as literal text
+    ignore_stderr: true # error wording differs
+    stdin: |
+      echo before
+      echo ${x!}
+      echo "rc=$?"
+      x="a ${y!} b"
+      echo "rc=$? x=$x"
+
+  - name: "Braced last background process ID"
+    known_failure: true # TODO(expansion): '${!}' (not followed by a name) is taken as indirection, so it doesn't parse
+    stdin: |
+      echo "[${!:-none}]"
+      true &
+      wait
+      [ "${!}" = "$!" ] && echo same
+      echo "[${!:+set}]"
+      b=x x=y
+      echo "${!b}"
+
+  - name: "Case-toggling parameter expansion"
+    known_failure: true # TODO(expansion): ${x~} and ${x~~} (undocumented in bash) are not implemented
+    stdin: |
+      x=aBc
+      echo "${x~}" "${x~~}"

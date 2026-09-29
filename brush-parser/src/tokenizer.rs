@@ -380,7 +380,7 @@ impl Default for TokenizerOptions {
 /// This bounds only the tokenizer's own recursion. Words keep their nesting, so later passes
 /// over them (e.g., expanding them) recurse as deeply, with stack frames of their own that may
 /// be far larger (in an unoptimized build, over 100 KiB per level of `${...}` expansion).
-const MAX_EXPANSION_NESTING: u32 = 32;
+pub(crate) const MAX_EXPANSION_NESTING: u32 = 32;
 
 /// A tokenizer for shell scripts.
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
