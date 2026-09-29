@@ -107,6 +107,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn treats_here_doc_with_empty_tag_as_incomplete_until_empty_line() {
+        let shell = test_shell().await;
+
+        // As in bash, an empty tag's body ends at the first empty line, which hasn't been
+        // read yet; the input isn't complete (with an empty body) at the tag's newline.
+        assert!(needs_more_input_locked(&shell, "cat <<''\n"));
+        assert!(needs_more_input_locked(&shell, "cat <<\"\"\n"));
+        assert!(needs_more_input_locked(&shell, "cat <<''\nbody\n"));
+        assert!(!needs_more_input_locked(&shell, "cat <<''\n\n"));
+        assert!(!needs_more_input_locked(&shell, "cat <<''\nbody\n\n"));
+    }
+
+    #[tokio::test]
     async fn treats_complete_programs_as_complete() {
         let shell = test_shell().await;
 

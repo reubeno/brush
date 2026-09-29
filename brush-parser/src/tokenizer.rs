@@ -1539,6 +1539,13 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             tag_str.as_ref()
         };
 
+        // At the end of input, the tag's line may lack its newline (`cat <<EOF⏎body⏎EOF`). An
+        // empty tag would then match the nothing after the last newline, which isn't a line: as
+        // in bash, its body only ends at an empty line.
+        if tag_str.is_empty() {
+            return Ok(false);
+        }
+
         if let Some(current_token_without_here_tag) = state.current_token().strip_suffix(tag_str) {
             // Make sure that was either the start of the here document, or there
             // was a newline between the preceding part
