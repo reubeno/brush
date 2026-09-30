@@ -325,35 +325,34 @@ peg::parser! {
             }
 
         pub(crate) rule case_item_ns() -> ast::CaseItem =
-            s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() {
+            b:case_item_body() linebreak() {
+                let (s, p, e, c) = b;
                 let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
-                let end = c.location();
+                let loc = match &c {
+                    Some(c) => maybe_location(start, c.location().as_ref()),
+                    None => maybe_location(start, Some(e.location())),
+                };
 
-                let loc = maybe_location(start, end.as_ref());
-
-                ast::CaseItem { patterns: p, cmd: Some(c), post_action: ast::CaseItemPostAction::ExitCase, loc }
-            } /
-            s:specific_operator("(")? p:pattern() e:specific_operator(")") linebreak() {
-                let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
-                let end = Some(e.location());
-
-                let loc = maybe_location(start, end);
-                ast::CaseItem { patterns: p, cmd: None, post_action: ast::CaseItemPostAction::ExitCase, loc }
+                ast::CaseItem { patterns: p, cmd: c, post_action: ast::CaseItemPostAction::ExitCase, loc }
             }
 
         pub(crate) rule case_item() -> ast::CaseItem =
-            s:specific_operator("(")? p:pattern() specific_operator(")") linebreak() post_action:case_item_post_action() linebreak() {
+            b:case_item_body() linebreak() post_action:case_item_post_action() linebreak() {
+                let (s, p, _, c) = b;
                 let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
                 let end = Some(post_action.1);
                 let loc = maybe_location(start, end);
-                ast::CaseItem { patterns: p, cmd: None, post_action: post_action.0, loc }
-            } /
-            s:specific_operator("(")? p:pattern() specific_operator(")") c:compound_list() post_action:case_item_post_action() linebreak() {
-                let start = s.map(Token::location).or_else(|| p.first().and_then(|w| w.loc.as_ref()));
-                let end = Some(post_action.1);
-                let loc = maybe_location(start, end);
-                ast::CaseItem { patterns: p, cmd: Some(c), post_action: post_action.0, loc }
+                ast::CaseItem { patterns: p, cmd: c, post_action: post_action.0, loc }
             }
+
+        // N.B. Cached because `case_clause` tries each item as `case_item` and then, if no
+        // terminator follows, as `case_item_ns`, and both begin with this. Without the
+        // cache the item's commands are parsed twice whenever the terminator is missing,
+        // and a nested `case` inside those commands does the same, so the work doubles
+        // with every level of nesting.
+        #[cache]
+        rule case_item_body() -> (Option<&'input Token>, Vec<ast::Word>, &'input Token, Option<ast::CompoundList>) =
+            s:specific_operator("(")? p:pattern() e:specific_operator(")") c:compound_list()? { (s, p, e, c) }
 
         rule case_item_post_action() -> (ast::CaseItemPostAction, &'input SourceSpan)  =
             s:specific_operator(";;") {
