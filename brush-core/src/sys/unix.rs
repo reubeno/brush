@@ -11,6 +11,10 @@ pub use crate::sys::tokio_process as process;
 pub mod resource;
 pub mod signal;
 pub mod terminal;
+#[cfg(not(target_os = "ios"))]
+pub(crate) mod users;
+#[cfg(target_os = "ios")]
+#[path = "unix/users_ios.rs"]
 pub(crate) mod users;
 
 /// Platform-specific errors.

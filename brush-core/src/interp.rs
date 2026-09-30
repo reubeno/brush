@@ -138,6 +138,15 @@ impl ExecutionParameters {
         }
     }
 
+    /// Returns whether the given file descriptor was explicitly specified for
+    /// this execution (e.g. via a redirection or pipeline), as opposed to being
+    /// inherited from the shell's persistent open files. Useful for telling a
+    /// redirected/piped stdin from an interactive one.
+    #[must_use]
+    pub fn is_fd_specified(&self, fd: ShellFd) -> bool {
+        matches!(self.open_files.fd_entry(fd), openfiles::OpenFileEntry::Open(_))
+    }
+
     /// Sets the given file descriptor to the provided open file.
     ///
     /// # Arguments
