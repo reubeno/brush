@@ -367,21 +367,24 @@ cases:
       EOF
       )"'
 
-  - name: "Here doc with unterminated expansions"
-    known_failure: true # TODO(expansion): #540: unterminated '${' or '$(' is silently treated as literal text
+  - name: "Here doc with unterminated command substitution"
+    ignore_stderr: true
+    stdin: |
+      cat <<EOF
+      a $(echo hi b
+      EOF
+      echo "rc=$?"
+
+  - name: "Here doc with unterminated parameter expansion"
+    known_failure: true # TODO(expansion): #540: unterminated '${' is silently treated as literal text
     ignore_stderr: true
     stdin: |
       cat <<EOF
       a ${USER b
       EOF
       echo "rc=$?"
-      cat <<EOF
-      a $(echo hi b
-      EOF
-      echo "rc=$?"
 
   - name: "Here doc with command substitution that never closes"
-    known_failure: true # TODO(expansion): #540: unterminated '$(' is silently treated as literal text
     ignore_stderr: true
     stdin: |
       cat <<EOF
@@ -392,3 +395,262 @@ cases:
       a $(echo b # c)
       EOF
       echo "rc=$?"
+
+  - name: "Here doc with unterminated arithmetic expansions"
+    ignore_stderr: true
+    stdin: |
+      cat <<EOF
+      a $((1 + b
+      EOF
+      echo "rc=$?"
+      cat <<EOF
+      a $[1 + b
+      EOF
+      echo "rc=$?"
+
+  - name: "Here doc tag containing command substitution"
+    stdin: |
+      cat <<$(x)
+      body
+      $(x)
+
+  - name: "Here doc tag containing parameter expansion"
+    stdin: |
+      cat <<E${x}
+      body
+      E${x}
+
+  - name: "Here doc tag containing arithmetic expansion"
+    stdin: |
+      cat <<$((1 + 2))
+      body
+      $((1 + 2))
+      cat <<$[1]
+      body
+      $[1]
+
+  - name: "Expansions after here doc tag on the same line"
+    stdin: |
+      printf '[%s]\n' <<EOF $(echo a b) "$((1 + 2))" "${x:-y}" $[4]
+      ignored
+      EOF
+
+  - name: "Here doc in command substitution with multiple blanks before tag"
+    stdin: |
+      echo "$(cat <<  EOF
+      two blanks
+      EOF
+      )"
+      echo "$(cat <<-		EOF
+      	two tabs
+      	EOF
+      )"
+
+  - name: "Here doc in command substitution on the same line as another here doc"
+    stdin: |
+      cat <<A; echo "$(cat <<B
+      inner body
+      B
+      )"
+      outer body
+      A
+
+  - name: "Here doc started in command substitution with body after it"
+    ignore_stderr: true # bash warns about the unterminated here-document
+    stdin: |
+      tr a-z A-Z <<<"[$(cat <<EOF)]"
+      body
+      EOF
+      echo after
+
+  - name: "Here doc started in command substitution while another here doc is pending"
+    ignore_stderr: true # bash warns about the unterminated here-document
+    stdin: |
+      cat <<A; echo "[$(cat <<B)]"
+      b body
+      B
+      a body
+      A
+      echo "[$(cat <<C)]" "[$(cat <<D)]"
+      c body
+      C
+      d body
+      D
+
+  - name: "Here doc started in nested command substitution with body after it"
+    ignore_stderr: true # bash warns about the unterminated here-document
+    stdin: |
+      echo $(echo $(cat <<EOF)
+      body
+      EOF
+      echo more
+      )
+
+  - name: "Here doc started in doubly nested command substitution with body after it"
+    ignore_stderr: true # bash warns about the unterminated here-document
+    stdin: |
+      echo "[$(echo $(cat <<EOF))]"
+      body
+      EOF
+
+  - name: "Here doc started in command substitution in parameter expansion with body after it"
+    ignore_stderr: true # bash warns about the unterminated here-document
+    stdin: |
+      echo "[${x:-$(cat <<EOF)}]"
+      body
+      EOF
+
+  - name: "Here doc started in command substitution with commands after it and body after it"
+    ignore_stderr: true # bash warns about the unterminated here-documents
+    stdin: |
+      echo "[$(cat <<EOF | tr a-z A-Z)]"
+      body
+      EOF
+      echo "[$(cat <<A; cat <<-B)]"
+      a
+      A
+      	b
+      	B
+
+  - name: "Here doc started in command substitution in command with its own here doc"
+    ignore_stderr: true # bash warns about the unterminated here-document
+    stdin: |
+      f() { echo "arg=$1"; cat; }
+      f "[$(cat <<B)]" <<A
+      b
+      B
+      a
+      A
+
+  - name: "Here doc started in command substitution with line continuation after it"
+    known_failure: true # TODO(input): reading a line at a time, the check for a trailing line continuation misses one set aside until after the body, so the command runs without the line it continues onto
+    ignore_stderr: true # bash warns about the unterminated here-document
+    stdin: |
+      echo "[$(cat <<EOF)]" \
+        more
+      body
+      EOF
+      echo after
+
+  - name: "Here doc operator with no tag in command substitution"
+    ignore_stderr: true
+    stdin: |
+      echo "[$(cat <<)]"
+      echo after
+
+  - name: "Here doc operator inside parameter expansion is literal"
+    stdin: |
+      echo ${x:-<<}
+      echo ${x:-<< foo}
+      echo "${x:-a<<b}"
+      echo ${x:-<<-EOF}
+      echo after
+
+  - name: "Blanks and operators inside parameter expansion word"
+    stdin: |
+      echo "[${x:- | }]" "[${x:-a  b}]" "[${x:-a;b}]" "[${x:- #y}]" "[${x:-a #b}]"
+      echo "[${x:-(a) && b}]"
+
+  - name: "Shift operator after nested arithmetic expansion"
+    stdin: |
+      echo $(( $((1)) << 2 ))
+      echo $[ $((1)) << 3 ]
+      (( x = $((1)) << 4 )); echo "$x"
+
+  - name: "Here doc after arithmetic command in command substitution"
+    stdin: |
+      x=$( ((1)) ); cat <<EOF
+      body
+      EOF
+
+  - name: "Here doc after arithmetic command inside command substitution"
+    stdin: |
+      x=$( ((1)); cat <<EOF
+      a)b
+      EOF
+      )
+      echo "[$x]"
+
+  - name: "Shift operator after parenthesized arithmetic in arithmetic expansion"
+    stdin: |
+      echo $(( ((1)) << 2 )) $[ ((1)) << 3 ]
+
+  - name: "Here doc in subshell in command substitution"
+    stdin: |
+      x=$( (cat <<EOF; echo x) | tr a-z A-Z
+      body
+      EOF
+      )
+      echo "[$x]"
+
+  - name: "Here doc pending while a later expansion spans lines"
+    stdin: |
+      cat <<A; echo "$(echo x
+      echo y)"
+      a
+      A
+      cat <<B; echo "${x:-p
+      q}"
+      b
+      B
+      cat <<C; echo $[ 1 +
+      2 ]
+      c
+      C
+
+  - name: "Here doc body with command substitution that leaves a here doc open"
+    ignore_stderr: true # bash warns about the unterminated here-documents
+    stdin: |
+      cat <<X
+      a $(cat <<EOF) b
+      X
+      echo "rc=$?"
+
+  - name: "Here doc body with command substitution that doesn't parse"
+    known_failure: true # TODO(expansion): bash fails the command when a substitution in the body doesn't parse; brush runs it with the substitution empty
+    ignore_stderr: true
+    stdin: |
+      cat <<X
+      a $(if) b
+      X
+      echo "rc=$?"
+
+  - name: "Here doc tag quote removal with nested quotes and backslashes"
+    known_failure: true # TODO(tokenizer): unquote_str drops every quote char, even quoted ones, and treats a backslash in single quotes as an escape
+    ignore_stderr: true
+    stdin: |
+      cat <<"'"
+      a
+      '
+      cat <<'"x"'
+      b
+      "x"
+      cat <<'a\b'
+      c
+      a\b
+      echo after
+
+  - name: "Here doc tag with ANSI-C quoting"
+    known_failure: true # TODO(tokenizer): $'...' in a here tag isn't decoded, so the tag is never matched
+    ignore_stderr: true
+    stdin: |
+      cat <<$'E\x4fF'
+      a
+      EOF
+      echo after
+
+  - name: "Here doc delimited by end of input"
+    known_failure: true # TODO(tokenizer): bash warns and ends the body at the end of the input; brush rejects the script
+    ignore_stderr: true
+    stdin: |
+      cat <<EOF
+      body
+
+  - name: "Here doc in command substitution closed on its tag line"
+    known_failure: true # TODO(tokenizer): bash ends the body at a line holding the tag followed by the substitution's ')'
+    ignore_stderr: true
+    stdin: |
+      x=$(cat <<EOF
+      body
+      EOF)
+      echo "[$x]"

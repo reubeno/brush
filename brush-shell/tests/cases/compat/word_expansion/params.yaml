@@ -791,18 +791,62 @@ cases:
       echo "${#var}"
 
   - name: "Extglob-like text in parameter expansion default"
-    known_failure: true # TODO(tokenizer): '@(' inside '${...}' is taken as the start of an extglob
     stdin: |
       shopt -s extglob
       echo ${u:-a@(}
 
   - name: "Doubled dollar sign before brace"
-    known_failure: true # TODO(tokenizer): '$${' is taken as '$' followed by '${' instead of '$$' followed by '{'
     stdin: |
       echo $${u | sed "s/$$/PID/g"
       echo "rc=$?"
+
+  - name: "Doubled dollar sign before parenthesis"
+    ignore_stderr: true
+    stdin: |
+      echo $$(echo hi)
+
+  - name: "ANSI-C quoting in parameter expansion in double quotes"
+    known_failure: true # TODO(expansion): with extquote (on by default), $'...' inside "${...}" is decoded; brush keeps it as is
+    stdin: |
+      echo "[${x:-$'a\tb'}]"
+
+  - name: "Escaped closing brace in parameter expansion in double quotes"
+    known_failure: true # TODO(expansion): bash removes the backslash from '\}' inside "${...}"; brush keeps it
+    stdin: |
+      echo "[${x:-\}}]"
+
+  - name: "Tabs in parameter expansion default"
+    stdin: |
+      echo "[${x:-a	b}]" "[${x:-a 	 b}]"
 
   - name: "Here-doc operator as parameter expansion default"
     stdin: |
       echo ${u:-<<} ${u:-<<-}
       echo "${u:-<<}" "${u:-<<-}"
+
+  - name: "Bad substitution in braced parameter expansion"
+    known_failure: true # TODO(expansion): #540: a malformed '${...}' is silently treated as literal text
+    ignore_stderr: true # error wording differs
+    stdin: |
+      echo before
+      echo ${x!}
+      echo "rc=$?"
+      x="a ${y!} b"
+      echo "rc=$? x=$x"
+
+  - name: "Braced last background process ID"
+    known_failure: true # TODO(expansion): '${!}' (not followed by a name) is taken as indirection, so it doesn't parse
+    stdin: |
+      echo "[${!:-none}]"
+      true &
+      wait
+      [ "${!}" = "$!" ] && echo same
+      echo "[${!:+set}]"
+      b=x x=y
+      echo "${!b}"
+
+  - name: "Case-toggling parameter expansion"
+    known_failure: true # TODO(expansion): ${x~} and ${x~~} (undocumented in bash) are not implemented
+    stdin: |
+      x=aBc
+      echo "${x~}" "${x~~}"

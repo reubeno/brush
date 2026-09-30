@@ -162,6 +162,14 @@ cases:
     stdin: |
       ( : $(echo hi >&3); ) 3>output.txt
 
+  - name: "Expansions in a command don't see its redirections"
+    known_failure: true # TODO(expansion): redirections are set up as they're reached, so they apply to command substitutions in later words and in all assignments
+    stdin: |
+      f() { echo </dev/null "[$(cat)]"; }
+      echo stdin-data | f
+      g() { x="[$(cat)]" </dev/null; echo "$x"; }
+      echo stdin-data | g
+
   - name: "Redirection failure"
     ignore_stderr: true
     stdin: |

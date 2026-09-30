@@ -838,8 +838,8 @@ peg::parser! {
             // into us, because if we see an opening parenthesis then we *must* find its closing
             // partner.
             "(" arithmetic_word_plus_right_paren() {} /
-            // This branch handles the case where we have an array element name with square brackets,
-            // which may (legitimately) contain the stop condition.
+            // An array subscript may contain the stop condition. Other brackets are left
+            // as text, so malformed arithmetic doesn't fall back to command substitution.
             array_element_name() {} /
             // This branch matches any standard piece of a word, stopping as soon as we reach
             // either the overall stop condition *OR* an opening parenthesis. We add this latter
@@ -937,7 +937,7 @@ peg::parser! {
             s:double_quote_body_text() { WordPiece::Text(s.to_owned()) }
 
         rule double_quote_body_text() -> &'input str =
-            $((!double_quoted_escape_sequence() !dollar_sign_word_piece() [^'\"'])+)
+            $((!double_quoted_escape_sequence() !dollar_sign_word_piece() !expansion_opener() [^'\"'])+)
 
         // Heredoc body parsing: like double-quoted content, but " and ' are literal characters.
         pub(crate) rule unexpanded_heredoc_word() -> Vec<WordPieceWithSource> =
@@ -963,7 +963,7 @@ peg::parser! {
             s:$("\\" ['$' | '`' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
 
         rule heredoc_literal_text() -> WordPiece =
-            s:$((!heredoc_escape_sequence() !dollar_sign_word_piece() [^'`'])+) {
+            s:$((!heredoc_escape_sequence() !dollar_sign_word_piece() !expansion_opener() [^'`'])+) {
                 WordPiece::Text(s.to_owned())
             }
 
@@ -1008,6 +1008,10 @@ peg::parser! {
 
         // TODO(parser): Deal with fact that there may be a quoted word or escaped closing brace chars.
         // TODO(parser): Improve on how we handle a '$' not followed by a valid variable name or parameter.
+        // Cached: each `${...}` can match any of ~20 parameter expression forms, and a failure
+        // within one (e.g., an unterminated `$(`) would otherwise be re-discovered by every form
+        // at every enclosing level, taking time exponential in the nesting depth.
+        #[cache]
         rule parameter_expansion() -> WordPiece =
             "${" e:parameter_expression() "}" {
                 WordPiece::ParameterExpansion(e)
@@ -1015,9 +1019,15 @@ peg::parser! {
             "$" parameter:unbraced_parameter() {
                 WordPiece::ParameterExpansion(ParameterExpr::Parameter { parameter, indirect: false })
             } /
-            "$" !['\''] {
+            !expansion_opener() "$" !['\''] {
                 WordPiece::Text("$".to_owned())
             }
+
+        // As in bash, these always start an expansion, whose end the tokenizer finds (so it
+        // always does, in a word the tokenizer accepted). If none parses, the text is malformed
+        // (e.g., unterminated, or nested too deeply), so its `$` mustn't be taken as literal text.
+        // TODO(expansion): #540: the same holds for `${`, which is still taken as text.
+        rule expansion_opener() = "$" ['(' | '[']
 
         rule parameter_expression() -> ParameterExpr =
             indirect:parameter_indirection() parameter:parameter() test_type:parameter_test_type() "-" default_value:parameter_expression_word()? {
@@ -1184,7 +1194,17 @@ peg::parser! {
             "$((" e:$(arithmetic_word(<"))">)) "))" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
 
         rule legacy_arithmetic_expansion() -> WordPiece =
-            "$[" e:$(arithmetic_word(<"]">)) "]" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+            "$[" e:legacy_arithmetic_expansion_body() "]" { WordPiece::ArithmeticExpression(ast::UnexpandedArithmeticExpr { value: e.to_owned() } ) }
+
+        // Reuse the tokenizer's iterative bracket counting rather than recursively parsing
+        // each bracket in the expression. As with command substitutions, preserve the source.
+        rule legacy_arithmetic_expansion_body() -> &'input str = #{|input, pos| {
+            let rest = input.split_at(pos).1;
+            match crate::tokenizer::legacy_arithmetic_expansion_body(rest, &parser_options.tokenizer_options()) {
+                Ok(body) => peg::RuleResult::Matched(pos + body.len(), body),
+                Err(_) => peg::RuleResult::Failed,
+            }
+        }}
 
         rule substring_offset() -> ast::UnexpandedArithmeticExpr =
             s:$(arithmetic_word(<[':' | '}']>)) { ast::UnexpandedArithmeticExpr { value: s.to_owned() } }
@@ -1456,6 +1476,119 @@ mod tests {
     #[test]
     fn parse_arithmetic_expansion_with_parens() -> Result<()> {
         assert_ron_snapshot!(test_parse("$((((1+2)*3)))")?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion_with_unmatched_brackets() -> Result<()> {
+        // Invalid arithmetic must stay arithmetic, rather than fall back to executing
+        // the expression as a command substitution.
+        for expr in ["echo unexpected [", "1[", "a[1", "[ ["] {
+            let word = std::format!("$(({expr}))");
+            let parsed = super::parse(&word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr,
+                "for {word:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_arithmetic_expansion_with_deep_brackets() -> Result<()> {
+        // Brackets in the expression must not grow the word parser's call stack.
+        // Arithmetic evaluation can reject this expression after its boundaries are found.
+        let expr = std::format!("{}1{}", "[".repeat(15_000), "]".repeat(15_000));
+        for (open, close) in [("$((", "))"), ("$[", "]")] {
+            let word = std::format!("{open}{expr}{close}");
+            let parsed = super::parse(&word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_legacy_arithmetic_expansion_with_array_subscripts() -> Result<()> {
+        for (word, expr) in [
+            ("$[a[1]]", "a[1]"),
+            ("$[ a[1] + 1 ]", " a[1] + 1 "),
+            ("$[ a[ a[0] ] ]", " a[ a[0] ] "),
+            ("$[ a[$[1]] + $(printf 2) ]", " a[$[1]] + $(printf 2) "),
+            ("$[ 'é]' ]", " 'é]' "),
+            ("$[ \\] ]", " \\] "),
+        ] {
+            let parsed = super::parse(word, &ParserOptions::default())?;
+            assert_matches!(
+                parsed.as_slice(),
+                [WordPieceWithSource { piece: WordPiece::ArithmeticExpression(e), .. }] if e.value == expr,
+                "for {word:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn parse_malformed_expansions_as_errors() {
+        // As in bash, a `$` before `(` or `[` always starts an expansion; if none parses, the
+        // text is malformed, not literal text.
+        let options = ParserOptions::default();
+        for word in ["a$(echo", "\"$(echo\"", "$((1 +", "$[1 +", "\"a $[1 + b\""] {
+            assert!(super::parse(word, &options).is_err(), "for {word:?}");
+        }
+        for body in [
+            "a $(echo hi\n",
+            "a $(echo 'b) c\n",
+            "a $((1 + b\n",
+            "a $[1 + b\n",
+        ] {
+            assert!(
+                super::parse_heredoc(body, &options).is_err(),
+                "for {body:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_malformed_expansions_nested_in_parameter_expansions_quickly() {
+        // Each `${...}` can match any of ~20 parameter expression forms; unless its parse is
+        // memoized, a failure within (e.g., an unterminated `$(`) is re-discovered by each form,
+        // taking time exponential in the nesting depth.
+        let options = ParserOptions::default();
+        let nested =
+            |inner: &str| std::format!("{}{inner}{}\n", "${x:-".repeat(30), "}".repeat(30));
+        assert!(super::parse_heredoc(&nested("$(echo"), &options).is_err());
+        assert!(super::parse_heredoc(&nested("$((1 +"), &options).is_err());
+        assert!(super::parse(&std::format!("\"{}\"", nested("$[1").trim_end()), &options).is_err());
+    }
+
+    #[test]
+    fn parse_lone_dollar_signs_as_text() -> Result<()> {
+        let options = ParserOptions::default();
+        for word in [
+            "$", "a$", "$ b", "$%", "\"$\"", "\"a$ b\"", "\"$'x'\"", "${x}$",
+        ] {
+            super::parse(word, &options)?;
+        }
+        super::parse_heredoc("cost: $5 $ $% \"$'x'\" a$\n", &options)?;
+        Ok(())
+    }
+
+    #[test]
+    fn parse_heredoc_with_command_substitutions_nested_too_deeply() -> Result<()> {
+        // Here-doc bodies aren't tokenized along with the script, so the word parser is the
+        // first to find nesting past the tokenizer's limit; that's an error, not literal text.
+        let nested = |depth: u32| {
+            let depth = depth as usize;
+            std::format!("{}:{}\n", "$(".repeat(depth), ")".repeat(depth))
+        };
+        let limit = crate::tokenizer::MAX_EXPANSION_NESTING;
+        let options = ParserOptions::default();
+        super::parse_heredoc(&nested(limit), &options)?;
+        assert!(super::parse_heredoc(&nested(limit + 1), &options).is_err());
         Ok(())
     }
 
