@@ -1,0 +1,7 @@
+error: clap_builtin!: `raw_args` was removed; a builtin that stores its arguments verbatim does not need clap. Use `verbatim_builtin!(Type, args = field, synopsis = ..., description = ...)` instead
+ --> tests/ui/clap_builtin_raw_args.rs:7:1
+  |
+7 | brush_builtin_utils::clap_builtin!(Command, raw_args = args);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `brush_builtin_utils::clap_builtin` (in Nightly builds, run with -Z macro-backtrace for more info)

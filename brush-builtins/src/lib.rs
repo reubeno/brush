@@ -139,29 +139,32 @@ fn write_alias_definition(
     )
 }
 
-/// Macro to define a struct that represents a shell built-in flag argument that can be
-/// enabled or disabled by specifying an option with a leading '+' or '-' character.
+/// Declares a usage-rs flag struct: `-$flag_char` enables, `$plus_flag` disables.
+///
+/// Since 0.3, this replaces `minus_or_plus_flag_arg!`, which declared a clap struct.
+/// The `+` spelling is now an explicit argument, and `From<Struct> for Option<bool>`
+/// is gone: call `to_bool`.
+///
+/// Each attribute is spelled separately. Combining them into one `#[usage(...)]`
+/// breaks the derive's parsing of literals that come from a macro expansion.
 ///
 /// # Arguments
 ///
 /// - `$struct_name` - The identifier to be used for the struct to define.
-/// - `$flag_char` - The character to use as the flag.
+/// - `$flag_char` - The character to use as the `-` flag.
+/// - `$plus_flag` - The long spelling of the `+` flag, such as `"+x"`.
 /// - `$desc` - The string description of the flag.
 #[macro_export]
-macro_rules! minus_or_plus_flag_arg {
-    ($struct_name:ident, $flag_char:literal, $desc:literal) => {
-        #[derive(clap::Parser)]
+macro_rules! usage_minus_or_plus_flag_arg {
+    ($struct_name:ident, $flag_char:literal, $plus_flag:literal, $desc:literal) => {
+        #[derive(usage::Args)]
         pub(crate) struct $struct_name {
-            #[arg(short = $flag_char, name = concat!(stringify!($struct_name), "_enable"), action = clap::ArgAction::SetTrue, help = $desc)]
+            #[usage(short = $flag_char)]
+            #[usage(help = $desc)]
             _enable: bool,
-            #[arg(long = concat!("+", $flag_char), name = concat!(stringify!($struct_name), "_disable"), action = clap::ArgAction::SetTrue, hide = true)]
+            #[usage(long = $plus_flag)]
+            #[usage(hide)]
             _disable: bool,
-        }
-
-        impl From<$struct_name> for Option<bool> {
-            fn from(value: $struct_name) -> Self {
-                value.to_bool()
-            }
         }
 
         impl $struct_name {

@@ -1,15 +1,21 @@
-use clap::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
+use usage::Cli;
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(Cli)]
+#[usage(
+    bin = "printf",
+    unknown_flags = "error",
+    args_override_self = false,
+    disable_help_flag,
+    disable_version_flag
+)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
+    #[usage(short = 'v')]
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
@@ -18,9 +24,83 @@ pub(crate) struct PrintfCommand {
     /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
     /// a positional argument. With it disabled, a format string that genuinely needs to
     /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
+    #[usage(trailing_var_arg, required)]
     format_and_args: Vec<String>,
 }
+
+impl brush_builtin_usage::UsageParsed for PrintfCommand {
+    fn parse_argv<'v>(argv: &[&'v std::ffi::OsStr]) -> Result<Self, usage::Error<'static, 'v>> {
+        Self::parse_from(argv)
+    }
+
+    fn spec() -> &'static usage::spec::Spec<'static> {
+        Self::spec()
+    }
+
+    fn command() -> &'static usage::Command<'static> {
+        Self::command()
+    }
+}
+
+impl brush_core::builtins::FromArgs for PrintfCommand {
+    fn from_args(
+        name: &str,
+        args: Vec<brush_core::CommandArg>,
+    ) -> Result<Self, brush_core::builtins::ArgsError> {
+        // Bash accepts only leading `-v` options and drops at most one `--`
+        // that ends them. Every later token, including further `--`s and words
+        // that look like flags, is format data.
+        let words = brush_builtin_utils::into_words(args);
+        let mut output_variable = None;
+        let mut index = 0;
+
+        while let Some(word) = words.get(index) {
+            if word == "--" {
+                index += 1;
+                break;
+            } else if word == "-v" {
+                index += 1;
+                match words.get(index) {
+                    Some(value) => {
+                        output_variable = Some(value.clone());
+                        index += 1;
+                    }
+                    None => {
+                        return Err(brush_core::builtins::ArgsError::Usage(format!(
+                            "{name}: -v: option requires an argument\n"
+                        )));
+                    }
+                }
+            } else if let Some(value) = word.strip_prefix("-v")
+                && !value.is_empty()
+            {
+                output_variable = Some(value.to_owned());
+                index += 1;
+            } else if word.starts_with('-') && word != "-" {
+                let flag = word.chars().nth(1).unwrap_or('-');
+                return Err(brush_core::builtins::ArgsError::Usage(format!(
+                    "{name}: invalid option -- '{flag}'\n"
+                )));
+            } else {
+                break;
+            }
+        }
+
+        let format_and_args = words[index..].to_vec();
+        if format_and_args.is_empty() {
+            return Err(brush_core::builtins::ArgsError::Usage(format!(
+                "{name}: usage: printf [-v var] format [arguments]\n"
+            )));
+        }
+
+        Ok(Self {
+            output_variable,
+            format_and_args,
+        })
+    }
+}
+
+brush_builtin_usage::__usage_builtin_help!(PrintfCommand);
 
 impl builtins::Command for PrintfCommand {
     type Error = brush_core::Error;
@@ -60,8 +140,8 @@ fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_co
     match format_and_args {
         // Handle format string with arguments using uucore
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
-        // Handle case with no format string (we shouldn't be able to get here since clap will
-        // fail parsing when the format string is missing)
+        // Handle case with no format string (we shouldn't be able to get here since parsing
+        // fails when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }

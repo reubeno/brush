@@ -1,8 +1,9 @@
 //! Generation commands for documentation, completions, and schemas.
 //!
 //! This module provides commands for generating various artifacts:
-//! - **Documentation**: Man pages and markdown help text from clap definitions
-//! - **Completions**: Shell completion scripts for bash, zsh, fish, etc.
+//! - **Documentation**: Man pages and markdown help text from the usage spec
+//! - **Completions**: Shell completion scripts for bash, zsh, fish, etc., which call
+//!   back into `brush` for their answers
 //! - **Schemas**: JSON schemas for configuration files
 //! - **Distribution archives**: Reproducible documentation bundles with checksums
 //!
@@ -129,7 +130,7 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
             DocsCommand::Dist(args) => gen_docs_dist(&sh, args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
-            // These names are the ones understood by clap_complete's `Shell`.
+            // These names are the ones understood by usage's `complete::Shell`.
             let shell = match completion_cmd {
                 CompletionCommand::Bash => "bash",
                 CompletionCommand::Elvish => "elvish",

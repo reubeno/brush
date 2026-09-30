@@ -1,11 +1,16 @@
 use std::{collections::HashMap, io::Write};
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins, env, variables};
 
 /// Parse command options.
-#[derive(Parser)]
+#[derive(usage::Cli)]
+#[usage(
+    bin = "getopts",
+    unknown_flags = "value",
+    args_override_self = false,
+    disable_help_flag,
+    disable_version_flag
+)]
 pub(crate) struct GetOptsCommand {
     /// Specification for options
     options_string: String,
@@ -14,7 +19,7 @@ pub(crate) struct GetOptsCommand {
     variable_name: String,
 
     /// Arguments to parse
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(arg, double_dash = "preserve")]
     args: Vec<String>,
 }
 
@@ -80,22 +85,10 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
     }
 }
 
+brush_builtin_usage::usage_builtin!(GetOptsCommand, trailing_args = args);
+
 impl builtins::Command for GetOptsCommand {
     type Error = brush_core::Error;
-
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(command): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
-    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

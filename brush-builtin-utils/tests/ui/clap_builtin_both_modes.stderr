@@ -1,0 +1,7 @@
+error: clap_builtin!: `trailing_args` and `declarations` are mutually exclusive; a builtin is parsed in one mode. Accepted forms: `clap_builtin!(Type)`, `clap_builtin!(Type, trailing_args = field)`, `clap_builtin!(Type, declarations = field)`
+ --> tests/ui/clap_builtin_both_modes.rs:8:1
+  |
+8 | brush_builtin_utils::clap_builtin!(Command, trailing_args = args, declarations = declarations);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `brush_builtin_utils::clap_builtin` (in Nightly builds, run with -Z macro-backtrace for more info)

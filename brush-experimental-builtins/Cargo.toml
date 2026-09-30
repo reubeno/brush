@@ -8,7 +8,8 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
-rust-version.workspace = true
+# usage-rs requires rustc 1.91.
+rust-version = "1.91"
 
 [lib]
 bench = false
@@ -22,5 +23,7 @@ workspace = true
 
 [dependencies]
 brush-core = { version = "^0.5.0", path = "../brush-core" }
-clap = { version = "4.6.0", features = ["derive", "wrap_help"] }
+brush-builtin-usage = { version = "^0.1.0", path = "../brush-builtin-usage" }
+brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils", default-features = false }
+usage = { package = "usage-rs", version = "6.11.1" }
 serde_json = { version = "1.0.149", optional = true }

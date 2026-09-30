@@ -1,0 +1,30 @@
+[package]
+name = "brush-builtin-usage"
+description = "usage-rs adapter for brush builtins"
+version = "0.1.0"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+# usage-rs 6.11 declares rustc 1.91. This crate exists so that dependency stays
+# off the workspace MSRV: brush-core and brush-builtin-utils keep compiling at
+# 1.88, and only a crate that actually parses with usage moves.
+rust-version = "1.91"
+
+[lib]
+bench = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils", default-features = false }
+brush-core = { version = "^0.5.0", path = "../brush-core" }
+usage = { package = "usage-rs", version = "6.11.1" }
+
+[dev-dependencies]
+anyhow = "1.0.102"
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["macros", "rt", "rt-multi-thread"] }

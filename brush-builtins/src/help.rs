@@ -1,26 +1,29 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
+use usage::Cli;
 
 /// Display command help.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "help", unknown_flags = "error", args_override_self = false)]
 pub(crate) struct HelpCommand {
     /// Display a short description for the commands.
-    #[arg(short = 'd')]
+    #[usage(short = 'd')]
     short_description: bool,
 
     /// Display a man-style page of documentation for the commands.
-    #[arg(short = 'm')]
+    #[usage(short = 'm')]
     man_page_style: bool,
 
     /// Display a short usage summary for the commands.
-    #[arg(short = 's')]
+    #[usage(short = 's')]
     short_usage: bool,
 
     /// Patterns of topics to display help for.
     topic_patterns: Vec<String>,
 }
+
+brush_builtin_usage::usage_builtin!(HelpCommand);
 
 impl builtins::Command for HelpCommand {
     type Error = brush_core::Error;
@@ -72,7 +75,7 @@ impl HelpCommand {
         for i in 0..items_per_column {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
-                    let prefix = if builtin.disabled { "*" } else { " " };
+                    let prefix = if builtin.is_disabled() { "*" } else { " " };
                     write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
                     // column width
                 }
@@ -119,15 +122,9 @@ impl HelpCommand {
         name: &str,
         registration: &builtins::Registration<SE>,
     ) -> Result<(), brush_core::Error> {
-        let content_type = if self.short_description {
-            builtins::ContentType::ShortDescription
-        } else if self.man_page_style {
-            builtins::ContentType::ManPage
-        } else if self.short_usage {
-            builtins::ContentType::ShortUsage
-        } else {
-            builtins::ContentType::DetailedHelp
-        };
+        if self.man_page_style {
+            return brush_core::error::unimp("man page rendering is not yet implemented");
+        }
 
         let Some(mut stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
             // If there's no stdout, nothing to do.
@@ -135,11 +132,16 @@ impl HelpCommand {
         };
 
         // For now, we assume colorized output if stdout is a terminal.
-        let options = builtins::ContentOptions {
-            colorized: stdout.is_terminal(),
-        };
+        let mut options = builtins::ContentOptions::default();
+        options.colorized = stdout.is_terminal();
 
-        let content = (registration.content_func)(name, content_type, &options)?;
+        let content = if self.short_description {
+            format!("{name} - {}\n", registration.description(name))
+        } else if self.short_usage {
+            format!("{name}: {}\n", registration.synopsis(name))
+        } else {
+            registration.detailed_help(name, &options)?
+        };
 
         write!(stdout, "{content}")?;
         stdout.flush()?;

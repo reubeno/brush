@@ -4,5 +4,12 @@ status-level = "slow"
 slow-timeout = { period = "5s", terminate-after = 3, grace-period = "2s" }
 fail-fast = false
 
+# trybuild compiles its compile-fail cases in a separate target directory, so a
+# cold run takes about a minute; a timeout there is a slow build, not a hang.
+[[profile.default.overrides]]
+filter = 'package(brush-builtin-utils) & binary(ui)'
+slow-timeout = { period = "60s", terminate-after = 4, grace-period = "2s" }
+retries = 0
+
 [profile.default.junit]
 path = "test-results.xml"

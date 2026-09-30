@@ -1,6 +1,7 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
+
+use usage::Cli;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
@@ -10,33 +11,30 @@ use brush_core::{
 };
 
 /// Add or update exported shell variables.
-#[derive(Parser)]
+#[derive(Cli)]
+#[usage(bin = "export", unknown_flags = "error")]
 pub(crate) struct ExportCommand {
     /// Names are treated as function names.
-    #[arg(short = 'f')]
+    #[usage(short = 'f')]
     names_are_functions: bool,
 
     /// Un-export the names.
-    #[arg(short = 'n')]
+    #[usage(short = 'n')]
     unexport: bool,
 
     /// Display all exported names.
-    #[arg(short = 'p')]
+    #[usage(short = 'p')]
     display_exported_names: bool,
 
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
-    #[clap(skip)]
+    // N.B. Skipped by usage; `usage_builtin!` stores the operands after the options here.
+    #[usage(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for ExportCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
-}
+brush_builtin_usage::usage_builtin!(ExportCommand, declarations = declarations);
 
 impl builtins::Command for ExportCommand {
     type Error = brush_core::Error;
@@ -84,6 +82,13 @@ impl ExportCommand {
                         writeln!(context.stderr(), "{s}: not a function")?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
+                } else if !brush_core::env::valid_variable_name(s) {
+                    writeln!(
+                        context.stderr(),
+                        "{}: `{s}': not a valid identifier",
+                        context.command_name
+                    )?;
+                    return Ok(ExecutionResult::general_error());
                 }
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
