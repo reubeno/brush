@@ -63,6 +63,28 @@ fn parse_arithmetic_for_empty_parts() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn parse_arithmetic_for_adjacent_semicolons() -> Result<()> {
+    let input = "for ((;;)); do echo loop; done";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_arithmetic_for_empty_condition() -> Result<()> {
+    let input = "for ((i = 0;;i++)); do echo $i; done";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
 // Brace group
 
 #[test]

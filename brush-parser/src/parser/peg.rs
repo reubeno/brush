@@ -129,6 +129,11 @@ peg::parser! {
             // command instead.
             !arithmetic_end() !specific_operator(")") [_] {}
 
+        // The tokenizer reads `;;` as a single operator, so in the header of an arithmetic for
+        // loop, an expression must also stop in front of `;;`.
+        rule arithmetic_for_expression() -> ast::UnexpandedArithmeticExpr =
+            raw_expr:$((!specific_operator(";;") arithmetic_expression_piece())*) { ast::UnexpandedArithmeticExpr { value: raw_expr } }
+
         // TODO(arithmetic): evaluate arithmetic end; the semicolon is used in arithmetic for loops.
         rule arithmetic_end() -> () =
             specific_operator(")") specific_operator(")") {} /
@@ -177,9 +182,9 @@ peg::parser! {
         rule arithmetic_for_clause() -> ast::ArithmeticForClauseCommand =
             s:specific_word("for")
             specific_operator("(") specific_operator("(")
-                initializer:arithmetic_expression()? specific_operator(";")
-                condition:arithmetic_expression()? specific_operator(";")
-                updater:arithmetic_expression()?
+                initializer:arithmetic_for_expression()?
+                condition:arithmetic_for_condition()
+                updater:arithmetic_for_expression()?
             specific_operator(")") specific_operator(")")
             body:arithmetic_for_body() {
                 let start = s.location();
@@ -187,6 +192,13 @@ peg::parser! {
                 let loc = SourceSpan::within(start, end);
                 ast::ArithmeticForClauseCommand { initializer, condition, updater, body, loc }
             }
+
+        // The condition of an arithmetic for loop, along with the `;` on each side of it. When the
+        // condition is empty and there is no space between the semicolons, the tokenizer has
+        // already combined them into a single `;;` operator.
+        rule arithmetic_for_condition() -> Option<ast::UnexpandedArithmeticExpr> =
+            specific_operator(";") condition:arithmetic_expression()? specific_operator(";") { condition } /
+            specific_operator(";;") { Some(ast::UnexpandedArithmeticExpr { value: String::new() }) }
 
         rule arithmetic_for_body() -> ast::DoGroupCommand =
             sequential_sep()? body:do_group() { body } /
