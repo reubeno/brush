@@ -1,18 +1,16 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
-/// Pop a path from the current directory stack.
-#[derive(Parser)]
+/// Pop a directory off the directory stack.
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PopdCommand {
-    /// Pop the path without changing the current working directory.
-    #[clap(short = 'n')]
+    /// Don't change the current directory.
+    #[arg(short = 'n')]
     no_directory_change: bool,
-    //
     // TODO(popd): implement +N and -N
 }
 
-brush_builtin_utils::clap_builtin!(PopdCommand);
+brush_builtin_winnow::winnow_builtin!(PopdCommand);
 
 impl builtins::Command for PopdCommand {
     type Error = crate::dirs::DirError;

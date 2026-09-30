@@ -1,28 +1,26 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
 /// Display command help.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct HelpCommand {
     /// Display a short description for the commands.
     #[arg(short = 'd')]
     short_description: bool,
-
     /// Display a man-style page of documentation for the commands.
     #[arg(short = 'm')]
     man_page_style: bool,
-
     /// Display a short usage summary for the commands.
     #[arg(short = 's')]
     short_usage: bool,
-
     /// Patterns of topics to display help for.
+    #[arg(positional, value_name = "pattern")]
     topic_patterns: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(HelpCommand);
+brush_builtin_winnow::winnow_builtin!(HelpCommand);
 
 impl builtins::Command for HelpCommand {
     type Error = brush_core::Error;

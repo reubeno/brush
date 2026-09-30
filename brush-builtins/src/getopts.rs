@@ -1,22 +1,31 @@
 use std::{collections::HashMap, io::Write};
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins, env, variables};
 
 /// Parse command options.
-#[derive(Parser)]
+///
+/// The words after `name` are the script's, `--` included: `getopts` reads
+/// them itself.
+#[derive(winnow_args::Args)]
+#[arg(
+    unknown_flags = "value",
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct GetOptsCommand {
     /// Specification for options
+    #[arg(positional, value_name = "optstring")]
     options_string: String,
-
     /// Name of variable to receive next option
+    #[arg(positional, value_name = "name")]
     variable_name: String,
-
     /// Arguments to parse
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, value_name = "arg", double_dash = "preserve")]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(GetOptsCommand, trailing_args = args);
 
 // We track cross-call state in special variables. They are hidden from enumeration
 // (e.g. `set`, `declare`) so they don't leak into scripts' environments.
@@ -79,8 +88,6 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
         silent_errors,
     }
 }
-
-brush_builtin_utils::clap_builtin!(GetOptsCommand, trailing_args = args);
 
 impl builtins::Command for GetOptsCommand {
     type Error = brush_core::Error;

@@ -1,4 +1,3 @@
-use clap::{Parser, ValueEnum};
 use itertools::Itertools as _;
 use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
 use strum::IntoEnumIterator;
@@ -9,21 +8,6 @@ use brush_core::{
     interfaces::{self, InputFunction, KeyAction, KeySequence},
     sys, trace_categories,
 };
-
-/// Identifier for a keymap
-#[derive(Clone, ValueEnum)]
-enum BindKeyMap {
-    #[clap(name = "emacs-standard", alias = "emacs")]
-    EmacsStandard,
-    #[clap(name = "emacs-meta")]
-    EmacsMeta,
-    #[clap(name = "emacs-ctlx")]
-    EmacsCtlx,
-    #[clap(name = "vi-command", aliases = &["vi", "vi-move"])]
-    ViCommand,
-    #[clap(name = "vi-insert")]
-    ViInsert,
-}
 
 impl BindKeyMap {
     const fn is_vi(&self) -> bool {
@@ -40,10 +24,11 @@ impl BindKeyMap {
 }
 
 /// Inspect and modify key bindings and other input configuration.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct BindCommand {
     /// Name of key map to use.
-    #[arg(short = 'm')]
+    #[arg(short = 'm', value_name = "keymap")]
     keymap: Option<BindKeyMap>,
     /// List functions.
     #[arg(short = 'l')]
@@ -67,26 +52,44 @@ pub(crate) struct BindCommand {
     #[arg(short = 'v')]
     list_vars_reusable: bool,
     /// Find the keys bound to the given named function.
-    #[arg(short = 'q', value_name = "FUNC_NAME")]
+    #[arg(short = 'q', value_name = "name")]
     query_func_bindings: Option<String>,
     /// Remove all bindings for the given named function.
-    #[arg(short = 'u', value_name = "FUNC_NAME")]
+    #[arg(short = 'u', value_name = "name")]
     remove_func_bindings: Option<String>,
     /// Remove the binding for the given key sequence.
-    #[arg(short = 'r', value_name = "KEY_SEQ")]
+    #[arg(short = 'r', value_name = "keyseq")]
     remove_key_seq_binding: Option<String>,
     /// Import bindings from the given file.
-    #[arg(short = 'f', value_name = "PATH")]
+    #[arg(short = 'f', value_name = "filename")]
     bindings_file: Option<String>,
     /// Bind key sequence to command.
-    #[arg(short = 'x', value_name = "BINDING")]
+    #[arg(short = 'x', value_name = "keyseq:shell-command")]
     key_seq_bindings: Vec<String>,
     /// List key sequence bindings.
     #[arg(short = 'X')]
     list_key_seq_bindings: bool,
     /// Key sequence binding to readline function or command.
+    #[arg(positional, value_name = "keyseq:readline-function")]
     key_sequence: Option<String>,
 }
+
+/// Identifier for a keymap
+#[derive(Clone, winnow_args::ValueEnum)]
+pub(crate) enum BindKeyMap {
+    #[arg(name = "emacs-standard", alias = "emacs")]
+    EmacsStandard,
+    #[arg(name = "emacs-meta")]
+    EmacsMeta,
+    #[arg(name = "emacs-ctlx")]
+    EmacsCtlx,
+    #[arg(name = "vi-command", alias("vi", "vi-move"))]
+    ViCommand,
+    #[arg(name = "vi-insert")]
+    ViInsert,
+}
+
+brush_builtin_winnow::winnow_builtin!(BindCommand);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BindError {
@@ -118,8 +121,6 @@ impl From<&BindError> for brush_core::ExecutionExitCode {
         Self::GeneralError
     }
 }
-
-brush_builtin_utils::clap_builtin!(BindCommand);
 
 impl builtins::Command for BindCommand {
     type Error = BindError;

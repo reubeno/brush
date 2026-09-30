@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
@@ -10,7 +9,8 @@ use brush_core::{
 };
 
 /// Add or update exported shell variables.
-#[derive(Parser)]
+#[derive(Default, winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExportCommand {
     /// Names are treated as function names.
     #[arg(short = 'f')]
@@ -24,15 +24,12 @@ pub(crate) struct ExportCommand {
     #[arg(short = 'p')]
     display_exported_names: bool,
 
-    //
-    // Declarations
-    //
-    // N.B. Skipped by clap; `clap_builtin!` stores the operands after the options here.
-    #[clap(skip)]
+    /// Assignments and names, filled in by brush after parsing the options.
+    #[arg(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
-brush_builtin_utils::clap_builtin!(ExportCommand, declarations = declarations);
+brush_builtin_winnow::winnow_builtin!(ExportCommand, declarations = declarations);
 
 impl builtins::Command for ExportCommand {
     type Error = brush_core::Error;

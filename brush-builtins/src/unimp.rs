@@ -1,15 +1,21 @@
 use brush_core::{ExecutionExitCode, builtins, trace_categories};
 
-use clap::Parser;
-
 /// (UNIMPLEMENTED COMMAND)
-#[derive(Parser)]
+///
+/// Every word is kept, to be logged.
+#[derive(winnow_args::Args)]
+#[arg(
+    unknown_flags = "value",
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct UnimplementedCommand {
-    #[clap(allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "preserve")]
     args: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(UnimplementedCommand);
+brush_builtin_winnow::winnow_builtin!(UnimplementedCommand);
 
 impl builtins::Command for UnimplementedCommand {
     type Error = brush_core::Error;

@@ -1,28 +1,25 @@
-use clap::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+///
+/// Only `-v` comes before the format; one leading `--` is dropped, and every
+/// word after the format is data, `--` included.
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
+    #[arg(short = 'v', value_name = "var", allow_hyphen_values)]
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
-    ///
-    /// N.B. We intentionally do *not* enable `allow_hyphen_values` here. Doing so would
-    /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
-    /// a positional argument. With it disabled, a format string that genuinely needs to
-    /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
+    #[arg(positional, value_name = "format", double_dash = "automatic", required)]
     format_and_args: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(PrintfCommand);
+brush_builtin_winnow::winnow_builtin!(PrintfCommand);
 
 impl builtins::Command for PrintfCommand {
     type Error = brush_core::Error;
@@ -62,8 +59,8 @@ fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_co
     match format_and_args {
         // Handle format string with arguments using uucore
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
-        // Handle case with no format string (we shouldn't be able to get here since clap will
-        // fail parsing when the format string is missing)
+        // Handle case with no format string (we shouldn't be able to get here since parsing
+        // fails when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }

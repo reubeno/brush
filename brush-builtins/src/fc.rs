@@ -1,40 +1,40 @@
 use brush_core::{ExecutionResult, builtins, error, history};
-use clap::Parser;
 use std::io::Write;
 
-/// Process command history list.
-#[derive(Parser)]
+/// Fix up and re-execute commands from history.
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct FcCommand {
-    /// List commands instead of editing them.
+    /// Use `ename` as the editor.
+    #[arg(short = 'e', value_name = "ename")]
+    editor: Option<String>,
+
+    /// List the commands instead of editing them.
     #[arg(short = 'l')]
     list: bool,
 
-    /// Suppress line numbers when listing.
-    #[arg(short = 'n', requires = "list")]
+    /// Omit line numbers when listing.
+    #[arg(short = 'n', requires = "-l")]
     no_line_numbers: bool,
 
-    /// Reverse the order of commands.
+    /// Reverse the order of the listing.
     #[arg(short = 'r')]
     reverse: bool,
 
-    /// Re-execute command after substitution (old=new format).
+    /// Re-execute a command after a `pat=rep` substitution.
     #[arg(short = 's')]
     substitute: bool,
 
-    /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
-    editor: Option<String>,
-
-    /// First command in range (number or string prefix).
-    #[arg(value_name = "FIRST", allow_hyphen_values = true)]
+    /// First command, a number (negative: back from the latest) or a prefix.
+    #[arg(positional, value_name = "first", allow_negative_numbers)]
     first: Option<String>,
 
-    /// Last command in range (number or string prefix).
-    #[arg(value_name = "LAST", allow_hyphen_values = true)]
+    /// Last command.
+    #[arg(positional, value_name = "last", allow_negative_numbers)]
     last: Option<String>,
 }
 
-brush_builtin_utils::clap_builtin!(FcCommand);
+brush_builtin_winnow::winnow_builtin!(FcCommand);
 
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;

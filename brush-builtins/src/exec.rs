@@ -1,15 +1,11 @@
-use clap::Parser;
 use std::{borrow::Cow, os::unix::process::CommandExt};
 
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
 
-/// Exec the provided command.
-#[derive(Parser)]
+/// Replace the shell with the given command.
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExecCommand {
-    /// Pass given name as zeroth argument to command.
-    #[arg(short = 'a', value_name = "NAME")]
-    name_for_argv0: Option<String>,
-
     /// Exec command with an empty environment.
     #[arg(short = 'c')]
     empty_environment: bool,
@@ -18,12 +14,16 @@ pub(crate) struct ExecCommand {
     #[arg(short = 'l')]
     exec_as_login: bool,
 
+    /// Pass given name as zeroth argument to command.
+    #[arg(short = 'a', value_name = "name")]
+    name_for_argv0: Option<String>,
+
     /// Command and args.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, value_name = "command", double_dash = "automatic")]
     args: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(ExecCommand);
+brush_builtin_winnow::winnow_builtin!(ExecCommand);
 
 impl builtins::Command for ExecCommand {
     type Error = brush_core::Error;

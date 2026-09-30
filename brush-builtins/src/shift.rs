@@ -1,15 +1,15 @@
-use clap::Parser;
-
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
-/// Shift positional arguments.
-#[derive(Parser)]
+/// Shift positional parameters.
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ShiftCommand {
-    /// Number of positions to shift the arguments by (defaults to 1).
+    /// The number (negative ones included, as bash takes them).
+    #[arg(positional, value_name = "n", allow_negative_numbers)]
     n: Option<i32>,
 }
 
-brush_builtin_utils::clap_builtin!(ShiftCommand);
+brush_builtin_winnow::winnow_builtin!(ShiftCommand);
 
 impl builtins::Command for ShiftCommand {
     type Error = brush_core::Error;
