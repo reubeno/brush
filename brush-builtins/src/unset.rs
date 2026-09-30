@@ -1,32 +1,33 @@
 use std::borrow::Cow;
-
-use clap::Parser;
+use std::io::Write;
 
 use brush_core::{ExecutionResult, Shell, builtins};
 
 /// Unset a variable.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct UnsetCommand {
-    #[clap(flatten)]
+    #[arg(flatten)]
     name_interpretation: UnsetNameInterpretation,
 
     /// Names of variables to unset.
+    #[arg(positional, value_name = "name")]
     names: Vec<String>,
 }
 
-#[derive(Parser)]
-#[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
+// Only `-f` with `-v` is rejected, and at execution time: `-n` combines with either.
+#[derive(winnow_args::Args)]
 pub(crate) struct UnsetNameInterpretation {
     /// Treat each name as a shell function.
-    #[arg(short = 'f', group = "name-interpretation")]
+    #[arg(short = 'f')]
     shell_functions: bool,
 
     /// Treat each name as a shell variable.
-    #[arg(short = 'v', group = "name-interpretation")]
+    #[arg(short = 'v')]
     shell_variables: bool,
 
     /// Treat each name as a name reference.
-    #[arg(short = 'n', group = "name-interpretation")]
+    #[arg(short = 'n')]
     name_references: bool,
 }
 
@@ -36,7 +37,7 @@ impl UnsetNameInterpretation {
     }
 }
 
-brush_builtin_utils::clap_builtin!(UnsetCommand);
+brush_builtin_winnow::winnow_builtin!(UnsetCommand);
 
 impl builtins::Command for UnsetCommand {
     type Error = brush_core::Error;
@@ -45,6 +46,15 @@ impl builtins::Command for UnsetCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        if self.name_interpretation.shell_functions && self.name_interpretation.shell_variables {
+            writeln!(
+                context.stderr(),
+                "{}: cannot simultaneously unset a function and a variable",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::general_error());
+        }
+
         //
         // TODO(nameref): implement nameref
         //

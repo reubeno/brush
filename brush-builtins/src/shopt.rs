@@ -1,11 +1,11 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Manage shopt-style options.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ShoptCommand {
     /// Manage set -o options.
     #[arg(short = 'o')]
@@ -28,10 +28,11 @@ pub(crate) struct ShoptCommand {
     unset: bool,
 
     /// Names of options to operate on.
+    #[arg(positional, value_name = "optname")]
     options: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(ShoptCommand);
+brush_builtin_winnow::winnow_builtin!(ShoptCommand);
 
 impl builtins::Command for ShoptCommand {
     type Error = brush_core::Error;

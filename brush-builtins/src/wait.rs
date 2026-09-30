@@ -1,10 +1,10 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error};
 
-/// Wait for jobs to terminate.
-#[derive(Parser)]
+/// Wait for jobs to terminate or change status.
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct WaitCommand {
     /// Wait for specified job to terminate (instead of change status).
     #[arg(short = 'f')]
@@ -16,14 +16,15 @@ pub(crate) struct WaitCommand {
     wait_for_first_or_next: bool,
 
     /// Name of variable to receive the job ID of the job whose status is indicated.
-    #[arg(short = 'p', value_name = "VAR_NAME")]
+    #[arg(short = 'p', value_name = "var")]
     variable_to_receive_id: Option<String>,
 
     /// Process IDs or job specs to wait for.
+    #[arg(positional, value_name = "id")]
     ids: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(WaitCommand);
+brush_builtin_winnow::winnow_builtin!(WaitCommand);
 
 impl builtins::Command for WaitCommand {
     type Error = brush_core::Error;

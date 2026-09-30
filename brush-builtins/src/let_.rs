@@ -1,17 +1,30 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
-#[derive(Parser)]
+///
+/// `let` has no options: `let -x=1` is an expression. One leading `--` is
+/// still dropped.
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct LetCommand {
     /// Arithmetic expressions to evaluate.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(
+        positional,
+        value_name = "arg",
+        double_dash = "automatic",
+        allow_negative_numbers
+    )]
     exprs: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(LetCommand);
+brush_builtin_winnow::winnow_builtin!(LetCommand);
 
 impl builtins::Command for LetCommand {
     type Error = brush_core::Error;

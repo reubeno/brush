@@ -1,26 +1,25 @@
 use std::io::{Read, Write};
 
-use clap::Parser;
-
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
 
 /// Read lines from standard input into an indexed array variable.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
-    #[arg(short = 'd')]
+    #[arg(short = 'd', value_name = "delim")]
     delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default_value_t = 0)]
+    #[arg(short = 'n', value_name = "count", default = "0")]
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O', allow_hyphen_values = true)]
+    #[arg(short = 'O', value_name = "origin", allow_negative_numbers)]
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
+    #[arg(short = 's', value_name = "count", default = "0")]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -28,23 +27,23 @@ pub(crate) struct MapFileCommand {
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default_value_t = 0)]
+    #[arg(short = 'u', value_name = "fd", default = "0")]
     fd: brush_core::ShellFd,
 
     /// Name of function to call for each group of lines.
-    #[arg(short = 'C')]
+    #[arg(short = 'C', value_name = "callback")]
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000, value_parser = clap::value_parser!(i64).range(1..))]
+    #[arg(short = 'c', value_name = "quantum", default = "5000")]
     callback_group_size: i64,
 
     /// Name of array to read into.
-    #[arg(default_value = "MAPFILE")]
+    #[arg(positional, value_name = "array", default = "MAPFILE")]
     array_var_name: String,
 }
 
-brush_builtin_utils::clap_builtin!(MapFileCommand);
+brush_builtin_winnow::winnow_builtin!(MapFileCommand);
 
 impl builtins::Command for MapFileCommand {
     type Error = brush_core::Error;

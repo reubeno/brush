@@ -1,16 +1,15 @@
-use clap::Parser;
-
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
-/// Continue to the next iteration of a control-flow loop.
-#[derive(Parser)]
+/// Continue to the next iteration of a loop.
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ContinueCommand {
-    /// If specified, indicates which nested loop to continue to the next iteration of.
-    #[clap(default_value_t = 1)]
+    /// Which enclosing loop.
+    #[arg(positional, value_name = "n", default = "1", allow_negative_numbers)]
     which_loop: i8,
 }
 
-brush_builtin_utils::clap_builtin!(ContinueCommand);
+brush_builtin_winnow::winnow_builtin!(ContinueCommand);
 
 impl builtins::Command for ContinueCommand {
     type Error = brush_core::Error;
