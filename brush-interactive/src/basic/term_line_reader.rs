@@ -38,11 +38,7 @@ impl super::LineReader for TermLineReader {
     fn read_line(
         &self,
         prompt: Option<&str>,
-        mut completion_handler: impl FnMut(
-            &str,
-            usize,
-        )
-            -> Result<brush_core::completion::Completions, ShellError>,
+        mut completion_handler: impl FnMut(&str, usize) -> Result<crate::completion::Offers, ShellError>,
     ) -> Result<ReadResult, ShellError> {
         let mut state = ReadLineState::new(prompt);
         state.display_prompt()?;
@@ -89,11 +85,7 @@ impl<'a> ReadLineState<'a> {
     fn on_key(
         &mut self,
         event: crossterm::event::KeyEvent,
-        mut completion_handler: impl FnMut(
-            &str,
-            usize,
-        )
-            -> Result<brush_core::completion::Completions, ShellError>,
+        mut completion_handler: impl FnMut(&str, usize) -> Result<crate::completion::Offers, ShellError>,
     ) -> Result<Option<ReadResult>, ShellError> {
         match (event.modifiers, event.code) {
             (_, crossterm::event::KeyCode::Enter)
@@ -202,18 +194,34 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
-    fn handle_completions(
-        &mut self,
-        completions: &brush_core::completion::Completions,
-    ) -> Result<(), ShellError> {
-        if completions.candidates.is_empty() {
-            // Do nothing
-            Ok(())
-        } else if completions.candidates.len() == 1 {
-            self.handle_single_completion(completions)
-        } else {
-            self.handle_multiple_completions(completions)
+    fn handle_completions(&mut self, offers: &crate::completion::Offers) -> Result<(), ShellError> {
+        match (&offers.edit, offers.list.as_slice()) {
+            (None, []) => Ok(()),
+            (Some(edit), []) => self.handle_single_completion(edit),
+            (edit, list) => {
+                // Like readline, an edit made along with listing candidates shows when the
+                // line is redrawn after them.
+                if let Some(edit) = edit {
+                    self.apply_edit(edit);
+                }
+                self.handle_multiple_completions(list)
+            }
         }
+    }
+
+    /// Applies `edit` to the line, without showing it; returns false if it doesn't apply at
+    /// the cursor.
+    fn apply_edit(&mut self, edit: &brush_core::completion::Edit) -> bool {
+        let replace = &edit.replace;
+        if !(replace.start <= self.cursor && self.cursor <= replace.end)
+            || replace.end > self.line.len()
+        {
+            return false;
+        }
+
+        self.line.replace_range(replace.clone(), &edit.text);
+        self.cursor = replace.start + edit.text.len();
+        true
     }
 
     #[expect(
@@ -222,36 +230,28 @@ impl<'a> ReadLineState<'a> {
     )]
     fn handle_single_completion(
         &mut self,
-        completions: &brush_core::completion::Completions,
+        edit: &brush_core::completion::Edit,
     ) -> Result<(), ShellError> {
-        let Some(candidate) = completions.candidates.first() else {
-            return Ok(());
-        };
-
-        if completions.insertion_index + completions.delete_count != self.cursor {
-            return Ok(());
-        }
-
-        let mut delete_count = completions.delete_count;
-        let mut redisplay_offset = completions.insertion_index;
+        let replace = &edit.replace;
+        let mut delete_count = self.cursor.saturating_sub(replace.start);
+        let mut redisplay_offset = replace.start;
 
         // Don't bother erasing and re-writing the portion of the
         // completion's prefix that
         // is identical to what we already had in the token-being-completed.
         if delete_count > 0
-            && candidate.starts_with(&self.line[redisplay_offset..redisplay_offset + delete_count])
+            && self
+                .line
+                .get(redisplay_offset..self.cursor)
+                .is_some_and(|typed| edit.text.starts_with(typed))
         {
-            redisplay_offset += delete_count;
+            redisplay_offset = self.cursor;
             delete_count = 0;
         }
 
-        let mut updated_line = self.line.clone();
-        updated_line.truncate(completions.insertion_index);
-        updated_line.push_str(candidate);
-        updated_line.push_str(&self.line[self.cursor..]);
-        self.line = updated_line;
-
-        self.cursor = completions.insertion_index + candidate.len();
+        if !self.apply_edit(edit) {
+            return Ok(());
+        }
 
         let move_left = repeated_char_str(BACKSPACE, delete_count);
         eprint!("{move_left}{}", &self.line[redisplay_offset..]);
@@ -269,13 +269,12 @@ impl<'a> ReadLineState<'a> {
 
     fn handle_multiple_completions(
         &self,
-        completions: &brush_core::completion::Completions,
+        offers: &[crate::completion::Offer],
     ) -> Result<(), ShellError> {
         // Display replacements.
         Self::display_newline()?;
-        for candidate in &completions.candidates {
-            let formatted = format_completion_candidate(candidate.as_str(), &completions.options);
-            eprintln!("{formatted}");
+        for offer in offers {
+            eprintln!("{}", offer.display);
         }
         std::io::stderr().flush()?;
 
@@ -293,21 +292,6 @@ impl<'a> ReadLineState<'a> {
 
         Ok(())
     }
-}
-
-#[allow(clippy::string_slice)]
-fn format_completion_candidate(
-    mut candidate: &str,
-    options: &brush_core::completion::ProcessingOptions,
-) -> String {
-    if options.treat_as_filenames {
-        let trimmed = brush_core::sys::fs::strip_path_separator_suffix(candidate);
-        if let Some(index) = brush_core::sys::fs::rfind_path_separator(trimmed) {
-            candidate = &candidate[index + 1..];
-        }
-    }
-
-    candidate.to_string()
 }
 
 fn repeated_char_str(c: char, count: usize) -> String {

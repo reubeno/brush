@@ -179,10 +179,9 @@ cases:
       done
 
   - name: "compgen -f with quoted tilde"
-    known_failure: true
+    home_dir: . # Not HOME=...: macOS (Homebrew) bash expands ~ from the environment's HOME.
     stdin: |
       touch item1
-      HOME=$(pwd)
 
       echo "[0]"
       for p in $(compgen -f '~/'); do
@@ -190,7 +189,7 @@ cases:
       done
 
   - name: "compgen -f with quoted var"
-    known_failure: true
+    min_oracle_version: 5.3 # bash 5.2 doesn't complete after a quoted variable
     stdin: |
       touch item1
       HOME=$(pwd)
@@ -201,7 +200,6 @@ cases:
       done
 
   - name: "compgen -f with quoted + escaped var"
-    known_failure: true
     stdin: |
       touch item1
       HOME=$(pwd)
@@ -378,8 +376,124 @@ cases:
       compgen -A command -- link_non_exec
       compgen -A command -- link_broken
 
+  - name: "compgen -A command includes aliases but not disabled builtins, in order"
+    stdin: |
+      mkdir test-bin
+      touch test-bin/zzqx
+      chmod +x test-bin/zzqx
+      PATH="$(pwd)/test-bin:$PATH"
+      alias zzqc=1 zzqa=1
+      zzqf() { :; }
+      zzqb() { :; }
+      enable -n caller
+      compgen -A command zzq
+      echo "[disabled]"
+      compgen -A command caller
+
+  - name: "compgen -F ignores a function that asks for completion to restart"
+    ignore_stderr: true
+    stdin: |
+      _comp() { COMPREPLY=(a); return 124; }
+      compgen -F _comp mycmd
+      echo "rc=$?"
+
+  - name: "compgen -F tells the function about an empty line"
+    ignore_stderr: true
+    stdin: |
+      _comp() {
+        echo "#=$# 1=<$1> 2=<$2> 3=<$3> LINE=<$COMP_LINE> POINT=<$COMP_POINT>"
+        echo "WORDS=<${COMP_WORDS[*]}> NWORDS=${#COMP_WORDS[@]} CWORD=<$COMP_CWORD>"
+      }
+      compgen -F _comp xy
+
+  - name: "compgen -C tells the command about an empty line"
+    ignore_stderr: true
+    stdin: |
+      compgen -C 'printf "<%s>\n"' xy
+      _cmd() { echo "LINE=<$COMP_LINE> POINT=<$COMP_POINT> #=$#"; }
+      export -f _cmd
+      compgen -C _cmd xy
+
   - name: "compgen -F sets COMP_KEY and COMP_TYPE to 0"
     ignore_stderr: true
     stdin: |
       _comp() { echo "KEY=${COMP_KEY:-unset} TYPE=${COMP_TYPE:-unset}"; COMPREPLY=(); }
       compgen -F _comp mycmd
+
+  - name: "compgen dequotes the word for list actions"
+    stdin: |
+      alias myalias=1
+      myfunc() { :; }
+      export MYEXPORT=1
+      declare -a MYARRAY=(1)
+      compgen -a '"myal'
+      compgen -b '"ec'
+      compgen -v '"MYEXP'
+      compgen -v 'MYEX\P'
+      compgen -e '"MYEXP'
+      compgen -A function '"myf'
+      compgen -A arrayvar '"MYARR'
+      compgen -A signal '"SIGHU'
+      compgen -A shopt '"extgl'
+      compgen -A setopt '"errex'
+      compgen -k '"whil'
+      compgen -A helptopic '"ec'
+
+  - name: "compgen dequotes the word for matching like bash"
+    # bash dequotes the word as if a leading quote were already open, so that
+    # quote closes and a quote char after it opens a new quote.
+    stdin: |
+      abc=1
+      echo "[$(compgen -W "ab\\' abx" -- "'a\"b'")]"
+      echo "[$(compgen -v -- "'a\"b'")]"
+      echo "[$(compgen -W "a\\\\b ab" -- "'a\\b'")]"
+      echo "[$(compgen -W "a\\\\b ab" -- "\"a\\\\")]"
+
+  - name: "compgen -A helptopic includes keywords"
+    known_failure: true # brush's help topics are only its builtins
+    stdin: |
+      compgen -A helptopic whil
+
+  - name: "compgen does not dequote the word for commands"
+    stdin: |
+      echo "[$(compgen -c '"ech')]"
+      echo "[$(compgen -c 'ec\h')]"
+
+  - name: "compgen -f outside completion does not dequote the word"
+    stdin: |
+      touch item1
+      echo "[$(compgen -f '"ite')]"
+      echo "[$(compgen -f 'ite\m')]"
+      echo "[$(compgen -d '"ite')]"
+
+  - name: "compgen -f and -d do not expand a bare tilde"
+    stdin: |
+      mkdir h h2
+      HOME=$PWD/h
+      compgen -f '~'; echo "rc=$?"
+      compgen -d '~'; echo "rc=$?"
+
+  - name: "compgen -W closes a quote left open at the end of the list"
+    stdin: |
+      compgen -W 'fo"o'; echo "rc=$?"
+      compgen -W 'fo"o bar'; echo "rc=$?"
+      compgen -W 'fo"o bar' -- f; echo "rc=$?"
+      compgen -W "a 'b c"; echo "rc=$?"
+
+  - name: "compgen -f keeps the directory part as typed"
+    min_oracle_version: 5.3 # bash 5.2 doesn't complete after a variable or escaped space
+    home_dir: h # Not HOME=...: macOS (Homebrew) bash expands ~ from the environment's HOME.
+    stdin: |
+      mkdir -p h/"Docs dir" "dir with space"
+      touch "dir with space/item"
+      compgen -f '~/Do' | sed "s|^$HOME|H|"
+      compgen -f '$HOME/Do' | sed "s|^$HOME|H|"
+      compgen -f 'dir\ with\ space/i'
+
+  - name: "compgen -f with direxpand expands parameters in the directory part"
+    home_dir: h # Not HOME=...: macOS (Homebrew) bash expands ~ from the environment's HOME.
+    stdin: |
+      mkdir -p h/"Docs dir"
+      shopt -s direxpand
+      compgen -f '$HOME/Do' | sed "s|^$HOME|H|"
+      compgen -f '~/Do' | sed "s|^$HOME|H|"

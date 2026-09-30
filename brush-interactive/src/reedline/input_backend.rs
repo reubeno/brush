@@ -83,6 +83,10 @@ impl ReedlineInputBackend {
                 .with_name(COMPLETION_MENU_NAME)
                 .with_marker("")
                 .with_columns(10)
+                // Like readline, hand completion the whole line, not just the text before
+                // the cursor: completion functions see the words after the cursor (e.g. in
+                // COMP_WORDS), and candidates completed mid-line don't get a trailing space.
+                .with_input_mode(reedline::InputMode::FullBuffer)
                 .with_text_style(completion_menu_text_style())
                 .with_match_text_style(completion_menu_match_text_style())
                 .with_selected_text_style(completion_menu_selected_text_style())

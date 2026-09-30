@@ -12,7 +12,11 @@ use super::{non_term_line_reader, term_line_reader};
 /// Represents a basic shell input backend capable of interactive usage, with primitive support
 /// for completion and test-focused automation via pexpect and similar technologies.
 #[derive(Default)]
-pub struct BasicInputBackend;
+pub struct BasicInputBackend {
+    /// Whether, like readline's `show-all-if-ambiguous`, to list several candidates as soon as
+    /// they're completed to their common prefix, rather than on the next completion.
+    show_all_if_ambiguous: bool,
+}
 
 impl InputBackend for BasicInputBackend {
     fn read_line(
@@ -29,6 +33,17 @@ impl InputBackend for BasicInputBackend {
 }
 
 impl BasicInputBackend {
+    /// Returns a basic input backend with the given options.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The options for the shell's user interface.
+    pub const fn new(options: &crate::UIOptions) -> Self {
+        Self {
+            show_all_if_ambiguous: options.show_all_if_ambiguous,
+        }
+    }
+
     fn read_line_via<R: super::LineReader, SE: brush_core::ShellExtensions>(
         &self,
         shell_ref: &crate::ShellRef<SE>,
@@ -36,6 +51,7 @@ impl BasicInputBackend {
         prompt: &InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
         let mut prompt_to_use = self.should_display_prompt().then_some(&prompt);
+        let show_all_if_ambiguous = self.show_all_if_ambiguous;
         let mut result = String::new();
 
         loop {
@@ -44,7 +60,7 @@ impl BasicInputBackend {
                     tokio::runtime::Handle::current().block_on(shell_ref.lock())
                 });
 
-                Self::generate_completions(&mut shell, line, cursor)
+                Self::generate_completions(&mut shell, line, cursor, show_all_if_ambiguous)
             })? {
                 ReadResult::Input(s) => {
                     result.push_str(s.as_str());
@@ -81,10 +97,15 @@ impl BasicInputBackend {
         shell: &mut Shell<impl brush_core::ShellExtensions>,
         line: &str,
         cursor: usize,
-    ) -> Result<brush_core::completion::Completions, ShellError> {
+        show_all_if_ambiguous: bool,
+    ) -> Result<crate::completion::Offers, ShellError> {
         tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(Self::generate_completions_async(shell, line, cursor))
+            tokio::runtime::Handle::current().block_on(Self::generate_completions_async(
+                shell,
+                line,
+                cursor,
+                show_all_if_ambiguous,
+            ))
         })
     }
 
@@ -92,7 +113,8 @@ impl BasicInputBackend {
         shell: &mut Shell<impl brush_core::ShellExtensions>,
         line: &str,
         cursor: usize,
-    ) -> Result<brush_core::completion::Completions, ShellError> {
-        Ok(completion::complete_async(shell, line, cursor).await)
+        show_all_if_ambiguous: bool,
+    ) -> Result<crate::completion::Offers, ShellError> {
+        Ok(completion::complete_async(shell, line, cursor, show_all_if_ambiguous).await)
     }
 }

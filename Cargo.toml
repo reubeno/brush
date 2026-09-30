@@ -110,6 +110,12 @@ extend-ignore-re = [
 "iterm" = "iterm"
 "jod" = "jod"
 
+# Partial words completed in completion tests, allowed only in the files with those tests.
+# (A type's globs match just file names, not paths.)
+[workspace.metadata.typos.type.completion-tests]
+extend-glob = ["completion_tests.rs", "compgen.yaml", "words.rs", "edits.rs"]
+extend-words = { "fo" = "fo", "whil" = "whil" }
+
 [profile.release]
 strip = true
 lto = "fat"

@@ -231,6 +231,21 @@ cases:
       something
       EOF
 
+  - name: "Here doc with quoted delimiter containing backslashes and quotes"
+    stdin: |
+      cat <<'a\b'
+      single
+      a\b
+      cat <<"a\b"
+      double
+      a\b
+      cat <<"x'y"
+      mixed
+      x'y
+      cat <<a\'b
+      escaped
+      a'b
+
   - name: "Here doc with double quoted delimiter"
     stdin: |
       cat <<"EOF"

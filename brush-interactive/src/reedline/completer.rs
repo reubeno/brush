@@ -1,5 +1,6 @@
 use nu_ansi_term::{Color, Style};
 use std::borrow::BorrowMut;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{completion, refs};
 
@@ -20,73 +21,98 @@ impl<SE: brush_core::ShellExtensions> ReedlineCompleter<SE> {
     async fn complete_async(&self, line: &str, pos: usize) -> Vec<reedline::Suggestion> {
         let mut shell_guard = self.shell.lock().await;
         let shell = shell_guard.borrow_mut().as_mut();
-        let completions = completion::complete_async(shell, line, pos).await;
+        let offers = completion::complete_async(shell, line, pos, false).await;
 
         // We're done with the shell, so drop it eagerly.
         drop(shell_guard);
 
-        let insertion_index = completions.insertion_index;
-        let delete_count = completions.delete_count;
-        let options = completions.options;
+        let offers = match offers.edit {
+            // A lone suggestion is made at once, so its display is never shown.
+            Some(edit) => vec![completion::Offer {
+                display: edit.text.clone(),
+                edit,
+                is_dir: false,
+            }],
+            None => offers.list,
+        };
 
-        completions
-            .candidates
+        let shared = shared_graphemes(offers.iter().map(|offer| offer.display.as_str()));
+        offers
             .into_iter()
-            .map(|candidate| {
-                Self::to_suggestion(line, candidate, insertion_index, delete_count, &options)
-            })
+            .map(|offer| Self::to_suggestion(offer, shared))
             .collect()
     }
 
-    #[allow(
-        clippy::string_slice,
-        reason = "all indices + counts are expected to be at char boundaries"
-    )]
+    /// Returns `offer` as a suggestion, whose display has its first `shared` graphemes
+    /// highlighted.
     fn to_suggestion(
-        line: &str,
-        mut candidate: String,
-        mut insertion_index: usize,
-        mut delete_count: usize,
-        options: &brush_core::completion::ProcessingOptions,
+        completion::Offer {
+            edit,
+            display,
+            is_dir,
+        }: completion::Offer,
+        shared: usize,
     ) -> reedline::Suggestion {
         let mut style = Style::new();
-
-        // Special handling for filename completions.
-        if options.treat_as_filenames {
-            if brush_core::sys::fs::ends_with_path_separator(&candidate) {
-                style = style.fg(Color::Green);
-            }
-
-            if insertion_index + delete_count <= line.len() {
-                let removed = &line[insertion_index..insertion_index + delete_count];
-                if let Some(last_sep_index) = brush_core::sys::fs::rfind_path_separator(removed) {
-                    if candidate.starts_with(removed) {
-                        candidate = candidate.split_off(last_sep_index + 1);
-                        insertion_index += last_sep_index + 1;
-                        delete_count -= last_sep_index + 1;
-                    }
-                }
-            }
+        if is_dir {
+            style = style.fg(Color::Green);
         }
 
-        // See if there's whitespace at the end.
-        let append_whitespace = candidate.ends_with(' ');
-        if append_whitespace {
-            candidate.pop();
-        }
+        let brush_core::completion::Edit { replace, text } = edit;
 
         reedline::Suggestion {
-            value: candidate,
+            value: text,
             description: None,
             style: Some(style),
             extra: None,
             span: reedline::Span {
-                start: insertion_index,
-                end: insertion_index + delete_count,
+                start: replace.start,
+                end: replace.end,
             },
-            match_indices: None,
-            display_override: None,
-            append_whitespace,
+            // Like readline's `colored-completion-prefix`, highlight the part of the listed
+            // candidates that they share. (Otherwise, the menu highlights where it finds the
+            // text the edit replaces, which a file name's display, its last component,
+            // doesn't have.)
+            match_indices: Some((0..shared).collect()),
+            display_override: Some(display),
+            // The edit's text already has any trailing space.
+            append_whitespace: false,
         }
+    }
+}
+
+/// Returns how many graphemes all of `displays` start with.
+fn shared_graphemes<'a>(mut displays: impl Iterator<Item = &'a str>) -> usize {
+    let Some(first) = displays.next() else {
+        return 0;
+    };
+    let first: Vec<_> = first.graphemes(true).collect();
+
+    displays.fold(first.len(), |shared, display| {
+        display
+            .graphemes(true)
+            .zip(&first)
+            .take_while(|(a, b)| a == *b)
+            .count()
+            .min(shared)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graphemes_shared_by_displays() {
+        let shared = |displays: &[&str]| shared_graphemes(displays.iter().copied());
+
+        assert_eq!(shared(&["foo", "fob"]), 2);
+        assert_eq!(shared(&["sub/", "sua"]), 2);
+        assert_eq!(shared(&["a", "b"]), 0);
+        assert_eq!(shared(&["abc"]), 3);
+        assert_eq!(shared(&[]), 0);
+        // A char with a combining mark is one grapheme, which differs from the bare char.
+        assert_eq!(shared(&["e\u{301}x", "e\u{301}y"]), 1);
+        assert_eq!(shared(&["e\u{301}x", "ex"]), 0);
     }
 }

@@ -1,0 +1,43 @@
+name: "Builtins: compopt"
+cases:
+  - name: "compopt outside a completion fails"
+    stdin: |
+      # Normalize away the leading "shell: line N:" that the oracle prefixes onto diagnostics.
+      strip() { sed 's/^.*compopt:/compopt:/'; }
+
+      compopt -o nospace 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      compopt +o nospace 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      compopt 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "compopt +o disables an option"
+    stdin: |
+      complete -o nospace -o filenames -W x mycmd
+      compopt +o nospace mycmd; echo "rc=$?"
+      complete -p
+
+  - name: "compopt with a name that has no completion spec fails"
+    stdin: |
+      strip() { sed -E 's/^.*(compopt|complete):/\1:/'; }
+
+      complete -W x a
+      compopt -o nospace b a 2>err; echo "rc=$?"; strip <err
+      complete -p a b 2>err; echo "rc=$?"; strip <err
+      rm err
+
+  - name: "compopt -D, -E, or -I with no such completion spec fails"
+    stdin: |
+      strip() { sed -E 's/^.*(compopt|complete):/\1:/'; }
+
+      for flag in -D -E -I; do
+        compopt $flag -o nospace 2>err; echo "rc=$?"; strip <err
+        complete -p $flag 2>err; echo "rc=$?"; strip <err
+      done
+      rm err
+
+  - name: "compopt -D, -E, or -I updates an existing completion spec"
+    stdin: |
+      for flag in -D -E -I; do
+        complete $flag -W x
+        compopt $flag -o nospace; echo "rc=$?"
+        complete -p $flag | grep -o -- '-o nospace'
+      done

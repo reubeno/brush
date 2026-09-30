@@ -1,3 +1,12 @@
 # Tests that must not run at all, one "Class#method" per line, each with a comment saying why.
 # Reserve this for tests that hang or are irrelevant to the shell under test; anything that merely
 # fails belongs in xfail-list.txt, so it keeps running and a fix is reported.
+
+# Load-flaky in CI: the Tab that should exclude regular files shows NO RECORDS FOUND after ~11s.
+# It passes in isolation and fails on main the same way (e.g. run 35480185117), so it cannot be
+# xfailed without failing the run whenever it passes.
+TestBash#test_dir_completion
+
+# Load-flaky: under brush, fzf binds Ctrl-R with `bind -x`, and the test times out under CPU
+# contention (e.g. run 36155337854) but passes in isolation.
+TestBash#test_ctrl_r_delete

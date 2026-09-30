@@ -216,6 +216,9 @@ impl TestCase {
         let start_time = std::time::Instant::now();
         let mut p = expectrl::session::log(expectrl::Session::spawn(cmd)?, writer)?;
         p.set_echo(true)?;
+        if let Some(timeout) = self.timeout_in_seconds {
+            p.set_expect_timeout(Some(std::time::Duration::from_secs(timeout)));
+        }
 
         if let Some(stdin) = &self.stdin {
             for line in stdin.lines() {

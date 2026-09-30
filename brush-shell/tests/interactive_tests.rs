@@ -127,6 +127,69 @@ fn run_pipeline_interactively() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Completing a file name in an open quote keeps the quote and, like readline, closes it
+/// -- except after a directory, so completion can continue into it.
+#[test]
+fn completion_closes_open_quote() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("sp ace"), "")?;
+    std::fs::write(dir.path().join("q$x"), "")?;
+    std::fs::create_dir(dir.path().join("sub"))?;
+    std::fs::write(dir.path().join("sub").join("x"), "")?;
+
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.arg("--norc").current_dir(dir.path());
+    })?;
+    session.expect_prompt()?;
+
+    // Each line is completed, then run; `[%s]` keeps the echoed input from matching.
+    for (typed, expected) in [
+        ("'sp\t", "[sp ace]"),
+        ("\"q\t", "[q$x]"),
+        // The quote stays open after a directory, so finishing the word by hand works.
+        ("'su\tx'", "[sub/x]"),
+    ] {
+        session.send(format!("printf '[%s]\\n' {typed}"))?;
+        session.send_line("")?;
+        session
+            .expect(expected)
+            .with_context(|| format!("completing {typed:?}"))?;
+        session.expect_prompt()?;
+    }
+
+    session.exit()?;
+
+    Ok(())
+}
+
+/// With `--show-all-if-ambiguous`, like readline's variable of that name, one Tab completes
+/// several candidates to their common prefix and lists them too.
+#[test]
+fn completion_shows_all_if_ambiguous() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("item1"), "")?;
+    std::fs::write(dir.path().join("item2"), "")?;
+
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.args(["--norc", "--show-all-if-ambiguous"])
+            .current_dir(dir.path());
+    })?;
+    session.expect_prompt()?;
+
+    // `[%s]` keeps the echoed input from matching.
+    session.send("printf '[%s]\\n' ite\t")?;
+    session.expect("item2").context("listing the candidates")?;
+    session.send_line("1")?;
+    session
+        .expect("[item1]")
+        .context("completing to the common prefix")?;
+    session.expect_prompt()?;
+
+    session.exit()?;
+
+    Ok(())
+}
+
 #[test]
 fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
     let mut session = start_shell_session_with(|cmd| {
