@@ -223,7 +223,7 @@ jobs:
   # and then, once every target's archive is in place, `<target>` (always the newest build).
   #
   # N.B. install.sh depends on the package name, the tags, and each manifest having the archive
-  # as its only layer.
+  # as its only layer. It also shows users the build's revision and created annotations.
   publish-canary:
     name: "Publish canary builds"
     needs: upload-assets

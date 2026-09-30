@@ -9,14 +9,7 @@
 # To pass options, use `sh -s --`, e.g.:
 #   curl ... | sh -s -- --version 0.4.0 --require-attestation
 #
-# Options:
-#   --version <version>     Version to install (e.g. "0.4.0"); defaults to the latest release.
-#   --canary                Install the newest canary build of main instead of a release. Canary
-#                           builds are unreleased and may break.
-#   --commit <sha>          Install the canary build of this commit of main (a full 40-character
-#                           hash); builds of the last ~100 pushes are kept.
-#   --dir <dir>             Directory to install into; defaults to $XDG_BIN_HOME, or ~/.local/bin.
-#   --require-attestation   Fail if the build attestation can't be verified.
+# For the list of options, see usage() below, or pass --help.
 #
 # The downloaded archive is always checked against its published SHA-256 checksum.
 # If the GitHub CLI (gh) is installed and authenticated, the archive's build
@@ -33,6 +26,25 @@ REPO="reubeno/brush"
 RELEASE_WORKFLOW="${REPO}/.github/workflows/cd.yaml"
 # Where the release workflow publishes canary builds, on ghcr.io.
 CANARY_PACKAGE="reubeno/brush-canary"
+
+usage() {
+    cat <<'EOF'
+Installs brush from its official GitHub releases, or from canary builds of its main branch.
+
+Usage:
+  curl --proto '=https' --tlsv1.2 -fsSL https://brush.sh/install.sh | sh -s -- [options]
+
+Options:
+  --version <version>     Version to install (e.g. "0.4.0"); defaults to the latest release.
+  --canary                Install the newest canary build of main instead of a release. Canary
+                          builds are unreleased and may break.
+  --commit <sha>          Install the canary build of this commit of main (a full 40-character
+                          hash); builds of the last ~100 pushes are kept.
+  --dir <dir>             Directory to install into; defaults to $XDG_BIN_HOME, or ~/.local/bin.
+  --require-attestation   Fail if the build attestation can't be verified.
+  -h, --help              Show this help.
+EOF
+}
 
 say() {
     echo "brush-install: $*" >&2
@@ -102,8 +114,12 @@ parse_args() {
             --require-attestation)
                 require_attestation=1
                 ;;
+            -h | --help)
+                usage
+                exit 0
+                ;;
             *)
-                die "unknown option: $1 (options: --version <version>, --canary, --commit <sha>, --dir <dir>, --require-attestation)"
+                die "unknown option: $1 (see --help)"
                 ;;
         esac
         shift
@@ -204,6 +220,13 @@ download_archive() {
     say "verified SHA-256 checksum"
 }
 
+# Prints the value of the annotation named $1 in the (whitespace-free) `manifest`, if it
+# matches the sed pattern $2. Values go straight to the terminal, so the patterns should
+# admit nothing but the expected characters.
+manifest_annotation() {
+    printf '%s' "${manifest}" | sed -n "s|.*\"$1\":\"\($2\)\".*|\1|p"
+}
+
 # Downloads the newest canary build (or the one for `commit`) into `tmp_dir`, and checks it
 # against its digest in the registry, which is the SHA-256 of its content.
 download_canary_archive() {
@@ -222,13 +245,20 @@ download_canary_archive() {
         -H "Accept: application/vnd.oci.image.manifest.v1+json" \
         "${registry}/manifests/${image_tag}")" ||
         die "no canary build of brush found for ${target}${commit:+ at commit ${commit}}"
+    manifest="$(printf '%s' "${manifest}" | tr -d ' \t\r\n')"
 
     # The archive is the manifest's only layer.
-    digest="$(printf '%s' "${manifest}" | tr -d ' \t\r\n' |
+    digest="$(printf '%s' "${manifest}" |
         sed -n 's/.*"layers":\[{[^}]*"digest":"sha256:\([0-9a-f]\{64\}\)".*/\1/p')"
     [ -n "${digest}" ] || die "unexpected manifest for ghcr.io/${CANARY_PACKAGE}:${image_tag}"
 
+    # Where the build came from, as the release workflow recorded it. Just for the user's
+    # information: only the archive itself is covered by the checks below.
+    built_commit="$(manifest_annotation org.opencontainers.image.revision '[0-9a-f]\{40\}')"
+    built_at="$(manifest_annotation org.opencontainers.image.created '[0-9T:Z-]*')"
+
     say "downloading ghcr.io/${CANARY_PACKAGE}:${image_tag} (${archive})"
+    say "canary build of commit ${built_commit:-(unknown)}, published ${built_at:-(unknown)}"
     fetch -H "Authorization: Bearer ${token}" -o "${tmp_dir}/${archive}" \
         "${registry}/blobs/sha256:${digest}" || die "failed to download ${archive}"
 

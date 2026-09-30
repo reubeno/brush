@@ -11,6 +11,7 @@ Usage: python3 -m pytest scripts/install/tests
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -294,8 +295,16 @@ def test_pinned_canary_attestation_checks_commit(install, tmp_path):
     args_file = tmp_path / "gh-args"
     result = install("--commit", commit, "--dir", tmp_path / "bin", shims=["gh-records-args"], GH_ARGS_FILE=args_file)
     assert_succeeded(result)
+    assert re.search(rf"canary build of commit {commit}, published \d{{4}}-\d\d-\d\dT", result.stdout), result.stdout
     assert f"--source-digest {commit}" in args_file.read_text()
     assert f"(git:{commit[:7]}" in brush_version(tmp_path / "bin" / "brush")
+
+
+def test_help(install):
+    result = install("--help", "--bogus")
+    assert result.returncode == 0, result.stdout
+    assert result.stdout.startswith("Installs brush"), result.stdout
+    assert "--require-attestation" in result.stdout
 
 
 def test_unset_home_without_dir(install):
