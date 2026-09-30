@@ -10,6 +10,8 @@ mod args;
 pub mod clap_adapter;
 pub mod verbatim;
 
+pub use args::{into_words, split_leading_options};
+
 // Lets the exported macros name brush-core items from any calling crate.
 #[doc(hidden)]
 pub use brush_core as __brush_core;

@@ -387,6 +387,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "brush-builtin-winnow"
+version = "0.1.0"
+dependencies = [
+ "brush-builtin-utils",
+ "brush-core",
+ "thiserror 2.0.20",
+ "tokio",
+ "winnow-args",
+]
+
+[[package]]
 name = "brush-builtins"
 version = "0.2.0"
 dependencies = [
@@ -6419,6 +6430,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winnow-args"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9b4fbe210950698db7ec7fedbbb721379fb2d92c0b39835ad0876b904547063"
+dependencies = [
+ "winnow",
+ "winnow-args-derive",
+]
+
+[[package]]
+name = "winnow-args-derive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09359adf85eecc7ca2696928137722055b85d380089b159673a161347115adc1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
