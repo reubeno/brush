@@ -16,6 +16,9 @@ pub struct Error {
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+
+    /// Whether interpreter recovery must propagate this error to its caller.
+    terminating: bool,
 }
 
 /// Monolithic error type for the shell
@@ -330,6 +333,12 @@ pub enum ErrorKind {
 
 /// Trait implementable by built-in commands to represent errors.
 pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {
+    /// Whether this error must escape the interpreter instead of becoming a
+    /// recoverable command exit status. The default preserves ordinary errors.
+    fn is_terminating(&self) -> bool {
+        false
+    }
+
     /// Try to extract a reference to the underlying `std::io::Error`, if any.
     /// Implementations should return `None` if there is no inner I/O error.
     /// They should not attempt to *synthesize* an I/O error if one does not
@@ -340,6 +349,10 @@ pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync 
 }
 
 impl BuiltinError for Error {
+    fn is_terminating(&self) -> bool {
+        self.is_terminating()
+    }
+
     fn as_io_error(&self) -> Option<&std::io::Error> {
         self.as_io_error()
     }
@@ -403,11 +416,36 @@ where
         Self {
             kind: convertible_to_kind.into(),
             fatal: false,
+            terminating: false,
         }
     }
 }
 
 impl Error {
+    /// Require the interpreter to propagate this error out of the current run.
+    ///
+    /// An embedding filter can use this to stop a run, including a loop made
+    /// entirely of builtins. Unlike a fatal shell error, a terminating error
+    /// escapes as an error in both interactive and non-interactive shells.
+    ///
+    /// Propagation follows awaited evaluation boundaries. Independently
+    /// scheduled process-substitution tasks do not currently join their errors
+    /// into the parent evaluation: termination stops that task, but does not
+    /// provide a synchronized failure result to its parent.
+    #[must_use]
+    pub const fn into_terminating(mut self) -> Self {
+        self.terminating = true;
+        self
+    }
+
+    /// Whether the interpreter must propagate this error without recovering.
+    /// The marker survives builtins that wrap a nested shell error, such as
+    /// `source` and `eval`.
+    pub fn is_terminating(&self) -> bool {
+        self.terminating
+            || matches!(&self.kind, ErrorKind::BuiltinError(inner, _) if inner.is_terminating())
+    }
+
     /// Marks this error as fatal.
     #[must_use]
     pub const fn into_fatal(mut self) -> Self {

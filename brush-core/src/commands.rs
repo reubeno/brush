@@ -10,12 +10,13 @@ use std::{
 
 use brush_parser::ast;
 use itertools::Itertools;
-use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
+use sys::commands::{CommandExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
     extensions::{self, ShellExtensions},
+    filter::{CmdExecFilter as _, ExternalCmdParams, ExternalCommand, SimpleCmdParams},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
@@ -157,6 +158,26 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
     }
 }
 
+/// Resolves `command_name` to the executable brush would actually run.
+///
+/// Mirrors external command dispatch: a name containing a path separator is taken as
+/// written, anything else is looked up in `PATH` (using the shell's hash cache). Returns
+/// `None` when a bare name is not found.
+///
+/// Callers that launch a process outside [`SimpleCommand`]'s dispatch -- the `exec` builtin
+/// is the one in-tree case -- use this so the command-execution filter is shown the same
+/// resolved program that ordinary dispatch would show it.
+pub fn resolve_external_program<SE: extensions::ShellExtensions>(
+    shell: &mut Shell<SE>,
+    command_name: &str,
+) -> Option<PathBuf> {
+    if sys::fs::contains_path_separator(command_name) {
+        Some(PathBuf::from(command_name))
+    } else {
+        shell.find_first_executable_in_path_using_cache(command_name)
+    }
+}
+
 /// Composes a `std::process::Command` to execute the given command. Appropriately
 /// configures the command name and arguments, redirections, injected file
 /// descriptors, environment variables, etc.
@@ -169,7 +190,6 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
 /// * `args` - The arguments to pass to the command.
 /// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
 ///   command will inherit environment variables marked as exported in the provided `Shell`.
-#[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
 pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     context: &ExecutionContext<'_, SE>,
     command_name: &str,
@@ -177,38 +197,38 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     args: &[S],
     empty_env: bool,
 ) -> Result<std::process::Command, error::Error> {
-    let mut cmd = std::process::Command::new(command_name);
+    let command = compose_external_command(context.shell, command_name, argv0, args, empty_env);
+    compose_filtered_std_command(context, command)
+}
 
-    // Override argv[0].
-    // NOTE: Not supported on all platforms.
-    cmd.arg0(argv0);
+/// Builds the complete external command before filters run.
+///
+/// The environment is explicit, copied from exported shell variables and functions;
+/// it never implicitly inherits the embedding process's environment. No descriptors
+/// are opened or processes started by this function.
+pub fn compose_external_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
+    shell: &Shell<SE>,
+    program: impl AsRef<OsStr>,
+    argv0: impl AsRef<OsStr>,
+    args: &[S],
+    empty_env: bool,
+) -> ExternalCommand {
+    let mut cmd = ExternalCommand::new(program);
+    cmd.set_argv0(argv0);
+    cmd.args_extend(args);
+    cmd.set_current_dir(shell.working_dir());
+    cmd.clear_env();
 
-    // Pass through args.
-    cmd.args(args);
-
-    // Use the shell's current working dir.
-    cmd.current_dir(context.shell.working_dir());
-
-    // Start with a clear environment.
-    cmd.env_clear();
-
-    // Add in exported variables.
     if !empty_env {
-        for (k, v) in context.shell.env().iter_exported() {
-            // NOTE: To match bash behavior, we only include exported variables
-            // that are set (i.e., have a value). This means a variable that
-            // shows up in `declare -p` but has no *set* value will be omitted.
+        for (k, v) in shell.env().iter_exported() {
+            // Unset exported variables are omitted, matching bash.
             if v.value().is_set() {
-                cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
+                cmd.env(k.as_str(), v.value().to_cow_str(shell).as_ref());
             }
         }
-        // Set _ to the resolved command path for external commands.
-        cmd.env("_", command_name);
-    }
-
-    // Add in exported functions.
-    if !empty_env {
-        for (func_name, registration) in context.shell.funcs().iter() {
+        let program = cmd.program().to_owned();
+        cmd.env("_", program);
+        for (func_name, registration) in shell.funcs().iter() {
             if registration.is_exported() {
                 let var_name = std::format!("BASH_FUNC_{func_name}%%");
                 let value = std::format!("() {}", registration.definition().body);
@@ -216,6 +236,32 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
             }
         }
     }
+    cmd
+}
+
+/// Converts the authorized command without rebuilding or discarding its fields,
+/// and attaches the execution context's standard streams and other descriptors.
+///
+/// Callers are responsible for running final authorization before this operation.
+pub fn compose_filtered_std_command<SE: extensions::ShellExtensions>(
+    context: &ExecutionContext<'_, SE>,
+    command: ExternalCommand,
+) -> Result<std::process::Command, error::Error> {
+    let result = compose_filtered_std_command_ref(context, &command);
+    drop(command);
+    result
+}
+
+fn compose_filtered_std_command_ref<SE: extensions::ShellExtensions>(
+    context: &ExecutionContext<'_, SE>,
+    command: &ExternalCommand,
+) -> Result<std::process::Command, error::Error> {
+    // Build one descriptor mapping, so overlapping source/target numbers are
+    // resolved together and delegated capabilities cannot replace redirections.
+    let other_files = context.iter_fds().filter(|(fd, _)| {
+        *fd != OpenFiles::STDIN_FD && *fd != OpenFiles::STDOUT_FD && *fd != OpenFiles::STDERR_FD
+    });
+    let mut cmd = command.to_std_command_with_fds(other_files)?;
 
     // Redirect stdin, if applicable.
     match context.try_fd(OpenFiles::STDIN_FD) {
@@ -243,12 +289,6 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
             cmd.stderr(as_stdio);
         }
     }
-
-    // Inject any other fds.
-    let other_files = context.iter_fds().filter(|(fd, _)| {
-        *fd != OpenFiles::STDIN_FD && *fd != OpenFiles::STDOUT_FD && *fd != OpenFiles::STDERR_FD
-    });
-    cmd.inject_fds(other_files)?;
 
     Ok(cmd)
 }
@@ -316,6 +356,13 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
 }
 
 impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
+    /// Run the caller's cleanup once when execution is short-circuited.
+    pub(crate) fn complete_without_execution(&mut self) {
+        if let Some(post_execute) = self.post_execute.take() {
+            let _ = post_execute(&mut self.shell);
+        }
+    }
+
     /// Creates a new `SimpleCommand` instance.
     ///
     /// # Arguments
@@ -356,6 +403,32 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         reason = "these unwrap calls should not panic"
     )]
     pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+        // Create filter params with lazy arg conversion - no allocation unless filter inspects args
+        let filter_params = SimpleCmdParams::from_command_args(
+            &*self.shell,
+            self.command_name.as_str(),
+            &self.args,
+        );
+
+        let filter = self.shell.cmd_exec_filter().clone();
+        match filter.pre_simple_cmd(filter_params).await {
+            crate::filter::PreFilterResult::Continue(_) => {
+                let result = self.execute_impl().await;
+                let crate::filter::PostFilterResult::Return(result) =
+                    filter.post_simple_cmd(result).await;
+                result
+            }
+            crate::filter::PreFilterResult::Return(result) => {
+                // The command never reached any dispatch branch, but its
+                // temporary environment was already installed by the caller.
+                self.complete_without_execution();
+                result
+            }
+        }
+    }
+
+    /// Internal implementation of command execution (called after pre-filter).
+    async fn execute_impl(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 
@@ -401,7 +474,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             };
 
             if let Some(path) = path {
-                self.execute_via_external(&path)
+                self.execute_via_external(&path).await
             } else {
                 // Bash updates $_ even when the command is not found, so mirror
                 // that here before reporting the error.
@@ -416,7 +489,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             }
         } else {
             let command_name = PathBuf::from(self.command_name.clone());
-            self.execute_via_external(command_name.as_path())
+            self.execute_via_external(command_name.as_path()).await
         }
     }
 
@@ -529,55 +602,88 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         result
     }
 
-    fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
-        let mut shell = self.shell;
-        let last_arg = Self::take_last_arg(&self.args);
-
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
-
-        let resolved_path = path.to_string_lossy();
-        let result = execute_external_command(
-            cmd_context,
-            resolved_path.as_ref(),
-            self.process_group_id,
-            self.argv0.as_deref(),
-            &self.args[1..],
+    async fn execute_via_external(self, path: &Path) -> Result<ExecutionSpawnResult, error::Error> {
+        let cmd_args = self.args[1..]
+            .iter()
+            .filter_map(|arg| match arg {
+                CommandArg::String(value) => Some(value),
+                CommandArg::Assignment(_) => None,
+            })
+            .collect::<Vec<_>>();
+        let ext_cmd = compose_external_command(
+            &self.shell,
+            path,
+            self.argv0.as_deref().unwrap_or(&self.command_name),
+            &cmd_args,
+            false,
         );
 
-        // Update $_ after command execution.
-        shell.update_last_arg_variable(last_arg);
+        // Extract fields from self before creating params (which borrows shell).
+        let last_arg = Self::take_last_arg(&self.args);
+        let mut shell = self.shell;
+        let command_name = self.command_name;
+        let params = self.params;
+        let process_group_id = self.process_group_id;
+        let post_execute = self.post_execute;
 
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
-        }
+        // Create filter params.
+        let filter_params =
+            ExternalCmdParams::with_original_command(&shell, &command_name, ext_cmd);
 
-        result
+        crate::with_filter!(
+            shell,
+            cmd_exec_filter,
+            pre_external_cmd,
+            post_external_cmd,
+            filter_params,
+            p => {
+                match shell.cmd_exec_filter().authorize_external_cmd(&p).await {
+                    Ok(()) => {
+                        let command = p.command;
+                        let cmd_context = ExecutionContext {
+                            shell: &mut shell,
+                            command_name,
+                            params,
+                        };
+                        execute_external_command(cmd_context, command, process_group_id).await
+                    }
+                    Err(error) => Err(error),
+                }
+            },
+            finally {
+                // Update $_ after command execution.
+                shell.update_last_arg_variable(last_arg);
+
+                if let Some(post_execute) = post_execute {
+                    let _ = post_execute(&mut shell);
+                }
+            }
+        )
     }
 }
 
-pub(crate) fn execute_external_command(
-    context: ExecutionContext<'_, impl extensions::ShellExtensions>,
-    executable_path: &str,
-    process_group_id: Option<i32>,
-    argv0_override: Option<&str>,
-    args: &[CommandArg],
-) -> Result<ExecutionSpawnResult, error::Error> {
-    // Filter out the args; we only want strings.
-    let cmd_args = args
-        .iter()
-        .filter_map(|e| {
-            if let CommandArg::String(s) = e {
-                Some(s)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
+/// Keeps a spawned child owned while its asynchronous registration is pending.
+/// Ordinary shell lifecycle settings apply only after the filter acknowledges it.
+struct PendingChildRegistration<'a> {
+    child: &'a mut sys::process::Child,
+    acknowledged: bool,
+}
 
+impl Drop for PendingChildRegistration<'_> {
+    fn drop(&mut self) {
+        if !self.acknowledged {
+            if let Err(error) = self.child.start_kill() {
+                tracing::warn!(%error, "failed to stop child with incomplete registration");
+            }
+        }
+    }
+}
+
+pub(crate) async fn execute_external_command(
+    context: ExecutionContext<'_, impl extensions::ShellExtensions>,
+    command: ExternalCommand,
+    process_group_id: Option<i32>,
+) -> Result<ExecutionSpawnResult, error::Error> {
     // Before we lose ownership of the open files, figure out if stdin will be a terminal.
     let child_stdin_is_terminal = context
         .try_fd(openfiles::OpenFiles::STDIN_FD)
@@ -589,18 +695,8 @@ pub(crate) fn execute_external_command(
         ProcessGroupPolicy::NewProcessGroup
     );
 
-    // Compose the std::process::Command that encapsulates what we want to launch.
-    // argv[0] defaults to context.command_name (the user-facing name of the
-    // command) unless the caller specified an explicit override.
-    let argv0 = argv0_override.unwrap_or(context.command_name.as_str());
     #[allow(unused_mut, reason = "only mutated on unix platforms")]
-    let mut cmd = compose_std_command(
-        &context,
-        executable_path,
-        argv0,
-        cmd_args.as_slice(),
-        false, /* empty environment? */
-    )?;
+    let mut cmd = compose_filtered_std_command_ref(&context, &command)?;
 
     // Set up process group state.
     if new_pg {
@@ -633,7 +729,26 @@ pub(crate) fn execute_external_command(
     );
 
     match sys::process::spawn(cmd, context.shell.options().kill_external_commands_on_drop) {
-        Ok(child) => {
+        Ok(mut child) => {
+            {
+                let mut registration = PendingChildRegistration {
+                    child: &mut child,
+                    acknowledged: false,
+                };
+                if let Err(error) = context
+                    .shell
+                    .cmd_exec_filter()
+                    .external_cmd_spawned(&command, registration.child.id())
+                    .await
+                {
+                    if let Err(cleanup_error) = registration.child.kill().await {
+                        tracing::warn!(%cleanup_error, "failed to kill unregistered child; waiting for exit");
+                        let _ = registration.child.wait().await;
+                    }
+                    return Err(error.into_terminating());
+                }
+                registration.acknowledged = true;
+            }
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
             let pid = child.id().map(|id| id as i32);
@@ -684,6 +799,7 @@ async fn execute_builtin_command<SE: extensions::ShellExtensions>(
 
     match (builtin.execute_func)(context, args).await {
         Ok(result) => Ok(result),
+        Err(e) if e.is_terminating() => Err(e),
         Err(e) => {
             // Broken pipe errors should silently return the appropriate exit code
             if let Some(io_err) = e.as_io_error() {

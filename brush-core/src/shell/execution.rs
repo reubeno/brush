@@ -4,8 +4,11 @@ use std::{io::Read, path::Path};
 
 use crate::{
     ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, SourceInfo,
-    arithmetic::Evaluatable as _, callstack, error, interp::Execute as _, openfiles,
-    trace_categories,
+    arithmetic::Evaluatable as _,
+    callstack, error,
+    filter::{SourceFilter as _, SourceScriptParams},
+    interp::Execute as _,
+    openfiles, trace_categories,
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
@@ -51,13 +54,29 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(
-            path.as_ref(),
-            args,
-            params,
-            callstack::ScriptCallType::Source,
+        // Collect args and create filter params.
+        let args_vec: Vec<String> = args.map(Into::into).collect();
+        let filter_params = SourceScriptParams::new(self, path.as_ref(), args_vec.as_slice());
+
+        crate::with_filter!(
+            self,
+            source_filter,
+            pre_source_script,
+            post_source_script,
+            filter_params,
+            p => {
+                // Extract owned values to release the borrow on self
+                let path = p.path.into_owned();
+                let args = p.args.into_owned();
+                self.parse_and_execute_script_file(
+                    &path,
+                    args.iter().cloned(),
+                    params,
+                    callstack::ScriptCallType::Source,
+                )
+                .await
+            }
         )
-        .await
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.
@@ -86,8 +105,21 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         options.read(true);
 
         let opened_file: openfiles::OpenFile = self
-            .open_file(&options, path, params)
-            .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
+            .open_file(&options, crate::filter::FileOpenAccess::Read, path, params)
+            .map_err(|e| {
+                if e.is_terminating() {
+                    e
+                } else {
+                    let kind = e
+                        .as_io_error()
+                        .map_or(std::io::ErrorKind::Other, std::io::Error::kind);
+                    error::ErrorKind::FailedSourcingFile(
+                        path.to_owned(),
+                        std::io::Error::new(kind, e),
+                    )
+                    .into()
+                }
+            })?;
 
         if opened_file.is_dir() {
             return Err(error::ErrorKind::FailedSourcingFile(
@@ -194,8 +226,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         self.end_command_string_mode()?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Ordinary exit-hook errors do not replace the result; explicit
+        // termination must still be visible to the caller.
+        if let Err(error) = self.on_exit().await
+            && error.is_terminating()
+        {
+            return Err(error);
+        }
 
         Ok(result)
     }
@@ -225,8 +262,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             )
             .await?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Ordinary exit-hook errors do not replace the result; explicit
+        // termination must still be visible to the caller.
+        if let Err(error) = self.on_exit().await
+            && error.is_terminating()
+        {
+            return Err(error);
+        }
 
         Ok(result)
     }
@@ -250,6 +292,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // Report any errors.
         match result {
             Ok(result) => Ok(result),
+            Err(err) if err.is_terminating() => Err(err),
             Err(err) => {
                 let _ = self.display_error(&mut params.stderr(self), &err);
 

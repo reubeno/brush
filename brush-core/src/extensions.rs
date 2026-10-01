@@ -1,5 +1,9 @@
 //! Definition of shell behavior traits and defaults.
 
+use crate::filter::{
+    CmdExecFilter, FileOpenFilter, NoOpCmdExecFilter, NoOpFileOpenFilter, NoOpSourceFilter,
+    SourceFilter,
+};
 use crate::{Shell, error, extensions};
 
 /// Trait for static shell extensions. Collects all associated types needed to
@@ -7,16 +11,59 @@ use crate::{Shell, error, extensions};
 pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
     /// Type of the error behavior implementation.
     type ErrorFormatter: ErrorFormatter;
+    /// Type of the command execution filter.
+    type CmdExecFilter: CmdExecFilter;
+    /// Type of the source filter.
+    type SourceFilter: SourceFilter;
+    /// Type of the file-open filter.
+    type FileOpenFilter: FileOpenFilter;
 }
 
 /// Shell extensions implementation constructed from component types.
 #[derive(Clone, Default)]
-pub struct ShellExtensionsImpl<EF: ErrorFormatter = DefaultErrorFormatter> {
-    _marker: std::marker::PhantomData<EF>,
+pub struct ShellExtensionsImpl<
+    EF: ErrorFormatter = DefaultErrorFormatter,
+    CF: CmdExecFilter = NoOpCmdExecFilter,
+    SF: SourceFilter = NoOpSourceFilter,
+    FF: FileOpenFilter = NoOpFileOpenFilter,
+> {
+    error_formatter: EF,
+    cmd_exec_filter: CF,
+    source_filter: SF,
+    file_open_filter: FF,
 }
 
-impl<EF: ErrorFormatter> ShellExtensions for ShellExtensionsImpl<EF> {
+impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter, FF: FileOpenFilter> ShellExtensions
+    for ShellExtensionsImpl<EF, CF, SF, FF>
+{
     type ErrorFormatter = EF;
+    type CmdExecFilter = CF;
+    type SourceFilter = SF;
+    type FileOpenFilter = FF;
+}
+
+impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter, FF: FileOpenFilter>
+    ShellExtensionsImpl<EF, CF, SF, FF>
+{
+    /// Returns a reference to the error formatter.
+    pub const fn error_formatter(&self) -> &EF {
+        &self.error_formatter
+    }
+
+    /// Returns a reference to the command execution filter.
+    pub const fn cmd_exec_filter(&self) -> &CF {
+        &self.cmd_exec_filter
+    }
+
+    /// Returns a reference to the source filter.
+    pub const fn source_filter(&self) -> &SF {
+        &self.source_filter
+    }
+
+    /// Returns a reference to the file-open filter.
+    pub const fn file_open_filter(&self) -> &FF {
+        &self.file_open_filter
+    }
 }
 
 /// Default shell extensions implementation.
@@ -46,12 +93,3 @@ pub trait ErrorFormatter: Clone + Default + Send + Sync + 'static {
 pub struct DefaultErrorFormatter;
 
 impl ErrorFormatter for DefaultErrorFormatter {}
-
-/// Trait for placeholder behavior (stub for future extension).
-pub trait PlaceholderBehavior: Clone + Default + Send + Sync + 'static {}
-
-/// Default placeholder implementation.
-#[derive(Clone, Default)]
-pub struct DefaultPlaceholder;
-
-impl PlaceholderBehavior for DefaultPlaceholder {}
