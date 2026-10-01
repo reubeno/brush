@@ -1,10 +1,10 @@
 use brush_core::{ExecutionResult, builtins};
 
-/// Pop a directory off the directory stack.
+/// Pop a path from the current directory stack.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PopdCommand {
-    /// Don't change the current directory.
+    /// Pop the path without changing the current working directory.
     #[arg(short = 'n')]
     no_directory_change: bool,
     // TODO(popd): implement +N and -N

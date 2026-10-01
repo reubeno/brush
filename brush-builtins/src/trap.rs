@@ -3,7 +3,7 @@ use std::io::Write;
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionResult, builtins};
 
-/// Manage handlers for signals and other events.
+/// Manage signal traps.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct TrapCommand {
@@ -11,12 +11,11 @@ pub(crate) struct TrapCommand {
     #[arg(short = 'l')]
     list_signals: bool,
 
-    /// Print the trap commands.
+    /// Print registered trap commands.
     #[arg(short = 'p')]
     print_trap_commands: bool,
 
-    /// The action, then signal specs.
-    #[arg(positional, value_name = "action", double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     args: Vec<String>,
 }
 

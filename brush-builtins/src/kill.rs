@@ -4,9 +4,6 @@ use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
 
 /// Signal a job or process.
-///
-/// A word with a letter kill lacks (`-9`, `-TERM`, `-SIGTERM`) is an operand:
-/// `kill.rs` reads it as a signal spec.
 #[derive(winnow_args::Args)]
 #[arg(
     disable_help_short,
@@ -16,19 +13,18 @@ use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
 )]
 pub(crate) struct KillCommand {
     /// Name of the signal to send.
-    #[arg(short = 's', value_name = "sigspec")]
+    #[arg(short = 's', value_name = "SIG_NAME")]
     signal_name: Option<String>,
 
     /// Number of the signal to send.
-    #[arg(short = 'n', value_name = "signum")]
+    #[arg(short = 'n', value_name = "SIG_NUM")]
     signal_number: Option<usize>,
 
     /// List known signal names.
     #[arg(short = 'l', short = 'L')]
     list_signals: bool,
 
-    /// Processes or jobs; with `-l`, signals to name.
-    #[arg(positional, value_name = "pid", allow_negative_numbers)]
+    #[arg(positional, allow_negative_numbers)]
     args: Vec<String>,
 }
 

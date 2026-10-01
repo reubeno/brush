@@ -4,24 +4,26 @@ use uucore::format;
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
-///
-/// Only `-v` comes before the format; one leading `--` is dropped, and every
-/// word after the format is data, `--` included.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v', value_name = "var", allow_hyphen_values)]
+    #[arg(short = 'v', allow_hyphen_values)]
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
-    #[arg(positional, value_name = "format", double_dash = "automatic", required)]
+    ///
+    /// N.B. We intentionally do *not* enable `allow_hyphen_values` here. Doing so would
+    /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
+    /// a positional argument. With it disabled, a format string that genuinely needs to
+    /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
+    #[arg(positional, double_dash = "automatic", required)]
     format_and_args: Vec<String>,
 }
 
 // Parsed by hand: only leading `-v` options come before the format, at most
-// one `--` ends them, and every later word is data. This is the whole of
-// bash's grammar for `printf`, and a loop over the words is the cheapest way
+// one `--` ends them, and every later word is data. That is the whole
+// grammar, and a loop over the words is the cheapest way
 // to read it; the derive above still provides the help.
 brush_builtin_winnow::__winnow_builtin_help!(PrintfCommand);
 
@@ -30,11 +32,8 @@ impl builtins::FromArgs for PrintfCommand {
         name: &str,
         args: Vec<brush_core::CommandArg>,
     ) -> Result<Self, builtins::ArgsError> {
-        let usage = || {
-            format!(
-                "{name}: usage: {}",
-                brush_builtin_winnow::adapter::synopsis::<Self>(name)
-            )
+        let error = |error: winnow_args::Error| {
+            brush_builtin_winnow::adapter::to_args_error::<Self>(name, &error)
         };
         let mut words = brush_builtin_utils::into_words(args);
         let mut output_variable = None;
@@ -46,10 +45,7 @@ impl builtins::FromArgs for PrintfCommand {
                 break;
             } else if word == "-v" {
                 let Some(value) = words.get_mut(index + 1) else {
-                    return Err(builtins::ArgsError::Usage(format!(
-                        "{name}: -v: option requires an argument\n{}",
-                        usage()
-                    )));
+                    return Err(error(winnow_args::Error::missing_value(index, "-v")));
                 };
                 output_variable = Some(std::mem::take(value));
                 index += 2;
@@ -57,10 +53,9 @@ impl builtins::FromArgs for PrintfCommand {
                 output_variable = Some(value.to_owned());
                 index += 1;
             } else if word.len() > 1 && word.starts_with('-') {
-                let letter = word.chars().nth(1).unwrap_or('-');
-                return Err(builtins::ArgsError::Usage(format!(
-                    "{name}: -{letter}: invalid option\n{}",
-                    usage()
+                return Err(error(winnow_args::Error::unknown_flag(
+                    index,
+                    word.as_str(),
                 )));
             } else {
                 break;
@@ -68,7 +63,10 @@ impl builtins::FromArgs for PrintfCommand {
         }
 
         if index >= words.len() {
-            return Err(builtins::ArgsError::Usage(usage()));
+            return Err(error(winnow_args::Error::missing_argument(
+                index,
+                "<format_and_args>",
+            )));
         }
         words.drain(..index);
         Ok(Self {

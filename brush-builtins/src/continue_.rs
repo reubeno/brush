@@ -1,11 +1,11 @@
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
-/// Continue to the next iteration of a loop.
+/// Continue to the next iteration of a control-flow loop.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ContinueCommand {
-    /// Which enclosing loop.
-    #[arg(positional, value_name = "n", default = "1", allow_negative_numbers)]
+    /// If specified, indicates which nested loop to continue to the next iteration of.
+    #[arg(positional, default = "1", allow_negative_numbers)]
     which_loop: i8,
 }
 

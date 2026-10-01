@@ -7,19 +7,19 @@ use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, e
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
-    #[arg(short = 'd', value_name = "delim")]
+    #[arg(short = 'd')]
     delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', value_name = "count", default = "0")]
+    #[arg(short = 'n', default = "0")]
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O', value_name = "origin", allow_negative_numbers)]
+    #[arg(short = 'O', allow_negative_numbers)]
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', value_name = "count", default = "0")]
+    #[arg(short = 's', default = "0")]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -27,19 +27,19 @@ pub(crate) struct MapFileCommand {
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', value_name = "fd", default = "0")]
+    #[arg(short = 'u', default = "0")]
     fd: brush_core::ShellFd,
 
     /// Name of function to call for each group of lines.
-    #[arg(short = 'C', value_name = "callback")]
+    #[arg(short = 'C')]
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', value_name = "quantum", default = "5000")]
+    #[arg(short = 'c', default = "5000")]
     callback_group_size: i64,
 
     /// Name of array to read into.
-    #[arg(positional, value_name = "array", default = "MAPFILE")]
+    #[arg(positional, default = "MAPFILE")]
     array_var_name: String,
 }
 

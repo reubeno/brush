@@ -18,12 +18,12 @@ pub(crate) struct CommandCommand {
     #[arg(short = 'V', overrides = "-v")]
     pub(crate) print_verbose_description: bool,
 
-    /// Display a short description of the command (the last of `-v`/`-V` wins).
+    /// Display a short description of the command.
     #[arg(short = 'v', overrides = "-V")]
     pub(crate) print_description: bool,
 
     /// Command and arguments.
-    #[arg(positional, value_name = "command", double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     pub(crate) command_and_args: Vec<String>,
 }
 

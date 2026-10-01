@@ -26,7 +26,7 @@ pub(crate) struct CdCommand {
 
     /// By default it is the value of the HOME shell variable. If `TARGET_DIR` is "-", it is
     /// converted to $OLDPWD.
-    #[arg(positional, value_name = "dir")]
+    #[arg(positional)]
     target_dir: Option<PathBuf>,
 }
 

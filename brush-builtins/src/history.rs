@@ -9,49 +9,45 @@ use std::{
 /// Bound to a bare `-a`, `-n`, `-r` or `-w`: the default history file.
 const NO_FILE: &str = "\u{0}";
 
-/// Display or manipulate the history list.
+/// Query or manipulate the shell's command history.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct HistoryCommand {
-    /// Clear the history list.
+    /// Clears all history.
     #[arg(short = 'c')]
     clear_history: bool,
 
-    /// Delete the history entry at `offset` (negative: back from the end).
-    #[arg(short = 'd', value_name = "offset", allow_negative_numbers)]
+    /// Deletes the history entry at the given offset. Positive offsets are relative to the
+    /// beginning of the history, while negative offsets are relative to the end of the history.
+    #[arg(short = 'd', value_name = "OFFSET", allow_negative_numbers)]
     delete_offset: Option<i64>,
 
-    /// Append this session's history to the file.
-    #[arg(short = 'a', value_name = "filename", default_missing = "\u{0}")]
+    /// Appends the history from the current session to the history file.
+    #[arg(short = 'a', value_name = "HIST_FILE", default_missing = "\u{0}")]
     append_session_to_file: Option<String>,
 
-    /// Read history lines not yet read from the file.
-    #[arg(short = 'n', value_name = "filename", default_missing = "\u{0}")]
+    /// Appends any remaining history from the history file to the current session.
+    #[arg(short = 'n', value_name = "HIST_FILE", default_missing = "\u{0}")]
     append_rest_of_file_to_session: Option<String>,
 
-    /// Read the file and append it to the history list.
-    #[arg(short = 'r', value_name = "filename", default_missing = "\u{0}")]
+    /// Appends the history from the history file to the current session.
+    #[arg(short = 'r', value_name = "HIST_FILE", default_missing = "\u{0}")]
     append_file_to_session: Option<String>,
 
-    /// Write the history list to the file.
-    #[arg(short = 'w', value_name = "filename", default_missing = "\u{0}")]
+    /// Replaces the history file with the current session history.
+    #[arg(short = 'w', value_name = "HIST_FILE", default_missing = "\u{0}")]
     write_session_to_file: Option<String>,
 
-    /// Expand the arguments with history expansion and print them.
+    /// History-expands positional arguments and displays them.
     #[arg(short = 'p')]
     expand: bool,
 
-    /// Append the arguments to the history list as one entry.
+    /// Appends positional arguments as an entry in the current session.
     #[arg(short = 's')]
     append: bool,
 
-    /// `n`, or with `-p`/`-s` the arguments.
-    #[arg(
-        positional,
-        value_name = "arg",
-        double_dash = "automatic",
-        allow_negative_numbers
-    )]
+    /// Arguments.
+    #[arg(positional, double_dash = "automatic", allow_negative_numbers)]
     args: Vec<String>,
 }
 

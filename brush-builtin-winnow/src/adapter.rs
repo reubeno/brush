@@ -75,44 +75,24 @@ fn parse_words<T: Args>(name: &str, words: &[String]) -> Result<T, ArgsError> {
     parsed.map_err(|e| to_args_error::<T>(name, &e))
 }
 
-/// An error as bash prints it for a builtin: `name: -x: invalid option`, then
-/// `name: usage: name [-ab] [arg ...]`; a missing operand gets the usage line
-/// alone.
-fn to_args_error<T: Args>(name: &str, error: &Error) -> ArgsError {
-    let usage = format!("{name}: usage: {}", synopsis::<T>(name));
-    let token = error.token().unwrap_or_default();
-    let what = match error.kind() {
-        ErrorKind::HelpRequested | ErrorKind::VersionRequested => {
-            return ArgsError::HelpRequested(help_text::<T>(name));
-        }
-        ErrorKind::MissingArgument | ErrorKind::MissingRequired => {
-            return ArgsError::Usage(usage);
-        }
-        ErrorKind::UnknownFlag => format!("{token}: invalid option"),
-        ErrorKind::MissingValue => format!("{token}: option requires an argument"),
-        _ => error.to_string(),
-    };
-    ArgsError::Usage(format!("{name}: {what}\n{usage}"))
-}
-
-/// `name --help` as bash prints it: the synopsis, then the description
-/// indented.
-fn help_text<T: Args>(name: &str) -> String {
-    let mut out = format!("{name}: {}", synopsis::<T>(name));
-    let command = T::HELP;
-    let text = if command.long_about.is_empty() {
-        command.about
-    } else {
-        command.long_about
-    };
-    for line in text.lines() {
-        let _ = write!(out, "\n    {line}");
+/// A parse failure as the builtin reports it: `name: error: …` in
+/// winnow-args' words, then the usage line. Help and version requests become
+/// [`ArgsError::HelpRequested`].
+pub fn to_args_error<T: Args>(name: &str, error: &Error) -> ArgsError {
+    match error.kind() {
+        ErrorKind::HelpRequested | ErrorKind::VersionRequested => ArgsError::HelpRequested(
+            help::render_styled(T::HELP, &[name], false, help::width(), help::Style::PLAIN),
+        ),
+        _ => ArgsError::Usage(format!(
+            "{name}: error: {}\nusage: {}",
+            error.message(help::Style::PLAIN),
+            synopsis::<T>(name)
+        )),
     }
-    out
 }
 
-/// bash's one-line synopsis: `name [-ab] [-c value] [arg ...]`, from the help
-/// data the derive emits. Long options and hidden flags (`+x` forms) are left
+/// A one-line synopsis: `name [-ab] [-c value] [arg ...]`, from the help data
+/// the derive emits. Long options and hidden flags (`+x` forms) are left
 /// out, as `help -s` shows them.
 pub fn synopsis<T: Args>(name: &str) -> String {
     let command: &help::Command = T::HELP;
@@ -225,7 +205,7 @@ mod tests {
         x: Option<bool>,
         #[arg(short = 'y', plus = 'y')]
         y: Option<bool>,
-        /// Options end at the first operand, as for bash's `set`.
+        /// Options end at the first operand.
         #[arg(positional, stop_flags)]
         words: Vec<String>,
     }
@@ -303,10 +283,13 @@ mod tests {
 
     #[test]
     #[allow(clippy::panic)]
-    fn unknown_option_is_a_usage_error_in_bash_form() {
+    fn unknown_option_is_a_usage_error_with_the_usage_line() {
         match HelpLike::from_args("cd", strings(&["-x"])) {
             Err(ArgsError::Usage(text)) => {
-                assert_eq!(text, "cd: -x: invalid option\ncd: usage: cd [-P] [target]");
+                assert_eq!(
+                    text,
+                    "cd: error: unknown flag `-x`\nusage: cd [-P] [target]"
+                );
             }
             Err(err) => panic!("unexpected argument error: {err}"),
             Ok(_) => panic!("an unknown option is a usage error"),

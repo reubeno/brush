@@ -1,15 +1,15 @@
 use brush_core::{ExecutionResult, builtins};
 
-/// Push a directory onto the directory stack.
+/// Push a path onto the current directory stack.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PushdCommand {
-    /// Don't change the current directory.
+    /// Push the path without changing the current working directory.
     #[arg(short = 'n')]
     no_directory_change: bool,
 
-    /// Directory to push.
-    #[arg(positional, value_name = "dir")]
+    /// Directory to push on the directory stack.
+    #[arg(positional)]
     dir: String,
     // TODO(pushd): implement +N and -N
 }

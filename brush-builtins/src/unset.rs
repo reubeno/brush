@@ -11,7 +11,7 @@ pub(crate) struct UnsetCommand {
     name_interpretation: UnsetNameInterpretation,
 
     /// Names of variables to unset.
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     names: Vec<String>,
 }
 

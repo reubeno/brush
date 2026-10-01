@@ -5,8 +5,6 @@ use brush_core::{
 };
 
 /// Evaluate test expression.
-///
-/// Every word is the expression's, `--`, `-o` and a first `--help` included.
 #[derive(winnow_args::Args)]
 #[arg(
     unknown_flags = "value",

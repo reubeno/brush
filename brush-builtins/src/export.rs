@@ -24,7 +24,6 @@ pub(crate) struct ExportCommand {
     #[arg(short = 'p')]
     display_exported_names: bool,
 
-    /// Assignments and names, filled in by brush after parsing the options.
     #[arg(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }

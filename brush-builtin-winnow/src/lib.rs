@@ -9,8 +9,8 @@
 //!
 //! The words are parsed where they lie, borrowed rather than copied; `+x`
 //! options are winnow-args' own (`#[arg(plus_options)]`), so nothing is
-//! rewritten first. Errors read as bash's builtins print them:
-//! `name: -x: invalid option`, then `name: usage: ...`.
+//! rewritten first. Errors are winnow-args' own (`name: error: …`), followed
+//! by the usage line.
 
 pub mod adapter;
 

@@ -1,11 +1,11 @@
 use brush_core::{ExecutionResult, builtins};
 
-/// Execute arguments as a shell command.
+/// Evaluate the given string as script.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EvalCommand {
     /// The script to evaluate.
-    #[arg(positional, value_name = "arg", double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     args: Vec<String>,
 }
 

@@ -2,7 +2,7 @@ use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, error, jobs};
 
-/// Display status of jobs.
+/// Manage jobs.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct JobsCommand {
@@ -28,7 +28,7 @@ pub(crate) struct JobsCommand {
 
     /// Job specs to list.
     // TODO(jobs): Add -x option
-    #[arg(positional, value_name = "jobspec")]
+    #[arg(positional)]
     job_specs: Vec<String>,
 }
 

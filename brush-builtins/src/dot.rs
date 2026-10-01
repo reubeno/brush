@@ -7,11 +7,11 @@ use brush_core::builtins;
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct DotCommand {
     /// Path to the script to evaluate.
-    #[arg(positional, value_name = "filename", double_dash = "automatic")]
+    #[arg(positional, double_dash = "automatic")]
     script_path: String,
 
     /// Any arguments to be passed as positional parameters to the script.
-    #[arg(positional, value_name = "arguments", allow_negative_numbers)]
+    #[arg(positional, allow_negative_numbers)]
     script_args: Vec<String>,
 }
 

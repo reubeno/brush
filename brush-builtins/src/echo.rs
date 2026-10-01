@@ -3,9 +3,6 @@ use std::io::Write;
 use brush_core::{ExecutionResult, builtins, escape};
 
 /// Echo text to standard output.
-///
-/// A word is an option only if every letter is one echo knows (`-nx` is text),
-/// and the first operand ends the options; a leading `--` is text too.
 #[derive(winnow_args::Args)]
 #[arg(
     disable_help_flag,
@@ -27,7 +24,7 @@ pub(crate) struct EchoCommand {
     no_interpret_backslash_escapes: bool,
 
     /// Tokens to echo to standard output.
-    #[arg(positional, value_name = "arg", double_dash = "preserve", stop_flags)]
+    #[arg(positional, double_dash = "preserve", stop_flags)]
     args: Vec<String>,
 }
 

@@ -17,7 +17,7 @@ pub(crate) struct UmaskCommand {
     symbolic_output: bool,
 
     /// Mode mask.
-    #[arg(positional, value_name = "mode")]
+    #[arg(positional)]
     mode: Option<String>,
 }
 

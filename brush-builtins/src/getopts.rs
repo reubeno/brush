@@ -3,9 +3,6 @@ use std::{collections::HashMap, io::Write};
 use brush_core::{ExecutionResult, builtins, env, variables};
 
 /// Parse command options.
-///
-/// The words after `name` are the script's, `--` included: `getopts` reads
-/// them itself.
 #[derive(winnow_args::Args)]
 #[arg(
     unknown_flags = "value",
@@ -15,13 +12,13 @@ use brush_core::{ExecutionResult, builtins, env, variables};
 )]
 pub(crate) struct GetOptsCommand {
     /// Specification for options
-    #[arg(positional, value_name = "optstring")]
+    #[arg(positional)]
     options_string: String,
     /// Name of variable to receive next option
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     variable_name: String,
     /// Arguments to parse
-    #[arg(positional, value_name = "arg", double_dash = "preserve")]
+    #[arg(positional, double_dash = "preserve")]
     args: Vec<String>,
 }
 

@@ -1,8 +1,6 @@
 use brush_core::{ExecutionExitCode, builtins, trace_categories};
 
 /// (UNIMPLEMENTED COMMAND)
-///
-/// Every word is kept, to be logged.
 #[derive(winnow_args::Args)]
 #[arg(
     unknown_flags = "value",

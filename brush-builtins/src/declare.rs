@@ -41,47 +41,36 @@ pub(crate) struct DeclareCommand {
     #[arg(short = 'p')]
     print: bool,
 
-    /// Make the variable an indexed array.
     #[arg(short = 'a', plus = 'a')]
     make_indexed_array: Option<bool>,
 
-    /// Make the variable an associative array.
     #[arg(short = 'A', plus = 'A')]
     make_associative_array: Option<bool>,
 
-    /// Enable capitalize-on-assignment for the variable.
     #[arg(short = 'c', plus = 'c')]
     capitalize_value_on_assignment: Option<bool>,
 
-    /// Assign values in lowercase.
     #[arg(short = 'l', plus = 'l')]
     lowercase_value_on_assignment: Option<bool>,
 
-    /// Export the variable.
     #[arg(short = 'x', plus = 'x')]
     make_exported: Option<bool>,
 
-    /// Make the variable an integer.
     #[arg(short = 'i', plus = 'i')]
     make_integer: Option<bool>,
 
-    /// Make the variable a name reference.
     #[arg(short = 'n', plus = 'n')]
     make_nameref: Option<bool>,
 
-    /// Make the variable readonly.
     #[arg(short = 'r', plus = 'r')]
     make_readonly: Option<bool>,
 
-    /// Enable tracing for the variable.
     #[arg(short = 't', plus = 't')]
     make_traced: Option<bool>,
 
-    /// Assign values in uppercase.
     #[arg(short = 'u', plus = 'u')]
     uppercase_value_on_assignment: Option<bool>,
 
-    /// Assignments and names, filled in by brush after parsing the options.
     #[arg(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
