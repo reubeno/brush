@@ -5,6 +5,12 @@ cases:
       - "-c"
       - "echo hi"
 
+  - name: "Trailing backslash at end of -c string"
+    known_failure: true # TODO(tokenizer): a backslash ending complete input is reported as an unterminated escape; bash takes it literally
+    args:
+      - "-c"
+      - "printf '<%s>\\n' \\"
+
   - name: "Basic -c usage: output"
     stdin: |
       # Capture raw output of command
