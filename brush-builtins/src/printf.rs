@@ -19,7 +19,64 @@ pub(crate) struct PrintfCommand {
     format_and_args: Vec<String>,
 }
 
-brush_builtin_winnow::winnow_builtin!(PrintfCommand);
+// Parsed by hand: only leading `-v` options come before the format, at most
+// one `--` ends them, and every later word is data. This is the whole of
+// bash's grammar for `printf`, and a loop over the words is the cheapest way
+// to read it; the derive above still provides the help.
+brush_builtin_winnow::__winnow_builtin_help!(PrintfCommand);
+
+impl builtins::FromArgs for PrintfCommand {
+    fn from_args(
+        name: &str,
+        args: Vec<brush_core::CommandArg>,
+    ) -> Result<Self, builtins::ArgsError> {
+        let usage = || {
+            format!(
+                "{name}: usage: {}",
+                brush_builtin_winnow::adapter::synopsis::<Self>(name)
+            )
+        };
+        let mut words = brush_builtin_utils::into_words(args);
+        let mut output_variable = None;
+        let mut index = 0;
+
+        while let Some(word) = words.get(index) {
+            if word == "--" {
+                index += 1;
+                break;
+            } else if word == "-v" {
+                let Some(value) = words.get_mut(index + 1) else {
+                    return Err(builtins::ArgsError::Usage(format!(
+                        "{name}: -v: option requires an argument\n{}",
+                        usage()
+                    )));
+                };
+                output_variable = Some(std::mem::take(value));
+                index += 2;
+            } else if let Some(value) = word.strip_prefix("-v") {
+                output_variable = Some(value.to_owned());
+                index += 1;
+            } else if word.len() > 1 && word.starts_with('-') {
+                let letter = word.chars().nth(1).unwrap_or('-');
+                return Err(builtins::ArgsError::Usage(format!(
+                    "{name}: -{letter}: invalid option\n{}",
+                    usage()
+                )));
+            } else {
+                break;
+            }
+        }
+
+        if index >= words.len() {
+            return Err(builtins::ArgsError::Usage(usage()));
+        }
+        words.drain(..index);
+        Ok(Self {
+            output_variable,
+            format_and_args: words,
+        })
+    }
+}
 
 impl builtins::Command for PrintfCommand {
     type Error = brush_core::Error;
