@@ -18,92 +18,72 @@ const BARE_OPTION: &str = "\u{0}";
     disable_help_subcommand
 )]
 pub(crate) struct SetCommand {
-    /// Export variables on modification.
     #[arg(short = 'a', plus = 'a')]
     export_variables_on_modification: Option<bool>,
 
-    /// Notify job termination immediately.
     #[arg(short = 'b', plus = 'b')]
     notify_job_termination_immediately: Option<bool>,
 
-    /// Exit on nonzero command exit.
     #[arg(short = 'e', plus = 'e')]
     exit_on_nonzero_command_exit: Option<bool>,
 
-    /// Disable filename globbing.
     #[arg(short = 'f', plus = 'f')]
     disable_filename_globbing: Option<bool>,
 
-    /// Remember command locations.
     #[arg(short = 'h', plus = 'h')]
     remember_command_locations: Option<bool>,
 
-    /// Place all assignment args in command environment.
     #[arg(short = 'k', plus = 'k')]
     place_all_assignment_args_in_command_env: Option<bool>,
 
-    /// Enable job control.
     #[arg(short = 'm', plus = 'm')]
     enable_job_control: Option<bool>,
 
-    /// Do not execute commands.
     #[arg(short = 'n', plus = 'n')]
     do_not_execute_commands: Option<bool>,
 
-    /// Real effective UID mismatch.
     #[arg(short = 'p', plus = 'p')]
     real_effective_uid_mismatch: Option<bool>,
 
-    /// Exit after one command.
     #[arg(short = 't', plus = 't')]
     exit_after_one_command: Option<bool>,
 
-    /// Treat unset variables as error.
     #[arg(short = 'u', plus = 'u')]
     treat_unset_variables_as_error: Option<bool>,
 
-    /// Print shell input lines.
     #[arg(short = 'v', plus = 'v')]
     print_shell_input_lines: Option<bool>,
 
-    /// Print commands and arguments.
     #[arg(short = 'x', plus = 'x')]
     print_commands_and_arguments: Option<bool>,
 
-    /// Perform brace expansion.
     #[arg(short = 'B', plus = 'B')]
     perform_brace_expansion: Option<bool>,
 
-    /// Disallow overwriting regular files via output redirection.
     #[arg(short = 'C', plus = 'C')]
     disallow_overwriting_regular_files_via_output_redirection: Option<bool>,
 
-    /// Shell functions inherit ERR trap.
     #[arg(short = 'E', plus = 'E')]
     shell_functions_inherit_err_trap: Option<bool>,
 
-    /// Enable bang style history substitution.
     #[arg(short = 'H', plus = 'H')]
     enable_bang_style_history_substitution: Option<bool>,
 
-    /// Do not resolve symlinks when changing dir.
     #[arg(short = 'P', plus = 'P')]
     do_not_resolve_symlinks_when_changing_dir: Option<bool>,
 
-    /// Shell functions inherit DEBUG and RETURN traps.
     #[arg(short = 'T', plus = 'T')]
     shell_functions_inherit_debug_and_return_traps: Option<bool>,
 
     /// Set the named option (`-o NAME`); alone, list the options.
-    #[arg(short = 'o', value_name = "option-name", default_missing = "\u{0}")]
+    #[arg(short = 'o', value_name = "OPT", default_missing = "\u{0}")]
     enable: Vec<String>,
 
     /// Unset the named option (`+o NAME`); alone, list them as commands.
-    #[arg(plus = 'o', value_name = "option-name", default_missing = "\u{0}")]
+    #[arg(plus = 'o', value_name = "OPT", default_missing = "\u{0}")]
     disable: Vec<String>,
 
-    /// Positional parameters, a leading `-` or `--` kept.
-    #[arg(positional, value_name = "arg", double_dash = "preserve", stop_flags)]
+    #[arg(positional, double_dash = "preserve", stop_flags)]
     positional_args: Vec<String>,
 }
 

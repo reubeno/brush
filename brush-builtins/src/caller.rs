@@ -6,7 +6,7 @@ use std::io::Write;
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct CallerCommand {
     /// The number of call frames to go back.
-    #[arg(positional, value_name = "expr")]
+    #[arg(positional)]
     expr: Option<usize>,
 }
 

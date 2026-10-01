@@ -16,7 +16,7 @@ pub(crate) struct HelpCommand {
     #[arg(short = 's')]
     short_usage: bool,
     /// Patterns of topics to display help for.
-    #[arg(positional, value_name = "pattern")]
+    #[arg(positional)]
     topic_patterns: Vec<String>,
 }
 

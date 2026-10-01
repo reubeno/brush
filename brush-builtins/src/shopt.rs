@@ -28,7 +28,7 @@ pub(crate) struct ShoptCommand {
     unset: bool,
 
     /// Names of options to operate on.
-    #[arg(positional, value_name = "optname")]
+    #[arg(positional)]
     options: Vec<String>,
 }
 

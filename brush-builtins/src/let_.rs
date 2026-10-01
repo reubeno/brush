@@ -3,9 +3,6 @@ use std::io::Write;
 use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
-///
-/// `let` has no options: `let -x=1` is an expression. One leading `--` is
-/// still dropped.
 #[derive(winnow_args::Args)]
 #[arg(
     disable_help_short,
@@ -15,12 +12,7 @@ use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, bu
 )]
 pub(crate) struct LetCommand {
     /// Arithmetic expressions to evaluate.
-    #[arg(
-        positional,
-        value_name = "arg",
-        double_dash = "automatic",
-        allow_negative_numbers
-    )]
+    #[arg(positional, double_dash = "automatic", allow_negative_numbers)]
     exprs: Vec<String>,
 }
 

@@ -27,15 +27,14 @@ impl<T: std::str::FromStr + strum::VariantNames> winnow_args::FromArg for Choice
     }
 }
 
-/// The options `complete` and `compgen` share.
 #[derive(winnow_args::Args)]
 struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
-    #[arg(short = 'o', value_name = "option")]
+    #[arg(short = 'o')]
     options: Vec<Choice<CompleteOption>>,
 
     /// Actions to apply to generate completions.
-    #[arg(short = 'A', value_name = "action")]
+    #[arg(short = 'A')]
     actions: Vec<Choice<CompleteAction>>,
 
     /// File glob pattern to be expanded to generate completions.
@@ -205,8 +204,7 @@ pub(crate) struct CompleteCommand {
     #[arg(flatten)]
     common_args: CommonCompleteCommandArgs,
 
-    /// Commands the settings apply to.
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     names: Vec<String>,
 }
 
@@ -449,7 +447,7 @@ pub(crate) struct CompGenCommand {
     common_args: CommonCompleteCommandArgs,
 
     // N.B. The word can only start with a hyphen if it's after a --.
-    #[arg(positional, value_name = "word")]
+    #[arg(positional)]
     word: Option<String>,
 }
 
@@ -533,15 +531,14 @@ pub(crate) struct CompOptCommand {
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o', value_name = "option")]
+    #[arg(short = 'o', value_name = "OPT")]
     enabled_options: Vec<Choice<CompleteOption>>,
 
-    /// Disable the specified option for selected completion scenarios.
-    #[arg(plus = 'o', value_name = "option")]
+    #[arg(plus = 'o')]
     disabled_options: Vec<Choice<CompleteOption>>,
 
     /// If specified, scopes updates to completions of the named commands.
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     names: Vec<String>,
 }
 

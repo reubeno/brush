@@ -4,8 +4,8 @@ use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExitCommand {
-    /// The number (negative ones included, as bash takes them).
-    #[arg(positional, value_name = "n", allow_negative_numbers)]
+    /// The exit code to return.
+    #[arg(positional, allow_negative_numbers)]
     code: Option<i64>,
 }
 

@@ -4,7 +4,7 @@ use brush_core::{ExecutionResult, builtins};
 
 use crate::lookup::{self, Resolved};
 
-/// Display information about how commands would be interpreted.
+/// Inspect the type of a named shell item.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct TypeCommand {
@@ -30,7 +30,7 @@ pub(crate) struct TypeCommand {
     type_only: bool,
 
     /// Names to search for.
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     names: Vec<String>,
 }
 

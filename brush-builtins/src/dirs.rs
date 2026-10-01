@@ -24,7 +24,7 @@ impl From<&DirError> for brush_core::ExecutionExitCode {
 
 impl brush_core::BuiltinError for DirError {}
 
-/// Display the directory stack.
+/// Manage the current directory stack.
 #[derive(Default, winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct DirsCommand {

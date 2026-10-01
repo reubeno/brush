@@ -30,11 +30,11 @@ pub(crate) struct EnableCommand {
     special_only: bool,
 
     /// Path to a shared object from which built-in commands will be loaded.
-    #[arg(short = 'f', value_name = "filename")]
+    #[arg(short = 'f', value_name = "PATH")]
     shared_object_path: Option<String>,
 
     /// Names of built-in commands to operate on.
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     names: Vec<String>,
 }
 

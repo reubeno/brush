@@ -1,36 +1,36 @@
 use brush_core::{ExecutionResult, builtins, error, history};
 use std::io::Write;
 
-/// Fix up and re-execute commands from history.
+/// Process command history list.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct FcCommand {
-    /// Use `ename` as the editor.
-    #[arg(short = 'e', value_name = "ename")]
+    /// Editor to use (only relevant when not listing or substituting).
+    #[arg(short = 'e', value_name = "ENAME")]
     editor: Option<String>,
 
-    /// List the commands instead of editing them.
+    /// List commands instead of editing them.
     #[arg(short = 'l')]
     list: bool,
 
-    /// Omit line numbers when listing.
+    /// Suppress line numbers when listing.
     #[arg(short = 'n', requires = "-l")]
     no_line_numbers: bool,
 
-    /// Reverse the order of the listing.
+    /// Reverse the order of commands.
     #[arg(short = 'r')]
     reverse: bool,
 
-    /// Re-execute a command after a `pat=rep` substitution.
+    /// Re-execute command after substitution (old=new format).
     #[arg(short = 's')]
     substitute: bool,
 
-    /// First command, a number (negative: back from the latest) or a prefix.
-    #[arg(positional, value_name = "first", allow_negative_numbers)]
+    /// First command in range (number or string prefix).
+    #[arg(positional, value_name = "FIRST", allow_negative_numbers)]
     first: Option<String>,
 
-    /// Last command.
-    #[arg(positional, value_name = "last", allow_negative_numbers)]
+    /// Last command in range (number or string prefix).
+    #[arg(positional, value_name = "LAST", allow_negative_numbers)]
     last: Option<String>,
 }
 

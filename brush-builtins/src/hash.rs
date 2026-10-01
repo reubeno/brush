@@ -2,7 +2,6 @@ use std::{io::Write, path::PathBuf};
 
 use brush_core::{ExecutionResult, builtins};
 
-/// Remember or display program locations.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct HashCommand {
@@ -15,7 +14,7 @@ pub(crate) struct HashCommand {
     remove_all: bool,
 
     /// The path to associate with the names.
-    #[arg(short = 'p', value_name = "pathname")]
+    #[arg(short = 'p', value_name = "PATH")]
     path_to_use: Option<PathBuf>,
 
     /// Remove entries associated with the given names.
@@ -27,7 +26,7 @@ pub(crate) struct HashCommand {
     display_paths: bool,
 
     /// Names to process.
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     names: Vec<String>,
 }
 

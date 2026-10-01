@@ -40,41 +40,41 @@ pub(crate) struct ReadCommand {
 
     /// Optionally, name of an array variable to receive read words
     /// of input.
-    #[arg(short = 'a', value_name = "array")]
+    #[arg(short = 'a', value_name = "VAR_NAME")]
     array_variable: Option<String>,
 
     /// Optionally, a delimiter to use other than a newline character.
-    #[arg(short = 'd', value_name = "delim")]
+    #[arg(short = 'd')]
     delimiter: Option<String>,
 
     /// Provide text to use as initial input for readline.
-    #[arg(short = 'i', value_name = "text")]
+    #[arg(short = 'i', value_name = "STR")]
     initial_text: Option<String>,
 
     /// Read only the first N characters or until a specified
     /// delimiter is reached, whichever happens first.
-    #[arg(short = 'n', value_name = "nchars")]
+    #[arg(short = 'n', value_name = "COUNT")]
     return_after_n_chars: Option<usize>,
 
     /// Read exactly N characters, ignoring any specified delimiter.
-    #[arg(short = 'N', value_name = "nchars")]
+    #[arg(short = 'N', value_name = "COUNT")]
     return_after_n_chars_no_delimiter: Option<usize>,
 
     /// Prompt to display before reading.
-    #[arg(short = 'p', value_name = "prompt")]
+    #[arg(short = 'p')]
     prompt: Option<String>,
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[arg(short = 't', value_name = "timeout", allow_negative_numbers)]
+    #[arg(short = 't', value_name = "SECONDS", allow_negative_numbers)]
     timeout_in_seconds: Option<f64>,
 
     /// File descriptor to read from instead of stdin.
-    #[arg(short = 'u', value_name = "fd")]
+    #[arg(short = 'u', value_name = "FD")]
     fd_num_to_read: Option<u8>,
 
     /// Optionally, names of variables to receive read input.
-    #[arg(positional, value_name = "name")]
+    #[arg(positional)]
     variable_names: Vec<String>,
 }
 

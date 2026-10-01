@@ -28,7 +28,7 @@ impl BindKeyMap {
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct BindCommand {
     /// Name of key map to use.
-    #[arg(short = 'm', value_name = "keymap")]
+    #[arg(short = 'm')]
     keymap: Option<BindKeyMap>,
     /// List functions.
     #[arg(short = 'l')]
@@ -52,25 +52,25 @@ pub(crate) struct BindCommand {
     #[arg(short = 'v')]
     list_vars_reusable: bool,
     /// Find the keys bound to the given named function.
-    #[arg(short = 'q', value_name = "name")]
+    #[arg(short = 'q', value_name = "FUNC_NAME")]
     query_func_bindings: Option<String>,
     /// Remove all bindings for the given named function.
-    #[arg(short = 'u', value_name = "name")]
+    #[arg(short = 'u', value_name = "FUNC_NAME")]
     remove_func_bindings: Option<String>,
     /// Remove the binding for the given key sequence.
-    #[arg(short = 'r', value_name = "keyseq")]
+    #[arg(short = 'r', value_name = "KEY_SEQ")]
     remove_key_seq_binding: Option<String>,
     /// Import bindings from the given file.
-    #[arg(short = 'f', value_name = "filename")]
+    #[arg(short = 'f', value_name = "PATH")]
     bindings_file: Option<String>,
     /// Bind key sequence to command.
-    #[arg(short = 'x', value_name = "keyseq:shell-command")]
+    #[arg(short = 'x', value_name = "BINDING")]
     key_seq_bindings: Vec<String>,
     /// List key sequence bindings.
     #[arg(short = 'X')]
     list_key_seq_bindings: bool,
     /// Key sequence binding to readline function or command.
-    #[arg(positional, value_name = "keyseq:readline-function")]
+    #[arg(positional)]
     key_sequence: Option<String>,
 }
 

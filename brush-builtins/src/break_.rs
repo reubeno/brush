@@ -1,11 +1,11 @@
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
-/// Break out of a loop.
+/// Breaks out of a control-flow loop.
 #[derive(winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct BreakCommand {
-    /// Which enclosing loop.
-    #[arg(positional, value_name = "n", default = "1", allow_negative_numbers)]
+    /// If specified, indicates which nested loop to break out of.
+    #[arg(positional, default = "1", allow_negative_numbers)]
     which_loop: i8,
 }
 
