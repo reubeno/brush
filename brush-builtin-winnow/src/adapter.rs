@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use brush_core::CommandArg;
 use brush_core::builtins::{ArgsError, ContentOptions};
 use brush_core::error;
+use winnow_args::BStr;
 use winnow_args::{Args, Error, ErrorKind, help};
 
 /// Parses a builtin's arguments.
@@ -57,8 +58,21 @@ pub fn parse_with_declarations<T: Args>(
     Ok((parse_words(name, &options)?, operands))
 }
 
+/// Builtin invocations this short borrow their words from a stack buffer
+/// rather than an allocated list.
+const INLINE_WORDS: usize = 16;
+
 fn parse_words<T: Args>(name: &str, words: &[String]) -> Result<T, ArgsError> {
-    T::parse_words(&winnow_args::words(words)).map_err(|e| to_args_error::<T>(name, &e))
+    let parsed = if words.len() <= INLINE_WORDS {
+        let mut buf = [BStr::new(b""); INLINE_WORDS];
+        for (slot, word) in buf.iter_mut().zip(words) {
+            *slot = BStr::new(word.as_bytes());
+        }
+        T::parse_words(&buf[..words.len()])
+    } else {
+        T::parse_words(&winnow_args::words(words))
+    };
+    parsed.map_err(|e| to_args_error::<T>(name, &e))
 }
 
 /// An error as bash prints it for a builtin: `name: -x: invalid option`, then
