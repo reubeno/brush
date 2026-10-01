@@ -582,3 +582,55 @@ async fn native_complete_path_after_variable() -> Result<()> {
 
     Ok(())
 }
+
+/// Tests that command completion works after a pipe operator (|).
+/// The token after | is in command position and should complete from $PATH
+/// (commands/builtins), not from $PWD files.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_command_after_pipe() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    // Create a file that starts with "ech" to confirm it is NOT returned.
+    test_shell.temp_dir.child("echoing_file").touch()?;
+
+    let completions = test_shell
+        .complete_end_of_line_full("cat /dev/null | ech")
+        .await?;
+    let results: Vec<String> = completions.candidates.into_iter().collect();
+
+    assert!(
+        results.contains(&"echo".to_string()),
+        "expected 'echo' builtin in completions after pipe, got: {results:?}"
+    );
+    assert!(
+        !results.contains(&"echoing_file".to_string()),
+        "expected $PWD file 'echoing_file' NOT to appear in completions after pipe, got: {results:?}"
+    );
+
+    Ok(())
+}
+
+/// Tests that command completion works after the && operator.
+/// Like pipe, the token after && is in command position and should complete
+/// from $PATH, not from $PWD files.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_command_after_and_operator() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    // Create a file that starts with "ech" to confirm it is NOT returned.
+    test_shell.temp_dir.child("echoing_file").touch()?;
+
+    let completions = test_shell.complete_end_of_line_full("true && ech").await?;
+    let results: Vec<String> = completions.candidates.into_iter().collect();
+
+    assert!(
+        results.contains(&"echo".to_string()),
+        "expected 'echo' builtin in completions after &&, got: {results:?}"
+    );
+    assert!(
+        !results.contains(&"echoing_file".to_string()),
+        "expected $PWD file 'echoing_file' NOT to appear in completions after &&, got: {results:?}"
+    );
+
+    Ok(())
+}
