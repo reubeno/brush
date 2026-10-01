@@ -7,3 +7,16 @@ cases:
   - name: "Semicolon-terminated sequence"
     stdin: |
       echo 1; echo 2;
+
+  - name: "Operator followed by an escaped word"
+    stdin: |
+      echo pipe |\cat
+      false ||\echo or
+      echo one;\echo two
+      x=1
+      cat <<\EOF
+      quoted $x
+      EOF
+      cat <<-\EOF
+      	quoted $x
+      	EOF

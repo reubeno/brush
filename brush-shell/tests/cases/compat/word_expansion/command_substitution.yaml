@@ -78,6 +78,15 @@ cases:
       echo "`echo \"q\"`"
       echo "`echo 'a\"b'`"
 
+  - name: "Backtick command substitution line continuations"
+    stdin: |
+      echo `echo e\
+      cho`
+      echo `echo 'a\
+      b'`
+      echo "`echo 'a\
+      b'`"
+
   - name: "Backtick command substitution in double quotes"
     stdin: |
       echo "`echo First line`"

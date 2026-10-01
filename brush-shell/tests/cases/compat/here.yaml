@@ -174,12 +174,60 @@ cases:
       \'not unquoted\'
       EOF
 
+  - name: "Here doc line continuation"
+    stdin: |
+      cat <<EOF
+      alpha\
+      beta
+      double\\
+      backslash
+      $(echo 'single\
+      quotes') `echo back\
+      quotes`
+      EOF
+      cat <<'EOF'
+      alpha\
+      beta
+      EOF
+      cat <<\EOF
+      alpha\
+      beta $HOME
+      EOF
+      cat <<'EOF'
+      \
+      quoted body starting with a line continuation
+      EOF
+
   - name: "Here doc backquote escape rules"
     stdin: |
       cat <<EOF
       `echo \"q\"`
       `echo \\\\z`
       EOF
+
+  - name: "Here doc end tag joined by a line continuation"
+    stdin: |
+      cat <<EOF
+      body
+      E\
+      OF
+      echo after
+      cat <<EOF
+      body\
+      EOF
+      EOF
+
+  - name: "Here doc end tag line continued onto the next line"
+    stdin: |
+      cat <<E
+      abc
+      E\
+      X
+      E
+      echo done
+
+  - name: "Here doc line continuation with tab stripping"
+    stdin: "cat <<-EOF\n\talpha\\\n\tbeta\n\tEOF\n"
 
   - name: "Here doc with command substitution containing quotes"
     stdin: |

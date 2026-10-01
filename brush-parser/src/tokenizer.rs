@@ -4,6 +4,9 @@ use utf8_chars::BufReadCharsExt;
 
 use crate::{SourcePosition, SourceSpan};
 
+mod char_reader;
+use char_reader::CharReader;
+
 #[derive(Clone, Debug)]
 pub(crate) enum TokenEndReason {
     /// End of input was reached.
@@ -137,9 +140,10 @@ pub enum TokenizerError {
     MissingHereTag(String),
 
     /// The input ended after a here-document operator (`<<` or `<<-`) and before its tag, but
-    /// not right at the operator (e.g., after blanks or a line continuation following it). Input
-    /// ending right at the operator tokenizes, leaving the parser to report its end. Unlike
-    /// [`TokenizerError::MissingHereTag`], more input could still supply the tag.
+    /// not right at the operator (e.g., after blanks following it). Input ending right at the
+    /// operator (even after a line continuation, which is removed) tokenizes, leaving the parser
+    /// to report its end. Unlike [`TokenizerError::MissingHereTag`], more input could still
+    /// supply the tag.
     #[error("missing here-document tag at end of input")]
     MissingHereTagAtEndOfInput,
 
@@ -384,7 +388,7 @@ pub(crate) const MAX_EXPANSION_NESTING: u32 = 32;
 
 /// A tokenizer for shell scripts.
 pub(crate) struct Tokenizer<'a, R: ?Sized + std::io::BufRead> {
-    char_reader: std::iter::Peekable<utf8_chars::Chars<'a, R>>,
+    char_reader: CharReader<utf8_chars::Chars<'a, R>>,
     /// Chars read ahead and put back, to be read again before any further input; see
     /// [`Tokenizer::read_here_doc_bodies_left_pending`].
     unread: Option<UnreadChars>,
@@ -774,7 +778,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
     pub fn new(reader: &'a mut R, options: &TokenizerOptions) -> Self {
         Tokenizer {
             options: options.clone(),
-            char_reader: reader.chars().peekable(),
+            char_reader: CharReader::new(reader.chars()),
             unread: None,
             read_bodies_left_pending: true,
             cross_state: CrossTokenParseState {
@@ -838,6 +842,67 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             },
             None => Ok(None),
         }
+    }
+
+    /// Returns the char after the next one, consuming neither.
+    fn peek_second_char(&mut self) -> Result<Option<char>, TokenizerError> {
+        // Any unread chars come first. They're kept in reverse order (the next one last).
+        let peeked = match self
+            .unread
+            .as_ref()
+            .map_or(&[][..], |unread| unread.chars.as_slice())
+        {
+            [.., second, _] => return Ok(Some(*second)),
+            [_] => self.char_reader.peek(),
+            [] => self.char_reader.peek_second(),
+        };
+
+        match peeked {
+            Some(Ok(c)) => Ok(Some(*c)),
+            Some(Err(_)) => Err(TokenizerError::FailedDecoding),
+            None => Ok(None),
+        }
+    }
+
+    /// Consumes any line continuations (backslash-newline pairs) next in the input. Bash removes
+    /// them as it reads input, before anything else sees it, except where a backslash is taken
+    /// literally: right after an escaping backslash, within single quotes (including `$'...'`),
+    /// in a comment, or in the body of a here-document whose tag is quoted. The tokenizer calls
+    /// this wherever it reads input in which they're removed.
+    fn skip_line_continuations(&mut self) -> Result<(), TokenizerError> {
+        while self.peek_char()? == Some('\\') && self.peek_second_char()? == Some('\n') {
+            self.consume_char()?;
+            self.consume_char()?;
+        }
+        Ok(())
+    }
+
+    /// Returns whether a backslash next in the input would be taken literally, given the state of
+    /// the token in progress, rather than possibly starting a line continuation; see
+    /// [`Tokenizer::skip_line_continuations`].
+    fn backslash_is_literal(&self, state: &TokenParseState) -> bool {
+        if state.in_escape || matches!(state.quote_mode, QuoteMode::Single(_) | QuoteMode::AnsiC(_))
+        {
+            return true;
+        }
+
+        // A here-document body follows the newline ending the line holding its tag.
+        let frame = &self.cross_state.frame;
+        let in_here_doc_body = match frame.here_state {
+            HereState::InHereDocs => true,
+            HereState::NextLineIsHereDoc => state.is_newline(),
+            _ => false,
+        };
+        if !in_here_doc_body {
+            return false;
+        }
+
+        // The whole body is literal if its tag was quoted. (Otherwise, a backslash escaping
+        // another is read along with it, so the next one is never escaped.)
+        frame
+            .current_here_tags
+            .first()
+            .is_some_and(|tag| tag.tag_was_escaped_or_quoted)
     }
 
     /// Consumes the rest of a nested expansion, whose opening (e.g., `$(`) has already been
@@ -979,6 +1044,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
         if c == '$' {
             // Consume the '$' so we can peek beyond.
             self.consume_char()?;
+            self.skip_line_continuations()?;
 
             // Now peek beyond to see what we have.
             let char_after_dollar_sign = self.peek_char()?;
@@ -992,6 +1058,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
                     // Check to see if this is possibly an arithmetic expression
                     // (i.e., one that starts with `$((`).
+                    self.skip_line_continuations()?;
                     let expansion = if matches!(self.peek_char()?, Some('(')) {
                         // Consume the second '(' and add it to the token.
                         state.append_char(self.next_char()?.unwrap());
@@ -1057,6 +1124,12 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             let mut escaping_enabled = false;
             let mut done = false;
             while !done {
+                // As in bash, line continuations are removed throughout (even within quotes in
+                // the command), except right after an escaping backslash.
+                if !escaping_enabled {
+                    self.skip_line_continuations()?;
+                }
+
                 // Read (and consume) the next char.
                 let next_char_in_backquote = self.next_char()?;
                 if let Some(cib) = next_char_in_backquote {
@@ -1112,7 +1185,20 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 return Ok(self.cross_state.queued_tokens.remove(0));
             }
 
-            let next = self.peek_char()?;
+            // As bash does as it reads input, drop any line continuations before looking at the
+            // next char, unless the backslash would be taken literally. A token not yet started
+            // starts after them.
+            let mut next = self.peek_char()?;
+            if next == Some('\\')
+                && self.peek_second_char()? == Some('\n')
+                && !self.backslash_is_literal(&state)
+            {
+                self.skip_line_continuations()?;
+                if !state.started_token() {
+                    state.start_position = self.cross_state.cursor.clone();
+                }
+                next = self.peek_char()?;
+            }
             let c = next.unwrap_or('\0');
 
             // When we hit the end of the input, then we're done with the current token (if there is
@@ -1206,6 +1292,20 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                     // See if this was a newline character following the terminating here tag.
                     if c == '\n' {
                         self.remove_here_end_tag(&mut state, &mut result, true)?;
+                    } else if c == '\\'
+                        && self
+                            .cross_state
+                            .frame
+                            .current_here_tags
+                            .first()
+                            .is_some_and(|tag| !tag.tag_was_escaped_or_quoted)
+                    {
+                        // In the body of a here-document whose tag isn't quoted, a backslash
+                        // escapes the next char; take that as-is too. (It isn't a newline: that
+                        // would have been a line continuation, already removed.)
+                        if let Some(escaped) = self.next_char()? {
+                            state.append_char(escaped);
+                        }
                     }
                 }
             //
@@ -1285,18 +1385,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             } else if does_char_newly_affect_quoting(&state, c) {
                 if c == '\\' {
-                    // Consume the backslash ourselves so we can peek past it.
                     self.consume_char()?;
-
-                    if matches!(self.peek_char()?, Some('\n')) {
-                        // Make sure the newline char gets consumed too.
-                        self.consume_char()?;
-
-                        // Make sure to include neither the backslash nor the newline character.
-                    } else {
-                        state.in_escape = true;
-                        state.append_char(c);
-                    }
+                    state.in_escape = true;
+                    state.append_char(c);
                 } else if c == '\'' {
                     // (A `$'` was already taken as ANSI-C quoting where its `$` was read.)
                     state.quote_mode = QuoteMode::Single(self.cross_state.cursor.clone());
@@ -1372,6 +1463,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 // `$(...)` and `${...}` are only nested constructs inside double
                 // quotes; elsewhere their parens simply count toward the nesting.
                 while paren_depth > 0 {
+                    // Only single quotes (including `$'...'`) keep line continuations; double
+                    // quotes don't.
+                    if !matches!(quote, Some(('\'', _))) {
+                        self.skip_line_continuations()?;
+                    }
                     let Some(extglob_char) = self.peek_char()? else {
                         return Err(TokenizerError::UnterminatedExtendedGlob(
                             self.cross_state.cursor.clone(),
@@ -1738,6 +1834,67 @@ bc"
     }
 
     #[test]
+    fn tokenize_line_continuations() -> Result<()> {
+        // As in bash, a line continuation is removed wherever the backslash isn't quoted, even
+        // splitting an operator or following a `$`.
+        for (input, expected) in [
+            ("a&\\\n&b", &["a", "&&", "b"][..]),
+            ("a|\\\n&b", &["a", "|&", "b"]),
+            ("a&&\\\n", &["a", "&&"]),
+            // At the end of input, it's as though the input ended right at the operator.
+            ("a <<\\\n", &["a", "<<"]),
+            ("a&&\\b", &["a", "&&", "\\b"]),
+            ("a<\\\n<b\nx\nb\n", &["a", "<<", "b", "x\n", "b", "\n"]),
+            ("a<<\\b\n$x\nb\n", &["a", "<<", "\\b", "$x\n", "b", "\n"]),
+            ("$\\\n(a) $\\\n{a}", &["$(a)", "${a}"]),
+            ("$(\\\n(1))", &["$((1))"]),
+            (
+                "$(a\\\nb) ${a\\\nb} $((1+\\\n1))",
+                &["$(ab)", "${ab}", "$((1+1))"],
+            ),
+            ("\"a\\\nb\" `'a\\\nb'`", &["\"ab\"", "`'ab'`"]),
+            ("@(a\\\nb|\"a\\\nb\")", &["@(ab|\"ab\")"]),
+            // Kept after an escaping backslash, in single quotes, and in a comment.
+            ("a\\\\\n", &["a\\\\", "\n"]),
+            ("'a\\\nb' $'a\\\nb'", &["'a\\\nb'", "$'a\\\nb'"]),
+            ("`\\\\\n`", &["`\\\\\n`"]),
+            ("@('a\\\nb')", &["@('a\\\nb')"]),
+            ("a #b\\\nc", &["a", "\n", "c"]),
+            // In a here-document's body, they're kept only if its tag is quoted.
+            (
+                "<<a\nb\\\nc\\\\\nd\na\n",
+                &["<<", "a", "bc\\\\\nd\n", "a", "\n"],
+            ),
+            ("<<a\nb\\\na\na\n", &["<<", "a", "ba\n", "a", "\n"]),
+            ("<<'a'\n\\\nb\na\n", &["<<", "'a'", "\\\nb\n", "a", "\n"]),
+        ] {
+            let tokens = tokenize_str(input)?;
+            let token_strs: Vec<_> = tokens.iter().map(Token::to_str).collect();
+            assert_eq!(token_strs, expected, "tokenizing {input:?}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_token_after_blanks_and_line_continuation() -> Result<()> {
+        // The blanks before the line continuation don't count toward where `c` starts.
+        assert_matches!(
+            &tokenize_str("a; \\\n  c")?[..],
+            [_, _, Token::Word(word, span)]
+                if word == "c" && (span.start.line, span.start.column, span.start.index) == (2, 3, 7)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_operator_followed_by_backslash() -> Result<()> {
+        // The `;` ends before the escaped `b`. The `|` ends after the line continuation following
+        // it (as a word would), and the `c` starts on the next line.
+        assert_ron_snapshot!(test_tokenizer("a;\\b|\\\n  c")?);
+        Ok(())
+    }
+
+    #[test]
     fn tokenize_comment() -> Result<()> {
         assert_ron_snapshot!(test_tokenizer(
             r"a #comment
@@ -1925,8 +2082,9 @@ SOMETHING
 
     #[test]
     fn tokenize_input_ending_where_here_tag_expected_is_incomplete() {
-        // More input could still supply the tag, as after a line continuation.
-        for input in ["cat << ", "cat << \\\n", "cat <<\\\n"] {
+        // More input could still supply the tag, as after a line continuation. (Input ending
+        // right at the operator, even after a line continuation, is left to the parser.)
+        for input in ["cat << ", "cat << \\\n"] {
             assert_matches!(
                 tokenize_str(input),
                 Err(e) if e.is_incomplete(),

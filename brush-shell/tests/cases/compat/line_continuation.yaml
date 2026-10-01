@@ -1,0 +1,65 @@
+name: "Line continuations"
+cases:
+  - name: "Line continuation inside operators"
+    stdin: |
+      true &\
+      & echo and
+      false |\
+      | echo or
+      echo pipe |\
+      & cat
+      case x in x) echo case ;\
+      ; esac
+      cat <\
+      <EOF
+      body
+      EOF
+
+  - name: "Line number after a line continuation"
+    stdin: |
+      true && \
+        echo $LINENO
+      true | \
+        echo $LINENO
+
+  - name: "Line number of a word after a line continuation"
+    min_oracle_version: "5.3" # bash 5.2 gives the word's own line, not the command's
+    stdin: |
+      echo \
+        $LINENO
+
+  - name: "Line continuation after a dollar sign"
+    stdin: |
+      x=1
+      echo $\
+      (echo cmdsub) $\
+      {x} $\
+      x $\
+      ((1 + 1)) $\
+      'ansi'
+
+  - name: "Line continuation in quotes"
+    stdin: |
+      echo "a\
+      b" 'c\
+      d' "e\\
+      f"
+      printf '[%s]\n' $'g\
+      h'
+
+  - name: "Line continuation in an extglob"
+    stdin: |
+      shopt -s extglob
+      case ab in @(a\
+      b)) echo unquoted;; esac
+      case ab in @("a\
+      b")) echo double-quoted;; esac
+      case 'a\
+      b' in @('a\
+      b')) echo single-quoted;; esac
+
+  - name: "Line continuation in single quotes in a parameter expansion in double quotes"
+    known_failure: true # TODO(tokenizer): in a `${...}` within double quotes, single quotes are literal, so a line continuation in them is removed
+    stdin: |
+      echo "${x:-'a\
+      b'}"
