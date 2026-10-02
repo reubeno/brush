@@ -369,7 +369,6 @@ fn bind_key_sequence_to_readline_target(
             }
 
             bindings.bind(key_sequence, interfaces::KeyAction::DoInputFunction(func))?;
-            Ok(())
         }
         BindableReadlineTarget::Macro(cmd_macro) => {
             tracing::debug!(target: trace_categories::INPUT,
@@ -377,9 +376,10 @@ fn bind_key_sequence_to_readline_target(
             );
 
             bindings.define_macro(key_sequence, cmd_macro)?;
-            Ok(())
         }
     }
+
+    Ok(())
 }
 
 fn key_sequence_to_abstract_strokes(

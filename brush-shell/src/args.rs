@@ -327,7 +327,7 @@ mod tests {
         assert!(!args.interactive);
         assert!(!args.login);
         assert!(args.command.is_none());
-        assert!(args.script_args.is_empty());
+        assert_eq!(args.script_args, Vec::<String>::new());
     }
 
     #[test]

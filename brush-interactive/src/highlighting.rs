@@ -414,7 +414,7 @@ mod tests {
         let highlighted = highlight_command(&shell, line, line.len());
 
         // Should have at least 2 spans
-        assert!(!highlighted.spans().is_empty());
+        assert_ne!(highlighted.spans(), []);
 
         // Verify highlighting produces spans that cover the input
         let total_covered: usize = highlighted.spans().iter().map(|s| s.range.len()).sum();
@@ -435,7 +435,7 @@ mod tests {
         let highlighted = highlight_command(&shell, line, 0);
 
         // Should have spans for: echo, space, "hello world"
-        assert!(!highlighted.spans().is_empty());
+        assert_ne!(highlighted.spans(), []);
 
         // Check that quoted parts are marked as Quoted
         assert!(
