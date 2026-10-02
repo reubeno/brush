@@ -1,0 +1,69 @@
+---
+source: brush-parser/src/tokenizer.rs
+expression: "test_tokenizer(\"a;\\\\b|\\\\\\n  c\")?"
+---
+TokenizerResult(
+  input: "a;\\b|\\\n  c",
+  result: [
+    Word("a", SourceSpan(
+      start: SourcePosition(
+        index: 0,
+        line: 1,
+        column: 1,
+      ),
+      end: SourcePosition(
+        index: 1,
+        line: 1,
+        column: 2,
+      ),
+    )),
+    Operator(";", SourceSpan(
+      start: SourcePosition(
+        index: 1,
+        line: 1,
+        column: 2,
+      ),
+      end: SourcePosition(
+        index: 2,
+        line: 1,
+        column: 3,
+      ),
+    )),
+    Word("\\b", SourceSpan(
+      start: SourcePosition(
+        index: 2,
+        line: 1,
+        column: 3,
+      ),
+      end: SourcePosition(
+        index: 4,
+        line: 1,
+        column: 5,
+      ),
+    )),
+    Operator("|", SourceSpan(
+      start: SourcePosition(
+        index: 4,
+        line: 1,
+        column: 5,
+      ),
+      end: SourcePosition(
+        index: 7,
+        line: 2,
+        column: 1,
+      ),
+    )),
+    Word("c", SourceSpan(
+      start: SourcePosition(
+        index: 9,
+        line: 2,
+        column: 3,
+      ),
+      end: SourcePosition(
+        index: 10,
+        line: 2,
+        column: 4,
+      ),
+    )),
+  ],
+)

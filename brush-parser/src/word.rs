@@ -1183,11 +1183,20 @@ peg::parser! {
         }}
 
         rule backquoted_command() -> String =
-            chars:(backquoted_char()*) { chars.into_iter().collect() }
+            chars:(backquoted_char()*) {
+                let mut command: String = chars.into_iter().collect();
+                // TODO(tokenizer): A backslash ending the input is reported as an unterminated
+                // escape, where bash takes it literally; escape it so it stays literal.
+                if command.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
+                    command.push('\\');
+                }
+                command
+            }
 
+        // As in bash, a backslash is removed only before `$`, `` ` ``, or `\`. (The tokenizer
+        // already removed line continuations.)
         rule backquoted_char() -> &'input str =
-            "\\`" { "`" } /
-            "\\\\" { "\\\\" } /
+            "\\" s:$(['$' | '`' | '\\']) { s } /
             s:$([^'`']) { s }
 
         rule arithmetic_expansion() -> WordPiece =
@@ -1458,6 +1467,28 @@ mod tests {
     #[test]
     fn parse_backquoted_command_in_double_quotes() -> Result<()> {
         assert_ron_snapshot!(test_parse(r#""`echo hi`""#)?);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_backquoted_command_escapes() -> Result<()> {
+        for (input, expected) in [
+            (r"`printf \\2`", r"printf \2"),
+            (r"`printf \\\\2`", r"printf \\2"),
+            (r#"`echo \$x \` \" \a`"#, r#"echo $x ` \" \a"#),
+            // A backslash left ending the command is escaped to keep it literal.
+            (r"`printf \\`", r"printf \\"),
+            (r"`printf \\\\`", r"printf \\"),
+            (r"`printf \\\\\\`", r"printf \\\\"),
+        ] {
+            let parsed = super::parse(input, &ParserOptions::default())?;
+            assert_matches!(
+                &parsed[..],
+                [WordPieceWithSource { piece: WordPiece::BackquotedCommandSubstitution(command), .. }]
+                    if command == expected,
+                "parsing {input:?}"
+            );
+        }
         Ok(())
     }
 

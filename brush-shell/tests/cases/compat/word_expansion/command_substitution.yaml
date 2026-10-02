@@ -46,6 +46,47 @@ cases:
     stdin: |
       echo `echo \\`
 
+  - name: "Backtick command substitution with trailing backslashes"
+    stdin: |
+      y=`printf %s \\`
+      printf 'two: <%s> len=%s\n' "$y" "${#y}"
+      y=`printf %s \\\\`
+      printf 'four: <%s> len=%s\n' "$y" "${#y}"
+      y=`printf %s \\\\\\`
+      printf 'six: <%s> len=%s\n' "$y" "${#y}"
+
+  - name: "Backtick command substitution escape rules"
+    stdin: |
+      HOME=abc
+      printf '<%s>\n' `printf '%s\n' \\\\2`
+      echo `echo \$HOME`
+      echo `echo \\$HOME`
+      echo `echo \"q\"`
+      echo `echo 'a\"b'`
+
+  - name: "Backtick command substitution escape rules in double quotes"
+    stdin: |
+      HOME=abc
+      echo "`echo \\\\a`"
+      echo "`echo \$HOME \\$HOME`"
+      y=
+      echo "${y:-`echo \"q\"`}"
+
+  - name: "Backtick command substitution unescaping double quotes in double quotes"
+    known_failure: true # TODO(parser): in backquotes directly within double quotes (not in a `${...}` within them), a backslash before `"` is removed
+    stdin: |
+      echo "`echo \"q\"`"
+      echo "`echo 'a\"b'`"
+
+  - name: "Backtick command substitution line continuations"
+    stdin: |
+      echo `echo e\
+      cho`
+      echo `echo 'a\
+      b'`
+      echo "`echo 'a\
+      b'`"
+
   - name: "Backtick command substitution in double quotes"
     stdin: |
       echo "`echo First line`"
@@ -307,7 +348,6 @@ cases:
       case "$v" in @("$'x'")) echo match;; *) echo no match;; esac
 
   - name: "Escaped backslash in backquoted command"
-    known_failure: true # TODO(expansion): '\\' inside backquotes isn't reduced to '\' before the command runs
     stdin: |
       shopt -s extglob
       echo `echo \\"`
