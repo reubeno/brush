@@ -83,13 +83,15 @@ fn parse_words(words: &[String]) -> Result<CommandLineArgs, ParseError> {
 
 fn render_parse_error(err: &winnow_args::Error) -> ParseError {
     // Help goes to stdout with status 0; every other failure to stderr with 2.
-    match err.render_help("brush") {
+    // Colored when the stream each goes to is a terminal that shows color.
+    use winnow_args::help::Style;
+    match err.render_help_styled("brush", Style::auto()) {
         Some(message) => ParseError {
             message,
             exit_code: 0,
         },
         None => ParseError {
-            message: err.render(winnow_args::help::Style::PLAIN),
+            message: err.render(Style::auto_stderr()),
             exit_code: 2,
         },
     }
