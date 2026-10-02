@@ -869,7 +869,7 @@ mod tests {
     #[test]
     fn test_build_array_fields_none_input() {
         let result = build_array_fields(None, " ", false);
-        assert!(result.is_empty());
+        assert_eq!(result, Vec::<(Option<String>, String)>::new());
     }
 
     // ==================== build_variable_fields tests ====================
@@ -897,6 +897,6 @@ mod tests {
     #[test]
     fn test_build_variable_fields_none_input() {
         let result = build_variable_fields(None, " ", false, 3);
-        assert!(result.is_empty());
+        assert_eq!(result, VecDeque::<String>::new());
     }
 }

@@ -185,6 +185,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(prompts.is_empty());
+        assert_eq!(prompts, Vec::<u8>::new());
     }
 }

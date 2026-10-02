@@ -56,6 +56,12 @@ jobs:
           key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: prek-${{ runner.os }}-
 
+      - name: Prepare hooks
+        run: prek prepare-hooks
+        env:
+          # Pass through the token in case 'cargo binstall' needs it
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run pre-commit hooks
         run: cargo xtask check hooks
 
