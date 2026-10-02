@@ -42,12 +42,12 @@ impl openfiles::Stream for FailingReaderWriter {
         Box::new(self.clone())
     }
 
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, crate::error::Error> {
         Err(crate::error::ErrorKind::CannotConvertToNativeFd.into())
     }
 
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, crate::error::Error> {
         Err(crate::error::ErrorKind::CannotConvertToNativeFd.into())
     }

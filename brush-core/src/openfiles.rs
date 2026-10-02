@@ -20,12 +20,12 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 
     /// Converts the stream into an `OwnedFd`. Returns an error if the operation
     /// is not supported or if it fails.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, error::Error>;
 
     /// Borrows the stream as a `BorrowedFd`. Returns an error if the operation
     /// is not supported or if it fails.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error>;
 }
 
@@ -135,7 +135,7 @@ impl std::fmt::Display for OpenFile {
 impl OpenFile {
     /// Converts the open file into an `OwnedFd`. For shared file/pipe handles this materializes
     /// a real duplicate via `dup(2)` so the caller receives an independently owned descriptor.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub(crate) fn try_clone_to_owned(self) -> Result<std::os::fd::OwnedFd, error::Error> {
         use std::os::fd::AsFd as _;
 
@@ -155,7 +155,7 @@ impl OpenFile {
     /// # Errors
     ///
     /// Returns an error if the operation is not supported for the underlying file type.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error> {
         use std::os::fd::AsFd as _;
 

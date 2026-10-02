@@ -1,0 +1,21 @@
+id: platform-cfg-outside-sys
+valid:
+  - "#[cfg(test)] fn f() {}"
+  - '#[cfg(feature = "unix")] fn f() {}'
+  - "// #[cfg(unix)]"
+  - "fn f() -> &'static str { std::env::consts::OS }"
+invalid:
+  - "#![cfg(windows)]"
+  - "#[cfg(unix)] fn f() {}"
+  - '#[cfg(all(test, target_os = "linux"))] fn f() {}'
+  - '#[cfg(not(target_family = "wasm"))] fn f() {}'
+  - '#[cfg(target_pointer_width = "64")] fn f() {}'
+  - "#[cfg_attr(unix, derive(Debug))] struct S;"
+  - "struct S { #[cfg(windows)] x: u8 }"
+  - "fn f(v: u8) { match v { #[cfg(unix)] 0 => {} _ => {} } }"
+  - "fn f() { #[cfg(windows)] let x = 1; }"
+  - 'fn f() -> bool { cfg!(target_os = "macos") }'
+  - "fn f() { cfg_select! { windows => {} _ => {} } }"
+  - "cfg_if::cfg_if! { if #[cfg(unix)] { fn f() {} } }"
+  - "macro_rules! m { () => { #[cfg(unix)] fn f() {} } }"
+  - "fn f() { vec![#[cfg(unix)] 1]; }"

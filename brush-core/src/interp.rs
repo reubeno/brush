@@ -1998,6 +1998,7 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
 
     let bytes = contents.as_bytes();
 
+    // ast-grep-ignore: platform-cfg-outside-sys
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::os::fd::AsFd as _;

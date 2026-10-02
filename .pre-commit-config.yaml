@@ -1,12 +1,15 @@
 # Third-party linter definitions, and the single place their versions are
-# pinned. Dependabot's `pre-commit` ecosystem keeps the `rev:` fields current
+# pinned. As with GitHub Actions, each `rev:` is a full commit SHA, since a tag
+# can be moved to point at different code; the `# frozen: <tag>` comment records
+# which release that is. Dependabot's `pre-commit` ecosystem keeps both current
 # (see .github/dependabot.yml).
 #
 # Two different front ends read this file:
 #
 #   cargo xtask check hooks            # runs every hook; needs no knowledge of prek
 #   cargo xtask check hooks <HOOK>...  # runs only the named hooks, by id or by the
-#                                      # aliases below: spelling, links, workflows, deps
+#                                      # aliases below: spelling, links, workflows, deps,
+#                                      # structure
 #
 # ...and prek (https://prek.j178.dev) directly, as installed git hooks. CI's
 # Pre-commit hooks workflow (.github/workflows/hooks.yaml) goes through
@@ -47,7 +50,7 @@ repos:
   # automatically, so nothing is cloned or installed for this block.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
     hooks:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
@@ -94,7 +97,7 @@ repos:
   # Spelling. Configured by Cargo.toml [workspace.metadata.typos].
   # ---------------------------------------------------------------------------
   - repo: https://github.com/crate-ci/typos
-    rev: v1.50.2
+    rev: 512fc24f32f44ab01972217aaaf3dc86ec234d53 # frozen: v1.50.2
     hooks:
       - id: typos
         alias: spelling
@@ -113,7 +116,7 @@ repos:
   # .github/workflows/workflow-checks.yaml and is not redundant with it.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.30.1
+    rev: fa412071e4f5d44d44f9e365f4676f9df92456a2 # frozen: v1.30.1
     hooks:
       - id: zizmor
         alias: workflows
@@ -123,9 +126,12 @@ repos:
   # Link checking. Configured by lychee.toml. `types_or` mirrors lychee's own
   # default `--extensions` list (markdown, html, css, txt, xml), so this reaches
   # the same files as pointing lychee at the whole tree.
+  #
+  # Dependabot bumps this SHA but can't rewrite the comment, because lychee's
+  # tags carry a `lychee-` prefix; fix the comment by hand in its bump PRs.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/lycheeverse/lychee
-    rev: lychee-v0.24.2
+    rev: 2bba271688c1abb1503097a064e6c3bc1d1b6a9b # frozen: lychee-v0.24.2
     hooks:
       - id: lychee
         alias: links
@@ -142,17 +148,41 @@ repos:
   # Cargo.toml or Cargo.lock is among the files.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/EmbarkStudios/cargo-deny
-    rev: 0.20.2
+    rev: bca0dde53651ee946720e4540b5ce2610bec8f06 # frozen: 0.20.2
     hooks:
       - id: cargo-deny
         alias: deps
+
+  # ---------------------------------------------------------------------------
+  # Structural lints over the syntax tree, for architectural rules that clippy
+  # can't express. Configured by sgconfig.yml; the rules and their tests live
+  # in .config/ast-grep/. Pre-existing violations are baselined in place, and
+  # --error=unused-suppression fails once one of those is no longer needed, so
+  # the baseline can only shrink. This is a thin community wrapper around the
+  # official @ast-grep/cli npm package, whose version it tracks; a `repo: local`
+  # hook would avoid it, but Dependabot skips those.
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/boidolr/ast-grep-pre-commit
+    rev: 7bae9c67e1a003cd5ef629c64f0466dc46556b3b # frozen: 0.45.3
+    hooks:
+      - id: ast-grep
+        alias: structure
+        args: [--error=unused-suppression]
+        types: [rust]
+      # Each rule's test cases must or mustn't match. Skipping snapshot tests
+      # skips the extra comparison of each match's exact output (span, message)
+      # against a recorded __snapshots__ file, which would need regenerating on
+      # every rule edit without telling us more about what the rule catches.
+      - id: ast-grep-rule-tests
+        args: [--skip-snapshot-tests]
+        files: ^(sgconfig\.yml|\.config/ast-grep/)
 
   # ---------------------------------------------------------------------------
   # Conventional Commits, as required by CONTRIBUTING.md and consumed by
   # git-cliff and release-plz.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v4.4.0
+    rev: 91ab4bf57e58b32adf1a122681f6ebe164d081c8 # frozen: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
