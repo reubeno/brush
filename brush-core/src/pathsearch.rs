@@ -210,7 +210,7 @@ mod tests {
 
     /// On Windows, `PATHEXT` resolution has to run before directories are rejected: a
     /// `prog` directory must not keep `prog.bat` in the same PATH entry from being found.
-    #[cfg(windows)]
+    #[cfg(windows)] // ast-grep-ignore: platform-cfg-outside-sys
     #[test]
     fn same_named_directory_does_not_hide_a_pathext_match() -> Result<()> {
         let scratch = tempfile::tempdir()?;

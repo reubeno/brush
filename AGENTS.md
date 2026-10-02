@@ -26,7 +26,7 @@ The brush project is organized into several key crates:
 
 - Shell instances are created via `Shell::builder()`
 - The project uses builder patterns for type-safe configuration
-- We try to keep platform-specific code in `brush-core` under the `sys` module
+- Platform-specific code in `brush-core` MUST live under the `sys` module
 - Follows Rust 2024 edition standards
 
 ### Module Dependencies
@@ -105,7 +105,7 @@ cargo xtask ci full
 - **Compatibility tests**: `cargo test --test brush-compat-tests`
 - **Linting**: `cargo clippy`
 - **Formatting**: `cargo fmt --check`
-- **Pre-commit hooks** (spelling, links, workflows, dependency audit): `cargo xtask check hooks` (needs `prek`)
+- **Pre-commit hooks** (spelling, links, workflows, dependency audit, structural lints): `cargo xtask check hooks` (needs `prek`)
 - **Full test suite**: `cargo test --workspace`
 
 **When tests fail:**
@@ -234,7 +234,7 @@ cargo xtask check fmt      # Format check
 cargo xtask check lint     # Clippy
 cargo xtask check build    # Compilation check
 cargo xtask check schemas  # Schema drift check
-cargo xtask check hooks  # prek hooks: file hygiene, typos, zizmor, lychee, cargo-deny
+cargo xtask check hooks  # prek hooks: file hygiene, typos, zizmor, lychee, cargo-deny, ast-grep
 cargo xtask check hooks deps  # One hook, by id or alias
 
 # Tests
@@ -265,7 +265,7 @@ cargo xtask analyze bench  # Run benchmarks
 
 **Outer loop validation:**
 
-- `cargo xtask check hooks` should pass (file hygiene, typos, zizmor, lychee, cargo-deny) - not for frequent use during development; `cargo xtask ci full --no-hooks` skips it when `prek` is unavailable
+- `cargo xtask check hooks` should pass (file hygiene, typos, zizmor, lychee, cargo-deny, ast-grep) - not for frequent use during development; `cargo xtask ci full --no-hooks` skips it when `prek` is unavailable
 
 ## 6. Performance & Error Handling Patterns
 

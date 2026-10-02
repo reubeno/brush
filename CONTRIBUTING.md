@@ -147,7 +147,7 @@ and is what CI invokes too:
 
 `cargo xtask ci full` also runs the third-party linters -- spelling (typos),
 GitHub Actions analysis (zizmor), link checking (lychee), dependency auditing
-(cargo-deny), and assorted file hygiene. Those are defined and version-pinned in
+(cargo-deny), structural lints (ast-grep), and assorted file hygiene. Those are defined and version-pinned in
 `.pre-commit-config.yaml` and executed by [prek](https://prek.j178.dev):
 
 ```bash

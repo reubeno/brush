@@ -1,6 +1,6 @@
 //! Encapsulation of execution results.
 
-#[cfg(unix)]
+#[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
 use std::os::unix::process::ExitStatusExt;
 
 use crate::{error, processes};
@@ -121,7 +121,7 @@ impl From<std::process::Output> for ExecutionResult {
             return Self::new((code & 0xFF) as u8);
         }
 
-        #[cfg(unix)]
+        #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
         if let Some(signal) = output.status.signal() {
             #[expect(clippy::cast_sign_loss)]
             return Self::new((signal & 0xFF) as u8 + 128);

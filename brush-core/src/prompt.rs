@@ -181,6 +181,7 @@ fn format_current_working_directory(
         working_dir_str = filename.to_string_lossy().to_string();
     }
 
+    // ast-grep-ignore: platform-cfg-outside-sys
     if cfg!(windows) {
         working_dir_str = working_dir_str.replace('\\', "/");
     }
