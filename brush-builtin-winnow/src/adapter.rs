@@ -92,26 +92,43 @@ pub fn to_args_error<T: Args>(name: &str, error: &Error) -> ArgsError {
 }
 
 /// A one-line synopsis: `name [-ab] [-c value] [arg ...]`, from the help data
-/// the derive emits. Long options and hidden flags (`+x` forms) are left
-/// out, as `help -s` shows them.
+/// the derive emits: short and `+` options; long options and hidden flags
+/// are left out.
 pub fn synopsis<T: Args>(name: &str) -> String {
     let command: &help::Command = T::HELP;
     let mut out = String::from(name);
     let visible = || command.items.iter().filter(|i| !i.hide);
+    let switch = |i: &&help::Item| !i.positional && i.value_name.is_none() && !i.required;
     let switches: String = visible()
-        .filter(|i| !i.positional && i.value_name.is_none() && !i.required)
-        .filter_map(|i| i.short)
+        .filter(switch)
+        .flat_map(|i| i.short.into_iter().chain(i.more_shorts.iter().copied()))
         .collect();
     if !switches.is_empty() {
         let _ = write!(out, " [-{switches}]");
     }
+    let plus_switches: String = visible().filter(switch).filter_map(|i| i.plus).collect();
+    if !plus_switches.is_empty() {
+        let _ = write!(out, " [+{plus_switches}]");
+    }
     for item in visible().filter(|i| !i.positional && i.value_name.is_some()) {
-        let Some(short) = item.short else { continue };
         let value = item.value_name.unwrap_or("VALUE").to_lowercase();
-        if item.required {
-            let _ = write!(out, " -{short} {value}");
+        let value = if item.optional_value {
+            format!("[{value}]")
         } else {
-            let _ = write!(out, " [-{short} {value}]");
+            value
+        };
+        // `-o value` and `+o value` are told apart; a long-only flag is left out.
+        let spellings = item
+            .short
+            .map(|c| format!("-{c}"))
+            .into_iter()
+            .chain(item.plus.map(|c| format!("+{c}")));
+        for flag in spellings {
+            if item.required {
+                let _ = write!(out, " {flag} {value}");
+            } else {
+                let _ = write!(out, " [{flag} {value}]");
+            }
         }
     }
     for item in visible().filter(|i| i.positional) {

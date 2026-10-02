@@ -534,7 +534,7 @@ pub(crate) struct CompOptCommand {
     #[arg(short = 'o', value_name = "OPT")]
     enabled_options: Vec<Choice<CompleteOption>>,
 
-    #[arg(plus = 'o')]
+    #[arg(plus = 'o', value_name = "OPT")]
     disabled_options: Vec<Choice<CompleteOption>>,
 
     /// If specified, scopes updates to completions of the named commands.
