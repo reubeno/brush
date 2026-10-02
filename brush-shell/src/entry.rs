@@ -716,7 +716,7 @@ mod tests {
             CommandLineArgs::try_parse_from(args(&["brush", "-c", "-o", "errexit", "echo hello"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert_eq!(parsed_args.enabled_options, ["errexit"]);
-        assert!(parsed_args.script_args.is_empty());
+        assert_eq!(parsed_args.script_args, Vec::<String>::new());
         Ok(())
     }
 
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert!(parsed_args.login);
         assert!(parsed_args.print_commands_and_arguments);
-        assert!(parsed_args.script_args.is_empty());
+        assert_eq!(parsed_args.script_args, Vec::<String>::new());
         Ok(())
     }
 
@@ -796,7 +796,7 @@ mod tests {
             CommandLineArgs::try_parse_from(args(&["brush", "-c", "-l", "--", "echo hello"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert!(parsed_args.login);
-        assert!(parsed_args.script_args.is_empty());
+        assert_eq!(parsed_args.script_args, Vec::<String>::new());
         Ok(())
     }
 

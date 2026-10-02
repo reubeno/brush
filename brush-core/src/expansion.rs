@@ -1017,6 +1017,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
     }
 
+    #[allow(clippy::double_must_use)]
     #[async_recursion::async_recursion]
     async fn expand_word_piece(
         &mut self,
