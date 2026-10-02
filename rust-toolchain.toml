@@ -26,5 +26,5 @@
 # it selects its toolchain with `rustup default`, which this file
 # silently overrides.
 [toolchain]
-channel = "1.98.1"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]
