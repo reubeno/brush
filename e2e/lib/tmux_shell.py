@@ -32,7 +32,7 @@ class TmuxShell:
         # binary, the rcfile) have to survive another round of word splitting.
         command = shlex.join([str(shell), "--noprofile", "--rcfile", str(rc)])
         session = self.server.new_session(window_command=command, x=width, y=height)
-        self.pane = session.attached_pane
+        self.pane = session.active_pane
         self.wait_for_prompt()
         LOG.info("shell startup:\n%s", self.screen())
 

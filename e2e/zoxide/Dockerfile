@@ -1,6 +1,6 @@
 # zoxide's upstream tests only validate generated scripts, so this image installs a
 # pinned release and runs the small PTY-driven shell-integration suite in tests/.
-FROM ubuntu:25.10
+FROM ubuntu:26.04
 ARG ZOXIDE_VERSION=0.10.0
 # Bump these together with ZOXIDE_VERSION; upstream publishes no checksum file, so they
 # are the sha256 of the release tarballs themselves.
