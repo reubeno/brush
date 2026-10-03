@@ -226,6 +226,13 @@ cases:
       echo "[Take 3]"
       compgen -W '&1 foo' -X '\&*' ''
 
+  - name: "compgen -X with a leading ! keeps only matches"
+    stdin: |
+      compgen -W 'foo bar fab' -X '!f*' ''
+      echo "rc=$?"
+      compgen -W 'foo bar' -X '!z*' ''
+      echo "rc=$?"
+
   - name: "compgen -X with replacement"
     stdin: |
       echo "[Take 1]"

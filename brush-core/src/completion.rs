@@ -1,10 +1,9 @@
 //! Implements programmable command completion support.
 
-use clap::ValueEnum;
 use itertools::Itertools;
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
 };
 use strum::IntoEnumIterator;
@@ -59,126 +58,187 @@ fn split_completion_word_list(
     Ok(words)
 }
 
-/// Type of action to take to generate completion candidates.
-#[derive(Clone, Debug, ValueEnum)]
+/// Type of action to take to generate completion candidates. Each one's name (e.g.
+/// `arrayvar`) is what `complete -A` takes.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    strum_macros::EnumIter,
+    strum_macros::EnumMessage,
+    strum_macros::EnumString,
+    strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "lowercase")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteAction {
     /// Complete with valid aliases.
-    #[clap(name = "alias")]
     Alias,
     /// Complete with names of array shell variables.
-    #[clap(name = "arrayvar")]
     ArrayVar,
     /// Complete with names of key bindings.
-    #[clap(name = "binding")]
     Binding,
     /// Complete with names of shell builtins.
-    #[clap(name = "builtin")]
     Builtin,
     /// Complete with names of executable commands.
-    #[clap(name = "command")]
     Command,
     /// Complete with directory names.
-    #[clap(name = "directory")]
     Directory,
     /// Complete with names of disabled shell builtins.
-    #[clap(name = "disabled")]
     Disabled,
     /// Complete with names of enabled shell builtins.
-    #[clap(name = "enabled")]
     Enabled,
     /// Complete with names of exported shell variables.
-    #[clap(name = "export")]
     Export,
     /// Complete with filenames.
-    #[clap(name = "file")]
     File,
     /// Complete with names of shell functions.
-    #[clap(name = "function")]
     Function,
     /// Complete with valid user groups.
-    #[clap(name = "group")]
     Group,
     /// Complete with names of valid shell help topics.
-    #[clap(name = "helptopic")]
     HelpTopic,
     /// Complete with the system's hostname(s).
-    #[clap(name = "hostname")]
     HostName,
     /// Complete with the command names of shell-managed jobs.
-    #[clap(name = "job")]
     Job,
     /// Complete with valid shell keywords.
-    #[clap(name = "keyword")]
     Keyword,
     /// Complete with the command names of running shell-managed jobs.
-    #[clap(name = "running")]
     Running,
     /// Complete with names of system services.
-    #[clap(name = "service")]
     Service,
-    /// Complete with the names of options settable via shopt.
-    #[clap(name = "setopt")]
-    SetOpt,
     /// Complete with the names of options settable via set -o.
-    #[clap(name = "shopt")]
+    SetOpt,
+    /// Complete with the names of options settable via shopt.
     ShOpt,
     /// Complete with the names of trappable signals.
-    #[clap(name = "signal")]
     Signal,
     /// Complete with the command names of stopped shell-managed jobs.
-    #[clap(name = "stopped")]
     Stopped,
     /// Complete with valid usernames.
-    #[clap(name = "user")]
     User,
     /// Complete with names of shell variables.
-    #[clap(name = "variable")]
     Variable,
 }
 
-/// Options influencing how command completions are generated.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
+/// Options influencing how command completions are generated. Each one's name (e.g.
+/// `nospace`) is what `complete -o` takes; they're declared in the order bash lists them.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    strum_macros::EnumIter,
+    strum_macros::EnumMessage,
+    strum_macros::EnumString,
+    strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "lowercase")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
-    #[clap(name = "bashdefault")]
     BashDefault,
     /// Use default filename completion if no completions are generated.
-    #[clap(name = "default")]
     Default,
     /// Treat completions as directory names.
-    #[clap(name = "dirnames")]
     DirNames,
     /// Treat completions as filenames.
-    #[clap(name = "filenames")]
     FileNames,
     /// Suppress default auto-quotation of completions.
-    #[clap(name = "noquote")]
     NoQuote,
     /// Do not sort completions.
-    #[clap(name = "nosort")]
     NoSort,
     /// Do not append a trailing space to completions at the end of the input line.
-    #[clap(name = "nospace")]
     NoSpace,
     /// Also generate directory completions.
-    #[clap(name = "plusdirs")]
     PlusDirs,
+}
+
+/// Options for generating completions: which [`CompleteOption`]s are enabled.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct GenerationOptions {
+    enabled: BTreeSet<CompleteOption>,
+}
+
+impl FromIterator<CompleteOption> for GenerationOptions {
+    /// Returns options with just the given ones enabled.
+    fn from_iter<I: IntoIterator<Item = CompleteOption>>(options: I) -> Self {
+        Self {
+            enabled: options.into_iter().collect(),
+        }
+    }
+}
+
+impl GenerationOptions {
+    /// Returns whether `option` is enabled.
+    pub fn get(&self, option: CompleteOption) -> bool {
+        self.enabled.contains(&option)
+    }
+
+    /// Enables or disables `option`.
+    pub fn set(&mut self, option: CompleteOption, enabled: bool) {
+        if enabled {
+            self.enabled.insert(option);
+        } else {
+            self.enabled.remove(&option);
+        }
+    }
+}
+
+/// Encapsulates a command completion specification; provides policy for how to
+/// generate completions for a given input.
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Spec {
+    //
+    // Options
+    /// Options to use for completion.
+    pub options: GenerationOptions,
+
+    //
+    // Generators
+    /// Actions to take to generate completions.
+    pub actions: Vec<CompleteAction>,
+    /// Optionally, a glob pattern whose expansion will be used as completions.
+    pub glob_pattern: Option<String>,
+    /// Optionally, a list of words to use as completions.
+    pub word_list: Option<String>,
+    /// Optionally, the name of a shell function to invoke to generate completions.
+    pub function_name: Option<String>,
+    /// Optionally, the name of a command to execute to generate completions.
+    pub command: Option<String>,
+
+    //
+    // Filters
+    /// Optionally, a pattern to filter completions (`complete -X`), as given: candidates
+    /// it matches are removed, or, if it starts with a `!` (that doesn't start an extglob
+    /// pattern), those it doesn't match.
+    pub filter_pattern: Option<String>,
+
+    //
+    // Transformers
+    /// Optionally, provides a prefix to be prepended to all completion candidates.
+    pub prefix: Option<String>,
+    /// Optionally, provides a suffix to be appended to all completion candidates.
+    pub suffix: Option<String>,
 }
 
 /// Encapsulates the shell's programmable command completion configuration.
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Config {
+    /// The specs for completing commands' arguments, by command name.
     commands: HashMap<String, Spec>,
-
-    /// Optionally, a completion spec to be used as a default, when earlier
-    /// matches yield no candidates.
-    pub default: Option<Spec>,
-    /// Optionally, a completion spec to be used when the command line is empty.
-    pub empty_line: Option<Spec>,
-    /// Optionally, a completion spec to be used for the initial word of a command line.
-    pub initial_word: Option<Spec>,
+    /// The specs used in place of a command's.
+    specials: HashMap<SpecialSpec, Spec>,
 
     /// Optionally, stores the current completion options in effect. May be mutated
     /// while a completion generation is in-flight.
@@ -208,67 +268,58 @@ impl Default for FallbackOptions {
     }
 }
 
-/// Options for generating completions.
-#[derive(Clone, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct GenerationOptions {
-    //
-    // Options
-    /// Perform rest of default completions if no completions are generated.
-    pub bash_default: bool,
-    /// Use default readline-style filename completion if no completions are generated.
-    pub default: bool,
-    /// Treat completions as directory names.
-    pub dir_names: bool,
-    /// Treat completions as filenames.
-    pub file_names: bool,
-    /// Do not add usual quoting for completions.
-    pub no_quote: bool,
-    /// Do not sort completions.
-    pub no_sort: bool,
-    /// Do not append typical space to a completion at the end of the input line.
-    pub no_space: bool,
-    /// Also complete with directory names.
-    pub plus_dirs: bool,
+/// Names a completion spec in a [`Config`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SpecName<'a> {
+    /// The spec for completing the named command's arguments.
+    Command(&'a str),
+    /// One of the special specs.
+    Special(SpecialSpec),
 }
 
-/// Encapsulates a command completion specification; provides policy for how to
-/// generate completions for a given input.
-#[derive(Clone, Debug, Default)]
+impl<'a> SpecName<'a> {
+    /// Returns the spec named `name`: a command's, or the special spec that bash's name for
+    /// it (see [`SpecialSpec::command_name`]) names.
+    pub fn parse(name: &'a str) -> Self {
+        SpecialSpec::from_command_name(name).map_or(Self::Command(name), Self::Special)
+    }
+
+    /// Returns the name: a command's, or for a special spec, bash's name for it.
+    pub const fn as_str(self) -> &'a str {
+        match self {
+            Self::Command(command) => command,
+            Self::Special(special) => special.command_name(),
+        }
+    }
+}
+
+/// A completion spec used in place of a command's.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum_macros::EnumIter)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Spec {
-    //
-    // Options
-    /// Options to use for completion.
-    pub options: GenerationOptions,
+pub enum SpecialSpec {
+    /// The spec used when no command's spec applies (`complete -D`).
+    Default,
+    /// The spec used when the command line is empty (`complete -E`).
+    EmptyLine,
+    /// The spec used for the initial word of a command line (`complete -I`).
+    InitialWord,
+}
 
-    //
-    // Generators
-    /// Actions to take to generate completions.
-    pub actions: Vec<CompleteAction>,
-    /// Optionally, a glob pattern whose expansion will be used as completions.
-    pub glob_pattern: Option<String>,
-    /// Optionally, a list of words to use as completions.
-    pub word_list: Option<String>,
-    /// Optionally, the name of a shell function to invoke to generate completions.
-    pub function_name: Option<String>,
-    /// Optionally, the name of a command to execute to generate completions.
-    pub command: Option<String>,
+impl SpecialSpec {
+    /// Returns the name that stands in for a command's with this spec, as bash's does:
+    /// the `complete` and `compopt` builtins accept it in place of a command name.
+    pub const fn command_name(self) -> &'static str {
+        match self {
+            Self::Default => "_DefaultCmD_",
+            Self::EmptyLine => "_EmptycmD_",
+            Self::InitialWord => "_InitialWorD_",
+        }
+    }
 
-    //
-    // Filters
-    /// Optionally, a pattern to filter completions.
-    pub filter_pattern: Option<String>,
-    /// If true, completion candidates matching `filter_pattern` are removed;
-    /// otherwise, those not matching it are removed.
-    pub filter_pattern_excludes: bool,
-
-    //
-    // Transformers
-    /// Optionally, provides a prefix to be prepended to all completion candidates.
-    pub prefix: Option<String>,
-    /// Optionally, provides a suffix to be prepended to all completion candidates.
-    pub suffix: Option<String>,
+    /// Returns the special spec that `name`, bash's name for it, names, if any.
+    pub fn from_command_name(name: &str) -> Option<Self> {
+        Self::iter().find(|special| special.command_name() == name)
+    }
 }
 
 /// Describes what triggered the completion process.
@@ -408,15 +459,24 @@ impl Spec {
         {
             let mut updated = Vec::new();
 
+            // Like bash, a leading `!` (unless extglob is on and it starts a `!(...)`
+            // pattern) inverts the filter, which then keeps what it matches.
+            let (pattern, keep_matches) = match filter_pattern.strip_prefix('!') {
+                Some(rest) if !(shell.options().extended_globbing && rest.starts_with('(')) => {
+                    (rest, true)
+                }
+                _ => (filter_pattern.as_str(), false),
+            };
+
             for candidate in candidates {
                 let matches = completion_filter_pattern_matches(
-                    filter_pattern.as_str(),
+                    pattern,
                     candidate.as_str(),
                     context.token_to_complete,
                     shell,
                 )?;
 
-                if self.filter_pattern_excludes != matches {
+                if matches == keep_matches {
                     updated.push(candidate);
                 }
             }
@@ -449,13 +509,15 @@ impl Spec {
         };
 
         let mut processing_options = ProcessingOptions {
-            treat_as_filenames: options.file_names,
-            no_autoquote_filenames: options.no_quote,
-            no_trailing_space_at_end_of_line: options.no_space,
+            treat_as_filenames: options.get(CompleteOption::FileNames),
+            no_autoquote_filenames: options.get(CompleteOption::NoQuote),
+            no_trailing_space_at_end_of_line: options.get(CompleteOption::NoSpace),
         };
 
         // plusdirs always adds directory names; dirnames only does so when nothing else matched.
-        if options.plus_dirs || (options.dir_names && candidates.is_empty()) {
+        if options.get(CompleteOption::PlusDirs)
+            || (options.get(CompleteOption::DirNames) && candidates.is_empty())
+        {
             let mut dir_candidates = get_file_completions(
                 shell,
                 context.token_to_complete,
@@ -474,7 +536,7 @@ impl Spec {
 
         // If we still have no candidates, and bashdefault completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.bash_default {
+        if candidates.is_empty() && options.get(CompleteOption::BashDefault) {
             // TODO(completions): it's not clear what default "bash" completions means. From basic
             // testing, this doesn't seem to include basic file and directory name
             // completion.
@@ -483,10 +545,10 @@ impl Spec {
 
         // If we still have no candidates, and default completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.default {
+        if candidates.is_empty() && options.get(CompleteOption::Default) {
             // N.B. We approximate "default" readline completion behavior by getting file and
             // dir completions.
-            let must_be_dir = options.dir_names;
+            let must_be_dir = options.get(CompleteOption::DirNames);
 
             let mut default_candidates =
                 get_file_completions(shell, context.token_to_complete, must_be_dir).await;
@@ -498,7 +560,7 @@ impl Spec {
         }
 
         // Sort, unless blocked by options.
-        if !self.options.no_sort {
+        if !self.options.get(CompleteOption::NoSort) {
             candidates.sort();
         }
 
@@ -942,17 +1004,11 @@ pub enum Answer {
     RestartCompletionProcess,
 }
 
-const EMPTY_COMMAND: &str = "_EmptycmD_";
-const DEFAULT_COMMAND: &str = "_DefaultCmD_";
-const INITIAL_WORD: &str = "_InitialWorD_";
-
 impl Config {
     /// Removes all registered completion specs.
     pub fn clear(&mut self) {
         self.commands.clear();
-        self.empty_line = None;
-        self.default = None;
-        self.initial_word = None;
+        self.specials.clear();
     }
 
     /// Ensures the named completion spec is no longer registered; returns whether a
@@ -961,104 +1017,66 @@ impl Config {
     /// # Arguments
     ///
     /// * `name` - The name of the completion spec to remove.
-    pub fn remove(&mut self, name: &str) -> bool {
+    pub fn remove(&mut self, name: SpecName<'_>) -> bool {
         match name {
-            EMPTY_COMMAND => {
-                let result = self.empty_line.is_some();
-                self.empty_line = None;
-                result
-            }
-            DEFAULT_COMMAND => {
-                let result = self.default.is_some();
-                self.default = None;
-                result
-            }
-            INITIAL_WORD => {
-                let result = self.initial_word.is_some();
-                self.initial_word = None;
-                result
-            }
-            _ => self.commands.remove(name).is_some(),
+            SpecName::Command(command) => self.commands.remove(command).is_some(),
+            SpecName::Special(special) => self.specials.remove(&special).is_some(),
         }
     }
 
-    /// Returns an iterator over the completion specs.
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &Spec)> {
-        self.commands.iter()
+    /// Returns an iterator over the completion specs and their names, in no particular
+    /// order.
+    pub fn iter(&self) -> impl Iterator<Item = (SpecName<'_>, &Spec)> {
+        let commands = self
+            .commands
+            .iter()
+            .map(|(command, spec)| (SpecName::Command(command), spec));
+        let specials = self
+            .specials
+            .iter()
+            .map(|(special, spec)| (SpecName::Special(*special), spec));
+        commands.chain(specials)
     }
 
-    /// If present, returns the completion spec for the command of the given name.
+    /// If present, returns the named completion spec.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the command.
-    pub fn get(&self, name: &str) -> Option<&Spec> {
+    /// * `name` - The name of the completion spec.
+    pub fn get(&self, name: SpecName<'_>) -> Option<&Spec> {
         match name {
-            EMPTY_COMMAND => self.empty_line.as_ref(),
-            DEFAULT_COMMAND => self.default.as_ref(),
-            INITIAL_WORD => self.initial_word.as_ref(),
-            _ => self.commands.get(name),
+            SpecName::Command(command) => self.commands.get(command),
+            SpecName::Special(special) => self.specials.get(&special),
         }
     }
 
-    /// If present, sets the provided completion spec to be associated with the
-    /// command of the given name.
+    /// If present, returns a mutable reference to the named completion spec.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the command.
-    /// * `spec` - The completion spec to associate with the command.
-    pub fn set(&mut self, name: &str, spec: Spec) {
+    /// * `name` - The name of the completion spec.
+    pub fn get_mut(&mut self, name: SpecName<'_>) -> Option<&mut Spec> {
         match name {
-            EMPTY_COMMAND => {
-                self.empty_line = Some(spec);
-            }
-            DEFAULT_COMMAND => {
-                self.default = Some(spec);
-            }
-            INITIAL_WORD => {
-                self.initial_word = Some(spec);
-            }
-            _ => {
-                self.commands.insert(name.to_owned(), spec);
-            }
+            SpecName::Command(command) => self.commands.get_mut(command),
+            SpecName::Special(special) => self.specials.get_mut(&special),
         }
     }
 
-    /// Returns a mutable reference to the completion spec for the command of the
-    /// given name; if the command already was associated with a spec, returns
-    /// a reference to that existing spec. Otherwise registers a new default
-    /// spec and returns a mutable reference to it.
+    /// Registers the provided completion spec under the given name, replacing any
+    /// already registered there.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the command.
-    #[allow(
-        clippy::missing_panics_doc,
-        clippy::unwrap_used,
-        reason = "these unwrap calls should not fail"
-    )]
-    pub fn get_or_add_mut(&mut self, name: &str) -> &mut Spec {
+    /// * `name` - The name of the completion spec.
+    /// * `spec` - The completion spec.
+    pub fn set(&mut self, name: SpecName<'_>, spec: Spec) {
         match name {
-            EMPTY_COMMAND => {
-                if self.empty_line.is_none() {
-                    self.empty_line = Some(Spec::default());
-                }
-                self.empty_line.as_mut().unwrap()
+            SpecName::Command(command) => {
+                self.commands.insert(command.to_owned(), spec);
             }
-            DEFAULT_COMMAND => {
-                if self.default.is_none() {
-                    self.default = Some(Spec::default());
-                }
-                self.default.as_mut().unwrap()
+            SpecName::Special(special) => {
+                self.specials.insert(special, spec);
             }
-            INITIAL_WORD => {
-                if self.initial_word.is_none() {
-                    self.initial_word = Some(Spec::default());
-                }
-                self.initial_word.as_mut().unwrap()
-            }
-            _ => self.commands.entry(name.to_owned()).or_default(),
         }
     }
 
@@ -1205,7 +1223,7 @@ impl Config {
 
         if let Some(command_name) = context.command_name {
             if context.token_index == 0 {
-                if let Some(spec) = &self.initial_word {
+                if let Some(spec) = self.specials.get(&SpecialSpec::InitialWord) {
                     found_spec = Some(spec);
                 }
             } else {
@@ -1222,13 +1240,13 @@ impl Config {
                 }
 
                 if found_spec.is_none() {
-                    if let Some(spec) = &self.default {
+                    if let Some(spec) = self.specials.get(&SpecialSpec::Default) {
                         found_spec = Some(spec);
                     }
                 }
             }
         } else {
-            if let Some(spec) = &self.empty_line {
+            if let Some(spec) = self.specials.get(&SpecialSpec::EmptyLine) {
                 found_spec = Some(spec);
             }
         }
