@@ -1,0 +1,41 @@
+name: "Interactive completion"
+incompatible_configs: ["sh"]
+cases:
+  # A completion function that returns 124 restarts completion, which uses the specs as
+  # the function left them, including the special ones (e.g. a `-D` loader replacing
+  # itself).
+  - name: "Restarted completion uses the specs the completion function registered"
+    min_oracle_version: 5.3 # bash 5.2 doesn't restart with a replaced -D spec
+    pty: true
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      _load() { complete -D -W loaded; return 124; }; complete -D -F _load; zz() { printf '<%s>\n' "$@"; }
+      #send:Enter
+      #expect-prompt
+      zz l
+      #send:Tab
+      #send:Enter
+      #expect:<loaded>
+      #expect-prompt
+      #send:Ctrl+D
+
+  # Like bash, a completion function that asks for a restart doesn't leave its `COMPREPLY`
+  # behind, even when the restart uses a spec that isn't a function.
+  - name: "Restarted completion discards the COMPREPLY the function set"
+    pty: true
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      _f() { COMPREPLY=(leak); complete -W word zz; return 124; }; complete -F _f zz; zz() { :; }
+      #send:Enter
+      #expect-prompt
+      zz w
+      #send:Tab
+      #send:Enter
+      #expect-prompt
+      [[ -v COMPREPLY ]] && echo "<leak""ed>" || echo "<un""set>"
+      #send:Enter
+      #expect:<unset>
+      #expect-prompt
+      #send:Ctrl+D

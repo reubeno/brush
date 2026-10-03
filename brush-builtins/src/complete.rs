@@ -5,7 +5,7 @@ use std::io::Write;
 use strum::{EnumMessage, IntoEnumIterator};
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecName, SpecialSpec};
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins, escape};
 
 #[derive(Parser)]
 struct CommonCompleteCommandArgs {
@@ -384,47 +384,18 @@ impl builtins::Command for CompGenCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut spec = self.common_args.create_spec();
-        spec.options.set(CompleteOption::NoSort, true);
+        let spec = self.common_args.create_spec();
+        let word = self.word.as_deref().unwrap_or_default();
+        let candidates = spec.generate(context.shell, word).await?;
 
-        let token_to_complete = self.word.as_deref().unwrap_or_default();
+        // We are expected to return 1 if there are no candidates, even if no errors
+        // occurred along the way.
+        if candidates.is_empty() {
+            return Ok(ExecutionResult::general_error());
+        }
 
-        // We unquote the token-to-be-completed before passing it to the completion system.
-        let unquoted_token = brush_parser::unquote_str(token_to_complete);
-
-        let completion_context = completion::Context {
-            token_to_complete: unquoted_token.as_str(),
-            preceding_token: None,
-            command_name: None,
-            token_index: 0,
-            tokens: &[&completion::CompletionToken {
-                text: token_to_complete,
-                start: 0,
-            }],
-            input_line: token_to_complete,
-            cursor_index: token_to_complete.len(),
-            trigger: completion::CompletionTrigger::Programmatic,
-        };
-
-        let result = spec
-            .get_completions(context.shell, &completion_context)
-            .await?;
-
-        match result {
-            completion::Answer::Candidates(candidates, _options) => {
-                // We are expected to return 1 if there are no candidates, even if no errors
-                // occurred along the way.
-                if candidates.is_empty() {
-                    return Ok(ExecutionResult::general_error());
-                }
-
-                for candidate in candidates {
-                    writeln!(context.stdout(), "{candidate}")?;
-                }
-            }
-            completion::Answer::RestartCompletionProcess => {
-                return error::unimp("restart completion");
-            }
+        for candidate in candidates {
+            writeln!(context.stdout(), "{candidate}")?;
         }
 
         Ok(ExecutionResult::success())

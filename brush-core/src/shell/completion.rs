@@ -3,21 +3,23 @@
 use crate::{completion, error, extensions};
 
 impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
-    /// Generates command completions for the shell.
+    /// Completes the word at the cursor in a line being edited, with programmable
+    /// completion (see the [`completion`] module).
     ///
     /// # Arguments
     ///
-    /// * `input` - The input string to generate completions for.
-    /// * `position` - The position in the input string to generate completions at.
+    /// * `input` - The line being completed.
+    /// * `cursor` - The cursor's byte offset in the line.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `cursor` isn't a char boundary in `input`.
     pub async fn complete(
         &mut self,
         input: &str,
-        position: usize,
+        cursor: usize,
     ) -> Result<completion::Completions, error::Error> {
-        let completion_config = self.completion.config.clone();
-        completion_config
-            .get_completions(self, input, position)
-            .await
+        completion::complete(self, input, cursor).await
     }
 
     /// Returns the options of the programmable completion in progress, if any (e.g.
