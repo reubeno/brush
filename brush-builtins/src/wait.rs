@@ -24,6 +24,8 @@ pub(crate) struct WaitCommand {
 }
 
 impl builtins::Command for WaitCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

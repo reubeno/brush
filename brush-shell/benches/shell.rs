@@ -5,27 +5,26 @@
 
 #[cfg(unix)]
 mod unix {
-    use brush_builtins::ShellBuilderExt;
+    use brush_builtins::ShellExt;
     use brush_parser::SourceSpan;
     use criterion::Criterion;
     use std::hint::black_box;
 
     async fn instantiate_shell() -> brush_core::Shell {
-        brush_core::Shell::builder()
-            .default_builtins(brush_builtins::BuiltinSet::BashMode)
-            .build()
-            .await
-            .unwrap()
+        let mut shell = brush_core::Shell::builder().build().await.unwrap();
+        shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
+        shell
     }
 
     async fn instantiate_shell_with_init_scripts() -> brush_core::Shell {
-        brush_core::Shell::builder()
+        let mut shell = brush_core::Shell::builder()
             .interactive(true)
             .read_commands_from_stdin(true)
-            .default_builtins(brush_builtins::BuiltinSet::BashMode)
             .build()
             .await
-            .unwrap()
+            .unwrap();
+        shell.register_default_builtins(brush_builtins::BuiltinSet::BashMode);
+        shell
     }
 
     async fn run_one_command(shell: &mut brush_core::Shell, command: &str) {

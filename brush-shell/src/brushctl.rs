@@ -4,28 +4,20 @@ use std::io::Write;
 
 use crate::events;
 
-/// Extension trait for adding brush-specific built-in commands to a shell builder.
-pub(crate) trait ShellBuilderBrushBuiltinExt {
-    /// Add brush-specific builtins to a shell being built.
-    #[must_use]
-    fn brush_builtins(self) -> Self;
-}
-
-impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderState>
-    ShellBuilderBrushBuiltinExt for brush_core::ShellBuilder<SE, S>
-{
-    fn brush_builtins(self) -> Self {
-        // For compatibility with previous releases, we register the command under both
-        // `brushctl` and `brushinfo` names. It will behave identically across the two.
-        self.builtin(
-            "brushctl",
-            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
-        )
-        .builtin(
-            "brushinfo",
-            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
-        )
-    }
+/// Register brush-specific built-in commands on a shell.
+pub(crate) fn register_brush_builtins<SE: brush_core::extensions::ShellExtensions>(
+    shell: &mut brush_core::Shell<SE>,
+) {
+    // For compatibility with previous releases, we register the command under both
+    // `brushctl` and `brushinfo` names. It will behave identically across the two.
+    shell.register_builtin(
+        "brushctl",
+        brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
+    );
+    shell.register_builtin(
+        "brushinfo",
+        brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
+    );
 }
 
 /// Configure the running brush shell.
@@ -112,6 +104,8 @@ enum ProcessCommand {
 }
 
 impl brush_core::builtins::Command for BrushCtlCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

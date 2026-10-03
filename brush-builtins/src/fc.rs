@@ -35,6 +35,8 @@ pub(crate) struct FcCommand {
 }
 
 impl builtins::Command for FcCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(

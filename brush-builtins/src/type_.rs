@@ -35,6 +35,8 @@ pub(crate) struct TypeCommand {
 }
 
 impl builtins::Command for TypeCommand {
+    type State = ();
+    type SharedState = ();
     type Error = brush_core::Error;
 
     async fn execute<SE: brush_core::ShellExtensions>(
