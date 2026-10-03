@@ -16,6 +16,7 @@ use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
     extensions::{self, ShellExtensions},
+    filter::{CmdExecFilter as _, SimpleCmdParams},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
@@ -316,6 +317,13 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
 }
 
 impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
+    /// Runs command cleanup after a pre-hook short-circuit.
+    pub(crate) fn complete_without_execution(&mut self) {
+        if let Some(post_execute) = self.post_execute.take() {
+            let _ = post_execute(&mut self.shell);
+        }
+    }
+
     /// Creates a new `SimpleCommand` instance.
     ///
     /// # Arguments
@@ -356,6 +364,30 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         reason = "these unwrap calls should not panic"
     )]
     pub async fn execute(mut self) -> Result<ExecutionSpawnResult, error::Error> {
+        // Defer argument conversion until a filter requests it.
+        let filter_params = SimpleCmdParams::from_command_args(
+            &*self.shell,
+            self.command_name.as_str(),
+            &self.args,
+        );
+
+        let filter = self.shell.cmd_exec_filter().clone();
+        match filter.pre_simple_cmd(filter_params).await {
+            crate::filter::PreFilterResult::Continue(_) => {
+                let result = self.execute_impl().await;
+                let crate::filter::PostFilterResult::Return(result) =
+                    filter.post_simple_cmd(result).await;
+                result
+            }
+            crate::filter::PreFilterResult::Return(result) => {
+                self.complete_without_execution();
+                result
+            }
+        }
+    }
+
+    /// Runs a command after its pre-hook.
+    async fn execute_impl(mut self) -> Result<ExecutionSpawnResult, error::Error> {
         // First see if it's the name of a builtin.
         let builtin = self.shell.builtins().get(&self.command_name).cloned();
 

@@ -4,8 +4,11 @@ use std::{io::Read, path::Path};
 
 use crate::{
     ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, SourceInfo,
-    arithmetic::Evaluatable as _, callstack, error, interp::Execute as _, openfiles,
-    trace_categories,
+    arithmetic::Evaluatable as _,
+    callstack, error,
+    filter::{SourceFilter as _, SourceScriptParams},
+    interp::Execute as _,
+    openfiles, trace_categories,
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
@@ -51,13 +54,30 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
-        self.parse_and_execute_script_file(
-            path.as_ref(),
-            args,
-            params,
-            callstack::ScriptCallType::Source,
-        )
-        .await
+        // Own arguments before filtering.
+        let args_vec: Vec<String> = args.map(Into::into).collect();
+        let filter_params = SourceScriptParams::new(self, path.as_ref(), args_vec.as_slice());
+
+        let filter = self.source_filter().clone();
+        match filter.pre_source_script(filter_params).await {
+            crate::filter::PreFilterResult::Continue(source_params) => {
+                // Own values before borrowing self mutably.
+                let path = source_params.path.into_owned();
+                let args = source_params.args.into_owned();
+                let result = self
+                    .parse_and_execute_script_file(
+                        &path,
+                        args.iter().cloned(),
+                        params,
+                        callstack::ScriptCallType::Source,
+                    )
+                    .await;
+                let crate::filter::PostFilterResult::Return(result) =
+                    filter.post_source_script(result).await;
+                result
+            }
+            crate::filter::PreFilterResult::Return(result) => result,
+        }
     }
 
     /// Parse and execute the given file as a shell script, returning the execution result.

@@ -1,5 +1,6 @@
 //! Definition of shell behavior traits and defaults.
 
+use crate::filter::{CmdExecFilter, NoOpCmdExecFilter, NoOpSourceFilter, SourceFilter};
 use crate::{Shell, error, extensions};
 
 /// Trait for static shell extensions. Collects all associated types needed to
@@ -7,16 +8,28 @@ use crate::{Shell, error, extensions};
 pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
     /// Type of the error behavior implementation.
     type ErrorFormatter: ErrorFormatter;
+    /// Type of the command execution filter.
+    type CmdExecFilter: CmdExecFilter;
+    /// Type of the source filter.
+    type SourceFilter: SourceFilter;
 }
 
 /// Shell extensions implementation constructed from component types.
 #[derive(Clone, Default)]
-pub struct ShellExtensionsImpl<EF: ErrorFormatter = DefaultErrorFormatter> {
-    _marker: std::marker::PhantomData<EF>,
+pub struct ShellExtensionsImpl<
+    EF: ErrorFormatter = DefaultErrorFormatter,
+    CF: CmdExecFilter = NoOpCmdExecFilter,
+    SF: SourceFilter = NoOpSourceFilter,
+> {
+    _marker: std::marker::PhantomData<(EF, CF, SF)>,
 }
 
-impl<EF: ErrorFormatter> ShellExtensions for ShellExtensionsImpl<EF> {
+impl<EF: ErrorFormatter, CF: CmdExecFilter, SF: SourceFilter> ShellExtensions
+    for ShellExtensionsImpl<EF, CF, SF>
+{
     type ErrorFormatter = EF;
+    type CmdExecFilter = CF;
+    type SourceFilter = SF;
 }
 
 /// Default shell extensions implementation.
