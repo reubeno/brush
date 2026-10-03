@@ -124,7 +124,7 @@ pub struct TestCase {
     #[serde(default)]
     pub max_oracle_version: Option<String>,
 
-    /// Timeout for this test in seconds.
+    /// Timeout for this test in seconds; for a PTY test, for each expectation in it.
     #[serde(default)]
     pub timeout_in_seconds: Option<u64>,
 
