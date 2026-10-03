@@ -92,6 +92,16 @@ impl<SE: extensions::ShellExtensions, S: shell_builder::State> ShellBuilder<SE, 
         self
     }
 
+    /// Add a builtin implemented via [`builtins::Command`], registered under
+    /// `name`. Shorthand for `.builtin(name, builtins::builtin::<C, _>())`.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin is invoked by.
+    pub fn command<C: builtins::Command + Send + Sync>(self, name: impl Into<String>) -> Self {
+        self.builtin(name, builtins::builtin::<C, SE>())
+    }
+
     /// Add many builtin registrations
     pub fn builtins(
         mut self,

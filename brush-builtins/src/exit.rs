@@ -1,14 +1,15 @@
-use clap::Parser;
-
 use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Exit the shell.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExitCommand {
     /// The exit code to return.
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional, allow_negative_numbers)]
     code: Option<i64>,
 }
+
+brush_builtin_winnow::winnow_builtin!(ExitCommand);
 
 impl builtins::Command for ExitCommand {
     type Error = brush_core::Error;

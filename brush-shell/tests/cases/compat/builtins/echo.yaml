@@ -10,3 +10,11 @@ cases:
     stdin: |
       echo -e "1. \x65" | hexdump -C
       echo -e "2. \x{65}" | hexdump -C
+
+  - name: "echo options after an operand are operands"
+    stdin: |
+      echo hi -n
+      echo a -e 'x\ty'
+      echo -e a -n
+      f() { echo "$@"; }
+      f a -n

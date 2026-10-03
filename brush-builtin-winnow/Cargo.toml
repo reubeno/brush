@@ -1,0 +1,25 @@
+[package]
+name = "brush-builtin-winnow"
+description = "winnow-args adapter for brush builtins"
+version = "0.1.0"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+
+[lib]
+bench = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils", default-features = false }
+brush-core = { version = "^0.5.0", path = "../brush-core" }
+winnow-args = { version = "0.1.1", default-features = false, features = ["derive", "help-text"] }
+
+[dev-dependencies]
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["macros", "rt", "rt-multi-thread"] }

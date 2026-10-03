@@ -1,0 +1,12 @@
+error: verbatim_builtin!: expected `verbatim_builtin!(Type, synopsis = "...", description = "...")` or `verbatim_builtin!(Type, args = field, synopsis = "...", description = "...")`, each optionally followed by `help = "..."`. Options must appear in that order
+  --> tests/ui/verbatim_builtin_unknown_option.rs:5:1
+   |
+ 5 | / brush_builtin_utils::verbatim_builtin!(
+ 6 | |     Command,
+ 7 | |     raw_args = args,
+ 8 | |     synopsis = "command",
+ 9 | |     description = "a command",
+10 | | );
+   | |_^
+   |
+   = note: this error originates in the macro `brush_builtin_utils::verbatim_builtin` (in Nightly builds, run with -Z macro-backtrace for more info)

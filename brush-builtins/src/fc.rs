@@ -1,16 +1,20 @@
 use brush_core::{ExecutionResult, builtins, error, history};
-use clap::Parser;
 use std::io::Write;
 
 /// Process command history list.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct FcCommand {
+    /// Editor to use (only relevant when not listing or substituting).
+    #[arg(short = 'e', value_name = "ENAME")]
+    editor: Option<String>,
+
     /// List commands instead of editing them.
     #[arg(short = 'l')]
     list: bool,
 
     /// Suppress line numbers when listing.
-    #[arg(short = 'n', requires = "list")]
+    #[arg(short = 'n', requires = "-l")]
     no_line_numbers: bool,
 
     /// Reverse the order of commands.
@@ -21,18 +25,16 @@ pub(crate) struct FcCommand {
     #[arg(short = 's')]
     substitute: bool,
 
-    /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
-    editor: Option<String>,
-
     /// First command in range (number or string prefix).
-    #[arg(value_name = "FIRST", allow_hyphen_values = true)]
+    #[arg(positional, value_name = "FIRST", allow_negative_numbers)]
     first: Option<String>,
 
     /// Last command in range (number or string prefix).
-    #[arg(value_name = "LAST", allow_hyphen_values = true)]
+    #[arg(positional, value_name = "LAST", allow_negative_numbers)]
     last: Option<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(FcCommand);
 
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;

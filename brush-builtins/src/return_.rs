@@ -1,14 +1,17 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Return from the current function.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ReturnCommand {
     /// The exit code to return.
+    #[arg(positional, allow_negative_numbers)]
     code: Option<i32>,
 }
+
+brush_builtin_winnow::winnow_builtin!(ReturnCommand);
 
 impl builtins::Command for ReturnCommand {
     type Error = brush_core::Error;

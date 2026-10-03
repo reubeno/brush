@@ -1,11 +1,13 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct TimesCommand {}
+
+brush_builtin_winnow::winnow_builtin!(TimesCommand);
 
 impl builtins::Command for TimesCommand {
     type Error = brush_core::Error;

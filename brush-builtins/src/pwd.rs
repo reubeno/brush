@@ -1,18 +1,20 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use std::{borrow::Cow, io::Write, path::Path};
 
 /// Display the current working directory.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PwdCommand {
-    /// Print the physical directory without any symlinks.
-    #[arg(short = 'P', overrides_with = "allow_symlinks")]
-    physical: bool,
-
     /// Print $PWD if it names the current working directory.
-    #[arg(short = 'L', overrides_with = "physical")]
+    #[arg(short = 'L', overrides = "-P")]
     allow_symlinks: bool,
+
+    /// Print the physical directory without any symlinks.
+    #[arg(short = 'P', overrides = "-L")]
+    physical: bool,
 }
+
+brush_builtin_winnow::winnow_builtin!(PwdCommand);
 
 impl builtins::Command for PwdCommand {
     type Error = brush_core::Error;
