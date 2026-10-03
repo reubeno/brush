@@ -1,0 +1,18 @@
+name: "Completion"
+cases:
+  - name: "compgen -W translates $'...' and $\"...\" as a command line would"
+    # Deliberately unlike bash, which translates them only when it parses a command line, so in
+    # -W's list (outside a command substitution) reads them as a literal `$` and an ordinary
+    # quote.
+    stdin: |
+      compgen -W "\$'a\\'b' \$'c\\td' \$\"e f\" g\$\"h\""
+      compgen -W "\$'i j"
+    expected_stdout: "a'b\nc\td\ne f\ngh\ni j\n"
+
+  - name: "compgen -W translates a $'...' after $$"
+    # Command substitution forks a subshell, which WASI doesn't support. (Compared in the
+    # shell, not with sed, which Windows lacks.)
+    incompatible_platforms: ["wasi"]
+    stdin: |
+      [[ $(compgen -W "\$\$\$'k'") == "$$k" ]] && echo PIDk
+    expected_stdout: "PIDk\n"

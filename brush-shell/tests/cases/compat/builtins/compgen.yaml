@@ -469,3 +469,51 @@ cases:
         env | grep -c ^COMP_LINE
       }
       compgen -F f x 2>/dev/null
+
+  - name: "compgen -A helptopic includes keywords"
+    known_failure: true # brush's help topics are only its builtins
+    stdin: |
+      compgen -A helptopic whil
+
+  - name: "compgen -V"
+    known_failure: true # brush's compgen doesn't take -V
+    min_oracle_version: 5.3
+    stdin: |
+      compgen -V out -W 'a b c' -- b; echo "rc=$?"
+      declare -p out
+
+  - name: "compgen -W closes a quote left open at the end of the list"
+    stdin: |
+      compgen -W 'fo"o'; echo "rc=$?"
+      compgen -W 'fo"o bar'; echo "rc=$?"
+      compgen -W 'fo"o bar' -- f; echo "rc=$?"
+      compgen -W "a 'b c"; echo "rc=$?"
+      # A backslash left dangling at the end is dropped, except in single quotes.
+      word='fo"o\'; compgen -W "$word"; echo "rc=$?"
+      word='fo\'; compgen -W "$word"; echo "rc=$?"
+      word="fo'o\\"; compgen -W "$word"; echo "rc=$?"
+
+  - name: "compgen -W with a $ before a quote"
+    # Only the lists that bash reads as a command line would. brush reads every list that way,
+    # deliberately unlike bash; see the brush-specific completion cases.
+    stdin: |
+      compgen -W "\"\$'a\" a\\\$'b'"
+      compgen -W "\$\$'a' \$\$\"b\" \$\$\$\$'d'" | sed "s/$$/PID/g"
+      compgen -W "\$(echo \$'\\x41') \`echo \$'\\x42'\`"
+
+  - name: "compgen -W with an expansion error"
+    known_failure: true # brush's compgen fails with status 1, and the line carries on
+    ignore_stderr: true
+    stdin: |
+      w='a $(echo b'; compgen -W "$w"; echo "rc=$?"
+      echo next1
+      w='a ${x c'; compgen -W "$w"; echo "rc=$?"
+      echo next2
+
+  - name: "compgen -W with an unset variable under set -u"
+    known_failure: true # brush's compgen fails with status 1, and the script carries on
+    ignore_stderr: true
+    stdin: |
+      set -u
+      compgen -W '$nope'; echo "rc=$?"
+      echo next

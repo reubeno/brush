@@ -976,6 +976,36 @@ complete -D -F _test_comp
     Ok(())
 }
 
+/// Like bash, the `file` action makes a completion's candidates file names, and so does the
+/// `directory` action if it finds any. Expected values were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+async fn file_and_directory_actions_complete_file_names() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("a b").touch()?;
+    test_shell.temp_dir.child("dir x").create_dir_all()?;
+    test_shell
+        .run(
+            r"complete -f filecmd; complete -d dircmd
+              complete -W 'q\ r' -f wfilecmd; complete -W 'q\ r' -d wdircmd",
+        )
+        .await?;
+
+    for (line, expected, file_names) in [
+        ("filecmd a", "a b", true),
+        ("dircmd di", "dir x", true),
+        // Even with no file names found, `-f` makes the other candidates file names...
+        ("wfilecmd q", "q r", true),
+        // ...but `-d` doesn't, if it finds no directories.
+        ("wdircmd q", "q r", false),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), [expected], "{line}");
+        assert_eq!(completions.options.treat_as_filenames, file_names, "{line}");
+    }
+
+    Ok(())
+}
+
 /// Like bash, `compopt` changes the options of the completion in progress, which a
 /// `compgen` call from the completion function doesn't disturb.
 #[tokio::test(flavor = "multi_thread")]

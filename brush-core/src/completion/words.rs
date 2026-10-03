@@ -135,7 +135,7 @@ pub(super) fn find_completion_word(
     }
 
     let (start, text_start) = match open_quote {
-        Some((index, q)) => (index, index + q.as_char().len_utf8()),
+        Some((index, q)) => (index, index + q.opening().len()),
         None => (word_start, word_start),
     };
 
@@ -232,6 +232,11 @@ mod tests {
         assert_eq!(word("ls x'a b", 8), quoted("a b", '\''));
         assert_eq!(word("ls --x=\"a", 9), quoted("a", '"'));
         assert_eq!(word(r#"ls "a\"b"#, 8), quoted(r#"a\"b"#, '"'));
+        // A `$'...'` quote opens at its `$`, and a backslash in it escapes a quote too.
+        assert_eq!(word("ls $'a b", 8), quoted("a b", '$'));
+        assert_eq!(word(r"ls $'a\'b c", 11), quoted(r"a\'b c", '$'));
+        // But `$$` is the shell's PID, so a quote after it is an ordinary one.
+        assert_eq!(word("ls $$'a b", 9), quoted("a b", '\''));
         // Backslashes are literal in single quotes, and an escaped quote opens nothing.
         assert_eq!(word(r"ls 'a\'b", 8), unquoted(r"'a\'b"));
         assert_eq!(word(r"ls \'a", 6), unquoted(r"\'a"));
