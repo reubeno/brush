@@ -378,6 +378,32 @@ cases:
       compgen -A command -- link_non_exec
       compgen -A command -- link_broken
 
+  - name: "compgen -A command includes aliases but not disabled builtins, in order"
+    stdin: |
+      mkdir test-bin
+      touch test-bin/zzqx
+      chmod +x test-bin/zzqx
+      PATH="$(pwd)/test-bin:$PATH"
+      alias zzqc=1 zzqa=1
+      zzqf() { :; }
+      zzqb() { :; }
+      enable -n caller
+      compgen -A command zzq
+      echo "[disabled]"
+      compgen -A command caller
+
+  - name: "compgen -k lists keywords in bash's order"
+    stdin: |
+      compgen -k
+
+  - name: "compgen -A command lists keywords in bash's order"
+    stdin: |
+      PATH=/nonexistent
+      compgen -A command -- do
+      for w in $(compgen -A command -- f); do
+        case $w in fi|for|function) echo "$w" ;; esac
+      done
+
   - name: "compgen -F sets COMP_KEY and COMP_TYPE to 0"
     ignore_stderr: true
     stdin: |

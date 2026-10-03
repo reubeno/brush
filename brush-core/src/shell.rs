@@ -354,13 +354,9 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         }
     }
 
-    /// Returns the keywords that are reserved by the shell.
-    pub(crate) fn get_keywords(&self) -> impl IntoIterator<Item = &str> {
-        if self.options.sh_mode {
-            keywords::SH_MODE_KEYWORDS.iter().copied()
-        } else {
-            keywords::KEYWORDS.iter().copied()
-        }
+    /// Returns the keywords that are reserved by the shell, in the order bash lists them.
+    pub(crate) fn get_keywords(&self) -> impl IntoIterator<Item = &'static str> {
+        keywords::keywords(self.options.sh_mode)
     }
 
     /// Checks if the given string is a keyword reserved in this shell.
@@ -369,11 +365,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     ///
     /// * `s` - The string to check.
     pub fn is_keyword(&self, s: &str) -> bool {
-        if self.options.sh_mode {
-            keywords::SH_MODE_KEYWORDS.contains(s)
-        } else {
-            keywords::KEYWORDS.contains(s)
-        }
+        keywords::keywords(self.options.sh_mode).any(|keyword| keyword == s)
     }
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
