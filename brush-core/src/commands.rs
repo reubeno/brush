@@ -15,7 +15,7 @@ use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
-    extensions::{self, ShellExtensions},
+    extensions::{self, ExternalCommandSpawner as _, ShellExtensions},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFile, OpenFiles},
@@ -632,7 +632,12 @@ pub(crate) fn execute_external_command(
             .join(" ")
     );
 
-    match sys::process::spawn(cmd, context.shell.options().kill_external_commands_on_drop) {
+    let kill_on_drop = context.shell.options().kill_external_commands_on_drop;
+    match context
+        .shell
+        .external_command_spawner()
+        .spawn(cmd, kill_on_drop)
+    {
         Ok(child) => {
             // Retrieve the pid.
             #[expect(clippy::cast_possible_wrap)]
