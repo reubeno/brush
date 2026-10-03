@@ -51,12 +51,17 @@ pub trait Command: clap::Parser {
             let (lower, _) = args.size_hint();
 
             // N.B. clap doesn't support named options like '+x'. To work around this, we
-            // establish a pattern of renaming them.
+            // establish a pattern of renaming them. Arguments after `--` aren't options, so
+            // they're left alone (e.g. a command name starting with '+').
             let mut updated_args = Vec::with_capacity(lower);
+            let mut options_ended = false;
             for arg in args {
-                if let Some(plus_options) = arg.strip_prefix("+") {
+                if options_ended {
+                    updated_args.push(arg);
+                } else if let Some(plus_options) = arg.strip_prefix("+") {
                     updated_args.extend(plus_options.chars().map(|c| format!("--+{c}")));
                 } else {
+                    options_ended = arg == "--";
                     updated_args.push(arg);
                 }
             }
