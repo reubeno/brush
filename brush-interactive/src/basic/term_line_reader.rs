@@ -38,11 +38,7 @@ impl super::LineReader for TermLineReader {
     fn read_line(
         &self,
         prompt: Option<&str>,
-        mut completion_handler: impl FnMut(
-            &str,
-            usize,
-        )
-            -> Result<brush_core::completion::Completions, ShellError>,
+        mut completion_handler: impl FnMut(&str, usize) -> Result<crate::completion::Offers, ShellError>,
     ) -> Result<ReadResult, ShellError> {
         let mut state = ReadLineState::new(prompt);
         state.display_prompt()?;
@@ -89,11 +85,7 @@ impl<'a> ReadLineState<'a> {
     fn on_key(
         &mut self,
         event: crossterm::event::KeyEvent,
-        mut completion_handler: impl FnMut(
-            &str,
-            usize,
-        )
-            -> Result<brush_core::completion::Completions, ShellError>,
+        mut completion_handler: impl FnMut(&str, usize) -> Result<crate::completion::Offers, ShellError>,
     ) -> Result<Option<ReadResult>, ShellError> {
         match (event.modifiers, event.code) {
             (_, crossterm::event::KeyCode::Enter)
@@ -202,80 +194,87 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
-    fn handle_completions(
-        &mut self,
-        completions: &brush_core::completion::Completions,
-    ) -> Result<(), ShellError> {
-        if completions.candidates.is_empty() {
-            // Do nothing
-            Ok(())
-        } else if completions.candidates.len() == 1 {
-            self.handle_single_completion(completions)
-        } else {
-            self.handle_multiple_completions(completions)
+    fn handle_completions(&mut self, offers: &crate::completion::Offers) -> Result<(), ShellError> {
+        match (&offers.edit, offers.list.as_slice()) {
+            (None, []) => Ok(()),
+            (Some(edit), _) => self.handle_single_completion(edit, &mut std::io::stderr()),
+            (None, list) => self.handle_multiple_completions(list),
         }
+    }
+
+    /// Applies `edit` to the line, without showing it; returns false if it doesn't apply at
+    /// the cursor.
+    fn apply_edit(&mut self, edit: &brush_core::completion::Edit) -> bool {
+        let replace = &edit.replace;
+        if !(replace.start <= self.cursor && self.cursor <= replace.end)
+            || replace.end > self.line.len()
+        {
+            return false;
+        }
+
+        self.line.replace_range(replace.clone(), &edit.text);
+        self.cursor = replace.start + edit.text.len();
+        true
     }
 
     #[expect(
         clippy::string_slice,
         reason = "all offsets are expected to be at char boundaries"
     )]
+    /// Applies `edit` to the line, and shows it on `out`, the terminal.
     fn handle_single_completion(
         &mut self,
-        completions: &brush_core::completion::Completions,
+        edit: &brush_core::completion::Edit,
+        out: &mut impl Write,
     ) -> Result<(), ShellError> {
-        let Some(candidate) = completions.candidates.first() else {
-            return Ok(());
+        // Don't rewrite what's already typed of the word, if the edit keeps it.
+        let replace = &edit.replace;
+        let redisplay_offset = if self
+            .line
+            .get(replace.start..self.cursor)
+            .is_some_and(|typed| edit.text.starts_with(typed))
+        {
+            self.cursor
+        } else {
+            replace.start
         };
 
-        if completions.insertion_index + completions.delete_count != self.cursor {
+        // How much of the line is shown from there, and how far back that is from the
+        // cursor, in chars (the terminal's cells).
+        let width = |text: Option<&str>| text.map_or(0, |text| text.chars().count());
+        let old_width = width(self.line.get(redisplay_offset..));
+        let move_left = width(self.line.get(redisplay_offset..self.cursor));
+
+        if !self.apply_edit(edit) {
             return Ok(());
         }
 
-        let mut delete_count = completions.delete_count;
-        let mut redisplay_offset = completions.insertion_index;
+        // Rewrite the line from there, blanking whatever's left of it if it got shorter,
+        // then move back to the cursor.
+        let rewritten = &self.line[redisplay_offset..];
+        let blanks = old_width.saturating_sub(rewritten.chars().count());
+        let move_back = self.line[self.cursor..].chars().count() + blanks;
+        write!(
+            out,
+            "{}{rewritten}{}{}",
+            repeated_char_str(BACKSPACE, move_left),
+            repeated_char_str(' ', blanks),
+            repeated_char_str(BACKSPACE, move_back)
+        )?;
 
-        // Don't bother erasing and re-writing the portion of the
-        // completion's prefix that
-        // is identical to what we already had in the token-being-completed.
-        if delete_count > 0
-            && candidate.starts_with(&self.line[redisplay_offset..redisplay_offset + delete_count])
-        {
-            redisplay_offset += delete_count;
-            delete_count = 0;
-        }
-
-        let mut updated_line = self.line.clone();
-        updated_line.truncate(completions.insertion_index);
-        updated_line.push_str(candidate);
-        updated_line.push_str(&self.line[self.cursor..]);
-        self.line = updated_line;
-
-        self.cursor = completions.insertion_index + candidate.len();
-
-        let move_left = repeated_char_str(BACKSPACE, delete_count);
-        eprint!("{move_left}{}", &self.line[redisplay_offset..]);
-
-        // TODO(completion): Remove trailing chars if completion is shorter?
-        eprint!(
-            "{}",
-            repeated_char_str(BACKSPACE, self.line.len() - self.cursor)
-        );
-
-        std::io::stderr().flush()?;
+        out.flush()?;
 
         Ok(())
     }
 
     fn handle_multiple_completions(
         &self,
-        completions: &brush_core::completion::Completions,
+        offers: &[crate::completion::Offer],
     ) -> Result<(), ShellError> {
         // Display replacements.
         Self::display_newline()?;
-        for candidate in &completions.candidates {
-            let formatted = format_completion_candidate(candidate.as_str(), &completions.options);
-            eprintln!("{formatted}");
+        for offer in offers {
+            eprintln!("{}", offer.display);
         }
         std::io::stderr().flush()?;
 
@@ -295,21 +294,65 @@ impl<'a> ReadLineState<'a> {
     }
 }
 
-#[allow(clippy::string_slice)]
-fn format_completion_candidate(
-    mut candidate: &str,
-    options: &brush_core::completion::ProcessingOptions,
-) -> String {
-    if options.treat_as_filenames {
-        let trimmed = brush_core::sys::fs::strip_path_separator_suffix(candidate);
-        if let Some(index) = brush_core::sys::fs::rfind_path_separator(trimmed) {
-            candidate = &candidate[index + 1..];
-        }
-    }
-
-    candidate.to_string()
-}
-
 fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use super::*;
+
+    /// Plays `output` on a terminal line showing `shown`, with the cursor `cursor` chars in,
+    /// as a terminal would: a backspace moves left, and a char overwrites. Returns what the
+    /// line then shows (without trailing spaces) and where the cursor is.
+    fn play(shown: &str, cursor: usize, output: &[u8]) -> (String, usize) {
+        let mut screen: Vec<char> = shown.chars().collect();
+        let mut pos = cursor;
+        for c in String::from_utf8_lossy(output).chars() {
+            if c == BACKSPACE {
+                pos = pos.saturating_sub(1);
+            } else {
+                if pos < screen.len() {
+                    screen[pos] = c;
+                } else {
+                    screen.push(c);
+                }
+                pos += 1;
+            }
+        }
+        let shown: String = screen.into_iter().collect();
+        (shown.trim_end().to_owned(), pos)
+    }
+
+    /// The line shown after a completion is the line that will run, even when the edit
+    /// shortens the word or isn't a plain extension of it.
+    #[test]
+    fn completion_redraws_the_line_it_leaves() -> Result<(), ShellError> {
+        for (line, replace, text, expected) in [
+            ("cmd abcdef", 4..10, "b", "cmd b"),
+            ("cmd ab", 4..6, "abc", "cmd abc"),
+            ("cmd ab", 4..6, "xyz", "cmd xyz"),
+            ("cmd é", 4..6, "e", "cmd e"),
+            ("cmd ab", 4..6, "éé", "cmd éé"),
+        ] {
+            let mut state = ReadLineState::new(None);
+            state.line = line.to_owned();
+            state.cursor = line.len();
+            let edit = brush_core::completion::Edit {
+                replace,
+                text: text.to_owned(),
+            };
+
+            let mut out = Vec::new();
+            state.handle_single_completion(&edit, &mut out)?;
+
+            let (shown, cursor) = play(line, line.chars().count(), &out);
+            assert_eq!(shown, expected, "{line:?} -> {text:?}");
+            assert_eq!(state.line, expected, "{line:?} -> {text:?}");
+            assert_eq!(cursor, expected.chars().count(), "{line:?} -> {text:?}");
+        }
+
+        Ok(())
+    }
 }

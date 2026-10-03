@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use super::quoting;
+use super::quoting::{self, WordQuoting};
 
 /// The words of `COMP_WORDS` in an input line being completed, and which the cursor is in.
 #[derive(Debug)]
@@ -35,7 +35,7 @@ impl<'a> LineWords<'a> {
     }
 }
 
-/// The word being completed: the text that completions replace.
+/// The word being completed -- the text that completions replace -- and how it's quoted.
 ///
 /// Like readline, it runs up to the cursor from just past an unclosed quote the cursor is
 /// in, or else from just past the last unquoted word-break char (see `COMP_WORDBREAKS`),
@@ -47,6 +47,8 @@ pub(super) struct CompletionWord {
     /// The byte range of the line that candidates replace: the word's text, and the
     /// unclosed quote before it, if any.
     pub range: Range<usize>,
+    /// How the word is quoted.
+    pub quoting: WordQuoting,
 }
 
 /// A word of `COMP_WORDS`, and where it is in the input line.
@@ -134,14 +136,19 @@ pub(super) fn find_completion_word(
         open_quote = scanned.open_quote;
     }
 
-    let (start, text_start) = match open_quote {
-        Some((index, q)) => (index, index + q.opening().len()),
-        None => (word_start, word_start),
+    let (start, text_start, quote) = match open_quote {
+        Some((index, q)) => (index, index + q.opening().len(), Some(q)),
+        None => (word_start, word_start, None),
     };
 
     CompletionWord {
         text: input[text_start..cursor].to_owned(),
         range: start..cursor,
+        quoting: WordQuoting {
+            quote,
+            dequote: quoting::has_quoting(&input[..cursor]),
+            dequote_again: false,
+        },
     }
 }
 
@@ -190,17 +197,14 @@ fn comp_words<'a>(input: &'a str, word_breaks: &[char]) -> Vec<CompWord<'a>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::completion::quoting::Quote;
 
     #[test]
     fn completion_word_like_readline() {
         let word_with = |delims: &str, input: &str, cursor: usize| {
             let delims: Vec<char> = delims.chars().collect();
             let word = find_completion_word(input, &delims, cursor);
-            // The word is in a quote if it's replaced from just before its text.
-            let quote = (word.range.len() > word.text.len())
-                .then(|| input.get(word.range.start..)?.chars().next())
-                .flatten();
-            (word.text, quote)
+            (word.text, word.quoting.quote)
         };
         let word = |input: &str, cursor: usize| word_with(" \t\n\"'><=;|&(:", input, cursor);
         let unquoted = |text: &str| (text.to_owned(), None);
@@ -228,15 +232,15 @@ mod tests {
         assert_eq!(word("ls a@", 5), unquoted("@"));
 
         // In an open quote, the word's text starts after the quote, wherever it opened.
-        assert_eq!(word("ls 'a b:c", 9), quoted("a b:c", '\''));
-        assert_eq!(word("ls x'a b", 8), quoted("a b", '\''));
-        assert_eq!(word("ls --x=\"a", 9), quoted("a", '"'));
-        assert_eq!(word(r#"ls "a\"b"#, 8), quoted(r#"a\"b"#, '"'));
+        assert_eq!(word("ls 'a b:c", 9), quoted("a b:c", Quote::Single));
+        assert_eq!(word("ls x'a b", 8), quoted("a b", Quote::Single));
+        assert_eq!(word("ls --x=\"a", 9), quoted("a", Quote::Double));
+        assert_eq!(word(r#"ls "a\"b"#, 8), quoted(r#"a\"b"#, Quote::Double));
         // A `$'...'` quote opens at its `$`, and a backslash in it escapes a quote too.
-        assert_eq!(word("ls $'a b", 8), quoted("a b", '$'));
-        assert_eq!(word(r"ls $'a\'b c", 11), quoted(r"a\'b c", '$'));
+        assert_eq!(word("ls $'a b", 8), quoted("a b", Quote::AnsiC));
+        assert_eq!(word(r"ls $'a\'b c", 11), quoted(r"a\'b c", Quote::AnsiC));
         // But `$$` is the shell's PID, so a quote after it is an ordinary one.
-        assert_eq!(word("ls $$'a b", 9), quoted("a b", '\''));
+        assert_eq!(word("ls $$'a b", 9), quoted("a b", Quote::Single));
         // Backslashes are literal in single quotes, and an escaped quote opens nothing.
         assert_eq!(word(r"ls 'a\'b", 8), unquoted(r"'a\'b"));
         assert_eq!(word(r"ls \'a", 6), unquoted(r"\'a"));
@@ -281,6 +285,18 @@ mod tests {
             words("ls a=b", 5),
             (vec!["ls", "a", "=", "b"], Some(3), Some("ls"), Some("="))
         );
+    }
+
+    #[test]
+    fn quoting_before_cursor() {
+        let has_quoting =
+            |input: &str, cursor| find_completion_word(input, &[' '], cursor).quoting.dequote;
+
+        assert!(!has_quoting("ls a b", 6));
+        assert!(has_quoting("ls 'a' b", 8));
+        assert!(has_quoting(r"ls a\ b", 7));
+        assert!(has_quoting("ls \"a", 5));
+        assert!(!has_quoting("ls a 'b'", 4));
     }
 
     #[test]

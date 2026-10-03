@@ -127,6 +127,41 @@ fn run_pipeline_interactively() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Completing a file name in an open quote keeps the quote and, like readline, closes it
+/// -- except after a directory, so completion can continue into it.
+#[test]
+fn completion_closes_open_quote() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("sp ace"), "")?;
+    std::fs::write(dir.path().join("q$x"), "")?;
+    std::fs::create_dir(dir.path().join("sub"))?;
+    std::fs::write(dir.path().join("sub").join("x"), "")?;
+
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.arg("--norc").current_dir(dir.path());
+    })?;
+    session.expect_prompt()?;
+
+    // Each line is completed, then run; `[%s]` keeps the echoed input from matching.
+    for (typed, expected) in [
+        ("'sp\t", "[sp ace]"),
+        ("\"q\t", "[q$x]"),
+        // The quote stays open after a directory, so finishing the word by hand works.
+        ("'su\tx'", "[sub/x]"),
+    ] {
+        session.send(format!("printf '[%s]\\n' {typed}"))?;
+        session.send_line("")?;
+        session
+            .expect(expected)
+            .with_context(|| format!("completing {typed:?}"))?;
+        session.expect_prompt()?;
+    }
+
+    session.exit()?;
+
+    Ok(())
+}
+
 #[test]
 fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
     let mut session = start_shell_session_with(|cmd| {
