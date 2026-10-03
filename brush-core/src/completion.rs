@@ -180,10 +180,6 @@ pub struct Config {
     /// Optionally, a completion spec to be used for the initial word of a command line.
     pub initial_word: Option<Spec>,
 
-    /// Optionally, stores the current completion options in effect. May be mutated
-    /// while a completion generation is in-flight.
-    pub current_completion_options: Option<GenerationOptions>,
-
     /// Fallback options to use when 'default' completions are requested (not to be
     /// confused with the 'default' completion spec, nor 'bashdefault' completions).
     pub fallback_options: FallbackOptions,
@@ -271,6 +267,110 @@ pub struct Spec {
     pub suffix: Option<String>,
 }
 
+/// A shell's programmable completion state.
+#[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub(crate) struct State {
+    /// The completion specs and settings.
+    pub(crate) config: Config,
+    /// The programmable completion in progress, if any.
+    pub(crate) in_progress: Option<InProgressCompletion>,
+}
+
+/// A programmable completion whose spec is generating candidates.
+///
+/// That includes while its completion function runs. Like bash, the `compopt` builtin
+/// changes its options.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub(crate) struct InProgressCompletion {
+    /// The options in effect, which start as the spec's.
+    pub(crate) options: GenerationOptions,
+}
+
+/// Keeps a completion in progress on a shell until dropped, then restores the one (if any)
+/// it replaced -- even if the completion is cancelled partway through, e.g. by Ctrl-C.
+struct InProgressScope<'a, SE: extensions::ShellExtensions> {
+    shell: &'a mut Shell<SE>,
+    prev: Option<InProgressCompletion>,
+}
+
+impl<'a, SE: extensions::ShellExtensions> InProgressScope<'a, SE> {
+    const fn start(shell: &'a mut Shell<SE>, in_progress: InProgressCompletion) -> Self {
+        let prev = shell.in_progress_completion_mut().replace(in_progress);
+        Self { shell, prev }
+    }
+
+    /// Ends the completion in progress early, returning its options as `compopt` left
+    /// them, if it's still in progress.
+    fn take_options(&mut self) -> Option<GenerationOptions> {
+        self.shell
+            .in_progress_completion_mut()
+            .take()
+            .map(|in_progress| in_progress.options)
+    }
+}
+
+impl<SE: extensions::ShellExtensions> Drop for InProgressScope<'_, SE> {
+    fn drop(&mut self) {
+        *self.shell.in_progress_completion_mut() = self.prev.take();
+    }
+}
+
+/// While a completion function or command runs, blocks trap delivery and keeps the `COMP_*`
+/// variables set for it; when dropped, releases the block and unsets the variables, as bash
+/// does -- even if the completion is cancelled partway through, e.g. by Ctrl-C.
+struct CompletionVarsScope<'a, SE: extensions::ShellExtensions> {
+    shell: &'a mut Shell<SE>,
+    /// The variables set so far.
+    vars: Vec<&'static str>,
+}
+
+impl<'a, SE: extensions::ShellExtensions> CompletionVarsScope<'a, SE> {
+    /// Sets `vars` for a completion function or command, exporting them if `export` (as a
+    /// command's are).
+    fn start(
+        shell: &'a mut Shell<SE>,
+        vars: impl IntoIterator<Item = (&'static str, ShellValueLiteral)>,
+        export: bool,
+    ) -> Result<Self, error::Error> {
+        shell.acquire_trap_delivery_block();
+        let mut scope = Self {
+            shell,
+            vars: Vec::new(),
+        };
+
+        for (var, value) in vars {
+            scope.shell.env_mut().update_or_add(
+                var,
+                value,
+                |v| {
+                    if export {
+                        v.export();
+                    }
+                    Ok(())
+                },
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+            scope.vars.push(var);
+        }
+
+        Ok(scope)
+    }
+}
+
+impl<SE: extensions::ShellExtensions> Drop for CompletionVarsScope<'_, SE> {
+    fn drop(&mut self) {
+        self.shell.release_trap_delivery_block();
+
+        // Make a best-effort attempt to unset the variables.
+        for var in &self.vars {
+            let _ = self.shell.env_mut().unset(var);
+        }
+    }
+}
+
 /// Describes what triggered the completion process.
 #[derive(Clone, Copy, Debug, Default)]
 pub enum CompletionTrigger {
@@ -325,23 +425,61 @@ pub struct Context<'a> {
 }
 
 impl Spec {
-    /// Generates completion candidates using this specification.
+    /// Generates completion candidates using this specification, as the `compgen` builtin
+    /// does. This doesn't start a completion in progress, so the `compopt` builtin can't
+    /// change the options applied to the candidates.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell instance to use for completion generation.
     /// * `context` - The context in which completion is being generated.
-    #[expect(clippy::too_many_lines)]
     pub async fn get_completions(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         context: &Context<'_>,
     ) -> Result<Answer, crate::error::Error> {
-        // Store the current options in the shell; this is needed since the compopt
-        // built-in has the ability of modifying the options for an in-flight
-        // completion process.
-        shell.completion_config_mut().current_completion_options = Some(self.options.clone());
+        let Some(candidates) = self.generate_candidates(shell, context).await? else {
+            return Ok(Answer::RestartCompletionProcess);
+        };
 
+        Ok(self
+            .apply_options(shell, context, candidates, self.options.clone())
+            .await)
+    }
+
+    /// Completes the token in `context`, with a completion in progress for it (see
+    /// [`InProgressCompletion`]) while its candidates are generated, so the `compopt`
+    /// builtin can change the options applied to them.
+    async fn complete(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        context: &Context<'_>,
+    ) -> Result<Answer, crate::error::Error> {
+        let mut scope = InProgressScope::start(
+            shell,
+            InProgressCompletion {
+                options: self.options.clone(),
+            },
+        );
+
+        let Some(candidates) = self.generate_candidates(scope.shell, context).await? else {
+            return Ok(Answer::RestartCompletionProcess);
+        };
+
+        // Apply the options as `compopt` left them.
+        let options = scope.take_options().unwrap_or_else(|| self.options.clone());
+        Ok(self
+            .apply_options(scope.shell, context, candidates, options)
+            .await)
+    }
+
+    /// Generates this spec's candidates, before its options are applied; returns `None` if
+    /// a completion function asked for completion to restart.
+    async fn generate_candidates(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        context: &Context<'_>,
+    ) -> Result<Option<Vec<String>>, crate::error::Error> {
         // Generate completions based on any provided actions (and on words).
         let mut candidates = self.generate_action_completions(shell, context).await?;
         if let Some(word_list) = &self.word_list {
@@ -389,7 +527,7 @@ impl Spec {
                 .await?;
 
             match call_result {
-                Answer::RestartCompletionProcess => return Ok(call_result),
+                Answer::RestartCompletionProcess => return Ok(None),
                 Answer::Candidates(mut new_candidates, _options) => {
                     candidates.append(&mut new_candidates);
                 }
@@ -438,16 +576,18 @@ impl Spec {
             candidates = updated;
         }
 
-        //
-        // Now apply options
-        //
+        Ok(Some(candidates))
+    }
 
-        let options = if let Some(options) = &shell.completion_config().current_completion_options {
-            options
-        } else {
-            &self.options
-        };
-
+    /// Applies `options` to the candidates this spec generated: adding any fallbacks they
+    /// ask for, and sorting unless `nosort`.
+    async fn apply_options(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+        context: &Context<'_>,
+        mut candidates: Vec<String>,
+        options: GenerationOptions,
+    ) -> Answer {
         let mut processing_options = ProcessingOptions {
             treat_as_filenames: options.file_names,
             no_autoquote_filenames: options.no_quote,
@@ -498,11 +638,11 @@ impl Spec {
         }
 
         // Sort, unless blocked by options.
-        if !self.options.no_sort {
+        if !options.no_sort {
             candidates.sort();
         }
 
-        Ok(Answer::Candidates(candidates, processing_options))
+        Answer::Candidates(candidates, processing_options)
     }
 
     #[expect(clippy::too_many_lines)]
@@ -799,19 +939,6 @@ impl Spec {
         tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
             vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
 
-        let mut vars_to_remove = Vec::with_capacity(vars_and_values.len());
-        for (var, value) in vars_and_values {
-            shell.env_mut().update_or_add(
-                var,
-                value,
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-
-            vars_to_remove.push(var);
-        }
-
         let mut args = vec![
             context.command_name.unwrap_or(""),
             context.token_to_complete,
@@ -820,28 +947,18 @@ impl Spec {
             args.push(preceding_token);
         }
 
-        // Suppress trap delivery during completion function invocation.
-        // N.B. We use manual acquire/release rather than an RAII guard because an
-        // RAII guard would need to hold `&mut Shell`, preventing the mutable borrow
-        // required by `invoke_function()`. This is safe because `invoke_result` is
-        // captured into a variable (never early-returned with `?`), so
-        // `release_trap_delivery_block()` always runs.
-        shell.acquire_trap_delivery_block();
+        let scope = CompletionVarsScope::start(shell, vars_and_values, false)?;
 
-        let params = shell.default_exec_params();
-        let invoke_result = shell
+        let params = scope.shell.default_exec_params();
+        let invoke_result = scope
+            .shell
             .invoke_function(function_name, args.iter(), params)
             .await
             .map(|result| u8::from(result.exit_code));
 
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 
-        shell.release_trap_delivery_block();
-
-        // Make a best-effort attempt to unset the temporary variables.
-        for var_name in vars_to_remove {
-            let _ = shell.env_mut().unset(var_name);
-        }
+        drop(scope);
 
         let result = invoke_result.unwrap_or_else(|e| {
             tracing::warn!(target: trace_categories::COMPLETION, "error while running completion function '{function_name}': {e}");
@@ -1236,7 +1353,7 @@ impl Config {
         // Try to generate completions.
         if let Some(spec) = found_spec {
             spec.to_owned()
-                .get_completions(shell, &context)
+                .complete(shell, &context)
                 .await
                 .unwrap_or_else(|_err| Answer::Candidates(Vec::new(), ProcessingOptions::default()))
         } else {

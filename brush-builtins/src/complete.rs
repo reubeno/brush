@@ -604,15 +604,16 @@ impl builtins::Command for CompOptCommand {
                 context.shell.completion_config_mut().initial_word = Some(spec);
             }
         } else {
-            // If we got here, then we need to apply to any completion actively in-flight.
-            if let Some(in_flight_options) = context
-                .shell
-                .completion_config_mut()
-                .current_completion_options
-                .as_mut()
-            {
-                Self::set_options(in_flight_options, &options);
-            }
+            // With no names, apply to the completion in progress, if there is one.
+            let Some(in_progress_options) = context.shell.in_progress_completion_options_mut()
+            else {
+                writeln!(
+                    context.stderr(),
+                    "compopt: not currently executing completion function"
+                )?;
+                return Ok(ExecutionResult::general_error());
+            };
+            Self::set_options(in_progress_options, &options);
         }
 
         Ok(ExecutionResult::success())
