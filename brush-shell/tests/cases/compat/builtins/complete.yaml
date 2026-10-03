@@ -171,6 +171,14 @@ cases:
 
       complete -p
 
+  - name: "compopt outside a completion fails"
+    stdin: |
+      # Normalize away the leading "shell: line N:" that the oracle prefixes onto diagnostics.
+      strip() { sed 's/^.*compopt:/compopt:/'; }
+
+      compopt -o nospace 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      compopt 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
   - name: "complete -r with special options"
     stdin: |
       complete -W token mycmd

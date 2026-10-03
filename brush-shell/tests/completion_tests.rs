@@ -23,6 +23,8 @@ impl TestShellWithBashCompletion {
             .profile(brush_core::ProfileLoadBehavior::Skip)
             .rc(brush_core::RcLoadBehavior::Skip)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
+            // Don't leave external commands running when a test drops a completion.
+            .kill_external_commands_on_drop(true)
             .build()
             .await?;
 
@@ -417,6 +419,8 @@ async fn interactive_completion_sets_comp_key_and_comp_type() -> Result<()> {
         .profile(brush_core::ProfileLoadBehavior::Skip)
         .rc(brush_core::RcLoadBehavior::Skip)
         .default_builtins(brush_builtins::BuiltinSet::BashMode)
+        // Don't leave external commands running when a test drops a completion.
+        .kill_external_commands_on_drop(true)
         .build()
         .await?;
 
@@ -475,6 +479,8 @@ impl TestShellNative {
             .profile(brush_core::ProfileLoadBehavior::Skip)
             .rc(brush_core::RcLoadBehavior::Skip)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
+            // Don't leave external commands running when a test drops a completion.
+            .kill_external_commands_on_drop(true)
             .build()
             .await?;
 
@@ -496,6 +502,25 @@ impl TestShellNative {
             .env_mut()
             .set_global(name, brush_core::ShellVariable::new(value))?;
         Ok(())
+    }
+
+    async fn run(&mut self, script: &str) -> Result<()> {
+        let exec_params = self.shell.default_exec_params();
+        self.shell
+            .run_string(
+                script.to_owned(),
+                &brush_core::SourceInfo::default(),
+                &exec_params,
+            )
+            .await?;
+        Ok(())
+    }
+
+    fn get_var(&self, name: &str) -> Option<String> {
+        self.shell
+            .env()
+            .get(name)
+            .map(|(_, v)| v.value().to_cow_str(&self.shell).into_owned())
     }
 }
 
@@ -603,6 +628,94 @@ async fn native_complete_path_after_variable() -> Result<()> {
         completions.options.treat_as_filenames,
         "path completions should be treated as filenames"
     );
+
+    Ok(())
+}
+
+/// Like bash, `compopt` changes the options of the completion in progress, which a
+/// `compgen` call from the completion function doesn't disturb.
+#[tokio::test(flavor = "multi_thread")]
+async fn compopt_survives_compgen_in_completion_function() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    test_shell
+        .run(
+            "_f() { compopt -o nospace; compgen -W x >/dev/null; COMPREPLY=(xy); }; complete -F _f cmd",
+        )
+        .await?;
+
+    let completions = test_shell.complete_end_of_line_full("cmd x").await?;
+    assert_eq!(completions.candidates, ["xy"]);
+    assert!(completions.options.no_trailing_space_at_end_of_line);
+
+    Ok(())
+}
+
+/// Like bash, a subshell of a completion function is in the completion too (so `compopt`
+/// succeeds there), but `compopt` there changes only the subshell's options, not the
+/// completion's.
+#[tokio::test(flavor = "multi_thread")]
+async fn compopt_in_subshell_does_not_change_completion() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    test_shell
+        .run("_f() { (compopt -o nospace) && COMPREPLY=(xy); }; complete -F _f cmd")
+        .await?;
+
+    let completions = test_shell.complete_end_of_line_full("cmd x").await?;
+    assert_eq!(completions.candidates, ["xy"]);
+    assert!(!completions.options.no_trailing_space_at_end_of_line);
+
+    Ok(())
+}
+
+/// A completion that's cancelled (e.g. by Ctrl-C) while its completion function runs is no
+/// longer in progress, so `compopt` acts as it does outside one.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelled_completion_is_no_longer_in_progress() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+    test_shell
+        .run("_slow() { sleep 10 >/dev/null 2>&1; }; complete -F _slow mycmd")
+        .await?;
+
+    let completion = test_shell.complete_end_of_line_full("mycmd x");
+    let result = tokio::time::timeout(std::time::Duration::from_millis(500), completion).await;
+    assert!(result.is_err(), "the completion should have been cancelled");
+
+    test_shell.run("compopt -o nospace; rc=$?").await?;
+    assert_eq!(test_shell.get_var("rc").as_deref(), Some("1"));
+
+    Ok(())
+}
+
+/// Like bash, `compopt -o nosort` in a completion function keeps the candidates in the order
+/// generated.
+#[tokio::test(flavor = "multi_thread")]
+async fn compopt_nosort_applies_to_completion_in_progress() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    test_shell
+        .run("_f() { compopt -o nosort; COMPREPLY=(xb xa xc); }; complete -F _f cmd")
+        .await?;
+
+    let completions = test_shell.complete_end_of_line_full("cmd x").await?;
+    assert_eq!(completions.candidates, ["xb", "xa", "xc"]);
+
+    Ok(())
+}
+
+/// A `compgen` call in a completion function doesn't leak its options (e.g. its own
+/// `nosort`) into the completion: like bash, the candidates are still sorted.
+#[tokio::test(flavor = "multi_thread")]
+async fn compgen_in_completion_function_keeps_sorting() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    test_shell
+        .run("_f() { compgen -W x >/dev/null; COMPREPLY=(xb xa); }; complete -F _f cmd")
+        .await?;
+
+    let completions = test_shell.complete_end_of_line_full("cmd x").await?;
+    assert_eq!(completions.candidates, ["xa", "xb"]);
 
     Ok(())
 }
