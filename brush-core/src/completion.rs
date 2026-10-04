@@ -779,19 +779,6 @@ impl Spec {
         tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
             vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
 
-        let mut vars_to_remove = Vec::with_capacity(vars_and_values.len());
-        for (var, value) in vars_and_values {
-            shell.env_mut().update_or_add(
-                var,
-                value,
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
-            )?;
-
-            vars_to_remove.push(var);
-        }
-
         let mut args = vec![
             context.command_name.unwrap_or(""),
             context.token_to_complete,
@@ -800,28 +787,20 @@ impl Spec {
             args.push(preceding_token);
         }
 
-        // Suppress trap delivery during completion function invocation.
-        // N.B. We use manual acquire/release rather than an RAII guard because an
-        // RAII guard would need to hold `&mut Shell`, preventing the mutable borrow
-        // required by `invoke_function()`. This is safe because `invoke_result` is
-        // captured into a variable (never early-returned with `?`), so
-        // `release_trap_delivery_block()` always runs.
-        shell.acquire_trap_delivery_block();
+        // Set the variables and block trap delivery for as long as the function runs --
+        // and no longer, even if the completion is cancelled partway through.
+        let scope = CompletionVarsScope::start(shell, vars_and_values, false)?;
 
-        let params = shell.default_exec_params();
-        let invoke_result = shell
+        let params = scope.shell.default_exec_params();
+        let invoke_result = scope
+            .shell
             .invoke_function(function_name, args.iter(), params)
             .await
             .map(|result| u8::from(result.exit_code));
 
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
 
-        shell.release_trap_delivery_block();
-
-        // Make a best-effort attempt to unset the temporary variables.
-        for var_name in vars_to_remove {
-            let _ = shell.env_mut().unset(var_name);
-        }
+        drop(scope);
 
         let result = invoke_result.unwrap_or_else(|e| {
             tracing::warn!(target: trace_categories::COMPLETION, "error while running completion function '{function_name}': {e}");
@@ -1222,6 +1201,60 @@ impl Config {
         } else {
             // If we didn't find a spec, then fall back to basic completion.
             get_completions_using_basic_lookup(shell, &context).await
+        }
+    }
+}
+
+/// While a completion function or command runs, blocks trap delivery and keeps the `COMP_*`
+/// variables set for it; when dropped, releases the block and unsets the variables, as bash
+/// does -- even if the completion is cancelled partway through, e.g. by Ctrl-C.
+struct CompletionVarsScope<'a, SE: extensions::ShellExtensions> {
+    shell: &'a mut Shell<SE>,
+    /// The variables set so far.
+    vars: Vec<&'static str>,
+}
+
+impl<'a, SE: extensions::ShellExtensions> CompletionVarsScope<'a, SE> {
+    /// Sets `vars` for a completion function or command, exporting them if `export` (as a
+    /// command's are).
+    fn start(
+        shell: &'a mut Shell<SE>,
+        vars: impl IntoIterator<Item = (&'static str, ShellValueLiteral)>,
+        export: bool,
+    ) -> Result<Self, error::Error> {
+        shell.acquire_trap_delivery_block();
+        let mut scope = Self {
+            shell,
+            vars: Vec::new(),
+        };
+
+        for (var, value) in vars {
+            scope.shell.env_mut().update_or_add(
+                var,
+                value,
+                |v| {
+                    if export {
+                        v.export();
+                    }
+                    Ok(())
+                },
+                env::EnvironmentLookup::Anywhere,
+                env::EnvironmentScope::Global,
+            )?;
+            scope.vars.push(var);
+        }
+
+        Ok(scope)
+    }
+}
+
+impl<SE: extensions::ShellExtensions> Drop for CompletionVarsScope<'_, SE> {
+    fn drop(&mut self) {
+        self.shell.release_trap_delivery_block();
+
+        // Make a best-effort attempt to unset the variables.
+        for var in &self.vars {
+            let _ = self.shell.env_mut().unset(var);
         }
     }
 }

@@ -23,6 +23,8 @@ impl TestShellWithBashCompletion {
             .profile(brush_core::ProfileLoadBehavior::Skip)
             .rc(brush_core::RcLoadBehavior::Skip)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
+            // Don't leave external commands running when a test drops a completion.
+            .kill_external_commands_on_drop(true)
             .build()
             .await?;
 
@@ -417,6 +419,8 @@ async fn interactive_completion_sets_comp_key_and_comp_type() -> Result<()> {
         .profile(brush_core::ProfileLoadBehavior::Skip)
         .rc(brush_core::RcLoadBehavior::Skip)
         .default_builtins(brush_builtins::BuiltinSet::BashMode)
+        // Don't leave external commands running when a test drops a completion.
+        .kill_external_commands_on_drop(true)
         .build()
         .await?;
 
@@ -475,6 +479,8 @@ impl TestShellNative {
             .profile(brush_core::ProfileLoadBehavior::Skip)
             .rc(brush_core::RcLoadBehavior::Skip)
             .default_builtins(brush_builtins::BuiltinSet::BashMode)
+            // Don't leave external commands running when a test drops a completion.
+            .kill_external_commands_on_drop(true)
             .build()
             .await?;
 
@@ -545,6 +551,31 @@ async fn native_complete_variable_names_with_braces() -> Result<()> {
         !completions.options.treat_as_filenames,
         "variable completions should not be treated as filenames"
     );
+
+    Ok(())
+}
+
+/// A completion that's cancelled (e.g. by Ctrl-C) while its completion function runs
+/// leaves nothing behind: the `COMP_*` variables are unset, and traps aren't blocked.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelled_completion_cleans_up_after_completion_function() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+    let exec_params = test_shell.shell.default_exec_params();
+    test_shell
+        .shell
+        .run_string(
+            "_slow() { sleep 10 >/dev/null 2>&1; }; complete -F _slow mycmd".to_owned(),
+            &brush_core::SourceInfo::default(),
+            &exec_params,
+        )
+        .await?;
+
+    let completion = test_shell.complete_end_of_line_full("mycmd x");
+    let result = tokio::time::timeout(std::time::Duration::from_millis(500), completion).await;
+    assert!(result.is_err(), "the completion should have been cancelled");
+
+    assert!(test_shell.shell.env().get("COMP_LINE").is_none());
+    assert!(!test_shell.shell.call_stack().is_trap_delivery_suppressed());
 
     Ok(())
 }
