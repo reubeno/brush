@@ -73,6 +73,18 @@ cases:
         complete -p mycmd_${opt}
       done
 
+  - name: "compopt +o disables an option"
+    stdin: |
+      complete -o nospace -o filenames -W x mycmd
+      compopt +o nospace mycmd; echo "rc=$?"
+      complete -p
+
+  - name: "compopt takes command names starting with + or - after --"
+    stdin: |
+      complete -W x -- +cmd -cmd
+      compopt -o nospace -- +cmd -cmd; echo "rc=$?"
+      complete -p -- +cmd -cmd
+
   - name: "complete -r"
     stdin: |
       echo "[Removing non-existent]"
