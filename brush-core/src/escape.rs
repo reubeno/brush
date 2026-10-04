@@ -290,6 +290,12 @@ pub(crate) struct QuoteOptions {
     /// Default is for newline characters to require upgrading the string's quoting to
     /// ANSI C quoting.
     pub avoid_ansi_c_quoting_newline: bool,
+    /// Whether to leave a `#` starting the input unquoted. Bash does in some output that
+    /// isn't read back as shell input, e.g. tracing a `[[ -n ... ]]` test.
+    pub leave_leading_hash: bool,
+    /// Whether to leave a `~` unquoted where it would be tilde-expanded. Bash does when
+    /// quoting a file name it completes, so that a `~user` completion still expands.
+    pub leave_tilde: bool,
 }
 
 pub(crate) fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
@@ -302,14 +308,14 @@ pub(crate) fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
     }
 
     let use_default_quotes =
-        !use_ansi_c_quotes && (options.always_quote || s.is_empty() || s.contains(needs_escaping));
+        !use_ansi_c_quotes && (options.always_quote || s.is_empty() || needs_quoting(s, options));
 
     if !use_default_quotes {
         return s.into();
     }
 
     match options.preferred_mode {
-        QuoteMode::BackslashEscape => backslash_escape(s),
+        QuoteMode::BackslashEscape => backslash_escape(s, options),
         QuoteMode::SingleQuote => single_quote(s),
         QuoteMode::DoubleQuote => double_quote(s).into(),
     }
@@ -347,16 +353,34 @@ pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
     quote(s, &options)
 }
 
-fn backslash_escape(s: &str) -> Cow<'_, str> {
+/// Like [`quote_if_needed`], but leaves a `~` unquoted where it would be tilde-expanded,
+/// as bash does when quoting a file name it completes, so that a `~user` completion still
+/// expands.
+///
+/// # Arguments
+///
+/// * `s` - The string to escape.
+/// * `mode` - The quoting mode to use.
+pub fn quote_completion_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
+    let options = QuoteOptions {
+        preferred_mode: mode,
+        leave_tilde: true,
+        ..Default::default()
+    };
+
+    quote(s, &options)
+}
+
+fn backslash_escape<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
     if s.is_empty() {
         // An empty string must be represented as '' to be a valid shell word.
         Cow::Owned("''".to_string())
-    } else if !s.chars().any(needs_escaping) {
+    } else if !needs_quoting(s, options) {
         Cow::Borrowed(s)
     } else {
         let mut output = String::with_capacity(s.len());
-        for c in s.chars() {
-            if needs_escaping(c) {
+        for (i, c) in s.char_indices() {
+            if needs_escaping_at(s, i, c, options) {
                 output.push('\\');
             }
             output.push(c);
@@ -448,6 +472,29 @@ fn ansi_c_quote(s: &str) -> String {
     result
 }
 
+/// Returns whether `s` has a char that needs quoting for `s` to be a shell word that
+/// expands to just `s`, as `options` say.
+fn needs_quoting(s: &str, options: &QuoteOptions) -> bool {
+    s.char_indices()
+        .any(|(i, c)| needs_escaping_at(s, i, c, options))
+}
+
+/// Returns whether `c`, at byte offset `i` in `s`, needs quoting: if it's always special,
+/// or, like bash, it's a `#` starting the word (which would start a comment), or a `~`
+/// starting it or following a `=` or `:` (where it would be tilde-expanded) -- unless
+/// `options` say to leave those.
+fn needs_escaping_at(s: &str, i: usize, c: char, options: &QuoteOptions) -> bool {
+    match c {
+        '#' => i == 0 && !options.leave_leading_hash,
+        '~' if options.leave_tilde => false,
+        '~' => {
+            let prev = s.get(..i).and_then(|before| before.chars().next_back());
+            matches!(prev, None | Some('=' | ':'))
+        }
+        _ => needs_escaping(c),
+    }
+}
+
 // Returns whether or not the given character needs to be escaped (or quoted) if outside
 // quotes.
 const fn needs_escaping(c: char) -> bool {
@@ -490,6 +537,24 @@ mod tests {
         assert_eq!(quote_if_needed("a", QuoteMode::BackslashEscape), "a");
         assert_eq!(quote_if_needed("a b", QuoteMode::BackslashEscape), r"a\ b");
         assert_eq!(quote_if_needed("", QuoteMode::BackslashEscape), "''");
+    }
+
+    #[test]
+    fn test_leading_hash_and_tilde_need_quoting() {
+        // Like bash: a `#` starting a word, and a `~` starting it or following `=` or `:`.
+        assert_eq!(quote_if_needed("#a", QuoteMode::BackslashEscape), r"\#a");
+        assert_eq!(quote_if_needed("~/x", QuoteMode::BackslashEscape), r"\~/x");
+        assert_eq!(quote_if_needed("a=~", QuoteMode::BackslashEscape), r"a=\~");
+        assert_eq!(quote_if_needed("a:~", QuoteMode::BackslashEscape), r"a:\~");
+        assert_eq!(quote_if_needed("#a", QuoteMode::SingleQuote), "'#a'");
+        assert_eq!(quote_if_needed("~", QuoteMode::SingleQuote), "'~'");
+        // Elsewhere, they're ordinary chars.
+        assert_eq!(quote_if_needed("a#", QuoteMode::SingleQuote), "a#");
+        assert_eq!(quote_if_needed("a~", QuoteMode::SingleQuote), "a~");
+        // A multibyte char before them doesn't change that.
+        assert_eq!(quote_if_needed("é=~", QuoteMode::BackslashEscape), r"é=\~");
+        assert_eq!(quote_if_needed("é~", QuoteMode::BackslashEscape), "é~");
+        assert_eq!(quote_if_needed("é#", QuoteMode::BackslashEscape), "é#");
     }
 
     #[test]

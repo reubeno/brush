@@ -140,16 +140,7 @@ fn format_via_uucore(
 }
 
 fn quote_printf_q(s: &str) -> String {
-    let quoted = escape::quote_if_needed(s, escape::QuoteMode::BackslashEscape);
-    if quoted.starts_with("$'") {
-        return quoted.into_owned();
-    }
-
-    let mut quoted = quoted.replace(":~", ":\\~").replace("=~", "=\\~");
-    if matches!(quoted.as_bytes().first(), Some(b'~' | b'#')) {
-        quoted.insert(0, '\\');
-    }
-    quoted
+    escape::quote_if_needed(s, escape::QuoteMode::BackslashEscape).into_owned()
 }
 
 type ParsedFormatItem = (format::FormatItem<format::EscapedChar>, bool);

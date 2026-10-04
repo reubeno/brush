@@ -48,6 +48,16 @@ cases:
       complete -P 'my prefix' mycmd
       complete -p mycmd
 
+  - name: "compopt +o wins over -o for the same option"
+    stdin: |
+      complete -W x cmd
+      compopt -o nospace +o nospace cmd
+      complete -p cmd
+      compopt +o nospace -o nospace cmd
+      complete -p cmd
+      compopt -o nospace +o filenames -o filenames cmd
+      complete -p cmd
+
   - name: "Roundtrip: complete -S"
     stdin: |
       complete -S mysuffix mycmd
@@ -123,6 +133,33 @@ cases:
       complete -r mycmd
       echo $?
       complete -p mycmd 2>/dev/null
+
+  - name: "compopt with a name that has no completion spec fails"
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      complete -W x a
+      compopt -o nospace b a 2>err; echo "rc=$?"; strip <err
+      complete -p a
+      complete -p b >/dev/null 2>&1; echo "b has a spec: rc=$?"
+      rm err
+
+  - name: "compopt -D, -E, or -I with no such completion spec fails"
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      for flag in -D -E -I; do
+        compopt $flag -o nospace 2>err; echo "rc=$?"; strip <err
+      done
+      rm err
+
+  - name: "compopt -D, -E, or -I updates an existing completion spec"
+    stdin: |
+      for flag in -D -E -I; do
+        complete $flag -W x
+        compopt $flag -o nospace; echo "rc=$?"
+        complete -p $flag | grep -o -- '-o nospace'
+      done
 
   - name: "complete -r with no args"
     stdin: |
