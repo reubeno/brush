@@ -553,6 +553,10 @@ pub(crate) struct CompOptCommand {
 impl builtins::Command for CompOptCommand {
     type Error = brush_core::Error;
 
+    fn takes_plus_options() -> bool {
+        true
+    }
+
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
