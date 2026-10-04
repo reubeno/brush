@@ -370,15 +370,32 @@ pub struct Context<'a> {
 }
 
 impl Spec {
-    /// Generates completion candidates using this specification, with a completion in
-    /// progress for it (see [`InProgressCompletion`]) while they're generated, so the
-    /// `compopt` builtin can change the options applied to them.
+    /// Generates completion candidates using this specification, as the `compgen` builtin
+    /// does. This doesn't start a completion in progress, so the `compopt` builtin can't
+    /// change the options applied to the candidates.
     ///
     /// # Arguments
     ///
     /// * `shell` - The shell instance to use for completion generation.
     /// * `context` - The context in which completion is being generated.
     pub async fn get_completions(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        context: &Context<'_>,
+    ) -> Result<Answer, crate::error::Error> {
+        let Some(candidates) = self.generate_candidates(shell, context).await? else {
+            return Ok(Answer::RestartCompletionProcess);
+        };
+
+        Ok(self
+            .apply_options(shell, context, candidates, self.options.clone())
+            .await)
+    }
+
+    /// Completes the token in `context`, with a completion in progress for it (see
+    /// [`InProgressCompletion`]) while its candidates are generated, so the `compopt`
+    /// builtin can change the options applied to them.
+    async fn complete(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         context: &Context<'_>,
@@ -1362,7 +1379,7 @@ impl Config {
         // Try to generate completions.
         if let Some(spec) = found_spec {
             spec.to_owned()
-                .get_completions(shell, &context)
+                .complete(shell, &context)
                 .await
                 .unwrap_or_else(|_err| Answer::Candidates(Vec::new(), ProcessingOptions::default()))
         } else {
