@@ -524,6 +524,28 @@ async fn native_complete_variable_names() -> Result<()> {
     Ok(())
 }
 
+/// Like bash, `compopt -o nosort` in a completion function keeps the candidates in the order
+/// generated.
+#[tokio::test(flavor = "multi_thread")]
+async fn compopt_nosort_applies_to_completion_in_progress() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    let exec_params = test_shell.shell.default_exec_params();
+    test_shell
+        .shell
+        .run_string(
+            "_f() { compopt -o nosort; COMPREPLY=(xb xa xc); }; complete -F _f cmd".to_owned(),
+            &brush_core::SourceInfo::default(),
+            &exec_params,
+        )
+        .await?;
+
+    let completions = test_shell.complete_end_of_line_full("cmd x").await?;
+    assert_eq!(completions.candidates, ["xb", "xa", "xc"]);
+
+    Ok(())
+}
+
 /// Tests native variable completion with braces (e.g., ${VAR})
 #[tokio::test(flavor = "multi_thread")]
 async fn native_complete_variable_names_with_braces() -> Result<()> {

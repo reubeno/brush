@@ -498,7 +498,7 @@ impl Spec {
         }
 
         // Sort, unless blocked by options.
-        if !self.options.no_sort {
+        if !options.no_sort {
             candidates.sort();
         }
 
