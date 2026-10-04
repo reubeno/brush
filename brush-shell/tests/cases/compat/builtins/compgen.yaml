@@ -416,3 +416,9 @@ cases:
     stdin: |
       _comp() { echo "KEY=${COMP_KEY:-unset} TYPE=${COMP_TYPE:-unset}"; COMPREPLY=(); }
       compgen -F _comp mycmd
+
+  - name: "compgen -C passes words with commas or braces intact"
+    ignore_stderr: true
+    stdin: |
+      compgen -C 'printf "<%s>\n"' -- 'a,b' | grep -F '<a,b>'
+      compgen -C 'printf "<%s>\n"' -- '{a,b}' | grep -F '<{a,b}>'

@@ -60,7 +60,7 @@ fn split_completion_word_list(
 }
 
 /// Type of action to take to generate completion candidates.
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug, Eq, PartialEq, ValueEnum)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteAction {
     /// Complete with valid aliases.
@@ -1643,6 +1643,46 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn special_specs_have_bash_names() {
+        assert_eq!(SpecialSpec::Default.command_name(), "_DefaultCmD_");
+        assert_eq!(SpecialSpec::EmptyLine.command_name(), "_EmptycmD_");
+        assert_eq!(SpecialSpec::InitialWord.command_name(), "_InitialWorD_");
+    }
+
+    #[test]
+    fn special_specs_are_each_stored_on_their_own() {
+        let mut config = Config::default();
+        let specials = [
+            (SpecialSpec::Default, "d"),
+            (SpecialSpec::EmptyLine, "e"),
+            (SpecialSpec::InitialWord, "i"),
+        ];
+
+        for (special, word) in specials {
+            assert!(config.get_special(special).is_none());
+            let spec = Spec {
+                word_list: Some(word.to_owned()),
+                ..Spec::default()
+            };
+            config.set(special.command_name(), spec);
+        }
+
+        for (special, word) in specials {
+            let spec = config.get_special(special);
+            assert_eq!(spec.and_then(|spec| spec.word_list.as_deref()), Some(word));
+
+            if let Some(spec) = config.get_special_mut(special) {
+                spec.prefix = Some(word.to_uppercase());
+            }
+            let spec = config.get(special.command_name());
+            assert_eq!(
+                spec.and_then(|spec| spec.prefix.clone()),
+                Some(word.to_uppercase())
+            );
+        }
+    }
 
     #[test]
     fn special_specs_round_trip_through_bash_names() {

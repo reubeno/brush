@@ -442,3 +442,7 @@ cases:
     stdin: |
       printf '<%#q>\n' 'foo'
       printf '<%#12q>\n' 'foo bar'
+
+  - name: "printf %q escapes commas"
+    stdin: |
+      printf '%q\n' 'a,b' ',' '{a,b}'

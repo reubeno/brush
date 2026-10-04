@@ -140,7 +140,13 @@ fn format_via_uucore(
 }
 
 fn quote_printf_q(s: &str) -> String {
-    escape::quote_if_needed(s, escape::QuoteMode::BackslashEscape).into_owned()
+    // Like bash's, this escapes commas too, so the result is safe even inside a brace
+    // expansion.
+    let options = escape::QuoteOptions::builder()
+        .preferred_mode(escape::QuoteMode::BackslashEscape)
+        .quote_commas(true)
+        .build();
+    escape::quote(s, &options).into_owned()
 }
 
 type ParsedFormatItem = (format::FormatItem<format::EscapedChar>, bool);

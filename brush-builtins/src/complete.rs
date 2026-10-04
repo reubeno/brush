@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum as _};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
@@ -124,6 +124,8 @@ impl CommonCompleteCommandArgs {
         spec
     }
 
+    /// Returns the actions selected, like bash, each once, in the fixed order bash runs them
+    /// in (that of [`CompleteAction`]'s variants), however they were given.
     fn resolve_actions(&self) -> Vec<CompleteAction> {
         let mut actions = self.actions.clone();
 
@@ -146,7 +148,11 @@ impl CommonCompleteCommandArgs {
             .filter_map(|(enabled, action)| enabled.then_some(action)),
         );
 
-        actions
+        CompleteAction::value_variants()
+            .iter()
+            .filter(|action| actions.contains(action))
+            .cloned()
+            .collect()
     }
 }
 
@@ -275,7 +281,7 @@ impl CompleteCommand {
         }
     }
 
-    #[expect(clippy::too_many_lines)]
+    /// Displays `spec` as the `complete` command that recreates it, formatted as bash does.
     fn display_spec(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         special_name: Option<&str>,
@@ -284,121 +290,65 @@ impl CompleteCommand {
     ) -> Result<(), brush_core::Error> {
         let mut s = String::from("complete");
 
-        if let Some(special_name) = special_name {
-            s.push(' ');
-            s.push_str(special_name);
+        // Options, in the order bash shows them.
+        let options = &spec.options;
+        for (enabled, option) in [
+            (options.bash_default, "bashdefault"),
+            (options.default, "default"),
+            (options.dir_names, "dirnames"),
+            (options.file_names, "filenames"),
+            (options.no_quote, "noquote"),
+            (options.no_sort, "nosort"),
+            (options.no_space, "nospace"),
+            (options.plus_dirs, "plusdirs"),
+        ] {
+            if enabled {
+                write!(s, " -o {option}")?;
+            }
         }
 
-        for action in &spec.actions {
-            s.push(' ');
-
-            let action_str = match action {
-                CompleteAction::Alias => "-a",
-                CompleteAction::ArrayVar => "-A arrayvar",
-                CompleteAction::Binding => "-A binding",
-                CompleteAction::Builtin => "-b",
-                CompleteAction::Command => "-c",
-                CompleteAction::Directory => "-d",
-                CompleteAction::Disabled => "-A disabled",
-                CompleteAction::Enabled => "-A enabled",
-                CompleteAction::Export => "-e",
-                CompleteAction::File => "-f",
-                CompleteAction::Function => "-A function",
-                CompleteAction::Group => "-g",
-                CompleteAction::HelpTopic => "-A helptopic",
-                CompleteAction::HostName => "-A hostname",
-                CompleteAction::Job => "-j",
-                CompleteAction::Keyword => "-k",
-                CompleteAction::Running => "-A running",
-                CompleteAction::Service => "-s",
-                CompleteAction::SetOpt => "-A setopt",
-                CompleteAction::ShOpt => "-A shopt",
-                CompleteAction::Signal => "-A signal",
-                CompleteAction::Stopped => "-A stopped",
-                CompleteAction::User => "-u",
-                CompleteAction::Variable => "-v",
-            };
-
-            s.push_str(action_str);
+        // Like bash, show each action once: those with their own flag first, then the rest
+        // with `-A`, each in the order bash lists them.
+        let actions: Vec<_> = spec.actions.iter().map(action_flag).collect();
+        for own_flag in [true, false] {
+            for flag in CompleteAction::value_variants().iter().map(action_flag) {
+                if actions.contains(&flag) && flag.starts_with("-A ") != own_flag {
+                    write!(s, " {flag}")?;
+                }
+            }
         }
 
-        if spec.options.bash_default {
-            s.push_str(" -o bashdefault");
-        }
-        if spec.options.default {
-            s.push_str(" -o default");
-        }
-        if spec.options.dir_names {
-            s.push_str(" -o dirnames");
-        }
-        if spec.options.file_names {
-            s.push_str(" -o filenames");
-        }
-        if spec.options.no_quote {
-            s.push_str(" -o noquote");
-        }
-        if spec.options.no_sort {
-            s.push_str(" -o nosort");
-        }
-        if spec.options.no_space {
-            s.push_str(" -o nospace");
-        }
-        if spec.options.plus_dirs {
-            s.push_str(" -o plusdirs");
-        }
-
-        if let Some(glob_pattern) = &spec.glob_pattern {
-            write!(
-                s,
-                " -G {}",
-                escape::force_quote(glob_pattern, escape::QuoteMode::SingleQuote)
-            )?;
-        }
-        if let Some(word_list) = &spec.word_list {
-            write!(
-                s,
-                " -W {}",
-                escape::force_quote(word_list, escape::QuoteMode::SingleQuote)
-            )?;
+        for (flag, arg) in [
+            ("-G", spec.glob_pattern.as_ref()),
+            ("-W", spec.word_list.as_ref()),
+            ("-P", spec.prefix.as_ref()),
+            ("-S", spec.suffix.as_ref()),
+            ("-X", spec.filter_pattern.as_ref()),
+            ("-C", spec.command.as_ref()),
+        ] {
+            if let Some(arg) = arg {
+                let arg = escape::force_quote(arg, escape::QuoteMode::SingleQuote);
+                write!(s, " {flag} {arg}")?;
+            }
         }
         if let Some(function_name) = &spec.function_name {
+            let function_name =
+                escape::quote_if_needed(function_name, escape::QuoteMode::SingleQuote);
             write!(s, " -F {function_name}")?;
         }
-        if let Some(command) = &spec.command {
-            write!(
-                s,
-                " -C {}",
-                escape::force_quote(command, escape::QuoteMode::SingleQuote)
-            )?;
-        }
-        if let Some(filter_pattern) = &spec.filter_pattern {
-            write!(
-                s,
-                " -X {}",
-                escape::force_quote(filter_pattern, escape::QuoteMode::SingleQuote)
-            )?;
-        }
-        if let Some(prefix) = &spec.prefix {
-            write!(
-                s,
-                " -P {}",
-                escape::force_quote(prefix, escape::QuoteMode::SingleQuote)
-            )?;
-        }
-        if let Some(suffix) = &spec.suffix {
-            write!(
-                s,
-                " -S {}",
-                escape::force_quote(suffix, escape::QuoteMode::SingleQuote)
-            )?;
-        }
 
-        if let Some(command_name) = command_name {
-            s.push(' ');
-            s.push_str(command_name);
-        }
-
-        writeln!(context.stdout(), "{s}")?;
+        // Like bash, the spec's name comes last: a special spec's flag, or the command's
+        // name, quoted if needed.
+        let name = special_name.map_or_else(
+            || {
+                escape::quote_if_needed(
+                    command_name.unwrap_or_default(),
+                    escape::QuoteMode::SingleQuote,
+                )
+            },
+            Into::into,
+        );
+        writeln!(context.stdout(), "{s} {name}")?;
 
         Ok(())
     }
@@ -431,6 +381,37 @@ impl CompleteCommand {
         context.shell.completion_config_mut().set(name, config);
 
         Ok(true)
+    }
+}
+
+/// Returns the flag that selects `action` in `complete` and `compgen` (e.g. `-a`, or
+/// `-A arrayvar` for an action with no flag of its own).
+const fn action_flag(action: &CompleteAction) -> &'static str {
+    match action {
+        CompleteAction::Alias => "-a",
+        CompleteAction::ArrayVar => "-A arrayvar",
+        CompleteAction::Binding => "-A binding",
+        CompleteAction::Builtin => "-b",
+        CompleteAction::Command => "-c",
+        CompleteAction::Directory => "-d",
+        CompleteAction::Disabled => "-A disabled",
+        CompleteAction::Enabled => "-A enabled",
+        CompleteAction::Export => "-e",
+        CompleteAction::File => "-f",
+        CompleteAction::Function => "-A function",
+        CompleteAction::Group => "-g",
+        CompleteAction::HelpTopic => "-A helptopic",
+        CompleteAction::HostName => "-A hostname",
+        CompleteAction::Job => "-j",
+        CompleteAction::Keyword => "-k",
+        CompleteAction::Running => "-A running",
+        CompleteAction::Service => "-s",
+        CompleteAction::SetOpt => "-A setopt",
+        CompleteAction::ShOpt => "-A shopt",
+        CompleteAction::Signal => "-A signal",
+        CompleteAction::Stopped => "-A stopped",
+        CompleteAction::User => "-u",
+        CompleteAction::Variable => "-v",
     }
 }
 

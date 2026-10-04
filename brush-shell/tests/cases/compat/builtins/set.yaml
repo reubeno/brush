@@ -125,3 +125,14 @@ cases:
     stdin: |
       x="~" y="#z" z="a=~" w="a~"
       set | grep -E "^(w|x|y|z)="
+
+  - name: "set leaves commas unquoted, like bash"
+    stdin: |
+      x="a,b" y="{a,b}" z=","
+      set | grep -E "^(x|y|z)="
+
+  - name: "set and declare -p leave commas in associative array keys unquoted, like bash"
+    stdin: |
+      declare -A m=([a,b]=1 [c]=2)
+      set | grep "^m="
+      declare -p m

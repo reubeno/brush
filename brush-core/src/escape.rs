@@ -266,7 +266,7 @@ pub fn expand_backslash_escapes(
 }
 
 /// Quoting mode to use for escaping.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum QuoteMode {
     /// Single-quote.
     #[default]
@@ -277,28 +277,45 @@ pub enum QuoteMode {
     BackslashEscape,
 }
 
-/// Options influencing how to escape/quote an input string.
-#[derive(Default)]
-pub(crate) struct QuoteOptions {
-    /// Whether or not to *always* escape or quote the input; if false, then escaping/quoting
-    /// will only be applied if the input contains characters that *require* it.
-    pub always_quote: bool,
-    /// Preferred mode for quoting/escaping. Quoting may be "upgraded" to a more expressive
-    /// format if the input is not expressible otherwise.
-    pub preferred_mode: QuoteMode,
-    /// Whether or not to *avoid* using ANSI C quoting just for the benefit of newline characters.
-    /// Default is for newline characters to require upgrading the string's quoting to
-    /// ANSI C quoting.
-    pub avoid_ansi_c_quoting_newline: bool,
+/// Options for [`quote`]: how to quote a string so that, read back as a shell word, it
+/// yields just that string, and which chars that are special only in some places (or to
+/// some readers) to treat as special.
+///
+/// Build one with [`QuoteOptions::builder`]; every option defaults to off (and the mode to
+/// [`QuoteMode::SingleQuote`]), which is what [`quote_if_needed`] uses.
+#[derive(Clone, Debug, Default, bon::Builder)]
+pub struct QuoteOptions {
+    /// Whether to quote the input even if nothing in it needs quoting.
+    #[builder(default)]
+    pub(crate) always_quote: bool,
+    /// Preferred mode for quoting. It's upgraded to ANSI-C quoting (`$'...'`) if the input
+    /// has chars only that can express.
+    #[builder(default)]
+    pub(crate) preferred_mode: QuoteMode,
+    /// Whether to avoid ANSI-C quoting just for newlines, which otherwise require it.
+    #[builder(default)]
+    pub(crate) avoid_ansi_c_quoting_newline: bool,
     /// Whether to leave a `#` starting the input unquoted. Bash does in some output that
     /// isn't read back as shell input, e.g. tracing a `[[ -n ... ]]` test.
-    pub leave_leading_hash: bool,
+    #[builder(default)]
+    pub(crate) leave_leading_hash: bool,
     /// Whether to leave a `~` unquoted where it would be tilde-expanded. Bash does when
     /// quoting a file name it completes, so that a `~user` completion still expands.
-    pub leave_tilde: bool,
+    #[builder(default)]
+    pub(crate) leave_tilde: bool,
+    /// Whether to quote commas, which aren't special on their own. Bash's `printf %q`
+    /// does, so its output is safe even inside a brace expansion.
+    #[builder(default)]
+    pub(crate) quote_commas: bool,
 }
 
-pub(crate) fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
+/// Quotes `s` as `options` say, so that, read back as a shell word, it yields just `s`.
+///
+/// # Arguments
+///
+/// * `s` - The string to quote.
+/// * `options` - How to quote it.
+pub fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
     let use_ansi_c_quotes = s.contains(|c| {
         needs_ansi_c_quoting(c) && (!options.avoid_ansi_c_quoting_newline || c != '\n')
     });
@@ -347,24 +364,6 @@ pub fn quote_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
     let options = QuoteOptions {
         always_quote: false,
         preferred_mode: mode,
-        ..Default::default()
-    };
-
-    quote(s, &options)
-}
-
-/// Like [`quote_if_needed`], but leaves a `~` unquoted where it would be tilde-expanded,
-/// as bash does when quoting a file name it completes, so that a `~user` completion still
-/// expands.
-///
-/// # Arguments
-///
-/// * `s` - The string to escape.
-/// * `mode` - The quoting mode to use.
-pub fn quote_completion_if_needed(s: &str, mode: QuoteMode) -> Cow<'_, str> {
-    let options = QuoteOptions {
-        preferred_mode: mode,
-        leave_tilde: true,
         ..Default::default()
     };
 
@@ -487,6 +486,7 @@ fn needs_escaping_at(s: &str, i: usize, c: char, options: &QuoteOptions) -> bool
     match c {
         '#' => i == 0 && !options.leave_leading_hash,
         '~' if options.leave_tilde => false,
+        ',' => options.quote_commas,
         '~' => {
             let prev = s.get(..i).and_then(|before| before.chars().next_back());
             matches!(prev, None | Some('=' | ':'))
@@ -518,7 +518,6 @@ const fn needs_escaping(c: char) -> bool {
             | '"'
             | '!'
             | '^'
-            | ','
             | ' '
             | '\''
     )
