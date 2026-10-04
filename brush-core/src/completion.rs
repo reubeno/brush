@@ -930,9 +930,37 @@ pub enum Answer {
     RestartCompletionProcess,
 }
 
-const EMPTY_COMMAND: &str = "_EmptycmD_";
-const DEFAULT_COMMAND: &str = "_DefaultCmD_";
-const INITIAL_WORD: &str = "_InitialWorD_";
+/// A completion spec used in place of a command's.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, strum_macros::EnumIter)]
+pub enum SpecialSpec {
+    /// The spec used when no command's spec applies (`complete -D`).
+    Default,
+    /// The spec used when the command line is empty (`complete -E`).
+    EmptyLine,
+    /// The spec used for the initial word of a command line (`complete -I`).
+    InitialWord,
+}
+
+impl SpecialSpec {
+    /// Returns bash's name for this spec, which the `complete` and `compopt` builtins
+    /// accept in place of a command name, and show in their messages.
+    pub const fn command_name(self) -> &'static str {
+        match self {
+            Self::Default => "_DefaultCmD_",
+            Self::EmptyLine => "_EmptycmD_",
+            Self::InitialWord => "_InitialWorD_",
+        }
+    }
+
+    /// Returns the special spec that `name`, bash's name for it, names, if any.
+    pub fn from_command_name(name: &str) -> Option<Self> {
+        Self::iter().find(|special| special.command_name() == name)
+    }
+}
+
+const EMPTY_COMMAND: &str = SpecialSpec::EmptyLine.command_name();
+const DEFAULT_COMMAND: &str = SpecialSpec::Default.command_name();
+const INITIAL_WORD: &str = SpecialSpec::InitialWord.command_name();
 
 impl Config {
     /// Removes all registered completion specs.
@@ -986,6 +1014,32 @@ impl Config {
             DEFAULT_COMMAND => self.default.as_ref(),
             INITIAL_WORD => self.initial_word.as_ref(),
             _ => self.commands.get(name),
+        }
+    }
+
+    /// If present, returns the given special completion spec.
+    ///
+    /// # Arguments
+    ///
+    /// * `special` - The special spec.
+    pub const fn get_special(&self, special: SpecialSpec) -> Option<&Spec> {
+        match special {
+            SpecialSpec::Default => self.default.as_ref(),
+            SpecialSpec::EmptyLine => self.empty_line.as_ref(),
+            SpecialSpec::InitialWord => self.initial_word.as_ref(),
+        }
+    }
+
+    /// If present, returns a mutable reference to the given special completion spec.
+    ///
+    /// # Arguments
+    ///
+    /// * `special` - The special spec.
+    pub const fn get_special_mut(&mut self, special: SpecialSpec) -> Option<&mut Spec> {
+        match special {
+            SpecialSpec::Default => self.default.as_mut(),
+            SpecialSpec::EmptyLine => self.empty_line.as_mut(),
+            SpecialSpec::InitialWord => self.initial_word.as_mut(),
         }
     }
 
@@ -1574,6 +1628,21 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn special_specs_round_trip_through_bash_names() {
+        for special in SpecialSpec::iter() {
+            assert_eq!(
+                SpecialSpec::from_command_name(special.command_name()),
+                Some(special)
+            );
+        }
+        assert_eq!(
+            SpecialSpec::from_command_name("_DefaultCmD_"),
+            Some(SpecialSpec::Default)
+        );
+        assert_eq!(SpecialSpec::from_command_name("mycmd"), None);
+    }
     use pretty_assertions::assert_matches;
 
     #[test]
