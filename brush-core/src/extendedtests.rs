@@ -59,7 +59,16 @@ async fn apply_unary_predicate(
                 params,
                 std::format!(
                     "[[ {op} {} ]]",
-                    escape::quote_if_needed(&expanded_operand, escape::QuoteMode::SingleQuote)
+                    // Like bash, leave a leading `#` or `~` as is.
+                    escape::quote(
+                        &expanded_operand,
+                        &escape::QuoteOptions {
+                            preferred_mode: escape::QuoteMode::SingleQuote,
+                            leave_leading_hash: true,
+                            leave_tilde: true,
+                            ..Default::default()
+                        }
+                    )
                 ),
             )
             .await;
@@ -439,9 +448,14 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, params, right).await?;
-                let escaped_right = escape::quote_if_needed(
+                // Like bash, leave a `~` as is.
+                let escaped_right = escape::quote(
                     expanded_right.as_str(),
-                    escape::QuoteMode::BackslashEscape,
+                    &escape::QuoteOptions {
+                        preferred_mode: escape::QuoteMode::BackslashEscape,
+                        leave_tilde: true,
+                        ..Default::default()
+                    },
                 );
                 shell
                     .trace_command(params, std::format!("[[ {s} {op} {escaped_right} ]]"))
@@ -459,9 +473,14 @@ async fn apply_binary_predicate(
 
             if shell.options().print_commands_and_arguments {
                 let expanded_right = expansion::basic_expand_word(shell, params, right).await?;
-                let escaped_right = escape::quote_if_needed(
+                // Like bash, leave a `~` as is.
+                let escaped_right = escape::quote(
                     expanded_right.as_str(),
-                    escape::QuoteMode::BackslashEscape,
+                    &escape::QuoteOptions {
+                        preferred_mode: escape::QuoteMode::BackslashEscape,
+                        leave_tilde: true,
+                        ..Default::default()
+                    },
                 );
                 shell
                     .trace_command(params, std::format!("[[ {s} {op} {escaped_right} ]]"))

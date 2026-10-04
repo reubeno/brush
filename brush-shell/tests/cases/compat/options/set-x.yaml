@@ -210,3 +210,25 @@ cases:
       x=1
       echo done
       trap - DEBUG
+
+  - name: "Words starting with # or ~ are quoted in traces"
+    stdin: |
+      set -x
+      : "~" "#a" "b#" "x~"
+
+  - name: "[[ ]] traces show unary operands starting with # or ~ like bash"
+    stdin: |
+      x="~" y="#a" z="a=~"
+      set -x
+      [[ -n $x ]]
+      [[ -n $y ]]
+      [[ -n $z ]]
+
+  - name: "[[ ]] traces show patterns starting with # or ~ like bash"
+    min_oracle_version: 5.3 # bash 5.2 escapes every char of a traced pattern
+    stdin: |
+      x="~" y="#a" w="~/x"
+      set -x
+      [[ a == "$x" ]]
+      [[ a == "$w" ]]
+      [[ a != "$y" ]]
