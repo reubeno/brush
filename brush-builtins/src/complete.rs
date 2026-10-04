@@ -2,8 +2,9 @@ use clap::Parser;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
+use strum::IntoEnumIterator;
 
-use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
+use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecialSpec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
 
 #[derive(Parser)]
@@ -178,6 +179,15 @@ pub(crate) struct CompleteCommand {
     names: Vec<String>,
 }
 
+/// Returns the flag that selects a special completion spec in `complete` and `compopt`.
+const fn special_spec_flag(special: SpecialSpec) -> &'static str {
+    match special {
+        SpecialSpec::Default => "-D",
+        SpecialSpec::EmptyLine => "-E",
+        SpecialSpec::InitialWord => "-I",
+    }
+}
+
 impl builtins::Command for CompleteCommand {
     type Error = brush_core::Error;
 
@@ -185,20 +195,47 @@ impl builtins::Command for CompleteCommand {
         &self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut result = ExecutionResult::success();
+        // Like bash, -D, -E, or -I name a special spec in place of any names given; they
+        // take precedence in that order.
+        let special = [
+            (self.use_as_default, SpecialSpec::Default),
+            (self.use_for_empty_line, SpecialSpec::EmptyLine),
+            (self.use_for_initial_word, SpecialSpec::InitialWord),
+        ]
+        .into_iter()
+        .find_map(|(selected, special)| selected.then_some(special));
+        let names: Vec<&str> = match special {
+            Some(special) => vec![special.command_name()],
+            None => self.names.iter().map(String::as_str).collect(),
+        };
 
-        // If -D, -E, or -I are specified, then any names provided are ignored.
-        if self.use_as_default
-            || self.use_for_empty_line
-            || self.use_for_initial_word
-            || self.names.is_empty()
-        {
-            self.process_global(&mut context)?;
-        } else {
-            for name in &self.names {
-                if !self.try_process_for_command(&mut context, name.as_str())? {
-                    result = ExecutionResult::general_error();
+        // With no spec named, list them all (as `complete` with no options does too), or
+        // with `-r`, remove them all.
+        if names.is_empty() {
+            if self.remove && !self.print {
+                context.shell.completion_config_mut().clear();
+            } else {
+                let config = context.shell.completion_config();
+                // Sort, so the listing is stable; the special specs come last.
+                let mut specs: Vec<_> = config
+                    .iter()
+                    .map(|(name, spec)| (name.as_str(), spec))
+                    .collect();
+                specs.sort_by_key(|(name, _)| *name);
+                specs.extend(SpecialSpec::iter().filter_map(|special| {
+                    Some((special.command_name(), config.get_special(special)?))
+                }));
+                for (name, spec) in specs {
+                    Self::display_named_spec(&context, name, spec)?;
                 }
+            }
+            return Ok(ExecutionResult::success());
+        }
+
+        let mut result = ExecutionResult::success();
+        for name in names {
+            if !self.try_process_for_command(&mut context, name)? {
+                result = ExecutionResult::general_error();
             }
         }
 
@@ -207,57 +244,19 @@ impl builtins::Command for CompleteCommand {
 }
 
 impl CompleteCommand {
-    fn process_global(
-        &self,
-        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    /// Displays `spec`, registered under `name`: a command's, or bash's name for a special
+    /// spec, which is shown as the flag that selects it.
+    fn display_named_spec(
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        spec: &Spec,
     ) -> Result<(), brush_core::Error> {
-        // These are processed in an intentional order.
-        let special_option_name;
-        let target_spec = if self.use_as_default {
-            special_option_name = "-D";
-            Some(&mut context.shell.completion_config_mut().default)
-        } else if self.use_for_empty_line {
-            special_option_name = "-E";
-            Some(&mut context.shell.completion_config_mut().empty_line)
-        } else if self.use_for_initial_word {
-            special_option_name = "-I";
-            Some(&mut context.shell.completion_config_mut().initial_word)
-        } else {
-            special_option_name = "";
-            None
-        };
-
-        // Treat 'complete' with no options the same as 'complete -p'.
-        if self.print || (!self.remove && target_spec.is_none()) {
-            if let Some(target_spec) = target_spec {
-                if let Some(existing_spec) = target_spec {
-                    let existing_spec = existing_spec.clone();
-                    Self::display_spec(context, Some(special_option_name), None, &existing_spec)?;
-                } else {
-                    return error::unimp("special spec not found");
-                }
-            } else {
-                for (command_name, spec) in context.shell.completion_config().iter() {
-                    Self::display_spec(context, None, Some(command_name.as_str()), spec)?;
-                }
+        match SpecialSpec::from_command_name(name) {
+            Some(special) => {
+                Self::display_spec(context, Some(special_spec_flag(special)), None, spec)
             }
-        } else if self.remove {
-            if let Some(target_spec) = target_spec {
-                let mut new_spec = None;
-                std::mem::swap(&mut new_spec, target_spec);
-            } else {
-                context.shell.completion_config_mut().clear();
-            }
-        } else {
-            if let Some(target_spec) = target_spec {
-                let mut new_spec = Some(self.common_args.create_spec());
-                std::mem::swap(&mut new_spec, target_spec);
-            } else {
-                return error::unimp("set unspecified spec");
-            }
+            None => Self::display_spec(context, None, Some(name), spec),
         }
-
-        Ok(())
     }
 
     fn try_display_spec_for_command(
@@ -265,10 +264,13 @@ impl CompleteCommand {
         name: &str,
     ) -> Result<bool, brush_core::Error> {
         if let Some(spec) = context.shell.completion_config().get(name) {
-            Self::display_spec(context, None, Some(name), spec)?;
+            Self::display_named_spec(context, name, spec)?;
             Ok(true)
         } else {
-            writeln!(context.stderr(), "no completion found for command")?;
+            writeln!(
+                context.stderr(),
+                "complete: {name}: no completion specification"
+            )?;
             Ok(false)
         }
     }
