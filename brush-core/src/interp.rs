@@ -3,7 +3,7 @@ use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
@@ -1723,7 +1723,7 @@ pub(crate) async fn setup_redirect(
                         return Err(error::ErrorKind::InvalidRedirection.into());
                     }
 
-                    let expanded_file_path: PathBuf =
+                    let expanded_file_path =
                         shell.absolute_path(Path::new(expanded_fields.remove(0).as_str()));
 
                     let default_fd_if_unspecified = get_default_fd_for_redirect_kind(kind);
@@ -1779,7 +1779,7 @@ pub(crate) async fn setup_redirect(
                         .open_file(&options, &expanded_file_path, params)
                         .map_err(|err| {
                             error::ErrorKind::RedirectionFailure(
-                                expanded_file_path.to_string_lossy().to_string(),
+                                expanded_file_path.as_path().to_string_lossy().to_string(),
                                 err.to_string(),
                             )
                         })?;
@@ -1935,7 +1935,7 @@ fn setup_redirect_output_and_error_to(
     file_path: &str,
     append: bool,
 ) -> Result<(), error::Error> {
-    let abs_file_path: PathBuf = shell.absolute_path(Path::new(file_path));
+    let abs_file_path = shell.absolute_path(Path::new(file_path));
 
     let mut file_options = std::fs::File::options();
     file_options
@@ -1948,7 +1948,7 @@ fn setup_redirect_output_and_error_to(
         .open_file(&file_options, &abs_file_path, params)
         .map_err(|err| {
             error::ErrorKind::RedirectionFailure(
-                abs_file_path.to_string_lossy().to_string(),
+                abs_file_path.as_path().to_string_lossy().to_string(),
                 err.to_string(),
             )
         })?;

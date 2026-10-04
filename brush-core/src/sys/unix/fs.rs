@@ -12,17 +12,17 @@ pub use std::os::unix::fs::MetadataExt;
 // _PATH_DEFPATH in https://android.googlesource.com/platform/bionic/+/refs/heads/main/libc/include/paths.h
 const ANDROID_DEFPATH: &str = "/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/apex/com.android.virt/bin:/system_ext/bin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin";
 
-impl crate::sys::fs::PathExt for Path {
+impl crate::sys::fs::PathExt for crate::ResolvedPath {
     fn readable(&self) -> bool {
-        nix::unistd::access(self, nix::unistd::AccessFlags::R_OK).is_ok()
+        nix::unistd::access(self.as_path(), nix::unistd::AccessFlags::R_OK).is_ok()
     }
 
     fn writable(&self) -> bool {
-        nix::unistd::access(self, nix::unistd::AccessFlags::W_OK).is_ok()
+        nix::unistd::access(self.as_path(), nix::unistd::AccessFlags::W_OK).is_ok()
     }
 
     fn executable(&self) -> bool {
-        nix::unistd::access(self, nix::unistd::AccessFlags::X_OK).is_ok()
+        nix::unistd::access(self.as_path(), nix::unistd::AccessFlags::X_OK).is_ok()
     }
 
     fn exists_and_is_block_device(&self) -> bool {
@@ -65,11 +65,11 @@ impl crate::sys::fs::PathExt for Path {
     }
 }
 
-fn try_get_file_type(path: &Path) -> Option<std::fs::FileType> {
+fn try_get_file_type(path: &crate::ResolvedPath) -> Option<std::fs::FileType> {
     path.metadata().map(|metadata| metadata.file_type()).ok()
 }
 
-fn try_get_file_mode(path: &Path) -> Option<u32> {
+fn try_get_file_mode(path: &crate::ResolvedPath) -> Option<u32> {
     path.metadata().map(|metadata| metadata.mode()).ok()
 }
 
@@ -212,12 +212,8 @@ fn confstr(name: nix::libc::c_int) -> Result<Option<std::ffi::OsString>, std::io
 
 /// Opens a null file that will discard all I/O.
 pub fn open_null_file() -> Result<std::fs::File, error::Error> {
-    let f = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .open("/dev/null")?;
-
-    Ok(f)
+    let null = crate::ResolvedPath::try_from(PathBuf::from("/dev/null"))?;
+    Ok(null.open(std::fs::File::options().read(true).write(true))?)
 }
 
 /// Gives the platform an opportunity to handle a special file path (e.g. `/dev/null`).
@@ -311,16 +307,20 @@ pub const fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
 ///
 /// On Windows this function may append a `PATHEXT` extension and return a
 /// possibly-different `PathBuf`.
-pub fn resolve_executable(path: PathBuf) -> Option<PathBuf> {
+pub fn resolve_executable(path: crate::ResolvedPath) -> Option<crate::ResolvedPath> {
     use crate::sys::fs::PathExt;
-    if path.as_path().executable() {
-        Some(path)
-    } else {
-        None
-    }
+    if path.executable() { Some(path) } else { None }
+}
+
+/// Makes the file at `path` executable, for tests that need something to find.
+#[cfg(test)]
+pub(crate) fn make_executable(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
 }
 
 #[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
 
@@ -390,24 +390,28 @@ mod tests {
     }
 
     #[test]
-    fn resolve_executable_returns_input_unchanged() {
+    fn resolve_executable_returns_input_unchanged() -> std::io::Result<()> {
         // /bin/sh exists and is executable on every supported Unix host.
-        let path = PathBuf::from("/bin/sh");
+        let path = crate::ResolvedPath::try_from(PathBuf::from("/bin/sh"))?;
         let resolved = resolve_executable(path.clone());
-        assert_eq!(resolved.as_deref(), Some(path.as_path()));
+        assert_eq!(resolved, Some(path));
+        Ok(())
     }
 
     #[test]
-    fn resolve_executable_returns_none_for_nonexistent() {
-        let path = PathBuf::from("/this/path/should/not/exist/brush-test");
+    fn resolve_executable_returns_none_for_nonexistent() -> std::io::Result<()> {
+        let path =
+            crate::ResolvedPath::try_from(PathBuf::from("/this/path/should/not/exist/brush-test"))?;
         assert!(resolve_executable(path).is_none());
+        Ok(())
     }
 
     #[test]
-    fn resolve_executable_returns_none_for_non_executable() {
+    fn resolve_executable_returns_none_for_non_executable() -> std::io::Result<()> {
         // /etc/hostname (or similar) is a regular file but not executable.
         // Use /etc/passwd which is universally present and not executable.
-        let path = PathBuf::from("/etc/passwd");
+        let path = crate::ResolvedPath::try_from(PathBuf::from("/etc/passwd"))?;
         assert!(resolve_executable(path).is_none());
+        Ok(())
     }
 }

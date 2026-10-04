@@ -2,7 +2,7 @@
 
 pub use crate::sys::stubs::fs::*;
 
-impl crate::sys::fs::PathExt for std::path::Path {
+impl crate::sys::fs::PathExt for crate::ResolvedPath {
     fn readable(&self) -> bool {
         true
     }

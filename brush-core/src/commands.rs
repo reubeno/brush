@@ -164,7 +164,8 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
 /// # Arguments
 ///
 /// * `context` - The execution context in which the command is being composed.
-/// * `command_name` - The name of the command to execute.
+/// * `executable_path` - The path of the executable to run: absolute, or relative to the
+///   shell's working directory. It's never searched for in `PATH`; look the command up first.
 /// * `argv0` - The value to use for `argv[0]` (may be different from the command).
 /// * `args` - The arguments to pass to the command.
 /// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
@@ -172,12 +173,12 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
 #[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
 pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
     context: &ExecutionContext<'_, SE>,
-    command_name: &str,
+    executable_path: &Path,
     argv0: &str,
     args: &[S],
     empty_env: bool,
 ) -> Result<std::process::Command, error::Error> {
-    let mut cmd = std::process::Command::new(command_name);
+    let mut cmd = sys::process::create_command(executable_path, context.shell.working_dir());
 
     // Override argv[0].
     // NOTE: Not supported on all platforms.
@@ -185,9 +186,6 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
 
     // Pass through args.
     cmd.args(args);
-
-    // Use the shell's current working dir.
-    cmd.current_dir(context.shell.working_dir());
 
     // Start with a clear environment.
     cmd.env_clear();
@@ -203,7 +201,7 @@ pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
             }
         }
         // Set _ to the resolved command path for external commands.
-        cmd.env("_", command_name);
+        cmd.env("_", executable_path);
     }
 
     // Add in exported functions.
@@ -387,7 +385,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             // All else failed; if we were given path directories to search, look through them
             // for a match. Otherwise, use our default search logic.
             let path = if let Some(path_dirs) = &self.path_dirs {
-                pathsearch::resolve_command(path_dirs, self.command_name.as_str())
+                pathsearch::resolve_command(
+                    self.shell.working_dir(),
+                    path_dirs,
+                    self.command_name.as_str(),
+                )
             } else {
                 self.shell
                     .resolve_command_in_path_using_cache(&self.command_name)
@@ -520,10 +522,9 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             params: self.params,
         };
 
-        let resolved_path = path.to_string_lossy();
         let result = execute_external_command(
             cmd_context,
-            resolved_path.as_ref(),
+            path,
             self.process_group_id,
             self.argv0.as_deref(),
             &self.args[1..],
@@ -538,7 +539,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
-    executable_path: &str,
+    executable_path: &Path,
     process_group_id: Option<i32>,
     argv0_override: Option<&str>,
     args: &[CommandArg],
@@ -634,10 +635,10 @@ pub(crate) fn execute_external_command(
 
             if spawn_err.kind() == std::io::ErrorKind::NotFound {
                 if !context.shell.working_dir().exists() {
-                    Err(
-                        error::ErrorKind::WorkingDirMissing(context.shell.working_dir().to_owned())
-                            .into(),
+                    Err(error::ErrorKind::WorkingDirMissing(
+                        context.shell.working_dir().as_path().to_path_buf(),
                     )
+                    .into())
                 } else {
                     Err(error::ErrorKind::CommandNotFound(context.command_name).into())
                 }

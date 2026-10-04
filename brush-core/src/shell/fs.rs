@@ -1,14 +1,12 @@
 //! Filesystem interaction in the shell.
 
-use std::path::{Path, PathBuf};
-
-use normalize_path::NormalizePath as _;
+use std::path::{Component, Path, PathBuf};
 
 use crate::{
     ExecutionParameters, ShellFd,
     env::{EnvironmentLookup, EnvironmentScope},
     error, openfiles, pathsearch,
-    sys::users,
+    sys::{fs::PathExt as _, users},
     variables,
 };
 
@@ -21,10 +19,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub fn set_working_dir(&mut self, target_dir: impl AsRef<Path>) -> Result<(), error::Error> {
         let abs_path = self.absolute_path(target_dir.as_ref());
 
-        match std::fs::metadata(&abs_path) {
+        match abs_path.metadata() {
             Ok(m) => {
                 if !m.is_dir() {
-                    return Err(error::ErrorKind::NotADirectory(abs_path).into());
+                    return Err(error::ErrorKind::NotADirectory(abs_path.into()).into());
                 }
             }
             Err(e) => {
@@ -33,9 +31,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
 
         // Normalize the path (but don't canonicalize it).
-        let cleaned_path = abs_path.normalize();
+        let cleaned_path = abs_path.normalized();
 
-        let pwd = cleaned_path.to_string_lossy().to_string();
+        let pwd = cleaned_path.as_path().to_string_lossy().to_string();
 
         self.env.update_or_add(
             "PWD",
@@ -48,7 +46,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         self.env.update_or_add(
             "OLDPWD",
-            variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
+            variables::ShellValueLiteral::Scalar(oldpwd.as_path().to_string_lossy().to_string()),
             |_| Ok(()),
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
@@ -82,7 +80,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     }
 
     /// Finds executables with the given name in the shell's current PATH, yielding each match
-    /// in search order.
+    /// in search order. A match is named the way [`pathsearch`] describes.
     ///
     /// # Arguments
     ///
@@ -94,7 +92,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
-        pathsearch::search_for_executable(paths, filename)
+        pathsearch::search_for_executable(self.working_dir(), paths, filename)
     }
 
     /// Finds executables in the shell's current default PATH, with filenames matching the
@@ -111,7 +109,12 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
-        pathsearch::search_for_executable_with_prefix(paths, filename_prefix, case_insensitive)
+        pathsearch::search_for_executable_with_prefix(
+            self.working_dir(),
+            paths,
+            filename_prefix,
+            case_insensitive,
+        )
     }
 
     /// Determines whether the given filename is the name of an executable in one of the
@@ -142,7 +145,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     where
         String: From<S>,
     {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+        if let Some(cached_path) = self.hashed_command_path(candidate_name.as_ref()) {
             Some(cached_path)
         } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
             self.program_location_cache
@@ -153,7 +156,22 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
     }
 
-    /// Resolves a command name by searching the shell's current PATH.
+    /// Looks a command name up in the shell's hash table, the way bash does. A hashed relative
+    /// path is relative to the working directory: if it names an executable file there, it's
+    /// returned with a leading `./`, so it isn't taken for a name to search `PATH` for. If it
+    /// doesn't, a path that already had the `./` counts as not hashed, and any other is
+    /// returned as stored.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The command name to look up.
+    pub fn hashed_command_path(&self, name: &str) -> Option<PathBuf> {
+        let path = self.program_location_cache.get(name)?;
+        hashed_path_in(path, self.working_dir())
+    }
+
+    /// Resolves a command name by searching the shell's current PATH. A match is named the way
+    /// [`pathsearch`] describes.
     ///
     /// Unlike [`Self::find_first_executable_in_path`], a non-executable entry in the PATH
     /// resolves as the command; the shell reports it as the command and then fails to run it.
@@ -165,7 +183,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub fn resolve_command_in_path<S: AsRef<str>>(&self, candidate_name: S) -> Option<PathBuf> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
-        pathsearch::resolve_command(paths, candidate_name.as_ref())
+        pathsearch::resolve_command(self.working_dir(), paths, candidate_name.as_ref())
     }
 
     /// Like [`Self::resolve_command_in_path`], but consults the shell's hash-based path cache
@@ -181,7 +199,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     where
         String: From<S>,
     {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+        if let Some(cached_path) = self.hashed_command_path(candidate_name.as_ref()) {
             return Some(cached_path);
         }
 
@@ -192,18 +210,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Some(found_path)
     }
 
-    /// Gets the absolute form of the given path.
+    /// Resolves the given path against the shell's working directory. Filesystem operations
+    /// must go through the result rather than through a relative path, which the filesystem
+    /// would resolve against the host process's working directory instead.
     ///
     /// # Arguments
     ///
-    /// * `path` - The path to get the absolute form of.
-    pub fn absolute_path(&self, path: impl AsRef<Path>) -> PathBuf {
-        let path = path.as_ref();
-        if path.as_os_str().is_empty() || path.is_absolute() {
-            path.to_owned()
-        } else {
-            self.working_dir().join(path)
-        }
+    /// * `path` - The path to resolve.
+    pub fn absolute_path(&self, path: impl AsRef<Path>) -> crate::ResolvedPath {
+        self.working_dir().join(path)
     }
 
     /// Opens the given file, using the context of this shell and the provided execution parameters.
@@ -232,13 +247,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // See if this is a reference to a file descriptor. These paths should
         // reflect the shell's current execution fds, which can differ from the
         // host process fds after redirections like here-docs.
-        if let Some(fd_num) = shell_fd_path_to_fd(&path_to_open)
+        if let Some(fd_num) = shell_fd_path_to_fd(path_to_open.as_path())
             && let Some(open_file) = params.try_fd(self, fd_num)
         {
             return Ok(open_file);
         }
 
-        Ok(options.open(path_to_open)?.into())
+        Ok(path_to_open.open(options)?.into())
     }
 
     /// Replaces the shell's currently configured open files with the given set.
@@ -259,6 +274,29 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     }
 }
 
+/// Interprets a hashed `path` relative to `working_dir`; see [`crate::Shell::hashed_command_path`].
+fn hashed_path_in(path: PathBuf, working_dir: &crate::ResolvedPath) -> Option<PathBuf> {
+    if path.is_absolute() {
+        return Some(path);
+    }
+
+    let dotted = path.components().next() == Some(Component::CurDir);
+    let candidate = if dotted {
+        path.clone()
+    } else {
+        Path::new(".").join(&path)
+    };
+
+    let file = working_dir.join(&candidate);
+    if !file.is_dir() && file.executable() {
+        Some(candidate)
+    } else if dotted {
+        None
+    } else {
+        Some(path)
+    }
+}
+
 fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
     match path.to_str()? {
         "/dev/stdin" => return Some(openfiles::OpenFiles::STDIN_FD),
@@ -274,5 +312,96 @@ fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
         filename.to_string_lossy().parse::<ShellFd>().ok()
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
+mod tests {
+    use anyhow::Result;
+
+    use super::*;
+
+    /// The executable [`lookups`] creates, with the platform's executable suffix.
+    fn prog() -> String {
+        format!("bin/prog{}", std::env::consts::EXE_SUFFIX)
+    }
+
+    /// Looks each relative path up as if hashed, from a directory holding an executable
+    /// [`prog`], a non-executable `data`, and a directory `dir`.
+    fn lookups(paths: &[&str]) -> Result<Vec<Option<PathBuf>>> {
+        let scratch = tempfile::tempdir()?;
+        std::fs::create_dir_all(scratch.path().join("bin"))?;
+        std::fs::create_dir_all(scratch.path().join("dir"))?;
+        let prog = scratch.path().join(prog());
+        std::fs::write(&prog, "")?;
+        crate::sys::fs::make_executable(&prog)?;
+        std::fs::write(scratch.path().join("data"), "")?;
+        let working_dir = crate::ResolvedPath::try_from(scratch.path().to_owned())?;
+
+        Ok(paths
+            .iter()
+            .map(|path| hashed_path_in(PathBuf::from(path), &working_dir))
+            .collect())
+    }
+
+    #[test]
+    fn executable_relative_path_gets_a_leading_dot() -> Result<()> {
+        let prog = prog();
+        let dotted = format!("./{prog}");
+        let indirect = format!("dir/../{prog}");
+        assert_eq!(
+            lookups(&[&prog, &dotted, &indirect])?,
+            [
+                Some(Path::new(".").join(&prog)),
+                Some(PathBuf::from(&dotted)),
+                Some(Path::new(".").join(&indirect)),
+            ]
+        );
+        Ok(())
+    }
+
+    /// Only a leading `.` component counts as already dotted: `.hidden` and `..` don't.
+    #[test]
+    fn dot_prefix_is_a_whole_component() -> Result<()> {
+        assert_eq!(
+            lookups(&["../missing", ".missing"])?,
+            [
+                Some(PathBuf::from("../missing")),
+                Some(PathBuf::from(".missing"))
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn other_relative_paths_are_returned_as_stored() -> Result<()> {
+        assert_eq!(
+            lookups(&["data", "dir", "missing"])?,
+            [
+                Some(PathBuf::from("data")),
+                Some(PathBuf::from("dir")),
+                Some(PathBuf::from("missing")),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn dotted_path_that_is_not_executable_is_not_hashed() -> Result<()> {
+        assert_eq!(
+            lookups(&["./data", "./dir", "./missing"])?,
+            [None, None, None]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn absolute_path_is_returned_as_stored() {
+        let path = std::env::temp_dir().join("prog");
+        assert_eq!(
+            hashed_path_in(path.clone(), &crate::ResolvedPath::default()),
+            Some(path)
+        );
     }
 }

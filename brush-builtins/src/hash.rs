@@ -50,7 +50,7 @@ impl builtins::Command for HashCommand {
             }
         } else if self.display_paths {
             for name in &self.names {
-                if let Some(path) = context.shell.program_location_cache().get(name) {
+                if let Some(path) = context.shell.hashed_command_path(name) {
                     if self.display_as_usable_input {
                         writeln!(
                             context.stdout(),

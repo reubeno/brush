@@ -2,13 +2,10 @@ name: "PATH search"
 
 #
 # An empty entry in PATH names the working directory, so a command found through one is
-# reported with a leading "./". brush finds the command but reports the bare name; the
-# `known_failure` cases below cover each surface that exposes the difference. They share
-# one root cause in the path search, so they should be retired together.
+# reported with a leading "./".
 #
 cases:
   - name: "empty PATH entry is reported as the working directory"
-    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
     stdin: |
       printf '#!/bin/sh\necho ran\n' > prog
       chmod +x prog
@@ -26,7 +23,6 @@ cases:
       command -v prog; echo "rc=$?"
 
   - name: "empty PATH entry is reported the same wherever it appears"
-    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
     stdin: |
       printf '#!/bin/sh\necho ran\n' > prog
       chmod +x prog
@@ -47,7 +43,6 @@ cases:
       command -v prog; echo "rc=$?"
 
   - name: "empty PATH entry is hashed as the working directory"
-    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
     stdin: |
       printf '#!/bin/sh\necho ran\n' > prog
       chmod +x prog
@@ -57,10 +52,6 @@ cases:
       hash prog; echo "rc=$?"
       hash -t prog; echo "rc=$?"
 
-  #
-  # These two surfaces already agree with the oracle; they guard the parts of the
-  # behavior that work, so that a fix for the cases above doesn't regress them.
-  #
   - name: "a command found through an empty PATH entry is runnable"
     stdin: |
       printf '#!/bin/sh\necho ran\n' > prog
@@ -79,3 +70,135 @@ cases:
       PATH=":$PATH"
 
       command -V prog | scrub; echo "rc=${PIPESTATUS[0]}"
+
+  #
+  # brush never changes the host process's working directory, so `cd` leaves the two
+  # apart; PATH entries that aren't absolute must be searched from the shell's.
+  #
+  - name: "a relative PATH entry is searched from the working directory"
+    stdin: |
+      mkdir -p sub/bin
+      printf '#!/bin/sh\necho ran\n' > sub/bin/prog
+      chmod +x sub/bin/prog
+      cd sub
+      PATH="bin:$PATH"
+
+      type -P prog; echo "rc=$?"
+      command -v prog; echo "rc=$?"
+      prog; echo "rc=$?"
+
+  - name: "an empty PATH entry is searched from the working directory"
+    stdin: |
+      mkdir sub
+      printf '#!/bin/sh\necho ran\n' > sub/prog
+      chmod +x sub/prog
+      cd sub
+      PATH=":$PATH"
+
+      prog; echo "rc=$?"
+
+  - name: "a command found through a relative PATH entry is hashed with a leading ./"
+    stdin: |
+      mkdir bin
+      printf '#!/bin/sh\necho ran\n' > bin/prog
+      chmod +x bin/prog
+      PATH="bin:$PATH"
+
+      prog
+      hash -t prog; echo "rc=$?"
+      type -P prog; echo "rc=$?"
+
+  - name: "compgen -c searches a relative PATH entry from the working directory"
+    stdin: |
+      mkdir -p sub/bin
+      printf '#!/bin/sh\necho ran\n' > sub/bin/zzprog
+      chmod +x sub/bin/zzprog
+      cd sub
+      PATH="bin:$PATH"
+
+      compgen -c zzp
+
+  #
+  # bash keeps a hashed relative path as given, but every lookup of it adds a leading "./":
+  # it names a file relative to the working directory, not a command to search for.
+  #
+  - name: "a relative path hashed with hash -p is looked up with a leading ./"
+    stdin: |
+      printf '#!/bin/sh\necho "ran $0"\n' > run.sh
+      chmod +x run.sh
+      hash -p run.sh myrun
+
+      hash -t myrun; echo "rc=$?"
+      type myrun; echo "rc=$?"
+      command -v myrun; echo "rc=$?"
+      myrun; echo "rc=$?"
+
+  - name: "a hashed relative path runs from the working directory"
+    stdin: |
+      mkdir -p sub/bin
+      printf '#!/bin/sh\necho "ran $0"\n' > sub/bin/prog
+      chmod +x sub/bin/prog
+      cd sub
+      PATH="bin:$PATH"
+
+      prog; echo "rc=$?"
+      prog; echo "rc=$?"
+
+  - name: "a hashed relative path that no longer resolves is reported by its path"
+    known_failure: true # TODO(path): bash reports the missing hashed path; brush says the command isn't found
+    stdin: |
+      mkdir -p sub/bin
+      printf '#!/bin/sh\necho ran\n' > sub/bin/prog
+      chmod +x sub/bin/prog
+      cd sub
+      PATH="bin:$PATH"
+
+      prog; echo "rc=$?"
+      cd ..
+      prog; echo "rc=$?"
+
+  - name: "a hashed bare name is run from the working directory, not searched for"
+    stdin: |
+      hash -p ls myls
+      myls -d / 2>/dev/null; echo "rc=$?"
+
+  #
+  # exec looks its command up the way the shell does (hash table, then PATH), and runs it by
+  # an absolute path.
+  #
+  - name: "exec runs a hashed relative path"
+    stdin: |
+      printf '#!/bin/sh\necho "ran"\n' > run.sh
+      chmod +x run.sh
+      hash -p run.sh myrun
+      exec myrun
+
+  - name: "exec runs a relative path from the working directory, by its absolute path"
+    stdin: |
+      mkdir -p sub/bin
+      printf '#!/bin/sh\ncase "$0" in /*) echo "absolute ${0##*/}" ;; *) echo "relative $0" ;; esac\n' > sub/bin/prog
+      chmod +x sub/bin/prog
+      cd sub
+      exec bin/prog
+
+  - name: "exec runs a command found through a relative PATH entry by its absolute path"
+    stdin: |
+      mkdir -p sub/bin
+      printf '#!/bin/sh\ncase "$0" in /*) echo "absolute ${0##*/}" ;; *) echo "relative $0" ;; esac\n' > sub/bin/prog
+      chmod +x sub/bin/prog
+      cd sub
+      PATH="bin:$PATH"
+      exec prog
+
+  - name: "exec reports a command it can't find"
+    ignore_stderr: true
+    stdin: |
+      (exec nosuchcommand); echo "rc=$?"
+
+  - name: "a failed exec exits a non-interactive shell"
+    known_failure: true # TODO(exec): brush keeps running after a failed exec
+    ignore_stderr: true
+    stdin: |
+      exec nosuchcommand
+      echo "not reached"
+

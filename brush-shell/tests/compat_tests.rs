@@ -32,6 +32,7 @@ fn create_bash_oracle(options: &TestOptions) -> Result<OracleConfig> {
             default_args: vec![String::from("--norc"), String::from("--noprofile")],
             default_path_var: options.test_path_var.clone(),
             launcher: None,
+            working_dir_option: None,
         },
         version_str: Some(bash_version_str),
     })
@@ -45,6 +46,7 @@ fn create_sh_oracle(options: &TestOptions) -> OracleConfig {
             default_args: vec![],
             default_path_var: options.test_path_var.clone(),
             launcher: None,
+            working_dir_option: None,
         },
         version_str: None,
     }

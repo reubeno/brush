@@ -248,7 +248,8 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             continuation_prompt: shell.compose_continuation_prompt().await?,
         };
 
-        prompt.prompt = terminal_integration.decorate_prompt(prompt.prompt, shell.working_dir());
+        prompt.prompt =
+            terminal_integration.decorate_prompt(prompt.prompt, shell.working_dir().as_path());
 
         Ok(prompt)
     }

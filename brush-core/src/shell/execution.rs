@@ -28,7 +28,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         params: &ExecutionParameters,
     ) -> Result<bool, error::Error> {
         let path = path.as_ref();
-        if path.exists() {
+        if self.absolute_path(path).exists() {
             self.source_script(path, std::iter::empty::<String>(), params)
                 .await?;
             Ok(true)

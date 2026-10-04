@@ -1,6 +1,6 @@
 use brush_core::{ExecutionResult, builtins};
 use clap::Parser;
-use std::{borrow::Cow, io::Write, path::Path};
+use std::{borrow::Cow, io::Write};
 
 /// Display the current working directory.
 #[derive(Parser)]
@@ -21,7 +21,17 @@ impl builtins::Command for PwdCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();
+        let mut cwd = Cow::Borrowed(context.shell.working_dir());
+
+        // The shell started somewhere it couldn't find (e.g., a deleted directory).
+        if cwd.is_empty() {
+            writeln!(
+                context.stderr(),
+                "{}: error retrieving current directory",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::general_error());
+        }
 
         let should_canonicalize = self.physical
             || context
@@ -30,10 +40,10 @@ impl builtins::Command for PwdCommand {
                 .do_not_resolve_symlinks_when_changing_dir;
 
         if should_canonicalize {
-            cwd = cwd.canonicalize()?.into();
+            cwd = Cow::Owned(cwd.canonicalize()?);
         }
 
-        writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
+        writeln!(context.stdout(), "{}", cwd.as_path().to_string_lossy())?;
 
         Ok(ExecutionResult::success())
     }

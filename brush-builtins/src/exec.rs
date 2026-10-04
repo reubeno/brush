@@ -1,7 +1,7 @@
 use clap::Parser;
-use std::{borrow::Cow, os::unix::process::CommandExt};
+use std::{borrow::Cow, io::Write as _, os::unix::process::CommandExt, path::PathBuf};
 
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
+use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands, sys};
 
 /// Exec the provided command.
 #[derive(Parser)]
@@ -64,9 +64,29 @@ impl builtins::Command for ExecCommand {
             argv0 = Cow::Owned(std::format!("-{argv0}"));
         }
 
+        // Like bash, look the command up the way the shell would run it, and run it by its
+        // absolute path.
+        let name = &self.args[0];
+        let found = if sys::fs::contains_path_separator(name) {
+            Some(PathBuf::from(name))
+        } else {
+            context
+                .shell
+                .resolve_command_in_path_using_cache(name.as_str())
+        };
+        let Some(found) = found else {
+            writeln!(
+                context.stderr(),
+                "{}: {name}: not found",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::NotFound.into());
+        };
+        let executable_path = context.shell.absolute_path(found);
+
         let mut cmd = commands::compose_std_command(
             &context,
-            &self.args[0],
+            executable_path.as_path(),
             argv0.as_str(),
             &self.args[1..],
             self.empty_environment,

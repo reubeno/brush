@@ -1,9 +1,6 @@
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, history};
+use brush_core::{ExecutionExitCode, ExecutionResult, ResolvedPath, builtins, error, history};
 use clap::Parser;
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::io::Write;
 
 /// Query or manipulate the shell's command history.
 // TODO(history): Evaluate which of the options conflict with each other.
@@ -49,7 +46,8 @@ pub(crate) struct HistoryCommand {
 }
 
 struct HistoryConfig {
-    default_history_file_path: Option<PathBuf>,
+    /// The file that `-a` or `-w` acts on.
+    history_file_path: Option<ResolvedPath>,
     time_format: Option<String>,
 }
 
@@ -60,9 +58,22 @@ impl builtins::Command for HistoryCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
+        let named_file = self
+            .append_session_to_file
+            .as_ref()
+            .or(self.write_session_to_file.as_ref())
+            .and_then(Option::as_deref);
+        if named_file == Some("") {
+            writeln!(context.stderr(), "{}: empty filename", context.command_name)?;
+            return Ok(ExecutionResult::general_error());
+        }
+
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
-            default_history_file_path: context.shell.history_file_path(),
+            history_file_path: named_file.map_or_else(
+                || context.shell.history_file_path(),
+                |file| Some(context.shell.absolute_path(file)),
+            ),
             time_format: context.shell.history_time_format(),
         };
 
@@ -119,11 +130,8 @@ impl HistoryCommand {
             return Ok(ExecutionResult::success());
         }
 
-        if let Some(append_option) = &self.append_session_to_file {
-            if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path.as_deref(),
-                append_option.as_deref(),
-            ) {
+        if self.append_session_to_file.is_some() {
+            if let Some(file_path) = &config.history_file_path {
                 history.flush(
                     file_path,
                     true,                         /* append? */
@@ -143,11 +151,8 @@ impl HistoryCommand {
             return error::unimp("history -r is not yet implemented");
         }
 
-        if let Some(write_option) = &self.write_session_to_file {
-            if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path.as_deref(),
-                write_option.as_deref(),
-            ) {
+        if self.write_session_to_file.is_some() {
+            if let Some(file_path) = &config.history_file_path {
                 history.flush(
                     file_path,
                     false,                        /* append? */
@@ -212,13 +217,6 @@ fn display_history(
     }
 
     Ok(())
-}
-
-fn get_effective_history_file_path<'a>(
-    default_history_file_path: Option<&'a Path>,
-    option: Option<&'a str>,
-) -> Option<&'a Path> {
-    option.map(Path::new).or(default_history_file_path)
 }
 
 #[cfg(test)]

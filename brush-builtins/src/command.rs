@@ -91,7 +91,7 @@ impl CommandCommand {
                     && !sys::fs::contains_path_separator(name)
                 {
                     let relative = path.strip_prefix(".").unwrap_or(&*path);
-                    *path = context.shell.absolute_path(relative);
+                    *path = context.shell.absolute_path(relative).into();
                 }
 
                 lookup::describe(context.stdout(), name, &found)?;

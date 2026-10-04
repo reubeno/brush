@@ -220,6 +220,10 @@ pub struct CommandLineArgs {
     #[clap(long = "load", value_name = "FILE", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
     pub load_file: Option<PathBuf>,
 
+    /// Start the shell in the given directory instead of the process's working directory.
+    #[clap(long = "working-dir", value_name = "DIR", hide = true)]
+    pub working_dir: Option<PathBuf>,
+
     /// Enable debug logging for classes of tracing events.
     #[clap(long = "debug", alias = "log-enable", value_name = "EVENT", help_heading = HEADING_UI_OPTIONS)]
     pub enabled_debug_events: Vec<events::TraceEvent>,

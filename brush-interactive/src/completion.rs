@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-
 use brush_core::escape;
 
 #[allow(dead_code)]
@@ -8,20 +6,20 @@ pub(crate) async fn complete_async(
     line: &str,
     pos: usize,
 ) -> brush_core::completion::Completions {
-    let working_dir = shell.working_dir().to_path_buf();
-
-    // Intentionally ignore any errors that arise.
-    let completion_future = shell.complete(line, pos);
-    tokio::pin!(completion_future);
-
     // Wait for the completions to come back or interruption, whichever happens first.
-    let result = tokio::select! {
-        result = &mut completion_future => {
-            result
+    // Intentionally ignore any errors that arise.
+    let result = {
+        let completion_future = shell.complete(line, pos);
+        tokio::pin!(completion_future);
+
+        tokio::select! {
+            result = &mut completion_future => {
+                result
+            }
+            _ = tokio::signal::ctrl_c() => {
+                Err(brush_core::ErrorKind::Interrupted.into())
+            },
         }
-        _ = tokio::signal::ctrl_c() => {
-            Err(brush_core::ErrorKind::Interrupted.into())
-        },
     };
 
     let mut completions = result.unwrap_or_else(|_| brush_core::completion::Completions {
@@ -57,6 +55,7 @@ pub(crate) async fn complete_async(
     }
 
     let completing_end_of_line = pos == line.len();
+    let working_dir = shell.working_dir();
 
     // Deduplicate the candidates (retaining order), then postprocess them.
     completions.candidates = completions
@@ -68,7 +67,7 @@ pub(crate) async fn complete_async(
             postprocess_completion_candidate(
                 candidate,
                 &completions.options,
-                working_dir.as_ref(),
+                working_dir,
                 completing_end_of_line,
                 quote_char,
             )
@@ -82,21 +81,14 @@ pub(crate) async fn complete_async(
 fn postprocess_completion_candidate(
     mut candidate: String,
     options: &brush_core::completion::ProcessingOptions,
-    working_dir: &Path,
+    working_dir: &brush_core::ResolvedPath,
     completing_end_of_line: bool,
     quote_char: Option<char>,
 ) -> String {
     if options.treat_as_filenames {
         // Check if it's a directory.
         if !brush_core::sys::fs::ends_with_path_separator(&candidate) {
-            let candidate_path = Path::new(&candidate);
-            let abs_candidate_path = if candidate_path.is_absolute() {
-                PathBuf::from(candidate_path)
-            } else {
-                working_dir.join(candidate_path)
-            };
-
-            if abs_candidate_path.is_dir() {
+            if working_dir.join(&candidate).is_dir() {
                 // Use forward slash: backslash is the shell escape character.
                 candidate.push('/');
             }
@@ -140,7 +132,7 @@ mod tests {
         postprocess_completion_candidate(
             candidate.to_owned(),
             &options,
-            Path::new("/nonexistent"),
+            &brush_core::ResolvedPath::default(),
             true,
             None,
         )

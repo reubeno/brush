@@ -114,7 +114,7 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
     // Reporting every location is a strict search for executables; reporting just the one the
     // name resolves to matches what the shell would actually try to run, which can be a
     // non-executable file if the search turns up nothing better.
-    if let Some(path) = shell.program_location_cache().get(name) {
+    if let Some(path) = shell.hashed_command_path(name) {
         resolved.push(Resolved::File { path, hashed: true });
         if !options.all_locations {
             return;
@@ -123,10 +123,13 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
 
     match (&options.path_dirs, options.all_locations) {
         (Some(dirs), true) => {
-            resolved.extend(pathsearch::search_for_executable(dirs.iter(), name).map(to_file));
+            resolved.extend(
+                pathsearch::search_for_executable(shell.working_dir(), dirs, name).map(to_file),
+            );
         }
         (Some(dirs), false) => {
-            resolved.extend(pathsearch::resolve_command(dirs.iter(), name).map(to_file));
+            resolved
+                .extend(pathsearch::resolve_command(shell.working_dir(), dirs, name).map(to_file));
         }
         (None, true) => resolved.extend(shell.find_executables_in_path(name).map(to_file)),
         (None, false) => resolved.extend(shell.resolve_command_in_path(name).map(to_file)),

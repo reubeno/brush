@@ -126,11 +126,18 @@ pub const fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
 /// In the stub implementation, returns the path unchanged if it is
 /// executable (per the stub `PathExt`, which considers every path
 /// executable).
-pub fn resolve_executable(path: std::path::PathBuf) -> Option<std::path::PathBuf> {
+pub fn resolve_executable(path: crate::ResolvedPath) -> Option<crate::ResolvedPath> {
     use crate::sys::fs::PathExt;
-    if path.as_path().executable() {
-        Some(path)
-    } else {
-        None
-    }
+    if path.executable() { Some(path) } else { None }
+}
+
+/// Makes the file at `path` executable, for tests that need something to find. Every file
+/// already counts as executable here.
+#[cfg(test)]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "matches the other platforms' signature"
+)]
+pub(crate) const fn make_executable(_path: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
 }

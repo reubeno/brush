@@ -25,6 +25,11 @@ pub struct ShellConfig {
     /// targets). The first element is the program to execute; the rest are leading arguments
     /// inserted before the shell binary path.
     pub launcher: Option<Vec<String>>,
+    /// The option, if any, that tells this shell which directory to start in, like `git -C`.
+    /// When there is one, the shell's process runs in an empty directory of its own and is
+    /// told to start in the test's directory, so a path resolved against the process's
+    /// working directory instead of the shell's fails the test.
+    pub working_dir_option: Option<String>,
 }
 
 impl ShellConfig {
@@ -125,6 +130,7 @@ impl RunnerConfig {
                 ],
                 default_path_var: None,
                 launcher: None,
+                working_dir_option: None,
             },
             test_cases_dir,
             snapshot_dir_name: String::from("snaps"),
@@ -333,6 +339,10 @@ impl TestOptions {
             default_args,
             default_path_var: self.test_path_var.clone(),
             launcher,
+            // Not under WASI, whose launcher maps the process's working directory in as the
+            // guest's root, so that has to be the test's directory.
+            working_dir_option: (!self.platform_tags().contains("wasi"))
+                .then(|| "--working-dir".into()),
         })
     }
 

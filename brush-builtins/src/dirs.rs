@@ -57,7 +57,7 @@ impl builtins::Command for DirsCommand {
         if self.clear {
             context.shell.directory_stack_mut().clear();
         } else {
-            let dirs = vec![context.shell.working_dir()]
+            let dirs = vec![context.shell.working_dir().as_path()]
                 .into_iter()
                 .chain(
                     context

@@ -524,7 +524,7 @@ pub(crate) fn init_well_known_vars(
     // we inherited an out-of-sync version of the variable. Future updates
     // will be handled by set_working_dir().
     //
-    let pwd = shell.working_dir().to_string_lossy().to_string();
+    let pwd = shell.working_dir().as_path().to_string_lossy().to_string();
     let mut pwd_var = ShellVariable::new(pwd);
     pwd_var.export();
     shell.env_mut().set_global("PWD", pwd_var)?;
