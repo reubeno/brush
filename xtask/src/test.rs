@@ -124,17 +124,19 @@ pub struct IntegrationTestArgs {
     #[clap(long)]
     pub results_output: Option<PathBuf>,
 
-    /// Build and test against a wasm32-wasip2 target under a WASI runtime
-    /// (wasmtime by default). Builds brush for wasm32-wasip2 with minimal
+    /// Build and test against a wasm32-wasip3 target under a WASI runtime
+    /// (wasmtime by default). Builds brush for wasm32-wasip3 with minimal
     /// features, then runs a subset of integration tests (excluding compat,
-    /// interactive, and completion suites) under the WASI launcher.
+    /// interactive, and completion suites) under the WASI launcher. Needs a
+    /// toolchain with the wasm32-wasip3 target (Rust 1.100+, or nightly) and
+    /// a runtime with WASI 0.3 support (e.g., wasmtime 46+).
     #[clap(long)]
     pub wasi: bool,
 
     /// Launcher command for the WASI runtime (only used with --wasi).
     /// The first token is resolved against `PATH`; subsequent tokens are
     /// passed as leading arguments before the brush binary path.
-    /// Defaults to `wasmtime run --dir=.::/ --allow-precompiled --`.
+    /// Defaults to `wasmtime run -S inherit-env --dir=.::/ --allow-precompiled --`.
     #[clap(long)]
     pub wasi_launcher: Option<String>,
 
@@ -209,7 +211,7 @@ pub fn run_unit_tests(
 ///
 /// This runs all tests in the workspace, including integration tests
 /// that execute the brush binary. With `--wasi`, builds brush for
-/// wasm32-wasip2 and runs the integration tests under a WASI runtime.
+/// wasm32-wasip3 and runs the integration tests under a WASI runtime.
 pub fn run_integration_tests(
     sh: &Shell,
     binary_args: &BinaryArgs,
@@ -256,7 +258,7 @@ pub fn run_integration_tests(
     test_result
 }
 
-/// Run the brush integration tests against a wasm32-wasip2 build of brush,
+/// Run the brush integration tests against a wasm32-wasip3 build of brush,
 /// executed under a WASI runtime. Builds the wasm module first unless
 /// `--skip-wasi-build` is given, then runs the integration tests via nextest
 /// with the appropriate environment variables populated for the test harness.
@@ -270,11 +272,11 @@ fn run_integration_tests_wasi(
 
     // Build the wasm module unless the caller opts out.
     if !args.skip_wasi_build {
-        eprintln!("Building brush for wasm32-wasip2...");
+        eprintln!("Building brush for wasm32-wasip3...");
         let mut build_args = vec![
             "build",
             "--target",
-            "wasm32-wasip2",
+            "wasm32-wasip3",
             "-p",
             "brush-shell",
             "--bin",
@@ -291,14 +293,14 @@ fn run_integration_tests_wasi(
         }
         cmd!(sh, "cargo {build_args...}")
             .run()
-            .context("failed to build brush for wasm32-wasip2")?;
+            .context("failed to build brush for wasm32-wasip3")?;
     }
 
     // Locate the wasm module that was (or should have been) produced.
     let workspace_root = find_workspace_root()?;
     let profile_dir = if is_release { "release" } else { "debug" };
     let wasm_path = workspace_root
-        .join("target/wasm32-wasip2")
+        .join("target/wasm32-wasip3")
         .join(profile_dir)
         .join("brush.wasm");
     let wasm_path = wasm_path.canonicalize().with_context(|| {
@@ -327,11 +329,13 @@ fn run_integration_tests_wasi(
     }
 
     // The default launcher includes --allow-precompiled so wasmtime accepts
-    // the AOT-compiled .cwasm module without re-compilation.
+    // the AOT-compiled .cwasm module without re-compilation, and
+    // `-S inherit-env` so the environment the harness sets for each test
+    // case reaches brush.
     let launcher = args
         .wasi_launcher
         .as_deref()
-        .unwrap_or("wasmtime run --dir=.::/ --allow-precompiled --");
+        .unwrap_or("wasmtime run -S inherit-env --dir=.::/ --allow-precompiled --");
 
     eprintln!("Running brush integration tests under WASI...");
     eprintln!("  wasm:     {}", cwasm_path.display());
