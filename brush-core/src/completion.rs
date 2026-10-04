@@ -1043,6 +1043,21 @@ impl Config {
         }
     }
 
+    /// If present, returns a mutable reference to the completion spec for the command of
+    /// the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Spec> {
+        match name {
+            EMPTY_COMMAND => self.empty_line.as_mut(),
+            DEFAULT_COMMAND => self.default.as_mut(),
+            INITIAL_WORD => self.initial_word.as_mut(),
+            _ => self.commands.get_mut(name),
+        }
+    }
+
     /// If present, sets the provided completion spec to be associated with the
     /// command of the given name.
     ///

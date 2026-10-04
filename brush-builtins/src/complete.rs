@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use brush_core::completion::{self, CompleteAction, CompleteOption, Spec};
+use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecialSpec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
 
 #[derive(Parser)]
@@ -541,53 +541,55 @@ impl builtins::Command for CompOptCommand {
             options.insert(option.clone(), true);
         }
 
-        if !self.names.is_empty() {
-            if self.update_default || self.update_empty || self.update_initial_word {
-                writeln!(
-                    context.stderr(),
-                    "compopt: cannot specify names with -D, -E, or -I"
-                )?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
-            }
+        if !self.names.is_empty()
+            && (self.update_default || self.update_empty || self.update_initial_word)
+        {
+            writeln!(
+                context.stderr(),
+                "compopt: cannot specify names with -D, -E, or -I"
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
 
-            for name in &self.names {
-                let spec = context.shell.completion_config_mut().get_or_add_mut(name);
-                Self::set_options_for_spec(spec, &options);
+        // -D, -E, and -I select a special spec, which, like bash, we name by bash's name for
+        // it (e.g. in messages).
+        let special = [
+            (self.update_default, SpecialSpec::Default),
+            (self.update_empty, SpecialSpec::EmptyLine),
+            (self.update_initial_word, SpecialSpec::InitialWord),
+        ]
+        .into_iter()
+        .find_map(|(selected, special)| selected.then_some(special));
+        let names: Vec<&str> = match special {
+            Some(special) => vec![special.command_name()],
+            None => self.names.iter().map(String::as_str).collect(),
+        };
+
+        if !names.is_empty() {
+            // Like bash, a spec that doesn't exist is an error, rather than being created.
+            let mut result = ExecutionResult::success();
+            for name in names {
+                if let Some(spec) = context.shell.completion_config_mut().get_mut(name) {
+                    Self::set_options_for_spec(spec, &options);
+                } else {
+                    writeln!(
+                        context.stderr(),
+                        "compopt: {name}: no completion specification"
+                    )?;
+                    result = ExecutionResult::general_error();
+                }
             }
-        } else if self.update_default {
-            if let Some(spec) = &mut context.shell.completion_config_mut().default {
-                Self::set_options_for_spec(spec, &options);
-            } else {
-                let mut spec = Spec::default();
-                Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config_mut().default = Some(spec);
-            }
-        } else if self.update_empty {
-            if let Some(spec) = &mut context.shell.completion_config_mut().empty_line {
-                Self::set_options_for_spec(spec, &options);
-            } else {
-                let mut spec = Spec::default();
-                Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config_mut().empty_line = Some(spec);
-            }
-        } else if self.update_initial_word {
-            if let Some(spec) = &mut context.shell.completion_config_mut().initial_word {
-                Self::set_options_for_spec(spec, &options);
-            } else {
-                let mut spec = Spec::default();
-                Self::set_options_for_spec(&mut spec, &options);
-                context.shell.completion_config_mut().initial_word = Some(spec);
-            }
-        } else {
-            // If we got here, then we need to apply to any completion actively in-flight.
-            if let Some(in_flight_options) = context
-                .shell
-                .completion_config_mut()
-                .current_completion_options
-                .as_mut()
-            {
-                Self::set_options(in_flight_options, &options);
-            }
+            return Ok(result);
+        }
+
+        // With no names, apply to any completion actively in-flight.
+        if let Some(in_flight_options) = context
+            .shell
+            .completion_config_mut()
+            .current_completion_options
+            .as_mut()
+        {
+            Self::set_options(in_flight_options, &options);
         }
 
         Ok(ExecutionResult::success())
