@@ -8,7 +8,7 @@ cases:
     expected_exit_code: 0
     snapshot: true
     # std::fs::File::try_clone() returns "operation not supported" on
-    # wasm32-wasip2, so brush's OpenFile::clone() falls back to a failing
+    # wasm32-wasip3, so brush's OpenFile::clone() falls back to a failing
     # writer and the trace file ends up empty. Affects all output redirection
     # under wasi, not just xtrace.
     incompatible_platforms: ["wasi"]

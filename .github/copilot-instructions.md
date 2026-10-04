@@ -286,7 +286,7 @@ The project uses **extremely strict** linting (workspace-level in `Cargo.toml`):
 ## Cross-Platform Considerations
 
 - Primary targets: Linux (x86_64, aarch64), macOS (aarch64)
-- Secondary: Windows (x86_64), WASM (wasm32-unknown-unknown, wasm32-wasip2)
+- Secondary: Windows (x86_64), WASM (wasm32-unknown-unknown, wasm32-wasip3)
 - Platform-specific code goes in `brush-core/src/sys/` modules
 - Use `cfg(unix)`, `cfg(windows)`, `cfg(target_family = "wasm")` appropriately
 - See `.cargo/config.toml` for target-specific configurations

@@ -105,7 +105,7 @@ cases:
       PRECMD[0][0]
     expected_stderr: |
       exit
-    # A pipeline forks a subshell per stage, which WASI 0.2 doesn't support.
+    # A pipeline forks a subshell per stage, which WASI doesn't support.
     incompatible_platforms: ["wasi"]
 
   # The guards and hook arrays are assigned the way `name=value` assigns, so a variable
@@ -125,10 +125,6 @@ cases:
     expected_stdout: |
       declare -x bash_preexec_imported="defined"
       declare -ax precmd_functions=([0]="precmd")
-    # The `env` above only takes effect through host process environment inheritance,
-    # which WASI 0.2 doesn't support -- so the guard and registry come up unset rather
-    # than "stale", and never keep the exported attribute this case is testing for.
-    incompatible_platforms: ["wasi"]
 
   # `$?` and `PIPESTATUS` are restored before every hook, not just the first: a hook that
   # runs a pipeline of its own doesn't change what the next one sees. There is no
@@ -151,7 +147,7 @@ cases:
       SECOND[0][0]
       FIRST[4][3 4][unset]
       SECOND[4][3 4]
-    # A pipeline of subshells forks each stage, which WASI 0.2 doesn't support.
+    # A pipeline of subshells forks each stage, which WASI doesn't support.
     incompatible_platforms: ["wasi"]
 
   # The command has already been entered into history when preexec runs. Integrations that
@@ -168,7 +164,7 @@ cases:
     expected_stdout: |
       HISTORY[echo from-history]
       from-history
-    # Command substitution forks a subshell to run `history 1`, which WASI 0.2 doesn't
+    # Command substitution forks a subshell to run `history 1`, which WASI doesn't
     # support.
     incompatible_platforms: ["wasi"]
 
@@ -319,9 +315,6 @@ cases:
       PRE-B[(exit 7)]
       POST-A[7]
       POST-B[7]
-    # WASI 0.2's wasi-cli/exit interface only models success/failure, so any
-    # non-zero exit code is clamped to 1 by the host (e.g., wasmtime).
-    incompatible_platforms: ["wasi"]
 
   # Each registry is read once per dispatch, so a hook that edits it is heeded from the next
   # dispatch on -- never mid-loop. `added` is appended during the second dispatch but doesn't
@@ -395,9 +388,6 @@ cases:
     expected_stdout: ""
     expected_stderr: |
       exit
-    # WASI 0.2's wasi-cli/exit interface only models success/failure, so any
-    # non-zero exit code is clamped to 1 by the host (e.g., wasmtime).
-    incompatible_platforms: ["wasi"]
 
   - name: "exit from zsh preexec stops the command"
     args: ["--enable-zsh-hooks", "-i", "-s"]
@@ -408,9 +398,6 @@ cases:
     expected_stdout: ""
     expected_stderr: |
       exit
-    # WASI 0.2's wasi-cli/exit interface only models success/failure, so any
-    # non-zero exit code is clamped to 1 by the host (e.g., wasmtime).
-    incompatible_platforms: ["wasi"]
 
   - name: "exit from PROMPT_COMMAND exits the interactive shell"
     args: ["-i", "-s"]
@@ -421,9 +408,6 @@ cases:
     expected_stdout: ""
     expected_stderr: |
       exit
-    # WASI 0.2's wasi-cli/exit interface only models success/failure, so any
-    # non-zero exit code is clamped to 1 by the host (e.g., wasmtime).
-    incompatible_platforms: ["wasi"]
 
   # Hook state belongs to this shell only. Exporting it would incorrectly tell a child bash
   # that bash-preexec is installed there too.
@@ -436,7 +420,7 @@ cases:
     expected_stdout: |
       NOT-EXPORTED
       guards=[defined|defined]
-    # Command substitution forks a subshell to run `export -p`, which WASI 0.2 doesn't
+    # Command substitution forks a subshell to run `export -p`, which WASI doesn't
     # support.
     incompatible_platforms: ["wasi"]
 
@@ -536,7 +520,7 @@ cases:
       PC[0][0][]
       PC[0][0][PROMPT-ARG]
       PC[8][9 8][PROMPT-ARG]
-    # A pipeline of subshells forks each stage, which WASI 0.2 doesn't support.
+    # A pipeline of subshells forks each stage, which WASI doesn't support.
     incompatible_platforms: ["wasi"]
 
   # A hook registry that ended up a scalar still dispatches. bash-preexec iterates

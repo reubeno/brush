@@ -92,16 +92,19 @@ jobs:
             required_tools: ""
             binary_name: "brush.wasm"
             extra_build_args: "--no-default-features --features minimal"
-          # Build for WASI-0.2 target on x86_64/linux host.
+          # Build for WASI-0.3 target on x86_64/linux host. wasm32-wasip3 first
+          # ships prebuilt std in Rust 1.100; until rust-toolchain.toml is at
+          # 1.100+, use nightly. Drop `toolchain` once it is.
           - host: "ubuntu-24.04"
-            target: "wasm32-wasip2"
-            cross_command: "cross"
-            cross_tool_to_install: "cross"
-            os: "wasi-0.2"
+            target: "wasm32-wasip3"
+            cross_command: "cargo"
+            cross_tool_to_install: ""
+            os: "wasi-0.3"
             arch: "wasm32"
             required_tools: ""
             binary_name: "brush.wasm"
             extra_build_args: "--no-default-features --features minimal"
+            toolchain: "nightly"
           # Build for x86_64/windows target on x86_64/linux host.
           - host: "ubuntu-24.04"
             target: "x86_64-pc-windows-gnu"
@@ -293,10 +296,12 @@ jobs:
           - host: "ubuntu-24.04"
             variant: "wasi"
             artifact_suffix: "-wasi"
-            name_suffix: "(wasm32/wasi-0.2)"
+            name_suffix: "(wasm32/wasi-0.3)"
             homebrew_supported: false
             coverage: false
-            extra_rust_targets: "wasm32-wasip2"
+            # See the wasm32-wasip3 build leg: nightly until Rust 1.100.
+            toolchain: "nightly"
+            extra_rust_targets: "wasm32-wasip3"
             wasi_runtime: "wasmtime"
             xtask_test_args: "--wasi"
 
@@ -313,11 +318,20 @@ jobs:
 
       - name: Set up rust toolchain
         env:
+          # Empty -- meaning the toolchain pinned in rust-toolchain.toml -- for
+          # every leg that doesn't set `toolchain` itself.
+          TOOLCHAIN: ${{ matrix.toolchain }}
           TARGETS: ${{ matrix.extra_rust_targets }}
         # Targets/components are added separately: the nameless
         # `rustup toolchain install` form ignores --target and --component.
         run: |
-          rustup toolchain install --profile minimal
+          if [[ -n "${TOOLCHAIN}" ]]; then
+            rustup toolchain install "${TOOLCHAIN}" --profile minimal
+            # A directory override takes precedence over rust-toolchain.toml.
+            rustup override set "${TOOLCHAIN}"
+          else
+            rustup toolchain install --profile minimal
+          fi
           rustup component add llvm-tools-preview
           if [[ -n "${TARGETS}" ]]; then rustup target add "${TARGETS}"; fi
 
