@@ -21,6 +21,16 @@ cases:
       complete -P 'my prefix' mycmd
       complete -p mycmd
 
+  - name: "compopt +o wins over -o for the same option"
+    stdin: |
+      complete -W x cmd
+      compopt -o nospace +o nospace cmd
+      complete -p cmd
+      compopt +o nospace -o nospace cmd
+      complete -p cmd
+      compopt -o nospace +o filenames -o filenames cmd
+      complete -p cmd
+
   - name: "Roundtrip: complete -S"
     stdin: |
       complete -S mysuffix mycmd
