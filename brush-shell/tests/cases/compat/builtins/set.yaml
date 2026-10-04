@@ -120,3 +120,8 @@ cases:
 
       # Remove set-output.txt to avoid it being byte-for-byte compared.
       rm set-output.txt
+
+  - name: "set quotes values starting with # or ~"
+    stdin: |
+      x="~" y="#z" z="a=~" w="a~"
+      set | grep -E "^(w|x|y|z)="
