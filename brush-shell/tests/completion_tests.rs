@@ -499,6 +499,30 @@ impl TestShellNative {
     }
 }
 
+/// Like bash, a `complete -X` pattern's leading `!` is interpreted when completing, not
+/// when the spec is registered: with extglob on by then, `!(...)` is an extglob pattern.
+#[tokio::test(flavor = "multi_thread")]
+async fn completion_filter_is_interpreted_when_completing() -> Result<()> {
+    let mut test_shell = TestShellNative::new().await?;
+
+    let exec_params = test_shell.shell.default_exec_params();
+    test_shell
+        .shell
+        .run_string(
+            "shopt -u extglob; complete -W 'foo bar fab' -X '!(f*)' mycmd; shopt -s extglob"
+                .to_owned(),
+            &brush_core::SourceInfo::default(),
+            &exec_params,
+        )
+        .await?;
+
+    // `!(f*)` matches what doesn't start with `f`, so those are removed.
+    let completions = test_shell.complete_end_of_line_full("mycmd ").await?;
+    assert_eq!(completions.candidates, ["fab", "foo"]);
+
+    Ok(())
+}
+
 /// Tests native variable completion without braces (e.g., $VAR)
 #[tokio::test(flavor = "multi_thread")]
 async fn native_complete_variable_names() -> Result<()> {

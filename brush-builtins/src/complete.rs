@@ -94,28 +94,7 @@ struct CommonCompleteCommandArgs {
 }
 
 impl CommonCompleteCommandArgs {
-    fn create_spec(&self, extglob_enabled: bool) -> completion::Spec {
-        let filter_pattern_excludes;
-        let filter_pattern = if let Some(filter_pattern) = self.filter_pattern.as_ref() {
-            // If the pattern starts with a '!' that's not the start of an extglob pattern,
-            // then we invert.
-            if let Some(remaining_pattern) = filter_pattern.strip_prefix('!') {
-                if !extglob_enabled || !remaining_pattern.starts_with('(') {
-                    filter_pattern_excludes = false;
-                    Some(remaining_pattern.to_owned())
-                } else {
-                    filter_pattern_excludes = true;
-                    Some(filter_pattern.to_owned())
-                }
-            } else {
-                filter_pattern_excludes = true;
-                Some(filter_pattern.clone())
-            }
-        } else {
-            filter_pattern_excludes = false;
-            None
-        };
-
+    fn create_spec(&self) -> completion::Spec {
         let mut spec = completion::Spec {
             options: completion::GenerationOptions::default(),
             actions: self.resolve_actions(),
@@ -123,8 +102,7 @@ impl CommonCompleteCommandArgs {
             word_list: self.word_list.clone(),
             function_name: self.function_name.clone(),
             command: self.command.clone(),
-            filter_pattern,
-            filter_pattern_excludes,
+            filter_pattern: self.filter_pattern.clone(),
             prefix: self.prefix.clone(),
             suffix: self.suffix.clone(),
         };
@@ -233,9 +211,6 @@ impl CompleteCommand {
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
-        // Read options before taking mutable borrow on completion_config
-        let extended_globbing = context.shell.options().extended_globbing;
-
         // These are processed in an intentional order.
         let special_option_name;
         let target_spec = if self.use_as_default {
@@ -275,7 +250,7 @@ impl CompleteCommand {
             }
         } else {
             if let Some(target_spec) = target_spec {
-                let mut new_spec = Some(self.common_args.create_spec(extended_globbing));
+                let mut new_spec = Some(self.common_args.create_spec());
                 std::mem::swap(&mut new_spec, target_spec);
             } else {
                 return error::unimp("set unspecified spec");
@@ -449,9 +424,7 @@ impl CompleteCommand {
             return Ok(result);
         }
 
-        let config = self
-            .common_args
-            .create_spec(context.shell.options().extended_globbing);
+        let config = self.common_args.create_spec();
 
         context.shell.completion_config_mut().set(name, config);
 
@@ -476,9 +449,7 @@ impl builtins::Command for CompGenCommand {
         &self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut spec = self
-            .common_args
-            .create_spec(context.shell.options().extended_globbing);
+        let mut spec = self.common_args.create_spec();
         spec.options.no_sort = true;
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();

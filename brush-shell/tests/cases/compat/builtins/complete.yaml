@@ -112,3 +112,8 @@ cases:
   - name: "compgen -W preserves order"
     stdin: |
       compgen -W "z y x a"
+
+  - name: "complete -p shows a -X pattern with a leading ! as given"
+    stdin: |
+      complete -f -X '!*.txt' mycmd
+      complete -p mycmd

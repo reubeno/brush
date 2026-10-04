@@ -257,11 +257,10 @@ pub struct Spec {
 
     //
     // Filters
-    /// Optionally, a pattern to filter completions.
+    /// Optionally, a pattern to filter completions (`complete -X`), as given: candidates
+    /// it matches are removed, or, if it starts with a `!` (that doesn't start an extglob
+    /// pattern), those it doesn't match.
     pub filter_pattern: Option<String>,
-    /// If true, completion candidates matching `filter_pattern` are removed;
-    /// otherwise, those not matching it are removed.
-    pub filter_pattern_excludes: bool,
 
     //
     // Transformers
@@ -408,15 +407,24 @@ impl Spec {
         {
             let mut updated = Vec::new();
 
+            // Like bash, a leading `!` (unless extglob is on and it starts a `!(...)`
+            // pattern) inverts the filter, which then keeps what it matches.
+            let (pattern, keep_matches) = match filter_pattern.strip_prefix('!') {
+                Some(rest) if !(shell.options().extended_globbing && rest.starts_with('(')) => {
+                    (rest, true)
+                }
+                _ => (filter_pattern.as_str(), false),
+            };
+
             for candidate in candidates {
                 let matches = completion_filter_pattern_matches(
-                    filter_pattern.as_str(),
+                    pattern,
                     candidate.as_str(),
                     context.token_to_complete,
                     shell,
                 )?;
 
-                if self.filter_pattern_excludes != matches {
+                if matches == keep_matches {
                     updated.push(candidate);
                 }
             }
