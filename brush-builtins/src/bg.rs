@@ -1,14 +1,17 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Moves a job to run in the background.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct BgCommand {
     /// List of job specs to move to background.
+    #[arg(positional)]
     job_specs: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(BgCommand);
 
 impl builtins::Command for BgCommand {
     type Error = brush_core::Error;

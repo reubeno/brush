@@ -1,33 +1,36 @@
-use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
 use brush_core::{ExecutionResult, builtins};
 
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct HashCommand {
-    /// Remove entries associated with the given names.
-    #[arg(short = 'd')]
-    remove: bool,
-
     /// Display paths in a format usable for input.
     #[arg(short = 'l')]
     display_as_usable_input: bool,
+
+    /// Remove all entries.
+    #[arg(short = 'r')]
+    remove_all: bool,
 
     /// The path to associate with the names.
     #[arg(short = 'p', value_name = "PATH")]
     path_to_use: Option<PathBuf>,
 
-    /// Remove all entries.
-    #[arg(short = 'r')]
-    remove_all: bool,
+    /// Remove entries associated with the given names.
+    #[arg(short = 'd')]
+    remove: bool,
 
     /// Display the paths associated with the names.
     #[arg(short = 't')]
     display_paths: bool,
 
     /// Names to process.
+    #[arg(positional)]
     names: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(HashCommand);
 
 impl builtins::Command for HashCommand {
     type Error = brush_core::Error;

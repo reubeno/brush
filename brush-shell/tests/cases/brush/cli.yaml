@@ -25,6 +25,23 @@ cases:
     expected_exit_code: 0
     # Note: can't easily check stdout content as it varies
 
+  - name: "Version goes to stdout and names the shell"
+    stdin: |
+      version=$("$BASH" --version 2>/dev/null)
+      echo "${version%% *}"
+    expected_exit_code: 0
+    expected_stdout: "brush\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion script callback answers from the CLI spec"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "reedline\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
   - name: "Help flag succeeds"
     args:
       - "--help"

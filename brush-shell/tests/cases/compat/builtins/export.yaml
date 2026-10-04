@@ -151,7 +151,6 @@ cases:
       unset -f export
 
   - name: "Export rejects an array element target"
-    known_failure: true # TODO: export improvements required
     ignore_stderr: true
     stdin: |
       export 'ea[0]=1'
@@ -163,3 +162,10 @@ cases:
       value=world
       command export wrapped=$value
       declare -p wrapped
+
+  - name: "export rejects dash-prefixed operands after a name"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export v -x; echo "export v -x: $?"; } 2>&1 | strip
+      { export -- -x; echo "export -- -x: $?"; } 2>&1 | strip
+      { export w=1 +r; echo "export w=1 +r: $?"; } 2>&1 | strip

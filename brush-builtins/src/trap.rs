@@ -1,11 +1,11 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionResult, builtins};
 
 /// Manage signal traps.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct TrapCommand {
     /// List all signal names.
     #[arg(short = 'l')]
@@ -15,8 +15,11 @@ pub(crate) struct TrapCommand {
     #[arg(short = 'p')]
     print_trap_commands: bool,
 
+    #[arg(positional, double_dash = "automatic")]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(TrapCommand);
 
 impl builtins::Command for TrapCommand {
     type Error = brush_core::Error;
