@@ -143,14 +143,14 @@ fn osc_command_markers_stay_paired_for_a_bound_command() -> anyhow::Result<()> {
 
 /// A single unanswered cursor-position query (a transient terminal hiccup,
 /// e.g. right after a full-screen program hands the terminal back) must not
-/// terminate the shell; the query is retried and the next answer is used.
+/// terminate the shell; reedline asks again and uses the next answer.
 #[test]
-fn transient_cursor_query_timeout_is_retried() -> anyhow::Result<()> {
+fn transient_cursor_query_timeout_is_tolerated() -> anyhow::Result<()> {
     let mut session = start_reedline_session()?;
     expect_next_prompt(&mut session, 0)?;
 
     // Withhold the answer to the query preceding the next prompt; crossterm
-    // gives up on it after ~2s and brush must ask again rather than exit.
+    // gives up on it after ~2s and the shell must carry on rather than exit.
     session.send_line("echo BEFORE_$((7*6))")?;
     session.expect("BEFORE_42")?;
     expect_next_prompt(&mut session, 1)
@@ -159,33 +159,30 @@ fn transient_cursor_query_timeout_is_retried() -> anyhow::Result<()> {
     session.send_line("echo AFTER_$((6*7))")?;
     session
         .expect("AFTER_42")
-        .context("shell not interactive after the retried query")?;
+        .context("shell not interactive after the unanswered query")?;
 
     Ok(())
 }
 
-/// The retry is bounded: a terminal that never answers must make the shell
-/// give up (three attempts, ~2s each) rather than loop forever.
+/// A terminal that never answers cursor-position queries still gets a
+/// prompt and a working shell; reedline (>= 0.52) falls back to anchoring
+/// the prompt at the bottom of the screen instead of failing the read.
 #[test]
-fn unanswered_cursor_queries_eventually_fail_the_read() -> anyhow::Result<()> {
+fn unanswered_cursor_queries_still_yield_a_prompt() -> anyhow::Result<()> {
     let mut session = start_reedline_session()?;
     expect_next_prompt(&mut session, 0)?;
 
     session.send_line("echo BEFORE_$((7*6))")?;
     session.expect("BEFORE_42")?;
 
-    // Never answer. Exactly three queries, then the shell exits on the error.
-    for attempt in 1..=3 {
-        session
-            .expect(DSR_QUERY)
-            .with_context(|| format!("no cursor-position query for attempt {attempt}"))?;
-    }
+    // Never answer from here on.
     session
-        .expect("The cursor position could not be read")
-        .context("shell did not report the exhausted query")?;
+        .expect(PROMPT)
+        .context("no prompt without cursor-query answers")?;
+    session.send_line("echo AFTER_$((6*7))")?;
     session
-        .expect(expectrl::Eof)
-        .context("shell did not exit after exhausting retries")?;
+        .expect("AFTER_42")
+        .context("shell not interactive without cursor-query answers")?;
 
     Ok(())
 }
@@ -243,8 +240,8 @@ fn start_reedline_session_with(
     // N.B. Replace with `session` directly to disable logging of the session.
     let mut session = expectrl::session::log(session, std::io::stdout())?;
 
-    // The timeout tests deliberately let ~2s crossterm timeouts elapse, up
-    // to three in a row (MAX_READ_LINE_ATTEMPTS) for the exhaustion test.
+    // The timeout tests deliberately let ~2s crossterm timeouts elapse,
+    // several in a row when the terminal never answers.
     session.set_expect_timeout(Some(Duration::from_secs(15)));
 
     Ok(session)
