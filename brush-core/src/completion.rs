@@ -547,27 +547,7 @@ impl Spec {
                         }
                     }
                 }
-                CompleteAction::Command => {
-                    let command_completions =
-                        get_external_command_completions(shell, context.token_to_complete);
-                    candidates.extend(command_completions);
-                    for name in shell.builtins().keys() {
-                        if name.starts_with(token) {
-                            candidates.push(name.to_owned());
-                        }
-                    }
-                    for keyword in shell.get_keywords() {
-                        if keyword.starts_with(token) {
-                            candidates.push(keyword.to_string());
-                        }
-                    }
-                    // Functions are stored unordered; bash enumerates them sorted by name.
-                    for (name, _) in shell.funcs().iter().sorted_by_key(|v| v.0) {
-                        if name.starts_with(token) {
-                            candidates.push(name.to_owned());
-                        }
-                    }
-                }
+                CompleteAction::Command => candidates.extend(command_completions(shell, token)),
                 CompleteAction::Directory => {
                     let mut file_completions =
                         get_file_completions(shell, context.token_to_complete, true).await;
@@ -1310,22 +1290,6 @@ async fn get_file_completions(
     completions.dedup();
     completions
 }
-
-fn get_external_command_completions(
-    shell: &Shell<impl extensions::ShellExtensions>,
-    prefix: &str,
-) -> impl Iterator<Item = String> {
-    shell
-        .find_executables_in_path_with_prefix(
-            prefix,
-            shell.options().case_insensitive_pathname_expansion,
-        )
-        .filter_map(|path| {
-            path.file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-        })
-}
-
 /// Attempts to complete a variable name from the given token.
 /// Returns `Some(Answer)` if the token looks like a variable reference being typed,
 /// or `None` if file/command completion should be used instead.
@@ -1379,44 +1343,57 @@ fn try_get_variable_completions(
     Some(Answer::Candidates(candidates, options))
 }
 
-/// Adds command-position completions to candidates.
-/// This includes external commands, builtins, functions, aliases, and keywords.
-fn add_command_completions(
+/// Returns the names of the commands that start with `prefix`, in the order bash lists
+/// them: aliases, keywords, functions, enabled builtins, then executables in the path.
+fn command_completions(
     shell: &Shell<impl extensions::ShellExtensions>,
     prefix: &str,
+) -> Vec<String> {
+    let mut names = Vec::new();
+
+    // Aliases, functions, and builtins are stored unordered; bash enumerates each sorted by
+    // name.
+    extend_matching(&mut names, shell.aliases().keys().sorted(), prefix);
+    extend_matching(&mut names, shell.get_keywords(), prefix);
+    extend_matching(
+        &mut names,
+        shell.funcs().iter().map(|(name, _)| name).sorted(),
+        prefix,
+    );
+    extend_matching(
+        &mut names,
+        shell
+            .builtins()
+            .iter()
+            .filter(|(_, registration)| !registration.disabled)
+            .map(|(name, _)| name)
+            .sorted(),
+        prefix,
+    );
+    names.extend(
+        shell
+            .find_executables_in_path_with_prefix(
+                prefix,
+                shell.options().case_insensitive_pathname_expansion,
+            )
+            .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())),
+    );
+
+    names
+}
+
+/// Adds the `names` that start with `prefix` to `candidates`.
+fn extend_matching<S: AsRef<str>>(
     candidates: &mut Vec<String>,
+    names: impl IntoIterator<Item = S>,
+    prefix: &str,
 ) {
-    // Add external commands.
-    let command_completions = get_external_command_completions(shell, prefix);
-    candidates.extend(command_completions);
-
-    // Add built-in commands.
-    for (name, registration) in shell.builtins() {
-        if !registration.disabled && name.starts_with(prefix) {
-            candidates.push(name.to_owned());
-        }
-    }
-
-    // Add shell functions.
-    for (name, _) in shell.funcs().iter() {
-        if name.starts_with(prefix) {
-            candidates.push(name.to_owned());
-        }
-    }
-
-    // Add aliases.
-    for name in shell.aliases().keys() {
-        if name.starts_with(prefix) {
-            candidates.push(name.to_owned());
-        }
-    }
-
-    // Add keywords.
-    for keyword in shell.get_keywords() {
-        if keyword.starts_with(prefix) {
-            candidates.push(keyword.to_string());
-        }
-    }
+    candidates.extend(
+        names
+            .into_iter()
+            .filter(|name| name.as_ref().starts_with(prefix))
+            .map(|name| name.as_ref().to_owned()),
+    );
 }
 
 async fn get_completions_using_basic_lookup(
@@ -1441,7 +1418,7 @@ async fn get_completions_using_basic_lookup(
         context.token_index == 0 && !token.is_empty() && !sys::fs::contains_path_separator(token);
 
     if is_command_position {
-        add_command_completions(shell, token, &mut candidates);
+        candidates.extend(command_completions(shell, token));
         candidates.sort();
     }
 
