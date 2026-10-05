@@ -1597,38 +1597,56 @@ async fn apply_assignment(
     // Read option before taking mutable borrow on env.
     let export_variables_on_modification = shell.options().export_variables_on_modification;
 
-    // See if we can find an existing value associated with the variable.
-    if let Some((existing_value_scope, existing_value)) =
-        shell.env_mut().get_mut(variable_name.as_str())
+    // Like bash, a variable for one command can't override a readonly one: report that and
+    // skip this assignment. The command still runs.
+    if required_scope.is_some()
+        && shell
+            .env()
+            .get(variable_name.as_str())
+            .is_some_and(|(_, var)| var.is_readonly())
     {
-        if required_scope.is_none() || Some(existing_value_scope) == required_scope {
-            if let Some(array_index) = array_index {
-                match new_value {
-                    ShellValueLiteral::Scalar(s) => {
-                        existing_value.assign_at_index(array_index, s, assignment.append)?;
-                    }
-                    ShellValueLiteral::Array(_) => {
-                        return error::unimp("replacing an array item with an array");
-                    }
-                }
-            } else {
-                if !export
-                    && export_variables_on_modification
-                    && !matches!(new_value, ShellValueLiteral::Array(_))
-                {
-                    export = true;
-                }
+        let err = error::Error::from(error::ErrorKind::ReadonlyVariable);
+        let _ = shell.display_error(&mut params.stderr(shell), &err);
+        return Ok(());
+    }
 
-                existing_value.assign(new_value, assignment.append)?;
+    // See if we can find an existing value associated with the variable. A variable for one
+    // command (e.g. `FOO=1 cmd`) can only be one already set for that same command, in its
+    // own scope -- not one set for a command it was called from.
+    let lookup = required_scope.map_or(
+        EnvironmentLookup::Anywhere,
+        EnvironmentLookup::OnlyInCurrent,
+    );
+    let existing_value = shell
+        .env_mut()
+        .get_mut_using_policy(variable_name.as_str(), lookup);
+    if let Some(existing_value) = existing_value {
+        if let Some(array_index) = array_index {
+            match new_value {
+                ShellValueLiteral::Scalar(s) => {
+                    existing_value.assign_at_index(array_index, s, assignment.append)?;
+                }
+                ShellValueLiteral::Array(_) => {
+                    return error::unimp("replacing an array item with an array");
+                }
+            }
+        } else {
+            if !export
+                && export_variables_on_modification
+                && !matches!(new_value, ShellValueLiteral::Array(_))
+            {
+                export = true;
             }
 
-            if export {
-                existing_value.export();
-            }
-
-            // That's it!
-            return Ok(());
+            existing_value.assign(new_value, assignment.append)?;
         }
+
+        if export {
+            existing_value.export();
+        }
+
+        // That's it!
+        return Ok(());
     }
 
     // If we fell down here, then we need to add it.
@@ -1645,6 +1663,18 @@ async fn apply_assignment(
         match new_value {
             ShellValueLiteral::Scalar(s) => {
                 export = export || shell.options().export_variables_on_modification;
+
+                // A new variable for a command (e.g. `FOO+=x cmd`) appends to the value the
+                // variable has where it's visible, as that variable would (e.g. adding, for
+                // an integer); the result is a plain string.
+                let s = match shell.env().get(variable_name.as_str()) {
+                    Some((_, visible)) if assignment.append => {
+                        let mut appended = visible.clone();
+                        appended.assign(ShellValueLiteral::Scalar(s), true)?;
+                        appended.value().to_cow_str(shell).into_owned()
+                    }
+                    _ => s,
+                };
                 ShellValue::String(s)
             }
             ShellValueLiteral::Array(values) => ShellValue::indexed_array_from_literals(values),

@@ -189,3 +189,40 @@ cases:
       }
       
       myfunc "" "non-empty" "" "last"
+
+  - name: "Prefix assignment in a function leaves the caller's prefix assignment alone"
+    stdin: |
+      f() { FOO=2 true; echo "[$FOO]"; }
+      FOO=1 f
+      g() { FOO=2 h; echo "[$FOO]"; }
+      h() { echo "h: $FOO"; }
+      FOO=1 g
+
+  - name: "Prefix assignments to one variable build on each other"
+    stdin: |
+      f() { echo "[$FOO]"; }
+      FOO=1 FOO+=2 f
+
+  - name: "Prefix assignment with += appends to the value where it's visible"
+    stdin: |
+      BAR=a
+      BAR+=b env | grep ^BAR=
+      declare -i N=5
+      N+=3 env | grep ^N=
+      f() { FOO+=2 g; echo "[$FOO]"; }
+      g() { echo "g: $FOO"; }
+      FOO=1 f
+      echo "[$BAR] [$N]"
+
+  - name: "Prefix assignment can't override a readonly variable"
+    ignore_stderr: true
+    stdin: |
+      g() { echo "g: $FOO"; }
+      f() { readonly FOO; FOO=2 g; echo "f: $FOO rc=$?"; }
+      FOO=1 f
+      k() { echo "k: $L"; }
+      h() { local -r L=1; L=2 k; echo "h: rc=$?"; }
+      h
+      readonly R=1
+      R=2 B=3 env | grep -E '^(R|B)='
+      echo "R=$R"
