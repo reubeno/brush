@@ -170,15 +170,10 @@ pub enum CompleteOption {
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Config {
+    /// The specs for completing commands' arguments, by command name.
     commands: HashMap<String, Spec>,
-
-    /// Optionally, a completion spec to be used as a default, when earlier
-    /// matches yield no candidates.
-    pub default: Option<Spec>,
-    /// Optionally, a completion spec to be used when the command line is empty.
-    pub empty_line: Option<Spec>,
-    /// Optionally, a completion spec to be used for the initial word of a command line.
-    pub initial_word: Option<Spec>,
+    /// The specs used in place of a command's.
+    specials: HashMap<SpecialSpec, Spec>,
 
     /// Fallback options to use when 'default' completions are requested (not to be
     /// confused with the 'default' completion spec, nor 'bashdefault' completions).
@@ -1017,7 +1012,8 @@ pub enum Answer {
 }
 
 /// A completion spec used in place of a command's.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, strum_macros::EnumIter)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum_macros::EnumIter)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SpecialSpec {
     /// The spec used when no command's spec applies (`complete -D`).
     Default,
@@ -1044,17 +1040,36 @@ impl SpecialSpec {
     }
 }
 
-const EMPTY_COMMAND: &str = SpecialSpec::EmptyLine.command_name();
-const DEFAULT_COMMAND: &str = SpecialSpec::Default.command_name();
-const INITIAL_WORD: &str = SpecialSpec::InitialWord.command_name();
+/// Names a completion spec in a [`Config`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SpecName<'a> {
+    /// The spec for completing the named command's arguments.
+    Command(&'a str),
+    /// One of the special specs.
+    Special(SpecialSpec),
+}
+
+impl<'a> SpecName<'a> {
+    /// Returns the spec named `name`: a command's, or the special spec that bash's name for
+    /// it (see [`SpecialSpec::command_name`]) names.
+    pub fn parse(name: &'a str) -> Self {
+        SpecialSpec::from_command_name(name).map_or(Self::Command(name), Self::Special)
+    }
+
+    /// Returns the name: a command's, or for a special spec, bash's name for it.
+    pub const fn as_str(self) -> &'a str {
+        match self {
+            Self::Command(command) => command,
+            Self::Special(special) => special.command_name(),
+        }
+    }
+}
 
 impl Config {
     /// Removes all registered completion specs.
     pub fn clear(&mut self) {
         self.commands.clear();
-        self.empty_line = None;
-        self.default = None;
-        self.initial_word = None;
+        self.specials.clear();
     }
 
     /// Ensures the named completion spec is no longer registered; returns whether a
@@ -1063,145 +1078,66 @@ impl Config {
     /// # Arguments
     ///
     /// * `name` - The name of the completion spec to remove.
-    pub fn remove(&mut self, name: &str) -> bool {
+    pub fn remove(&mut self, name: SpecName<'_>) -> bool {
         match name {
-            EMPTY_COMMAND => {
-                let result = self.empty_line.is_some();
-                self.empty_line = None;
-                result
-            }
-            DEFAULT_COMMAND => {
-                let result = self.default.is_some();
-                self.default = None;
-                result
-            }
-            INITIAL_WORD => {
-                let result = self.initial_word.is_some();
-                self.initial_word = None;
-                result
-            }
-            _ => self.commands.remove(name).is_some(),
+            SpecName::Command(command) => self.commands.remove(command).is_some(),
+            SpecName::Special(special) => self.specials.remove(&special).is_some(),
         }
     }
 
-    /// Returns an iterator over the completion specs.
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &Spec)> {
-        self.commands.iter()
+    /// Returns an iterator over the completion specs and their names, in no particular
+    /// order.
+    pub fn iter(&self) -> impl Iterator<Item = (SpecName<'_>, &Spec)> {
+        let commands = self
+            .commands
+            .iter()
+            .map(|(command, spec)| (SpecName::Command(command), spec));
+        let specials = self
+            .specials
+            .iter()
+            .map(|(special, spec)| (SpecName::Special(*special), spec));
+        commands.chain(specials)
     }
 
-    /// If present, returns the completion spec for the command of the given name.
+    /// If present, returns the named completion spec.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the command.
-    pub fn get(&self, name: &str) -> Option<&Spec> {
+    /// * `name` - The name of the completion spec.
+    pub fn get(&self, name: SpecName<'_>) -> Option<&Spec> {
         match name {
-            EMPTY_COMMAND => self.empty_line.as_ref(),
-            DEFAULT_COMMAND => self.default.as_ref(),
-            INITIAL_WORD => self.initial_word.as_ref(),
-            _ => self.commands.get(name),
+            SpecName::Command(command) => self.commands.get(command),
+            SpecName::Special(special) => self.specials.get(&special),
         }
     }
 
-    /// If present, returns the given special completion spec.
+    /// If present, returns a mutable reference to the named completion spec.
     ///
     /// # Arguments
     ///
-    /// * `special` - The special spec.
-    pub const fn get_special(&self, special: SpecialSpec) -> Option<&Spec> {
-        match special {
-            SpecialSpec::Default => self.default.as_ref(),
-            SpecialSpec::EmptyLine => self.empty_line.as_ref(),
-            SpecialSpec::InitialWord => self.initial_word.as_ref(),
-        }
-    }
-
-    /// If present, returns a mutable reference to the given special completion spec.
-    ///
-    /// # Arguments
-    ///
-    /// * `special` - The special spec.
-    pub const fn get_special_mut(&mut self, special: SpecialSpec) -> Option<&mut Spec> {
-        match special {
-            SpecialSpec::Default => self.default.as_mut(),
-            SpecialSpec::EmptyLine => self.empty_line.as_mut(),
-            SpecialSpec::InitialWord => self.initial_word.as_mut(),
-        }
-    }
-
-    /// If present, returns a mutable reference to the completion spec for the command of
-    /// the given name.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the command.
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut Spec> {
+    /// * `name` - The name of the completion spec.
+    pub fn get_mut(&mut self, name: SpecName<'_>) -> Option<&mut Spec> {
         match name {
-            EMPTY_COMMAND => self.empty_line.as_mut(),
-            DEFAULT_COMMAND => self.default.as_mut(),
-            INITIAL_WORD => self.initial_word.as_mut(),
-            _ => self.commands.get_mut(name),
+            SpecName::Command(command) => self.commands.get_mut(command),
+            SpecName::Special(special) => self.specials.get_mut(&special),
         }
     }
 
-    /// If present, sets the provided completion spec to be associated with the
-    /// command of the given name.
+    /// Registers the provided completion spec under the given name, replacing any
+    /// already registered there.
     ///
     /// # Arguments
     ///
-    /// * `name` - The name of the command.
-    /// * `spec` - The completion spec to associate with the command.
-    pub fn set(&mut self, name: &str, spec: Spec) {
+    /// * `name` - The name of the completion spec.
+    /// * `spec` - The completion spec.
+    pub fn set(&mut self, name: SpecName<'_>, spec: Spec) {
         match name {
-            EMPTY_COMMAND => {
-                self.empty_line = Some(spec);
+            SpecName::Command(command) => {
+                self.commands.insert(command.to_owned(), spec);
             }
-            DEFAULT_COMMAND => {
-                self.default = Some(spec);
+            SpecName::Special(special) => {
+                self.specials.insert(special, spec);
             }
-            INITIAL_WORD => {
-                self.initial_word = Some(spec);
-            }
-            _ => {
-                self.commands.insert(name.to_owned(), spec);
-            }
-        }
-    }
-
-    /// Returns a mutable reference to the completion spec for the command of the
-    /// given name; if the command already was associated with a spec, returns
-    /// a reference to that existing spec. Otherwise registers a new default
-    /// spec and returns a mutable reference to it.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the command.
-    #[allow(
-        clippy::missing_panics_doc,
-        clippy::unwrap_used,
-        reason = "these unwrap calls should not fail"
-    )]
-    pub fn get_or_add_mut(&mut self, name: &str) -> &mut Spec {
-        match name {
-            EMPTY_COMMAND => {
-                if self.empty_line.is_none() {
-                    self.empty_line = Some(Spec::default());
-                }
-                self.empty_line.as_mut().unwrap()
-            }
-            DEFAULT_COMMAND => {
-                if self.default.is_none() {
-                    self.default = Some(Spec::default());
-                }
-                self.default.as_mut().unwrap()
-            }
-            INITIAL_WORD => {
-                if self.initial_word.is_none() {
-                    self.initial_word = Some(Spec::default());
-                }
-                self.initial_word.as_mut().unwrap()
-            }
-            _ => self.commands.entry(name.to_owned()).or_default(),
         }
     }
 
@@ -1348,7 +1284,7 @@ impl Config {
 
         if let Some(command_name) = context.command_name {
             if context.token_index == 0 {
-                if let Some(spec) = &self.initial_word {
+                if let Some(spec) = self.specials.get(&SpecialSpec::InitialWord) {
                     found_spec = Some(spec);
                 }
             } else {
@@ -1365,13 +1301,13 @@ impl Config {
                 }
 
                 if found_spec.is_none() {
-                    if let Some(spec) = &self.default {
+                    if let Some(spec) = self.specials.get(&SpecialSpec::Default) {
                         found_spec = Some(spec);
                     }
                 }
             }
         } else {
-            if let Some(spec) = &self.empty_line {
+            if let Some(spec) = self.specials.get(&SpecialSpec::EmptyLine) {
                 found_spec = Some(spec);
             }
         }
@@ -1747,27 +1683,42 @@ mod tests {
         ];
 
         for (special, word) in specials {
-            assert!(config.get_special(special).is_none());
+            assert!(config.get(SpecName::Special(special)).is_none());
             let spec = Spec {
                 word_list: Some(word.to_owned()),
                 ..Spec::default()
             };
-            config.set(special.command_name(), spec);
+            config.set(SpecName::Special(special), spec);
         }
 
         for (special, word) in specials {
-            let spec = config.get_special(special);
+            let spec = config.get(SpecName::Special(special));
             assert_eq!(spec.and_then(|spec| spec.word_list.as_deref()), Some(word));
 
-            if let Some(spec) = config.get_special_mut(special) {
+            if let Some(spec) = config.get_mut(SpecName::Special(special)) {
                 spec.prefix = Some(word.to_uppercase());
             }
-            let spec = config.get(special.command_name());
+            // Bash's name for the spec names the same one.
+            let spec = config.get(SpecName::parse(special.command_name()));
             assert_eq!(
                 spec.and_then(|spec| spec.prefix.clone()),
                 Some(word.to_uppercase())
             );
         }
+    }
+
+    #[test]
+    fn spec_names_parse_bash_names_for_special_specs() {
+        assert_eq!(
+            SpecName::parse("_DefaultCmD_"),
+            SpecName::Special(SpecialSpec::Default)
+        );
+        assert_eq!(SpecName::parse("mycmd"), SpecName::Command("mycmd"));
+        for special in SpecialSpec::iter() {
+            let name = SpecName::Special(special);
+            assert_eq!(SpecName::parse(name.as_str()), name);
+        }
+        assert_eq!(SpecName::Command("mycmd").as_str(), "mycmd");
     }
 
     #[test]

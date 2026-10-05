@@ -2,9 +2,8 @@ use clap::{Parser, ValueEnum as _};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
-use strum::IntoEnumIterator;
 
-use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecialSpec};
+use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecName, SpecialSpec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
 
 #[derive(Parser)]
@@ -210,9 +209,13 @@ impl builtins::Command for CompleteCommand {
         ]
         .into_iter()
         .find_map(|(selected, special)| selected.then_some(special));
-        let names: Vec<&str> = match special {
-            Some(special) => vec![special.command_name()],
-            None => self.names.iter().map(String::as_str).collect(),
+        let names: Vec<SpecName<'_>> = match special {
+            Some(special) => vec![SpecName::Special(special)],
+            None => self
+                .names
+                .iter()
+                .map(|name| SpecName::parse(name))
+                .collect(),
         };
 
         // With no spec named, list them all (as `complete` with no options does too), or
@@ -221,16 +224,9 @@ impl builtins::Command for CompleteCommand {
             if self.remove && !self.print {
                 context.shell.completion_config_mut().clear();
             } else {
-                let config = context.shell.completion_config();
                 // Sort, so the listing is stable; the special specs come last.
-                let mut specs: Vec<_> = config
-                    .iter()
-                    .map(|(name, spec)| (name.as_str(), spec))
-                    .collect();
+                let mut specs: Vec<_> = context.shell.completion_config().iter().collect();
                 specs.sort_by_key(|(name, _)| *name);
-                specs.extend(SpecialSpec::iter().filter_map(|special| {
-                    Some((special.command_name(), config.get_special(special)?))
-                }));
                 for (name, spec) in specs {
                     Self::display_named_spec(&context, name, spec)?;
                 }
@@ -250,24 +246,24 @@ impl builtins::Command for CompleteCommand {
 }
 
 impl CompleteCommand {
-    /// Displays `spec`, registered under `name`: a command's, or bash's name for a special
-    /// spec, which is shown as the flag that selects it.
+    /// Displays `spec`, registered under `name`; a special spec is shown by the flag that
+    /// selects it.
     fn display_named_spec(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        name: &str,
+        name: SpecName<'_>,
         spec: &Spec,
     ) -> Result<(), brush_core::Error> {
-        match SpecialSpec::from_command_name(name) {
-            Some(special) => {
+        match name {
+            SpecName::Special(special) => {
                 Self::display_spec(context, Some(special_spec_flag(special)), None, spec)
             }
-            None => Self::display_spec(context, None, Some(name), spec),
+            SpecName::Command(command) => Self::display_spec(context, None, Some(command), spec),
         }
     }
 
     fn try_display_spec_for_command(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        name: &str,
+        name: SpecName<'_>,
     ) -> Result<bool, brush_core::Error> {
         if let Some(spec) = context.shell.completion_config().get(name) {
             Self::display_named_spec(context, name, spec)?;
@@ -275,7 +271,8 @@ impl CompleteCommand {
         } else {
             writeln!(
                 context.stderr(),
-                "complete: {name}: no completion specification"
+                "complete: {}: no completion specification",
+                name.as_str()
             )?;
             Ok(false)
         }
@@ -356,7 +353,7 @@ impl CompleteCommand {
     fn try_process_for_command(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        name: &str,
+        name: SpecName<'_>,
     ) -> Result<bool, brush_core::Error> {
         if self.print {
             return Self::try_display_spec_for_command(context, name);
@@ -365,7 +362,7 @@ impl CompleteCommand {
 
             if !result {
                 if context.shell.options().interactive {
-                    writeln!(context.stderr(), "complete: {name}: not found")?;
+                    writeln!(context.stderr(), "complete: {}: not found", name.as_str())?;
                 } else {
                     // For some reason, this is not supposed to be treated as a failure
                     // in non-interactive execution.
@@ -536,8 +533,8 @@ impl builtins::Command for CompOptCommand {
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
-        // -D, -E, and -I select a special spec, which, like bash, we name by bash's name for
-        // it (e.g. in messages).
+        // -D, -E, and -I select a special spec, which, like bash, messages name by bash's name
+        // for it.
         let special = [
             (self.update_default, SpecialSpec::Default),
             (self.update_empty, SpecialSpec::EmptyLine),
@@ -545,9 +542,13 @@ impl builtins::Command for CompOptCommand {
         ]
         .into_iter()
         .find_map(|(selected, special)| selected.then_some(special));
-        let names: Vec<&str> = match special {
-            Some(special) => vec![special.command_name()],
-            None => self.names.iter().map(String::as_str).collect(),
+        let names: Vec<SpecName<'_>> = match special {
+            Some(special) => vec![SpecName::Special(special)],
+            None => self
+                .names
+                .iter()
+                .map(|name| SpecName::parse(name))
+                .collect(),
         };
 
         if !names.is_empty() {
@@ -559,7 +560,8 @@ impl builtins::Command for CompOptCommand {
                 } else {
                     writeln!(
                         context.stderr(),
-                        "compopt: {name}: no completion specification"
+                        "compopt: {}: no completion specification",
+                        name.as_str()
                     )?;
                     result = ExecutionResult::general_error();
                 }
