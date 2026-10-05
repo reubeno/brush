@@ -4,7 +4,7 @@ use clap::ValueEnum;
 use itertools::Itertools;
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
 };
 use strum::IntoEnumIterator;
@@ -138,7 +138,8 @@ pub enum CompleteAction {
 }
 
 /// Options influencing how command completions are generated.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, ValueEnum)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CompleteOption {
     /// Perform rest of default completions if no completions are generated.
     #[clap(name = "bashdefault")]
@@ -204,28 +205,36 @@ impl Default for FallbackOptions {
     }
 }
 
-/// Options for generating completions.
-#[derive(Clone, Debug, Default)]
+/// Options for generating completions: which [`CompleteOption`]s are enabled.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GenerationOptions {
-    //
-    // Options
-    /// Perform rest of default completions if no completions are generated.
-    pub bash_default: bool,
-    /// Use default readline-style filename completion if no completions are generated.
-    pub default: bool,
-    /// Treat completions as directory names.
-    pub dir_names: bool,
-    /// Treat completions as filenames.
-    pub file_names: bool,
-    /// Do not add usual quoting for completions.
-    pub no_quote: bool,
-    /// Do not sort completions.
-    pub no_sort: bool,
-    /// Do not append typical space to a completion at the end of the input line.
-    pub no_space: bool,
-    /// Also complete with directory names.
-    pub plus_dirs: bool,
+    enabled: BTreeSet<CompleteOption>,
+}
+
+impl FromIterator<CompleteOption> for GenerationOptions {
+    /// Returns options with just the given ones enabled.
+    fn from_iter<I: IntoIterator<Item = CompleteOption>>(options: I) -> Self {
+        Self {
+            enabled: options.into_iter().collect(),
+        }
+    }
+}
+
+impl GenerationOptions {
+    /// Returns whether `option` is enabled.
+    pub fn get(&self, option: CompleteOption) -> bool {
+        self.enabled.contains(&option)
+    }
+
+    /// Enables or disables `option`.
+    pub fn set(&mut self, option: CompleteOption, enabled: bool) {
+        if enabled {
+            self.enabled.insert(option);
+        } else {
+            self.enabled.remove(&option);
+        }
+    }
 }
 
 /// Encapsulates a command completion specification; provides policy for how to
@@ -543,13 +552,15 @@ impl Spec {
         options: GenerationOptions,
     ) -> Answer {
         let mut processing_options = ProcessingOptions {
-            treat_as_filenames: options.file_names,
-            no_autoquote_filenames: options.no_quote,
-            no_trailing_space_at_end_of_line: options.no_space,
+            treat_as_filenames: options.get(CompleteOption::FileNames),
+            no_autoquote_filenames: options.get(CompleteOption::NoQuote),
+            no_trailing_space_at_end_of_line: options.get(CompleteOption::NoSpace),
         };
 
         // plusdirs always adds directory names; dirnames only does so when nothing else matched.
-        if options.plus_dirs || (options.dir_names && candidates.is_empty()) {
+        if options.get(CompleteOption::PlusDirs)
+            || (options.get(CompleteOption::DirNames) && candidates.is_empty())
+        {
             let mut dir_candidates = get_file_completions(
                 shell,
                 context.token_to_complete,
@@ -568,7 +579,7 @@ impl Spec {
 
         // If we still have no candidates, and bashdefault completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.bash_default {
+        if candidates.is_empty() && options.get(CompleteOption::BashDefault) {
             // TODO(completions): it's not clear what default "bash" completions means. From basic
             // testing, this doesn't seem to include basic file and directory name
             // completion.
@@ -577,10 +588,10 @@ impl Spec {
 
         // If we still have no candidates, and default completions were requested, then generate
         // those.
-        if candidates.is_empty() && options.default {
+        if candidates.is_empty() && options.get(CompleteOption::Default) {
             // N.B. We approximate "default" readline completion behavior by getting file and
             // dir completions.
-            let must_be_dir = options.dir_names;
+            let must_be_dir = options.get(CompleteOption::DirNames);
 
             let mut default_candidates =
                 get_file_completions(shell, context.token_to_complete, must_be_dir).await;
@@ -592,7 +603,7 @@ impl Spec {
         }
 
         // Sort, unless blocked by options.
-        if !options.no_sort {
+        if !options.get(CompleteOption::NoSort) {
             candidates.sort();
         }
 
@@ -1729,6 +1740,22 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generation_options_enable_and_disable_each_option() {
+        let mut options: GenerationOptions = std::iter::once(CompleteOption::NoSpace).collect();
+        assert!(options.get(CompleteOption::NoSpace));
+        assert!(!options.get(CompleteOption::NoSort));
+
+        options.set(CompleteOption::NoSort, true);
+        options.set(CompleteOption::NoSpace, false);
+        assert!(options.get(CompleteOption::NoSort));
+        assert!(!options.get(CompleteOption::NoSpace));
+        assert_eq!(
+            options,
+            std::iter::once(CompleteOption::NoSort).collect::<GenerationOptions>()
+        );
+    }
 
     #[test]
     fn special_specs_have_bash_names() {
