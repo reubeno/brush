@@ -95,8 +95,8 @@ struct CommonCompleteCommandArgs {
 
 impl CommonCompleteCommandArgs {
     fn create_spec(&self) -> completion::Spec {
-        let mut spec = completion::Spec {
-            options: completion::GenerationOptions::default(),
+        completion::Spec {
+            options: self.options.iter().copied().collect(),
             actions: self.resolve_actions(),
             glob_pattern: self.glob_pattern.clone(),
             word_list: self.word_list.clone(),
@@ -105,22 +105,7 @@ impl CommonCompleteCommandArgs {
             filter_pattern: self.filter_pattern.clone(),
             prefix: self.prefix.clone(),
             suffix: self.suffix.clone(),
-        };
-
-        for option in &self.options {
-            match option {
-                CompleteOption::BashDefault => spec.options.bash_default = true,
-                CompleteOption::Default => spec.options.default = true,
-                CompleteOption::DirNames => spec.options.dir_names = true,
-                CompleteOption::FileNames => spec.options.file_names = true,
-                CompleteOption::NoQuote => spec.options.no_quote = true,
-                CompleteOption::NoSort => spec.options.no_sort = true,
-                CompleteOption::NoSpace => spec.options.no_space = true,
-                CompleteOption::PlusDirs => spec.options.plus_dirs = true,
-            }
         }
-
-        spec
     }
 
     /// Returns the actions selected, like bash, each once, in the fixed order bash runs them
@@ -289,18 +274,18 @@ impl CompleteCommand {
 
         // Options, in the order bash shows them.
         let options = &spec.options;
-        for (enabled, option) in [
-            (options.bash_default, "bashdefault"),
-            (options.default, "default"),
-            (options.dir_names, "dirnames"),
-            (options.file_names, "filenames"),
-            (options.no_quote, "noquote"),
-            (options.no_sort, "nosort"),
-            (options.no_space, "nospace"),
-            (options.plus_dirs, "plusdirs"),
+        for (option, name) in [
+            (CompleteOption::BashDefault, "bashdefault"),
+            (CompleteOption::Default, "default"),
+            (CompleteOption::DirNames, "dirnames"),
+            (CompleteOption::FileNames, "filenames"),
+            (CompleteOption::NoQuote, "noquote"),
+            (CompleteOption::NoSort, "nosort"),
+            (CompleteOption::NoSpace, "nospace"),
+            (CompleteOption::PlusDirs, "plusdirs"),
         ] {
-            if enabled {
-                write!(s, " -o {option}")?;
+            if options.get(option) {
+                write!(s, " -o {name}")?;
             }
         }
 
@@ -430,7 +415,7 @@ impl builtins::Command for CompGenCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut spec = self.common_args.create_spec();
-        spec.options.no_sort = true;
+        spec.options.set(CompleteOption::NoSort, true);
 
         let token_to_complete = self.word.as_deref().unwrap_or_default();
 
@@ -517,10 +502,10 @@ impl builtins::Command for CompOptCommand {
         let mut options =
             HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
         for option in &self.enabled_options {
-            options.insert(option.clone(), true);
+            options.insert(*option, true);
         }
         for option in &self.disabled_options {
-            options.insert(option.clone(), false);
+            options.insert(*option, false);
         }
 
         if !self.names.is_empty()
@@ -596,16 +581,7 @@ impl CompOptCommand {
         I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
     {
         for (option, value) in options {
-            match option {
-                CompleteOption::BashDefault => target_options.bash_default = *value,
-                CompleteOption::Default => target_options.default = *value,
-                CompleteOption::DirNames => target_options.dir_names = *value,
-                CompleteOption::FileNames => target_options.file_names = *value,
-                CompleteOption::NoQuote => target_options.no_quote = *value,
-                CompleteOption::NoSort => target_options.no_sort = *value,
-                CompleteOption::NoSpace => target_options.no_space = *value,
-                CompleteOption::PlusDirs => target_options.plus_dirs = *value,
-            }
+            target_options.set(*option, *value);
         }
     }
 }
