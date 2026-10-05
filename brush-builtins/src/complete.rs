@@ -1,7 +1,8 @@
-use clap::{Parser, ValueEnum as _};
+use clap::{Parser, builder::TypedValueParser as _};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
+use strum::{EnumMessage, IntoEnumIterator};
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecName, SpecialSpec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
@@ -9,11 +10,11 @@ use brush_core::{ExecutionExitCode, ExecutionResult, builtins, error, escape};
 #[derive(Parser)]
 struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
-    #[arg(short = 'o')]
+    #[arg(short = 'o', value_parser = name_parser::<CompleteOption>())]
     options: Vec<CompleteOption>,
 
     /// Actions to apply to generate completions.
-    #[arg(short = 'A')]
+    #[arg(short = 'A', value_parser = name_parser::<CompleteAction>())]
     actions: Vec<CompleteAction>,
 
     /// File glob pattern to be expanded to generate completions.
@@ -44,53 +45,84 @@ struct CommonCompleteCommandArgs {
     #[arg(short = 'S', allow_hyphen_values = true)]
     suffix: Option<String>,
 
-    /// Complete with valid aliases.
-    #[arg(short = 'a')]
-    action_alias: bool,
+    /// Actions selected with their own flags (e.g. `-a`).
+    #[clap(flatten)]
+    action_flags: ActionFlags,
+}
 
-    /// Complete with names of shell builtins.
-    #[arg(short = 'b')]
-    action_builtin: bool,
+/// Returns a parser for the name of one of `E`'s variants (e.g. `alias` for
+/// [`CompleteAction::Alias`]), which lists the names, and describes each with its docs.
+fn name_parser<E>() -> impl clap::builder::TypedValueParser<Value = E>
+where
+    E: IntoEnumIterator + EnumMessage + std::str::FromStr + Clone + Send + Sync + 'static,
+    &'static str: From<E>,
+    E::Err: std::error::Error + Send + Sync + 'static,
+{
+    let names = E::iter().map(|variant| {
+        let help = help_for(&variant);
+        clap::builder::PossibleValue::new(<&'static str>::from(variant)).help(help)
+    });
+    clap::builder::PossibleValuesParser::new(names).try_map(|name| name.parse::<E>())
+}
 
-    /// Complete with names of executable commands.
-    #[arg(short = 'c')]
-    action_command: bool,
+/// Returns the help for `variant`: its docs, without a trailing period, as clap shows help.
+fn help_for(variant: &impl EnumMessage) -> &'static str {
+    let docs = variant.get_documentation().unwrap_or_default();
+    docs.strip_suffix('.').unwrap_or(docs)
+}
 
-    /// Complete with directory names.
-    #[arg(short = 'd')]
-    action_directory: bool,
+/// The actions with flags of their own in `complete` and `compgen`, and those flags (e.g.
+/// `a`, for `-a`, which is short for `-A alias`), in the order bash shows them. Each flag
+/// is also its argument's clap ID.
+const ACTION_FLAGS: [(&str, CompleteAction); 12] = [
+    ("a", CompleteAction::Alias),
+    ("b", CompleteAction::Builtin),
+    ("c", CompleteAction::Command),
+    ("d", CompleteAction::Directory),
+    ("e", CompleteAction::Export),
+    ("f", CompleteAction::File),
+    ("g", CompleteAction::Group),
+    ("j", CompleteAction::Job),
+    ("k", CompleteAction::Keyword),
+    ("s", CompleteAction::Service),
+    ("u", CompleteAction::User),
+    ("v", CompleteAction::Variable),
+];
 
-    /// Complete with names of exported shell variables.
-    #[arg(short = 'e')]
-    action_exported: bool,
+/// The actions selected with their own flags (see [`ACTION_FLAGS`]), which this parses.
+struct ActionFlags(Vec<CompleteAction>);
 
-    /// Complete with filenames.
-    #[arg(short = 'f')]
-    action_file: bool,
+impl clap::FromArgMatches for ActionFlags {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let actions = ACTION_FLAGS
+            .iter()
+            .filter(|(flag, _)| matches.get_flag(flag))
+            .map(|(_, action)| *action)
+            .collect();
+        Ok(Self(actions))
+    }
 
-    /// Complete with valid user groups.
-    #[arg(short = 'g')]
-    action_group: bool,
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
+}
 
-    /// Complete with job specs.
-    #[arg(short = 'j')]
-    action_job: bool,
+impl clap::Args for ActionFlags {
+    fn augment_args(cmd: clap::Command) -> clap::Command {
+        ACTION_FLAGS.iter().fold(cmd, |cmd, (flag, action)| {
+            cmd.arg(
+                clap::Arg::new(*flag)
+                    .short(flag.chars().next())
+                    .action(clap::ArgAction::SetTrue)
+                    .help(help_for(action)),
+            )
+        })
+    }
 
-    /// Complete with keywords.
-    #[arg(short = 'k')]
-    action_keyword: bool,
-
-    /// Complete with names of system services.
-    #[arg(short = 's')]
-    action_service: bool,
-
-    /// Complete with valid usernames.
-    #[arg(short = 'u')]
-    action_user: bool,
-
-    /// Complete with names of shell variables.
-    #[arg(short = 'v')]
-    action_variable: bool,
+    fn augment_args_for_update(cmd: clap::Command) -> clap::Command {
+        Self::augment_args(cmd)
+    }
 }
 
 impl CommonCompleteCommandArgs {
@@ -111,31 +143,9 @@ impl CommonCompleteCommandArgs {
     /// Returns the actions selected, like bash, each once, in the fixed order bash runs them
     /// in (that of [`CompleteAction`]'s variants), however they were given.
     fn resolve_actions(&self) -> Vec<CompleteAction> {
-        let mut actions = self.actions.clone();
-
-        actions.extend(
-            [
-                (self.action_alias, CompleteAction::Alias),
-                (self.action_builtin, CompleteAction::Builtin),
-                (self.action_command, CompleteAction::Command),
-                (self.action_directory, CompleteAction::Directory),
-                (self.action_exported, CompleteAction::Export),
-                (self.action_file, CompleteAction::File),
-                (self.action_group, CompleteAction::Group),
-                (self.action_job, CompleteAction::Job),
-                (self.action_keyword, CompleteAction::Keyword),
-                (self.action_service, CompleteAction::Service),
-                (self.action_user, CompleteAction::User),
-                (self.action_variable, CompleteAction::Variable),
-            ]
-            .into_iter()
-            .filter_map(|(enabled, action)| enabled.then_some(action)),
-        );
-
-        CompleteAction::value_variants()
-            .iter()
-            .filter(|action| actions.contains(action))
-            .cloned()
+        let selected: Vec<_> = self.actions.iter().chain(&self.action_flags.0).collect();
+        CompleteAction::iter()
+            .filter(|action| selected.contains(&action))
             .collect()
     }
 }
@@ -274,29 +284,20 @@ impl CompleteCommand {
 
         // Options, in the order bash shows them.
         let options = &spec.options;
-        for (option, name) in [
-            (CompleteOption::BashDefault, "bashdefault"),
-            (CompleteOption::Default, "default"),
-            (CompleteOption::DirNames, "dirnames"),
-            (CompleteOption::FileNames, "filenames"),
-            (CompleteOption::NoQuote, "noquote"),
-            (CompleteOption::NoSort, "nosort"),
-            (CompleteOption::NoSpace, "nospace"),
-            (CompleteOption::PlusDirs, "plusdirs"),
-        ] {
-            if options.get(option) {
-                write!(s, " -o {name}")?;
-            }
+        for option in CompleteOption::iter().filter(|option| options.get(*option)) {
+            write!(s, " -o {}", <&str>::from(option))?;
         }
 
         // Like bash, show each action once: those with their own flag first, then the rest
         // with `-A`, each in the order bash lists them.
-        let actions: Vec<_> = spec.actions.iter().map(action_flag).collect();
-        for own_flag in [true, false] {
-            for flag in CompleteAction::value_variants().iter().map(action_flag) {
-                if actions.contains(&flag) && flag.starts_with("-A ") != own_flag {
-                    write!(s, " {flag}")?;
-                }
+        for (flag, action) in &ACTION_FLAGS {
+            if spec.actions.contains(action) {
+                write!(s, " -{flag}")?;
+            }
+        }
+        for action in CompleteAction::iter() {
+            if spec.actions.contains(&action) && !ACTION_FLAGS.iter().any(|(_, a)| *a == action) {
+                write!(s, " -A {}", <&str>::from(action))?;
             }
         }
 
@@ -363,37 +364,6 @@ impl CompleteCommand {
         context.shell.completion_config_mut().set(name, config);
 
         Ok(true)
-    }
-}
-
-/// Returns the flag that selects `action` in `complete` and `compgen` (e.g. `-a`, or
-/// `-A arrayvar` for an action with no flag of its own).
-const fn action_flag(action: &CompleteAction) -> &'static str {
-    match action {
-        CompleteAction::Alias => "-a",
-        CompleteAction::ArrayVar => "-A arrayvar",
-        CompleteAction::Binding => "-A binding",
-        CompleteAction::Builtin => "-b",
-        CompleteAction::Command => "-c",
-        CompleteAction::Directory => "-d",
-        CompleteAction::Disabled => "-A disabled",
-        CompleteAction::Enabled => "-A enabled",
-        CompleteAction::Export => "-e",
-        CompleteAction::File => "-f",
-        CompleteAction::Function => "-A function",
-        CompleteAction::Group => "-g",
-        CompleteAction::HelpTopic => "-A helptopic",
-        CompleteAction::HostName => "-A hostname",
-        CompleteAction::Job => "-j",
-        CompleteAction::Keyword => "-k",
-        CompleteAction::Running => "-A running",
-        CompleteAction::Service => "-s",
-        CompleteAction::SetOpt => "-A setopt",
-        CompleteAction::ShOpt => "-A shopt",
-        CompleteAction::Signal => "-A signal",
-        CompleteAction::Stopped => "-A stopped",
-        CompleteAction::User => "-u",
-        CompleteAction::Variable => "-v",
     }
 }
 
@@ -477,9 +447,9 @@ pub(crate) struct CompOptCommand {
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o', value_name = "OPT")]
+    #[arg(short = 'o', value_name = "OPT", value_parser = name_parser::<CompleteOption>())]
     enabled_options: Vec<CompleteOption>,
-    #[arg(long = concat!("+o"), hide = true)]
+    #[arg(long = "+o", hide = true, value_parser = name_parser::<CompleteOption>())]
     disabled_options: Vec<CompleteOption>,
 
     /// If specified, scopes updates to completions of the named commands.
