@@ -159,6 +159,7 @@ strip-ansi-escapes = "0.2.1"
 test-with = { version = "0.17.0", default-features = false, features = [
     "executable",
 ] }
+tokio = { version = "1.52.3", features = ["time"] }
 version-compare = "0.2.1"
 walkdir = "2.5.0"
 which = "8.0.2"
