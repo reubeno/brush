@@ -5,6 +5,33 @@ cases:
       complete -W foo mycmd
       complete
 
+  - name: "complete -p with no such completion spec fails"
+    stdin: |
+      strip() { sed 's/^.*complete:/complete:/'; }
+
+      complete -p mycmd 2>err; echo "rc=$?"; strip <err
+      for flag in -D -E -I; do
+        complete -p $flag 2>err; echo "rc=$?"; strip <err
+      done
+      rm err
+
+  - name: "complete -p lists every spec, including -D, -E, and -I"
+    stdin: |
+      complete -W b bcmd
+      complete -D -W x
+      complete -E -F f
+      complete -I -o nospace -W y
+      complete -W a acmd
+      # Check which specs are listed, not how: bash lists them in its hash table's order.
+      names() { grep -oE -- ' -[DEI]( |$)|[ab]cmd$' | tr -d ' ' | sort; }
+      complete -p | names
+      echo ---
+      complete | names
+      echo ---
+      for name in -D -E -I _DefaultCmD_; do
+        complete -p $name | grep -oE -- "-W 'x'|-F f|-W 'y'"
+      done
+
   - name: "Roundtrip: complete -W"
     stdin: |
       complete -W foo mycmd
