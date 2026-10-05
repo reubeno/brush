@@ -422,3 +422,26 @@ cases:
     stdin: |
       compgen -C 'printf "<%s>\n"' -- 'a,b' | grep -F '<a,b>'
       compgen -C 'printf "<%s>\n"' -- '{a,b}' | grep -F '<{a,b}>'
+
+  - name: "compgen -F leaves no COMP_* variables set"
+    stdin: |
+      f() { :; }
+      compgen -F f x 2>/dev/null
+      echo "[${COMP_LINE-unset}] [${COMP_POINT-unset}] [${COMP_CWORD-unset}]"
+
+  - name: "compgen -F leaves no COMP_* variables set, even ones set before or re-created"
+    stdin: |
+      COMP_LINE=user
+      f() { unset COMP_WORDS COMP_CWORD; COMP_WORDS=(n e w); COMP_CWORD=1; }
+      compgen -F f x 2>/dev/null
+      echo "[${COMP_LINE-unset}] [${COMP_WORDS[*]-unset}] [${COMP_CWORD-unset}]"
+
+  - name: "compgen -F function's prefix assignment to a COMP_* variable is temporary"
+    stdin: |
+      f() {
+        before=$COMP_LINE
+        COMP_LINE=changed true
+        [[ $COMP_LINE == "$before" ]] && echo same
+        env | grep -c ^COMP_LINE
+      }
+      compgen -F f x 2>/dev/null

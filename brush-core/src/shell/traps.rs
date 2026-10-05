@@ -67,24 +67,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let mut params = params.clone();
         params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
-        // Preserve $? across trap handler execution so the handler doesn't
-        // clobber the status that triggered it.
-        let orig_last_exit_status = self.last_exit_status;
-
-        // N.B. We use manual enter/leave rather than an RAII guard because a guard
-        // would need to hold `&mut Shell`, preventing the mutable borrow required by
-        // `run_string()`. This is safe because `result` is captured into a variable
-        // (never early-returned with `?`), so `leave_trap_handler()` always runs.
-        self.enter_trap_handler(signal, Some(&handler));
-
-        let result = self
+        // The guard leaves the handler, restoring `$?`, once this finishes -- or is cancelled.
+        self.enter_trap_handler(signal, Some(&handler))
             .run_string(&handler.command, &handler.source_info, &params)
-            .await;
-
-        self.leave_trap_handler();
-        self.last_exit_status = orig_last_exit_status;
-
-        result
+            .await
     }
 
     /// Returns whether the given trap signal is inherited in the current

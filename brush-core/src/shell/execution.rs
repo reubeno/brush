@@ -141,16 +141,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let script_positional_args = args.map(Into::into);
 
-        self.call_stack
-            .push_script(call_type, source_info, script_positional_args);
-
-        let result = self
+        self.enter_script(call_type, source_info, script_positional_args)
             .run_parsed_result(parse_result, source_info, params)
-            .await;
-
-        self.call_stack.pop();
-
-        result
+            .await
     }
 
     /// Executes the given string as a shell program, returning the resulting exit status.

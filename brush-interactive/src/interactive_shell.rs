@@ -119,11 +119,16 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
 
         drop(shell);
 
-        loop {
-            let result = self.run_interactively_once().await?;
+        // Run commands until the shell exits or input ends. The loop yields its result
+        // rather than returning early on an error, so that the session still ends below.
+        let looped = loop {
+            let result = match self.run_interactively_once().await {
+                Ok(result) => result,
+                Err(err) => break Err(err),
+            };
             match result {
                 InteractiveExecutionResult::Executed(result) if result.is_exit() => {
-                    break;
+                    break Ok(());
                 }
                 InteractiveExecutionResult::Executed(brush_core::ExecutionResult {
                     next_control_flow:
@@ -142,19 +147,23 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
                     drop(shell);
                 }
                 InteractiveExecutionResult::Eof => {
-                    break;
+                    break Ok(());
                 }
             }
 
             if self.shell.lock().await.options().exit_after_one_command {
                 announce_exit = false;
-                break;
+                break Ok(());
             }
-        }
+        };
 
         let mut shell = self.shell.lock().await;
 
-        shell.end_interactive_session()?;
+        // End the session whether or not the loop failed. If both failed, the loop's error
+        // is the one to report.
+        let ended = shell.end_interactive_session();
+        looped?;
+        ended?;
 
         if announce_exit {
             writeln!(shell.stderr(), "exit")?;
@@ -409,5 +418,43 @@ impl crate::term_detection::TerminalEnvironment for HostEnvironment {
     /// * `name` - The name of the environment variable to get.
     fn get_env_var(&self, name: &str) -> Option<String> {
         std::env::var(name).ok()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use super::*;
+
+    /// An input backend whose every read fails.
+    struct FailingInput;
+
+    impl InputBackend for FailingInput {
+        fn read_line(
+            &mut self,
+            _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
+            _prompt: InteractivePrompt,
+        ) -> Result<ReadResult, ShellError> {
+            Err(std::io::Error::other("input failed").into())
+        }
+    }
+
+    /// An interactive session ends even when the loop fails, so the shell isn't left in it.
+    #[tokio::test]
+    async fn failed_interactive_loop_ends_its_session() -> Result<(), ShellError> {
+        let shell = brush_core::Shell::builder()
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
+            .build()
+            .await?;
+        let shell = std::sync::Arc::new(tokio::sync::Mutex::new(shell));
+        let mut input = FailingInput;
+        let mut interactive =
+            InteractiveShell::new(&shell, &mut input, &InteractiveOptions::default())?;
+
+        assert!(interactive.run_interactively().await.is_err());
+        assert!(shell.lock().await.call_stack().is_empty());
+
+        Ok(())
     }
 }
