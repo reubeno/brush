@@ -181,6 +181,49 @@ cases:
 
       complete -p
 
+  - name: "complete -p prints options, actions, and arguments in bash's order"
+    stdin: |
+      complete -v -o nospace -A function -a -o default -F fn -G '*.c' -W 'w1 w2' -X '*.x' -P pre -S suf -C cmd mycmd
+      complete -p mycmd
+      complete -A signal -A arrayvar -b -a -A builtin other
+      complete -p other
+      complete -X '*.y' -W x 'a b'
+      complete -p 'a b'
+
+  - name: "complete -p output round-trips"
+    stdin: |
+      complete -o filenames -A function -X '*.x' -P pre -W 'w1 w2' mycmd
+      complete -D -X '*.y' -F fn
+      before=$(complete -p mycmd; complete -p -D)
+      complete -r
+      eval "$before"
+      after=$(complete -p mycmd; complete -p -D)
+      echo "$after"
+      [[ $before == "$after" ]] && echo "round-tripped"
+
+  - name: "complete -p quotes names like bash, so its output round-trips"
+    stdin: |
+      complete -F '#fn' -W x '~'
+      complete -F a,b cmd1
+      complete -F fn 'a,b'
+      before=$(complete -p '~' cmd1 'a,b')
+      echo "$before"
+      complete -r
+      eval "$before"
+      after=$(complete -p '~' cmd1 'a,b')
+      [[ $before == "$after" ]] && echo "round-tripped"
+
+  - name: "complete actions are generated once each, in bash's order"
+    stdin: |
+      alias zzqa=1
+      zzqf() { :; }
+      compgen -A function -A alias zzq
+      echo ---
+      compgen -A alias -A alias zzq
+      echo ---
+      complete -o nosort -A function -A alias -A function mycmd
+      complete -p mycmd
+
   - name: "compgen -W preserves duplicates"
     stdin: |
       compgen -W "a b a c b"

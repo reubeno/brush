@@ -109,7 +109,12 @@ fn postprocess_completion_candidate(
                 _ => escape::QuoteMode::BackslashEscape,
             };
 
-            candidate = escape::quote_completion_if_needed(&candidate, quote_mode).to_string();
+            // Like bash, leave a `~` unquoted, so a `~user` completion still expands.
+            let options = escape::QuoteOptions::builder()
+                .preferred_mode(quote_mode)
+                .leave_tilde(true)
+                .build();
+            candidate = escape::quote(&candidate, &options).to_string();
         }
     }
     if completing_end_of_line && !options.no_trailing_space_at_end_of_line {
@@ -148,5 +153,7 @@ mod tests {
         // ...but a leading `#` is, so it doesn't start a comment.
         assert_eq!(quoted_file_name("#hash"), r"\#hash ");
         assert_eq!(quoted_file_name("a b"), r"a\ b ");
+        // Like bash, a comma isn't special on its own.
+        assert_eq!(quoted_file_name("a,b"), "a,b ");
     }
 }

@@ -232,3 +232,26 @@ cases:
       [[ a == "$x" ]]
       [[ a == "$w" ]]
       [[ a != "$y" ]]
+
+  - name: "Traces leave commas unquoted, like bash"
+    stdin: |
+      set -x
+      : a,b "{a,b}" ,
+
+  - name: "Traces of assignments leave commas unquoted, like bash"
+    stdin: |
+      set -x
+      t=a,b
+      t+=c,d
+      arr=(a,b '{c,d}')
+
+  - name: "[[ ]] traces leave commas in unary operands unquoted, like bash"
+    stdin: |
+      set -x
+      [[ -n a,b ]]
+
+  - name: "[[ ]] traces leave commas in patterns unquoted, like bash"
+    min_oracle_version: 5.3 # bash 5.2 escapes every char of a traced pattern
+    stdin: |
+      set -x
+      [[ x == a,b ]]
