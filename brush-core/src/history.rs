@@ -190,12 +190,11 @@ impl History {
             file_options.write(true).truncate(true);
         }
 
-        let mut file = file_options.create(true).open(history_file_path.as_ref())?;
+        let mut file =
+            std::io::BufWriter::new(file_options.create(true).open(history_file_path.as_ref())?);
 
-        for index in 0..self.items.len() {
-            let Some(item) = self.items.get(index) else {
-                continue;
-            };
+        let mut written = Vec::new();
+        for (index, item) in self.items.iter().enumerate() {
             if unsaved_items_only && !item.dirty {
                 continue;
             }
@@ -206,12 +205,20 @@ impl History {
 
             writeln!(file, "{}", item.command_line)?;
 
-            if unsaved_items_only && let Some(item) = self.items.get_mut(index) {
-                item.dirty = false;
+            if unsaved_items_only {
+                written.push(index);
             }
         }
 
-        file.flush()?;
+        // Only once they're all written out, mark the items saved: if writing fails, they
+        // stay unsaved, so a later flush retries them.
+        file.into_inner()
+            .map_err(std::io::IntoInnerError::into_error)?;
+        for index in written {
+            if let Some(item) = self.items.get_mut(index) {
+                item.dirty = false;
+            }
+        }
 
         Ok(())
     }
