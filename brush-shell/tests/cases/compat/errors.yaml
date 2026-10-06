@@ -375,6 +375,15 @@ cases:
       . ./non-existent-file
       echo "after builtin call (status $?)"
 
+  - name: "Prefix assignment to a readonly variable (POSIX mode, non-interactive)"
+    known_failure: true # in POSIX mode, bash doesn't run the command; brush does
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      readonly R=1
+      R=2 printf 'ran\n'
+      echo "after"
+
   - name: "errexit with failing command (non-interactive)"
     stdin: |
       set -e
