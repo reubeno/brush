@@ -63,48 +63,6 @@ impl std::fmt::Display for EnvironmentScope {
     }
 }
 
-/// A guard that pushes a scope onto a shell environment and pops it when dropped.
-pub(crate) struct ScopeGuard<'a, SE: extensions::ShellExtensions> {
-    scope_type: EnvironmentScope,
-    shell: &'a mut crate::Shell<SE>,
-    detached: bool,
-}
-
-impl<'a, SE: extensions::ShellExtensions> ScopeGuard<'a, SE> {
-    /// Creates a new scope guard, pushing the given scope type onto the environment.
-    ///
-    /// # Arguments
-    ///
-    /// * `shell` - The shell whose environment to modify.
-    /// * `scope_type` - The type of scope to push.
-    pub fn new(shell: &'a mut crate::Shell<SE>, scope_type: EnvironmentScope) -> Self {
-        shell.env_mut().push_scope(scope_type);
-        Self {
-            scope_type,
-            shell,
-            detached: false,
-        }
-    }
-
-    /// Returns a mutable reference to the shell.
-    pub const fn shell(&mut self) -> &mut crate::Shell<SE> {
-        self.shell
-    }
-
-    /// Detaches the guard, preventing it from popping the scope on drop.
-    pub const fn detach(&mut self) {
-        self.detached = true;
-    }
-}
-
-impl<SE: extensions::ShellExtensions> Drop for ScopeGuard<'_, SE> {
-    fn drop(&mut self) {
-        if !self.detached {
-            let _ = self.shell.env_mut().pop_scope(self.scope_type);
-        }
-    }
-}
-
 /// Represents the shell variable environment, composed of a stack of scopes.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -133,6 +91,11 @@ impl ShellEnvironment {
         }
     }
 
+    /// Returns how many scopes deep the environment is.
+    pub(crate) const fn scope_depth(&self) -> usize {
+        self.scopes.len()
+    }
+
     /// Pushes a new scope of the given type onto the environment's scope stack.
     ///
     /// # Arguments
@@ -149,11 +112,15 @@ impl ShellEnvironment {
     /// * `expected_scope_type` - The type of scope that is expected to be atop the stack.
     pub fn pop_scope(&mut self, expected_scope_type: EnvironmentScope) -> Result<(), error::Error> {
         // TODO(env): Should we panic instead on failure? It's effectively a broken invariant.
-        match self.scopes.pop() {
-            Some((actual_scope_type, _)) if actual_scope_type == expected_scope_type => Ok(()),
+        // Either way, don't pop a scope that isn't the one expected.
+        match self.scopes.last() {
+            Some((actual_scope_type, _)) if *actual_scope_type == expected_scope_type => {
+                self.scopes.pop();
+                Ok(())
+            }
             Some((actual_scope_type, _)) => Err(error::ErrorKind::UnexpectedScopeType {
                 expected: expected_scope_type,
-                actual: actual_scope_type,
+                actual: *actual_scope_type,
             }
             .into()),
             None => Err(error::ErrorKind::MissingScope.into()),

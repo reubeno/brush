@@ -307,12 +307,6 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
     /// Optional override for the `argv[0]` value presented to an externally
     /// spawned process. When `None`, `command_name` is used.
     pub argv0: Option<String>,
-
-    /// Optionally provides a function that can run after execution occurs. Note
-    /// that it is *not* invoked if the shell is discarded during the execution
-    /// process.
-    #[allow(clippy::type_complexity)]
-    pub post_execute: Option<fn(&mut Shell<SE>) -> Result<(), error::Error>>,
 }
 
 impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
@@ -342,7 +336,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             path_dirs: None,
             process_group_id: None,
             argv0: None,
-            post_execute: None,
         }
     }
 
@@ -407,10 +400,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
                 // that here before reporting the error.
                 let last_arg = Self::take_last_arg(&self.args);
                 self.shell.update_last_arg_variable(last_arg);
-
-                if let Some(post_execute) = self.post_execute {
-                    let _ = post_execute(&mut self.shell);
-                }
 
                 Err(ErrorKind::CommandNotFound(self.command_name).into())
             }
@@ -491,10 +480,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Update $_ after command execution.
         shell.update_last_arg_variable(last_arg);
 
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
-        }
-
         let result = result?;
 
         Ok(result.into())
@@ -522,10 +507,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // where the caller observes only the invocation's last argument.
         shell.update_last_arg_variable(last_arg);
 
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
-        }
-
         result
     }
 
@@ -550,10 +531,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
         // Update $_ after command execution.
         shell.update_last_arg_variable(last_arg);
-
-        if let Some(post_execute) = self.post_execute {
-            let _ = post_execute(&mut shell);
-        }
 
         result
     }
@@ -713,23 +690,20 @@ pub(crate) async fn invoke_shell_function(
 
     let positional_args = args.iter().map(|a| a.to_string());
 
-    // Note that we're going deeper. Once we do this, we need to make sure we don't bail early
-    // before "exiting" the function.
-    context.shell.enter_function(
-        context.command_name.as_str(),
-        &function,
-        positional_args,
-        &context.params,
-    )?;
+    // Enter the function; it's left however its body ends, even if it's cancelled.
+    let mut shell =
+        context
+            .shell
+            .enter_function(context.command_name.as_str(), &function, positional_args)?;
 
     // A function executes within the current shell process and shares its caller's open files,
     // so the parameters are passed through by shared reference rather than cloned. This prevents
     // direct mutation of the caller's `ExecutionParameters` open-file table, though the function
     // may still change the shell's persistent open files via builtins (e.g. `exec`).
-    let result = body.execute(context.shell, &context.params).await;
+    let result = body.execute(&mut shell, &context.params).await;
 
-    // We've come back out, reflect it.
-    context.shell.leave_function()?;
+    // Leave the function: pop its frame and its local variables.
+    drop(shell);
 
     // Get the actual execution result from the body of the function.
     let mut result = result?;

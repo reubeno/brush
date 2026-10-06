@@ -13,7 +13,7 @@ use crate::{
     patterns,
     sys::{self, users},
     trace_categories, traps,
-    variables::{self, ShellValueLiteral},
+    variables::{self, ShellValue, ShellValueLiteral, ShellVariable},
 };
 use brush_parser::unquote_str;
 
@@ -851,8 +851,7 @@ impl Spec {
         function_name: &str,
         context: &Context<'_>,
     ) -> Result<Answer, error::Error> {
-        // TODO(completions): Don't pollute the persistent environment with these?
-        let vars_and_values: [(&str, ShellValueLiteral); 6] = [
+        let vars_and_values: [(&str, ShellValue); 6] = [
             ("COMP_LINE", context.input_line.into()),
             ("COMP_POINT", context.cursor_index.to_string().into()),
             ("COMP_KEY", context.trigger.comp_key().to_string().into()),
@@ -870,19 +869,18 @@ impl Spec {
         ];
 
         tracing::debug!(target: trace_categories::COMPLETION, "[calling completion func '{function_name}']: {}",
-            vars_and_values.iter().map(|(k, v)| std::format!("{k}={v}")).collect::<Vec<String>>().join(" "));
+            vars_and_values.iter().map(|(k, v)| std::format!("{k}={v:?}")).collect::<Vec<String>>().join(" "));
 
-        let mut vars_to_remove = Vec::with_capacity(vars_and_values.len());
+        // Set the variables in a scope of their own, left when the function returns -- or
+        // when the completion is cancelled.
+        let names = vars_and_values.each_ref().map(|(name, _)| *name);
+        let mut scoped = shell.enter_scope(env::EnvironmentScope::Command);
         for (var, value) in vars_and_values {
-            shell.env_mut().update_or_add(
+            scoped.env_mut().add(
                 var,
-                value,
-                |_| Ok(()),
-                env::EnvironmentLookup::Anywhere,
-                env::EnvironmentScope::Global,
+                ShellVariable::new(value),
+                env::EnvironmentScope::Command,
             )?;
-
-            vars_to_remove.push(var);
         }
 
         let mut args = vec![
@@ -894,27 +892,23 @@ impl Spec {
         }
 
         // Suppress trap delivery during completion function invocation.
-        // N.B. We use manual acquire/release rather than an RAII guard because an
-        // RAII guard would need to hold `&mut Shell`, preventing the mutable borrow
-        // required by `invoke_function()`. This is safe because `invoke_result` is
-        // captured into a variable (never early-returned with `?`), so
-        // `release_trap_delivery_block()` always runs.
-        shell.acquire_trap_delivery_block();
-
-        let params = shell.default_exec_params();
-        let invoke_result = shell
+        let mut blocked = scoped.block_trap_delivery();
+        let params = blocked.default_exec_params();
+        let invoke_result = blocked
             .invoke_function(function_name, args.iter(), params)
             .await
             .map(|result| u8::from(result.exit_code));
+        // The function's done: unblock traps, and unset the variables.
+        drop(blocked);
+        drop(scoped);
+
+        // Like bash, also unset any the function set again after unsetting them, or that
+        // were set before it ran: either way, they're outside the scope just left.
+        for name in names {
+            let _ = shell.env_mut().unset(name);
+        }
 
         tracing::debug!(target: trace_categories::COMPLETION, "[completion function '{function_name}' returned: {invoke_result:?}]");
-
-        shell.release_trap_delivery_block();
-
-        // Make a best-effort attempt to unset the temporary variables.
-        for var_name in vars_to_remove {
-            let _ = shell.env_mut().unset(var_name);
-        }
 
         let result = invoke_result.unwrap_or_else(|e| {
             tracing::warn!(target: trace_categories::COMPLETION, "error while running completion function '{function_name}': {e}");

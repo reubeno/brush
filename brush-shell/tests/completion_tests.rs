@@ -669,18 +669,27 @@ async fn compopt_in_subshell_does_not_change_completion() -> Result<()> {
     Ok(())
 }
 
-/// A completion that's cancelled (e.g. by Ctrl-C) while its completion function runs is no
-/// longer in progress, so `compopt` acts as it does outside one.
+/// A completion that's cancelled (e.g. by Ctrl-C) while its completion function runs leaves
+/// nothing of it behind: the function's call, its variables (and the `COMP_*` ones set for
+/// it), the block on traps, or the completion in progress (so `compopt` acts as it does
+/// outside one).
 #[tokio::test(flavor = "multi_thread")]
-async fn cancelled_completion_is_no_longer_in_progress() -> Result<()> {
+async fn cancelled_completion_leaves_nothing_behind() -> Result<()> {
     let mut test_shell = TestShellNative::new().await?;
     test_shell
-        .run("_slow() { sleep 10 >/dev/null 2>&1; }; complete -F _slow mycmd")
+        .run("_slow() { local x=1; FOO=1 _block; }; _block() { sleep 10 >/dev/null 2>&1; }; complete -F _slow mycmd")
         .await?;
 
     let completion = test_shell.complete_end_of_line_full("mycmd x");
     let result = tokio::time::timeout(std::time::Duration::from_millis(500), completion).await;
     assert!(result.is_err(), "the completion should have been cancelled");
+
+    let shell = &test_shell.shell;
+    assert!(!shell.in_function());
+    assert!(shell.env_str("x").is_none());
+    assert!(shell.env_str("FOO").is_none());
+    assert!(shell.env_str("COMP_LINE").is_none());
+    assert!(!shell.call_stack().is_trap_delivery_suppressed());
 
     test_shell.run("compopt -o nospace; rc=$?").await?;
     assert_eq!(test_shell.get_var("rc").as_deref(), Some("1"));

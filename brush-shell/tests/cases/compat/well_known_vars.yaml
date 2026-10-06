@@ -265,3 +265,11 @@ cases:
         [[ $EPOCHREALTIME =~ ^[0-9]+\.[0-9]{6}$ ]] || echo "bad format: $EPOCHREALTIME"
       done
       echo "done"
+
+  - name: "Appending to SECONDS adds to its value"
+    known_failure: true # appending to a dynamic variable does nothing
+    stdin: |
+      SECONDS+=100
+      echo "$((SECONDS >= 100))"
+      f() { echo "$((SECONDS >= 200))"; }
+      SECONDS+=100 f
