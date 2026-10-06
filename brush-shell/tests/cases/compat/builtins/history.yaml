@@ -351,3 +351,148 @@ cases:
       history
       # Unset HISTFILE before exit so no wall-clock timestamp gets written to the file.
       unset HISTFILE
+
+  # Numbering: an entry's number is its position, so removing one renumbers those after
+  # it, and new entries are numbered after what's left.
+  - name: "history -d from the middle renumbers later entries"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      : c
+      history -d 2
+      : d
+      history
+
+  - name: "history -d of the last entry"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      history -d -1
+      history
+
+  - name: "history -d repeatedly"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      : c
+      : d
+      history -d 1
+      history -d 1
+      history -d 2
+      history
+
+  - name: "history -d range"
+    known_failure: true # brush's history -d takes only a single offset
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      : c
+      : d
+      history -d 2-3
+      history
+
+  - name: "history numbering after history -c"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      history -c
+      : c
+      : d
+      history
+
+  - name: "HISTCMD after history -d"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      : c
+      history -d 1
+      echo $HISTCMD
+      : d
+      echo $HISTCMD
+
+  - name: "history -a after history -d"
+    # Deletes an entry not yet appended. (See the next case for one already appended.)
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      history -a
+      : b
+      : c
+      history -d -2
+      history -a
+      echo "[histfile]"
+      cat $HISTFILE
+
+  - name: "history -a after history -d of an entry already appended"
+    # bash counts the entries to append rather than tracking which aren't saved, so
+    # deleting one already appended shifts what its next -a appends: it skips the
+    # history -d, which was never saved. brush appends it. (Arguably a bash quirk.)
+    known_failure: true
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      history -a
+      history -d 1
+      : c
+      history -a
+      echo "[histfile]"
+      cat $HISTFILE
+
+  - name: "history -w after history -d"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      : c
+      history -d 2
+      history -w
+      echo "[histfile]"
+      cat $HISTFILE
+
+  - name: "history -d in history loaded from HISTFILE"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    removed_default_args: ["--norc"]
+    args: ["-i"]
+    home_dir: "."
+    env:
+      HISTFILE: "history-file.txt"
+    test_files:
+      - path: "history-file.txt"
+        contents: |
+          one
+          two
+          three
+      - path: ".bashrc"
+        contents: |
+          unset HISTTIMEFORMAT
+    stdin: |
+      history -d 2
+      : four
+      history
+      # Unset HISTFILE before exit so the shell doesn't write it back.
+      unset HISTFILE
