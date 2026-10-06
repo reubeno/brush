@@ -16,10 +16,29 @@ pub enum EnvironmentLookup {
     Anywhere,
     /// Look only in the global scope.
     OnlyInGlobal,
-    /// Look only in the current local scope.
-    OnlyInCurrentLocal,
+    /// Look only in the innermost scope of the given type (e.g. the current function's
+    /// local scope, for [`EnvironmentScope::Local`]).
+    OnlyInCurrent(EnvironmentScope),
     /// Look only in local scopes.
     OnlyInLocal,
+}
+
+impl EnvironmentLookup {
+    /// Returns a filter that, given the environment's scopes' types from the innermost
+    /// out, says whether this policy looks in each.
+    fn scope_filter(self) -> impl FnMut(EnvironmentScope) -> bool {
+        let mut found_current = false;
+        move |scope_type| match self {
+            Self::Anywhere => true,
+            Self::OnlyInGlobal => scope_type == EnvironmentScope::Global,
+            Self::OnlyInLocal => scope_type == EnvironmentScope::Local,
+            Self::OnlyInCurrent(current) => {
+                let is_current = !found_current && scope_type == current;
+                found_current |= is_current;
+                is_current
+            }
+        }
+    }
 }
 
 /// Represents a shell environment scope.
@@ -184,42 +203,13 @@ impl ShellEnvironment {
         let mut visible_vars: HashMap<&String, &ShellVariable> =
             HashMap::with_capacity(self.entry_count);
 
-        let mut local_count = 0;
-        for (scope_type, var_map) in self.scopes.iter().rev() {
-            if matches!(scope_type, EnvironmentScope::Local) {
-                local_count += 1;
-            }
-
-            match lookup_policy {
-                EnvironmentLookup::Anywhere => (),
-                EnvironmentLookup::OnlyInGlobal => {
-                    if !matches!(scope_type, EnvironmentScope::Global) {
-                        continue;
-                    }
-                }
-                EnvironmentLookup::OnlyInCurrentLocal => {
-                    if !(matches!(scope_type, EnvironmentScope::Local) && local_count == 1) {
-                        continue;
-                    }
-                }
-                EnvironmentLookup::OnlyInLocal => {
-                    if !matches!(scope_type, EnvironmentScope::Local) {
-                        continue;
-                    }
-                }
-            }
-
+        let mut looks_in = lookup_policy.scope_filter();
+        for (_, var_map) in self.scopes.iter().rev().filter(|(t, _)| looks_in(*t)) {
             for (name, var) in var_map.iter() {
                 // Only insert the variable if it hasn't been seen yet.
                 if let hash_map::Entry::Vacant(entry) = visible_vars.entry(name) {
                     entry.insert(var);
                 }
-            }
-
-            if matches!(scope_type, EnvironmentScope::Local)
-                && matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal)
-            {
-                break;
             }
         }
 
@@ -369,43 +359,12 @@ impl ShellEnvironment {
         name: N,
         lookup_policy: EnvironmentLookup,
     ) -> Option<&ShellVariable> {
-        let mut local_count = 0;
-        for (scope_type, var_map) in self.scopes.iter().rev() {
-            if matches!(scope_type, EnvironmentScope::Local) {
-                local_count += 1;
-            }
-
-            match lookup_policy {
-                EnvironmentLookup::Anywhere => (),
-                EnvironmentLookup::OnlyInGlobal => {
-                    if !matches!(scope_type, EnvironmentScope::Global) {
-                        continue;
-                    }
-                }
-                EnvironmentLookup::OnlyInCurrentLocal => {
-                    if !(matches!(scope_type, EnvironmentScope::Local) && local_count == 1) {
-                        continue;
-                    }
-                }
-                EnvironmentLookup::OnlyInLocal => {
-                    if !matches!(scope_type, EnvironmentScope::Local) {
-                        continue;
-                    }
-                }
-            }
-
-            if let Some(var) = var_map.get(name.as_ref()) {
-                return Some(var);
-            }
-
-            if matches!(scope_type, EnvironmentScope::Local)
-                && matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal)
-            {
-                break;
-            }
-        }
-
-        None
+        let mut looks_in = lookup_policy.scope_filter();
+        self.scopes
+            .iter()
+            .rev()
+            .filter(|(t, _)| looks_in(*t))
+            .find_map(|(_, var_map)| var_map.get(name.as_ref()))
     }
 
     /// Tries to retrieve a mutable reference to a variable from the environment,
@@ -420,43 +379,12 @@ impl ShellEnvironment {
         name: N,
         lookup_policy: EnvironmentLookup,
     ) -> Option<&mut ShellVariable> {
-        let mut local_count = 0;
-        for (scope_type, var_map) in self.scopes.iter_mut().rev() {
-            if matches!(scope_type, EnvironmentScope::Local) {
-                local_count += 1;
-            }
-
-            match lookup_policy {
-                EnvironmentLookup::Anywhere => (),
-                EnvironmentLookup::OnlyInGlobal => {
-                    if !matches!(scope_type, EnvironmentScope::Global) {
-                        continue;
-                    }
-                }
-                EnvironmentLookup::OnlyInCurrentLocal => {
-                    if !(matches!(scope_type, EnvironmentScope::Local) && local_count == 1) {
-                        continue;
-                    }
-                }
-                EnvironmentLookup::OnlyInLocal => {
-                    if !matches!(scope_type, EnvironmentScope::Local) {
-                        continue;
-                    }
-                }
-            }
-
-            if let Some(var) = var_map.get_mut(name.as_ref()) {
-                return Some(var);
-            }
-
-            if matches!(scope_type, EnvironmentScope::Local)
-                && matches!(lookup_policy, EnvironmentLookup::OnlyInCurrentLocal)
-            {
-                break;
-            }
-        }
-
-        None
+        let mut looks_in = lookup_policy.scope_filter();
+        self.scopes
+            .iter_mut()
+            .rev()
+            .filter(|(t, _)| looks_in(*t))
+            .find_map(|(_, var_map)| var_map.get_mut(name.as_ref()))
     }
 
     /// Update a variable in the environment, or add it if it doesn't already exist.

@@ -185,7 +185,7 @@ impl DeclareCommand {
         };
 
         let lookup = if matches!(verb, DeclareVerb::Local) {
-            EnvironmentLookup::OnlyInCurrentLocal
+            EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
         } else {
             EnvironmentLookup::Anywhere
         };
@@ -304,7 +304,7 @@ impl DeclareCommand {
 
         // Figure out where we should look.
         let lookup = if create_var_local {
-            EnvironmentLookup::OnlyInCurrentLocal
+            EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
         } else {
             EnvironmentLookup::Anywhere
         };
@@ -573,7 +573,7 @@ impl DeclareCommand {
         }
 
         let iter_policy = if matches!(verb, DeclareVerb::Local) {
-            EnvironmentLookup::OnlyInCurrentLocal
+            EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
         } else {
             EnvironmentLookup::Anywhere
         };
