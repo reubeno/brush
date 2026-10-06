@@ -71,7 +71,10 @@ impl<SE: brush_core::ShellExtensions> reedline::History for ReedlineHistory<SE> 
         let query = reedline_history_query_into_brush(query)?;
 
         let shell = self.lock_shell();
-        let count = get_shell_history(&shell)?.search(query).iter().count();
+        let count = get_shell_history(&shell)?
+            .search(query)
+            .map_err(brush_error_to_reedline)?
+            .count();
         drop(shell);
 
         #[expect(clippy::cast_possible_wrap)]
@@ -260,4 +263,44 @@ fn get_shell_history_mut<'a, SE: brush_core::ShellExtensions>(
             feature: "load",
         })
     })
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use super::*;
+    use reedline::History as _;
+
+    /// A count is of the items that match the query.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn count_counts_matching_items() -> Result<(), Box<dyn std::error::Error>> {
+        // An interactive shell keeps history; with no HISTFILE, it's not loaded or saved.
+        let mut shell = brush_core::Shell::builder()
+            .interactive(true)
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
+            .var("HISTFILE", brush_core::ShellVariable::new(""))
+            .build()
+            .await?;
+        let history = shell.history_mut().ok_or("no history")?;
+        for line in ["ls", "echo a", "echo b"] {
+            history.add(brush_core::history::Item::new(line))?;
+        }
+        let history = ReedlineHistory {
+            shell: std::sync::Arc::new(tokio::sync::Mutex::new(shell)),
+        };
+
+        let everything =
+            || reedline::SearchQuery::everything(reedline::SearchDirection::Backward, None);
+        assert_eq!(history.count(everything())?, 3);
+
+        let mut echo = everything();
+        echo.filter = reedline::SearchFilter::from_text_search(
+            reedline::CommandLineSearch::Prefix("echo".to_owned()),
+            None,
+        );
+        assert_eq!(history.count(echo)?, 2);
+
+        Ok(())
+    }
 }

@@ -273,3 +273,24 @@ cases:
       : cmd3
       : other
       fc -l cmd 3
+
+  - name: "fc -l numbering after history -d"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      : b
+      : c
+      history -d 1
+      fc -l 1 3
+
+  - name: "history after fc -s"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      echo b
+      fc -s echo
+      history
