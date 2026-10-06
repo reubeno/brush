@@ -26,6 +26,16 @@ pub struct RunResult {
     pub duration: std::time::Duration,
 }
 
+/// The directories for a shell told where to start (see [`ShellConfig::working_dir_option`]).
+struct SeparateDirs {
+    /// An empty directory for the shell's process to run in.
+    process_dir: assert_fs::TempDir,
+    /// The test's directory, as the shell is told to start in it: canonical, as `getcwd()`
+    /// reports it to a shell started there (on macOS, the temporary directory is reached
+    /// through a symlink).
+    start_dir: PathBuf,
+}
+
 impl TestCase {
     /// Runs this test case with the given shell configuration.
     pub fn run_shell(
@@ -33,7 +43,16 @@ impl TestCase {
         shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
     ) -> Result<RunResult> {
-        let test_cmd = self.create_command_for_shell(shell_config, working_dir);
+        let separate_dirs = if shell_config.working_dir_option.is_some() {
+            Some(SeparateDirs {
+                process_dir: assert_fs::TempDir::new()?,
+                start_dir: working_dir.canonicalize()?,
+            })
+        } else {
+            None
+        };
+        let test_cmd =
+            self.create_command_for_shell(shell_config, working_dir, separate_dirs.as_ref());
 
         let result = if self.pty {
             self.run_command_with_pty(test_cmd)?
@@ -126,6 +145,7 @@ impl TestCase {
         &self,
         shell_config: &ShellConfig,
         working_dir: &assert_fs::TempDir,
+        separate_dirs: Option<&SeparateDirs>,
     ) -> std::process::Command {
         let (mut test_cmd, coverage_target_dir) = match self.invocation {
             ShellInvocation::ExecShellBinary => match &shell_config.which {
@@ -150,6 +170,10 @@ impl TestCase {
             for arg in &self.additional_test_args {
                 test_cmd.arg(arg);
             }
+        }
+
+        if let (Some(option), Some(dirs)) = (&shell_config.working_dir_option, separate_dirs) {
+            test_cmd.arg(option).arg(&dirs.start_dir);
         }
 
         for arg in &shell_config.default_args {
@@ -193,7 +217,9 @@ impl TestCase {
             test_cmd.env("HOME", abs_home_dir.to_string_lossy().to_string());
         }
 
-        test_cmd.current_dir(working_dir.to_string_lossy().to_string());
+        test_cmd.current_dir(
+            separate_dirs.map_or_else(|| working_dir.path(), |d| d.process_dir.path()),
+        );
 
         test_cmd
     }

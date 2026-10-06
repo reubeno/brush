@@ -3,7 +3,9 @@
 use crate::{error, variables};
 use std::path::PathBuf;
 
-/// A cache of paths associated with names.
+/// A cache of paths associated with names: the shell's command hash table. It stores each
+/// path as given; interpreting one is up to the shell (see
+/// [`Shell::hashed_command_path`](crate::Shell::hashed_command_path)).
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PathCache {
@@ -17,12 +19,14 @@ impl PathCache {
         self.cache.clear();
     }
 
-    /// Returns the path associated with the given name.
+    /// Returns the path associated with the given name, as it was stored. A relative path
+    /// means nothing until it's interpreted against the shell's working directory; look a
+    /// command up with [`Shell::hashed_command_path`](crate::Shell::hashed_command_path).
     ///
     /// # Arguments
     ///
     /// * `name` - The name to lookup.
-    pub fn get<S: AsRef<str>>(&self, name: S) -> Option<PathBuf> {
+    pub(crate) fn get<S: AsRef<str>>(&self, name: S) -> Option<PathBuf> {
         self.cache.get(name.as_ref()).cloned()
     }
 

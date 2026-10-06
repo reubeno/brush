@@ -211,12 +211,15 @@ pub fn default_config_path() -> Option<PathBuf> {
 ///
 /// Note: This function sets `explicit_path` to `false`. Use `load_config` for
 /// proper handling of explicit vs. default paths.
-pub fn load_from_path(path: &Path) -> ConfigLoadResult {
-    let content = match std::fs::read_to_string(path) {
+pub fn load_from_path(path: &brush_core::ResolvedPath) -> ConfigLoadResult {
+    let content = match path
+        .open(std::fs::OpenOptions::new().read(true))
+        .and_then(std::io::read_to_string)
+    {
         Ok(content) => content,
         Err(e) => {
             return ConfigLoadResult {
-                path: Some(path.to_path_buf()),
+                path: Some(path.as_path().to_path_buf()),
                 error: Some(ConfigLoadError::Io(e)),
                 ..Default::default()
             };
@@ -226,11 +229,11 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
     match toml::from_str(&content) {
         Ok(config) => ConfigLoadResult {
             config,
-            path: Some(path.to_path_buf()),
+            path: Some(path.as_path().to_path_buf()),
             ..Default::default()
         },
         Err(e) => ConfigLoadResult {
-            path: Some(path.to_path_buf()),
+            path: Some(path.as_path().to_path_buf()),
             error: Some(ConfigLoadError::Parse(e)),
             ..Default::default()
         },
@@ -243,13 +246,18 @@ pub fn load_from_path(path: &Path) -> ConfigLoadResult {
 ///
 /// * `disabled` - If true, skip loading and return defaults
 /// * `explicit_path` - If provided, use this path instead of the default
+/// * `working_dir` - The directory a relative `explicit_path` is relative to
 ///
 /// # Returns
 ///
 /// A `ConfigLoadResult` containing the configuration and any errors encountered.
 /// If `explicit_path` is provided and loading fails, the result will have
 /// `explicit_path: true` to indicate that the error should be treated as fatal.
-pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadResult {
+pub fn load_config(
+    disabled: bool,
+    explicit_path: Option<&Path>,
+    working_dir: &brush_core::ResolvedPath,
+) -> ConfigLoadResult {
     if disabled {
         return ConfigLoadResult::default();
     }
@@ -257,9 +265,9 @@ pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadRe
     let is_explicit = explicit_path.is_some();
 
     let path = match explicit_path {
-        Some(p) => p.to_path_buf(),
+        Some(p) => working_dir.join(p),
         None => match default_config_path() {
-            Some(p) => p,
+            Some(p) => working_dir.join(p),
             None => {
                 // Can't determine config path; use defaults silently
                 return ConfigLoadResult::default();
@@ -270,12 +278,16 @@ pub fn load_config(disabled: bool, explicit_path: Option<&Path>) -> ConfigLoadRe
     // If using default path and file doesn't exist, silently use defaults
     if !is_explicit && !path.exists() {
         return ConfigLoadResult {
-            path: Some(path),
+            path: Some(path.into()),
             ..Default::default()
         };
     }
 
     let mut result = load_from_path(&path);
+    // Report an explicit path the way it was given.
+    if let Some(p) = explicit_path {
+        result.path = Some(p.to_owned());
+    }
     result.explicit_path = is_explicit;
     result
 }
@@ -344,7 +356,7 @@ mod tests {
 
     #[test]
     fn load_config_disabled() {
-        let result = load_config(true, None);
+        let result = load_config(true, None, &brush_core::ResolvedPath::default());
         assert!(result.path.is_none());
         assert!(result.error.is_none());
     }
@@ -352,7 +364,7 @@ mod tests {
     #[test]
     fn load_config_nonexistent_default() {
         // When using default path and file doesn't exist, should return defaults without error
-        let result = load_config(false, None);
+        let result = load_config(false, None, &brush_core::ResolvedPath::default());
         // We may or may not get a path depending on platform, but shouldn't error
         assert!(result.error.is_none());
     }
@@ -360,7 +372,7 @@ mod tests {
     #[test]
     fn load_config_nonexistent_explicit() {
         let path = Path::new("/nonexistent/path/to/config.toml");
-        let result = load_config(false, Some(path));
+        let result = load_config(false, Some(path), &brush_core::ResolvedPath::default());
         assert!(result.error.is_some());
         assert!(matches!(result.error, Some(ConfigLoadError::Io(_))));
     }

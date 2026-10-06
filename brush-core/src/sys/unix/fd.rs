@@ -37,7 +37,8 @@ cfg_if::cfg_if! {
     target_os = "openbsd"
 ))]
 pub fn try_iter_open_fds() -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
-    std::fs::read_dir(FD_DIR_PATH)
+    crate::ResolvedPath::try_from(std::path::PathBuf::from(FD_DIR_PATH))
+        .and_then(|dir| dir.read_dir())
         .into_iter()
         .flatten()
         .filter_map(Result::ok)

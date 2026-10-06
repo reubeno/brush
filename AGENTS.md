@@ -26,6 +26,7 @@ the architecture changes.
 - Shell instances are created via `Shell::builder()`
 - The project uses builder patterns for type-safe configuration
 - Platform-specific code in `brush-core` MUST live under the `sys` module
+- brush never changes the host process's working directory, so filesystem access MUST go through a `ResolvedPath` (from `Shell::absolute_path`), never a raw relative path
 - Follows Rust 2024 edition standards
 
 ### Module Dependencies

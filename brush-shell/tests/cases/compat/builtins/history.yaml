@@ -154,6 +154,39 @@ cases:
       : cmd1
       history -w some-file.txt
 
+  - name: "relative history files are written in the working directory"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      mkdir sub
+      cd sub
+      : cmd1
+      history -w
+      history -w some-file.txt
+
+  - name: "history -w and -a reject an empty filename"
+    min_oracle_version: 5.3 # bash 5.2 tries to create a file with an empty name
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      history -w "" 2>&1 | sed -E 's/^.*history: /history: /'
+      echo "rc=${PIPESTATUS[0]}"
+      history -a "" 2>&1 | sed -E 's/^.*history: /history: /'
+      echo "rc=${PIPESTATUS[0]}"
+
+  - name: "history -a appends to a relative file in the working directory"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      mkdir sub
+      cd sub
+      : cmd1
+      history -a some-file.txt
+
   - name: "history -s"
     known_failure: true # NOTE: bash excludes the history command itself from history
     args: ["-o", "history"]

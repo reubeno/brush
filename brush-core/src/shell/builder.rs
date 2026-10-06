@@ -190,7 +190,8 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     #[builder(default)]
     pub kill_external_commands_on_drop: bool,
     /// Initial working dir for the shell. If left unspecified, will be populated from
-    /// the host environment.
+    /// the host environment. A relative path is resolved against the host process's
+    /// working directory. It must name an existing directory.
     pub working_dir: Option<PathBuf>,
     /// Whether the shell is in POSIX compliance mode.
     #[builder(default)]
@@ -242,7 +243,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             error_formatter: SE::ErrorFormatter::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
-            working_dir: PathBuf::default(),
+            working_dir: crate::ResolvedPath::default(),
             env: env::ShellEnvironment::default(),
             funcs: functions::FunctionEnv::default(),
             options: options::RuntimeOptions::default(),

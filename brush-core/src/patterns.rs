@@ -164,7 +164,7 @@ impl Pattern {
     #[expect(clippy::too_many_lines)]
     pub(crate) fn expand<PF>(
         &self,
-        working_dir: &Path,
+        working_dir: &crate::ResolvedPath,
         path_filter: Option<&PF>,
         options: &FilenameExpansionOptions,
     ) -> Result<PatternExpansionResult, error::Error>
@@ -245,7 +245,7 @@ impl Pattern {
             // also uses `/` on Windows (to avoid `PathBuf::push` drive-letter
             // semantics) — if we left `\` here, the strip_prefix below would
             // miss on Windows and leave results as absolute paths.
-            let working_dir_str = working_dir.to_string_lossy();
+            let working_dir_str = working_dir.as_path().to_string_lossy();
             let mut working_dir_str =
                 sys::fs::normalize_path_separators(&working_dir_str).into_owned();
             if !working_dir_str.ends_with('/') {
@@ -253,7 +253,7 @@ impl Pattern {
             }
 
             prefix_to_remove = Some(working_dir_str);
-            vec![working_dir.to_path_buf()]
+            vec![working_dir.as_path().to_path_buf()]
         };
 
         for component in components {
@@ -275,7 +275,7 @@ impl Pattern {
                     // bash. In particular this keeps dangling symlinks (which bash
                     // includes) while still rejecting a literal like `file/` whose
                     // trailing slash makes lstat fail with ENOTDIR for a regular file.
-                    p.symlink_metadata().is_ok()
+                    working_dir.join(&*p).symlink_metadata().is_ok()
                 });
                 continue;
             }
@@ -305,14 +305,18 @@ impl Pattern {
                         .unwrap_or(false)
                 };
 
-                let mut matching_paths_in_dir: Vec<_> = current_path
+                let mut matching_paths_in_dir: Vec<_> = working_dir
+                    .join(&current_path)
                     .read_dir()
                     .map_or_else(|_| vec![], |dir| dir.into_iter().collect())
                     .into_iter()
                     .filter_map(|result| result.ok())
                     .filter(matches_regex)
                     .filter(matches_dotfile_policy)
-                    .map(|entry| entry.path())
+                    // Report a match under the path the walk took, which may differ from the
+                    // resolved one it was read through (e.g., a root without a drive letter on
+                    // Windows).
+                    .map(|entry| current_path.join(entry.file_name()))
                     .collect();
 
                 matching_paths_in_dir.sort();
@@ -973,7 +977,7 @@ mod tests {
 
         let pattern = Pattern::from("sub/*.txt").set_extended_globbing(false);
         let result = pattern.expand::<fn(&Path) -> bool>(
-            scratch.path(),
+            &crate::ResolvedPath::try_from(scratch.path().to_owned())?,
             None,
             &FilenameExpansionOptions::default(),
         )?;
@@ -1013,8 +1017,9 @@ mod tests {
         let abs_pattern = abs_pattern.replace('\\', "/");
 
         let pattern = Pattern::from(abs_pattern.as_str()).set_extended_globbing(false);
+        // The working directory doesn't matter for an absolute pattern.
         let result = pattern.expand::<fn(&Path) -> bool>(
-            Path::new("/"),
+            &crate::ResolvedPath::try_from(scratch.path().to_owned())?,
             None,
             &FilenameExpansionOptions::default(),
         )?;

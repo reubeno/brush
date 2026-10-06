@@ -49,8 +49,15 @@ fn has_executable_extension(path: &Path) -> bool {
 ///
 /// Used both for the initial check in [`resolve_executable`] and for
 /// [`PathExt::executable`].
-fn is_executable_file(path: &Path) -> bool {
-    has_executable_extension(path) && path.is_file()
+fn is_executable_file(path: &crate::ResolvedPath) -> bool {
+    has_executable_extension(path.as_path()) && path.is_file()
+}
+
+/// Returns `path` with `ext` appended to its file name, which keeps it resolved.
+fn with_appended_extension(path: &crate::ResolvedPath, ext: &str) -> Option<crate::ResolvedPath> {
+    let mut name = path.as_path().as_os_str().to_owned();
+    name.push(ext);
+    crate::ResolvedPath::try_from(PathBuf::from(name)).ok()
 }
 
 /// Resolves an owned path to the actual on-disk executable file, if any.
@@ -58,23 +65,18 @@ fn is_executable_file(path: &Path) -> bool {
 /// If the path is already a file with a `PATHEXT` extension, it is returned
 /// unchanged (no allocation). Otherwise, each `PATHEXT` extension is appended
 /// in turn and the first existing file is returned.
-pub fn resolve_executable(path: PathBuf) -> Option<PathBuf> {
+pub fn resolve_executable(path: crate::ResolvedPath) -> Option<crate::ResolvedPath> {
     if is_executable_file(&path) {
         return Some(path);
     }
     // Try appending each PATHEXT extension.
-    for ext in PATHEXT_EXTENSIONS.iter() {
-        let mut name = path.as_os_str().to_owned();
-        name.push(ext);
-        let candidate = PathBuf::from(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
+    PATHEXT_EXTENSIONS
+        .iter()
+        .filter_map(|ext| with_appended_extension(&path, ext))
+        .find(|candidate| candidate.is_file())
 }
 
-impl crate::sys::fs::PathExt for Path {
+impl crate::sys::fs::PathExt for crate::ResolvedPath {
     fn readable(&self) -> bool {
         self.exists()
     }
@@ -84,16 +86,11 @@ impl crate::sys::fs::PathExt for Path {
     }
 
     fn executable(&self) -> bool {
-        if is_executable_file(self) {
-            return true;
-        }
-        // Try each PATHEXT extension without allocating a separate PathBuf
-        // per candidate until one exists.
-        PATHEXT_EXTENSIONS.iter().any(|ext| {
-            let mut name = self.as_os_str().to_owned();
-            name.push(ext);
-            Self::new(&name).is_file()
-        })
+        is_executable_file(self)
+            || PATHEXT_EXTENSIONS
+                .iter()
+                .filter_map(|ext| with_appended_extension(self, ext))
+                .any(|candidate| candidate.is_file())
     }
 
     fn exists_and_is_block_device(&self) -> bool {
@@ -308,9 +305,60 @@ pub fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Makes the file at `path` executable, for tests that need something to find. On
+/// Windows, that's decided by the file's extension (see `PATHEXT`), so there's nothing to do.
 #[cfg(test)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "matches the other platforms' signature"
+)]
+pub(crate) const fn make_executable(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
+
+    // Windows path forms that `ResolvedPath::join` has to handle.
+
+    /// A working directory can be in the verbatim form (`\\?\C:\work`).
+    #[test]
+    fn drive_relative_path_on_the_shells_drive_joins_a_verbatim_working_directory() {
+        assert_eq!(
+            resolved(r"\\?\C:\work").join(r"c:foo").as_path(),
+            Path::new(r"\\?\C:\work\foo")
+        );
+    }
+
+    fn resolved(path: &str) -> crate::ResolvedPath {
+        crate::ResolvedPath::try_from(PathBuf::from(path)).unwrap_or_default()
+    }
+
+    #[test]
+    fn drive_relative_path_on_the_shells_drive_joins_its_working_directory() {
+        assert_eq!(
+            resolved(r"C:\work").join(r"c:foo\bar").as_path(),
+            Path::new(r"C:\work\foo\bar")
+        );
+    }
+
+    #[test]
+    fn drive_relative_path_on_another_drive_starts_at_its_root() {
+        assert_eq!(
+            resolved(r"C:\work").join(r"D:foo").as_path(),
+            Path::new(r"D:\foo")
+        );
+    }
+
+    #[test]
+    fn rooted_path_stays_on_the_shells_drive() {
+        assert_eq!(
+            resolved(r"C:\work").join(r"\foo").as_path(),
+            Path::new(r"C:\foo")
+        );
+    }
 
     #[test]
     fn path_separator_helpers_both_slashes() {
@@ -447,9 +495,11 @@ mod tests {
     }
 
     #[test]
-    fn resolve_executable_for_nonexistent_returns_none() {
+    fn resolve_executable_for_nonexistent_returns_none() -> std::io::Result<()> {
         // A path that cannot exist on any test host.
-        let path = PathBuf::from(r"C:\__brush_test_definitely_missing__");
+        let path =
+            crate::ResolvedPath::try_from(PathBuf::from(r"C:\__brush_test_definitely_missing__"))?;
         assert!(resolve_executable(path).is_none());
+        Ok(())
     }
 }

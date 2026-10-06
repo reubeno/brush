@@ -68,3 +68,8 @@ cases:
 
       echo "pwd -L: $(basename $(pwd -L))"
       echo "pwd -P: $(basename $(pwd -P))"
+
+  - name: "Starting directory has no symlinks in it"
+    stdin: |
+      [ "$PWD" = "$(pwd -P)" ] && echo "same" || echo "differs"
+

@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -68,7 +68,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     open_files: openfiles::OpenFiles,
 
     /// The current working directory.
-    working_dir: PathBuf,
+    working_dir: crate::ResolvedPath,
 
     /// The shell environment, containing shell variables.
     env: ShellEnvironment,
@@ -223,7 +223,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             args: options.shell_args.unwrap_or_default(),
             version: options.shell_version,
             product_display_str: options.shell_product_display_str,
-            working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
+            working_dir: initial_working_dir(options.working_dir)?,
             builtins: options.builtins,
             parser_impl: options.parser,
             key_bindings: options.key_bindings,
@@ -567,14 +567,15 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
         self.key_bindings = key_bindings;
     }
 
-    /// Returns the shell's current working directory.
-    pub fn working_dir(&self) -> &Path {
+    /// Returns the shell's current working directory, or an empty path if it's unknown (e.g.,
+    /// the shell started in a directory that had been deleted).
+    pub fn working_dir(&self) -> &crate::ResolvedPath {
         &self.working_dir
     }
 
-    /// Returns a mutable reference to the shell's current working directory.
-    /// This is only accessible within the crate.
-    pub(crate) fn working_dir_mut(&mut self) -> &mut PathBuf {
+    /// Returns a mutable reference to the shell's current working directory. Unlike
+    /// `Shell::set_working_dir`, changing it this way doesn't update `PWD` or `OLDPWD`.
+    pub(crate) fn working_dir_mut(&mut self) -> &mut crate::ResolvedPath {
         &mut self.working_dir
     }
 
@@ -587,6 +588,28 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
+}
+
+/// Resolves a new shell's working directory: the one given, which must be an existing
+/// directory, or else the process's. If the process's can't be found (it may have been
+/// deleted), the shell starts without one, as bash does.
+fn initial_working_dir(dir: Option<PathBuf>) -> Result<crate::ResolvedPath, error::Error> {
+    let Some(dir) = dir else {
+        return match std::env::current_dir() {
+            Ok(dir) => Ok(crate::ResolvedPath::try_from(dir)?.normalized()),
+            Err(e) => {
+                tracing::warn!("error retrieving current directory: {e}");
+                Ok(crate::ResolvedPath::default())
+            }
+        };
+    };
+
+    let resolved = crate::ResolvedPath::try_from(std::path::absolute(&dir)?)?.normalized();
+    match resolved.metadata() {
+        Ok(metadata) if metadata.is_dir() => Ok(resolved),
+        Ok(_) => Err(error::ErrorKind::NotADirectory(dir).into()),
+        Err(_) => Err(error::ErrorKind::WorkingDirMissing(dir).into()),
+    }
 }
 
 #[cfg(test)]

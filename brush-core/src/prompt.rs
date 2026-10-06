@@ -171,7 +171,7 @@ fn format_current_working_directory(
     tilde_replaced: bool,
     basename: bool,
 ) -> String {
-    let mut working_dir_str = shell.working_dir().to_string_lossy().to_string();
+    let mut working_dir_str = shell.working_dir().as_path().to_string_lossy().to_string();
 
     if tilde_replaced {
         working_dir_str = shell.tilde_shorten(working_dir_str);

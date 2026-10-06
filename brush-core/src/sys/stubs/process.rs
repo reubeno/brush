@@ -28,6 +28,29 @@ impl Child {
     }
 }
 
+/// Creates a command to run the executable at `program` as a child of the shell, starting in
+/// `working_dir` (the shell's working directory) rather than the host process's. If
+/// `working_dir` is empty (the shell doesn't know where it is), the child starts in the host
+/// process's.
+///
+/// `program` is a path the shell has already found -- absolute, or relative to `working_dir`
+/// -- never a name to search for.
+///
+/// # Arguments
+///
+/// * `program` - The path of the executable to run.
+/// * `working_dir` - The directory the child starts in.
+pub(crate) fn create_command(
+    program: impl AsRef<std::path::Path>,
+    working_dir: &crate::ResolvedPath,
+) -> std::process::Command {
+    let mut command = std::process::Command::new(working_dir.join(program.as_ref()).as_path());
+    if !working_dir.is_empty() {
+        command.current_dir(working_dir);
+    }
+    command
+}
+
 pub(crate) fn spawn(
     mut command: std::process::Command,
     kill_on_drop: bool,

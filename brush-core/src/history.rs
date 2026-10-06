@@ -1,10 +1,7 @@
 //! Facilities for tracking and persisting the shell's command history.
 
 use chrono::Utc;
-use std::{
-    io::{BufRead, Read, Write},
-    path::Path,
-};
+use std::io::{BufRead, Read, Write};
 
 use crate::error;
 
@@ -176,11 +173,21 @@ impl History {
     /// * `write_timestamps` - Whether to write timestamps for each command line.
     pub fn flush(
         &mut self,
-        history_file_path: impl AsRef<Path>,
+        history_file_path: &crate::ResolvedPath,
         append: bool,
         unsaved_items_only: bool,
         write_timestamps: bool,
     ) -> Result<(), error::Error> {
+        // With nothing unsaved to write, leave the file alone; like bash, don't even create it.
+        if unsaved_items_only
+            && !self
+                .items
+                .iter()
+                .any(|id| self.id_map.get(id).is_some_and(|item| item.dirty))
+        {
+            return Ok(());
+        }
+
         // Open the file
         let mut file_options = std::fs::File::options();
 
@@ -190,7 +197,8 @@ impl History {
             file_options.write(true).truncate(true);
         }
 
-        let mut file = file_options.create(true).open(history_file_path.as_ref())?;
+        file_options.create(true);
+        let mut file = history_file_path.open(&file_options)?;
 
         for item_id in &self.items {
             if let Some(item) = self.id_map.get_mut(item_id) {

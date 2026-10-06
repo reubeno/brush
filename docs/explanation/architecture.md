@@ -45,6 +45,11 @@ without its front end. Keep that in mind when deciding what to export.
   behavior (today, how errors are formatted) at compile time.
 - Platform-specific code lives under the `sys` module, so the rest of the crate stays
   platform-neutral.
+- Each shell has its own working directory (`Shell::working_dir`); brush never changes
+  the host process's, since several shells can share one process. Filesystem access goes
+  through a `ResolvedPath`, from `Shell::absolute_path`, rather than a relative path the
+  operating system would resolve against the process's directory. Child processes start
+  in the shell's working directory (`sys::process::create_command`).
 
 ## Layering principles
 

@@ -78,7 +78,11 @@ impl builtins::Command for CdCommand {
                 return error::unimp("cd -e");
             }
 
-            target_dir = context.shell.absolute_path(target_dir).canonicalize()?;
+            target_dir = context
+                .shell
+                .absolute_path(target_dir)
+                .canonicalize()?
+                .into();
         }
 
         context.shell.set_working_dir(&target_dir)?;

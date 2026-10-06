@@ -1,14 +1,10 @@
 //! Defines state traits for the shell.
 
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, collections::HashMap, path::PathBuf};
 
 use crate::{
-    completion, env::ShellEnvironment, jobs, openfiles, options::RuntimeOptions, pathcache,
-    shell::KeyBindingsHelper,
+    ResolvedPath, completion, env::ShellEnvironment, jobs, openfiles, options::RuntimeOptions,
+    pathcache, shell::KeyBindingsHelper,
 };
 
 /// A dyn-safe trait for constrained access to shell state.
@@ -112,12 +108,13 @@ pub trait ShellState {
     /// Sets the key bindings helper for the shell.
     fn set_key_bindings(&mut self, key_bindings: Option<KeyBindingsHelper>);
 
-    /// Returns the shell's current working directory.
-    fn working_dir(&self) -> &Path;
+    /// Returns the shell's current working directory, or an empty path if it's unknown (e.g.,
+    /// the shell started in a directory that had been deleted).
+    fn working_dir(&self) -> &ResolvedPath;
 
-    /// Returns a mutable reference to the shell's current working directory.
-    /// This is only accessible within the crate.
-    fn working_dir_mut(&mut self) -> &mut PathBuf;
+    /// Returns a mutable reference to the shell's current working directory. Unlike
+    /// `Shell::set_working_dir`, changing it this way doesn't update `PWD` or `OLDPWD`.
+    fn working_dir_mut(&mut self) -> &mut ResolvedPath;
 
     /// Returns the product display name for this shell.
     fn product_display_str(&self) -> Option<&str>;

@@ -28,7 +28,7 @@ impl builtins::Command for PushdCommand {
                 .directory_stack_mut()
                 .push(std::path::PathBuf::from(&self.dir));
         } else {
-            let prev_working_dir = context.shell.working_dir().to_path_buf();
+            let prev_working_dir = context.shell.working_dir().as_path().to_path_buf();
 
             let dir = std::path::Path::new(&self.dir);
             context.shell.set_working_dir(dir)?;

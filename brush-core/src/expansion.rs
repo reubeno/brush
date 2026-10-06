@@ -1169,7 +1169,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 ))
             }
             brush_parser::word::TildeExpr::WorkingDir => {
-                Ok(self.shell.working_dir().to_string_lossy())
+                Ok(self.shell.working_dir().as_path().to_string_lossy())
             }
             brush_parser::word::TildeExpr::OldWorkingDir => {
                 if let Some(old_pwd) = self.shell.env_str("OLDPWD") {
@@ -1184,14 +1184,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 if let Some(dir) = self.shell.directory_stack().get(*n) {
                     Ok(dir.to_string_lossy())
                 } else if *n == dir_stack_count {
-                    Ok(self.shell.working_dir().to_string_lossy())
+                    Ok(self.shell.working_dir().as_path().to_string_lossy())
                 } else {
                     Ok(Cow::Owned(std::format!("~-{n}")))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromTopOfDirStack { n, plus_used } => {
                 if *n == 0 {
-                    return Ok(self.shell.working_dir().to_string_lossy());
+                    return Ok(self.shell.working_dir().as_path().to_string_lossy());
                 }
 
                 let dir_stack_count = self.shell.directory_stack().len();

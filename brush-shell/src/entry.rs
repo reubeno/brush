@@ -199,15 +199,20 @@ async fn run_async(
     ));
     drop(event_config);
 
-    // Load configuration file.
-    let file_config = config::load_config(args.no_config, args.config_file.as_deref())
-        .into_config_or_log()
-        .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
-
-    // Instantiate an appropriately configured shell and wrap it in an `Arc`. Note that we do
-    // *not* run any code in the shell yet. We'll delay loading profiles and such until after
-    // we've set up everything else (in `run_in_shell`).
+    // Instantiate an appropriately configured shell. Note that we do *not* run any code in the
+    // shell yet. We'll delay loading profiles and such until after we've set up everything else
+    // (in `run_in_shell`).
     let shell: BrushShell = instantiate_shell(&args, cli_args).await?;
+
+    // Load configuration file.
+    let file_config = config::load_config(
+        args.no_config,
+        args.config_file.as_deref(),
+        shell.working_dir(),
+    )
+    .into_config_or_log()
+    .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
+
     let shell = Arc::new(Mutex::new(shell));
 
     // Run with the selected input backend. Each branch instantiates the concrete
@@ -366,19 +371,22 @@ async fn instantiate_shell(
     args: &CommandLineArgs,
     cli_args: &[String],
 ) -> Result<BrushShell, brush_interactive::ShellError> {
-    #[cfg(feature = "experimental-load")]
-    let mut shell = if let Some(load_file) = &args.load_file {
-        instantiate_shell_from_file(load_file.as_path())?
-    } else {
-        instantiate_shell_from_args(args, cli_args).await?
-    };
-
-    #[cfg(not(feature = "experimental-load"))]
     let mut shell = instantiate_shell_from_args(args, cli_args).await?;
 
+    // A loaded shell replaces the one from the arguments, which resolves the file's path like
+    // any other path on the command line.
+    #[cfg(feature = "experimental-load")]
+    if let Some(load_file) = &args.load_file {
+        shell = instantiate_shell_from_file(&shell.absolute_path(load_file))?;
+    }
+
+    // Make adjustments. Done here (not inside the inner instantiators) so both paths are
+    // covered from a single site, and a shell that's replaced doesn't act on them.
+    if let Some(xtrace_file_path) = &args.xtrace_file_path {
+        enable_xtrace_to_file(&mut shell, xtrace_file_path)?;
+    }
+
     // Register shims for any bundled commands in the installed registry.
-    // Done here (not inside the inner instantiators) so both paths are
-    // covered from a single site.
     bundled::register_shims(&mut shell);
 
     Ok(shell)
@@ -386,9 +394,10 @@ async fn instantiate_shell(
 
 #[cfg(feature = "experimental-load")]
 fn instantiate_shell_from_file(
-    file_path: &Path,
+    file_path: &brush_core::ResolvedPath,
 ) -> Result<BrushShell, brush_interactive::ShellError> {
-    let mut shell: BrushShell = serde_json::from_reader(std::fs::File::open(file_path)?)
+    let file = file_path.open(std::fs::OpenOptions::new().read(true))?;
+    let mut shell: BrushShell = serde_json::from_reader(file)
         .map_err(|e| brush_interactive::ShellError::IoError(std::io::Error::other(e)))?;
 
     // NOTE: We need to manually register builtins because we can't serialize/deserialize them.
@@ -498,6 +507,7 @@ async fn instantiate_shell_from_args(
         .do_not_inherit_env(args.do_not_inherit_env)
         .fds(fds)
         .maybe_shell_args(shell_args)
+        .maybe_working_dir(args.working_dir.clone())
         .posix(args.posix || args.sh_mode)
         .print_commands_and_arguments(args.print_commands_and_arguments)
         .read_commands_from_stdin(read_commands_from_stdin)
@@ -520,25 +530,21 @@ async fn instantiate_shell_from_args(
     let shell = shell.experimental_builtins();
 
     // Build the shell.
-    let mut shell = shell.build().await?;
-
-    // Make adjustments.
-    if let Some(xtrace_file_path) = &args.xtrace_file_path {
-        enable_xtrace_to_file(&mut shell, xtrace_file_path)?;
-    }
-
-    Ok(shell)
+    Ok(shell.build().await?)
 }
 
 fn enable_xtrace_to_file(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     file_path: &Path,
 ) -> Result<(), brush_interactive::ShellError> {
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(file_path)
+    let file = shell
+        .absolute_path(file_path)
+        .open(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true),
+        )
         .map_err(|e| {
             brush_interactive::ShellError::FailedToCreateXtraceFile(file_path.to_path_buf(), e)
         })?;
