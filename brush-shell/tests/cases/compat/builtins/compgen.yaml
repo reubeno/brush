@@ -411,6 +411,30 @@ cases:
         case $w in fi|for|function) echo "$w" ;; esac
       done
 
+  - name: "compgen -F ignores a function that asks for completion to restart"
+    ignore_stderr: true
+    stdin: |
+      _comp() { COMPREPLY=(a); return 124; }
+      compgen -F _comp mycmd
+      echo "rc=$?"
+
+  - name: "compgen -F tells the function about an empty line"
+    ignore_stderr: true
+    stdin: |
+      _comp() {
+        echo "#=$# 1=<$1> 2=<$2> 3=<$3> LINE=<$COMP_LINE> POINT=<$COMP_POINT>"
+        echo "WORDS=<${COMP_WORDS[*]}> NWORDS=${#COMP_WORDS[@]} CWORD=<$COMP_CWORD>"
+      }
+      compgen -F _comp xy
+
+  - name: "compgen -C tells the command about an empty line"
+    ignore_stderr: true
+    stdin: |
+      compgen -C 'printf "<%s>\n"' xy
+      _cmd() { echo "LINE=<$COMP_LINE> POINT=<$COMP_POINT> #=$#"; }
+      export -f _cmd
+      compgen -C _cmd xy
+
   - name: "compgen -F sets COMP_KEY and COMP_TYPE to 0"
     ignore_stderr: true
     stdin: |
