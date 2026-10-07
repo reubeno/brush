@@ -581,9 +581,7 @@ impl Spec {
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
-            let pattern = patterns::Pattern::from(glob_pattern.as_str())
-                .set_extended_globbing(shell.options().extended_globbing)
-                .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
+            let pattern = shell_pattern(shell, glob_pattern.as_str());
 
             let expansions = pattern
                 .expand(
@@ -1272,9 +1270,7 @@ async fn get_file_completions(
 
     let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
 
-    let pattern = patterns::Pattern::from(glob)
-        .set_extended_globbing(shell.options().extended_globbing)
-        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
+    let pattern = shell_pattern(shell, glob);
 
     let mut completions: Vec<String> = pattern
         .expand(
@@ -1455,9 +1451,7 @@ fn completion_filter_pattern_matches(
     // TODO(completions): Replace unescaped '&' with the word being completed.
     //
 
-    let pattern = patterns::Pattern::from(pattern.as_ref())
-        .set_extended_globbing(shell.options().extended_globbing)
-        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
+    let pattern = shell_pattern(shell, pattern.as_ref());
 
     let matches = pattern.exactly_matches(candidate)?;
 
@@ -1485,6 +1479,17 @@ fn replace_unescaped_ampersands<'a>(pattern: &'a str, replacement: &str) -> Cow<
     }
 
     result.into()
+}
+
+/// Returns `pattern`, set to match as the shell's options say.
+fn shell_pattern(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    pattern: impl Into<patterns::Pattern>,
+) -> patterns::Pattern {
+    pattern
+        .into()
+        .set_extended_globbing(shell.options().extended_globbing)
+        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion)
 }
 
 #[cfg(test)]
