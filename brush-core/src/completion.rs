@@ -87,7 +87,8 @@ fn split_completion_word_list(
     Ok(words)
 }
 
-/// Type of action to take to generate completion candidates.
+/// Type of action to take to generate completion candidates. Each one's name (e.g.
+/// `arrayvar`) is what `complete -A` takes.
 #[derive(
     Clone,
     Copy,
@@ -138,9 +139,9 @@ pub enum CompleteAction {
     Running,
     /// Complete with names of system services.
     Service,
-    /// Complete with the names of options settable via shopt.
-    SetOpt,
     /// Complete with the names of options settable via set -o.
+    SetOpt,
+    /// Complete with the names of options settable via shopt.
     ShOpt,
     /// Complete with the names of trappable signals.
     Signal,
@@ -152,8 +153,8 @@ pub enum CompleteAction {
     Variable,
 }
 
-/// Options influencing how command completions are generated. They're declared in the
-/// order bash lists them (e.g. in `complete -p`).
+/// Options influencing how command completions are generated. Each one's name (e.g.
+/// `nospace`) is what `complete -o` takes; they're declared in the order bash lists them.
 #[derive(
     Clone,
     Copy,
@@ -288,7 +289,7 @@ pub struct Spec {
     // Transformers
     /// Optionally, provides a prefix to be prepended to all completion candidates.
     pub prefix: Option<String>,
-    /// Optionally, provides a suffix to be prepended to all completion candidates.
+    /// Optionally, provides a suffix to be appended to all completion candidates.
     pub suffix: Option<String>,
 }
 
@@ -1012,8 +1013,9 @@ pub enum SpecialSpec {
 }
 
 impl SpecialSpec {
-    /// Returns bash's name for this spec, which the `complete` and `compopt` builtins
-    /// accept in place of a command name, and show in their messages.
+    /// Returns the name that stands in for a command's with this spec, as bash's does:
+    /// the `complete` and `compopt` builtins accept it in place of a command name, and a
+    /// completion function for the empty-line or initial-word spec gets it as `$1`.
     pub const fn command_name(self) -> &'static str {
         match self {
             Self::Default => "_DefaultCmD_",
