@@ -2,6 +2,7 @@
 
 use chrono::Utc;
 use std::{
+    collections::BTreeSet,
     io::{BufRead, Read, Write},
     path::Path,
 };
@@ -129,6 +130,28 @@ impl History {
         true
     }
 
+    /// Keeps only the items that `keep` returns true for, in order. Their IDs don't change.
+    pub fn retain(&mut self, mut keep: impl FnMut(&Item) -> bool) {
+        let Some(first_removed) = self.items.iter().position(|item| !keep(item)) else {
+            return;
+        };
+
+        // As in `remove_nth_item`, rebuild only from the first item removed on.
+        let kept: Vec<Item> = self
+            .items
+            .iter()
+            .skip(first_removed + 1)
+            .filter(|item| keep(item))
+            .cloned()
+            .collect();
+        for _ in first_removed..self.items.len() {
+            self.items.drop_last_mut();
+        }
+        for item in kept {
+            self.items.push_back_mut(item);
+        }
+    }
+
     /// Adds a new history item. Returns the unique identifier of the newly added item.
     ///
     /// # Arguments
@@ -252,6 +275,11 @@ impl History {
         self.items.get(index)
     }
 
+    /// Returns the newest item, if there is one.
+    pub fn last(&self) -> Option<&Item> {
+        self.items.last()
+    }
+
     /// Returns the number of items in the history.
     pub fn count(&self) -> usize {
         self.items.len()
@@ -281,6 +309,38 @@ impl History {
             .get(index)
             .is_some_and(|item| item.id == id)
             .then_some(index)
+    }
+}
+
+/// A value of `HISTCONTROL`, which controls what an interactive shell saves to history.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum_macros::EnumString)]
+#[strum(serialize_all = "lowercase")]
+pub(crate) enum HistoryControl {
+    /// Don't save a command that starts with a space.
+    IgnoreSpace,
+    /// Don't save a command that's the same as the last one saved.
+    IgnoreDups,
+    /// Both `ignorespace` and `ignoredups`.
+    IgnoreBoth,
+    /// Before saving a command, remove any earlier ones the same as it.
+    EraseDups,
+}
+
+impl HistoryControl {
+    /// Parses `HISTCONTROL`'s colon-separated values into the set of them, with `ignoreboth`
+    /// as the two it stands for. Like bash, values it doesn't know are ignored.
+    pub(crate) fn parse_list(value: &str) -> BTreeSet<Self> {
+        value
+            .split(':')
+            .filter_map(|value| value.parse().ok())
+            .flat_map(|control| match control {
+                Self::IgnoreBoth => [Self::IgnoreSpace, Self::IgnoreDups].as_slice(),
+                Self::IgnoreSpace => &[Self::IgnoreSpace],
+                Self::IgnoreDups => &[Self::IgnoreDups],
+                Self::EraseDups => &[Self::EraseDups],
+            })
+            .copied()
+            .collect()
     }
 }
 
@@ -910,6 +970,64 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn last_and_retain() -> Result<(), error::Error> {
+        assert!(History::default().last().is_none());
+
+        let mut history = history(&["a", "x", "b", "x", "c", "x"])?;
+        assert_eq!(
+            history.last().map(|item| item.command_line.as_str()),
+            Some("x")
+        );
+
+        // Keeping everything changes nothing.
+        history.retain(|_| true);
+        assert_eq!(
+            command_lines(history.iter()),
+            ["a", "x", "b", "x", "c", "x"]
+        );
+
+        // Removing some keeps the rest in order, with their IDs.
+        history.retain(|item| item.command_line != "x");
+        assert_eq!(command_lines(history.iter()), ["a", "b", "c"]);
+        assert_eq!(
+            history.iter().map(|item| item.id).collect::<Vec<_>>(),
+            [0, 2, 4]
+        );
+        assert_eq!(
+            history.get_by_id(4)?.map(|item| item.command_line.as_str()),
+            Some("c")
+        );
+
+        history.retain(|item| item.command_line != "a");
+        assert_eq!(command_lines(history.iter()), ["b", "c"]);
+        history.retain(|_| false);
+        assert!(history.is_empty());
+
+        Ok(())
+    }
+
+    /// `HISTCONTROL` parses as bash reads it: `ignoreboth` is two values, and unknown values,
+    /// empty ones, and other cases are ignored.
+    #[test]
+    fn history_control_parses_like_bash() {
+        use HistoryControl::{EraseDups, IgnoreDups, IgnoreSpace};
+        let parse = |value| {
+            HistoryControl::parse_list(value)
+                .into_iter()
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(parse("ignoredups"), [IgnoreDups]);
+        assert_eq!(parse("ignorespace"), [IgnoreSpace]);
+        assert_eq!(parse("erasedups"), [EraseDups]);
+        assert_eq!(parse("ignoreboth"), [IgnoreSpace, IgnoreDups]);
+        assert_eq!(parse("erasedups:ignorespace"), [IgnoreSpace, EraseDups]);
+        assert_eq!(parse("bogus::ignoredups:"), [IgnoreDups]);
+        assert_eq!(parse("IGNOREDUPS"), []);
+        assert_eq!(parse(""), []);
     }
 
     /// Searches and iterators over history can be held across an await in a spawned task.

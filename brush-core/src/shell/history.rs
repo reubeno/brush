@@ -1,8 +1,8 @@
 //! History management for shells.
 
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
-use crate::{error, openfiles};
+use crate::{error, history::HistoryControl, openfiles};
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub(super) fn load_history(&self) -> Result<Option<crate::history::History>, error::Error> {
@@ -73,25 +73,53 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Ok(())
     }
 
-    /// Adds a command to history.
+    /// Adds a command to history. Like bash, an interactive shell leaves it out or makes room
+    /// for it as the colon-separated values of `HISTCONTROL` say:
+    ///
+    /// - `ignorespace`: leave it out if it starts with a space.
+    /// - `ignoredups`: leave it out if it's the same as the last entry.
+    /// - `ignoreboth`: both of those.
+    /// - `erasedups`: first remove any earlier entries the same as it.
     pub fn add_to_history(&mut self, command: &str) -> Result<(), error::Error> {
-        if let Some(history) = &mut self.history {
-            // Trim.
-            let command = command.trim();
+        let controls = if self.options.interactive {
+            self.env_str("HISTCONTROL")
+                .map(|value| HistoryControl::parse_list(&value))
+                .unwrap_or_default()
+        } else {
+            BTreeSet::new()
+        };
 
-            // For now, discard empty commands.
-            if command.is_empty() {
-                return Ok(());
-            }
+        let Some(history) = &mut self.history else {
+            return Ok(());
+        };
 
-            // Add it to history.
-            history.add(crate::history::Item {
-                id: 0,
-                command_line: command.to_owned(),
-                timestamp: Some(chrono::Utc::now()),
-                dirty: true,
-            })?;
+        if controls.contains(&HistoryControl::IgnoreSpace) && command.starts_with(' ') {
+            return Ok(());
         }
+
+        // Like bash, save the command as typed, surrounding whitespace and all, but leave out
+        // blank ones.
+        if command.trim().is_empty() {
+            return Ok(());
+        }
+
+        if controls.contains(&HistoryControl::IgnoreDups)
+            && history
+                .last()
+                .is_some_and(|last| last.command_line == command)
+        {
+            return Ok(());
+        }
+        if controls.contains(&HistoryControl::EraseDups) {
+            history.retain(|item| item.command_line != command);
+        }
+
+        history.add(crate::history::Item {
+            id: 0,
+            command_line: command.to_owned(),
+            timestamp: Some(chrono::Utc::now()),
+            dirty: true,
+        })?;
 
         Ok(())
     }

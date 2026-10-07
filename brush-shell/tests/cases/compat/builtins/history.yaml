@@ -496,3 +496,143 @@ cases:
       history
       # Unset HISTFILE before exit so the shell doesn't write it back.
       unset HISTFILE
+
+  # HISTCONTROL applies only to interactive shells.
+  - name: "HISTCONTROL=ignoredups"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTCONTROL: "ignoredups"
+    stdin: |
+      : a
+      : b
+      : b
+      : a
+      history
+
+  - name: "HISTCONTROL=ignorespace"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTCONTROL: "ignorespace"
+    stdin: |
+      : shown
+       : hidden
+      : shown
+      history
+
+  - name: "HISTCONTROL=ignoreboth"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTCONTROL: "ignoreboth"
+    stdin: |
+      : a
+       : hidden
+      : a
+      : b
+      history
+
+  - name: "HISTCONTROL=erasedups"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTCONTROL: "erasedups"
+    stdin: |
+      : a
+      : b
+      : a
+      : c
+      : a
+      history
+
+  - name: "HISTCONTROL with unknown values in its list"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTCONTROL: "bogus:ignoredups"
+    stdin: |
+      : a
+      : a
+      history
+
+  # N.B. Quoted so the trailing whitespace these depend on survives editors and hooks.
+  - name: "History keeps a command's surrounding whitespace"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: ": first\n  : indented\n: trailing  \nhistory\n"
+
+  - name: "HISTCONTROL=ignoredups tells apart lines differing in whitespace"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTCONTROL: "ignoredups"
+    stdin: ": same\n: same \n : same\nhistory\n"
+
+  - name: "HISTCONTROL=erasedups tells apart lines differing in whitespace"
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTCONTROL: "erasedups"
+    stdin: ": same\n: same \n : same\n: other\n: same\nhistory\n"
+
+  - name: "set +o history stops recording"
+    known_failure: true # brush keeps recording after `set +o history`
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : a
+      set +o history
+      : hidden
+      set -o history
+      : b
+      history
+
+  - name: "HISTIGNORE"
+    known_failure: true # brush doesn't implement HISTIGNORE
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+      HISTIGNORE: "ls*:&:echo skip"
+    stdin: |
+      : a
+      ls >/dev/null
+      : a
+      echo skip
+      : b
+      history
+
+  - name: "cmdhist saves a multi-line command as one line"
+    known_failure: true # brush saves the command's newlines as typed
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      for x in 1; do
+        : inside
+      done
+      history
+
+  - name: "History expansion"
+    known_failure: true # brush doesn't implement history expansion
+    ignore_stderr: true # Ignore job control warnings from interactive shell without a tty
+    args: ["-i"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      !!
+      history
