@@ -41,52 +41,6 @@ mod words;
 
 use words::{LineWords, find_completion_word, find_line_words};
 
-// `compgen -W` splits unquoted literal IFS characters before expanding each resulting word.
-fn split_completion_word_list(
-    word_list: &str,
-    ifs: &str,
-    parser_options: &brush_parser::ParserOptions,
-) -> Result<Vec<String>, error::Error> {
-    // Like bash, quoting left open at the end runs to the end of the list.
-    let mut word_list = word_list.to_owned();
-    quoting::close(&mut word_list);
-    let word_list = word_list.as_str();
-
-    let pieces = brush_parser::word::parse(word_list, parser_options)?;
-    let mut words = vec![];
-    let mut current_word = String::new();
-
-    for piece in pieces {
-        let source = word_list
-            .get(piece.start_index..piece.end_index)
-            .ok_or_else(|| {
-                error::ErrorKind::InternalError(String::from(
-                    "word parser returned an invalid source span",
-                ))
-            })?;
-
-        if matches!(piece.piece, brush_parser::word::WordPiece::Text(_)) {
-            for c in source.chars() {
-                if ifs.contains(c) {
-                    if !current_word.is_empty() {
-                        words.push(std::mem::take(&mut current_word));
-                    }
-                } else {
-                    current_word.push(c);
-                }
-            }
-        } else {
-            current_word.push_str(source);
-        }
-    }
-
-    if !current_word.is_empty() {
-        words.push(current_word);
-    }
-
-    Ok(words)
-}
-
 /// Type of action to take to generate completion candidates.
 #[derive(
     Clone,
@@ -189,39 +143,6 @@ pub enum CompleteOption {
     PlusDirs,
 }
 
-/// Encapsulates the shell's programmable command completion configuration.
-#[derive(Clone, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Config {
-    /// The specs for completing commands' arguments, by command name.
-    commands: HashMap<String, Spec>,
-    /// The specs used in place of a command's.
-    specials: HashMap<SpecialSpec, Spec>,
-
-    /// Fallback options to use when 'default' completions are requested (not to be
-    /// confused with the 'default' completion spec, nor 'bashdefault' completions).
-    pub fallback_options: FallbackOptions,
-}
-
-/// Options for fallback completions.
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct FallbackOptions {
-    /// If true, mark directory completions with a trailing slash.
-    pub mark_directories: bool,
-    /// If true, mark symlinked directory completions with a trailing slash.
-    pub mark_symlinked_directories: bool,
-}
-
-impl Default for FallbackOptions {
-    fn default() -> Self {
-        Self {
-            mark_directories: true,
-            mark_symlinked_directories: false,
-        }
-    }
-}
-
 /// Options for generating completions: which [`CompleteOption`]s are enabled.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -292,6 +213,242 @@ pub struct Spec {
     pub suffix: Option<String>,
 }
 
+/// Encapsulates the shell's programmable command completion configuration.
+#[derive(Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Config {
+    /// The specs for completing commands' arguments, by command name.
+    commands: HashMap<String, Spec>,
+    /// The specs used in place of a command's.
+    specials: HashMap<SpecialSpec, Spec>,
+
+    /// Fallback options to use when 'default' completions are requested (not to be
+    /// confused with the 'default' completion spec, nor 'bashdefault' completions).
+    pub fallback_options: FallbackOptions,
+}
+
+/// Options for fallback completions.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FallbackOptions {
+    /// If true, mark directory completions with a trailing slash.
+    pub mark_directories: bool,
+    /// If true, mark symlinked directory completions with a trailing slash.
+    pub mark_symlinked_directories: bool,
+}
+
+impl Default for FallbackOptions {
+    fn default() -> Self {
+        Self {
+            mark_directories: true,
+            mark_symlinked_directories: false,
+        }
+    }
+}
+
+impl Config {
+    /// Removes all registered completion specs.
+    pub fn clear(&mut self) {
+        self.commands.clear();
+        self.specials.clear();
+    }
+
+    /// Ensures the named completion spec is no longer registered; returns whether a
+    /// removal operation was required.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the completion spec to remove.
+    pub fn remove(&mut self, name: SpecName<'_>) -> bool {
+        match name {
+            SpecName::Command(command) => self.commands.remove(command).is_some(),
+            SpecName::Special(special) => self.specials.remove(&special).is_some(),
+        }
+    }
+
+    /// Returns an iterator over the completion specs and their names, in no particular
+    /// order.
+    pub fn iter(&self) -> impl Iterator<Item = (SpecName<'_>, &Spec)> {
+        let commands = self
+            .commands
+            .iter()
+            .map(|(command, spec)| (SpecName::Command(command), spec));
+        let specials = self
+            .specials
+            .iter()
+            .map(|(special, spec)| (SpecName::Special(*special), spec));
+        commands.chain(specials)
+    }
+
+    /// If present, returns the named completion spec.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the completion spec.
+    pub fn get(&self, name: SpecName<'_>) -> Option<&Spec> {
+        match name {
+            SpecName::Command(command) => self.commands.get(command),
+            SpecName::Special(special) => self.specials.get(&special),
+        }
+    }
+
+    /// If present, returns a mutable reference to the named completion spec.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the completion spec.
+    pub fn get_mut(&mut self, name: SpecName<'_>) -> Option<&mut Spec> {
+        match name {
+            SpecName::Command(command) => self.commands.get_mut(command),
+            SpecName::Special(special) => self.specials.get_mut(&special),
+        }
+    }
+
+    /// Registers the provided completion spec under the given name, replacing any
+    /// already registered there.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the completion spec.
+    /// * `spec` - The completion spec.
+    pub fn set(&mut self, name: SpecName<'_>, spec: Spec) {
+        match name {
+            SpecName::Command(command) => {
+                self.commands.insert(command.to_owned(), spec);
+            }
+            SpecName::Special(special) => {
+                self.specials.insert(special, spec);
+            }
+        }
+    }
+
+    /// Returns the completion spec to use for completing `line`, and the name of the command
+    /// it completes for (a completion function's `$1`): the empty-line spec (`complete -E`)
+    /// if there's nothing before the cursor and it isn't at the start of a word, else the
+    /// spec for the initial word (`complete -I`) if completing that, else its command's spec
+    /// (by name, or by file name if the command is a path), else the default spec
+    /// (`complete -D`). Like bash, the empty-line and initial-word specs complete for
+    /// commands named after them.
+    fn find_spec<'l>(&self, line: &LineContext<'l>) -> Option<(&Spec, Option<&'l str>)> {
+        let special = |special: SpecialSpec| {
+            let spec = self.specials.get(&special)?;
+            Some((spec, Some(special.command_name())))
+        };
+
+        // Like bash, it's the empty line only if the cursor is at its very start, and not at
+        // the start of a word there: with whitespace before the cursor, or a word just after
+        // it, the initial word is completed.
+        if line.cursor == 0 && line.input.chars().next().is_none_or(char::is_whitespace) {
+            return special(SpecialSpec::EmptyLine);
+        }
+
+        if matches!(line.words.cword, None | Some(0)) {
+            return special(SpecialSpec::InitialWord);
+        }
+
+        let command_name = line.command_name?;
+        let spec = self
+            .commands
+            .get(command_name)
+            .or_else(|| {
+                let file_name = Path::new(command_name).file_name()?;
+                self.commands.get(file_name.to_string_lossy().as_ref())
+            })
+            .or_else(|| self.specials.get(&SpecialSpec::Default))?;
+        Some((spec, Some(command_name)))
+    }
+}
+
+/// Names a completion spec in a [`Config`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SpecName<'a> {
+    /// The spec for completing the named command's arguments.
+    Command(&'a str),
+    /// One of the special specs.
+    Special(SpecialSpec),
+}
+
+impl<'a> SpecName<'a> {
+    /// Returns the spec named `name`: a command's, or the special spec that bash's name for
+    /// it (see [`SpecialSpec::command_name`]) names.
+    pub fn parse(name: &'a str) -> Self {
+        SpecialSpec::from_command_name(name).map_or(Self::Command(name), Self::Special)
+    }
+
+    /// Returns the name: a command's, or for a special spec, bash's name for it.
+    pub const fn as_str(self) -> &'a str {
+        match self {
+            Self::Command(command) => command,
+            Self::Special(special) => special.command_name(),
+        }
+    }
+}
+
+/// A completion spec used in place of a command's.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum_macros::EnumIter)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum SpecialSpec {
+    /// The spec used when no command's spec applies (`complete -D`).
+    Default,
+    /// The spec used when the command line is empty (`complete -E`).
+    EmptyLine,
+    /// The spec used for the initial word of a command line (`complete -I`).
+    InitialWord,
+}
+
+impl SpecialSpec {
+    /// Returns bash's name for this spec, which the `complete` and `compopt` builtins
+    /// accept in place of a command name, and show in their messages.
+    pub const fn command_name(self) -> &'static str {
+        match self {
+            Self::Default => "_DefaultCmD_",
+            Self::EmptyLine => "_EmptycmD_",
+            Self::InitialWord => "_InitialWorD_",
+        }
+    }
+
+    /// Returns the special spec that `name`, bash's name for it, names, if any.
+    pub fn from_command_name(name: &str) -> Option<Self> {
+        Self::iter().find(|special| special.command_name() == name)
+    }
+}
+
+/// Represents a set of generated command completions.
+#[derive(Debug, Default)]
+pub struct Completions {
+    /// The index in the input line where the completions should be inserted. Represented
+    /// as a byte offset into the input line; must be at a clean character boundary.
+    pub insertion_index: usize,
+    /// The number of elements in the input line that should be removed before insertion.
+    /// Represented as a byte count; must capture an exact character boundary.
+    pub delete_count: usize,
+    /// The ordered set of completions.
+    pub candidates: Vec<String>,
+    /// Options for processing the candidates.
+    pub options: ProcessingOptions,
+}
+
+/// Options governing how command completion candidates are processed after being generated.
+#[derive(Debug)]
+pub struct ProcessingOptions {
+    /// Treat completions as file names.
+    pub treat_as_filenames: bool,
+    /// Don't auto-quote completions that are file names.
+    pub no_autoquote_filenames: bool,
+    /// Don't append a trailing space to completions at the end of the input line.
+    pub no_trailing_space_at_end_of_line: bool,
+}
+
+impl Default for ProcessingOptions {
+    fn default() -> Self {
+        Self {
+            treat_as_filenames: true,
+            no_autoquote_filenames: false,
+            no_trailing_space_at_end_of_line: false,
+        }
+    }
+}
+
 /// A shell's programmable completion state.
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -300,6 +457,194 @@ pub(crate) struct State {
     pub(crate) config: Config,
     /// The programmable completion in progress, if any.
     pub(crate) in_progress: Option<InProgressCompletion>,
+}
+
+fn word_break_chars(shell: &Shell<impl extensions::ShellExtensions>) -> Vec<char> {
+    const FALLBACK: &str = " \t\n\"\'@><=;|&(:";
+
+    shell
+        .env_str("COMP_WORDBREAKS")
+        .unwrap_or_else(|| FALLBACK.into())
+        .chars()
+        .collect()
+}
+
+/// Completes the word being completed in `context`'s line, with the completion spec that
+/// applies to it if there is one, or else with basic completion. Returns the candidates and
+/// how to process them.
+async fn complete_word(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    mut context: Context<'_>,
+) -> Generated<(Vec<String>, ProcessingOptions)> {
+    // Look the spec up afresh each time: a completion function that asks for completion to
+    // restart may have registered a new one.
+    let Some((spec, command_name)) = shell.completion_config().find_spec(&context.line) else {
+        return Generated::Candidates(get_completions_using_basic_lookup(shell, &context).await);
+    };
+    let spec = spec.clone();
+    context.line.command_name = command_name;
+
+    spec.complete(shell, &context).await.unwrap_or_else(|err| {
+        tracing::debug!(target: trace_categories::COMPLETION, "completion spec failed: {err}");
+        Generated::Candidates((Vec::new(), ProcessingOptions::default()))
+    })
+}
+
+async fn get_file_completions(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    token_to_complete: &str,
+    must_be_dir: bool,
+) -> Vec<String> {
+    // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
+    let mut throwaway_shell = shell.clone();
+    let params = throwaway_shell.default_exec_params();
+    let options = expansion::ExpanderOptions {
+        execute_command_substitutions: false,
+        ..Default::default()
+    };
+    let expanded_token = expansion::basic_expand_word_with_options(
+        &mut throwaway_shell,
+        &params,
+        &unquote_str(token_to_complete),
+        &options,
+    )
+    .await
+    .unwrap_or_else(|_err| token_to_complete.to_owned());
+
+    // Normalize path separators before building the glob pattern, because backslash
+    // is the escape character in glob syntax and must not be confused with a Windows
+    // path separator.
+    let expanded_token = sys::fs::normalize_path_separators(&expanded_token).into_owned();
+
+    let glob = std::format!("{expanded_token}*");
+
+    let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
+
+    let pattern = patterns::Pattern::from(glob)
+        .set_extended_globbing(shell.options().extended_globbing)
+        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
+
+    let mut completions: Vec<String> = pattern
+        .expand(
+            shell.working_dir(),
+            Some(&path_filter),
+            &patterns::FilenameExpansionOptions::default(),
+        )
+        .unwrap_or_default()
+        .into_paths()
+        .into_iter()
+        .map(|p| match sys::fs::normalize_path_separators(&p) {
+            std::borrow::Cow::Borrowed(_) => p,
+            std::borrow::Cow::Owned(normalized) => normalized,
+        })
+        .collect();
+
+    match expanded_token.as_str() {
+        "." => {
+            completions.push(".".into());
+            completions.push("..".into());
+        }
+        ".." => {
+            completions.push("..".into());
+        }
+        _ => {}
+    }
+
+    completions.sort();
+    completions.dedup();
+    completions
+}
+
+/// Attempts to complete a variable name from the given token.
+/// Returns the candidates and how to process them if the token looks like a variable reference being typed,
+/// or `None` if file/command completion should be used instead.
+///
+/// # Arguments
+///
+/// * `shell` - The shell instance to use for variable lookup.
+/// * `token` - The token being completed. May be empty.
+fn try_get_variable_completions(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    token: &str,
+) -> Option<(Vec<String>, ProcessingOptions)> {
+    // Determine if this is a braced or unbraced variable reference
+    let (var_prefix, use_braces) = if let Some(prefix) = token.strip_prefix("${") {
+        // For braced: only complete if brace isn't closed yet
+        if prefix.contains('}') {
+            return None;
+        }
+        (prefix, true)
+    } else {
+        let prefix = token.strip_prefix('$')?;
+        (prefix, false)
+    };
+
+    // If there's a path separator, this is a path like $HOME/foo, not a variable to complete
+    if sys::fs::contains_path_separator(var_prefix) {
+        return None;
+    }
+
+    // Find matching variables
+    let mut candidates: Vec<String> = shell
+        .env()
+        .iter()
+        .filter(|(key, _)| key.starts_with(var_prefix))
+        .map(|(key, _)| {
+            if use_braces {
+                format!("${{{key}}}")
+            } else {
+                format!("${key}")
+            }
+        })
+        .collect();
+    candidates.sort();
+
+    // Variable completions should not be treated as filenames (no escaping needed)
+    let options = ProcessingOptions {
+        treat_as_filenames: false,
+        ..ProcessingOptions::default()
+    };
+
+    Some((candidates, options))
+}
+
+/// Returns the names of the commands that start with `prefix`, in the order bash lists
+/// them: aliases, keywords, functions, enabled builtins, then executables in the path.
+fn command_completions(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    prefix: &str,
+) -> Vec<String> {
+    let mut names = Vec::new();
+
+    // Aliases, functions, and builtins are stored unordered; bash enumerates each sorted by
+    // name.
+    extend_matching(&mut names, shell.aliases().keys().sorted(), prefix);
+    extend_matching(&mut names, shell.get_keywords(), prefix);
+    extend_matching(
+        &mut names,
+        shell.funcs().iter().map(|(name, _)| name).sorted(),
+        prefix,
+    );
+    extend_matching(
+        &mut names,
+        shell
+            .builtins()
+            .iter()
+            .filter(|(_, registration)| !registration.disabled)
+            .map(|(name, _)| name)
+            .sorted(),
+        prefix,
+    );
+    names.extend(
+        shell
+            .find_executables_in_path_with_prefix(
+                prefix,
+                shell.options().case_insensitive_pathname_expansion,
+            )
+            .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())),
+    );
+
+    names
 }
 
 /// A programmable completion whose spec is generating candidates.
@@ -311,6 +656,49 @@ pub(crate) struct State {
 pub(crate) struct InProgressCompletion {
     /// The options in effect, which start as the spec's.
     pub(crate) options: GenerationOptions,
+}
+
+/// Completes `input` at `cursor`: see [`Shell::complete`].
+pub(crate) async fn complete(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    input: &str,
+    cursor: usize,
+) -> Result<Completions, error::Error> {
+    /// How many times a completion function may ask for completion to restart.
+    const MAX_RESTARTS: u32 = 10;
+
+    if !input.is_char_boundary(cursor) {
+        return Err(error::ErrorKind::InvalidCompletionPosition(cursor).into());
+    }
+
+    let word_breaks = word_break_chars(shell);
+    let word = find_completion_word(input, &word_breaks, cursor);
+    let line_words = find_line_words(input, &word_breaks, cursor);
+    let context = Context {
+        word: &word.text,
+        line: LineContext::new(input, cursor, &line_words),
+    };
+
+    // Complete, restarting as often as completion functions ask to. If they never stop
+    // asking, there's nothing to complete with.
+    let mut completed = None;
+    for _ in 0..=MAX_RESTARTS {
+        if let Generated::Candidates(candidates_and_options) = complete_word(shell, context).await {
+            completed = Some(candidates_and_options);
+            break;
+        }
+    }
+    let (candidates, options) = completed.unwrap_or_else(|| {
+        tracing::warn!(target: trace_categories::COMPLETION, "completion kept restarting; giving up");
+        (Vec::new(), ProcessingOptions::default())
+    });
+
+    Ok(Completions {
+        insertion_index: word.range.start,
+        delete_count: word.range.len(),
+        candidates,
+        options,
+    })
 }
 
 /// Keeps a completion in progress on a shell until dropped, then restores the one (if any)
@@ -865,6 +1253,50 @@ impl Spec {
     }
 }
 
+/// Adds the `names` that start with `prefix` to `candidates`.
+fn extend_matching<S: AsRef<str>>(
+    candidates: &mut Vec<String>,
+    names: impl IntoIterator<Item = S>,
+    prefix: &str,
+) {
+    candidates.extend(
+        names
+            .into_iter()
+            .filter(|name| name.as_ref().starts_with(prefix))
+            .map(|name| name.as_ref().to_owned()),
+    );
+}
+
+async fn get_completions_using_basic_lookup(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    context: &Context<'_>,
+) -> (Vec<String>, ProcessingOptions) {
+    let token = context.word;
+
+    // Try variable completion first (e.g., $HO -> $HOME, ${HO -> ${HOME})
+    if let Some(answer) = try_get_variable_completions(shell, token) {
+        return answer;
+    }
+
+    // File completions
+    let mut candidates = get_file_completions(shell, token, false).await;
+
+    // If this appears to be the command token (and if there's *some* prefix without
+    // a path separator) then also consider whether we should search the path for
+    // completions too.
+    // TODO(completions): Do a better job than just checking if index == 0.
+    let is_command_position = context.line.words.cword == Some(0)
+        && !token.is_empty()
+        && !sys::fs::contains_path_separator(token);
+
+    if is_command_position {
+        candidates.extend(command_completions(shell, token));
+        candidates.sort();
+    }
+
+    (candidates, ProcessingOptions::default())
+}
+
 /// Runs the completion command `command` (`complete -C`) to generate candidates for the
 /// word `context` is generating them for: one per line of its output.
 async fn call_completion_command(
@@ -965,482 +1397,50 @@ async fn call_completion_function(
     Ok(Generated::Candidates(candidates))
 }
 
-/// Represents a set of generated command completions.
-#[derive(Debug, Default)]
-pub struct Completions {
-    /// The index in the input line where the completions should be inserted. Represented
-    /// as a byte offset into the input line; must be at a clean character boundary.
-    pub insertion_index: usize,
-    /// The number of elements in the input line that should be removed before insertion.
-    /// Represented as a byte count; must capture an exact character boundary.
-    pub delete_count: usize,
-    /// The ordered set of completions.
-    pub candidates: Vec<String>,
-    /// Options for processing the candidates.
-    pub options: ProcessingOptions,
-}
+// `compgen -W` splits unquoted literal IFS characters before expanding each resulting word.
+fn split_completion_word_list(
+    word_list: &str,
+    ifs: &str,
+    parser_options: &brush_parser::ParserOptions,
+) -> Result<Vec<String>, error::Error> {
+    // Like bash, quoting left open at the end runs to the end of the list.
+    let mut word_list = word_list.to_owned();
+    quoting::close(&mut word_list);
+    let word_list = word_list.as_str();
 
-/// Options governing how command completion candidates are processed after being generated.
-#[derive(Debug)]
-pub struct ProcessingOptions {
-    /// Treat completions as file names.
-    pub treat_as_filenames: bool,
-    /// Don't auto-quote completions that are file names.
-    pub no_autoquote_filenames: bool,
-    /// Don't append a trailing space to completions at the end of the input line.
-    pub no_trailing_space_at_end_of_line: bool,
-}
+    let pieces = brush_parser::word::parse(word_list, parser_options)?;
+    let mut words = vec![];
+    let mut current_word = String::new();
 
-impl Default for ProcessingOptions {
-    fn default() -> Self {
-        Self {
-            treat_as_filenames: true,
-            no_autoquote_filenames: false,
-            no_trailing_space_at_end_of_line: false,
-        }
-    }
-}
+    for piece in pieces {
+        let source = word_list
+            .get(piece.start_index..piece.end_index)
+            .ok_or_else(|| {
+                error::ErrorKind::InternalError(String::from(
+                    "word parser returned an invalid source span",
+                ))
+            })?;
 
-/// A completion spec used in place of a command's.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, strum_macros::EnumIter)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum SpecialSpec {
-    /// The spec used when no command's spec applies (`complete -D`).
-    Default,
-    /// The spec used when the command line is empty (`complete -E`).
-    EmptyLine,
-    /// The spec used for the initial word of a command line (`complete -I`).
-    InitialWord,
-}
-
-impl SpecialSpec {
-    /// Returns bash's name for this spec, which the `complete` and `compopt` builtins
-    /// accept in place of a command name, and show in their messages.
-    pub const fn command_name(self) -> &'static str {
-        match self {
-            Self::Default => "_DefaultCmD_",
-            Self::EmptyLine => "_EmptycmD_",
-            Self::InitialWord => "_InitialWorD_",
-        }
-    }
-
-    /// Returns the special spec that `name`, bash's name for it, names, if any.
-    pub fn from_command_name(name: &str) -> Option<Self> {
-        Self::iter().find(|special| special.command_name() == name)
-    }
-}
-
-/// Names a completion spec in a [`Config`].
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SpecName<'a> {
-    /// The spec for completing the named command's arguments.
-    Command(&'a str),
-    /// One of the special specs.
-    Special(SpecialSpec),
-}
-
-impl<'a> SpecName<'a> {
-    /// Returns the spec named `name`: a command's, or the special spec that bash's name for
-    /// it (see [`SpecialSpec::command_name`]) names.
-    pub fn parse(name: &'a str) -> Self {
-        SpecialSpec::from_command_name(name).map_or(Self::Command(name), Self::Special)
-    }
-
-    /// Returns the name: a command's, or for a special spec, bash's name for it.
-    pub const fn as_str(self) -> &'a str {
-        match self {
-            Self::Command(command) => command,
-            Self::Special(special) => special.command_name(),
-        }
-    }
-}
-
-impl Config {
-    /// Removes all registered completion specs.
-    pub fn clear(&mut self) {
-        self.commands.clear();
-        self.specials.clear();
-    }
-
-    /// Ensures the named completion spec is no longer registered; returns whether a
-    /// removal operation was required.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the completion spec to remove.
-    pub fn remove(&mut self, name: SpecName<'_>) -> bool {
-        match name {
-            SpecName::Command(command) => self.commands.remove(command).is_some(),
-            SpecName::Special(special) => self.specials.remove(&special).is_some(),
-        }
-    }
-
-    /// Returns an iterator over the completion specs and their names, in no particular
-    /// order.
-    pub fn iter(&self) -> impl Iterator<Item = (SpecName<'_>, &Spec)> {
-        let commands = self
-            .commands
-            .iter()
-            .map(|(command, spec)| (SpecName::Command(command), spec));
-        let specials = self
-            .specials
-            .iter()
-            .map(|(special, spec)| (SpecName::Special(*special), spec));
-        commands.chain(specials)
-    }
-
-    /// If present, returns the named completion spec.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the completion spec.
-    pub fn get(&self, name: SpecName<'_>) -> Option<&Spec> {
-        match name {
-            SpecName::Command(command) => self.commands.get(command),
-            SpecName::Special(special) => self.specials.get(&special),
-        }
-    }
-
-    /// If present, returns a mutable reference to the named completion spec.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the completion spec.
-    pub fn get_mut(&mut self, name: SpecName<'_>) -> Option<&mut Spec> {
-        match name {
-            SpecName::Command(command) => self.commands.get_mut(command),
-            SpecName::Special(special) => self.specials.get_mut(&special),
-        }
-    }
-
-    /// Registers the provided completion spec under the given name, replacing any
-    /// already registered there.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the completion spec.
-    /// * `spec` - The completion spec.
-    pub fn set(&mut self, name: SpecName<'_>, spec: Spec) {
-        match name {
-            SpecName::Command(command) => {
-                self.commands.insert(command.to_owned(), spec);
+        if matches!(piece.piece, brush_parser::word::WordPiece::Text(_)) {
+            for c in source.chars() {
+                if ifs.contains(c) {
+                    if !current_word.is_empty() {
+                        words.push(std::mem::take(&mut current_word));
+                    }
+                } else {
+                    current_word.push(c);
+                }
             }
-            SpecName::Special(special) => {
-                self.specials.insert(special, spec);
-            }
+        } else {
+            current_word.push_str(source);
         }
     }
 
-    /// Returns the completion spec to use for completing `line`, and the name of the command
-    /// it completes for (a completion function's `$1`): the empty-line spec (`complete -E`)
-    /// if there's nothing before the cursor and it isn't at the start of a word, else the
-    /// spec for the initial word (`complete -I`) if completing that, else its command's spec
-    /// (by name, or by file name if the command is a path), else the default spec
-    /// (`complete -D`). Like bash, the empty-line and initial-word specs complete for
-    /// commands named after them.
-    fn find_spec<'l>(&self, line: &LineContext<'l>) -> Option<(&Spec, Option<&'l str>)> {
-        let special = |special: SpecialSpec| {
-            let spec = self.specials.get(&special)?;
-            Some((spec, Some(special.command_name())))
-        };
-
-        // Like bash, it's the empty line only if the cursor is at its very start, and not at
-        // the start of a word there: with whitespace before the cursor, or a word just after
-        // it, the initial word is completed.
-        if line.cursor == 0 && line.input.chars().next().is_none_or(char::is_whitespace) {
-            return special(SpecialSpec::EmptyLine);
-        }
-
-        if matches!(line.words.cword, None | Some(0)) {
-            return special(SpecialSpec::InitialWord);
-        }
-
-        let command_name = line.command_name?;
-        let spec = self
-            .commands
-            .get(command_name)
-            .or_else(|| {
-                let file_name = Path::new(command_name).file_name()?;
-                self.commands.get(file_name.to_string_lossy().as_ref())
-            })
-            .or_else(|| self.specials.get(&SpecialSpec::Default))?;
-        Some((spec, Some(command_name)))
-    }
-}
-
-/// Completes `input` at `cursor`: see [`Shell::complete`].
-pub(crate) async fn complete(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    input: &str,
-    cursor: usize,
-) -> Result<Completions, error::Error> {
-    /// How many times a completion function may ask for completion to restart.
-    const MAX_RESTARTS: u32 = 10;
-
-    if !input.is_char_boundary(cursor) {
-        return Err(error::ErrorKind::InvalidCompletionPosition(cursor).into());
+    if !current_word.is_empty() {
+        words.push(current_word);
     }
 
-    let word_breaks = word_break_chars(shell);
-    let word = find_completion_word(input, &word_breaks, cursor);
-    let line_words = find_line_words(input, &word_breaks, cursor);
-    let context = Context {
-        word: &word.text,
-        line: LineContext::new(input, cursor, &line_words),
-    };
-
-    // Complete, restarting as often as completion functions ask to. If they never stop
-    // asking, there's nothing to complete with.
-    let mut completed = None;
-    for _ in 0..=MAX_RESTARTS {
-        if let Generated::Candidates(candidates_and_options) = complete_word(shell, context).await {
-            completed = Some(candidates_and_options);
-            break;
-        }
-    }
-    let (candidates, options) = completed.unwrap_or_else(|| {
-        tracing::warn!(target: trace_categories::COMPLETION, "completion kept restarting; giving up");
-        (Vec::new(), ProcessingOptions::default())
-    });
-
-    Ok(Completions {
-        insertion_index: word.range.start,
-        delete_count: word.range.len(),
-        candidates,
-        options,
-    })
-}
-
-fn word_break_chars(shell: &Shell<impl extensions::ShellExtensions>) -> Vec<char> {
-    const FALLBACK: &str = " \t\n\"\'@><=;|&(:";
-
-    shell
-        .env_str("COMP_WORDBREAKS")
-        .unwrap_or_else(|| FALLBACK.into())
-        .chars()
-        .collect()
-}
-
-/// Completes the word being completed in `context`'s line, with the completion spec that
-/// applies to it if there is one, or else with basic completion. Returns the candidates and
-/// how to process them.
-async fn complete_word(
-    shell: &mut Shell<impl extensions::ShellExtensions>,
-    mut context: Context<'_>,
-) -> Generated<(Vec<String>, ProcessingOptions)> {
-    // Look the spec up afresh each time: a completion function that asks for completion to
-    // restart may have registered a new one.
-    let Some((spec, command_name)) = shell.completion_config().find_spec(&context.line) else {
-        return Generated::Candidates(get_completions_using_basic_lookup(shell, &context).await);
-    };
-    let spec = spec.clone();
-    context.line.command_name = command_name;
-
-    spec.complete(shell, &context).await.unwrap_or_else(|err| {
-        tracing::debug!(target: trace_categories::COMPLETION, "completion spec failed: {err}");
-        Generated::Candidates((Vec::new(), ProcessingOptions::default()))
-    })
-}
-
-async fn get_file_completions(
-    shell: &Shell<impl extensions::ShellExtensions>,
-    token_to_complete: &str,
-    must_be_dir: bool,
-) -> Vec<String> {
-    // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
-    let mut throwaway_shell = shell.clone();
-    let params = throwaway_shell.default_exec_params();
-    let options = expansion::ExpanderOptions {
-        execute_command_substitutions: false,
-        ..Default::default()
-    };
-    let expanded_token = expansion::basic_expand_word_with_options(
-        &mut throwaway_shell,
-        &params,
-        &unquote_str(token_to_complete),
-        &options,
-    )
-    .await
-    .unwrap_or_else(|_err| token_to_complete.to_owned());
-
-    // Normalize path separators before building the glob pattern, because backslash
-    // is the escape character in glob syntax and must not be confused with a Windows
-    // path separator.
-    let expanded_token = sys::fs::normalize_path_separators(&expanded_token).into_owned();
-
-    let glob = std::format!("{expanded_token}*");
-
-    let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
-
-    let pattern = patterns::Pattern::from(glob)
-        .set_extended_globbing(shell.options().extended_globbing)
-        .set_case_insensitive(shell.options().case_insensitive_pathname_expansion);
-
-    let mut completions: Vec<String> = pattern
-        .expand(
-            shell.working_dir(),
-            Some(&path_filter),
-            &patterns::FilenameExpansionOptions::default(),
-        )
-        .unwrap_or_default()
-        .into_paths()
-        .into_iter()
-        .map(|p| match sys::fs::normalize_path_separators(&p) {
-            std::borrow::Cow::Borrowed(_) => p,
-            std::borrow::Cow::Owned(normalized) => normalized,
-        })
-        .collect();
-
-    match expanded_token.as_str() {
-        "." => {
-            completions.push(".".into());
-            completions.push("..".into());
-        }
-        ".." => {
-            completions.push("..".into());
-        }
-        _ => {}
-    }
-
-    completions.sort();
-    completions.dedup();
-    completions
-}
-
-/// Attempts to complete a variable name from the given token.
-/// Returns the candidates and how to process them if the token looks like a variable reference being typed,
-/// or `None` if file/command completion should be used instead.
-///
-/// # Arguments
-///
-/// * `shell` - The shell instance to use for variable lookup.
-/// * `token` - The token being completed. May be empty.
-fn try_get_variable_completions(
-    shell: &Shell<impl extensions::ShellExtensions>,
-    token: &str,
-) -> Option<(Vec<String>, ProcessingOptions)> {
-    // Determine if this is a braced or unbraced variable reference
-    let (var_prefix, use_braces) = if let Some(prefix) = token.strip_prefix("${") {
-        // For braced: only complete if brace isn't closed yet
-        if prefix.contains('}') {
-            return None;
-        }
-        (prefix, true)
-    } else {
-        let prefix = token.strip_prefix('$')?;
-        (prefix, false)
-    };
-
-    // If there's a path separator, this is a path like $HOME/foo, not a variable to complete
-    if sys::fs::contains_path_separator(var_prefix) {
-        return None;
-    }
-
-    // Find matching variables
-    let mut candidates: Vec<String> = shell
-        .env()
-        .iter()
-        .filter(|(key, _)| key.starts_with(var_prefix))
-        .map(|(key, _)| {
-            if use_braces {
-                format!("${{{key}}}")
-            } else {
-                format!("${key}")
-            }
-        })
-        .collect();
-    candidates.sort();
-
-    // Variable completions should not be treated as filenames (no escaping needed)
-    let options = ProcessingOptions {
-        treat_as_filenames: false,
-        ..ProcessingOptions::default()
-    };
-
-    Some((candidates, options))
-}
-
-/// Returns the names of the commands that start with `prefix`, in the order bash lists
-/// them: aliases, keywords, functions, enabled builtins, then executables in the path.
-fn command_completions(
-    shell: &Shell<impl extensions::ShellExtensions>,
-    prefix: &str,
-) -> Vec<String> {
-    let mut names = Vec::new();
-
-    // Aliases, functions, and builtins are stored unordered; bash enumerates each sorted by
-    // name.
-    extend_matching(&mut names, shell.aliases().keys().sorted(), prefix);
-    extend_matching(&mut names, shell.get_keywords(), prefix);
-    extend_matching(
-        &mut names,
-        shell.funcs().iter().map(|(name, _)| name).sorted(),
-        prefix,
-    );
-    extend_matching(
-        &mut names,
-        shell
-            .builtins()
-            .iter()
-            .filter(|(_, registration)| !registration.disabled)
-            .map(|(name, _)| name)
-            .sorted(),
-        prefix,
-    );
-    names.extend(
-        shell
-            .find_executables_in_path_with_prefix(
-                prefix,
-                shell.options().case_insensitive_pathname_expansion,
-            )
-            .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())),
-    );
-
-    names
-}
-
-/// Adds the `names` that start with `prefix` to `candidates`.
-fn extend_matching<S: AsRef<str>>(
-    candidates: &mut Vec<String>,
-    names: impl IntoIterator<Item = S>,
-    prefix: &str,
-) {
-    candidates.extend(
-        names
-            .into_iter()
-            .filter(|name| name.as_ref().starts_with(prefix))
-            .map(|name| name.as_ref().to_owned()),
-    );
-}
-
-async fn get_completions_using_basic_lookup(
-    shell: &Shell<impl extensions::ShellExtensions>,
-    context: &Context<'_>,
-) -> (Vec<String>, ProcessingOptions) {
-    let token = context.word;
-
-    // Try variable completion first (e.g., $HO -> $HOME, ${HO -> ${HOME})
-    if let Some(answer) = try_get_variable_completions(shell, token) {
-        return answer;
-    }
-
-    // File completions
-    let mut candidates = get_file_completions(shell, token, false).await;
-
-    // If this appears to be the command token (and if there's *some* prefix without
-    // a path separator) then also consider whether we should search the path for
-    // completions too.
-    // TODO(completions): Do a better job than just checking if index == 0.
-    let is_command_position = context.line.words.cword == Some(0)
-        && !token.is_empty()
-        && !sys::fs::contains_path_separator(token);
-
-    if is_command_position {
-        candidates.extend(command_completions(shell, token));
-        candidates.sort();
-    }
-
-    (candidates, ProcessingOptions::default())
+    Ok(words)
 }
 
 fn completion_filter_pattern_matches(
