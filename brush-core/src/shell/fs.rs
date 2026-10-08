@@ -37,6 +37,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let pwd = cleaned_path.to_string_lossy().to_string();
 
+        std::env::set_current_dir(&cleaned_path)?;
+
         self.env.update_or_add(
             "PWD",
             variables::ShellValueLiteral::Scalar(pwd),
