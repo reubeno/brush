@@ -70,6 +70,28 @@ fn bound_key_runs_command_and_shell_survives() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Like readline, completion sees the whole line, not just the text before the cursor:
+/// e.g. `COMP_WORDS` includes words after it.
+#[test]
+fn completion_sees_text_after_cursor() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+
+    session.send_line(
+        r#"_f() { echo "WORDS""=<${COMP_WORDS[*]}> CWORD=$COMP_CWORD" >&2; }; complete -F _f mycmd"#,
+    )?;
+    expect_next_prompt(&mut session, 0)?;
+
+    // Type the line, move the cursor back before `b`, and press Tab.
+    session.send("mycmd a b")?;
+    session.send("\x1b[D\t")?;
+    session
+        .expect("WORDS=<mycmd a b> CWORD=2")
+        .context("completion did not see the whole line")?;
+
+    Ok(())
+}
+
 /// `preexec` fires for lines the user typed, not for a command a key binding ran. The
 /// hooks exist to observe what the user is about to run; bash-preexec has the same split,
 /// because a `bind -x` command runs from readline rather than from the command line.
