@@ -32,6 +32,9 @@ pub(super) async fn file_completions(
         expanded_dir,
         file_name,
     } = file_name_prefix(shell, context).await;
+    // The paths found have their separators normalized (on Windows, `\` to `/`), so the
+    // directory they're under must be too, for the directory as shown to replace it.
+    let expanded_dir = sys::fs::normalize_path_separators(&expanded_dir).into_owned();
     let prefix = std::format!("{expanded_dir}{file_name}");
     let dot_dirs: &[&str] = match prefix.as_str() {
         "." => &[".", ".."],
