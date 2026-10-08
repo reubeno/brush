@@ -16,9 +16,21 @@
 //!    else `-D`. It's looked up again each time a completion function asks for completion
 //!    to restart, so specs it registered are used.
 //! 3. The spec generates candidates with a completion in progress on the shell, so
-//!    `compopt` can change its options. With no spec, basic completion completes
-//!    variables, file names, and commands.
-
+//!    `compopt` can change its options and `compgen` can generate file names to fit the
+//!    word being completed. With no spec, basic completion completes variables, file
+//!    names, commands, and glob patterns.
+//!
+//! Generators match the word as bash does, since completion scripts written for bash (e.g.
+//! bash-completion) rely on it:
+//!
+//! - List-type actions (e.g. `-A function`) and `-W` words match it dequoted, with a
+//!   leading quote taken as the one the word is in: completion functions pass `compgen`
+//!   words from `COMP_WORDS`, which keep that quote.
+//! - Commands, users, and groups match it as is.
+//! - File names are generated from it with its directory part expanded (e.g. `~/`), and
+//!   dequoted only if the line being completed has quoting before the cursor. That makes
+//!   no difference for the word being completed, which can only have quoting if the line
+//!   does, but it does for other words a completion function passes `compgen`.
 //!
 //! Each candidate comes back as an edit of the line: quoted as bash quotes it for readline,
 //! and, as readline does, closing the word's quote, marking a directory, or adding a
@@ -36,20 +48,19 @@ use std::{
 use strum::IntoEnumIterator;
 
 use crate::{
-    Shell, commands, env, error, escape, expansion, extensions, interfaces, jobs, namedoptions,
-    patterns,
+    Shell, commands, env, error, escape, extensions, interfaces, jobs, namedoptions, patterns,
     sys::{self, users},
     trace_categories, traps,
     variables::{self, ShellValue, ShellVariable},
 };
-use brush_parser::unquote_str;
 
 mod edits;
 mod files;
 mod quoting;
 mod words;
 
-use files::resolve_file_names;
+use files::{FileKinds, file_completions, glob_completion, resolve_file_names};
+use quoting::{WordQuoting, dequote_for_matching};
 use words::{LineWords, find_completion_word, find_line_words};
 
 // `compgen -W` splits unquoted literal IFS characters before expanding each resulting word.
@@ -322,12 +333,33 @@ pub(crate) struct State {
 /// A programmable completion whose spec is generating candidates.
 ///
 /// That includes while its completion function runs. Like bash, the `compopt` builtin
-/// changes its options.
+/// changes its options, and the `compgen` builtin generates file names to suit its word.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct InProgressCompletion {
+    /// The word being completed, as typed.
+    word: String,
+    /// How the word being completed is quoted.
+    quoting: WordQuoting,
     /// The options in effect, which start as the spec's.
     pub(crate) options: GenerationOptions,
+}
+
+impl InProgressCompletion {
+    /// Returns how to take `word`, which a completion function passed `compgen`, as
+    /// quoted: in the context of the word being completed -- the quote it's in, and how the
+    /// line is quoted up to it.
+    ///
+    /// There's no telling where the word came from, so, like bash, this judges by its text.
+    /// If it's the word being completed (e.g. the function passed on its `$2`), it's quoted
+    /// as that is. Otherwise, it's taken as quoted by the caller (as bash-completion quotes
+    /// the words it passes `compgen`), and so is dequoted once more.
+    fn quoting_for(&self, word: &str) -> WordQuoting {
+        WordQuoting {
+            dequote_again: self.word != word,
+            ..self.quoting
+        }
+    }
 }
 
 /// Keeps a completion in progress on a shell until dropped, then restores the one (if any)
@@ -383,9 +415,12 @@ fn enter_comp_vars_scope<SE: extensions::ShellExtensions>(
 /// What a spec generates candidates for.
 #[derive(Clone, Copy, Debug)]
 struct Context<'a> {
-    /// The word to generate candidates for. When completing a line, this is the word being
-    /// completed; for [`Spec::generate`], it's the word given, dequoted.
+    /// The word to generate candidates for, as typed, with any quoting: see the module
+    /// docs for how generators match it. When completing a line, this is the word being
+    /// completed; for [`Spec::generate`], it's the word given.
     word: &'a str,
+    /// How `word` is quoted, which file-name generation dequotes it by.
+    quoting: WordQuoting,
     /// The line a completion function or command is told about: the one being completed,
     /// or for [`Spec::generate`], like bash, an empty one being completed for `compgen`.
     line: LineContext<'a>,
@@ -482,7 +517,14 @@ impl Spec {
     /// Generates this spec's completion candidates for `word`, a word on its own (not
     /// part of a line being completed), as the `compgen` builtin does: with any fallbacks
     /// its options ask for added, and like bash, in the order generated (sorting is for
-    /// showing them to a user). A completion function or command run for `word` is told,
+    /// showing them to a user).
+    ///
+    /// If a completion is in progress (e.g. this runs from a completion function), `word`
+    /// is taken in its context: file names are generated to fit the word being completed
+    /// -- the quote it's in, and how the line is quoted up to it. Like bash's `compgen`, a
+    /// word other than the one being completed is taken as quoted by the caller (as
+    /// bash-completion quotes the words it passes to `compgen`), and so dequoted once more
+    /// to generate file names. A completion function or command run for `word` is told,
     /// like bash's, about an empty line being completed for `compgen`.
     ///
     /// This doesn't start a completion in progress, so the `compopt` builtin can't change
@@ -498,9 +540,14 @@ impl Spec {
         shell: &mut Shell<impl extensions::ShellExtensions>,
         word: &str,
     ) -> Result<Vec<String>, crate::error::Error> {
-        let word = unquote_str(word);
+        let quoting = shell
+            .in_progress_completion()
+            .map_or_else(WordQuoting::default, |in_progress| {
+                in_progress.quoting_for(word)
+            });
         let context = Context {
-            word: &word,
+            word,
+            quoting,
             line: LineContext {
                 input: "",
                 cursor: 0,
@@ -535,6 +582,8 @@ impl Spec {
         let mut scope = InProgressScope::start(
             shell,
             InProgressCompletion {
+                word: context.word.to_owned(),
+                quoting: context.quoting,
                 options: self.options.clone(),
             },
         );
@@ -590,11 +639,8 @@ impl Spec {
                     .await?,
                 );
             }
-            candidates.extend(
-                words
-                    .into_iter()
-                    .filter(|word| word.starts_with(context.word)),
-            );
+            let prefix = dequote_for_matching(context.word);
+            candidates.extend(words.into_iter().filter(|word| word.starts_with(&prefix)));
         }
 
         if let Some(glob_pattern) = &self.glob_pattern {
@@ -685,8 +731,7 @@ impl Spec {
         if options.get(CompleteOption::PlusDirs)
             || (options.get(CompleteOption::DirNames) && candidates.is_empty())
         {
-            let mut dir_candidates =
-                get_file_completions(shell, context.word, /* must_be_dir */ true).await;
+            let mut dir_candidates = file_completions(shell, context, FileKinds::DirsOnly).await;
 
             // If directories are all we have, they're file names.
             if candidates.is_empty() {
@@ -710,10 +755,13 @@ impl Spec {
         if candidates.is_empty() && options.get(CompleteOption::Default) {
             // N.B. We approximate "default" readline completion behavior by getting file and
             // dir completions.
-            let must_be_dir = options.get(CompleteOption::DirNames);
+            let kinds = if options.get(CompleteOption::DirNames) {
+                FileKinds::DirsOnly
+            } else {
+                FileKinds::All
+            };
 
-            let mut default_candidates =
-                get_file_completions(shell, context.word, must_be_dir).await;
+            let mut default_candidates = file_completions(shell, context, kinds).await;
             candidates.append(&mut default_candidates);
 
             options.set(CompleteOption::FileNames, true);
@@ -729,11 +777,22 @@ impl Spec {
         shell: &Shell<impl extensions::ShellExtensions>,
         context: &Context<'_>,
     ) -> Result<SpecCandidates, error::Error> {
-        let prefix = context.word;
+        let dequoted_word = dequote_for_matching(context.word);
         let mut candidates = Vec::new();
         let mut file_names = false;
 
         for action in &self.actions {
+            // Commands, users, and groups match the word as typed, and other list-type
+            // actions match it dequoted (see the module docs).
+            let prefix = if matches!(
+                action,
+                CompleteAction::Command | CompleteAction::Group | CompleteAction::User
+            ) {
+                context.word
+            } else {
+                dequoted_word.as_str()
+            };
+
             let c = &mut candidates;
             match action {
                 // Aliases and functions are stored unordered; bash enumerates them sorted
@@ -761,7 +820,7 @@ impl Spec {
                 }
                 CompleteAction::Command => c.extend(command_completions(shell, prefix)),
                 CompleteAction::Directory => {
-                    let dirs = get_file_completions(shell, context.word, true).await;
+                    let dirs = file_completions(shell, context, FileKinds::DirsOnly).await;
                     file_names |= !dirs.is_empty();
                     c.extend(dirs);
                 }
@@ -794,7 +853,7 @@ impl Spec {
                 ),
                 CompleteAction::File => {
                     file_names = true;
-                    c.extend(get_file_completions(shell, context.word, false).await);
+                    c.extend(file_completions(shell, context, FileKinds::All).await);
                 }
                 CompleteAction::Function => extend_matching(
                     c,
@@ -1033,6 +1092,9 @@ struct ResolvedCandidate {
     text: String,
     /// What kind of candidate it is.
     kind: CandidateKind,
+    /// For a file name that `text` names only once expanded (e.g. `~/Documents` or
+    /// `$HOME/Documents`), the expanded name: see [`quoting`]'s "File names that expand".
+    expanded: Option<String>,
 }
 
 impl ResolvedCandidate {
@@ -1041,6 +1103,7 @@ impl ResolvedCandidate {
         Self {
             text: text.into(),
             kind: CandidateKind::Other,
+            expanded: None,
         }
     }
 
@@ -1244,6 +1307,7 @@ pub(crate) async fn complete(
     let line_words = find_line_words(input, &word_breaks, cursor);
     let context = Context {
         word: &word.text,
+        quoting: word.quoting,
         line: LineContext::new(input, cursor, &line_words),
     };
 
@@ -1262,7 +1326,7 @@ pub(crate) async fn complete(
     });
 
     let candidates = if options.get(CompleteOption::FileNames) {
-        resolve_file_names(shell, candidates)
+        resolve_file_names(shell, candidates).await
     } else {
         candidates.into_iter().map(ResolvedCandidate::new).collect()
     };
@@ -1308,69 +1372,6 @@ async fn complete_word(
     })
 }
 
-async fn get_file_completions(
-    shell: &Shell<impl extensions::ShellExtensions>,
-    token_to_complete: &str,
-    must_be_dir: bool,
-) -> Vec<String> {
-    // Basic-expand the token-to-be-completed; it won't have been expanded to this point.
-    let mut throwaway_shell = shell.clone();
-    let params = throwaway_shell.default_exec_params();
-    let options = expansion::ExpanderOptions {
-        execute_command_substitutions: false,
-        ..Default::default()
-    };
-    let expanded_token = expansion::basic_expand_word_with_options(
-        &mut throwaway_shell,
-        &params,
-        &unquote_str(token_to_complete),
-        &options,
-    )
-    .await
-    .unwrap_or_else(|_err| token_to_complete.to_owned());
-
-    // Normalize path separators before building the glob pattern, because backslash
-    // is the escape character in glob syntax and must not be confused with a Windows
-    // path separator.
-    let expanded_token = sys::fs::normalize_path_separators(&expanded_token).into_owned();
-
-    let glob = std::format!("{expanded_token}*");
-
-    let path_filter = |path: &Path| !must_be_dir || shell.absolute_path(path).is_dir();
-
-    let pattern = shell_pattern(shell, glob);
-
-    let mut completions: Vec<String> = pattern
-        .expand(
-            shell.working_dir(),
-            Some(&path_filter),
-            &patterns::FilenameExpansionOptions::default(),
-        )
-        .unwrap_or_default()
-        .into_paths()
-        .into_iter()
-        .map(|p| match sys::fs::normalize_path_separators(&p) {
-            std::borrow::Cow::Borrowed(_) => p,
-            std::borrow::Cow::Owned(normalized) => normalized,
-        })
-        .collect();
-
-    match expanded_token.as_str() {
-        "." => {
-            completions.push(".".into());
-            completions.push("..".into());
-        }
-        ".." => {
-            completions.push("..".into());
-        }
-        _ => {}
-    }
-
-    completions.sort();
-    completions.dedup();
-    completions
-}
-
 /// Attempts to complete a variable name from the given token.
 /// Returns the candidates if the token looks like a variable reference being typed,
 /// or `None` if file/command completion should be used instead.
@@ -1395,8 +1396,12 @@ fn try_get_variable_completions(
         (prefix, false)
     };
 
-    // If there's a path separator, this is a path like $HOME/foo, not a variable to complete
-    if sys::fs::contains_path_separator(var_prefix) {
+    // Only (the start of) a name can follow: not e.g. a path (`$HOME/foo`), or the quote
+    // of `$'...'`.
+    if !var_prefix
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
         return None;
     }
 
@@ -1484,7 +1489,7 @@ async fn get_completions_using_basic_lookup(
     }
 
     // File completions
-    let mut candidates = get_file_completions(shell, token, false).await;
+    let mut candidates = file_completions(shell, context, FileKinds::All).await;
 
     // If this appears to be the command token (and if there's *some* prefix without
     // a path separator) then also consider whether we should search the path for
@@ -1497,6 +1502,11 @@ async fn get_completions_using_basic_lookup(
     if is_command_position {
         candidates.extend(command_completions(shell, token));
         candidates.sort();
+    }
+
+    // Else, the file name a glob pattern matches.
+    if candidates.is_empty() {
+        candidates.extend(glob_completion(shell, token));
     }
 
     (

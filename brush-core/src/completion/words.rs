@@ -144,7 +144,11 @@ pub(super) fn find_completion_word(
     CompletionWord {
         text: input[text_start..cursor].to_owned(),
         range: start..cursor,
-        quoting: WordQuoting { quote },
+        quoting: WordQuoting {
+            quote,
+            dequote: quoting::has_quoting(&input[..cursor]),
+            dequote_again: false,
+        },
     }
 }
 
@@ -281,6 +285,18 @@ mod tests {
             words("ls a=b", 5),
             (vec!["ls", "a", "=", "b"], Some(3), Some("ls"), Some("="))
         );
+    }
+
+    #[test]
+    fn quoting_before_cursor() {
+        let has_quoting =
+            |input: &str, cursor| find_completion_word(input, &[' '], cursor).quoting.dequote;
+
+        assert!(!has_quoting("ls a b", 6));
+        assert!(has_quoting("ls 'a' b", 8));
+        assert!(has_quoting(r"ls a\ b", 7));
+        assert!(has_quoting("ls \"a", 5));
+        assert!(!has_quoting("ls a 'b'", 4));
     }
 
     #[test]

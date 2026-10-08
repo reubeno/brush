@@ -202,6 +202,30 @@ fn completing_directory_variable_appends_slash() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Like readline, completing a file name under a `~` or `$VAR` directory keeps the
+/// directory as typed, quoting the rest so the directory still expands. Expected lines were
+/// captured from bash 5.3.
+#[test]
+fn completing_under_tilde_or_variable_keeps_directory() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    std::fs::create_dir(home.path().join("Docs dir"))?;
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.env("HOME", home.path());
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    bind_show_line(&mut session)?;
+
+    for (typed, expected) in [
+        ("echo ~/Do", r"LINE=<echo ~/Docs\ dir/>"),
+        ("echo $HOME/Do", r#"LINE=<echo "$HOME/Docs dir"/>"#),
+    ] {
+        expect_completed_line(&mut session, &format!("{typed}\t"), expected)?;
+    }
+
+    Ok(())
+}
+
 /// `preexec` fires for lines the user typed, not for a command a key binding ran. The
 /// hooks exist to observe what the user is about to run; bash-preexec has the same split,
 /// because a `bind -x` command runs from readline rather than from the command line.
