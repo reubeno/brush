@@ -452,11 +452,23 @@ fn quote_file_name(
     let needs_quoting =
         |s: &str| escape::quote(s, &options(escape::QuoteMode::BackslashEscape)) != s;
     let needs_quoting = if params_expand {
-        let unexpanded: String = dir
-            .char_indices()
-            .filter(|&(index, c)| !live_in_dir(index, c) && !matches!(c, '{' | '}' | '(' | ')'))
-            .map(|(_, c)| c)
-            .collect();
+        // The directory part's literal text: without its live expansions' `$` and `` ` ``,
+        // nor the braces or parens of a live `${...}` or `$(...)`. Any other brace or paren
+        // is literal, so it needs quoting.
+        let mut unexpanded = String::new();
+        let mut closing = Vec::new();
+        let mut chars = dir.char_indices().peekable();
+        while let Some((index, c)) = chars.next() {
+            if live_in_dir(index, c) {
+                if let Some((_, open)) = chars.next_if(|&(_, c)| matches!(c, '{' | '(')) {
+                    closing.push(if open == '{' { '}' } else { ')' });
+                }
+            } else if closing.last() == Some(&c) {
+                closing.pop();
+            } else {
+                unexpanded.push(c);
+            }
+        }
         needs_quoting(&unexpanded) || (!file.is_empty() && needs_quoting(file))
     } else {
         needs_quoting(rest)
@@ -670,8 +682,13 @@ mod tests {
                 Some(Quote::Single),
                 "'/h/Docs dir'/",
             ),
-            // Like bash, a `(` in the file name is quoted.
+            // Like bash, a `(` or `{` is quoted, in the file name or the directory part --
+            // unless it's part of a parameter expansion there.
             ("$HOME/d(e)", "/h/d(e)", None, r#""$HOME/d(e)""#),
+            ("$HOME/a(b)/f", "/h/a(b)/f", None, r#""$HOME/a(b)/f""#),
+            ("$HOME/c{d,e}/f", "/h/c{d,e}/f", None, r#""$HOME/c{d,e}/f""#),
+            ("${HOME}/a(b)/f", "/h/a(b)/f", None, r#""${HOME}/a(b)/f""#),
+            ("${HOME:-x}/real/f", "/h/real/f", None, "${HOME:-x}/real/f"),
             // With no file name past the directory part, it all still expands.
             ("$HOME/", "/h/", None, "$HOME/"),
             ("${HOME}/", "/h/", None, "${HOME}/"),
