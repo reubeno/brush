@@ -201,7 +201,10 @@ async fn expand_directory(
     } else {
         ("", dir)
     };
-    let word = std::format!("{tilde}{}", escape::double_quote_leaving(rest, live));
+    let word = std::format!(
+        "{tilde}{}",
+        escape::double_quote_leaving(rest, |_, c| live.contains(&c))
+    );
 
     // Expand in a copy of the shell, so completing can't change the shell: expansion has
     // side effects in several places (e.g. `${x:=y}`, `$((x++))`, or `$RANDOM`). This only

@@ -19,8 +19,9 @@
 //!   anything else needs quoting (e.g. `"$HOME/Docs dir"`); otherwise it's quoted with
 //!   backslashes (e.g. `~/Docs\ dir`).
 //! - Only the directory part, as typed, expands: a `$` or `` ` `` in the file name itself is
-//!   quoted (e.g. `"$HOME/a\$b"`). Unlike bash 5.3, which leaves those to expand too, so
-//!   the name names another file, or runs a command.
+//!   quoted (e.g. `"$HOME/a\$b"`), and so is one the user quoted in the directory part
+//!   ([`QuotedExpansions`], e.g. ``"$HOME/a\`b\`/file"``). Unlike bash 5.3, which leaves
+//!   those to expand too, so the name names another file, or runs a command.
 //! - In a quote, where a `~` can't expand, a name starting with one is replaced with what
 //!   it expands to, then quoted as usual (e.g. `"/home/me/Docs dir"`). Parameters are left
 //!   to expand in double quotes; in single quotes they're quoted, and don't (e.g.
@@ -234,6 +235,52 @@ pub(super) fn unquote(text: &str) -> String {
     result
 }
 
+/// The `$` and `` ` `` the user quoted in a word being completed: escaped, or in single
+/// quotes. Where file names completing the word are requoted to keep expanding, those stay
+/// quoted, so the completed line can't run a command the user quoted out (see "File names
+/// that expand" in the module docs).
+#[derive(Clone, Debug, Default)]
+pub(super) struct QuotedExpansions {
+    /// The word, dequoted: the text that file names completing it start with.
+    word: String,
+    /// The byte offsets in `word` of the quoted `$` and `` ` ``.
+    offsets: Vec<usize>,
+}
+
+impl QuotedExpansions {
+    /// Finds the quoted `$` and `` ` `` in `word`, as typed (starting with the quote it's
+    /// in, if any).
+    pub fn of(word: &str) -> Self {
+        let mut offsets = Vec::new();
+        let mut escaped = false;
+        for sc in scan(word) {
+            let in_literal_quote = matches!(sc.open_quote, Some((_, Quote::Single | Quote::AnsiC)));
+            if matches!(sc.c, '$' | '`') && (escaped || in_literal_quote) {
+                // It lands in the dequoted word just after what the text before it dequotes
+                // to (not counting a backslash escaping it, which dequoting drops).
+                // ponytail: dequotes each prefix again; fine for a word typed on a line.
+                let before = word.get(..sc.index - usize::from(escaped));
+                offsets.push(unquote(before.unwrap_or_default()).len());
+            }
+            escaped = sc.escapes_next;
+        }
+
+        Self {
+            word: unquote(word),
+            offsets,
+        }
+    }
+
+    /// Returns whether the char at byte offset `index` of `text` is a `$` or `` ` `` the user
+    /// quoted: `text` must match the dequoted word up to it.
+    pub fn is_quoted(&self, text: &str, index: usize) -> bool {
+        self.offsets.binary_search(&index).is_ok()
+            && text
+                .get(..=index)
+                .is_some_and(|start| self.word.starts_with(start))
+    }
+}
+
 /// Dequotes `text`, which starts in `open_quote` if given (e.g. the rest of a word after its
 /// opening quote).
 pub(super) fn unquote_in_quote(text: &str, open_quote: Option<Quote>) -> String {
@@ -270,6 +317,8 @@ pub(super) struct Quoter {
     /// Whether to quote candidates that are file names: unless the spec said not to
     /// ([`CompleteOption::NoQuote`](super::CompleteOption::NoQuote)).
     pub quote_file_names: bool,
+    /// The `$` and `` ` `` the user quoted in the word being completed, which stay quoted.
+    pub user_quoted: QuotedExpansions,
 }
 
 impl Quoter {
@@ -306,7 +355,7 @@ impl Quoter {
 
         let quoted = self
             .quote_file_names
-            .then(|| quote_file_name(name, expanded, self.open_quote))
+            .then(|| quote_file_name(name, expanded, self.open_quote, &self.user_quoted))
             .flatten();
         match (self.open_quote, quoted) {
             (None, quoted) => QuotedCandidate {
@@ -348,11 +397,13 @@ fn ends_in_quote(text: &str) -> bool {
 /// or with backslashes if there's none. Returns `None` if it doesn't need quoting.
 ///
 /// If it's `expanded` (to name the file), it's quoted so it still expands, as the module
-/// docs describe.
+/// docs describe: but the `$` and `` ` `` in its directory part that the user quoted
+/// ([`QuotedExpansions`]) stay quoted.
 fn quote_file_name(
     name: &str,
     expanded: Option<&str>,
     open_quote: Option<Quote>,
+    user_quoted: &QuotedExpansions,
 ) -> Option<String> {
     let expands = expanded.is_some();
     let (tilde, rest) = if expands {
@@ -373,7 +424,9 @@ fn quote_file_name(
         Some(_) => (rest, ""),
         None => ("", rest),
     };
-    let params_expand = dir.contains(['$', '`']);
+    let live_in_dir =
+        |index, c| matches!(c, '$' | '`') && !user_quoted.is_quoted(name, tilde.len() + index);
+    let params_expand = dir.char_indices().any(|(index, c)| live_in_dir(index, c));
 
     // Like bash quoting a file name it completes, leave a `~` unquoted, so that a `~user`
     // completion still expands.
@@ -386,8 +439,12 @@ fn quote_file_name(
     let needs_quoting =
         |s: &str| escape::quote(s, &options(escape::QuoteMode::BackslashEscape)) != s;
     let needs_quoting = if params_expand {
-        needs_quoting(&dir.replace(['$', '{', '}', '(', ')', '`'], ""))
-            || (!file.is_empty() && needs_quoting(file))
+        let unexpanded: String = dir
+            .char_indices()
+            .filter(|&(index, c)| !live_in_dir(index, c) && !matches!(c, '{' | '}' | '(' | ')'))
+            .map(|(_, c)| c)
+            .collect();
+        needs_quoting(&unexpanded) || (!file.is_empty() && needs_quoting(file))
     } else {
         needs_quoting(rest)
     };
@@ -396,14 +453,9 @@ fn quote_file_name(
     }
 
     let quoted = if params_expand && !matches!(open_quote, Some(Quote::Single | Quote::AnsiC)) {
-        // One double-quoted word, with the directory part's expansions left live.
-        let dir = escape::double_quote_leaving(dir, &['$', '`']);
-        let file = escape::double_quote_leaving(file, &[]);
-        std::format!(
-            "{}{}",
-            dir.strip_suffix('"').unwrap_or(&dir),
-            file.strip_prefix('"').unwrap_or(&file)
-        )
+        // One double-quoted word, with the directory part's expansions left live. (Here,
+        // `rest` is `dir` followed by `file`.)
+        escape::double_quote_leaving(rest, |index, c| index < dir.len() && live_in_dir(index, c))
     } else {
         let mode = open_quote.map_or(escape::QuoteMode::BackslashEscape, Into::into);
         escape::quote(rest, &options(mode)).into_owned()
@@ -459,15 +511,24 @@ mod tests {
     #[test]
     fn file_names_are_quoted_like_bash() {
         // Like bash, a `~user` file name isn't quoted, so it still expands...
-        assert_eq!(quote_file_name("~root", None, None), None);
+        assert_eq!(
+            quote_file_name("~root", None, None, &QuotedExpansions::default()),
+            None
+        );
         // ...but a leading `#` is, so it doesn't start a comment.
         assert_eq!(
-            quote_file_name("#hash", None, None).as_deref(),
+            quote_file_name("#hash", None, None, &QuotedExpansions::default()).as_deref(),
             Some(r"\#hash")
         );
-        assert_eq!(quote_file_name("a b", None, None).as_deref(), Some(r"a\ b"));
+        assert_eq!(
+            quote_file_name("a b", None, None, &QuotedExpansions::default()).as_deref(),
+            Some(r"a\ b")
+        );
         // A comma isn't special on its own.
-        assert_eq!(quote_file_name("a,b", None, None), None);
+        assert_eq!(
+            quote_file_name("a,b", None, None, &QuotedExpansions::default()),
+            None
+        );
     }
 
     #[test]
@@ -529,10 +590,11 @@ mod tests {
         assert_eq!(dequote_for_matching(r#""a\\"#), r"a\");
     }
 
-    fn file_name_quoter(quote: Option<Quote>) -> Quoter {
+    fn file_name_quoter(quote: Option<Quote>, user_quoted: QuotedExpansions) -> Quoter {
         Quoter {
             open_quote: quote,
             quote_file_names: true,
+            user_quoted,
         }
     }
 
@@ -540,12 +602,15 @@ mod tests {
     /// when quoted. Expected values were captured from bash 5.3.
     #[test]
     fn expanding_file_names_keep_expanding() {
-        let quote = |text: &str, expanded: &str, quote| {
+        // As if the candidate were typed in its quote.
+        let quote = |text: &str, expanded: &str, quote: Option<Quote>| {
             let candidate = ResolvedCandidate {
                 expanded: Some(expanded.to_owned()),
                 ..ResolvedCandidate::file_name(text)
             };
-            let quoted = file_name_quoter(quote).quote(&candidate, false);
+            let user_quoted =
+                QuotedExpansions::of(&std::format!("{}{text}", quote.map_or("", Quote::opening)));
+            let quoted = file_name_quoter(quote, user_quoted).quote(&candidate, false);
             quoted.closed.unwrap_or(quoted.text)
         };
 
@@ -633,12 +698,83 @@ mod tests {
 
         // A file named literally is quoted as usual.
         assert_eq!(
-            file_name_quoter(None).quote(&ResolvedCandidate::file_name("a$b"), false),
+            file_name_quoter(None, QuotedExpansions::default())
+                .quote(&ResolvedCandidate::file_name("a$b"), false),
             QuotedCandidate {
                 text: r"a\$b".to_owned(),
                 closed: None
             }
         );
+    }
+
+    #[test]
+    fn quoted_expansions_are_the_escaped_or_single_quoted_ones() {
+        // Quoted in single quotes or by a backslash; not in double quotes; a `$'` opens a
+        // quote.
+        let quoted = QuotedExpansions::of(r#""$a"'$b'\$c$'d'`e`"#);
+        let text = "$a$b$cd`e`";
+        let quoted_at: Vec<_> = (0..text.len())
+            .filter(|&i| quoted.is_quoted(text, i))
+            .collect();
+        assert_eq!(quoted_at, [2, 4]);
+
+        // Only in text that matches the word up to there.
+        assert!(quoted.is_quoted("$a$b", 2));
+        assert!(!quoted.is_quoted("$x$b$cd`e`", 2));
+        assert!(!QuotedExpansions::default().is_quoted("$b", 0));
+    }
+
+    /// The `$` and `` ` `` the user quoted in the directory part stay quoted when it's
+    /// requoted to keep expanding, so the completed line can't run a command.
+    #[test]
+    fn quoted_expansions_in_directory_part_stay_quoted() {
+        let quote = |typed: &str, text: &str, expanded: &str| {
+            let candidate = ResolvedCandidate {
+                expanded: Some(expanded.to_owned()),
+                ..ResolvedCandidate::file_name(text)
+            };
+            let open_quote = super::open_quote(typed);
+            let user_quoted = QuotedExpansions::of(typed);
+            let quoted = file_name_quoter(open_quote, user_quoted).quote(&candidate, false);
+            quoted.closed.unwrap_or(quoted.text)
+        };
+
+        for (typed, text, expanded, expected) in [
+            (
+                r#""$HOME/a\`x\`/fi"#,
+                "$HOME/a`x`/file",
+                "/h/a`x`/file",
+                r#""$HOME/a\`x\`/file""#,
+            ),
+            (
+                r"$HOME/a\`x\`/fi",
+                "$HOME/a`x`/file",
+                "/h/a`x`/file",
+                r#""$HOME/a\`x\`/file""#,
+            ),
+            (
+                r"$HOME/\$x/fi",
+                "$HOME/$x/file",
+                "/h/$x/file",
+                r#""$HOME/\$x/file""#,
+            ),
+            (
+                r"'$HOME'/$x/fi",
+                "$HOME/$x/file",
+                "$HOME//file",
+                r#""\$HOME/$x/file""#,
+            ),
+            // What the user didn't quote stays live.
+            ("$HOME/$x/fi", "$HOME/$x/file", "/h/y/file", "$HOME/$x/file"),
+            (
+                "$HOME/a`x`/fi",
+                "$HOME/a`x`/file",
+                "/h/a/file",
+                "$HOME/a`x`/file",
+            ),
+        ] {
+            assert_eq!(quote(typed, text, expanded), expected, "{typed}");
+        }
     }
 
     /// Like readline, a file name in an open quote is quoted to suit it: in full, if it
@@ -657,8 +793,8 @@ mod tests {
             ("plain", Quote::Double, r#""plain"#, None),
             ("sub/", Quote::Single, "'sub/", None),
         ] {
-            let quoted =
-                file_name_quoter(Some(q)).quote(&ResolvedCandidate::file_name(text), false);
+            let quoted = file_name_quoter(Some(q), QuotedExpansions::default())
+                .quote(&ResolvedCandidate::file_name(text), false);
             assert_eq!(quoted.text, expected_text, "{text:?} in {q:?}");
             assert_eq!(
                 quoted.closed.as_deref(),
@@ -673,6 +809,7 @@ mod tests {
         let quoter = Quoter {
             open_quote: Some(Quote::Double),
             quote_file_names: true,
+            user_quoted: QuotedExpansions::default(),
         };
         assert_eq!(
             quoter.quote(&ResolvedCandidate::new("a b"), false),

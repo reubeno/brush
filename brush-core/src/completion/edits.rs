@@ -9,7 +9,7 @@ use itertools::Itertools;
 use super::{
     Candidate, CandidateKind, CompleteOption, Completions, Edit, EditPrefs, GenerationOptions,
     ResolvedCandidate,
-    quoting::{Quote, Quoter},
+    quoting::{Quote, QuotedExpansions, Quoter},
 };
 
 /// Makes candidates edits of a line, replacing the word being completed.
@@ -31,9 +31,15 @@ impl CandidateEdits<'_> {
     /// Returns the completions of the word with `candidates`, without duplicates.
     pub fn completions(&self, candidates: Vec<ResolvedCandidate>) -> Completions {
         let candidates: Vec<_> = candidates.into_iter().unique().collect();
+        let typed = self.line.get(self.word.clone()).unwrap_or_default();
+        let quoter = Quoter {
+            open_quote: self.open_quote,
+            quote_file_names: !self.options.get(CompleteOption::NoQuote),
+            user_quoted: QuotedExpansions::of(typed),
+        };
 
         let common_prefix = if candidates.len() > 1 {
-            self.partial_edit(&common_prefix(&candidates))
+            self.partial_edit(&quoter, &common_prefix(&candidates))
         } else {
             None
         };
@@ -41,24 +47,17 @@ impl CandidateEdits<'_> {
         Completions {
             candidates: candidates
                 .into_iter()
-                .map(|candidate| self.candidate(candidate))
+                .map(|candidate| self.candidate(&quoter, candidate))
                 .collect(),
             common_prefix,
-        }
-    }
-
-    fn quoter(&self) -> Quoter {
-        Quoter {
-            open_quote: self.open_quote,
-            quote_file_names: !self.options.get(CompleteOption::NoQuote),
         }
     }
 
     /// Returns the edit that completes the word to `prefix`, the candidates' common prefix,
     /// if it's not empty and would change the line. Like readline, it's quoted, but its
     /// quote is left open.
-    fn partial_edit(&self, prefix: &ResolvedCandidate) -> Option<Edit> {
-        let text = self.quoter().quote(prefix, false).text;
+    fn partial_edit(&self, quoter: &Quoter, prefix: &ResolvedCandidate) -> Option<Edit> {
+        let text = quoter.quote(prefix, false).text;
         if prefix.text.is_empty() || self.line.get(self.word.clone()) == Some(text.as_str()) {
             return None;
         }
@@ -77,7 +76,7 @@ impl CandidateEdits<'_> {
     /// at the end of the line, and not after a directory, so it can be completed further.
     /// At the end of the line, a space follows, unless the spec said not to
     /// ([`CompleteOption::NoSpace`]) or the candidate is a directory.
-    fn candidate(&self, candidate: ResolvedCandidate) -> Candidate {
+    fn candidate(&self, quoter: &Quoter, candidate: ResolvedCandidate) -> Candidate {
         let next_char = self
             .line
             .get(self.word.end..)
@@ -86,9 +85,7 @@ impl CandidateEdits<'_> {
         let is_dir = candidate.kind == CandidateKind::FileName { is_dir: true };
         let open_quote = self.open_quote.map(Quote::as_char);
 
-        let quoted = self
-            .quoter()
-            .quote(&candidate, is_dir && self.prefs.mark_directories);
+        let quoted = quoter.quote(&candidate, is_dir && self.prefs.mark_directories);
         let mut replace = self.word.clone();
         let mut text = if let Some(closed) = quoted.closed {
             if let Some(q) = open_quote.filter(|&q| next_char == Some(q)) {

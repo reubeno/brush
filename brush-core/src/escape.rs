@@ -429,19 +429,19 @@ pub fn single_quote(s: &str) -> Cow<'_, str> {
 }
 
 fn double_quote(s: &str) -> String {
-    double_quote_leaving(s, &[])
+    double_quote_leaving(s, |_, _| false)
 }
 
 /// Double-quotes `s`, escaping the chars that are special in double quotes (`$`, `` ` ``,
-/// `"`, and `\`) -- except those in `live`, which keep their meaning. E.g., with `$` live,
-/// parameters in `s` still expand.
-pub(crate) fn double_quote_leaving(s: &str, live: &[char]) -> String {
+/// `"`, and `\`) -- except those `live` says to leave live, given each one's byte offset in
+/// `s` and the char. E.g., with every `$` live, parameters in `s` still expand.
+pub(crate) fn double_quote_leaving(s: &str, live: impl Fn(usize, char) -> bool) -> String {
     let mut result = String::with_capacity(s.len() + 2);
 
     result.push('"');
 
-    for c in s.chars() {
-        if matches!(c, '$' | '`' | '"' | '\\') && !live.contains(&c) {
+    for (index, c) in s.char_indices() {
+        if matches!(c, '$' | '`' | '"' | '\\') && !live(index, c) {
             result.push('\\');
         }
 

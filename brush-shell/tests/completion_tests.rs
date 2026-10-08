@@ -1646,26 +1646,31 @@ async fn common_prefix_that_cannot_stay_in_quote() -> Result<()> {
     Ok(())
 }
 
-/// Pins current, UNDESIRABLE behavior: a `` ` `` the user escaped in the directory part is
-/// left live when that part is requoted to keep its `$HOME` expanding, so running the
-/// completed line runs the command between them (here, `touch marker`) instead of naming the
-/// directory. bash 5.3 does the same. The edit should keep the escapes the user typed
-/// (``"$HOME/a\`touch marker\`/file"``); update this test when it does.
+/// A `` ` `` the user escaped in the directory part stays escaped when that part is requoted
+/// to keep its `$HOME` expanding, so running the completed line names the directory instead
+/// of running a command (here, `touch marker`). Deliberately unlike bash 5.3, which leaves
+/// them live. (A `$` the user quoted stays quoted too; see the unit tests.)
 #[tokio::test(flavor = "multi_thread")]
-async fn escaped_backticks_in_directory_part_are_left_live() -> Result<()> {
+async fn escaped_expansions_in_directory_part_stay_escaped() -> Result<()> {
     let mut test_shell = TestShell::new().await?;
     let home = test_shell.temp_dir.child("h");
     home.child("a`touch marker`").child("file").touch()?;
     let home = home.path().to_string_lossy().into_owned();
     test_shell.set_var("HOME", &home)?;
 
-    let completions = test_shell
-        .complete_end_of_line_full(r#"echo "$HOME/a\`touch marker\`/fi"#)
-        .await?;
-    assert_eq!(
-        candidate_edit_texts(&completions),
-        [r#""$HOME/a`touch marker`/file" "#]
-    );
+    for (line, expected) in [
+        (
+            r#"echo "$HOME/a\`touch marker\`/fi"#,
+            r#""$HOME/a\`touch marker\`/file" "#,
+        ),
+        (
+            r"echo $HOME/a\`touch\ marker\`/fi",
+            r#""$HOME/a\`touch marker\`/file" "#,
+        ),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_edit_texts(&completions), [expected], "{line}");
+    }
 
     Ok(())
 }
