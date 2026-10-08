@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::HashMap, path::Path};
 
 use super::{
     CandidateKind, Context, ResolvedCandidate,
-    quoting::{self, WordQuoting},
+    quoting::{self, QuotedExpansions, WordQuoting},
     shell_pattern,
 };
 use crate::{Shell, escape, expansion, extensions, patterns, sys};
@@ -111,12 +111,13 @@ async fn file_name_prefix(
 
     let (dir, file_name) = split_dir(&word);
     let unquoted_dir = quoting::unquote(dir);
+    let user_quoted = QuotedExpansions::of(&word);
 
     // A directory part that isn't dequoted is searched as typed (its backslashes escaping as
     // in double quotes, e.g. keeping `\$HOME` literal) only if it has expansions; one that
     // doesn't is searched dequoted (so `dir\ with\ space/` finds `dir with space/`).
     let expanded_dir = if dequote || !dir.contains(['$', '`']) {
-        expand_directory(shell, &unquoted_dir, DirExpansion::Dequoted).await
+        expand_directory(shell, &unquoted_dir, DirExpansion::Dequoted(&user_quoted)).await
     } else {
         expand_directory(shell, dir, DirExpansion::AsTyped).await
     };
@@ -124,7 +125,8 @@ async fn file_name_prefix(
     // Like bash, candidates show the directory as typed (dequoted along with the word), or
     // with `direxpand`, with its parameters (but not a leading `~`) expanded.
     let shown_dir = if shell.options().expand_dir_names_on_completion {
-        expand_directory(shell, &unquoted_dir, DirExpansion::ParametersOnly).await
+        let how = DirExpansion::ParametersOnly(&user_quoted);
+        expand_directory(shell, &unquoted_dir, how).await
     } else if dequote {
         unquoted_dir
     } else {
@@ -164,16 +166,16 @@ pub(super) fn split_tilde_prefix(path: &str) -> (&str, &str) {
 
 /// How [`expand_directory`] expands a directory's text.
 #[derive(Clone, Copy)]
-enum DirExpansion {
+enum DirExpansion<'a> {
     /// The text is dequoted, so its backslashes are literal. A leading `~` and parameters
-    /// expand.
-    Dequoted,
+    /// expand, but not a `$` the user quoted.
+    Dequoted(&'a QuotedExpansions),
     /// The text is as typed: its backslashes escape as they do in double quotes (e.g. `\$`).
     /// A leading `~` and parameters expand.
     AsTyped,
-    /// The text is dequoted, and just its parameters expand, not a leading `~`: as
-    /// `direxpand` shows it.
-    ParametersOnly,
+    /// The text is dequoted, and just its parameters expand (but not a `$` the user quoted),
+    /// not a leading `~`: as `direxpand` shows it.
+    ParametersOnly(&'a QuotedExpansions),
 }
 
 /// Expands `dir`, the directory part of a word being completed (e.g. `~/` or `$HOME/`), as
@@ -183,7 +185,7 @@ enum DirExpansion {
 async fn expand_directory(
     shell: &Shell<impl extensions::ShellExtensions>,
     dir: &str,
-    how: DirExpansion,
+    how: DirExpansion<'_>,
 ) -> String {
     if shell.absolute_path(Path::new(dir)).is_dir() {
         return dir.to_owned();
@@ -191,20 +193,19 @@ async fn expand_directory(
 
     // Expand a word that leaves just a leading `~user/` unquoted and double-quotes the
     // rest, keeping only the chars live there that should be.
-    let (expand_tilde, live): (bool, &[char]) = match how {
-        DirExpansion::Dequoted => (true, &['$']),
-        DirExpansion::AsTyped => (true, &['$', '\\']),
-        DirExpansion::ParametersOnly => (false, &['$']),
-    };
+    let expand_tilde = !matches!(how, DirExpansion::ParametersOnly(_));
     let (tilde, rest) = if expand_tilde {
         split_tilde_prefix(dir)
     } else {
         ("", dir)
     };
-    let word = std::format!(
-        "{tilde}{}",
-        escape::double_quote_leaving(rest, |_, c| live.contains(&c))
-    );
+    let live = |index, c| match how {
+        DirExpansion::Dequoted(user_quoted) | DirExpansion::ParametersOnly(user_quoted) => {
+            c == '$' && !user_quoted.is_quoted(dir, tilde.len() + index)
+        }
+        DirExpansion::AsTyped => matches!(c, '$' | '\\'),
+    };
+    let word = std::format!("{tilde}{}", escape::double_quote_leaving(rest, live));
 
     // Expand in a copy of the shell, so completing can't change the shell: expansion has
     // side effects in several places (e.g. `${x:=y}`, `$((x++))`, or `$RANDOM`). This only
@@ -225,17 +226,19 @@ async fn expand_directory(
 ///
 /// It works from their text alone, since that's all there is of candidates a completion
 /// function returns (in `COMPREPLY`), as in bash -- including file names it got from
-/// `compgen -f`.
+/// `compgen -f`.  A `$` the user quoted in the word being completed stays literal,
+/// as it did when searching (see [`QuotedExpansions`]).
 pub(super) async fn resolve_file_names(
     shell: &Shell<impl extensions::ShellExtensions>,
     texts: Vec<String>,
+    user_quoted: &QuotedExpansions,
 ) -> Vec<ResolvedCandidate> {
     // Candidates mostly share directories, so expand each just once.
     let mut expanded_dirs = HashMap::new();
 
     let mut candidates = Vec::with_capacity(texts.len());
     for text in texts {
-        let expanded = expand_file_name(shell, &text, &mut expanded_dirs).await;
+        let expanded = expand_file_name(shell, &text, user_quoted, &mut expanded_dirs).await;
         let is_dir = sys::fs::ends_with_path_separator(&text)
             || shell
                 .absolute_path(Path::new(expanded.as_deref().unwrap_or(&text)))
@@ -255,6 +258,7 @@ pub(super) async fn resolve_file_names(
 async fn expand_file_name(
     shell: &Shell<impl extensions::ShellExtensions>,
     text: &str,
+    user_quoted: &QuotedExpansions,
     expanded_dirs: &mut HashMap<String, String>,
 ) -> Option<String> {
     let (dir, name) = split_dir(text);
@@ -267,7 +271,7 @@ async fn expand_file_name(
     let expanded_dir = if let Some(expanded_dir) = expanded_dirs.get(dir) {
         expanded_dir.clone()
     } else {
-        let expanded_dir = expand_directory(shell, dir, DirExpansion::Dequoted).await;
+        let expanded_dir = expand_directory(shell, dir, DirExpansion::Dequoted(user_quoted)).await;
         expanded_dirs.insert(dir.to_owned(), expanded_dir.clone());
         expanded_dir
     };

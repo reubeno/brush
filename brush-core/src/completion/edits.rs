@@ -21,6 +21,8 @@ pub(super) struct CandidateEdits<'a> {
     pub word: Range<usize>,
     /// The quote the word is in, if the cursor is inside an unclosed quote.
     pub open_quote: Option<Quote>,
+    /// The `$` and `` ` `` the user quoted in the word.
+    pub user_quoted: &'a QuotedExpansions,
     /// The options in effect for the candidates.
     pub options: &'a GenerationOptions,
     /// The line editor's preferences.
@@ -31,11 +33,10 @@ impl CandidateEdits<'_> {
     /// Returns the completions of the word with `candidates`, without duplicates.
     pub fn completions(&self, candidates: Vec<ResolvedCandidate>) -> Completions {
         let candidates: Vec<_> = candidates.into_iter().unique().collect();
-        let typed = self.line.get(self.word.clone()).unwrap_or_default();
         let quoter = Quoter {
             open_quote: self.open_quote,
             quote_file_names: !self.options.get(CompleteOption::NoQuote),
-            user_quoted: QuotedExpansions::of(typed),
+            user_quoted: self.user_quoted,
         };
 
         let common_prefix = if candidates.len() > 1 {
@@ -56,7 +57,7 @@ impl CandidateEdits<'_> {
     /// Returns the edit that completes the word to `prefix`, the candidates' common prefix,
     /// if it's not empty and would change the line. Like readline, it's quoted, but its
     /// quote is left open.
-    fn partial_edit(&self, quoter: &Quoter, prefix: &ResolvedCandidate) -> Option<Edit> {
+    fn partial_edit(&self, quoter: &Quoter<'_>, prefix: &ResolvedCandidate) -> Option<Edit> {
         let text = quoter.quote(prefix, false).text;
         if prefix.text.is_empty() || self.line.get(self.word.clone()) == Some(text.as_str()) {
             return None;
@@ -76,7 +77,7 @@ impl CandidateEdits<'_> {
     /// at the end of the line, and not after a directory, so it can be completed further.
     /// At the end of the line, a space follows, unless the spec said not to
     /// ([`CompleteOption::NoSpace`]) or the candidate is a directory.
-    fn candidate(&self, quoter: &Quoter, candidate: ResolvedCandidate) -> Candidate {
+    fn candidate(&self, quoter: &Quoter<'_>, candidate: ResolvedCandidate) -> Candidate {
         let next_char = self
             .line
             .get(self.word.end..)
@@ -191,10 +192,12 @@ mod tests {
             mark_directories,
             ..EditPrefs::default()
         };
+        let user_quoted = QuotedExpansions::of(word);
         let editor = CandidateEdits {
             line,
             word: 0..word.len(),
             open_quote: quote,
+            user_quoted: &user_quoted,
             options,
             prefs: &prefs,
         };

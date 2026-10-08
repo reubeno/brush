@@ -235,10 +235,14 @@ pub(super) fn unquote(text: &str) -> String {
     result
 }
 
-/// The `$` and `` ` `` the user quoted in a word being completed: escaped, or in single
-/// quotes. Where file names completing the word are requoted to keep expanding, those stay
-/// quoted, so the completed line can't run a command the user quoted out (see "File names
-/// that expand" in the module docs).
+/// The `$` and `` ` `` the user quoted in a word being completed: escaped, or in a single
+/// quote that closes within the word. Like bash, the quote the word is in doesn't count:
+/// what follows it is taken as unquoted.
+///
+/// Searching for file names that complete the word takes these literally, as bash does, and
+/// where the names are requoted to keep expanding, they stay quoted -- so the completed line
+/// names what the search found, and can't run a command the user quoted out (see "File
+/// names that expand" in the module docs).
 #[derive(Clone, Debug, Default)]
 pub(super) struct QuotedExpansions {
     /// The word, dequoted: the text that file names completing it start with.
@@ -251,10 +255,19 @@ impl QuotedExpansions {
     /// Finds the quoted `$` and `` ` `` in `word`, as typed (starting with the quote it's
     /// in, if any).
     pub fn of(word: &str) -> Self {
+        // Where the quote still open at the end of the word opens, if any.
+        let open_at_end = scan(word)
+            .last()
+            .and_then(|sc| sc.open_quote)
+            .map(|(start, _)| start);
+
         let mut offsets = Vec::new();
         let mut escaped = false;
         for sc in scan(word) {
-            let in_literal_quote = matches!(sc.open_quote, Some((_, Quote::Single | Quote::AnsiC)));
+            let in_literal_quote = matches!(
+                sc.open_quote,
+                Some((start, Quote::Single | Quote::AnsiC)) if Some(start) != open_at_end
+            );
             if matches!(sc.c, '$' | '`') && (escaped || in_literal_quote) {
                 // It lands in the dequoted word just after what the text before it dequotes
                 // to (not counting a backslash escaping it, which dequoting drops).
@@ -311,17 +324,17 @@ pub(super) struct QuotedCandidate {
 }
 
 /// Quotes candidates to replace the word being completed, as bash quotes them for readline.
-pub(super) struct Quoter {
+pub(super) struct Quoter<'a> {
     /// The quote the word being completed is in, if any.
     pub open_quote: Option<Quote>,
     /// Whether to quote candidates that are file names: unless the spec said not to
     /// ([`CompleteOption::NoQuote`](super::CompleteOption::NoQuote)).
     pub quote_file_names: bool,
     /// The `$` and `` ` `` the user quoted in the word being completed, which stay quoted.
-    pub user_quoted: QuotedExpansions,
+    pub user_quoted: &'a QuotedExpansions,
 }
 
-impl Quoter {
+impl Quoter<'_> {
     /// Quotes `candidate` to replace the word being completed, adding a `/` to mark a
     /// directory if `add_slash` and it doesn't end with one.
     ///
@@ -355,7 +368,7 @@ impl Quoter {
 
         let quoted = self
             .quote_file_names
-            .then(|| quote_file_name(name, expanded, self.open_quote, &self.user_quoted))
+            .then(|| quote_file_name(name, expanded, self.open_quote, self.user_quoted))
             .flatten();
         match (self.open_quote, quoted) {
             (None, quoted) => QuotedCandidate {
@@ -590,7 +603,7 @@ mod tests {
         assert_eq!(dequote_for_matching(r#""a\\"#), r"a\");
     }
 
-    fn file_name_quoter(quote: Option<Quote>, user_quoted: QuotedExpansions) -> Quoter {
+    fn file_name_quoter(quote: Option<Quote>, user_quoted: &QuotedExpansions) -> Quoter<'_> {
         Quoter {
             open_quote: quote,
             quote_file_names: true,
@@ -610,7 +623,7 @@ mod tests {
             };
             let user_quoted =
                 QuotedExpansions::of(&std::format!("{}{text}", quote.map_or("", Quote::opening)));
-            let quoted = file_name_quoter(quote, user_quoted).quote(&candidate, false);
+            let quoted = file_name_quoter(quote, &user_quoted).quote(&candidate, false);
             quoted.closed.unwrap_or(quoted.text)
         };
 
@@ -698,7 +711,7 @@ mod tests {
 
         // A file named literally is quoted as usual.
         assert_eq!(
-            file_name_quoter(None, QuotedExpansions::default())
+            file_name_quoter(None, &QuotedExpansions::default())
                 .quote(&ResolvedCandidate::file_name("a$b"), false),
             QuotedCandidate {
                 text: r"a\$b".to_owned(),
@@ -722,6 +735,11 @@ mod tests {
         assert!(quoted.is_quoted("$a$b", 2));
         assert!(!quoted.is_quoted("$x$b$cd`e`", 2));
         assert!(!QuotedExpansions::default().is_quoted("$b", 0));
+
+        // The quote the word is in doesn't count: what follows it is taken as unquoted.
+        assert!(!QuotedExpansions::of("'$a").is_quoted("$a", 0));
+        assert!(QuotedExpansions::of(r#"'$a'"\$b"#).is_quoted("$a$b", 0));
+        assert!(QuotedExpansions::of(r#"'$a'"\$b"#).is_quoted("$a$b", 2));
     }
 
     /// The `$` and `` ` `` the user quoted in the directory part stay quoted when it's
@@ -735,7 +753,7 @@ mod tests {
             };
             let open_quote = super::open_quote(typed);
             let user_quoted = QuotedExpansions::of(typed);
-            let quoted = file_name_quoter(open_quote, user_quoted).quote(&candidate, false);
+            let quoted = file_name_quoter(open_quote, &user_quoted).quote(&candidate, false);
             quoted.closed.unwrap_or(quoted.text)
         };
 
@@ -793,7 +811,7 @@ mod tests {
             ("plain", Quote::Double, r#""plain"#, None),
             ("sub/", Quote::Single, "'sub/", None),
         ] {
-            let quoted = file_name_quoter(Some(q), QuotedExpansions::default())
+            let quoted = file_name_quoter(Some(q), &QuotedExpansions::default())
                 .quote(&ResolvedCandidate::file_name(text), false);
             assert_eq!(quoted.text, expected_text, "{text:?} in {q:?}");
             assert_eq!(
@@ -809,7 +827,7 @@ mod tests {
         let quoter = Quoter {
             open_quote: Some(Quote::Double),
             quote_file_names: true,
-            user_quoted: QuotedExpansions::default(),
+            user_quoted: &QuotedExpansions::default(),
         };
         assert_eq!(
             quoter.quote(&ResolvedCandidate::new("a b"), false),

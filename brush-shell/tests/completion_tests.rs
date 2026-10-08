@@ -1646,6 +1646,42 @@ async fn common_prefix_that_cannot_stay_in_quote() -> Result<()> {
     Ok(())
 }
 
+/// Like bash, a `$` the user quoted in the directory part -- escaped, or in a quote that
+/// closes within the word -- is searched literally; the quote the word is in doesn't count, as
+/// what follows it is taken as unquoted. So the completed name, which keeps the user's
+/// quoting, names the file the search found. Expected values were captured from bash 5.3,
+/// except that bash drops the user's escape from the completed name.
+#[tokio::test(flavor = "multi_thread")]
+async fn quoted_dollar_in_directory_part_is_searched_literally() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("real").child("file1").touch()?;
+    home.child("$x").child("litfile").touch()?;
+    home.child("Docs dir").create_dir_all()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+    test_shell.set_var("x", "real")?;
+
+    for (line, expected) in [
+        // Escaped, the `$` names the directory literally named `$x`.
+        (r#"echo "$HOME/\$x/fi"#, &[][..]),
+        (r#"echo "$HOME/\$x/l"#, &[r#""$HOME/\$x/litfile" "#]),
+        (r"echo $HOME/\$x/fi", &[]),
+        (r"echo \$HOME/Do", &[]),
+        // In a closed quote, it's literal too...
+        ("echo '$HOME'/Do", &[]),
+        ("echo $HOME/'$x'/fi", &[]),
+        // ...but not in the quote the word is in, nor in double quotes.
+        ("echo '$HOME/$x/fi", &["'$HOME/$x/file1' "]),
+        (r#"echo "$HOME/$x/fi"#, &[r#""$HOME/$x/file1" "#]),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_edit_texts(&completions), expected, "{line}");
+    }
+
+    Ok(())
+}
+
 /// A `` ` `` the user escaped in the directory part stays escaped when that part is requoted
 /// to keep its `$HOME` expanding, so running the completed line names the directory instead
 /// of running a command (here, `touch marker`). Deliberately unlike bash 5.3, which leaves

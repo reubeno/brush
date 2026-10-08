@@ -60,7 +60,7 @@ mod quoting;
 mod words;
 
 use files::{FileKinds, file_completions, glob_completion, resolve_file_names};
-use quoting::{WordQuoting, dequote_for_matching};
+use quoting::{QuotedExpansions, WordQuoting, dequote_for_matching};
 use words::{LineWords, find_completion_word, find_line_words};
 
 // `compgen -W` splits unquoted literal IFS characters before expanding each resulting word.
@@ -1325,8 +1325,10 @@ pub(crate) async fn complete(
         (Vec::new(), GenerationOptions::default())
     });
 
+    // What the user quoted in the word, which file names completing it keep quoted.
+    let user_quoted = QuotedExpansions::of(input.get(word.range.clone()).unwrap_or_default());
     let candidates = if options.get(CompleteOption::FileNames) {
-        resolve_file_names(shell, candidates).await
+        resolve_file_names(shell, candidates, &user_quoted).await
     } else {
         candidates.into_iter().map(ResolvedCandidate::new).collect()
     };
@@ -1335,6 +1337,7 @@ pub(crate) async fn complete(
         line: input,
         word: word.range.clone(),
         open_quote: word.quoting.quote,
+        user_quoted: &user_quoted,
         options: &options,
         prefs,
     };
