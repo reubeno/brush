@@ -1682,6 +1682,26 @@ async fn quoted_dollar_in_directory_part_is_searched_literally() -> Result<()> {
     Ok(())
 }
 
+/// Control chars in a name that's quoted to keep its directory part expanding are quoted
+/// like in any other name, as `$'...'`, so the completed line shows no raw control chars
+/// (here, ESC `[2J`, which clears the screen).
+#[tokio::test(flavor = "multi_thread")]
+async fn control_chars_in_expanding_names_are_quoted() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("x\u{1b}[2J").touch()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    let completions = test_shell.complete_end_of_line_full("echo $HOME/x").await?;
+    assert_eq!(
+        candidate_edit_texts(&completions),
+        [r#""$HOME/x"$'\E'"[2J" "#]
+    );
+
+    Ok(())
+}
+
 /// A `` ` `` the user escaped in the directory part stays escaped when that part is requoted
 /// to keep its `$HOME` expanding, so running the completed line names the directory instead
 /// of running a command (here, `touch marker`). Deliberately unlike bash 5.3, which leaves
