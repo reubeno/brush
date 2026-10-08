@@ -95,7 +95,7 @@ fn offers(completions: Completions, mark_directories: bool, show_all_if_ambiguou
 /// directory and `mark_directories`.
 fn display(value: &str, kind: CandidateKind, mark_directories: bool) -> String {
     if !matches!(kind, CandidateKind::FileName { .. }) {
-        return value.to_owned();
+        return visible(value);
     }
 
     let trimmed = brush_core::sys::fs::strip_path_separator_suffix(value);
@@ -110,7 +110,28 @@ fn display(value: &str, kind: CandidateKind, mark_directories: bool) -> String {
     {
         display.push('/');
     }
-    display
+    visible(&display)
+}
+
+/// Returns `text` with its control chars shown as readline lists them: e.g. ESC as `^[`,
+/// DEL as `^?`, and a C1 control as `M-` and the C0 one it's 0x80 past (e.g. `M-^[`). So
+/// listing a name can't send the terminal commands.
+fn visible(text: &str) -> String {
+    let mut shown = String::with_capacity(text.len());
+    for c in text.chars() {
+        let (meta, control) = match c as u32 {
+            code @ (0..0x20 | 0x7f) => ("", code),
+            code @ 0x80..0xa0 => ("M-", code - 0x80),
+            _ => {
+                shown.push(c);
+                continue;
+            }
+        };
+        shown.push_str(meta);
+        shown.push('^');
+        shown.extend(char::from_u32(control ^ 0x40));
+    }
+    shown
 }
 
 #[cfg(test)]
@@ -128,5 +149,16 @@ mod tests {
         assert_eq!(display("dir/sub", dir, false), "sub");
         // Anything else is listed as is.
         assert_eq!(display("a/b", CandidateKind::Other, true), "a/b");
+    }
+
+    /// Like readline, control chars are listed visibly, so a name can't send the terminal
+    /// commands (e.g. ESC `[2J` to clear the screen).
+    #[test]
+    fn control_chars_are_listed_visibly() {
+        let file = CandidateKind::FileName { is_dir: false };
+
+        assert_eq!(display("dir/x\x1b[2Jy", file, true), "x^[[2Jy");
+        assert_eq!(display("a\tb\x7f", CandidateKind::Other, true), "a^Ib^?");
+        assert_eq!(display("é\u{9b}", CandidateKind::Other, true), "éM-^[");
     }
 }
