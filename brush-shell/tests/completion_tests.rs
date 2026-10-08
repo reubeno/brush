@@ -1054,6 +1054,24 @@ async fn native_complete_variable_names_with_braces() -> Result<()> {
     Ok(())
 }
 
+/// Like readline with `mark-symlinked-directories` off (the default), a symlink to a
+/// directory that's completed to is neither marked nor followed by a space; once it's typed
+/// in full, it's marked. Expected values were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "TODO(completions): support mark-symlinked-directories"]
+async fn symlinked_directory_is_marked_only_once_typed() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("realdir").create_dir_all()?;
+    std::os::unix::fs::symlink("realdir", test_shell.temp_dir.child("linkdir").path())?;
+
+    for (line, expected) in [("ls lin", "linkdir"), ("ls linkdir", "linkdir/")] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_edit_texts(&completions), [expected], "{line}");
+    }
+
+    Ok(())
+}
+
 /// Like bash, `-o noquote` only stops file names being quoted: they're still file names, so
 /// a directory is still marked with a trailing slash.
 #[tokio::test(flavor = "multi_thread")]
