@@ -403,4 +403,26 @@ mod tests {
 
         Ok(())
     }
+
+    /// Like readline, a control char a completion puts in the line (e.g. from `COMPREPLY`)
+    /// is shown visibly, e.g. ESC as `^[`, so it can't drive the terminal. The line keeps it.
+    #[test]
+    #[ignore = "TODO(completions): show the line's control chars visibly, as readline does"]
+    fn completion_shows_control_chars_visibly() -> Result<(), ShellError> {
+        let mut state = ReadLineState::new(None);
+        state.line = "cmd x".to_owned();
+        state.cursor = state.line.len();
+        let edit = brush_core::completion::Edit {
+            replace: 4..5,
+            text: "x\u{1b}[2J".to_owned(),
+        };
+
+        let mut out = Vec::new();
+        state.handle_single_completion(&edit, &mut out)?;
+
+        assert_eq!(state.line, "cmd x\u{1b}[2J");
+        assert_eq!(play("cmd x", 5, &out).0, "cmd x^[[2J");
+
+        Ok(())
+    }
 }
