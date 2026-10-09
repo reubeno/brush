@@ -39,11 +39,7 @@ impl super::LineReader for TermLineReader {
     fn read_line(
         &self,
         prompt: Option<&str>,
-        mut completion_handler: impl FnMut(
-            &str,
-            usize,
-        )
-            -> Result<brush_core::completion::Completions, ShellError>,
+        mut completion_handler: impl FnMut(&str, usize) -> Result<crate::completion::Offers, ShellError>,
     ) -> Result<ReadResult, ShellError> {
         let mut state = ReadLineState::new(prompt);
         state.display_prompt()?;
@@ -90,11 +86,7 @@ impl<'a> ReadLineState<'a> {
     fn on_key(
         &mut self,
         event: crossterm::event::KeyEvent,
-        mut completion_handler: impl FnMut(
-            &str,
-            usize,
-        )
-            -> Result<brush_core::completion::Completions, ShellError>,
+        mut completion_handler: impl FnMut(&str, usize) -> Result<crate::completion::Offers, ShellError>,
     ) -> Result<Option<ReadResult>, ShellError> {
         match (event.modifiers, event.code) {
             (_, crossterm::event::KeyCode::Enter)
@@ -203,46 +195,45 @@ impl<'a> ReadLineState<'a> {
         Ok(())
     }
 
-    fn handle_completions(
-        &mut self,
-        completions: &brush_core::completion::Completions,
-    ) -> Result<(), ShellError> {
-        if completions.candidates.is_empty() {
-            // Do nothing
-            Ok(())
-        } else if completions.candidates.len() == 1 {
-            self.handle_single_completion(completions, &mut std::io::stderr())
-        } else {
-            self.handle_multiple_completions(completions)
+    fn handle_completions(&mut self, offers: &crate::completion::Offers) -> Result<(), ShellError> {
+        match (&offers.edit, offers.list.as_slice()) {
+            (None, []) => Ok(()),
+            (Some(edit), _) => self.handle_single_completion(edit, &mut std::io::stderr()),
+            (None, list) => self.handle_multiple_completions(list),
         }
+    }
+
+    /// Applies `edit` to the line, without showing it; returns false if it doesn't apply at
+    /// the cursor.
+    fn apply_edit(&mut self, edit: &brush_core::completion::Edit) -> bool {
+        let replace = &edit.replace;
+        if !(replace.start <= self.cursor && self.cursor <= replace.end)
+            || replace.end > self.line.len()
+        {
+            return false;
+        }
+
+        self.line.replace_range(replace.clone(), &edit.text);
+        self.cursor = replace.start + edit.text.len();
+        true
     }
 
     #[expect(
         clippy::string_slice,
         reason = "all offsets are expected to be at char boundaries"
     )]
-    /// Completes the word with the only candidate in `completions`, and shows it on `out`,
-    /// the terminal.
+    /// Applies `edit` to the line, and shows it on `out`, the terminal.
     fn handle_single_completion(
         &mut self,
-        completions: &brush_core::completion::Completions,
+        edit: &brush_core::completion::Edit,
         out: &mut impl Write,
     ) -> Result<(), ShellError> {
-        let Some(candidate) = completions.candidates.first() else {
-            return Ok(());
-        };
-
-        let replace =
-            completions.insertion_index..completions.insertion_index + completions.delete_count;
-        if replace.end != self.cursor {
-            return Ok(());
-        }
-
-        // Don't rewrite what's already typed of the word, if the candidate keeps it.
+        // Don't rewrite what's already typed of the word, if the edit keeps it.
+        let replace = &edit.replace;
         let redisplay_offset = if self
             .line
-            .get(replace.clone())
-            .is_some_and(|typed| candidate.starts_with(typed))
+            .get(replace.start..self.cursor)
+            .is_some_and(|typed| edit.text.starts_with(typed))
         {
             self.cursor
         } else {
@@ -255,8 +246,9 @@ impl<'a> ReadLineState<'a> {
         let old_width = width(self.line.get(redisplay_offset..));
         let move_left = width(self.line.get(redisplay_offset..self.cursor));
 
-        self.line.replace_range(replace.clone(), candidate);
-        self.cursor = replace.start + candidate.len();
+        if !self.apply_edit(edit) {
+            return Ok(());
+        }
 
         // Rewrite the line from there, blanking whatever's left of it if it got shorter,
         // then move back to the cursor.
@@ -278,13 +270,12 @@ impl<'a> ReadLineState<'a> {
 
     fn handle_multiple_completions(
         &self,
-        completions: &brush_core::completion::Completions,
+        offers: &[crate::completion::Offer],
     ) -> Result<(), ShellError> {
         // Display replacements.
         Self::display_newline()?;
-        for candidate in &completions.candidates {
-            let formatted = format_completion_candidate(candidate.as_str(), &completions.options);
-            eprintln!("{formatted}");
+        for offer in offers {
+            eprintln!("{}", offer.display);
         }
         std::io::stderr().flush()?;
 
@@ -302,21 +293,6 @@ impl<'a> ReadLineState<'a> {
 
         Ok(())
     }
-}
-
-#[allow(clippy::string_slice)]
-fn format_completion_candidate(
-    mut candidate: &str,
-    options: &brush_core::completion::ProcessingOptions,
-) -> String {
-    if options.treat_as_filenames {
-        let trimmed = brush_core::sys::fs::strip_path_separator_suffix(candidate);
-        if let Some(index) = brush_core::sys::fs::rfind_path_separator(trimmed) {
-            candidate = &candidate[index + 1..];
-        }
-    }
-
-    candidate.to_string()
 }
 
 fn repeated_char_str(c: char, count: usize) -> String {
@@ -380,9 +356,9 @@ mod tests {
         *pos = cells.end;
     }
 
-    /// The line shown after a completion is the line that will run, even when the candidate
-    /// is shorter than the word or isn't a plain extension of it, or the line has chars that
-    /// take two cells or none.
+    /// The line shown after a completion is the line that will run, even when the edit
+    /// shortens the word or isn't a plain extension of it, or the line has chars that take
+    /// two cells or none.
     #[test]
     fn completion_redraws_the_line_it_leaves() -> Result<(), ShellError> {
         for (line, replace, text, expected) in [
@@ -403,15 +379,13 @@ mod tests {
             let mut state = ReadLineState::new(None);
             state.line = line.to_owned();
             state.cursor = replace.end;
-            let completions = brush_core::completion::Completions {
-                insertion_index: replace.start,
-                delete_count: replace.len(),
-                candidates: vec![text.to_owned()],
-                ..Default::default()
+            let edit = brush_core::completion::Edit {
+                replace: replace.clone(),
+                text: text.to_owned(),
             };
 
             let mut out = Vec::new();
-            state.handle_single_completion(&completions, &mut out)?;
+            state.handle_single_completion(&edit, &mut out)?;
 
             let (shown, cursor) = play(line, cells(line, replace.end), &out);
             assert_eq!(shown, expected, "{line:?} -> {text:?}");
