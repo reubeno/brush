@@ -275,6 +275,8 @@ pub enum QuoteMode {
     DoubleQuote,
     /// Backslash-escape.
     BackslashEscape,
+    /// ANSI-C quote (`$'...'`).
+    AnsiC,
 }
 
 /// Options for [`quote`]: how to quote a string so that, read back as a shell word, it
@@ -335,6 +337,7 @@ pub fn quote<'a>(s: &'a str, options: &QuoteOptions) -> Cow<'a, str> {
         QuoteMode::BackslashEscape => backslash_escape(s, options),
         QuoteMode::SingleQuote => single_quote(s),
         QuoteMode::DoubleQuote => double_quote(s).into(),
+        QuoteMode::AnsiC => ansi_c_quote(s).into(),
     }
 }
 
