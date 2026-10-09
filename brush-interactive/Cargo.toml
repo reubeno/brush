@@ -17,7 +17,7 @@ bench = false
 
 [features]
 default = []
-basic = ["dep:crossterm", "completion"]
+basic = ["dep:crossterm", "dep:unicode-width", "completion"]
 completion = []
 minimal = []
 reedline = ["dep:reedline", "dep:nu-ansi-term", "completion", "highlighting"]
@@ -38,6 +38,7 @@ reedline = { version = "0.52.0", optional = true }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["rt", "sync"] }
 tracing = "0.1.44"
+unicode-width = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
