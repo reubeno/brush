@@ -198,8 +198,15 @@ impl<'a> ReadLineState<'a> {
     fn handle_completions(&mut self, offers: &crate::completion::Offers) -> Result<(), ShellError> {
         match (&offers.edit, offers.list.as_slice()) {
             (None, []) => Ok(()),
-            (Some(edit), _) => self.handle_single_completion(edit, &mut std::io::stderr()),
-            (None, list) => self.handle_multiple_completions(list),
+            (Some(edit), []) => self.handle_single_completion(edit, &mut std::io::stderr()),
+            (edit, list) => {
+                // Like readline, an edit made along with listing candidates shows when the
+                // line is redrawn after them.
+                if let Some(edit) = edit {
+                    self.apply_edit(edit);
+                }
+                self.handle_multiple_completions(list)
+            }
         }
     }
 

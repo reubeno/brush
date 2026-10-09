@@ -1,15 +1,17 @@
-//! Offers the completions the shell generates to the user: the only candidate, or else each
-//! of them to list. The shell makes each candidate an edit of the line; this just chooses
-//! which to offer, and how to show them.
+//! Offers the completions the shell generates to the user, like readline: completing to the
+//! candidates' common prefix first, if that changes the line, or else offering each of them.
+//! The shell makes each candidate an edit of the line; this just chooses which to offer, and
+//! how to show them.
 
 use brush_core::completion::{CandidateKind, Completions, Edit};
 
 /// What to offer the user when they ask for completion.
 #[derive(Debug, Default)]
 pub(crate) struct Offers {
-    /// An edit to make right away: the only candidate's.
+    /// An edit to make right away: the only candidate's, or the candidates' common prefix.
     pub edit: Option<Edit>,
-    /// The candidates to list, if there are several.
+    /// The candidates to list: if there are several and no edit to make first -- or, like
+    /// readline's `show-all-if-ambiguous`, even if there is.
     pub list: Vec<Offer>,
 }
 
@@ -36,6 +38,7 @@ pub(crate) async fn complete_async(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
     line: &str,
     pos: usize,
+    show_all_if_ambiguous: bool,
 ) -> Offers {
     // For now, the shell stores the line editor's preferences, as `bind` sets them.
     let prefs = shell.completion_config().edit_prefs.clone();
@@ -56,13 +59,15 @@ pub(crate) async fn complete_async(
     // Intentionally ignore any errors that arise: there's then nothing to complete with.
     result.map_or_else(
         |_| Offers::default(),
-        |completions| offers(completions, prefs.mark_directories),
+        |completions| offers(completions, prefs.mark_directories, show_all_if_ambiguous),
     )
 }
 
-/// Returns what to offer from `completions`: the only candidate, or else each candidate to
-/// list. Directories are listed with a trailing slash if `mark_directories`.
-fn offers(completions: Completions, mark_directories: bool) -> Offers {
+/// Returns what to offer from `completions`: like readline, the only candidate, or else their
+/// common prefix if there's one to complete to, or else each candidate to list -- and with
+/// `show_all_if_ambiguous`, both the common prefix and the candidates. Directories are
+/// listed with a trailing slash if `mark_directories`.
+fn offers(completions: Completions, mark_directories: bool, show_all_if_ambiguous: bool) -> Offers {
     let mut list: Vec<Offer> = completions
         .candidates
         .into_iter()
@@ -77,7 +82,12 @@ fn offers(completions: Completions, mark_directories: bool) -> Offers {
         let edit = list.pop().map(|offer| offer.edit);
         return Offers { edit, list };
     }
-    Offers { edit: None, list }
+
+    let edit = completions.common_prefix;
+    if edit.is_some() && !show_all_if_ambiguous {
+        list.clear();
+    }
+    Offers { edit, list }
 }
 
 /// Returns how to list a candidate with the given value and kind: like readline, as is, but
