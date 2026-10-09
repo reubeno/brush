@@ -6,6 +6,7 @@
 
 use crossterm::ExecutableCommand;
 use std::io::Write;
+use unicode_width::UnicodeWidthStr;
 
 use crate::{ReadResult, ShellError};
 
@@ -249,8 +250,8 @@ impl<'a> ReadLineState<'a> {
         };
 
         // How much of the line is shown from there, and how far back that is from the
-        // cursor, in chars (the terminal's cells).
-        let width = |text: Option<&str>| text.map_or(0, |text| text.chars().count());
+        // cursor, in terminal cells.
+        let width = |text: Option<&str>| text.map_or(0, UnicodeWidthStr::width);
         let old_width = width(self.line.get(redisplay_offset..));
         let move_left = width(self.line.get(redisplay_offset..self.cursor));
 
@@ -260,8 +261,8 @@ impl<'a> ReadLineState<'a> {
         // Rewrite the line from there, blanking whatever's left of it if it got shorter,
         // then move back to the cursor.
         let rewritten = &self.line[redisplay_offset..];
-        let blanks = old_width.saturating_sub(rewritten.chars().count());
-        let move_back = self.line[self.cursor..].chars().count() + blanks;
+        let blanks = old_width.saturating_sub(rewritten.width());
+        let move_back = self.line[self.cursor..].width() + blanks;
         write!(
             out,
             "{}{rewritten}{}{}",
@@ -327,30 +328,61 @@ fn repeated_char_str(c: char, count: usize) -> String {
 mod tests {
     use super::*;
 
-    /// Plays `output` on a terminal line showing `shown`, with the cursor `cursor` chars in,
-    /// as a terminal would: a backspace moves left, and a char overwrites. Returns what the
-    /// line then shows (without trailing spaces) and where the cursor is.
+    /// Plays `output` on a terminal line showing `shown`, with the cursor `cursor` cells in,
+    /// as a terminal would: a backspace moves left a cell, and a char overwrites the cells it
+    /// takes. Returns what the line then shows (without trailing spaces) and the cursor's
+    /// cell.
     fn play(shown: &str, cursor: usize, output: &[u8]) -> (String, usize) {
-        let mut screen: Vec<char> = shown.chars().collect();
-        let mut pos = cursor;
+        let mut screen = Vec::new();
+        let mut pos = 0;
+        for c in shown.chars() {
+            put(&mut screen, &mut pos, c);
+        }
+        pos = cursor;
         for c in String::from_utf8_lossy(output).chars() {
             if c == BACKSPACE {
                 pos = pos.saturating_sub(1);
             } else {
-                if pos < screen.len() {
-                    screen[pos] = c;
-                } else {
-                    screen.push(c);
-                }
-                pos += 1;
+                put(&mut screen, &mut pos, c);
             }
         }
-        let shown: String = screen.into_iter().collect();
-        (shown.trim_end().to_owned(), pos)
+        (screen.concat().trim_end().to_owned(), pos)
+    }
+
+    /// Puts `c` on `screen`, a line's cells, at `pos`, moving `pos` past it, as a terminal
+    /// would: a wide char takes two cells (the second left empty here), overwriting half of
+    /// one blanks the other half, and a combining char joins the char before it.
+    fn put(screen: &mut Vec<String>, pos: &mut usize, c: char) {
+        use unicode_width::UnicodeWidthChar;
+
+        let width = c.width().unwrap_or(0);
+        if width == 0 {
+            if let Some(cell) = pos.checked_sub(1).and_then(|p| screen.get_mut(p)) {
+                cell.push(c);
+            }
+            return;
+        }
+
+        let cells = *pos..*pos + width;
+        if screen.len() < cells.end {
+            screen.resize(cells.end, " ".to_owned());
+        }
+        if cells.start > 0 && screen[cells.start].is_empty() {
+            screen[cells.start - 1] = " ".to_owned();
+        }
+        if screen.get(cells.end).is_some_and(String::is_empty) {
+            screen[cells.end] = " ".to_owned();
+        }
+        screen[cells.start] = c.to_string();
+        if width == 2 {
+            screen[cells.start + 1] = String::new();
+        }
+        *pos = cells.end;
     }
 
     /// The line shown after a completion is the line that will run, even when the candidate
-    /// is shorter than the word or isn't a plain extension of it.
+    /// is shorter than the word or isn't a plain extension of it, or the line has chars that
+    /// take two cells or none.
     #[test]
     fn completion_redraws_the_line_it_leaves() -> Result<(), ShellError> {
         for (line, replace, text, expected) in [
@@ -359,10 +391,18 @@ mod tests {
             ("cmd ab", 4..6, "xyz", "cmd xyz"),
             ("cmd é", 4..6, "e", "cmd e"),
             ("cmd ab", 4..6, "éé", "cmd éé"),
+            ("cmd 界", 4..7, "e", "cmd e"),
+            ("cmd x", 4..5, "界", "cmd 界"),
+            ("cmd e\u{301}", 4..7, "x", "cmd x"),
+            // The cursor is where the word ends, and the line goes on past it.
+            ("cmd ab 界", 4..6, "x", "cmd x 界"),
         ] {
+            use unicode_width::UnicodeWidthStr;
+            let cells = |s: &str, end: usize| s.get(..end).map_or(0, UnicodeWidthStr::width);
+
             let mut state = ReadLineState::new(None);
             state.line = line.to_owned();
-            state.cursor = line.len();
+            state.cursor = replace.end;
             let completions = brush_core::completion::Completions {
                 insertion_index: replace.start,
                 delete_count: replace.len(),
@@ -373,10 +413,11 @@ mod tests {
             let mut out = Vec::new();
             state.handle_single_completion(&completions, &mut out)?;
 
-            let (shown, cursor) = play(line, line.chars().count(), &out);
+            let (shown, cursor) = play(line, cells(line, replace.end), &out);
             assert_eq!(shown, expected, "{line:?} -> {text:?}");
             assert_eq!(state.line, expected, "{line:?} -> {text:?}");
-            assert_eq!(cursor, expected.chars().count(), "{line:?} -> {text:?}");
+            let expected_cursor = cells(expected, replace.start + text.len());
+            assert_eq!(cursor, expected_cursor, "{line:?} -> {text:?}");
         }
 
         Ok(())
