@@ -210,7 +210,7 @@ impl<'a> ReadLineState<'a> {
             // Do nothing
             Ok(())
         } else if completions.candidates.len() == 1 {
-            self.handle_single_completion(completions)
+            self.handle_single_completion(completions, &mut std::io::stderr())
         } else {
             self.handle_multiple_completions(completions)
         }
@@ -220,49 +220,57 @@ impl<'a> ReadLineState<'a> {
         clippy::string_slice,
         reason = "all offsets are expected to be at char boundaries"
     )]
+    /// Completes the word with the only candidate in `completions`, and shows it on `out`,
+    /// the terminal.
     fn handle_single_completion(
         &mut self,
         completions: &brush_core::completion::Completions,
+        out: &mut impl Write,
     ) -> Result<(), ShellError> {
         let Some(candidate) = completions.candidates.first() else {
             return Ok(());
         };
 
-        if completions.insertion_index + completions.delete_count != self.cursor {
+        let replace =
+            completions.insertion_index..completions.insertion_index + completions.delete_count;
+        if replace.end != self.cursor {
             return Ok(());
         }
 
-        let mut delete_count = completions.delete_count;
-        let mut redisplay_offset = completions.insertion_index;
-
-        // Don't bother erasing and re-writing the portion of the
-        // completion's prefix that
-        // is identical to what we already had in the token-being-completed.
-        if delete_count > 0
-            && candidate.starts_with(&self.line[redisplay_offset..redisplay_offset + delete_count])
+        // Don't rewrite what's already typed of the word, if the candidate keeps it.
+        let redisplay_offset = if self
+            .line
+            .get(replace.clone())
+            .is_some_and(|typed| candidate.starts_with(typed))
         {
-            redisplay_offset += delete_count;
-            delete_count = 0;
-        }
+            self.cursor
+        } else {
+            replace.start
+        };
 
-        let mut updated_line = self.line.clone();
-        updated_line.truncate(completions.insertion_index);
-        updated_line.push_str(candidate);
-        updated_line.push_str(&self.line[self.cursor..]);
-        self.line = updated_line;
+        // How much of the line is shown from there, and how far back that is from the
+        // cursor, in chars (the terminal's cells).
+        let width = |text: Option<&str>| text.map_or(0, |text| text.chars().count());
+        let old_width = width(self.line.get(redisplay_offset..));
+        let move_left = width(self.line.get(redisplay_offset..self.cursor));
 
-        self.cursor = completions.insertion_index + candidate.len();
+        self.line.replace_range(replace.clone(), candidate);
+        self.cursor = replace.start + candidate.len();
 
-        let move_left = repeated_char_str(BACKSPACE, delete_count);
-        eprint!("{move_left}{}", &self.line[redisplay_offset..]);
+        // Rewrite the line from there, blanking whatever's left of it if it got shorter,
+        // then move back to the cursor.
+        let rewritten = &self.line[redisplay_offset..];
+        let blanks = old_width.saturating_sub(rewritten.chars().count());
+        let move_back = self.line[self.cursor..].chars().count() + blanks;
+        write!(
+            out,
+            "{}{rewritten}{}{}",
+            repeated_char_str(BACKSPACE, move_left),
+            repeated_char_str(' ', blanks),
+            repeated_char_str(BACKSPACE, move_back)
+        )?;
 
-        // TODO(completion): Remove trailing chars if completion is shorter?
-        eprint!(
-            "{}",
-            repeated_char_str(BACKSPACE, self.line.len() - self.cursor)
-        );
-
-        std::io::stderr().flush()?;
+        out.flush()?;
 
         Ok(())
     }
@@ -312,4 +320,65 @@ fn format_completion_candidate(
 
 fn repeated_char_str(c: char, count: usize) -> String {
     (0..count).map(|_| c).collect()
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use super::*;
+
+    /// Plays `output` on a terminal line showing `shown`, with the cursor `cursor` chars in,
+    /// as a terminal would: a backspace moves left, and a char overwrites. Returns what the
+    /// line then shows (without trailing spaces) and where the cursor is.
+    fn play(shown: &str, cursor: usize, output: &[u8]) -> (String, usize) {
+        let mut screen: Vec<char> = shown.chars().collect();
+        let mut pos = cursor;
+        for c in String::from_utf8_lossy(output).chars() {
+            if c == BACKSPACE {
+                pos = pos.saturating_sub(1);
+            } else {
+                if pos < screen.len() {
+                    screen[pos] = c;
+                } else {
+                    screen.push(c);
+                }
+                pos += 1;
+            }
+        }
+        let shown: String = screen.into_iter().collect();
+        (shown.trim_end().to_owned(), pos)
+    }
+
+    /// The line shown after a completion is the line that will run, even when the candidate
+    /// is shorter than the word or isn't a plain extension of it.
+    #[test]
+    fn completion_redraws_the_line_it_leaves() -> Result<(), ShellError> {
+        for (line, replace, text, expected) in [
+            ("cmd abcdef", 4..10, "b", "cmd b"),
+            ("cmd ab", 4..6, "abc", "cmd abc"),
+            ("cmd ab", 4..6, "xyz", "cmd xyz"),
+            ("cmd é", 4..6, "e", "cmd e"),
+            ("cmd ab", 4..6, "éé", "cmd éé"),
+        ] {
+            let mut state = ReadLineState::new(None);
+            state.line = line.to_owned();
+            state.cursor = line.len();
+            let completions = brush_core::completion::Completions {
+                insertion_index: replace.start,
+                delete_count: replace.len(),
+                candidates: vec![text.to_owned()],
+                ..Default::default()
+            };
+
+            let mut out = Vec::new();
+            state.handle_single_completion(&completions, &mut out)?;
+
+            let (shown, cursor) = play(line, line.chars().count(), &out);
+            assert_eq!(shown, expected, "{line:?} -> {text:?}");
+            assert_eq!(state.line, expected, "{line:?} -> {text:?}");
+            assert_eq!(cursor, expected.chars().count(), "{line:?} -> {text:?}");
+        }
+
+        Ok(())
+    }
 }
