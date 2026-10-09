@@ -175,6 +175,19 @@ fn parse_extended_test_not() -> Result<()> {
     Ok(())
 }
 
+// N.B. A run of negations is matched iteratively rather than recursively; this
+// pins the tree it builds to the one the recursive form built.
+#[test]
+fn parse_extended_test_repeated_not() -> Result<()> {
+    let input = "[[ ! ! ! -f file ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
 #[test]
 fn parse_extended_test_parenthesized() -> Result<()> {
     let input = "[[ ( -f file ) ]]";
@@ -259,6 +272,19 @@ fn parse_extended_test_arith_less_than() -> Result<()> {
 #[test]
 fn parse_extended_test_arith_greater_than() -> Result<()> {
     let input = "[[ 5 -gt 3 ]]";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+// N.B. A `!` with nothing after it to negate is the string `!`, so this is the negation of
+// a test that `!` is non-empty, and-ed with `x`.
+#[test]
+fn parse_extended_test_not_of_bang_word() -> Result<()> {
+    let input = "[[ ! ! && x ]]";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,
