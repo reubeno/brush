@@ -18,6 +18,68 @@ std::thread_local! {
     static SUPPRESS_INDENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+std::thread_local! {
+    /// Here-document bodies waiting for the end of the line that carries
+    /// their operators, one frame per [`HeredocLine`] being rendered. A
+    /// thread-local for the same reason as [`SUPPRESS_INDENT`].
+    static PENDING_HEREDOCS: std::cell::RefCell<Vec<Vec<String>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// One rendered line that may carry here-document operators
+///
+/// A here-document's body starts on the line after the one its `<<` is on,
+/// and that line can go on past the command: `cat <<EOF | sort && echo ok`.
+/// While a `HeredocLine` is open, [`IoHereDocument::write_body`] queues the
+/// body instead of writing it, and [`Self::finish`] writes the queued bodies
+/// once the whole line is out. Lines nest: a compound command inside a
+/// pipeline renders its own lines, each with its own frame.
+struct HeredocLine {
+    finished: bool,
+}
+
+impl HeredocLine {
+    fn begin() -> Self {
+        PENDING_HEREDOCS.with_borrow_mut(|frames| frames.push(Vec::new()));
+        Self { finished: false }
+    }
+
+    /// Queue `body` on the innermost open line. Gives it back when no line is
+    /// open, for the caller to write in place.
+    fn defer(body: String) -> Option<String> {
+        PENDING_HEREDOCS.with_borrow_mut(|frames| match frames.last_mut() {
+            Some(frame) => {
+                frame.push(body);
+                None
+            }
+            None => Some(body),
+        })
+    }
+
+    /// End the line: a newline and the bodies in operator order, if any
+    fn finish(mut self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.finished = true;
+        let bodies = PENDING_HEREDOCS
+            .with_borrow_mut(Vec::pop)
+            .unwrap_or_default();
+        if bodies.is_empty() {
+            return Ok(());
+        }
+        writeln!(f)?;
+        let _suppress = SuppressIndent::enter();
+        bodies.iter().try_for_each(|body| f.write_str(body))
+    }
+}
+
+impl Drop for HeredocLine {
+    fn drop(&mut self) {
+        // A failed write left the line unfinished; its frame goes with it.
+        if !self.finished {
+            PENDING_HEREDOCS.with_borrow_mut(Vec::pop);
+        }
+    }
+}
+
 /// RAII guard: sets [`SUPPRESS_INDENT`] on construction, restores whatever
 /// value it had before on drop (including on an early `?`-return from a
 /// failed write). Restoring the *previous* value rather than unconditionally
@@ -203,26 +265,31 @@ impl SourceLocation for AndOrList {
 }
 
 impl AndOrList {
-    /// Whether this list's last pipeline's last command ends in a
-    /// here-document — see [`CompoundList`]'s `Display`, which must
-    /// suppress the separator that would otherwise follow (a heredoc's own
-    /// closing delimiter line already ends the statement).
+    /// Whether rendering this list ends with a here-document's closing
+    /// delimiter line — see [`CompoundList`]'s `Display`, which must then
+    /// suppress the separator that would otherwise follow (the delimiter
+    /// line already ends the statement).
+    ///
+    /// True for a here-document on any command of any pipeline: every body
+    /// is written after the whole list, see [`HeredocLine`].
     fn ends_in_heredoc(&self) -> bool {
-        match self.additional.last() {
-            Some(AndOr::And(p) | AndOr::Or(p)) => p.ends_in_heredoc(),
-            None => self.first.ends_in_heredoc(),
-        }
+        let rest = self.additional.iter().map(|item| match item {
+            AndOr::And(p) | AndOr::Or(p) => p,
+        });
+        std::iter::once(&self.first)
+            .chain(rest)
+            .any(Pipeline::ends_in_heredoc)
     }
 }
 
 impl Display for AndOrList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let line = HeredocLine::begin();
         write!(f, "{}", self.first)?;
         for item in &self.additional {
             write!(f, "{item}")?;
         }
-
-        Ok(())
+        line.finish(f)
     }
 }
 
@@ -429,7 +496,7 @@ impl SourceLocation for Pipeline {
 impl Pipeline {
     /// See [`AndOrList::ends_in_heredoc`].
     fn ends_in_heredoc(&self) -> bool {
-        self.seq.last().is_some_and(Command::ends_in_heredoc)
+        self.seq.iter().any(Command::ends_in_heredoc)
     }
 }
 
@@ -1324,21 +1391,16 @@ impl SourceLocation for SimpleCommand {
 }
 
 impl SimpleCommand {
-    /// See [`AndOrList::ends_in_heredoc`]: whether the last thing this
-    /// command actually writes (matching [`Display`]'s own prefix →
-    /// word/name → suffix order) is a here-document redirect.
+    /// See [`AndOrList::ends_in_heredoc`]: whether this command carries a
+    /// here-document, before or after its name.
     fn ends_in_heredoc(&self) -> bool {
-        if let Some(suffix) = &self.suffix
-            && !suffix.0.is_empty()
-        {
-            return suffix.ends_in_heredoc();
-        }
-        if self.word_or_name.is_some() {
-            return false;
-        }
         self.prefix
             .as_ref()
             .is_some_and(CommandPrefix::ends_in_heredoc)
+            || self
+                .suffix
+                .as_ref()
+                .is_some_and(CommandSuffix::ends_in_heredoc)
     }
 }
 
@@ -1965,19 +2027,28 @@ impl IoHereDocument {
         write!(f, "{}", self.here_end)
     }
 
-    /// The deferred body: a newline ending the operator line, the content,
-    /// then the closing delimiter line. Suppresses [`write_indented`]'s
-    /// indentation for exactly these lines (see [`SUPPRESS_INDENT`]).
+    /// The deferred body: the content, then the closing delimiter line,
+    /// after the newline that ends the operator line. Suppresses
+    /// [`write_indented`]'s indentation for exactly these lines (see
+    /// [`SUPPRESS_INDENT`]).
     fn write_body(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
-        writeln!(f)?;
-        let _suppress = SuppressIndent::enter();
-        write!(f, "{}", self.doc)?;
+        let mut body = String::new();
+        write!(body, "{}", self.doc)?;
         // The closing delimiter is never quoted, even if the opening
         // `<<'EOF'`/`<<"EOF"` was — quoting there only suppresses expansion
         // inside the body, it's not part of the delimiter's own spelling.
         // `write_operator` (the opening line) intentionally keeps the
         // quotes as written; only this closing line needs them stripped.
-        writeln!(f, "{}", self.closing_delimiter())
+        writeln!(body, "{}", self.closing_delimiter())?;
+
+        // The line may go on past this command (`| next`, `&& next`): the
+        // body waits for its end. Rendered on its own, it follows directly.
+        let Some(body) = HeredocLine::defer(body) else {
+            return Ok(());
+        };
+        writeln!(f)?;
+        let _suppress = SuppressIndent::enter();
+        f.write_str(&body)
     }
 
     /// [`Self::here_end`]'s bare text for the closing delimiter line, with
@@ -2691,6 +2762,67 @@ mod tests {
         let reader = BufReader::new(input.as_bytes());
         let mut parser = crate::Parser::new(reader, &ParserOptions::default());
         parser.parse_program().unwrap()
+    }
+
+    /// `input` as the printer renders it, checked to parse back to the same
+    /// rendering
+    fn reprint(input: &str) -> String {
+        let printed = parse(input).to_string();
+        assert_eq!(parse(&printed).to_string(), printed, "from:\n{input}");
+        printed
+    }
+
+    #[test]
+    fn heredoc_body_follows_the_whole_pipeline() {
+        let printed = reprint(
+            "f() {\n\tsed d <<-EOF | newins - os-release\n\tNAME=x\n\tEOF\n\techo after\n}\n",
+        );
+        let lines: Vec<&str> = printed.lines().map(str::trim).collect();
+        let operator = lines.iter().position(|l| l.contains("<<-EOF")).unwrap();
+        assert!(lines[operator].contains("newins - os-release"), "{printed}");
+        assert_eq!(lines[operator + 1], "NAME=x", "{printed}");
+        assert_eq!(lines[operator + 2], "EOF", "{printed}");
+        assert!(printed.contains("echo after"), "{printed}");
+    }
+
+    #[test]
+    fn heredoc_body_follows_the_whole_and_or_list() {
+        let printed = reprint("f() {\n\tcat <<EOF && echo ok || echo failed\nbody\nEOF\n}\n");
+        let lines: Vec<&str> = printed.lines().map(str::trim).collect();
+        let operator = lines.iter().position(|l| l.contains("<<EOF")).unwrap();
+        assert!(lines[operator].ends_with("echo failed"), "{printed}");
+        assert_eq!(
+            &lines[operator + 1..operator + 3],
+            ["body", "EOF"],
+            "{printed}"
+        );
+    }
+
+    #[test]
+    fn two_heredocs_on_a_line_keep_their_order() {
+        let printed =
+            reprint("f() {\n\tcat <<ONE | cat - /dev/fd/3 3<<TWO\nfirst\nONE\nsecond\nTWO\n}\n");
+        let lines: Vec<&str> = printed.lines().map(str::trim).collect();
+        let operator = lines.iter().position(|l| l.contains("<<ONE")).unwrap();
+        assert!(lines[operator].contains("<<TWO"), "{printed}");
+        assert_eq!(
+            &lines[operator + 1..operator + 5],
+            ["first", "ONE", "second", "TWO"],
+            "{printed}"
+        );
+    }
+
+    #[test]
+    fn heredoc_before_the_command_name_stays_on_its_line() {
+        let printed = reprint("f() {\n\t<<EOF cat\nbody\nEOF\n}\n");
+        let lines: Vec<&str> = printed.lines().map(str::trim).collect();
+        let operator = lines.iter().position(|l| l.contains("<<EOF")).unwrap();
+        assert!(lines[operator].ends_with("cat"), "{printed}");
+        assert_eq!(
+            &lines[operator + 1..operator + 3],
+            ["body", "EOF"],
+            "{printed}"
+        );
     }
 
     #[test]

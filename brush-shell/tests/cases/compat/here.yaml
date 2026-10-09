@@ -330,3 +330,46 @@ cases:
         cat <<<"$var"
       )
       echo "x=$x"
+
+  - name: "A printed function with a here doc before a pipe runs again"
+    stdin: |
+      piped() {
+        cat <<EOF | tr a-z A-Z
+      through a pipe
+      EOF
+        echo after
+      }
+      printed="$(declare -f piped)"
+      unset -f piped
+      eval "$printed"
+      piped
+
+  - name: "Here doc line continuing with more than one pipe stage"
+    known_failure: true # the winnow parser keeps one `| command` after a here doc
+    stdin: |
+      cat <<EOF | tr a-z A-Z | rev
+      abc
+      EOF
+
+  - name: "Here doc line continuing with an and-or list"
+    known_failure: true # the winnow parser drops `&&`/`||` after a here doc
+    stdin: |
+      cat <<EOF && echo and
+      x
+      EOF
+      false <<EOF || echo or
+      x
+      EOF
+
+  - name: "Here doc line continuing with another command"
+    known_failure: true # the winnow parser fails on `;` after a here doc
+    stdin: |
+      cat <<EOF; echo semi
+      x
+      EOF
+      if cat <<EOF; then echo yes; fi
+      x
+      EOF
+      ( cat <<EOF ) | tr a-z A-Z
+      x
+      EOF
