@@ -307,6 +307,8 @@ async fn complete_absolute_paths() -> Result<()> {
     Ok(())
 }
 
+/// Like bash (with bash-completion), file names under a `$VAR` directory keep it as typed.
+/// Expected values were captured from bash 5.3.
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test(flavor = "multi_thread")]
 async fn complete_path_with_var() -> Result<()> {
@@ -318,28 +320,13 @@ async fn complete_path_with_var() -> Result<()> {
 
     // Complete; expect to see the two files.
     let results = test_shell.complete_end_of_line("ls $PWD/item").await?;
-
-    assert_eq!(
-        results,
-        [
-            test_shell
-                .temp_dir
-                .child("item1")
-                .path()
-                .display()
-                .to_string(),
-            test_shell
-                .temp_dir
-                .child("item2")
-                .path()
-                .display()
-                .to_string(),
-        ]
-    );
+    assert_eq!(results, ["$PWD/item1", "$PWD/item2"]);
 
     Ok(())
 }
 
+/// Like bash (with bash-completion), file names under `~` keep it as typed. Expected values
+/// were captured from bash 5.3.
 #[test_with::file(/usr/share/bash-completion/bash_completion)]
 #[tokio::test(flavor = "multi_thread")]
 async fn complete_path_with_tilde() -> Result<()> {
@@ -362,24 +349,7 @@ async fn complete_path_with_tilde() -> Result<()> {
 
     // Complete; expect to see the two files.
     let results = test_shell.complete_end_of_line("ls ~/item").await?;
-
-    assert_eq!(
-        results,
-        [
-            test_shell
-                .temp_dir
-                .child("item1")
-                .path()
-                .display()
-                .to_string(),
-            test_shell
-                .temp_dir
-                .child("item2")
-                .path()
-                .display()
-                .to_string(),
-        ]
-    );
+    assert_eq!(results, ["~/item1", "~/item2"]);
 
     Ok(())
 }
@@ -478,14 +448,22 @@ async fn complete_find_command() -> Result<()> {
 async fn complete_quoted_filenames() -> Result<()> {
     let mut test_shell = TestShell::with_bash_completion().await?;
 
+    // Use upstream bash-completion's spec for `ls`; some distros (e.g. openSUSE) add options.
+    test_shell
+        .run("complete -F _comp_complete_longopt ls")
+        .await?;
+
     test_shell.temp_dir.child("item1 item2").touch()?;
     test_shell.temp_dir.child("item1'item2").touch()?;
 
     let mut results = test_shell.complete_end_of_line("ls item1\\ ").await?;
     assert_eq!(results, ["item1 item2"]);
 
+    // Like bash, the `'` opens a quote, so this completes an empty word in it, for which
+    // bash-completion offers nothing (see native_complete_empty_word_in_open_quote for
+    // brush's own completion).
     results = test_shell.complete_end_of_line("ls item1'").await?;
-    assert_eq!(results, ["item1 item2", "item1'item2"]);
+    assert_eq!(results, Vec::<String>::new());
 
     results = test_shell.complete_end_of_line("ls item1").await?;
     assert_eq!(results, ["item1 item2", "item1'item2"]);
@@ -495,6 +473,14 @@ async fn complete_quoted_filenames() -> Result<()> {
 
     results = test_shell.complete_end_of_line("ls \"item1 ").await?;
     assert_eq!(results, ["item1 item2"]);
+
+    // With `-o default` (as openSUSE registers `ls`), the empty word in the open quote
+    // falls back to file names.
+    test_shell
+        .run("complete -o default -F _comp_complete_longopt ls")
+        .await?;
+    results = test_shell.complete_end_of_line("ls item1'").await?;
+    assert_eq!(results, ["item1 item2", "item1'item2"]);
 
     Ok(())
 }
@@ -850,6 +836,88 @@ async fn completion_range_in_open_quote() -> Result<()> {
     Ok(())
 }
 
+/// Tests `compgen -f` dequoting from a completion function, like bash: the word being
+/// completed is dequoted once, and a word the function quoted itself (as
+/// bash-completion does with `printf %q`) is dequoted once more.
+#[tokio::test(flavor = "multi_thread")]
+async fn compgen_f_dequotes_in_completion_function() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("a'b").child("c").touch()?;
+    test_shell.temp_dir.child("a$b").child("d").touch()?;
+    test_shell.temp_dir.child("a\"b").child("e").touch()?;
+    test_shell.temp_dir.child("a\nb").touch()?;
+
+    test_shell
+        .run(
+            r#"
+_as_is() { COMPREPLY=($(compgen -f -- "$2")); }
+_quoted() { local q; printf -v q %q "$2"; COMPREPLY=($(compgen -f -- "$q")); }
+_unquoted() { local w=${COMP_WORDS[COMP_CWORD]}; COMPREPLY=($(compgen -f -- "${w#\'}")); }
+complete -F _as_is as_is
+complete -F _quoted quoted
+complete -F _unquoted unquoted
+_nl() { COMPREPLY=("$(compgen -f -- $'"a\\\nb')"); }
+complete -F _nl nl
+"#,
+        )
+        .await?;
+
+    for (line, expected) in [
+        // In an open quote, `$2` excludes the quote and file names are generated as if
+        // inside it.
+        (r#"as_is 'a"b/"#, r#"a"b/e"#),
+        (r#"unquoted 'a"b/"#, r#"a"b/e"#),
+        (r"as_is a\'b/", "a'b/c"),
+        (r"quoted a\'b/", "a'b/c"),
+        (r"as_is a\$b/", "a$b/d"),
+        (r"quoted a\$b/", "a$b/d"),
+        (r#"as_is "a\"b/"#, r#"a"b/e"#),
+        (r#"quoted "a\"b/"#, r#"a"b/e"#),
+        // Like bash, a backslash before a newline in double
+        // quotes is removed, but the newline is kept.
+        (r#"nl "a"#, "a\nb"),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), [expected], "{line}");
+    }
+
+    // Like bash, a word the function quoted itself is dequoted in the open quote, where
+    // backslashes are literal, so this looks for `a\"b/` and finds nothing.
+    let completions = test_shell
+        .complete_end_of_line_full(r#"quoted 'a"b/"#)
+        .await?;
+    assert_eq!(completions.candidates.len(), 0);
+
+    Ok(())
+}
+
+/// Like bash, a word a completion function passes to `compgen` (rather than `$2`) is
+/// dequoted a second time only if the line has quoting before the cursor, in the word
+/// being completed or an earlier one. Expected values were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+async fn compgen_f_dequotes_again_only_if_quoting_before_cursor() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child(r"a\b").touch()?;
+    test_shell.temp_dir.child("ab").touch()?;
+
+    test_shell
+        .run(r"_f() { COMPREPLY=($(compgen -f -- 'a\\b')); }; complete -F _f zz")
+        .await?;
+
+    for (line, expected) in [
+        ("zz x", &[r"a\b"][..]),
+        (r"zz \x", &["ab"]),
+        ("zz 'q' x", &["ab"]),
+        // Backslashes are literal in single quotes, so neither dequoting removes them.
+        ("zz 'x", &[]),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), expected, "{line}");
+    }
+
+    Ok(())
+}
+
 /// File names that `-o default` or `-o dirnames` falls back to are file names, quoted as
 /// such, whether or not directories are to be marked. Checked with bash 5.3, which quotes
 /// them with `mark-directories` off.
@@ -964,7 +1032,56 @@ async fn completion_function_vars_are_not_left_set() -> Result<()> {
     Ok(())
 }
 
+/// Like bash, the file name being completed is dequoted but not expanded, so a `$` or a
+/// backslash in it is matched literally. Expected values were captured from bash 5.3.
+#[test_with::file(/usr/share/bash-completion/bash_completion)]
+#[tokio::test(flavor = "multi_thread")]
+async fn complete_file_name_with_dollar_and_backslash() -> Result<()> {
+    let mut test_shell = TestShell::with_bash_completion().await?;
+    test_shell.temp_dir.child("a$bc").touch()?;
+    test_shell.temp_dir.child(r"a\bq").touch()?;
+    test_shell.temp_dir.child("axy").touch()?;
+
+    for (line, expected) in [
+        ("ls a$b", &["a$bc"][..]),
+        ("ls 'x' a$b", &["a$bc"]),
+        (r"cat a\\b", &[r"a\bq"]),
+    ] {
+        assert_eq!(
+            test_shell.complete_end_of_line(line).await?,
+            expected,
+            "{line}"
+        );
+    }
+
+    Ok(())
+}
+
 // Tests for native completion fallback (without bash-completion installed)
+
+/// Like bash, the file name being completed is dequoted (in the quote it's in) but not
+/// expanded. Expected values were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_file_name_is_only_dequoted() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("a$bc").touch()?;
+    test_shell.temp_dir.child(r"a\bq").touch()?;
+    test_shell.temp_dir.child("axy").touch()?;
+
+    for (line, expected) in [
+        ("ls a$b", &["a$bc"][..]),
+        (r"ls a\$b", &["a$bc"]),
+        // A backslash in double quotes escapes only a few chars, so this one is literal.
+        (r#"ls "a\"#, &[r"a\bq"]),
+        (r#"ls "a\b"#, &[r"a\bq"]),
+        (r"ls 'a\", &[r"a\bq"]),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), expected, "{line}");
+    }
+
+    Ok(())
+}
 
 /// Like bash, the `'` in `item1'` opens a quote, so this completes the empty word in it,
 /// to every file in the directory.
@@ -979,6 +1096,53 @@ async fn native_complete_empty_word_in_open_quote() -> Result<()> {
         candidate_texts(&completions),
         ["item1 item2", "item1'item2"]
     );
+
+    Ok(())
+}
+
+/// Like bash's default completion, a glob pattern that matches no file name as a prefix
+/// completes to the one file name it matches, if it matches exactly one. Expected values
+/// were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_glob_pattern() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("foo.txt").touch()?;
+    test_shell.temp_dir.child("fob").touch()?;
+    test_shell.temp_dir.child("sub").child("x").touch()?;
+
+    for (line, expected) in [
+        ("ls *.txt", &["foo.txt"][..]),
+        ("ls f*.txt", &["foo.txt"]),
+        ("ls fob*", &["fob"]),
+        ("ls s*", &["sub"]),
+        // bash globs the word even in an open quote.
+        ("ls \"s*", &["sub"]),
+        // The pattern must match the whole file name, and just one.
+        ("ls *.t", &[]),
+        ("ls fo*", &[]),
+        // Quoted glob chars don't glob; bash matches quote chars in the word literally.
+        (r"ls \*.txt", &[]),
+        ("ls \"*\".txt", &[]),
+        ("ls 'f'*.txt", &[]),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), expected, "{line}");
+    }
+
+    Ok(())
+}
+
+/// Like bash, a glob pattern starting with `~` is tilde-expanded before it's matched.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "TODO(completions): tilde-expand glob patterns in default completion"]
+async fn native_complete_glob_pattern_with_tilde() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("foo.txt").touch()?;
+    let home = test_shell.temp_dir.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    let completions = test_shell.complete_end_of_line_full("ls ~/f*.txt").await?;
+    assert_eq!(candidate_texts(&completions), [format!("{home}/foo.txt")]);
 
     Ok(())
 }
@@ -1134,17 +1298,19 @@ async fn native_complete_path_after_variable() -> Result<()> {
     let temp_path = test_shell.temp_dir.path().to_str().unwrap().to_owned();
     test_shell.set_var("MYDIR", &temp_path)?;
 
-    // Complete files after variable expansion.
-    // The completion system expands variables before completing, so results use expanded paths.
+    // Complete files under the variable's directory. Like bash, they show the variable as
+    // typed, and are quoted so it still expands.
     let completions = test_shell
         .complete_end_of_line_full("ls $MYDIR/file")
         .await?;
-    let results = candidate_texts(&completions);
-    let expected = [
-        std::format!("{temp_path}/file1.txt"),
-        std::format!("{temp_path}/file2.txt"),
-    ];
-    assert_eq!(results, expected);
+    assert_eq!(
+        candidate_texts(&completions),
+        ["$MYDIR/file1.txt", "$MYDIR/file2.txt"]
+    );
+    assert_eq!(
+        candidate_edit_texts(&completions),
+        ["$MYDIR/file1.txt ", "$MYDIR/file2.txt "]
+    );
 
     // Path completions should be treated as filenames
     assert!(
@@ -1210,6 +1376,83 @@ async fn cancelled_completion_leaves_nothing_behind() -> Result<()> {
         .await?;
     assert_eq!(test_shell.get_var("leaked").as_deref(), Some("0"));
     assert!(!test_shell.shell.call_stack().is_trap_delivery_suppressed());
+
+    Ok(())
+}
+
+/// Like bash, the directory part of a file name being completed in an open quote is
+/// dequoted, then tilde- and parameter-expanded (even in single quotes) to find file names,
+/// but not otherwise expanded; the candidates show it as typed. Expected values were
+/// captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_expands_directory_in_open_quote() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("Docs dir").create_dir_all()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+    test_shell.temp_dir.child("a b").child("file").touch()?;
+    test_shell.temp_dir.child("x*y").child("file").touch()?;
+    test_shell.temp_dir.child("q\"d").child("file").touch()?;
+
+    // Each case's candidate, whether it's a directory, and how it's quoted: like bash, so
+    // it names the file the candidate does, in the quote it's in.
+    for (line, text, is_dir, quoted) in [
+        (
+            "echo \"~/Do",
+            "~/Docs dir",
+            true,
+            format!("\"{home}/Docs dir\""),
+        ),
+        (
+            "echo '~/Do",
+            "~/Docs dir",
+            true,
+            format!("'{home}/Docs dir'"),
+        ),
+        (
+            "echo \"$HOME/Do",
+            "$HOME/Docs dir",
+            true,
+            "\"$HOME/Docs dir\"".to_owned(),
+        ),
+        (
+            "echo '$HOME/Do",
+            "$HOME/Docs dir",
+            true,
+            "'$HOME/Docs dir'".to_owned(),
+        ),
+        (
+            "echo \"a b/fi",
+            "a b/file",
+            false,
+            "\"a b/file\"".to_owned(),
+        ),
+        ("echo 'x*y/fi", "x*y/file", false, "'x*y/file'".to_owned()),
+        (
+            "echo 'q\"d/fi",
+            "q\"d/file",
+            false,
+            "'q\"d/file'".to_owned(),
+        ),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        let [candidate] = completions.candidates.as_slice() else {
+            anyhow::bail!(
+                "{line}: expected one candidate, got {:?}",
+                completions.candidates
+            );
+        };
+        assert_eq!(candidate.value, text, "{line}");
+        assert_eq!(
+            candidate.kind,
+            brush_core::completion::CandidateKind::FileName { is_dir },
+            "{line}"
+        );
+        // A directory is marked, and anything else followed by a space.
+        let suffix = if is_dir { "/" } else { " " };
+        assert_eq!(candidate.edit.text, quoted + suffix, "{line}");
+    }
 
     Ok(())
 }
@@ -1288,6 +1531,103 @@ complete -D -F _test_comp
     Ok(())
 }
 
+/// Like bash, file names completed under a `~` or `$VAR` directory keep the directory as
+/// typed, but `shopt -s direxpand` expands its parameters (not a leading `~`). Expected
+/// values were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_keeps_directory_as_typed() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("Docs dir").create_dir_all()?;
+    home.child("plainfile").touch()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    for (line, expected) in [
+        ("echo ~/Do", "~/Docs dir"),
+        ("echo $HOME/Do", "$HOME/Docs dir"),
+        ("echo ${HOME}/pl", "${HOME}/plainfile"),
+        ("echo \"$HOME/Do", "$HOME/Docs dir"),
+        ("echo '$HOME/Do", "$HOME/Docs dir"),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), [expected], "{line}");
+    }
+
+    test_shell.run("shopt -s direxpand").await?;
+    let docs = format!("{home}/Docs dir");
+    for (line, expected) in [
+        ("echo $HOME/Do", docs.as_str()),
+        ("echo ~/Do", "~/Docs dir"),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(
+            candidate_texts(&completions),
+            [expected],
+            "direxpand: {line}"
+        );
+    }
+
+    Ok(())
+}
+
+/// Like readline, several candidates starting with `~/` complete to their common prefix
+/// with the `~` kept as typed, in a quote too (where a single candidate's is expanded). With
+/// nothing past the `~/` to add, that leaves the line as is, rather than quoting it to
+/// `~''/`. Expected values were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_common_prefix_keeps_tilde() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("pre fix1").touch()?;
+    home.child("pre fix2").touch()?;
+    home.child("plain1").touch()?;
+    home.child("plain2").touch()?;
+    home.child("zed").touch()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    for (line, expected) in [
+        ("ls ~/pre", r"~/pre\ fix"),
+        ("ls \"~/pre", "\"~/pre fix"),
+        ("ls '~/pre", "'~/pre fix"),
+        ("ls \"~/pl", "\"~/plain"),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        let prefix = completions.common_prefix.map(|prefix| prefix.text);
+        assert_eq!(prefix.as_deref(), Some(expected), "{line}");
+    }
+
+    let completions = test_shell.complete_end_of_line_full("ls ~/").await?;
+    assert_eq!(completions.common_prefix, None);
+
+    Ok(())
+}
+
+/// Like bash, a file name that's all directory part, as typed, keeps expanding: e.g. the
+/// common prefix `$HOME/`, or `$HOME/` from a completion function with `-o filenames`.
+#[tokio::test(flavor = "multi_thread")]
+async fn expanding_directory_alone_keeps_expanding() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("a").touch()?;
+    home.child("b").touch()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    // The common prefix is just what's typed, so there's no edit to make.
+    let completions = test_shell.complete_end_of_line_full("ls $HOME/").await?;
+    assert_eq!(completions.common_prefix, None);
+
+    test_shell
+        .run("_f() { COMPREPLY=('$HOME/'); }; complete -o filenames -F _f cmd")
+        .await?;
+    let completions = test_shell.complete_end_of_line_full("cmd ").await?;
+    assert_eq!(candidate_edit_texts(&completions), ["$HOME/"]);
+
+    Ok(())
+}
+
 /// A common prefix that can't stay in the quote the word is in (e.g. a lone `'` in single
 /// quotes) is written in full, replacing the quote, so it can be completed from.
 #[tokio::test(flavor = "multi_thread")]
@@ -1302,6 +1642,150 @@ async fn common_prefix_that_cannot_stay_in_quote() -> Result<()> {
 
     let completions = test_shell.complete_end_of_line_full(r"echo \'").await?;
     assert_eq!(candidate_edit_texts(&completions), [r"\'a ", r"\'b "]);
+
+    Ok(())
+}
+
+/// Like bash, a `$` the user quoted in the directory part -- escaped, or in a quote that
+/// closes within the word -- is searched literally; the quote the word is in doesn't count, as
+/// what follows it is taken as unquoted. So the completed name, which keeps the user's
+/// quoting, names the file the search found. Expected values were captured from bash 5.3,
+/// except that bash drops the user's escape from the completed name.
+#[tokio::test(flavor = "multi_thread")]
+async fn quoted_dollar_in_directory_part_is_searched_literally() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("real").child("file1").touch()?;
+    home.child("$x").child("litfile").touch()?;
+    home.child("Docs dir").create_dir_all()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+    test_shell.set_var("x", "real")?;
+
+    for (line, expected) in [
+        // Escaped, the `$` names the directory literally named `$x`.
+        (r#"echo "$HOME/\$x/fi"#, &[][..]),
+        (r#"echo "$HOME/\$x/l"#, &[r#""$HOME/\$x/litfile" "#]),
+        (r"echo $HOME/\$x/fi", &[]),
+        (r"echo \$HOME/Do", &[]),
+        // In a closed quote, it's literal too...
+        ("echo '$HOME'/Do", &[]),
+        ("echo $HOME/'$x'/fi", &[]),
+        // ...but not in the quote the word is in, nor in double quotes.
+        ("echo '$HOME/$x/fi", &["'$HOME/$x/file1' "]),
+        (r#"echo "$HOME/$x/fi"#, &[r#""$HOME/$x/file1" "#]),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_edit_texts(&completions), expected, "{line}");
+    }
+
+    Ok(())
+}
+
+/// Control chars in a name that's quoted to keep its directory part expanding are quoted
+/// like in any other name, as `$'...'`, so the completed line shows no raw control chars
+/// (here, ESC `[2J`, which clears the screen).
+#[tokio::test(flavor = "multi_thread")]
+async fn control_chars_in_expanding_names_are_quoted() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("x\u{1b}[2J").touch()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    let completions = test_shell.complete_end_of_line_full("echo $HOME/x").await?;
+    assert_eq!(
+        candidate_edit_texts(&completions),
+        [r#""$HOME/x"$'\E'"[2J" "#]
+    );
+
+    Ok(())
+}
+
+/// A `` ` `` the user escaped in the directory part stays escaped when that part is requoted
+/// to keep its `$HOME` expanding, so running the completed line names the directory instead
+/// of running a command (here, `touch marker`). Deliberately unlike bash 5.3, which leaves
+/// them live. (A `$` the user quoted stays quoted too; see the unit tests.)
+#[tokio::test(flavor = "multi_thread")]
+async fn escaped_expansions_in_directory_part_stay_escaped() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("a`touch marker`").child("file").touch()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    for (line, expected) in [
+        (
+            r#"echo "$HOME/a\`touch marker\`/fi"#,
+            r#""$HOME/a\`touch marker\`/file" "#,
+        ),
+        (
+            r"echo $HOME/a\`touch\ marker\`/fi",
+            r#""$HOME/a\`touch marker\`/file" "#,
+        ),
+    ] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_edit_texts(&completions), [expected], "{line}");
+    }
+
+    Ok(())
+}
+
+/// `$'...'` quoting is first class in completion, though readline doesn't know it: a common
+/// prefix that needs it (e.g. for a newline) can be completed from, a word in an open `$'`
+/// completes in it, and the escapes in it are translated to find what it names.
+#[tokio::test(flavor = "multi_thread")]
+async fn native_complete_in_ansi_c_quotes() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("a\nb1").touch()?;
+    test_shell.temp_dir.child("a\nb2").touch()?;
+    test_shell.temp_dir.child("it's").touch()?;
+
+    // The common prefix needs `$'...'` for its newline...
+    let completions = test_shell.complete_end_of_line_full("ls a").await?;
+    let prefix = completions.common_prefix.map(|prefix| prefix.text);
+    assert_eq!(prefix.as_deref(), Some(r"$'a\nb'"));
+
+    // ...and is completed from, as is the word in an open `$'`.
+    for line in [r"ls $'a\nb'", r"ls $'a\nb", r"ls $'a\n"] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), ["a\nb1", "a\nb2"], "{line}");
+        assert_eq!(
+            candidate_edit_texts(&completions),
+            [r"$'a\nb1' ", r"$'a\nb2' "],
+            "{line}"
+        );
+    }
+
+    // An escaped `'` doesn't end a `$'...'` quote, and the candidate is quoted to suit it.
+    let completions = test_shell.complete_end_of_line_full(r"ls $'it\'").await?;
+    assert_eq!(candidate_texts(&completions), ["it's"]);
+    assert_eq!(candidate_edit_texts(&completions), [r"$'it\'s' "]);
+
+    // A `$` before a quote isn't a variable reference to complete.
+    test_shell.set_var("ANSI_TEST_VAR", "1")?;
+    let completions = test_shell
+        .complete_end_of_line_full("echo $ANSI_TEST")
+        .await?;
+    assert_eq!(candidate_texts(&completions), ["$ANSI_TEST_VAR"]);
+
+    Ok(())
+}
+
+/// Like bash, readline's `expand-tilde` variable expands a leading `~` in file names being
+/// completed. Expected values were captured from bash 5.3.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "TODO(completions): support readline variables set with `bind`, e.g. expand-tilde"]
+async fn native_complete_with_expand_tilde() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    let home = test_shell.temp_dir.child("h");
+    home.child("plainfile").touch()?;
+    let home = home.path().to_string_lossy().into_owned();
+    test_shell.set_var("HOME", &home)?;
+
+    test_shell.run("bind 'set expand-tilde on'").await?;
+    let completions = test_shell.complete_end_of_line_full("echo ~/pl").await?;
+    assert_eq!(candidate_texts(&completions), [format!("{home}/plainfile")]);
 
     Ok(())
 }

@@ -429,19 +429,48 @@ pub fn single_quote(s: &str) -> Cow<'_, str> {
 }
 
 fn double_quote(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
+    double_quote_leaving(s, |_, _| false)
+}
 
-    result.push('"');
+/// Double-quotes `s`, escaping the chars that are special in double quotes (`$`, `` ` ``,
+/// `"`, and `\`) -- except those `live` says to leave live, given each one's byte offset in
+/// `s` and the char. E.g., with every `$` live, parameters in `s` still expand. Like
+/// [`quote`], chars that need it (e.g. control chars) are ANSI-C quoted, between the
+/// double-quoted pieces, so the word shows none of them raw.
+pub(crate) fn double_quote_leaving(s: &str, live: impl Fn(usize, char) -> bool) -> String {
+    let mut result = String::with_capacity(s.len() + 2);
+    let mut in_double_quotes = false;
 
-    for c in s.chars() {
-        if matches!(c, '$' | '`' | '"' | '\\') {
-            result.push('\\');
+    let mut chars = s.char_indices().peekable();
+    while let Some((index, c)) = chars.next() {
+        if needs_ansi_c_quoting(c) {
+            let mut run = String::from(c);
+            while let Some((_, c)) = chars.next_if(|&(_, c)| needs_ansi_c_quoting(c)) {
+                run.push(c);
+            }
+            if in_double_quotes {
+                result.push('"');
+                in_double_quotes = false;
+            }
+            result.push_str(&ansi_c_quote(&run));
+            continue;
         }
 
+        if !in_double_quotes {
+            result.push('"');
+            in_double_quotes = true;
+        }
+        if matches!(c, '$' | '`' | '"' | '\\') && !live(index, c) {
+            result.push('\\');
+        }
         result.push(c);
     }
 
-    result.push('"');
+    if in_double_quotes {
+        result.push('"');
+    } else if result.is_empty() {
+        result.push_str("\"\"");
+    }
 
     result
 }
@@ -533,6 +562,17 @@ const fn needs_ansi_c_quoting(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn double_quote_leaving_quotes_control_chars_ansi_c() {
+        let none_live = |s| double_quote_leaving(s, |_, _| false);
+        assert_eq!(double_quote_leaving("a$b", |_, c| c == '$'), r#""a$b""#);
+        assert_eq!(none_live("a$b"), r#""a\$b""#);
+        assert_eq!(none_live("x\x1b[2J"), r#""x"$'\E'"[2J""#);
+        assert_eq!(none_live("\x1bx\x07"), r#"$'\E'"x"$'\a'"#);
+        assert_eq!(none_live("\x1b\x1b"), r"$'\E\E'");
+        assert_eq!(none_live(""), r#""""#);
+    }
 
     #[test]
     fn test_backslash_escape() {
