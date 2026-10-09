@@ -16,6 +16,11 @@ pub struct UIOptions {
     /// Whether to enable zsh-style hooks.
     #[builder(default)]
     pub zsh_style_hooks: bool,
+    /// Whether, like readline's `show-all-if-ambiguous`, to list several completion
+    /// candidates as soon as they're completed to their common prefix, rather than on the
+    /// next completion. For now, only the basic input backend honors it.
+    #[builder(default)]
+    pub show_all_if_ambiguous: bool,
 }
 
 impl From<&UIOptions> for crate::InteractiveOptions {

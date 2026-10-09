@@ -158,6 +158,32 @@ fn completion_replaces_typed_closing_quote() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Like readline, several candidates are first completed to their longest common prefix.
+/// Expected lines were captured from bash 5.3.
+#[test]
+fn completion_inserts_common_prefix() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("item1"), "")?;
+    std::fs::write(dir.path().join("item2"), "")?;
+    std::fs::create_dir(dir.path().join("dir a"))?;
+    std::fs::create_dir(dir.path().join("dir b"))?;
+    let mut session = start_reedline_session_with(|cmd| {
+        cmd.current_dir(dir.path());
+    })?;
+    expect_next_prompt(&mut session, 0)?;
+
+    bind_show_line(&mut session)?;
+
+    for (typed, expected) in [
+        ("echo ite", "LINE=<echo item>"),
+        (r#"echo "di"#, r#"LINE=<echo "dir >"#),
+    ] {
+        expect_completed_line(&mut session, &format!("{typed}\t"), expected)?;
+    }
+
+    Ok(())
+}
+
 /// Like readline, completing a variable whose value is a directory appends a `/`.
 #[test]
 #[ignore = "TODO(completions): mark variables naming directories with a trailing slash"]

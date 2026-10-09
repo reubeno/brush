@@ -22,7 +22,8 @@
 //!
 //! Each candidate comes back as an edit of the line: quoted as bash quotes it for readline,
 //! and, as readline does, closing the word's quote, marking a directory, or adding a
-//! trailing space, as fits. That's everything that decides what the line says; the line editor just
+//! trailing space, as fits. So does the candidates' common prefix, which readline completes
+//! to first. That's everything that decides what the line says; the line editor just
 //! chooses which edit to make and how to show the candidates.
 
 use itertools::Itertools;
@@ -979,6 +980,10 @@ pub struct Completions {
     /// The candidates, without duplicates, in the order generated: sorted, unless the spec
     /// said not to ([`CompleteOption::NoSort`]).
     pub candidates: Vec<Candidate>,
+    /// If there are several candidates, the edit that completes the word to their longest
+    /// common prefix, only partway -- if it would change the line. Like readline, a line
+    /// editor might make it first, and offer the candidates once it can't.
+    pub common_prefix: Option<Edit>,
 }
 
 /// A completion candidate.
