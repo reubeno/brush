@@ -1,7 +1,7 @@
 use winnow::combinator::{alt, eof, fail, peek, preceded, repeat, terminated};
 use winnow::error::ContextError;
 use winnow::prelude::*;
-use winnow::stream::{Checkpoint, Offset, Stream};
+use winnow::stream::{Checkpoint, Location, Offset, Stream};
 use winnow::token::take_while;
 
 use crate::ast::SeparatorOperator;
@@ -700,7 +700,16 @@ pub(super) fn tilde_expansion<'a>() -> impl ModalParser<StrStream<'a>, &'a str, 
 /// Corresponds to: `matches_operator("\n`") in winnow.rs
 #[inline]
 pub(super) fn newline<'a>() -> impl ModalParser<StrStream<'a>, char, ContextError> {
-    '\n'
+    |input: &mut StrStream<'a>| {
+        let newline = '\n'.parse_next(input)?;
+        // The line just ended may have carried here-document operators: their
+        // bodies are the next lines, already read, and not commands.
+        let here = input.current_token_start();
+        if let Some(end) = super::here_doc_bodies::end_of_bodies(here) {
+            let _ = input.next_slice(end - here);
+        }
+        Ok(newline)
+    }
 }
 
 /// Parse a comment: # to end of line (not including newline)

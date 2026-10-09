@@ -1,11 +1,13 @@
 use winnow::combinator::{dispatch, fail};
 use winnow::error::ContextError;
 use winnow::prelude::*;
+use winnow::stream::{Location, Stream};
 
 use crate::ast;
 
 use super::compound::process_substitution;
 use super::helpers::{peek_op2, spaces};
+use super::here_doc_bodies;
 use super::position::PositionTracker;
 use super::types::{ParseContext, StrStream};
 use super::words::word_as_ast;
@@ -46,19 +48,21 @@ fn here_document_delimiter<'a>()
         let mut raw_delimiter = String::new();
         let mut match_delimiter = String::new();
         let mut quoted = false;
+        let mut open_quote = None;
         let mut done = false;
 
         while !done && !input.is_empty() {
             let checkpoint = input.checkpoint();
 
-            // Check for whitespace or newline (end of delimiter)
-            if let Ok(_ch) =
-                winnow::token::one_of::<_, _, ContextError>([' ', '\t', '\n']).parse_next(input)
-            {
+            // Whitespace ends the delimiter, and so does an operator character
+            // outside quotes: `cat <<EOF; next`, `cat <<EOF|next`, `(cat <<EOF)`.
+            if let Ok(ch) = winnow::token::any::<_, ContextError>.parse_next(input) {
                 input.reset(&checkpoint);
-                break;
+                let operator = matches!(ch, ';' | '&' | '|' | '<' | '>' | '(' | ')');
+                if matches!(ch, ' ' | '\t' | '\n') || (operator && open_quote.is_none()) {
+                    break;
+                }
             }
-            input.reset(&checkpoint);
 
             // Try to parse a character
             let ch: char = winnow::token::any.parse_next(input)?;
@@ -68,6 +72,11 @@ fn here_document_delimiter<'a>()
                 '\'' | '"' => {
                     quoted = true;
                     // Don't include quotes in match delimiter
+                    match open_quote {
+                        None => open_quote = Some(ch),
+                        Some(open) if open == ch => open_quote = None,
+                        Some(_) => match_delimiter.push(ch),
+                    }
                 }
                 '\\' => {
                     quoted = true;
@@ -162,10 +171,8 @@ fn here_document_content(
     }
 }
 
-/// Parse a here-document redirect (<< or <<-)
-/// Returns (fd, `here_doc`, `remaining_line`) where `remaining_line` is content after
-/// the delimiter on the same line (e.g., "| grep hello" in "<<EOF | grep hello")
-/// A pending here-document that has been parsed but content not yet resolved
+/// A here-document whose operator and delimiter are parsed and whose body is
+/// not yet read
 #[derive(Debug)]
 struct PendingHereDoc {
     fd: Option<i32>,
@@ -229,98 +236,40 @@ fn resolve_here_document(
     ))
 }
 
-/// Parse one or more here-documents on the same line.
-/// Returns a vector of resolved here-documents and optional trailing content.
-#[allow(clippy::type_complexity)]
-pub(super) fn here_documents<'a>(
-    tracker: &'a PositionTracker,
-) -> impl ModalParser<
-    StrStream<'a>,
-    (Vec<(Option<i32>, ast::IoHereDocument)>, Option<&'a str>),
-    ContextError,
-> + 'a {
-    move |input: &mut StrStream<'a>| {
-        // Collect all here-doc markers on this line
-        let mut markers: Vec<PendingHereDoc> = Vec::new();
-
-        // Parse the first marker
-        let first_marker = here_document_marker().parse_next(input)?;
-        markers.push(first_marker);
-
-        // Skip optional whitespace after delimiter
-        let _: &str =
-            winnow::token::take_while(0.., |c| c == ' ' || c == '\t').parse_next(input)?;
-
-        // Check if there are more here-doc markers on this line
-        while {
-            let r: ModalResult<&str> = winnow::combinator::peek("<<").parse_next(input);
-            r.is_ok()
-        } {
-            let marker = here_document_marker().parse_next(input)?;
-            markers.push(marker);
-            // Skip whitespace after this marker
-            let _: &str =
-                winnow::token::take_while(0.., |c| c == ' ' || c == '\t').parse_next(input)?;
-        }
-
-        // Capture remaining content until newline (for pipeline continuations like "| grep x")
-        let rest: &str = winnow::token::take_while(0.., |c| c != '\n').parse_next(input)?;
-        let remaining_line = {
-            let trimmed = rest.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        };
-
-        // Consume the newline
-        '\n'.parse_next(input)?;
-
-        // Now resolve content for each here-doc in order.
-        // Each heredoc's content parser stops WITHOUT consuming the newline
-        // after the delimiter.  Between consecutive heredocs we must skip
-        // that newline so the next heredoc's content starts on a fresh line.
-        let mut resolved: Vec<(Option<i32>, ast::IoHereDocument)> = Vec::new();
-        for (i, marker) in markers.into_iter().enumerate() {
-            if i > 0 {
-                // Skip the newline left after the previous delimiter
-                let _: ModalResult<char> = '\n'.parse_next(input);
-            }
-            let doc = resolve_here_document(input, marker, tracker)?;
-            resolved.push(doc);
-        }
-
-        Ok((resolved, remaining_line))
-    }
-}
-
+/// Parse a here-document redirect: its operator and delimiter here, and its
+/// body from the lines after this one
+///
+/// The rest of the operator's line is left for the grammar to go on with.
+/// The body is read ahead and its lines are recorded, to be stepped over when
+/// the line's newline is consumed (see [`here_doc_bodies`]).
 fn here_document<'a>(
     tracker: &'a PositionTracker,
-) -> impl ModalParser<StrStream<'a>, (Option<i32>, ast::IoHereDocument, Option<&'a str>), ContextError>
-+ 'a {
+) -> impl ModalParser<StrStream<'a>, (Option<i32>, ast::IoHereDocument), ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
-        // Use the multi-heredoc parser but only return the first one
-        // This maintains backwards compatibility with existing code that expects a single here-doc
-        let (mut docs, remaining) = here_documents(tracker).parse_next(input)?;
+        let operator = input.current_token_start();
+        let marker = here_document_marker().parse_next(input)?;
 
-        if docs.is_empty() {
-            return fail.parse_next(input);
-        }
+        // Look ahead on a copy: the end of this line, then past the bodies of
+        // the here-documents before this one on the line.
+        let mut ahead = *input;
+        let _: &str = winnow::token::take_while(0.., |c| c != '\n').parse_next(&mut ahead)?;
+        let _: char = '\n'.parse_next(&mut ahead)?;
+        let after_line = ahead.current_token_start();
+        let start = here_doc_bodies::body_start(operator, after_line);
+        let _ = ahead.next_slice(start - after_line);
 
-        let (fd, doc) = docs.remove(0);
-        // Note: additional docs are discarded here - callers should use here_documents() directly
-        // for proper multi-heredoc support
-        Ok((fd, doc, remaining))
+        let resolved = resolve_here_document(&mut ahead, marker, tracker)?;
+        // The delimiter's own newline belongs to the body's lines.
+        let _: ModalResult<char> = '\n'.parse_next(&mut ahead);
+        here_doc_bodies::claim(operator, after_line, ahead.current_token_start());
+        Ok(resolved)
     }
 }
 
-/// Result of parsing an I/O redirect - may include trailing content for here-docs
-pub(super) struct IoRedirectResult<'a> {
+/// Result of parsing an I/O redirect
+pub(super) struct IoRedirectResult {
     /// The parsed redirect
     pub redirect: ast::IoRedirect,
-    /// For here-docs, any content after the delimiter on the same line (e.g., "| grep x")
-    pub trailing_content: Option<&'a str>,
 }
 
 /// Parse a file redirect (e.g., "> file", "2>&1", "< input")
@@ -328,7 +277,7 @@ pub(super) struct IoRedirectResult<'a> {
 pub(super) fn io_redirect<'a>(
     ctx: &'a ParseContext<'a>,
     tracker: &'a PositionTracker,
-) -> impl ModalParser<StrStream<'a>, IoRedirectResult<'a>, ContextError> + 'a {
+) -> impl ModalParser<StrStream<'a>, IoRedirectResult, ContextError> + 'a {
     move |input: &mut StrStream<'a>| {
         winnow::combinator::alt((
             // Try OutputAndError redirects first (&>> and &>)
@@ -338,7 +287,6 @@ pub(super) fn io_redirect<'a>(
             )
                 .map(|(_, target)| IoRedirectResult {
                     redirect: ast::IoRedirect::OutputAndError(target, true),
-                    trailing_content: None,
                 }),
             (
                 "&>",
@@ -346,7 +294,6 @@ pub(super) fn io_redirect<'a>(
             )
                 .map(|(_, target)| IoRedirectResult {
                     redirect: ast::IoRedirect::OutputAndError(target, false),
-                    trailing_content: None,
                 }),
             // Try here-string (<<<)
             (
@@ -356,18 +303,10 @@ pub(super) fn io_redirect<'a>(
             )
                 .map(|(fd, _, word)| IoRedirectResult {
                     redirect: ast::IoRedirect::HereString(fd, word),
-                    trailing_content: None,
                 }),
             // Try here-document
-            here_document(tracker).map(|(fd, here_doc, remaining)| {
-                // Store trailing content in context for later processing by pipe_sequence
-                if let Some(trailing) = remaining {
-                    *ctx.pending_heredoc_trailing.borrow_mut() = Some(trailing);
-                }
-                IoRedirectResult {
-                    redirect: ast::IoRedirect::HereDocument(fd, here_doc),
-                    trailing_content: remaining,
-                }
+            here_document(tracker).map(|(fd, here_doc)| IoRedirectResult {
+                redirect: ast::IoRedirect::HereDocument(fd, here_doc),
             }),
             // Then try regular file redirects (including process substitution as target)
             move |input: &mut StrStream<'a>| {
@@ -393,7 +332,6 @@ pub(super) fn io_redirect<'a>(
 
                 Ok(IoRedirectResult {
                     redirect: ast::IoRedirect::File(fd, kind, redirect_target),
-                    trailing_content: None,
                 })
             },
         ))
@@ -410,7 +348,7 @@ pub(super) fn redirect_list<'a>(
     move |input: &mut StrStream<'a>| {
         winnow::combinator::repeat::<_, _, Vec<_>, _, _>(
             1..,
-            winnow::combinator::preceded(spaces(), io_redirect(ctx, tracker)).map(|r| r.redirect), // Extract just the redirect, ignore trailing content
+            winnow::combinator::preceded(spaces(), io_redirect(ctx, tracker)).map(|r| r.redirect),
         )
         .map(ast::RedirectList)
         .parse_next(input)

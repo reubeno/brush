@@ -181,12 +181,11 @@ pub fn parse_program(
     options: &ParserOptions,
     source_info: &SourceInfo,
 ) -> Result<ast::Program, crate::error::ParseError> {
-    let pending_heredoc_trailing = std::cell::RefCell::new(None);
+    let _here_doc_bodies = super::here_doc_bodies::Parse::begin();
     let comments = std::cell::RefCell::new(Vec::new());
     let ctx = ParseContext {
         options,
         source_info,
-        pending_heredoc_trailing: &pending_heredoc_trailing,
         comments: &comments,
     };
     let tracker = PositionTracker::new(input);

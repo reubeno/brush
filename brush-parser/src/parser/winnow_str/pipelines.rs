@@ -1,15 +1,12 @@
 use winnow::combinator::{fail, repeat};
 use winnow::error::ContextError;
 use winnow::prelude::*;
-use winnow::stream::LocatingSlice;
 
 use crate::ast;
-use crate::parser::{ParserOptions, SourceInfo};
 
 use super::commands::command;
 use super::helpers::{keyword, linebreak, spaces};
 use super::position::PositionTracker;
-use super::redirections::io_redirect;
 use super::types::{ParseContext, StrStream};
 
 // ============================================================================
@@ -68,58 +65,6 @@ fn add_redirect_to_command(cmd: &mut ast::Command, redirect: ast::IoRedirect) {
     }
 }
 
-/// Parse a single command from a string (used for trailing here-doc content)
-fn parse_trailing_command(input: &str, options: &ParserOptions) -> Option<ast::Command> {
-    let source_info = SourceInfo::default();
-    let pending = std::cell::RefCell::new(None);
-    let comments = std::cell::RefCell::new(Vec::new());
-    let ctx = ParseContext {
-        options,
-        source_info: &source_info,
-        pending_heredoc_trailing: &pending,
-        comments: &comments,
-    };
-    let tracker = PositionTracker::new(input);
-    let mut stream = LocatingSlice::new(input);
-    command(&ctx, &tracker).parse_next(&mut stream).ok()
-}
-
-/// Parse the leading redirects of a string (the marker-line content that
-/// followed a here-doc operator, e.g. `>out 2>&1` in `cat <<EOF >out 2>&1`),
-/// returning them plus any remaining content (a pipeline continuation or
-/// separator) trimmed for further handling. Used to recover redirects that
-/// appear after a here-doc, which the suffix parser captured as trailing text.
-fn parse_leading_redirects(
-    input: &str,
-    options: &ParserOptions,
-) -> (Vec<ast::IoRedirect>, Option<String>) {
-    let source_info = SourceInfo::default();
-    let pending = std::cell::RefCell::new(None);
-    let comments = std::cell::RefCell::new(Vec::new());
-    let ctx = ParseContext {
-        options,
-        source_info: &source_info,
-        pending_heredoc_trailing: &pending,
-        comments: &comments,
-    };
-    let tracker = PositionTracker::new(input);
-    let mut stream = LocatingSlice::new(input);
-
-    let redirects: Vec<ast::IoRedirect> = repeat(
-        0..,
-        winnow::combinator::preceded(spaces(), io_redirect(&ctx, &tracker)).map(|r| r.redirect),
-    )
-    .parse_next(&mut stream)
-    .unwrap_or_default();
-
-    let rest: &str = winnow::token::rest::<_, ContextError>
-        .parse_next(&mut stream)
-        .unwrap_or("");
-    let rest = rest.trim();
-    let leftover = (!rest.is_empty()).then(|| rest.to_string());
-    (redirects, leftover)
-}
-
 /// Parse pipe sequence (command | command | command)
 /// Corresponds to: winnow.rs `pipe_sequence()`
 pub(super) fn pipe_sequence<'a>(
@@ -144,41 +89,18 @@ pub(super) fn pipe_sequence<'a>(
                 .parse_next(input)?;
 
         // Build initial commands vector
-        let mut commands =
-            rest.into_iter()
-                .fold(vec![first], |mut commands, (is_pipe_and, cmd)| {
-                    if is_pipe_and {
-                        // For |&, add 2>&1 redirect to the previous command
-                        if let Some(prev_cmd) = commands.last_mut() {
-                            add_pipe_extension_redirect(prev_cmd);
-                        }
+        let commands = rest
+            .into_iter()
+            .fold(vec![first], |mut commands, (is_pipe_and, cmd)| {
+                if is_pipe_and {
+                    // For |&, add 2>&1 redirect to the previous command
+                    if let Some(prev_cmd) = commands.last_mut() {
+                        add_pipe_extension_redirect(prev_cmd);
                     }
-                    commands.push(cmd);
-                    commands
-                });
-
-        // Check if there's pending trailing content from a here-doc, i.e. the
-        // marker-line text after the `<<EOF` operator. It may be redirects
-        // (`cat <<EOF >out`), a pipeline continuation (`cat <<EOF | grep x`), or
-        // both (`cat <<EOF >out | grep x`).
-        if let Some(trailing) = ctx.pending_heredoc_trailing.borrow_mut().take() {
-            // Leading redirects belong to the command that owned the here-doc.
-            let (redirects, leftover) = parse_leading_redirects(trailing, ctx.options);
-            if !redirects.is_empty()
-                && let Some(cmd) = commands.last_mut()
-            {
-                for redirect in redirects {
-                    add_redirect_to_command(cmd, redirect);
                 }
-            }
-            // Anything left is a pipeline continuation.
-            if let Some(stripped) = leftover.as_deref().and_then(|s| s.strip_prefix('|')) {
-                let trailing_input = format!("{}\n", stripped.trim());
-                if let Some(trailing_cmd) = parse_trailing_command(&trailing_input, ctx.options) {
-                    commands.push(trailing_cmd);
-                }
-            }
-        }
+                commands.push(cmd);
+                commands
+            });
 
         Ok(commands)
     }

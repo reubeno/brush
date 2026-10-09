@@ -11,6 +11,7 @@ mod commands;
 mod compound;
 mod extended_test;
 mod helpers;
+mod here_doc_bodies;
 mod pipelines;
 mod position;
 mod program;

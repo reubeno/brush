@@ -345,14 +345,12 @@ cases:
       piped
 
   - name: "Here doc line continuing with more than one pipe stage"
-    known_failure: true # the winnow parser keeps one `| command` after a here doc
     stdin: |
       cat <<EOF | tr a-z A-Z | rev
       abc
       EOF
 
   - name: "Here doc line continuing with an and-or list"
-    known_failure: true # the winnow parser drops `&&`/`||` after a here doc
     stdin: |
       cat <<EOF && echo and
       x
@@ -362,7 +360,6 @@ cases:
       EOF
 
   - name: "Here doc line continuing with another command"
-    known_failure: true # the winnow parser fails on `;` after a here doc
     stdin: |
       cat <<EOF; echo semi
       x

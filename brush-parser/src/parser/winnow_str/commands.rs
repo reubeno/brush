@@ -13,7 +13,7 @@ use super::compound::{
 use super::extended_test::extended_test_command;
 use super::helpers::{array_spaces, parse_balanced_delimiters, peek_char, peek_first_word, spaces};
 use super::position::PositionTracker;
-use super::redirections::{here_documents, io_number, io_redirect, optional_redirects};
+use super::redirections::{io_redirect, optional_redirects};
 use super::types::{ParseContext, StrStream};
 use super::words::{non_reserved_word, word_as_ast, word_part};
 
@@ -266,43 +266,6 @@ pub(super) fn cmd_prefix<'a>(
     }
 }
 
-/// Check if we're at a here-doc marker (<<) but NOT a here-string (<<<)
-fn at_here_doc_marker<'a>() -> impl ModalParser<StrStream<'a>, (), ContextError> + 'a {
-    // Optional fd number, then "<<", then verify the next char is not another "<"
-    // (distinguishing << from <<<). Always called via peek() so consumption doesn't matter.
-    (
-        winnow::combinator::opt(io_number()),
-        "<<",
-        winnow::combinator::not("<"),
-    )
-        .void()
-}
-
-/// Parse multiple here-docs when we know we're at a here-doc marker.
-/// Returns a Vec of `IoRedirect` items.
-fn parse_here_docs<'a>(
-    ctx: &'a ParseContext<'a>,
-    tracker: &'a PositionTracker,
-) -> impl ModalParser<StrStream<'a>, Vec<ast::CommandPrefixOrSuffixItem>, ContextError> + 'a {
-    move |input: &mut StrStream<'a>| {
-        let (docs, remaining) = here_documents(tracker).parse_next(input)?;
-
-        // Store trailing content in context for later processing by pipe_sequence
-        if let Some(trailing) = remaining {
-            *ctx.pending_heredoc_trailing.borrow_mut() = Some(trailing);
-        }
-
-        let items: Vec<ast::CommandPrefixOrSuffixItem> = docs
-            .into_iter()
-            .map(|(fd, doc)| {
-                ast::CommandPrefixOrSuffixItem::IoRedirect(ast::IoRedirect::HereDocument(fd, doc))
-            })
-            .collect();
-
-        Ok(items)
-    }
-}
-
 /// Parse a single suffix item (word, redirect, process substitution, or assignment).
 fn single_suffix_item<'a>(
     ctx: &'a ParseContext<'a>,
@@ -350,27 +313,8 @@ pub(super) fn cmd_suffix<'a>(
         let mut all_items: Vec<ast::CommandPrefixOrSuffixItem> = Vec::new();
 
         loop {
-            // Fast path: peek at first char to decide what to try
-            let Ok(ch) = peek_char().parse_next(input) else {
+            if peek_char().parse_next(input).is_err() {
                 break;
-            };
-
-            // Only check for here-docs when we see '<' or a digit (fd number)
-            if ch == '<' || ch.is_ascii_digit() {
-                // Check if this is a here-doc (but not here-string)
-                if winnow::combinator::peek(at_here_doc_marker())
-                    .parse_next(input)
-                    .is_ok()
-                {
-                    let items = parse_here_docs(ctx, tracker).parse_next(input)?;
-                    all_items.extend(items);
-                    // Heredoc resolution consumed the command-line newline and
-                    // all heredoc content lines.  Any trailing content on the
-                    // same line (e.g., "| grep") is in pending_heredoc_trailing
-                    // and handled by pipe_sequence.  We must stop parsing
-                    // suffix items here — the next line is a new command.
-                    break;
-                }
             }
 
             // If we can't parse words (no leading space), only try redirects

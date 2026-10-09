@@ -1,6 +1,6 @@
 //! Tests for here-document parsing.
 
-use super::{ParseResult, test_with_snapshot};
+use super::{ParseResult, test_all_parsers_match, test_with_snapshot};
 use crate::assert_snapshot_redacted;
 use anyhow::Result;
 
@@ -311,5 +311,28 @@ fn parse_here_doc_in_command_substitution_eclass_pattern_winnow() -> Result<()> 
         input,
         result: &result
     });
+    Ok(())
+}
+
+// The line a here-document operator is on goes on after it; both parsers
+// must read all of it and then the body.
+#[test]
+fn here_doc_operator_line_continues_past_the_operator() -> Result<()> {
+    for input in [
+        "cat <<EOF | tr a-z A-Z | rev\nabc\nEOF\n",
+        "cat <<EOF && echo and\nx\nEOF\n",
+        "false <<EOF || echo or\nx\nEOF\n",
+        "cat <<EOF | tr a-z A-Z && echo and\nx\nEOF\n",
+        "cat <<EOF; echo semi\nx\nEOF\n",
+        "cat <<EOF&&echo and\nx\nEOF\n",
+        "if cat <<EOF; then echo yes; fi\nx\nEOF\n",
+        "( cat <<EOF ) | tr a-z A-Z\nx\nEOF\n",
+        "cat <<EOF |\nx\nEOF\ntr a-z A-Z\n",
+        "cat <<EOF - /dev/null\nx\nEOF\necho next\n",
+        "cat <<A - /dev/fd/3 3<<B\none\nA\ntwo\nB\necho next\n",
+        "f() {\n\tcat > file <<-EOF || die\n\tbody\n\tEOF\n\techo after\n}\n",
+    ] {
+        test_all_parsers_match(input)?;
+    }
     Ok(())
 }
