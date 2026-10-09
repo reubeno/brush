@@ -72,12 +72,12 @@ ParseResult(
                           loc: "[location]",
                         ), SourceSpan(
                           start: SourcePosition(
-                            index: 18,
+                            offset: 18,
                             line: 2,
                             column: 5,
                           ),
                           end: SourcePosition(
-                            index: 67,
+                            offset: 67,
                             line: 4,
                             column: 9,
                           ),

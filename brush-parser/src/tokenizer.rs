@@ -783,7 +783,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             read_bodies_left_pending: true,
             cross_state: CrossTokenParseState {
                 cursor: SourcePosition {
-                    index: 0,
+                    offset: 0,
                     line: 1,
                     column: 1,
                 },
@@ -815,7 +815,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             } else {
                 self.cross_state.cursor.column += 1;
             }
-            self.cross_state.cursor.index += 1;
+            self.cross_state.cursor.offset += ch.len_utf8();
         }
 
         if let Some(unread) = self.unread.take_if(|unread| unread.chars.is_empty()) {
@@ -1550,7 +1550,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 } else {
                     // Make sure we don't include this char in the token range.
                     state.start_position.column += 1;
-                    state.start_position.index += 1;
+                    state.start_position.offset += c.len_utf8();
                 }
 
                 self.consume_char()?;
