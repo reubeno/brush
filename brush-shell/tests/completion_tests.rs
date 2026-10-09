@@ -1006,6 +1006,32 @@ async fn file_and_directory_actions_complete_file_names() -> Result<()> {
     Ok(())
 }
 
+/// File names that `-o default` or `-o dirnames` falls back to are file names, quoted as
+/// such, whether or not directories are to be marked. Checked with bash 5.3, which quotes
+/// them with `mark-directories` off.
+#[tokio::test(flavor = "multi_thread")]
+async fn default_fallback_file_names_are_quoted_without_marked_directories() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("a b").touch()?;
+    test_shell.temp_dir.child("sub dir").create_dir_all()?;
+    test_shell
+        .run("complete -o default mycmd; complete -o dirnames -W '' dircmd")
+        .await?;
+    test_shell
+        .shell
+        .completion_config_mut()
+        .fallback_options
+        .mark_directories = false;
+
+    for (line, expected) in [("mycmd a", "a b"), ("dircmd su", "sub dir")] {
+        let completions = test_shell.complete_end_of_line_full(line).await?;
+        assert_eq!(candidate_texts(&completions), [expected], "{line}");
+        assert!(completions.options.treat_as_filenames, "{line}");
+    }
+
+    Ok(())
+}
+
 /// Like bash, `compopt` changes the options of the completion in progress, which a
 /// `compgen` call from the completion function doesn't disturb.
 #[tokio::test(flavor = "multi_thread")]
