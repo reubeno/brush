@@ -51,9 +51,9 @@ path = "tests/completion_tests.rs"
 # jobs, which run prebuilt test binaries outside a cargo target dir and so
 # can't run pty-based tests (see the interactive/version test skips there).
 
-# Generates man pages, markdown help, completion scripts, and the config
-# schema. Lives here so that xtask doesn't have to depend on brush-shell;
-# `cargo xtask gen` shells out to it.
+# Generates completion scripts and the config schema. Lives here so that
+# xtask doesn't have to depend on brush-shell; `cargo xtask gen` shells out
+# to it.
 [[example]]
 name = "gen"
 path = "examples/gen.rs"
