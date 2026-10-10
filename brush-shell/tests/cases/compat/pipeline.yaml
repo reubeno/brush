@@ -57,4 +57,20 @@ cases:
   - name: "printf broken pipe returns 141 in PIPESTATUS"
     stdin: |
       printf '%s\n' {0..10000} | x=1
+
+  - name: "Function stage writing more than a pipe buffer before the next stage is spawned"
+    # Regression test: a shell function used as a non-last pipeline stage
+    # must run concurrently with the rest of the pipeline, not be awaited
+    # to completion before the next stage is even spawned. Otherwise, once
+    # the function writes more to its stdout pipe than the OS pipe buffer
+    # holds (commonly 64KiB on Linux) before returning, the write blocks
+    # forever because nothing is reading the other end yet.
+    stdin: |
+      big() {
+        local i
+        for i in $(seq 1 5000); do
+          echo "padding line number ${i} to exceed the pipe buffer size"
+        done
+      }
+      big | wc -l
       echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
