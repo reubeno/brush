@@ -64,14 +64,9 @@ impl builtins::Command for WaitCommand {
                 }
             }
         } else {
-            // Wait for all jobs.
-            let jobs = context.shell.jobs_mut().wait_all().await?;
-
-            if context.shell.options().enable_job_control {
-                for job in jobs {
-                    writeln!(context.stdout(), "{job}")?;
-                }
-            }
+            // Wait for all jobs but produce no output. Job notices are emitted
+            // separately by the interactive prompt cycle.
+            let _ = context.shell.jobs_mut().wait_all().await?;
         }
 
         Ok(result)
