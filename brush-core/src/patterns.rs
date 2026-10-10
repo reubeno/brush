@@ -232,31 +232,29 @@ impl Pattern {
             sys::fs::pattern_path_root(&flattened)
         });
 
-        let prefix_to_remove;
+        // Each candidate is a path to look at and the text to report for it.
+        // The text is spelled as the pattern is: its own separators, doubled
+        // ones included, with a matched name in place of each glob component.
+        // Reporting the path itself would collapse `//`, which bash keeps and
+        // callers strip prefixes from (`${match#"${EROOT}"}`).
+        let mut first_component = true;
         let mut paths_so_far = if let Some(root) = absolute_root {
-            prefix_to_remove = None;
             // Skip the first component; it was consumed to determine the root.
-            components.remove(0);
-            vec![root]
+            let spelled: String = components.remove(0).iter().map(|p| p.as_str()).collect();
+            first_component = false;
+            vec![(root, spelled)]
         } else {
-            // Build a prefix to remove after glob expansion so results are
-            // returned relative to the working directory. The prefix is
-            // normalized to use `/` separators because `push_path_for_pattern`
-            // also uses `/` on Windows (to avoid `PathBuf::push` drive-letter
-            // semantics) — if we left `\` here, the strip_prefix below would
-            // miss on Windows and leave results as absolute paths.
-            let working_dir_str = working_dir.to_string_lossy();
-            let mut working_dir_str =
-                sys::fs::normalize_path_separators(&working_dir_str).into_owned();
-            if !working_dir_str.ends_with('/') {
-                working_dir_str.push('/');
-            }
-
-            prefix_to_remove = Some(working_dir_str);
-            vec![working_dir.to_path_buf()]
+            vec![(working_dir.to_path_buf(), String::new())]
         };
 
-        for component in components {
+        // bash keeps a doubled separator in the literal directories leading up
+        // to the first glob component, and writes single ones from there on.
+        let mut seen_glob = false;
+        let last = components.len().saturating_sub(1);
+        for (index, component) in components.into_iter().enumerate() {
+            let separator = if first_component { "" } else { "/" };
+            first_component = false;
+
             if !component.iter().any(|piece| {
                 matches!(piece, PatternPiece::Pattern(_))
                     && requires_expansion(piece.as_str(), self.enable_extended_globbing)
@@ -265,8 +263,13 @@ impl Pattern {
                     .iter()
                     .map(|piece| piece.as_str())
                     .collect::<String>();
-                paths_so_far.retain_mut(|p| {
+                let redundant = flattened.is_empty() && seen_glob && index != last;
+                paths_so_far.retain_mut(|(p, spelled)| {
                     sys::fs::push_path_for_pattern(p, &flattened);
+                    if !redundant {
+                        spelled.push_str(separator);
+                        spelled.push_str(&flattened);
+                    }
 
                     // Drop candidates that don't name an existing directory entry.
                     // We use `symlink_metadata` (lstat) rather than `exists` (stat) so
@@ -280,8 +283,9 @@ impl Pattern {
                 continue;
             }
 
+            seen_glob = true;
             let current_paths = std::mem::take(&mut paths_so_far);
-            for current_path in current_paths {
+            for (current_path, spelled) in current_paths {
                 let subpattern = Self::from(&component)
                     .set_extended_globbing(self.enable_extended_globbing)
                     .set_case_insensitive(self.case_insensitive);
@@ -312,7 +316,11 @@ impl Pattern {
                     .filter_map(|result| result.ok())
                     .filter(matches_regex)
                     .filter(matches_dotfile_policy)
-                    .map(|entry| entry.path())
+                    .map(|entry| {
+                        let name = entry.file_name();
+                        let spelled = format!("{spelled}{separator}{}", name.to_string_lossy());
+                        (entry.path(), spelled)
+                    })
                     .collect();
 
                 matching_paths_in_dir.sort();
@@ -323,28 +331,13 @@ impl Pattern {
 
         let results: Vec<_> = paths_so_far
             .into_iter()
-            .filter_map(|path| {
+            .filter_map(|(path, spelled)| {
                 if let Some(filter) = path_filter
                     && !filter(path.as_path())
                 {
                     return None;
                 }
-
-                // Normalize separators *before* stripping the working-dir
-                // prefix so that `prefix_to_remove` (already normalized to
-                // use `/`) matches paths that may contain a mix of `\` and
-                // `/` on Windows.
-                let path_str = path.to_string_lossy();
-                let normalized = sys::fs::normalize_path_separators(&path_str);
-                let mut path_ref: &str = normalized.as_ref();
-
-                if let Some(prefix_to_remove) = &prefix_to_remove
-                    && let Some(stripped) = path_ref.strip_prefix(prefix_to_remove.as_str())
-                {
-                    path_ref = stripped;
-                }
-
-                Some(path_ref.to_string())
+                Some(spelled)
             })
             .collect();
 

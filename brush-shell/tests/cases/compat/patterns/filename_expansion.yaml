@@ -375,3 +375,14 @@ cases:
       echo "./* : " ./*
       echo ".*  : " .*
       echo "./.*: " ./.*
+
+  - name: "Expansion keeps the separators the pattern spelled"
+    stdin: |
+      mkdir -p top/sub/deep
+      touch top/sub/one.txt top/sub/deep/two.txt
+      echo top//sub/*.txt
+      echo ./top//sub//deep//*
+      echo top/*/
+      echo top//s*//d*/
+      found=( "$PWD"/top//sub/*.txt )
+      echo "${found[0]#"$PWD"/top/}"
