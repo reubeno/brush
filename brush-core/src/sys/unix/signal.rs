@@ -106,6 +106,43 @@ pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
     Ok(found_stopped)
 }
 
+/// Returns whether the given child process has stopped since that was last
+/// reported. Doesn't reap the child if it has exited.
+///
+/// # Arguments
+///
+/// * `pid` - The child's process ID.
+pub(crate) fn poll_for_stopped_child(pid: sys::process::ProcessId) -> Result<bool, error::Error> {
+    let flags = nix::sys::wait::WaitPidFlag::WUNTRACED | nix::sys::wait::WaitPidFlag::WNOHANG;
+    match waitid_one(pid, flags) {
+        Ok(nix::sys::wait::WaitStatus::Stopped(..)) => Ok(true),
+        Ok(_) | Err(nix::errno::Errno::ECHILD) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "netbsd", target_os = "openbsd")))]
+fn waitid_one(
+    pid: sys::process::ProcessId,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    nix::sys::wait::waitid(
+        nix::sys::wait::Id::Pid(nix::unistd::Pid::from_raw(pid)),
+        flags,
+    )
+}
+
+// nix does not expose `waitid` on NetBSD/OpenBSD, and `waitpid` would reap a child
+// that has exited, so don't look.
+#[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+#[allow(clippy::unnecessary_wraps, reason = "matches other platforms")]
+const fn waitid_one(
+    _pid: sys::process::ProcessId,
+    _flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    Ok(nix::sys::wait::WaitStatus::StillAlive)
+}
+
 #[cfg(not(any(target_os = "macos", target_os = "netbsd", target_os = "openbsd")))]
 fn waitid_all(
     flags: nix::sys::wait::WaitPidFlag,
@@ -132,6 +169,24 @@ fn waitid_all(
 fn waitid_all(
     flags: nix::sys::wait::WaitPidFlag,
 ) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    waitid_macos(nix::libc::P_ALL, 0, flags)
+}
+
+#[cfg(target_os = "macos")]
+fn waitid_one(
+    pid: sys::process::ProcessId,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    #[expect(clippy::cast_sign_loss, reason = "process IDs are positive")]
+    waitid_macos(nix::libc::P_PID, pid as nix::libc::id_t, flags)
+}
+
+#[cfg(target_os = "macos")]
+fn waitid_macos(
+    idtype: nix::libc::idtype_t,
+    id: nix::libc::id_t,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
     // SAFETY:
     // Code copied from nix::sys::wait implementation of waitid for other platforms.
     // The siginfo structure is valid when filled with zeroes. Memory is zeroed
@@ -142,7 +197,7 @@ fn waitid_all(
     // SAFETY:
     // Code copied from nix::sys::wait implementation of waitid for other platforms.
     nix::errno::Errno::result(unsafe {
-        nix::libc::waitid(nix::libc::P_ALL, 0, &raw mut siginfo, flags.bits())
+        nix::libc::waitid(idtype, id, &raw mut siginfo, flags.bits())
     })?;
 
     siginfo_to_wait_status(siginfo)

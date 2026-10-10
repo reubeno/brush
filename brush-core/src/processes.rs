@@ -50,6 +50,14 @@ impl ChildProcess {
         #[allow(unused_mut, reason = "only mutated on some platforms")]
         let mut sigchld = sys::signal::chld_signal_listener()?;
 
+        // The child may have stopped before there were listeners to hear about it
+        // (e.g., straight after `fg` resumed it).
+        if let Some(pid) = self.pid
+            && sys::signal::poll_for_stopped_child(pid)?
+        {
+            return Ok(ProcessWaitResult::Stopped);
+        }
+
         #[allow(clippy::ignored_unit_patterns)]
         loop {
             tokio::select! {
