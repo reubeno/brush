@@ -34,6 +34,7 @@ pub mod results;
 mod shell;
 pub mod sourceinfo;
 pub mod sys;
+pub mod tasks;
 pub mod terminal;
 pub mod tests;
 pub mod timing;

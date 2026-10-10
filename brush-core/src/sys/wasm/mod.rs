@@ -10,6 +10,7 @@ pub use crate::sys::stubs::poll;
 pub use crate::sys::stubs::process;
 pub use crate::sys::stubs::resource;
 pub use crate::sys::stubs::signal;
+pub(crate) mod tasks;
 pub use crate::sys::stubs::terminal;
 pub(crate) use crate::sys::stubs::users;
 

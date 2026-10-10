@@ -427,7 +427,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
                     builtin,
                     self.command_name,
                     self.args,
-                ))
+                )
+                .await)
             }
             ShellForCommand::ParentShell(..) => {
                 self.execute_via_builtin_in_parent_shell(builtin).await
@@ -435,23 +436,26 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         }
     }
 
+    // Not an `async fn`: its future would hold `shell`, and that would grow the
+    // future of every simple command, not just this rare case.
     fn execute_via_builtin_in_owned_shell(
         mut shell: Shell<SE>,
         params: ExecutionParameters,
         builtin: builtins::Registration<SE>,
         command_name: String,
         args: Vec<CommandArg>,
-    ) -> ExecutionSpawnResult {
+    ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
-        let join_handle = tokio::task::spawn_blocking(move || {
+        // Builtins may block (e.g., reading input), so keep them from holding up the
+        // rest of the pipeline.
+        let task = sys::tasks::spawn_blocking(async move {
             let cmd_context = ExecutionContext {
                 shell: &mut shell,
                 command_name,
                 params,
             };
 
-            let rt = tokio::runtime::Handle::current();
-            let result = rt.block_on(execute_builtin_command(&builtin, cmd_context, args));
+            let result = execute_builtin_command(&builtin, cmd_context, args).await;
 
             // Update $_ after command execution.
             shell.update_last_arg_variable(last_arg);
@@ -459,7 +463,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             result
         });
 
-        ExecutionSpawnResult::StartedTask(join_handle)
+        async move { ExecutionSpawnResult::StartedTask(task.await) }
     }
 
     async fn execute_via_builtin_in_parent_shell(
@@ -747,7 +751,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
 
-    let cmd_join_handle = tokio::spawn(run_substitution_command(subshell, params, s));
+    let cmd_join_handle = sys::tasks::spawn(run_substitution_command(subshell, params, s));
 
     let output_str = async_reader.read_to_string().await?;
 

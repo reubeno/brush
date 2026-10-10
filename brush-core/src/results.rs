@@ -3,7 +3,7 @@
 #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
 use std::os::unix::process::ExitStatusExt;
 
-use crate::{error, processes};
+use crate::{error, processes, tasks};
 
 /// Represents the result of executing a command or similar item.
 #[derive(Default)]
@@ -253,7 +253,7 @@ pub enum ExecutionSpawnResult {
     /// Indicates that a process was started and had not yet completed.
     StartedProcess(processes::ChildProcess),
     /// Indicates that a task was started to handle the execution asynchronously.
-    StartedTask(tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>),
+    StartedTask(tasks::TaskHandle<Result<ExecutionResult, error::Error>>),
 }
 
 impl From<ExecutionResult> for ExecutionSpawnResult {

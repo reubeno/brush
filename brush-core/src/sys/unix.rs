@@ -10,6 +10,7 @@ use crate::error;
 pub use crate::sys::tokio_process as process;
 pub mod resource;
 pub mod signal;
+pub(crate) use crate::sys::tokio_tasks as tasks;
 pub mod terminal;
 pub(crate) mod users;
 

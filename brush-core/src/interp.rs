@@ -291,7 +291,7 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
         cloned_params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
     }
 
-    let join_handle = tokio::spawn(async move {
+    let join_handle = sys::tasks::spawn(async move {
         cloned_ao_list
             .execute(&mut cloned_shell, &cloned_params)
             .await
@@ -751,7 +751,7 @@ impl Execute for ast::CoprocessCommand {
             .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
 
         let body = self.body.clone();
-        let join_handle = tokio::spawn(async move {
+        let join_handle = sys::tasks::spawn(async move {
             let pipeline_context = PipelineExecutionContext {
                 shell: commands::ShellForCommand::ParentShell(&mut child_shell),
                 process_group_id: None,
@@ -2005,7 +2005,7 @@ fn setup_process_substitution(
     // Asynchronously spawn off the subshell; we intentionally don't block on its
     // completion.
     let subshell_cmd = subshell_cmd.to_owned();
-    tokio::spawn(async move {
+    sys::tasks::spawn(async move {
         // Intentionally ignore the result of the subshell command.
         let _ = subshell_cmd
             .list
