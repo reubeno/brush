@@ -6302,7 +6302,7 @@ dependencies = [
 [[package]]
 name = "winnow-args"
 version = "0.1.2"
-source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#a3cf62637608ac6ccdfdd00bc9b0923a49f961ee"
 dependencies = [
  "winnow",
  "winnow-args-derive",
@@ -6311,7 +6311,7 @@ dependencies = [
 [[package]]
 name = "winnow-args-derive"
 version = "0.1.2"
-source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#a3cf62637608ac6ccdfdd00bc9b0923a49f961ee"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6321,7 +6321,7 @@ dependencies = [
 [[package]]
 name = "winnow-args-man"
 version = "0.1.2"
-source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#a3cf62637608ac6ccdfdd00bc9b0923a49f961ee"
 dependencies = [
  "roff",
  "winnow-args-spec",
@@ -6330,7 +6330,7 @@ dependencies = [
 [[package]]
 name = "winnow-args-markdown"
 version = "0.1.2"
-source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#a3cf62637608ac6ccdfdd00bc9b0923a49f961ee"
 dependencies = [
  "winnow-args-spec",
 ]
@@ -6338,7 +6338,7 @@ dependencies = [
 [[package]]
 name = "winnow-args-spec"
 version = "0.1.2"
-source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#a3cf62637608ac6ccdfdd00bc9b0923a49f961ee"
 dependencies = [
  "toml",
 ]

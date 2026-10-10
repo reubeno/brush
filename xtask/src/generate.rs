@@ -194,7 +194,7 @@ fn gen_man(sh: &Shell, args: &GenerateManArgs, verbose: bool) -> Result<()> {
 
     let spec = write_fragments(sh, args.target.as_deref())?;
     let command = Catalog::load(&spec.join(SHELL_CRATE))?.stitch(SHELL_COMMAND)?;
-    let pages = Manual::default().render_pages(&command, &command.name)?;
+    let pages = manual(&command, &command.name)?.render_pages(&command, &command.name)?;
     write_pages(&args.output_dir, &pages)
 }
 
@@ -237,12 +237,36 @@ fn gen_builtin_docs(sh: &Shell, args: &GenerateBuiltinsArgs, verbose: bool) -> R
             } else {
                 command.name.clone()
             };
-            man.extend(Manual::default().render_pages(&command, &name)?);
+            man.extend(manual(&command, &name)?.render_pages(&command, &name)?);
             markdown.extend(winnow_args_markdown::render_pages(&command, &name)?);
         }
     }
     write_pages(&args.output_dir.join("man"), &man)?;
     write_pages(&args.output_dir.join("md"), &markdown)
+}
+
+/// The header of a man page: the version when the command has one, and the
+/// date only when `SOURCE_DATE_EPOCH` gives it, so that the pages of a
+/// documentation archive are the same whenever it is built.
+fn manual(command: &winnow_args_spec::Command, name: &str) -> Result<Manual> {
+    let date = match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(seconds) => Manual::date_of(
+            seconds
+                .parse()
+                .context("SOURCE_DATE_EPOCH is not a number of seconds")?,
+        ),
+        Err(_) => String::new(),
+    };
+    let source = command
+        .package_version
+        .as_ref()
+        .map(|version| format!("{name} {version}"))
+        .unwrap_or_default();
+    Ok(Manual {
+        date,
+        source,
+        ..Manual::default()
+    })
 }
 
 /// The word a builtin's pages go by, from the name of its type; `None` for a

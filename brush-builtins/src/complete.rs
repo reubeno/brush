@@ -30,11 +30,53 @@ impl<T: std::str::FromStr + strum::VariantNames> winnow_args::FromArg for Choice
 #[derive(winnow_args::Args)]
 struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
-    #[arg(short = 'o')]
+    // The values are stated for the generated documentation, which cannot
+    // read them from the type; a documentation build checks them against it.
+    #[arg(
+        short = 'o',
+        choices(
+            "bashdefault",
+            "default",
+            "dirnames",
+            "filenames",
+            "noquote",
+            "nosort",
+            "nospace",
+            "plusdirs"
+        )
+    )]
     options: Vec<Choice<CompleteOption>>,
 
     /// Actions to apply to generate completions.
-    #[arg(short = 'A')]
+    #[arg(
+        short = 'A',
+        choices(
+            "alias",
+            "arrayvar",
+            "binding",
+            "builtin",
+            "command",
+            "directory",
+            "disabled",
+            "enabled",
+            "export",
+            "file",
+            "function",
+            "group",
+            "helptopic",
+            "hostname",
+            "job",
+            "keyword",
+            "running",
+            "service",
+            "setopt",
+            "shopt",
+            "signal",
+            "stopped",
+            "user",
+            "variable"
+        )
+    )]
     actions: Vec<Choice<CompleteAction>>,
 
     /// File glob pattern to be expanded to generate completions.
@@ -531,10 +573,36 @@ pub(crate) struct CompOptCommand {
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o', value_name = "OPT")]
+    #[arg(
+        short = 'o',
+        value_name = "OPT",
+        choices(
+            "bashdefault",
+            "default",
+            "dirnames",
+            "filenames",
+            "noquote",
+            "nosort",
+            "nospace",
+            "plusdirs"
+        )
+    )]
     enabled_options: Vec<Choice<CompleteOption>>,
 
-    #[arg(plus = 'o', value_name = "OPT")]
+    #[arg(
+        plus = 'o',
+        value_name = "OPT",
+        choices(
+            "bashdefault",
+            "default",
+            "dirnames",
+            "filenames",
+            "noquote",
+            "nosort",
+            "nospace",
+            "plusdirs"
+        )
+    )]
     disabled_options: Vec<Choice<CompleteOption>>,
 
     /// If specified, scopes updates to completions of the named commands.
