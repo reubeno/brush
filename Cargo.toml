@@ -124,3 +124,10 @@ panic = "abort"
 [profile.bench]
 inherits = "release"
 strip = "debuginfo"
+
+# The documentation generator needs winnow-args' unreleased `docs-generation`
+# branch: its derive writes the fragments `cargo xtask gen docs` reads. This
+# goes away with the release that carries it.
+[patch.crates-io]
+winnow-args = { git = "https://github.com/lu-zero/winnow-args", branch = "docs-generation" }
+winnow-args-derive = { git = "https://github.com/lu-zero/winnow-args", branch = "docs-generation" }

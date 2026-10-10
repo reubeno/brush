@@ -3618,6 +3618,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "roff"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "323c417e1d9665a65b263ec744ba09030cfb277e9daa0b018a4ab62e57bc8189"
+
+[[package]]
 name = "ron"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6295,9 +6301,8 @@ dependencies = [
 
 [[package]]
 name = "winnow-args"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9b4fbe210950698db7ec7fedbbb721379fb2d92c0b39835ad0876b904547063"
+version = "0.1.2"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
 dependencies = [
  "winnow",
  "winnow-args-derive",
@@ -6305,13 +6310,37 @@ dependencies = [
 
 [[package]]
 name = "winnow-args-derive"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09359adf85eecc7ca2696928137722055b85d380089b159673a161347115adc1"
+version = "0.1.2"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "winnow-args-man"
+version = "0.1.2"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+dependencies = [
+ "roff",
+ "winnow-args-spec",
+]
+
+[[package]]
+name = "winnow-args-markdown"
+version = "0.1.2"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+dependencies = [
+ "winnow-args-spec",
+]
+
+[[package]]
+name = "winnow-args-spec"
+version = "0.1.2"
+source = "git+https://github.com/lu-zero/winnow-args?branch=docs-generation#7c25c343aa39604670d748d88d193cf91f981f13"
+dependencies = [
+ "toml",
 ]
 
 [[package]]
@@ -6380,6 +6409,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "winnow-args-man",
+ "winnow-args-markdown",
+ "winnow-args-spec",
  "xshell",
 ]
 

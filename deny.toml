@@ -83,7 +83,8 @@ deny = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# winnow-args' `docs-generation` branch, until the release that carries it.
+allow-git = ["https://github.com/lu-zero/winnow-args"]
 
 [sources.allow-org]
 # 1 or more github.com organizations to allow git sources for
