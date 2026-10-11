@@ -23,6 +23,8 @@ pub(crate) struct WaitCommand {
     ids: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(WaitCommand);
+
 impl builtins::Command for WaitCommand {
     type Error = brush_core::Error;
 

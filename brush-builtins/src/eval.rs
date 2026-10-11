@@ -9,6 +9,8 @@ pub(crate) struct EvalCommand {
     args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(EvalCommand);
+
 impl builtins::Command for EvalCommand {
     type Error = brush_core::Error;
 

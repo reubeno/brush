@@ -12,6 +12,8 @@ pub(crate) struct PopdCommand {
     // TODO(popd): implement +N and -N
 }
 
+brush_builtin_utils::clap_builtin!(PopdCommand);
+
 impl builtins::Command for PopdCommand {
     type Error = crate::dirs::DirError;
 

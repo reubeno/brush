@@ -762,7 +762,7 @@ impl Spec {
                     shell
                         .builtins()
                         .iter()
-                        .filter(|(_, registration)| registration.disabled)
+                        .filter(|(_, registration)| registration.is_disabled())
                         .map(|(name, _)| name),
                     prefix,
                 ),
@@ -771,7 +771,7 @@ impl Spec {
                     shell
                         .builtins()
                         .iter()
-                        .filter(|(_, registration)| !registration.disabled)
+                        .filter(|(_, registration)| !registration.is_disabled())
                         .map(|(name, _)| name),
                     prefix,
                 ),
@@ -1380,7 +1380,7 @@ fn command_completions(
         shell
             .builtins()
             .iter()
-            .filter(|(_, registration)| !registration.disabled)
+            .filter(|(_, registration)| !registration.is_disabled())
             .map(|(name, _)| name)
             .sorted(),
         prefix,

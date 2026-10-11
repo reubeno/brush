@@ -53,6 +53,8 @@ struct HistoryConfig {
     time_format: Option<String>,
 }
 
+brush_builtin_utils::clap_builtin!(HistoryCommand);
+
 impl builtins::Command for HistoryCommand {
     type Error = brush_core::Error;
 

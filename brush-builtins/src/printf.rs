@@ -22,6 +22,8 @@ pub(crate) struct PrintfCommand {
     format_and_args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(PrintfCommand);
+
 impl builtins::Command for PrintfCommand {
     type Error = brush_core::Error;
 

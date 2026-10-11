@@ -10,6 +10,8 @@ pub(crate) struct FgCommand {
     job_spec: Option<String>,
 }
 
+brush_builtin_utils::clap_builtin!(FgCommand);
+
 impl builtins::Command for FgCommand {
     type Error = brush_core::Error;
 

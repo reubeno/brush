@@ -34,6 +34,8 @@ pub(crate) struct FcCommand {
     last: Option<String>,
 }
 
+brush_builtin_utils::clap_builtin!(FcCommand);
+
 impl builtins::Command for FcCommand {
     type Error = brush_core::Error;
 

@@ -433,6 +433,8 @@ pub(crate) struct ULimitCommand {
     limit: Option<LimitValue>,
 }
 
+brush_builtin_utils::clap_builtin!(ULimitCommand);
+
 impl builtins::Command for ULimitCommand {
     type Error = brush_core::Error;
 

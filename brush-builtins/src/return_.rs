@@ -10,6 +10,8 @@ pub(crate) struct ReturnCommand {
     code: Option<i32>,
 }
 
+brush_builtin_utils::clap_builtin!(ReturnCommand);
+
 impl builtins::Command for ReturnCommand {
     type Error = brush_core::Error;
 

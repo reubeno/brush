@@ -188,6 +188,8 @@ const fn special_spec_flag(special: SpecialSpec) -> &'static str {
     }
 }
 
+brush_builtin_utils::clap_builtin!(CompleteCommand);
+
 impl builtins::Command for CompleteCommand {
     type Error = brush_core::Error;
 
@@ -377,6 +379,8 @@ pub(crate) struct CompGenCommand {
     word: Option<String>,
 }
 
+brush_builtin_utils::clap_builtin!(CompGenCommand);
+
 impl builtins::Command for CompGenCommand {
     type Error = brush_core::Error;
 
@@ -427,12 +431,10 @@ pub(crate) struct CompOptCommand {
     names: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(CompOptCommand);
+
 impl builtins::Command for CompOptCommand {
     type Error = brush_core::Error;
-
-    fn takes_plus_options() -> bool {
-        true
-    }
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,

@@ -14,6 +14,8 @@ pub(crate) struct PwdCommand {
     allow_symlinks: bool,
 }
 
+brush_builtin_utils::clap_builtin!(PwdCommand);
+
 impl builtins::Command for PwdCommand {
     type Error = brush_core::Error;
 

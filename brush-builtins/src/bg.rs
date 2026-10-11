@@ -10,6 +10,8 @@ pub(crate) struct BgCommand {
     job_specs: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(BgCommand);
+
 impl builtins::Command for BgCommand {
     type Error = brush_core::Error;
 

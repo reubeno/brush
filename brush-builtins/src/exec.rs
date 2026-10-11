@@ -23,6 +23,8 @@ pub(crate) struct ExecCommand {
     args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(ExecCommand);
+
 impl builtins::Command for ExecCommand {
     type Error = brush_core::Error;
 

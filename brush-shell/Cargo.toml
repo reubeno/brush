@@ -92,6 +92,7 @@ workspace = true
 
 [dependencies]
 brush-core = { version = "^0.5.0", path = "../brush-core" }
+brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils" }
 brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
 brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
 brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }

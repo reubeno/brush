@@ -18,6 +18,8 @@ pub(crate) struct AliasCommand {
     aliases: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(AliasCommand);
+
 impl builtins::Command for AliasCommand {
     type Error = brush_core::Error;
 

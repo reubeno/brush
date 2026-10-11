@@ -29,6 +29,8 @@ pub(crate) struct HashCommand {
     names: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(HashCommand);
+
 impl builtins::Command for HashCommand {
     type Error = brush_core::Error;
 

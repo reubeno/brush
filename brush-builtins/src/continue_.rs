@@ -10,6 +10,8 @@ pub(crate) struct ContinueCommand {
     which_loop: i8,
 }
 
+brush_builtin_utils::clap_builtin!(ContinueCommand);
+
 impl builtins::Command for ContinueCommand {
     type Error = brush_core::Error;
 

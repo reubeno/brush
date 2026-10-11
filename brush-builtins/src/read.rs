@@ -77,6 +77,8 @@ pub(crate) struct ReadCommand {
     variable_names: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(ReadCommand);
+
 impl builtins::Command for ReadCommand {
     type Error = brush_core::Error;
 

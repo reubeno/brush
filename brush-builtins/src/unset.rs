@@ -36,6 +36,8 @@ impl UnsetNameInterpretation {
     }
 }
 
+brush_builtin_utils::clap_builtin!(UnsetCommand);
+
 impl builtins::Command for UnsetCommand {
     type Error = brush_core::Error;
 

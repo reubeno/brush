@@ -18,6 +18,8 @@ pub(crate) struct TrapCommand {
     args: Vec<String>,
 }
 
+brush_builtin_utils::clap_builtin!(TrapCommand);
+
 impl builtins::Command for TrapCommand {
     type Error = brush_core::Error;
 
