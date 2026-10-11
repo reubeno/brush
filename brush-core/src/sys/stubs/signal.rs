@@ -89,3 +89,7 @@ pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
 pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
     Ok(false)
 }
+
+pub(crate) fn poll_for_stopped_child(_pid: sys::process::ProcessId) -> Result<bool, error::Error> {
+    Ok(false)
+}
