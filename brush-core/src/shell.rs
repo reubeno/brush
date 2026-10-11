@@ -145,6 +145,12 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
 
     /// History of commands executed in the shell.
     history: Option<crate::history::History>,
+
+    /// Whether the last `-c` command or script run, or a command string run while the
+    /// shell was not interactive, was stopped because a foreground external command it
+    /// ran was ended by Ctrl-C.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    interrupted_by_ctrl_c: bool,
 }
 
 impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
@@ -187,6 +193,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            interrupted_by_ctrl_c: false,
         }
     }
 }
@@ -373,6 +380,18 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
+    }
+
+    /// Returns whether the last command run by [`Self::run_dash_c_command`] or script run by
+    /// [`Self::run_script`] was stopped because a foreground external command in it was
+    /// ended by Ctrl-C. While the shell is not interactive, a command string run by
+    /// [`Self::run_string`] that is stopped this way also sets it, and a later command
+    /// string does not clear it: a caller that reads commands one at a time (such as from
+    /// standard input) can use it to stop reading. A caller exiting the process afterward can use this to
+    /// report the interruption to its own parent (see
+    /// [`crate::sys::signal::interrupted_exit_code`]).
+    pub const fn interrupted_by_ctrl_c(&self) -> bool {
+        self.interrupted_by_ctrl_c
     }
 }
 

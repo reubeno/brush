@@ -3,7 +3,7 @@
 #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
 use std::os::unix::process::ExitStatusExt;
 
-use crate::{error, processes};
+use crate::{error, processes, sys};
 
 /// Represents the result of executing a command or similar item.
 #[derive(Default)]
@@ -116,6 +116,12 @@ impl From<ExecutionWaitResult> for ExecutionResult {
 
 impl From<std::process::Output> for ExecutionResult {
     fn from(output: std::process::Output) -> Self {
+        // Ctrl-C ends a process on Windows with an exit code rather than a signal; report
+        // it the way bash reports a command that SIGINT ended, not by its low 8 bits.
+        if sys::signal::exited_from_ctrl_c(output.status) {
+            return ExecutionExitCode::Interrupted.into();
+        }
+
         if let Some(code) = output.status.code() {
             #[expect(clippy::cast_sign_loss)]
             return Self::new((code & 0xFF) as u8);

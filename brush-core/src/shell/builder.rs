@@ -266,6 +266,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             parser_impl: crate::parser::ParserImpl::default(),
             key_bindings: None,
             history: None,
+            interrupted_by_ctrl_c: false,
         }
     }
 }

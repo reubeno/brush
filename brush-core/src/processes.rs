@@ -1,5 +1,8 @@
 //! Process management
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use futures::FutureExt;
 
 use crate::{error, sys};
@@ -17,6 +20,8 @@ pub struct ChildProcess {
     pid: Option<sys::process::ProcessId>,
     /// If available, the process group ID of the child.
     pgid: Option<sys::process::ProcessId>,
+    /// If set, the interruption state to mark when the child exits because of Ctrl-C.
+    interrupted: Option<Arc<AtomicBool>>,
 }
 
 impl ChildProcess {
@@ -30,7 +35,13 @@ impl ChildProcess {
             exec_future: Box::pin(child.wait_with_output()),
             pid,
             pgid,
+            interrupted: None,
         }
+    }
+
+    /// Sets the interruption state to mark when the child exits because of Ctrl-C.
+    pub(crate) fn set_interrupted_state(&mut self, interrupted: Arc<AtomicBool>) {
+        self.interrupted = Some(interrupted);
     }
 
     /// Returns the process's ID.
@@ -62,7 +73,13 @@ impl ChildProcess {
         loop {
             tokio::select! {
                 output = &mut self.exec_future => {
-                    break Ok(ProcessWaitResult::Completed(output?))
+                    let output = output?;
+                    if let Some(interrupted) = &self.interrupted
+                        && sys::signal::exited_from_ctrl_c(output.status)
+                    {
+                        interrupted.store(true, Ordering::SeqCst);
+                    }
+                    break Ok(ProcessWaitResult::Completed(output))
                 },
                 _ = sigtstp.recv() => {
                     break Ok(ProcessWaitResult::Stopped)

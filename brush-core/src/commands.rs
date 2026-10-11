@@ -623,9 +623,10 @@ pub(crate) fn execute_external_command(
                 tracing::warn!("could not retrieve pid for child process");
             }
 
-            Ok(ExecutionSpawnResult::StartedProcess(
-                processes::ChildProcess::new(child, pid, actual_pgid),
-            ))
+            let mut child = processes::ChildProcess::new(child, pid, actual_pgid);
+            child.set_interrupted_state(context.params.interrupted_state());
+
+            Ok(ExecutionSpawnResult::StartedProcess(child))
         }
         Err(spawn_err) => {
             if context.shell.options().interactive {

@@ -142,7 +142,7 @@ pub fn run() {
         }
     };
 
-    std::process::exit(i32::from(exit_code));
+    std::process::exit(exit_code);
 }
 
 /// Installs panic handlers to report our panic and cleanly exit on panic.
@@ -190,7 +190,7 @@ pub(crate) const DEFAULT_ENABLE_HIGHLIGHTING: bool = false;
 async fn run_async(
     cli_args: &[String],
     args: CommandLineArgs,
-) -> Result<u8, brush_interactive::ShellError> {
+) -> Result<i32, brush_interactive::ShellError> {
     // Initializing tracing.
     let mut event_config = TRACE_EVENT_CONFIG.lock().await;
     *event_config = Some(events::TraceEventConfig::init(
@@ -279,7 +279,7 @@ async fn run_in_shell(
     args: CommandLineArgs,
     input_backend: &mut impl brush_interactive::InputBackend,
     ui_options: &brush_interactive::UIOptions,
-) -> Result<u8, brush_interactive::ShellError> {
+) -> Result<i32, brush_interactive::ShellError> {
     let read_commands_from_stdin = args.will_read_commands_from_stdin();
     let interactive_options: brush_interactive::InteractiveOptions = ui_options.into();
 
@@ -319,10 +319,20 @@ async fn run_in_shell(
             .await?;
     }
 
-    // Make sure to return the last result observed in the shell.
-    let result = shell_ref.lock().await.last_exit_status();
+    let shell = shell_ref.lock().await;
 
-    Ok(result)
+    // Exiting with 130 (what `$?` shows inside the shell) would not tell a parent process,
+    // such as a parent brush, that Ctrl-C stopped this one: on Windows the parent decides a
+    // child was stopped by Ctrl-C only from STATUS_CONTROL_C_EXIT, so a loop that runs this
+    // shell would keep going. Exiting with that status passes the interruption up.
+    if shell.interrupted_by_ctrl_c()
+        && let Some(code) = brush_core::sys::signal::interrupted_exit_code()
+    {
+        return Ok(code);
+    }
+
+    // Make sure to return the last result observed in the shell.
+    Ok(i32::from(shell.last_exit_status()))
 }
 
 /// Initializes a shell by loading profile and rc files as appropriate.

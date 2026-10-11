@@ -148,6 +148,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
     /// Executes the given string as a shell program, returning the resulting exit status.
     ///
+    /// If the shell is not interactive and a foreground external command that Ctrl-C ended
+    /// stops the program, this also marks the shell as interrupted; see
+    /// [`Self::interrupted_by_ctrl_c`].
+    ///
     /// # Arguments
     ///
     /// * `command` - The command to execute.
@@ -160,8 +164,19 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let parse_result = self.parse_string(command);
-        self.run_parsed_result(parse_result, source_info, params)
-            .await
+        let result = self
+            .run_parsed_result(parse_result, source_info, params)
+            .await;
+
+        // A non-interactive shell reading commands from standard input runs each line with
+        // fresh parameters, so the interruption has to be kept on the shell for the reading
+        // loop to stop. An interactive shell goes back to its prompt instead, and must not
+        // carry the interruption over to the exit status of the session.
+        if !self.options().interactive && params.is_interrupted() {
+            self.interrupted_by_ctrl_c = true;
+        }
+
+        result
     }
 
     /// Executes the given command, provided to a shell executable on the command
@@ -184,6 +199,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let params = self.default_exec_params();
         let source_info = SourceInfo::from("-c");
         let result = self.run_string(command, &source_info, &params).await?;
+        self.interrupted_by_ctrl_c = params.is_interrupted();
 
         self.end_command_string_mode()?;
 
@@ -217,6 +233,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
                 callstack::ScriptCallType::Run,
             )
             .await?;
+        self.interrupted_by_ctrl_c = params.is_interrupted();
 
         // Give the shell a chance to run on-exit tasks, but ignore the result.
         let _ = self.on_exit().await;

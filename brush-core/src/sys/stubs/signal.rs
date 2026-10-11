@@ -86,6 +86,17 @@ pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     Ok(())
 }
 
+pub(crate) const fn exited_from_ctrl_c(_status: std::process::ExitStatus) -> bool {
+    false
+}
+
+/// Returns the process exit code that tells a parent process this shell was stopped by
+/// Ctrl-C. Always `None` here: the shell exits with its usual status.
+#[must_use]
+pub const fn interrupted_exit_code() -> Option<i32> {
+    None
+}
+
 pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
     Ok(false)
 }

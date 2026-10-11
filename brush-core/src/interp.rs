@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
@@ -29,6 +31,17 @@ struct PipelineExecutionContext<'a, SE: extensions::ShellExtensions> {
 }
 
 /// Parameters for execution.
+///
+/// # Interruption by Ctrl-C
+///
+/// The parameters carry whether a foreground external command that Ctrl-C ended has
+/// interrupted the execution that uses them (this only happens on Windows, where such a
+/// command ends with `STATUS_CONTROL_C_EXIT`). Clones share this state, and once it is set,
+/// any execution that uses these parameters, or a clone of them, stops before its first
+/// command and returns without an error. Parameters used for more than one execution
+/// therefore stay interrupted: after one `run_string` or `invoke_function` is interrupted,
+/// later ones with the same parameters do nothing. Get fresh parameters from
+/// [`Shell::default_exec_params`] for each top-level execution.
 #[derive(Clone, Default)]
 pub struct ExecutionParameters {
     /// The open files tracked by the current context.
@@ -38,9 +51,38 @@ pub struct ExecutionParameters {
     /// Whether `errexit` (exit on error) behavior should be
     /// suppressed in this execution context. Defaults to `false`.
     pub suppress_errexit: bool,
+    /// Whether a foreground external command that Ctrl-C ended has interrupted this
+    /// execution. Clones share it, so an interruption deep inside (a function, `eval`,
+    /// `source`, a subshell, a pipeline stage) stops every caller up to where the
+    /// parameters were created.
+    ///
+    /// It lives here rather than in the shell so that each top-level execution starts
+    /// uninterrupted without anything having to clear it. The cost is that creating new
+    /// parameters partway through an execution, instead of passing or cloning the
+    /// caller's, cuts the interruption off: the caller would carry on. For callers that
+    /// reuse parameters, see the type's documentation.
+    interrupted: Arc<AtomicBool>,
 }
 
 impl ExecutionParameters {
+    /// Returns whether a foreground command that Ctrl-C ended has interrupted this
+    /// execution.
+    pub(crate) fn is_interrupted(&self) -> bool {
+        self.interrupted.load(Ordering::SeqCst)
+    }
+
+    /// Returns the interruption state shared with clones of these parameters. Setting it
+    /// marks every execution that shares it as interrupted.
+    pub(crate) fn interrupted_state(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.interrupted)
+    }
+
+    /// Gives these parameters their own interruption state, so that they no longer
+    /// share it with the parameters they were cloned from.
+    pub(crate) fn detach_interrupt(&mut self) {
+        self.interrupted = Arc::default();
+    }
+
     /// Returns the standard input file; usable with `write!` et al.
     ///
     /// # Arguments
@@ -211,6 +253,10 @@ impl Execute for ast::Program {
         let mut result = ExecutionResult::success();
 
         for command in &self.complete_commands {
+            if params.is_interrupted() {
+                break;
+            }
+
             // Execute the command and handle any errors without immediately propagating them.
             // This allows interactive shells to continue executing subsequent commands even after
             // errors.
@@ -246,6 +292,10 @@ impl Execute for ast::CompoundList {
         let mut result = ExecutionResult::success();
 
         for ast::CompoundListItem(ao_list, sep) in &self.0 {
+            if params.is_interrupted() {
+                break;
+            }
+
             let run_async = matches!(sep, ast::SeparatorOperator::Async);
 
             if run_async {
@@ -283,6 +333,10 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
     let mut cloned_params = params.clone();
     let cloned_ao_list = ao_list.clone();
 
+    // A background list runs independently of the foreground, so a command in it that
+    // Ctrl-C ended must not stop the foreground's commands, and vice versa.
+    cloned_params.detach_interrupt();
+
     // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
     cloned_shell.options_mut().interactive = false;
 
@@ -311,6 +365,10 @@ impl Execute for ast::AndOrList {
         shell: &mut Shell<impl extensions::ShellExtensions>,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
+        if params.is_interrupted() {
+            return Ok(ExecutionResult::success());
+        }
+
         let has_operators = !self.additional.is_empty();
 
         // For the first command, suppress errexit if there are more commands after it
@@ -323,7 +381,7 @@ impl Execute for ast::AndOrList {
 
         for (index, next_ao) in self.additional.iter().enumerate() {
             // Check for non-normal control flow.
-            if !result.is_normal_flow() {
+            if !result.is_normal_flow() || params.is_interrupted() {
                 break;
             }
 
@@ -402,7 +460,11 @@ impl Execute for ast::Pipeline {
         // We reuse `suppress_errexit` here because bash suppresses the ERR trap in
         // exactly the same contexts it suppresses errexit (conditionals, `!`-prefixed
         // pipelines, etc.).
-        if !result.is_success() && !params.suppress_errexit && !self.bang {
+        // A pipeline that Ctrl-C interrupted neither fires the ERR trap nor exits the shell
+        // under errexit: an interactive shell with `set -e` would otherwise end on Ctrl-C.
+        let interrupted = params.is_interrupted();
+
+        if !result.is_success() && !params.suppress_errexit && !self.bang && !interrupted {
             if shell.traps().handles(crate::traps::TrapSignal::Err) {
                 shell
                     .invoke_trap_handler(crate::traps::TrapSignal::Err, &params)
@@ -411,7 +473,7 @@ impl Execute for ast::Pipeline {
         }
 
         // Apply errexit if not suppressed (and not negated)
-        if !params.suppress_errexit && !self.bang {
+        if !params.suppress_errexit && !self.bang && !interrupted {
             shell.apply_errexit_if_enabled(&mut result);
         }
 
@@ -471,6 +533,11 @@ async fn spawn_pipeline_processes(
     }
 
     for (current_pipeline_index, command) in pipeline.seq.iter().enumerate() {
+        // Stages that already started are still waited for; later ones aren't started.
+        if params.is_interrupted() {
+            break;
+        }
+
         //
         // We run a command directly in the current shell if either of the following is true:
         //     * There's only one command in the pipeline.
@@ -743,6 +810,11 @@ impl Execute for ast::CoprocessCommand {
 
         // Setup redirection for the coprocess's shell's stdin/stdout.
         let mut child_params = params.clone();
+
+        // A coprocess runs independently of the foreground, so a command in it that Ctrl-C
+        // ended must not stop the foreground's commands, and vice versa.
+        child_params.detach_interrupt();
+
         child_params
             .open_files
             .set_fd(OpenFiles::STDIN_FD, stdin_reader.into());
@@ -807,6 +879,10 @@ impl Execute for ast::ForClauseCommand {
         };
 
         for value in expanded_values {
+            if params.is_interrupted() {
+                break;
+            }
+
             if shell.options().print_commands_and_arguments {
                 if let Some(unexpanded_values) = &self.values {
                     shell
@@ -874,6 +950,10 @@ impl Execute for ast::CaseClauseCommand {
         let mut force_execute_next_case = false;
 
         for case in &self.cases {
+            if params.is_interrupted() {
+                break;
+            }
+
             if force_execute_next_case {
                 force_execute_next_case = false;
             } else {
@@ -934,7 +1014,7 @@ impl Execute for ast::IfClauseCommand {
         let condition = self.condition.execute(shell, &condition_params).await?;
 
         // Check if the condition itself resulted in non-normal control flow.
-        if !condition.is_normal_flow() {
+        if !condition.is_normal_flow() || params.is_interrupted() {
             return Ok(condition);
         }
 
@@ -950,7 +1030,7 @@ impl Execute for ast::IfClauseCommand {
                             else_condition.execute(shell, &condition_params).await?;
 
                         // Check if the elif condition caused non-normal control flow.
-                        if !else_condition_result.is_normal_flow() {
+                        if !else_condition_result.is_normal_flow() || params.is_interrupted() {
                             return Ok(else_condition_result);
                         }
 
@@ -995,6 +1075,10 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
         condition_params.suppress_errexit = true;
 
         loop {
+            if params.is_interrupted() {
+                break;
+            }
+
             let condition_result = test_condition.execute(shell, &condition_params).await?;
 
             // Update status for condition
@@ -1006,6 +1090,13 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
                 // If the condition has break/continue, the while/until loop itself
                 // consumes one level. We need to decrement the level before returning.
                 result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
+                break;
+            }
+
+            // When the condition was interrupted, report its status rather than the one of
+            // the previous run of the body.
+            if params.is_interrupted() {
+                result = condition_result;
                 break;
             }
 
@@ -1065,6 +1156,10 @@ impl Execute for ast::ArithmeticForClauseCommand {
         }
 
         loop {
+            if params.is_interrupted() {
+                break;
+            }
+
             if let Some(condition) = &self.condition {
                 // An empty condition (e.g., `for (( ; ; ))`) means "always true".
                 if !condition.value.is_empty() && condition.eval(shell, params, true).await? == 0 {
@@ -1983,7 +2078,10 @@ fn setup_process_substitution(
     // Execute in a subshell.
     let mut subshell = shell.clone();
 
-    // Set up execution parameters for the child execution.
+    // Set up execution parameters for the child execution. Unlike a background list, it
+    // keeps sharing the interruption state: the substitution is part of the foreground
+    // command that reads or writes it. Otherwise Ctrl-C would end only the command in the
+    // substitution, and a loop reading from it would see end of input and carry on.
     let mut child_params = params.clone();
     child_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 

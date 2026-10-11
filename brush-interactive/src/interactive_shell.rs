@@ -151,10 +151,22 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
                 }
             }
 
-            if self.shell.lock().await.options().exit_after_one_command {
+            let shell = self.shell.lock().await;
+
+            if shell.options().exit_after_one_command {
                 announce_exit = false;
                 break Ok(());
             }
+
+            // A non-interactive shell reading a script from standard input stops the whole
+            // script on Ctrl-C, as bash does, rather than going on to the next line. Each
+            // line runs with fresh execution parameters, so the interruption is only seen
+            // through the shell.
+            if !shell.options().interactive && shell.interrupted_by_ctrl_c() {
+                break Ok(());
+            }
+
+            drop(shell);
         };
 
         let mut shell = self.shell.lock().await;

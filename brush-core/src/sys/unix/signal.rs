@@ -68,6 +68,19 @@ pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, erro
 
 pub(crate) use tokio::signal::ctrl_c as await_ctrl_c;
 
+/// Returns whether a process exited because of Ctrl-C. Always `false` here: a child that
+/// SIGINT ended is reported through its signal, not through an exit code.
+pub(crate) const fn exited_from_ctrl_c(_status: std::process::ExitStatus) -> bool {
+    false
+}
+
+/// Returns the process exit code that tells a parent process this shell was stopped by
+/// Ctrl-C. Always `None` here: the shell exits with its usual status.
+#[must_use]
+pub const fn interrupted_exit_code() -> Option<i32> {
+    None
+}
+
 pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     let ignore = nix::sys::signal::SigAction::new(
         nix::sys::signal::SigHandler::SigIgn,
@@ -235,4 +248,20 @@ fn siginfo_to_wait_status(
     };
 
     Ok(status)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::process::ExitStatusExt;
+
+    use super::*;
+
+    #[test]
+    fn no_exit_status_is_from_ctrl_c() {
+        // Raw wait statuses: killed by SIGINT, and exited with 0, 1, and 130.
+        for raw in [2, 0, 1 << 8, 130 << 8] {
+            let status = std::process::ExitStatus::from_raw(raw);
+            assert!(!exited_from_ctrl_c(status), "raw status {raw}");
+        }
+    }
 }
