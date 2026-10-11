@@ -1266,6 +1266,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first() {
+            let cmd_name = cmd_name.clone();
             let mut stderr = params.stderr(&context.shell);
 
             let (owned_shell, parent_shell) = match context.shell {
@@ -1287,7 +1288,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 process_group_id: context.process_group_id,
             };
 
-            match execute_command(context, params, cmd_name, &assignments, &args).await {
+            match execute_command(context, params, cmd_name, &assignments, args).await {
                 Ok(result) => Ok(result),
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
@@ -1333,12 +1334,12 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
     }
 }
 
-async fn execute_command<T: Into<String>>(
+async fn execute_command(
     context: PipelineExecutionContext<'_, impl extensions::ShellExtensions>,
     params: ExecutionParameters,
-    cmd_name: T,
+    cmd_name: String,
     assignments: &[&ast::Assignment],
-    args: &[CommandArg],
+    args: Vec<CommandArg>,
 ) -> Result<ExecutionSpawnResult, error::Error> {
     // Run the command in a new ephemeral environment scope, for its variable assignments.
     let mut scoped;
@@ -1378,8 +1379,7 @@ async fn execute_command<T: Into<String>>(
     }
 
     // Construct the command struct.
-    let mut cmd =
-        commands::SimpleCommand::new(shell, params, cmd_name.into(), args.iter().cloned());
+    let mut cmd = commands::SimpleCommand::new(shell, params, cmd_name, args);
     cmd.process_group_id = context.process_group_id;
 
     // Run through any pre-execution hooks as best effort.
