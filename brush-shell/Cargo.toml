@@ -109,7 +109,7 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 human-panic = "2.0.6"
-winnow-args = { version = "0.1.1", default-features = false, features = ["derive", "help-text"] }
+winnow-args = { version = "0.2.0", default-features = false, features = ["derive", "help-text"] }
 
 [target.'cfg(not(any(unix, windows)))'.dependencies]
 brush-interactive = { version = "^0.4.0", path = "../brush-interactive", features = [
