@@ -899,7 +899,26 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             } else {
                 // Not double-quoted - wrap in double-quotes to get double-quote parsing semantics
                 let wrapped = std::format!("\"{word}\"");
-                self.basic_expand(&wrapped).await?
+
+                // With extquote, bash also decodes $'...' here.
+                let extquoted = if self.shell.options().extquote && word.contains("$'") {
+                    brush_parser::word::parse_extquoted_double_quoted(
+                        &wrapped,
+                        &self.parser_options,
+                    )
+                    .ok()
+                } else {
+                    None
+                };
+
+                if let Some(pieces) = extquoted {
+                    self.expand_word_piece(brush_parser::word::WordPiece::DoubleQuotedSequence(
+                        pieces,
+                    ))
+                    .await?
+                } else {
+                    self.basic_expand(&wrapped).await?
+                }
             }
         } else {
             // When not inside double-quotes, perform normal expansion with quote removal
