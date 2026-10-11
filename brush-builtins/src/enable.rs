@@ -1,5 +1,4 @@
 use brush_core::ExecutionResult;
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
@@ -7,11 +6,16 @@ use brush_core::builtins;
 use brush_core::error;
 
 /// Enable, disable, or display built-in commands.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EnableCommand {
     /// Print a list of built-in commands.
     #[arg(short = 'a')]
     print_list: bool,
+
+    /// Remove the built-in commands loaded from the indicated object path.
+    #[arg(short = 'd')]
+    remove_loaded_builtin: bool,
 
     /// Disables the specified built-in commands.
     #[arg(short = 'n')]
@@ -29,15 +33,12 @@ pub(crate) struct EnableCommand {
     #[arg(short = 'f', value_name = "PATH")]
     shared_object_path: Option<String>,
 
-    /// Remove the built-in commands loaded from the indicated object path.
-    #[arg(short = 'd')]
-    remove_loaded_builtin: bool,
-
     /// Names of built-in commands to operate on.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-brush_builtin_utils::clap_builtin!(EnableCommand);
+brush_builtin_winnow::winnow_builtin!(EnableCommand);
 
 impl builtins::Command for EnableCommand {
     type Error = brush_core::Error;
