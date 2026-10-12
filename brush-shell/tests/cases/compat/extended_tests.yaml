@@ -386,6 +386,19 @@ cases:
 
       [[ -v not_set ]] || echo "3. Not set"
 
+  - name: "Variable set checks on array elements"
+    known_failure: true # TODO(extended-tests): -v with a subscript always reports an array element as unset
+    stdin: |
+      indexed=(x y)
+      [[ -v indexed[1] ]] && echo "1. Indexed element set"
+      [[ -v indexed[5] ]] || echo "2. Indexed element unset"
+
+      declare -A assoc=([key]=value)
+      [[ -v assoc[key] ]] && echo "3. Associative element set"
+      [[ -v assoc[nope] ]] || echo "4. Associative element unset"
+
+      test -v 'indexed[0]' && echo "5. test -v sees the element"
+
   - name: "Variables in extended tests"
     stdin: |
       var=10

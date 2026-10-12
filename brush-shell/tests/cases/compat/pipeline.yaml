@@ -86,3 +86,15 @@ cases:
       }
       f
       echo "f: $?"
+
+  - name: "Compound command writing more than a pipe holds"
+    known_failure: true # TODO(pipeline): a compound stage runs to completion before the next stage starts, so it blocks for good once the pipe fills
+    timeout_in_seconds: 3
+    stdin: |
+      for ((i = 0; i < 10000; i++)); do echo "line $i"; done | wc -l
+
+  - name: "Endless producer into head"
+    known_failure: true # TODO(pipeline): the producer runs to completion before head starts, so it never stops
+    timeout_in_seconds: 3
+    stdin: |
+      while true; do echo y; done | head -n 1
