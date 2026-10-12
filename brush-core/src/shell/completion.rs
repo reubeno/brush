@@ -35,6 +35,11 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             .map(|in_progress| &mut in_progress.options)
     }
 
+    /// Returns the programmable completion in progress, if any.
+    pub(crate) const fn in_progress_completion(&self) -> Option<&completion::InProgressCompletion> {
+        self.completion.in_progress.as_ref()
+    }
+
     /// Returns a mutable reference to the programmable completion in progress, if any.
     pub(crate) const fn in_progress_completion_mut(
         &mut self,

@@ -9,7 +9,7 @@ use itertools::Itertools;
 use super::{
     Candidate, CandidateKind, CompleteOption, Completions, Edit, EditPrefs, GenerationOptions,
     ResolvedCandidate,
-    quoting::{Quote, Quoter},
+    quoting::{Quote, QuotedExpansions, Quoter},
 };
 
 /// Makes candidates edits of a line, replacing the word being completed.
@@ -21,6 +21,8 @@ pub(super) struct CandidateEdits<'a> {
     pub word: Range<usize>,
     /// The quote the word is in, if the cursor is inside an unclosed quote.
     pub open_quote: Option<Quote>,
+    /// The `$` and `` ` `` the user quoted in the word.
+    pub user_quoted: &'a QuotedExpansions,
     /// The options in effect for the candidates.
     pub options: &'a GenerationOptions,
     /// The line editor's preferences.
@@ -34,6 +36,7 @@ impl CandidateEdits<'_> {
         let quoter = Quoter {
             open_quote: self.open_quote,
             quote_file_names: !self.options.get(CompleteOption::NoQuote),
+            user_quoted: self.user_quoted,
         };
 
         let common_prefix = if candidates.len() > 1 {
@@ -54,7 +57,7 @@ impl CandidateEdits<'_> {
     /// Returns the edit that completes the word to `prefix`, the candidates' common prefix,
     /// if it's not empty and would change the line. Like readline, it's quoted, but its
     /// quote is left open.
-    fn partial_edit(&self, quoter: &Quoter, prefix: &ResolvedCandidate) -> Option<Edit> {
+    fn partial_edit(&self, quoter: &Quoter<'_>, prefix: &ResolvedCandidate) -> Option<Edit> {
         let text = quoter.quote(prefix, false).text;
         if prefix.text.is_empty() || self.line.get(self.word.clone()) == Some(text.as_str()) {
             return None;
@@ -74,7 +77,7 @@ impl CandidateEdits<'_> {
     /// at the end of the line, and not after a directory, so it can be completed further.
     /// At the end of the line, a space follows, unless the spec said not to
     /// ([`CompleteOption::NoSpace`]) or the candidate is a directory.
-    fn candidate(&self, quoter: &Quoter, candidate: ResolvedCandidate) -> Candidate {
+    fn candidate(&self, quoter: &Quoter<'_>, candidate: ResolvedCandidate) -> Candidate {
         let next_char = self
             .line
             .get(self.word.end..)
@@ -112,18 +115,34 @@ impl CandidateEdits<'_> {
 
 /// Returns the longest prefix the candidates share, as a candidate: like readline, what
 /// several candidates are first completed to. It's a file name if they are, but not a
-/// directory's.
+/// directory's. It expands as the candidates do, if it can (see [`quoting`](super::quoting)'s "File names
+/// that expand").
 fn common_prefix(candidates: &[ResolvedCandidate]) -> ResolvedCandidate {
     let text = common_str_prefix(candidates.iter().map(|c| c.text.as_str()));
-    let kind = match candidates.first().map(|first| first.kind) {
-        Some(CandidateKind::FileName { .. }) => CandidateKind::FileName { is_dir: false },
-        Some(kind) => kind,
-        None => CandidateKind::Other,
+    let Some(first) = candidates.first() else {
+        return ResolvedCandidate::new(text);
     };
+
+    let kind = match first.kind {
+        CandidateKind::FileName { .. } => CandidateKind::FileName { is_dir: false },
+        kind => kind,
+    };
+    // Like readline, the prefix keeps a leading `~` as typed, even in a quote, where it
+    // won't expand. Otherwise, as expanding changes only the start of a name, the part the
+    // prefix leaves off is the same, expanded or not.
+    let expanded = first
+        .text
+        .get(text.len()..)
+        .filter(|_| !text.starts_with('~'))
+        .and_then(|rest| {
+            let expanded = first.expanded.as_deref()?.strip_suffix(rest)?;
+            Some(expanded.to_owned())
+        });
 
     ResolvedCandidate {
         text: text.to_owned(),
         kind,
+        expanded,
     }
 }
 
@@ -173,10 +192,12 @@ mod tests {
             mark_directories,
             ..EditPrefs::default()
         };
+        let user_quoted = QuotedExpansions::of(word);
         let editor = CandidateEdits {
             line,
             word: 0..word.len(),
             open_quote: quote,
+            user_quoted: &user_quoted,
             options,
             prefs: &prefs,
         };
@@ -440,6 +461,33 @@ mod tests {
             ResolvedCandidate::new("item2"),
         ]);
         assert_eq!(prefix, ResolvedCandidate::new("item"));
+
+        // The prefix expands as the candidates do, if it has all of the part that expands --
+        // but it keeps a leading `~` as typed.
+        let expanding = |text: &str, expanded: &str| ResolvedCandidate {
+            expanded: Some(expanded.to_owned()),
+            ..ResolvedCandidate::file_name(text)
+        };
+        let prefix = common_prefix(&[
+            expanding("$HOME/Docs", "/h/Docs"),
+            expanding("$HOME/Downloads", "/h/Downloads"),
+        ]);
+        assert_eq!(prefix.text, "$HOME/Do");
+        assert_eq!(prefix.expanded.as_deref(), Some("/h/Do"));
+
+        let prefix = common_prefix(&[
+            expanding("~/Docs", "/h/Docs"),
+            expanding("~/Downloads", "/h/Downloads"),
+        ]);
+        assert_eq!(prefix.text, "~/Do");
+        assert_eq!(prefix.expanded, None);
+
+        let prefix = common_prefix(&[
+            expanding("$HOME/a", "/h/a"),
+            expanding("$HOSTS/b", "/hosts/b"),
+        ]);
+        assert_eq!(prefix.text, "$HO");
+        assert_eq!(prefix.expanded, None);
     }
 
     #[test]

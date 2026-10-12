@@ -179,10 +179,9 @@ cases:
       done
 
   - name: "compgen -f with quoted tilde"
-    known_failure: true
+    home_dir: . # Not HOME=...: macOS (Homebrew) bash expands ~ from the environment's HOME.
     stdin: |
       touch item1
-      HOME=$(pwd)
 
       echo "[0]"
       for p in $(compgen -f '~/'); do
@@ -190,7 +189,7 @@ cases:
       done
 
   - name: "compgen -f with quoted var"
-    known_failure: true
+    min_oracle_version: 5.3 # bash 5.2 doesn't complete after a quoted variable
     stdin: |
       touch item1
       HOME=$(pwd)
@@ -201,7 +200,6 @@ cases:
       done
 
   - name: "compgen -f with quoted + escaped var"
-    known_failure: true
     stdin: |
       touch item1
       HOME=$(pwd)
@@ -470,6 +468,35 @@ cases:
       }
       compgen -F f x 2>/dev/null
 
+  - name: "compgen dequotes the word for list actions"
+    stdin: |
+      alias myalias=1
+      myfunc() { :; }
+      export MYEXPORT=1
+      declare -a MYARRAY=(1)
+      compgen -a '"myal'
+      compgen -b '"ec'
+      compgen -v '"MYEXP'
+      compgen -v 'MYEX\P'
+      compgen -e '"MYEXP'
+      compgen -A function '"myf'
+      compgen -A arrayvar '"MYARR'
+      compgen -A signal '"SIGHU'
+      compgen -A shopt '"extgl'
+      compgen -A setopt '"errex'
+      compgen -k '"whil'
+      compgen -A helptopic '"ec'
+
+  - name: "compgen dequotes the word for matching like bash"
+    # bash dequotes the word as if a leading quote were already open, so that
+    # quote closes and a quote char after it opens a new quote.
+    stdin: |
+      abc=1
+      echo "[$(compgen -W "ab\\' abx" -- "'a\"b'")]"
+      echo "[$(compgen -v -- "'a\"b'")]"
+      echo "[$(compgen -W "a\\\\b ab" -- "'a\\b'")]"
+      echo "[$(compgen -W "a\\\\b ab" -- "\"a\\\\")]"
+
   - name: "compgen -A helptopic includes keywords"
     known_failure: true # brush's help topics are only its builtins
     stdin: |
@@ -481,6 +508,25 @@ cases:
     stdin: |
       compgen -V out -W 'a b c' -- b; echo "rc=$?"
       declare -p out
+
+  - name: "compgen does not dequote the word for commands"
+    stdin: |
+      echo "[$(compgen -c '"ech')]"
+      echo "[$(compgen -c 'ec\h')]"
+
+  - name: "compgen -f outside completion does not dequote the word"
+    stdin: |
+      touch item1
+      echo "[$(compgen -f '"ite')]"
+      echo "[$(compgen -f 'ite\m')]"
+      echo "[$(compgen -d '"ite')]"
+
+  - name: "compgen -f and -d do not expand a bare tilde"
+    stdin: |
+      mkdir h h2
+      HOME=$PWD/h
+      compgen -f '~'; echo "rc=$?"
+      compgen -d '~'; echo "rc=$?"
 
   - name: "compgen -W closes a quote left open at the end of the list"
     stdin: |
@@ -517,3 +563,21 @@ cases:
       set -u
       compgen -W '$nope'; echo "rc=$?"
       echo next
+
+  - name: "compgen -f keeps the directory part as typed"
+    min_oracle_version: 5.3 # bash 5.2 doesn't complete after a variable or escaped space
+    home_dir: h # Not HOME=...: macOS (Homebrew) bash expands ~ from the environment's HOME.
+    stdin: |
+      mkdir -p h/"Docs dir" "dir with space"
+      touch "dir with space/item"
+      compgen -f '~/Do' | sed "s|^$HOME|H|"
+      compgen -f '$HOME/Do' | sed "s|^$HOME|H|"
+      compgen -f 'dir\ with\ space/i'
+
+  - name: "compgen -f with direxpand expands parameters in the directory part"
+    home_dir: h # Not HOME=...: macOS (Homebrew) bash expands ~ from the environment's HOME.
+    stdin: |
+      mkdir -p h/"Docs dir"
+      shopt -s direxpand
+      compgen -f '$HOME/Do' | sed "s|^$HOME|H|"
+      compgen -f '~/Do' | sed "s|^$HOME|H|"
