@@ -86,11 +86,21 @@ pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     Ok(())
 }
 
-pub(crate) fn poll_for_stopped_children() -> Result<bool, error::Error> {
+/// Returns whether the given child process has stopped, consuming its stop status, and leaving
+/// other children's stops to whoever waits on them. On NetBSD and OpenBSD, where one child
+/// can't be looked at (see `waitid_one`), any child's stop counts, as before.
+///
+/// # Arguments
+///
+/// * `pid` - The child's process ID.
+pub(crate) fn poll_for_stopped_children(
+    pid: sys::process::ProcessId,
+) -> Result<bool, error::Error> {
     let mut found_stopped = false;
 
     loop {
-        let wait_status = waitid_all(
+        let wait_status = waitid_for(
+            pid,
             nix::sys::wait::WaitPidFlag::WUNTRACED | nix::sys::wait::WaitPidFlag::WNOHANG,
         );
         match wait_status {
@@ -121,6 +131,24 @@ pub(crate) fn poll_for_stopped_child(pid: sys::process::ProcessId) -> Result<boo
     }
 }
 
+#[cfg(not(any(target_os = "netbsd", target_os = "openbsd")))]
+fn waitid_for(
+    pid: sys::process::ProcessId,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    waitid_one(pid, flags)
+}
+
+// There's no looking at one child on NetBSD/OpenBSD (see `waitid_one`), so look at any
+// child, as before.
+#[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+fn waitid_for(
+    _pid: sys::process::ProcessId,
+    flags: nix::sys::wait::WaitPidFlag,
+) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
+    waitid_all(flags)
+}
+
 #[cfg(not(any(target_os = "macos", target_os = "netbsd", target_os = "openbsd")))]
 fn waitid_one(
     pid: sys::process::ProcessId,
@@ -143,13 +171,6 @@ const fn waitid_one(
     Ok(nix::sys::wait::WaitStatus::StillAlive)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "netbsd", target_os = "openbsd")))]
-fn waitid_all(
-    flags: nix::sys::wait::WaitPidFlag,
-) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
-    nix::sys::wait::waitid(nix::sys::wait::Id::All, flags)
-}
-
 // nix does not expose `waitid` on NetBSD/OpenBSD; `waitpid` for any child is
 // equivalent for the flags used here.
 #[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
@@ -164,13 +185,6 @@ fn waitid_all(
 // to enable use of the `waitid` call on macOS. Ideally nix would expose it on macOS and we would
 // remove this code.
 //
-
-#[cfg(target_os = "macos")]
-fn waitid_all(
-    flags: nix::sys::wait::WaitPidFlag,
-) -> Result<nix::sys::wait::WaitStatus, nix::errno::Errno> {
-    waitid_macos(nix::libc::P_ALL, 0, flags)
-}
 
 #[cfg(target_os = "macos")]
 fn waitid_one(
