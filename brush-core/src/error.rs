@@ -216,9 +216,9 @@ pub enum ErrorKind {
     #[error(transparent)]
     BindingParseError(#[from] crate::parser::BindingParseError),
 
-    /// A threading error occurred.
-    #[error("threading error")]
-    ThreadingError(#[from] tokio::task::JoinError),
+    /// A task the shell started couldn't run to completion (e.g., it panicked).
+    #[error("task error")]
+    TaskError(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// An invalid signal was referenced.
     #[error("{0}: invalid signal specification")]

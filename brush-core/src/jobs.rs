@@ -10,10 +10,10 @@ use crate::ExecutionResult;
 use crate::error;
 use crate::processes;
 use crate::sys;
+use crate::tasks;
 use crate::trace_categories;
 use crate::traps;
 
-pub(crate) type JobJoinHandle = tokio::task::JoinHandle<Result<ExecutionResult, error::Error>>;
 pub(crate) type JobResult = (Job, Result<ExecutionResult, error::Error>);
 
 /// Manages the jobs that are currently managed by the shell.
@@ -28,7 +28,7 @@ pub enum JobTask {
     /// An external process.
     External(processes::ChildProcess),
     /// An internal asynchronous task.
-    Internal(JobJoinHandle),
+    Internal(tasks::TaskHandle<Result<ExecutionResult, error::Error>>),
 }
 
 /// Represents the result of waiting on a job task.

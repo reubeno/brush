@@ -24,6 +24,8 @@ pub(crate) mod stubs;
 pub(crate) mod hostname;
 #[cfg(any(unix, windows))]
 pub mod tokio_process;
+#[cfg(any(unix, windows))]
+pub(crate) mod tokio_tasks;
 
 pub mod fs;
 
@@ -37,6 +39,7 @@ pub use platform::poll;
 pub use platform::process;
 pub use platform::resource;
 pub use platform::signal;
+pub(crate) use platform::tasks;
 pub use platform::terminal;
 pub(crate) use platform::users;
 

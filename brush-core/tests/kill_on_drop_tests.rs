@@ -3,7 +3,7 @@
 //!
 //! Note: these tear down the whole runtime, not just the `Shell`. A backgrounded
 //! command runs in a detached `tokio` task owning a *clone* of the shell; the
-//! shell's job table holds only the task's `JoinHandle`, and dropping that
+//! shell's job table holds only the task's `TaskHandle`, and dropping that
 //! detaches rather than aborts. Dropping the tasks is what drops the `Child`,
 //! where `kill_on_drop` takes effect.
 

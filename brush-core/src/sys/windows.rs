@@ -16,6 +16,7 @@ pub mod signal {
 
 pub use crate::sys::stubs::terminal;
 pub use crate::sys::tokio_process as process;
+pub(crate) use crate::sys::tokio_tasks as tasks;
 pub(crate) mod users;
 
 /// Platform-specific errors.
