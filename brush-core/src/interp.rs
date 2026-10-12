@@ -461,7 +461,7 @@ async fn spawn_pipeline_processes(
         pipe_writers.reserve_exact(pipeline_len - 1);
 
         for _ in 0..(pipeline_len - 1) {
-            let (reader, writer) = std::io::pipe()?;
+            let (reader, writer) = sys::pipes::pipe()?;
             pipe_readers.push(Some(reader.into()));
             pipe_writers.push(Some(writer.into()));
         }
@@ -729,8 +729,8 @@ impl Execute for ast::CoprocessCommand {
         }
 
         // Set up the pipes that we'll use to communicate with the coprocess.
-        let (stdin_reader, stdin_writer) = std::io::pipe()?;
-        let (stdout_reader, stdout_writer) = std::io::pipe()?;
+        let (stdin_reader, stdin_writer) = sys::pipes::pipe()?;
+        let (stdout_reader, stdout_writer) = sys::pipes::pipe()?;
 
         // Allocate new fds in the (parent) shell for the read end of the coprocess's stdout
         // and the write end of the coprocess's stdin.
@@ -1988,7 +1988,7 @@ fn setup_process_substitution(
     child_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     // Set up pipe so we can connect to the command.
-    let (reader, writer) = std::io::pipe()?;
+    let (reader, writer) = sys::pipes::pipe()?;
     let (reader, writer) = (reader.into(), writer.into());
 
     let target_file = match kind {
@@ -2027,7 +2027,7 @@ fn setup_process_substitution(
 }
 
 fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
-    let (reader, mut writer) = std::io::pipe()?;
+    let (reader, mut writer) = sys::pipes::pipe()?;
 
     let bytes = contents.as_bytes();
 

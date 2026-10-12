@@ -1,0 +1,263 @@
+name: "Pipelines"
+# These cases use only builtins, so they also run under WASI
+# (`cargo xtask test integration --wasi`).
+cases:
+  - name: "Builtin output piped into a brace group"
+    stdin: |
+      echo hello | { read -r line; echo "got: $line"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      got: hello
+    expected_stderr: ""
+
+  - name: "Several builtin stages"
+    stdin: |
+      echo "a b c" | { read -r x y z; echo "$z $y $x"; } | { read -r p q r; echo "[$p][$q][$r]"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      [c][b][a]
+    expected_stderr: ""
+
+  - name: "while-read loop consumes every line"
+    stdin: |
+      for i in 1 2 3 4 5; do echo "item $i"; done | while read -r word n; do echo "$n:$word"; done
+    expected_exit_code: 0
+    expected_stdout: |
+      1:item
+      2:item
+      3:item
+      4:item
+      5:item
+    expected_stderr: ""
+
+  - name: "Functions as producer and consumer"
+    stdin: |
+      produce() { echo alpha; echo beta; }
+      consume() { local n=0; while read -r l; do n=$((n + 1)); echo "$n=$l"; done; }
+      produce | consume
+    expected_exit_code: 0
+    expected_stdout: |
+      1=alpha
+      2=beta
+    expected_stderr: ""
+
+  - name: "Exit status is the last stage's"
+    stdin: |
+      true | false
+      echo "status: $?"
+      false | true
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 1
+      status: 0
+    expected_stderr: ""
+
+  - name: "PIPESTATUS records every stage"
+    stdin: |
+      true | false | true
+      echo "${PIPESTATUS[*]}"
+      (exit 3) | (exit 4) | true
+      echo "${PIPESTATUS[*]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      0 1 0
+      3 4 0
+    expected_stderr: ""
+
+  - name: "Negated pipelines"
+    stdin: |
+      ! false | false
+      echo "status: $?"
+      ! echo hi | true
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 0
+      status: 1
+    expected_stderr: ""
+
+  - name: "pipefail reports the last failing stage"
+    stdin: |
+      set -o pipefail
+      (exit 2) | true
+      echo "status: $?"
+      true | (exit 3) | (exit 4) | true
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 2
+      status: 4
+    expected_stderr: ""
+
+  - name: "Stages don't change the shell's variables"
+    stdin: |
+      x=outer
+      echo hi | x=inner
+      echo "x=$x"
+      echo hi | { read -r x; }
+      echo "x=$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      x=outer
+      x=outer
+    expected_stderr: ""
+
+  - name: "Thousands of lines through a pipeline"
+    # TODO(pipeline): hangs on Windows: a compound stage runs to completion before the next stage
+    # starts, so it blocks once the pipe fills, and a Windows pipe holds less than this.
+    incompatible_platforms: ["windows"]
+    stdin: |
+      for ((i = 1; i <= 5000; i++)); do echo "line $i"; done | {
+        mapfile -t lines
+        echo "count=${#lines[@]} last=${lines[-1]}"
+      }
+    expected_exit_code: 0
+    expected_stdout: |
+      count=5000 last=line 5000
+    expected_stderr: ""
+
+  - name: "Reading an empty pipe reports end of input"
+    stdin: |
+      true | { read -r x; echo "status=$? x=[$x]"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      status=1 x=[]
+    expected_stderr: ""
+
+  - name: "Last line without a trailing newline"
+    stdin: |
+      echo -n "abc" | { read -r x; echo "status=$? x=$x"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      status=1 x=abc
+    expected_stderr: ""
+
+  - name: "Several reads from one pipe"
+    stdin: |
+      { echo 1; echo 2; echo 3; } | { read -r a; read -r b; read -r c; echo "$c$b$a"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      321
+    expected_stderr: ""
+
+  - name: "IFS splitting in a pipeline stage"
+    stdin: |
+      echo "a:b:c" | { IFS=: read -r p q r; echo "$r-$q-$p"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      c-b-a
+    expected_stderr: ""
+
+  - name: "read with and without -r"
+    stdin: |
+      echo 'a\tb\\c' | { read -r v; echo "$v"; }
+      echo 'a\tb\\c' | { read v; echo "$v"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      a\tb\\c
+      atb\c
+    expected_stderr: ""
+
+  - name: "stderr sent down the pipe"
+    stdin: |
+      { echo out; echo err >&2; } 2>&1 | while read -r l; do echo "got: $l"; done
+      { echo via-pipe-and >&2; } |& { read -r l; echo "got: $l"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      got: out
+      got: err
+      got: via-pipe-and
+    expected_stderr: ""
+
+  - name: "mapfile reads a pipeline's output"
+    stdin: |
+      echo -e "x\ny\nz" | { mapfile -t lines; echo "${#lines[@]}: ${lines[*]}"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      3: x y z
+    expected_stderr: ""
+
+  - name: "A stage that ignores its input"
+    stdin: |
+      echo unused | true
+      echo "status: $?"
+      echo unused | echo "ignored input"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 0
+      ignored input
+    expected_stderr: ""
+
+  - name: "Pipelines nested in subshells"
+    stdin: |
+      ( echo inner | { read -r v; echo "v=$v"; } ) | { read -r w; echo "w=$w"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      w=v=inner
+    expected_stderr: ""
+
+  - name: "Pipelines in loop bodies and conditions"
+    stdin: |
+      for w in one two three; do echo "$w" | { read -r x; echo "${#x}"; }; done
+      if echo yes | { read -r a; [[ $a == yes ]]; }; then echo matched; fi
+      n=0
+      while echo tick | { read -r t; [[ $t == tick ]]; } && (( n < 3 )); do n=$((n + 1)); done
+      echo "n=$n"
+    expected_exit_code: 0
+    expected_stdout: |
+      3
+      3
+      5
+      matched
+      n=3
+    expected_stderr: ""
+
+  - name: "A long line through a pipe"
+    stdin: |
+      s=
+      for i in {1..1000}; do s+=0123456789; done
+      echo "$s" | { read -r t; echo "${#t}"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      10000
+    expected_stderr: ""
+
+  - name: "eval and source in pipeline stages"
+    test_files:
+      - path: "lib.sh"
+        contents: |
+          greet() { echo "hello from lib"; }
+    stdin: |
+      eval 'echo from-eval' | { read -r l; echo "[$l]"; }
+      source ./lib.sh
+      greet | { read -r l; echo "[$l]"; }
+    expected_exit_code: 0
+    expected_stdout: |
+      [from-eval]
+      [hello from lib]
+    expected_stderr: ""
+
+  - name: "Coprocess round trip"
+    known_failure_platforms: ["wasi"] # TODO(wasm): the coprocess hasn't run when the shell reads its reply, and a read on wasm can't wait for it
+    stdin: |
+      coproc { read -r line; echo "co:$line"; }
+      echo ping >&"${COPROC[1]}"
+      read -r reply <&"${COPROC[0]}"
+      echo "reply=$reply"
+    expected_exit_code: 0
+    expected_stdout: |
+      reply=co:ping
+    expected_stderr: ""
+
+  - name: "An endless producer stops once its consumer is done"
+    # TODO(pipeline): hangs everywhere: a compound stage runs to completion before the next stage
+    # starts, so an endless producer never stops (natively, it blocks once the OS pipe fills).
+    skip: true
+    stdin: |
+      while true; do echo y; done | { read -r x; echo "got $x"; }
+      echo done
+    expected_exit_code: 0
+    expected_stdout: |
+      got y
+      done

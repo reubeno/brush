@@ -746,7 +746,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
     // Set up pipe so we can read the output.
-    let (reader, writer) = std::io::pipe()?;
+    let (reader, writer) = sys::pipes::pipe()?;
     params.set_fd(OpenFiles::STDOUT_FD, writer.into());
 
     let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
