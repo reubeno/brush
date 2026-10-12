@@ -404,7 +404,10 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
                 Err(ErrorKind::CommandNotFound(self.command_name).into())
             }
         } else {
-            let command_name = PathBuf::from(self.command_name.clone());
+            let command_name = sys::fs::resolve_executable_path(
+                PathBuf::from(&self.command_name),
+                self.shell.working_dir(),
+            );
             self.execute_via_external(command_name.as_path())
         }
     }
