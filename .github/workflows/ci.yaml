@@ -600,13 +600,20 @@ jobs:
             ./pr
             ./main
 
+      # Criterion keeps past results under target/criterion by default, which the cargo cache
+      # saves; a later run on the branch then fails to load them as a baseline, and its errors
+      # break the bencher-format output. CRITERION_HOME keeps results out of the cache.
       - name: Performance analysis on PR
         run: cargo xtask analyze bench --output benchmarks.txt
         working-directory: pr
+        env:
+          CRITERION_HOME: ${{ runner.temp }}/criterion-pr
 
       - name: Performance analysis on main
         run: cargo bench --workspace --benches -- --output-format bencher | tee benchmarks.txt
         working-directory: main
+        env:
+          CRITERION_HOME: ${{ runner.temp }}/criterion-main
 
       - name: Compare benchmark results
         run: |
