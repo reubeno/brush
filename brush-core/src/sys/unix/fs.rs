@@ -320,6 +320,13 @@ pub fn resolve_executable(path: PathBuf) -> Option<PathBuf> {
     }
 }
 
+/// Resolves a path to a potential executable.
+///
+/// Unix does not need PATHEXT resolution, so the path is left unchanged.
+pub(crate) const fn resolve_executable_path(path: PathBuf, _working_dir: &Path) -> PathBuf {
+    path
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
