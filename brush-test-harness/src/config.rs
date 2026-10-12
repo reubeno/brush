@@ -99,8 +99,9 @@ pub struct RunnerConfig {
     pub snapshot_dir_name: String,
     /// Host OS ID (for filtering incompatible tests).
     pub host_os_id: Option<String>,
-    /// Active runtime platform tags (e.g., "wasi", "wasm"). Tests that
-    /// declare any of these in `incompatible_platforms` will be skipped.
+    /// Active runtime platform tags (e.g., "wasi", "wasm", or for a native
+    /// build, the host's OS: "linux", "macos", "windows"). Tests that declare
+    /// any of these in `incompatible_platforms` will be skipped.
     pub platform_tags: HashSet<String>,
 }
 
@@ -238,7 +239,8 @@ pub struct TestOptions {
     /// environment in which brush is being executed. Test cases that
     /// declare any of these tags in `incompatible_platforms` will be
     /// skipped. May be specified multiple times on the CLI or as a
-    /// space-separated value in the environment variable.
+    /// space-separated value in the environment variable. When none are
+    /// given, brush runs natively, and its platform is the host's OS.
     #[clap(
         long = "brush-platform-tags",
         value_delimiter = ' ',
@@ -283,9 +285,15 @@ pub struct TestOptions {
 }
 
 impl TestOptions {
-    /// Returns the configured platform tags as a set.
+    /// Returns the configured platform tags as a set. With none configured,
+    /// brush runs natively, so its platform is the host's OS (e.g., "linux",
+    /// "macos", "windows").
     pub fn platform_tags(&self) -> HashSet<String> {
-        self.brush_platform_tags.iter().cloned().collect()
+        if self.brush_platform_tags.is_empty() {
+            HashSet::from([std::env::consts::OS.to_owned()])
+        } else {
+            self.brush_platform_tags.iter().cloned().collect()
+        }
     }
 
     /// Builds the default `ShellConfig` for the shell under test based on

@@ -102,6 +102,11 @@ pub struct TestCase {
     #[serde(default)]
     pub known_failure: bool,
 
+    /// Runtime platform tags (e.g., "wasi", "windows") on which this test is
+    /// a known failure. Elsewhere it's expected to pass.
+    #[serde(default)]
+    pub known_failure_platforms: HashSet<String>,
+
     /// Configurations that are incompatible with this test.
     #[serde(default)]
     pub incompatible_configs: HashSet<String>,
@@ -151,6 +156,16 @@ pub struct TestCase {
 }
 
 impl TestCase {
+    /// Returns whether this test case is expected to fail, given the runner's
+    /// active platform tags.
+    pub fn is_known_failure(&self, platform_tags: &HashSet<String>) -> bool {
+        self.known_failure
+            || self
+                .known_failure_platforms
+                .iter()
+                .any(|p| platform_tags.contains(p))
+    }
+
     /// Returns whether this test case has any inline expectations defined.
     pub const fn has_inline_expectations(&self) -> bool {
         self.expected_stdout.is_some()

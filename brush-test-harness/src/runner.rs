@@ -233,6 +233,7 @@ fn run_test_case_set(
     for test_case in &test_case_set.cases {
         let runner = TestRunner::new(config.clone(), options.clone());
         let case_is_skipped = runner.should_skip_test(test_case_set, test_case)?;
+        let known_failure = test_case.is_known_failure(&config.platform_tags);
 
         let test_case_result = if case_is_skipped == options.skipped_tests_only {
             run_single_test(test_case_set, test_case, &config)?
@@ -242,20 +243,20 @@ fn run_test_case_set(
                 comparison: TestComparison::skipped(),
                 name: test_case.name.clone(),
                 skip: true,
-                known_failure: test_case.known_failure,
+                known_failure,
             }
         };
 
         if test_case_result.skip {
             skip_count += 1;
         } else if test_case_result.success {
-            if test_case.known_failure {
+            if known_failure {
                 fail_count += 1;
             } else {
                 success_count += 1;
                 success_duration += test_case_result.comparison.duration;
             }
-        } else if test_case.known_failure {
+        } else if known_failure {
             known_failure_count += 1;
         } else {
             fail_count += 1;
@@ -341,7 +342,7 @@ fn run_single_test(
         comparison,
         name: test_case.name.clone(),
         skip: false,
-        known_failure: test_case.known_failure,
+        known_failure: test_case.is_known_failure(&config.platform_tags),
     })
 }
 

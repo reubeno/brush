@@ -1,0 +1,170 @@
+name: "Redirection"
+# These cases use only builtins, so they also run under WASI
+# (`cargo xtask test integration --wasi`).
+cases:
+  - name: "Write, append, and read back a file"
+    stdin: |
+      echo one > out.txt
+      echo two >> out.txt
+      while read -r l; do echo "read: $l"; done < out.txt
+    expected_exit_code: 0
+    expected_stdout: |
+      read: one
+      read: two
+    expected_stderr: ""
+
+  - name: "> truncates"
+    stdin: |
+      echo first > f.txt
+      echo second > f.txt
+      read -r v < f.txt
+      echo "$v"
+    expected_exit_code: 0
+    expected_stdout: |
+      second
+    expected_stderr: ""
+
+  - name: "stderr to a file"
+    stdin: |
+      { echo to-err >&2; } 2> err.txt
+      read -r e < err.txt
+      echo "captured: $e"
+    expected_exit_code: 0
+    expected_stdout: |
+      captured: to-err
+    expected_stderr: ""
+
+  - name: "&> and &>> send both streams"
+    stdin: |
+      { echo o; echo e >&2; } &> both.txt
+      { echo o2; echo e2 >&2; } &>> both.txt
+      mapfile -t lines < both.txt
+      echo "${#lines[@]}: ${lines[*]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      4: o e o2 e2
+    expected_stderr: ""
+
+  - name: "Duplicated file descriptors"
+    stdin: |
+      { echo moved >&3; } 3>&1
+      { echo to-file >&4; } 4> fd4.txt
+      read -r v < fd4.txt
+      echo "$v"
+    expected_exit_code: 0
+    expected_stdout: |
+      moved
+      to-file
+    expected_stderr: ""
+
+  - name: "Reading test files"
+    test_files:
+      - path: "input.txt"
+        contents: |
+          alpha
+          beta
+          gamma
+    stdin: |
+      mapfile -t rows < input.txt
+      echo "${#rows[@]}: ${rows[-1]}"
+      while read -r r; do echo "${r^^}"; done < input.txt > upper.txt
+      mapfile -t up < upper.txt
+      echo "${up[*]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      3: gamma
+      ALPHA BETA GAMMA
+    expected_stderr: ""
+
+  - name: "noclobber"
+    stdin: |
+      set -C
+      echo a > c.txt
+      { echo b > c.txt; } 2> err.txt
+      echo "status: $?"
+      read -r v < c.txt
+      echo "$v"
+      echo c >| c.txt
+      read -r v < c.txt
+      echo "$v"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 1
+      a
+      c
+    expected_stderr: ""
+
+  - name: "Redirecting a whole loop"
+    stdin: |
+      for i in 1 2 3; do echo "$i"; done > loop.txt
+      mapfile -t a < loop.txt
+      echo "${a[*]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      1 2 3
+    expected_stderr: ""
+
+  - name: "Redirecting a function's output"
+    stdin: |
+      f() { echo "from f"; echo "err from f" >&2; }
+      f > f-out.txt 2> f-err.txt
+      read -r o < f-out.txt
+      read -r e < f-err.txt
+      echo "$o / $e"
+    expected_exit_code: 0
+    expected_stdout: |
+      from f / err from f
+    expected_stderr: ""
+
+  - name: "Missing input file"
+    stdin: |
+      read -r v < missing.txt 2> err.txt
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 1
+
+  - name: "Sourcing a file"
+    test_files:
+      - path: "lib.sh"
+        contents: |
+          lib_var=loaded
+          lib_fn() { echo "lib_fn: $1"; }
+    stdin: |
+      source ./lib.sh
+      echo "$lib_var"
+      lib_fn arg
+      . ./lib.sh
+      echo "sourced twice"
+    expected_exit_code: 0
+    expected_stdout: |
+      loaded
+      lib_fn: arg
+      sourced twice
+    expected_stderr: ""
+
+  - name: "Process substitution as input"
+    known_failure_platforms: ["wasi"] # TODO(wasm): the substitution's command hasn't run when the read happens, and a read on wasm can't wait for it
+    stdin: |
+      while read -r l; do echo "got $l"; done < <(echo hi; echo there)
+      read -r x < <(echo hello)
+      echo "x=$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      got hi
+      got there
+      x=hello
+    expected_stderr: ""
+
+  - name: "Redirecting to /dev/null"
+    known_failure_platforms: ["wasi"] # TODO(wasm): the WASI sandbox has no /dev/null, and brush doesn't provide one
+    stdin: |
+      echo hidden > /dev/null
+      echo "write status: $?"
+      read -r v < /dev/null
+      echo "read status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      write status: 0
+      read status: 1
+    expected_stderr: ""

@@ -4,6 +4,7 @@ pub(crate) mod env;
 pub mod fd;
 pub mod fs;
 pub mod input;
+pub(crate) use crate::sys::os_pipes as pipes;
 pub(crate) mod network;
 pub mod poll;
 use crate::error;

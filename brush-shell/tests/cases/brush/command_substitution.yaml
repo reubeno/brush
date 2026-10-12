@@ -1,0 +1,200 @@
+name: "Command substitution"
+# These cases use only builtins, so they also run under WASI
+# (`cargo xtask test integration --wasi`).
+cases:
+  - name: "Modern and backtick forms"
+    stdin: |
+      echo "$(echo modern) `echo legacy`"
+    expected_exit_code: 0
+    expected_stdout: |
+      modern legacy
+    expected_stderr: ""
+
+  - name: "Trailing newlines are stripped, inner ones kept"
+    stdin: |
+      x=$(echo -e "a\n\nb\n\n\n")
+      echo "[$x]"
+      y=$(echo -n abc)
+      echo "[$y]"
+      z=$(true)
+      echo "[$z] ${#z}"
+    expected_exit_code: 0
+    expected_stdout: |
+      [a
+
+      b]
+      [abc]
+      [] 0
+    expected_stderr: ""
+
+  - name: "Nested substitutions"
+    stdin: |
+      echo "$(echo "outer $(echo "inner $(echo deepest)")")"
+    expected_exit_code: 0
+    expected_stdout: |
+      outer inner deepest
+    expected_stderr: ""
+
+  - name: "Exit status of a substitution"
+    stdin: |
+      x=$(false)
+      echo "status: $?"
+      x=$(exit 7)
+      echo "status: $?"
+      x=$(true)
+      echo "status: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      status: 1
+      status: 7
+      status: 0
+    expected_stderr: ""
+
+  - name: "Assignments inside don't leak out"
+    stdin: |
+      v=1
+      out=$(v=2; echo "$v")
+      echo "v=$v out=$out"
+    expected_exit_code: 0
+    expected_stdout: |
+      v=1 out=2
+    expected_stderr: ""
+
+  - name: "Functions and loops inside"
+    stdin: |
+      f() { for i in 1 2 3; do echo "$i"; done; }
+      all=$(f)
+      echo $all
+      echo "$all"
+    expected_exit_code: 0
+    expected_stdout: |
+      1 2 3
+      1
+      2
+      3
+    expected_stderr: ""
+
+  - name: "Captures a pipeline's output"
+    stdin: |
+      x=$(echo "a b" | { read -r p q; echo "$q$p"; })
+      echo "$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      ba
+    expected_stderr: ""
+
+  - name: "Large output"
+    stdin: |
+      pad=
+      for ((i = 0; i < 10; i++)); do pad+=0123456789; done
+      x=$(for ((i = 0; i < 1000; i++)); do echo "line $i $pad"; done)
+      echo "${#x}"
+      echo "${x:0:8}"
+      echo "${x: -20}"
+    expected_exit_code: 0
+    expected_stdout: |
+      109889
+      line 0 0
+      01234567890123456789
+    expected_stderr: ""
+
+  - name: "stderr is captured only when redirected"
+    stdin: |
+      x=$( { echo visible; echo captured >&2; } 2>&1 )
+      echo "$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      visible
+      captured
+    expected_stderr: ""
+
+  - name: "Word splitting of results"
+    stdin: |
+      set -- $(echo "a  b   c")
+      echo "$#"
+      set -- "$(echo "a  b   c")"
+      echo "$#"
+    expected_exit_code: 0
+    expected_stdout: |
+      3
+      1
+    expected_stderr: ""
+
+  - name: "Substitutions in arithmetic"
+    stdin: |
+      echo $(( $(echo 6) * $(echo 7) ))
+    expected_exit_code: 0
+    expected_stdout: |
+      42
+    expected_stderr: ""
+
+  - name: "Quotes and dollars inside"
+    stdin: |
+      echo "pre-$(echo 'mid "quoted" $notvar')-post"
+    expected_exit_code: 0
+    expected_stdout: |
+      pre-mid "quoted" $notvar-post
+    expected_stderr: ""
+
+  - name: "Reading a file"
+    test_files:
+      - path: "data.txt"
+        contents: |
+          first line
+          second line
+    stdin: |
+      x=$(<data.txt)
+      echo "$x"
+      y=$(while read -r l; do echo "<$l>"; done < data.txt)
+      echo "$y"
+    expected_exit_code: 0
+    expected_stdout: |
+      first line
+      second line
+      <first line>
+      <second line>
+    expected_stderr: ""
+
+  - name: "Here-string inside a substitution"
+    stdin: |
+      x=$(read -r a b <<< "1 2"; echo "$b$a")
+      echo "$x"
+    expected_exit_code: 0
+    expected_stdout: |
+      21
+    expected_stderr: ""
+
+  - name: "Many substitutions in a loop"
+    stdin: |
+      s=
+      for i in {1..200}; do s+=$(echo -n "$((i % 10))"); done
+      echo "${#s} ${s:0:12}"
+    expected_exit_code: 0
+    expected_stdout: |
+      200 123456789012
+    expected_stderr: ""
+
+  - name: "Recursion through substitutions"
+    stdin: |
+      fib() {
+        local n=$1
+        if (( n < 2 )); then echo "$n"; return; fi
+        echo $(( $(fib $((n - 1))) + $(fib $((n - 2))) ))
+      }
+      fib 12
+    expected_exit_code: 0
+    expected_stdout: |
+      144
+    expected_stderr: ""
+
+  - name: "Builtin output"
+    stdin: |
+      t=$(type -t echo)
+      echo "$t"
+      k=$(type -t while)
+      echo "$k"
+    expected_exit_code: 0
+    expected_stdout: |
+      builtin
+      keyword
+    expected_stderr: ""
