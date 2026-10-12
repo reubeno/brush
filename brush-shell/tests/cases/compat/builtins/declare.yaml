@@ -316,6 +316,16 @@ cases:
       i() { until :; do echo x; done; ( echo s; echo t ); }
       declare -f i
 
+  - name: "Displaying a function whose compound commands have redirections"
+    known_failure: true # brush-parser's Display puts no space between a compound command and its
+                        # redirections (`fi2>& 1`, which doesn't parse again; `}2> /dev/null`), and
+                        # prints `2>& 1` and `|cat` where bash prints `2>&1` and `| cat`
+    stdin: |
+      f() { if true; then :; fi 2>&1; while false; do :; done 3>/dev/null; { :; } 2>/dev/null; }
+      declare -f f
+      g() { [[ -n x ]] |& cat; }
+      declare -f g
+
   - name: "Displaying a function with case patterns"
     stdin: |
       f() {
