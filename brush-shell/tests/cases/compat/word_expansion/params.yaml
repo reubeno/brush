@@ -806,8 +806,16 @@ cases:
       echo $$(echo hi)
 
   - name: "ANSI-C quoting in parameter expansion in double quotes"
-    known_failure: true # TODO(expansion): with extquote (on by default), $'...' inside "${...}" is decoded; brush keeps it as is
     stdin: |
+      echo "[${x:-$'a\tb'}]"
+      P=x
+      W="a${P:+$'\n'}b"
+      declare -p W
+      echo "[${u:-${P:+$'x\ty'}}]"
+
+  - name: "ANSI-C quoting in parameter expansion in double quotes without extquote"
+    stdin: |
+      shopt -u extquote
       echo "[${x:-$'a\tb'}]"
 
   - name: "Escaped closing brace in parameter expansion in double quotes"

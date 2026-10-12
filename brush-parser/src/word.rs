@@ -567,6 +567,23 @@ pub fn parse_heredoc(
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
 }
 
+/// Parse a double-quoted word that may contain ANSI-C quoted (`$'...'`) text.
+///
+/// The word includes its surrounding quotes. Bash decodes `$'...'` this way, when
+/// `extquote` is enabled, for the word of a parameter expansion inside double quotes.
+///
+/// # Arguments
+///
+/// * `word` - The word to parse.
+/// * `options` - The parser options to use.
+pub fn parse_extquoted_double_quoted(
+    word: &str,
+    options: &ParserOptions,
+) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
+    expansion_parser::extquoted_double_quoted_sequence(word, options)
+        .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
+}
+
 /// Parse the given word into a parameter expression.
 ///
 /// # Arguments
@@ -894,6 +911,26 @@ peg::parser! {
 
         rule gettext_double_quoted_sequence() -> Vec<WordPieceWithSource> =
             "$\"" i:double_quoted_sequence_inner()* "\"" { i }
+
+        // Double-quoted sequence that also accepts ANSI-C quotes (bash extquote).
+        pub(crate) rule extquoted_double_quoted_sequence() -> Vec<WordPieceWithSource> =
+            "\"" i:extquoted_double_quoted_sequence_inner()* "\"" { i }
+
+        rule extquoted_double_quoted_sequence_inner() -> WordPieceWithSource =
+            start_index:position!() piece:extquoted_double_quoted_word_piece() end_index:position!() {
+                WordPieceWithSource {
+                    piece,
+                    start_index,
+                    end_index
+                }
+            }
+
+        rule extquoted_double_quoted_word_piece() -> WordPiece =
+            s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
+            s:$((!"$'" !double_quoted_escape_sequence() !dollar_sign_word_piece() !expansion_opener() [^'\"'])+) {
+                WordPiece::Text(s.to_owned())
+            } /
+            double_quoted_word_piece()
 
         rule double_quoted_sequence_inner() -> WordPieceWithSource =
             start_index:position!() piece:double_quoted_word_piece() end_index:position!() {
