@@ -87,3 +87,19 @@ cases:
       wait
       echo 2 &
       wait
+
+  - name: "Kill a background pipeline by job spec"
+    known_failure: true # TODO(jobs): a background job isn't tied to its processes, so `kill %1` fails, and the job runs to completion
+    ignore_stderr: true
+    stdin: |
+      sleep 3 | sleep 3 &
+      kill %1
+      wait %1
+      echo "status: $?"
+
+  - name: "Background job started in a pipeline stage"
+    known_failure: true # TODO(jobs): the background job's task holds the stage's standard output open, so the next stage waits for the job, though its program writes elsewhere
+    timeout_in_seconds: 2
+    stdin: |
+      { sleep 3 >/dev/null & } | cat
+      echo "done"
