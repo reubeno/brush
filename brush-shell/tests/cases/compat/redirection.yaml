@@ -99,6 +99,15 @@ cases:
       echo hi > >(wc -l)
       echo hi >> >(wc -l)
 
+  - name: "Process substitution: wait for an output consumer"
+    known_failure: true # TODO(redirection): wait doesn't wait for a process substitution, so the shell exits before the consumer prints anything
+    min_oracle_version: "5.0" # bash 4.4 and earlier don't wait for process substitutions either
+    stdin: |
+      shopt -u -o posix
+      echo hi > >(sleep 0.5; while read -r l; do echo "out:$l"; done)
+      wait
+      echo "after wait"
+
   - name: "Process substitution: input"
     stdin: |
       shopt -u -o posix
