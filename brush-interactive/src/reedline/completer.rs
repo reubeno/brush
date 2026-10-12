@@ -21,7 +21,7 @@ impl<SE: brush_core::ShellExtensions> ReedlineCompleter<SE> {
     async fn complete_async(&self, line: &str, pos: usize) -> Vec<reedline::Suggestion> {
         let mut shell_guard = self.shell.lock().await;
         let shell = shell_guard.borrow_mut().as_mut();
-        let offers = completion::complete_async(shell, line, pos).await;
+        let offers = completion::complete_async(shell, line, pos, false).await;
 
         // We're done with the shell, so drop it eagerly.
         drop(shell_guard);

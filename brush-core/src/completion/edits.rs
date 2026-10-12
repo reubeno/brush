@@ -30,18 +30,40 @@ pub(super) struct CandidateEdits<'a> {
 impl CandidateEdits<'_> {
     /// Returns the completions of the word with `candidates`, without duplicates.
     pub fn completions(&self, candidates: Vec<ResolvedCandidate>) -> Completions {
+        let candidates: Vec<_> = candidates.into_iter().unique().collect();
         let quoter = Quoter {
             open_quote: self.open_quote,
             quote_file_names: !self.options.get(CompleteOption::NoQuote),
         };
 
+        let common_prefix = if candidates.len() > 1 {
+            self.partial_edit(&quoter, &common_prefix(&candidates))
+        } else {
+            None
+        };
+
         Completions {
             candidates: candidates
                 .into_iter()
-                .unique()
                 .map(|candidate| self.candidate(&quoter, candidate))
                 .collect(),
+            common_prefix,
         }
+    }
+
+    /// Returns the edit that completes the word to `prefix`, the candidates' common prefix,
+    /// if it's not empty and would change the line. Like readline, it's quoted, but its
+    /// quote is left open.
+    fn partial_edit(&self, quoter: &Quoter, prefix: &ResolvedCandidate) -> Option<Edit> {
+        let text = quoter.quote(prefix, false).text;
+        if prefix.text.is_empty() || self.line.get(self.word.clone()) == Some(text.as_str()) {
+            return None;
+        }
+
+        Some(Edit {
+            replace: self.word.clone(),
+            text,
+        })
     }
 
     /// Returns `candidate` as a candidate that completes the word.
@@ -88,6 +110,43 @@ impl CandidateEdits<'_> {
     }
 }
 
+/// Returns the longest prefix the candidates share, as a candidate: like readline, what
+/// several candidates are first completed to. It's a file name if they are, but not a
+/// directory's.
+fn common_prefix(candidates: &[ResolvedCandidate]) -> ResolvedCandidate {
+    let text = common_str_prefix(candidates.iter().map(|c| c.text.as_str()));
+    let kind = match candidates.first().map(|first| first.kind) {
+        Some(CandidateKind::FileName { .. }) => CandidateKind::FileName { is_dir: false },
+        Some(kind) => kind,
+        None => CandidateKind::Other,
+    };
+
+    ResolvedCandidate {
+        text: text.to_owned(),
+        kind,
+    }
+}
+
+/// Returns the longest prefix `strings` share.
+fn common_str_prefix<'a>(mut strings: impl Iterator<Item = &'a str>) -> &'a str {
+    let Some(first) = strings.next() else {
+        return "";
+    };
+
+    let len = strings.fold(first.len(), |len, s| {
+        first
+            .char_indices()
+            .zip(s.chars())
+            .take_while(|((_, a), b)| a == b)
+            .last()
+            .map_or(0, |((i, c), _)| i + c.len_utf8())
+            .min(len)
+    });
+
+    // `len` is at the end of a char both have, so it's a char boundary in `first`.
+    first.get(..len).unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,7 +183,8 @@ mod tests {
         editor.completions(candidates)
     }
 
-    /// Returns the edits that completing `word` in `line` with `candidates` offers.
+    /// Returns the edits that completing `word` in `line` with `candidates` offers: their
+    /// common prefix, if it would change the line, or else each one.
     fn offered_edits(
         candidates: &[&str],
         line: &str,
@@ -143,7 +203,62 @@ mod tests {
             })
             .collect();
         let completions = completions_of(candidates, line, word, options, quote, true);
-        completions.candidates.into_iter().map(|c| c.edit).collect()
+        completions.common_prefix.map_or_else(
+            || completions.candidates.into_iter().map(|c| c.edit).collect(),
+            |prefix| vec![prefix],
+        )
+    }
+
+    /// Like readline, several candidates are first completed to their longest common
+    /// prefix, quoted but not closed, unless that's the word already. Expected values were
+    /// captured from bash 5.3.
+    #[test]
+    fn several_candidates_complete_to_common_prefix() {
+        let inserts = |candidates: &[&str], line: &str, word: &str, file_names, quote| {
+            offered_edits(candidates, line, word, &options(file_names), quote)
+                .into_iter()
+                .map(|edit| edit.text)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            inserts(&["item1", "item2"], "ite", "ite", true, None),
+            ["item"]
+        );
+        assert_eq!(
+            inserts(&["dir a", "dir b"], "di", "di", true, None),
+            [r"dir\ "]
+        );
+        assert_eq!(
+            inserts(
+                &["dir a", "dir b"],
+                "\"di",
+                "\"di",
+                true,
+                Some(Quote::Double)
+            ),
+            ["\"dir "]
+        );
+        assert_eq!(
+            inserts(&["dir a", "dir b"], "'di", "'di", true, Some(Quote::Single)),
+            ["'dir "]
+        );
+        assert_eq!(
+            inserts(&["item1", "item2"], "ite x", "ite", true, None),
+            ["item"]
+        );
+        assert_eq!(inserts(&["foo1", "foo2"], "f", "f", false, None), ["foo"]);
+        // The common prefix replaces the word, even if it doesn't extend it.
+        assert_eq!(inserts(&["bar1", "bar2"], "fo", "fo", false, None), ["bar"]);
+        // If the common prefix is the word already, the candidates are all offered.
+        assert_eq!(
+            inserts(&["item1", "item2"], "item", "item", true, None),
+            ["item1 ", "item2 "]
+        );
+        assert_eq!(
+            inserts(&["dir a", "dir b"], r"dir\ ", r"dir\ ", true, None),
+            [r"dir\ a ", r"dir\ b "]
+        );
     }
 
     #[test]
@@ -316,5 +431,26 @@ mod tests {
                 "{candidate:?} in {quote:?}, before {next_char:?}"
             );
         }
+    }
+
+    #[test]
+    fn common_prefix_of_candidates() {
+        let prefix = common_prefix(&[
+            ResolvedCandidate::new("item1"),
+            ResolvedCandidate::new("item2"),
+        ]);
+        assert_eq!(prefix, ResolvedCandidate::new("item"));
+    }
+
+    #[test]
+    fn common_prefix_of_strings() {
+        assert_eq!(
+            common_str_prefix(["item1", "item2", "it"].into_iter()),
+            "it"
+        );
+        assert_eq!(common_str_prefix(["é1", "é2"].into_iter()), "é");
+        assert_eq!(common_str_prefix(["éa", "èa"].into_iter()), "");
+        assert_eq!(common_str_prefix(["a"].into_iter()), "a");
+        assert_eq!(common_str_prefix(std::iter::empty()), "");
     }
 }

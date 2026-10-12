@@ -214,6 +214,12 @@ pub struct CommandLineArgs {
     #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
     pub input_backend: Option<InputBackendType>,
 
+    /// Like readline's `show-all-if-ambiguous`, list several completion candidates as soon as
+    /// they're completed to their common prefix. Hidden: it stands in for the readline
+    /// variable (which brush can't yet set) in tests that expect it, e.g. bash-completion's.
+    #[clap(long = "show-all-if-ambiguous", hide = true, help_heading = HEADING_UI_OPTIONS)]
+    pub show_all_if_ambiguous: bool,
+
     /// Load state from the given file; the saved state should be in JSON format
     /// and overrides any non-UI command-line options provided.
     #[cfg(feature = "experimental-load")]

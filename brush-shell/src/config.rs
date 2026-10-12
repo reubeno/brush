@@ -96,6 +96,7 @@ impl Config {
             .disable_highlighting(!enable_highlighting)
             .terminal_shell_integration(terminal_shell_integration)
             .zsh_style_hooks(zsh_style_hooks)
+            .show_all_if_ambiguous(args.show_all_if_ambiguous)
             .build()
     }
 }

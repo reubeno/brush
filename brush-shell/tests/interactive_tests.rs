@@ -162,6 +162,34 @@ fn completion_closes_open_quote() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// With `--show-all-if-ambiguous`, like readline's variable of that name, one Tab completes
+/// several candidates to their common prefix and lists them too.
+#[test]
+fn completion_shows_all_if_ambiguous() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(dir.path().join("item1"), "")?;
+    std::fs::write(dir.path().join("item2"), "")?;
+
+    let mut session = start_shell_session_with(|cmd| {
+        cmd.args(["--norc", "--show-all-if-ambiguous"])
+            .current_dir(dir.path());
+    })?;
+    session.expect_prompt()?;
+
+    // `[%s]` keeps the echoed input from matching.
+    session.send("printf '[%s]\\n' ite\t")?;
+    session.expect("item2").context("listing the candidates")?;
+    session.send_line("1")?;
+    session
+        .expect("[item1]")
+        .context("completing to the common prefix")?;
+    session.expect_prompt()?;
+
+    session.exit()?;
+
+    Ok(())
+}
+
 #[test]
 fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
     let mut session = start_shell_session_with(|cmd| {

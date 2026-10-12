@@ -10,10 +10,11 @@ if ! getent passwd "$(id -u)" >/dev/null; then
     getent group "$(id -g)" >/dev/null || echo "e2e:x:$(id -g):" >>/etc/group
 fi
 # The suite takes a command line, not a path, so brush's own flags can go here. Unset, the suite
-# runs the image's bash, which is the baseline.
+# runs the image's bash, which is the baseline. The suite's inputrc sets readline's
+# show-all-if-ambiguous, which brush can't read, so it's passed as a flag instead.
 case ${SHELL_UNDER_TEST-} in
     '') ;;
-    */brush*) export BASH_COMPLETION_TEST_BASH="$SHELL_UNDER_TEST --noprofile --no-config --input-backend=basic" ;;
+    */brush*) export BASH_COMPLETION_TEST_BASH="$SHELL_UNDER_TEST --noprofile --no-config --input-backend=basic --show-all-if-ambiguous" ;;
     *) export BASH_COMPLETION_TEST_BASH="$SHELL_UNDER_TEST --noprofile" ;;
 esac
 cd /bash-completion/test || exit 1

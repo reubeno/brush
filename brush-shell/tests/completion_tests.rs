@@ -1288,6 +1288,24 @@ complete -D -F _test_comp
     Ok(())
 }
 
+/// A common prefix that can't stay in the quote the word is in (e.g. a lone `'` in single
+/// quotes) is written in full, replacing the quote, so it can be completed from.
+#[tokio::test(flavor = "multi_thread")]
+async fn common_prefix_that_cannot_stay_in_quote() -> Result<()> {
+    let mut test_shell = TestShell::new().await?;
+    test_shell.temp_dir.child("'a").touch()?;
+    test_shell.temp_dir.child("'b").touch()?;
+
+    let completions = test_shell.complete_end_of_line_full("echo '").await?;
+    let prefix = completions.common_prefix.map(|prefix| prefix.text);
+    assert_eq!(prefix.as_deref(), Some(r"\'"));
+
+    let completions = test_shell.complete_end_of_line_full(r"echo \'").await?;
+    assert_eq!(candidate_edit_texts(&completions), [r"\'a ", r"\'b "]);
+
+    Ok(())
+}
+
 /// Like bash, `compopt -o nosort` in a completion function keeps the candidates in the order
 /// generated.
 #[tokio::test(flavor = "multi_thread")]
