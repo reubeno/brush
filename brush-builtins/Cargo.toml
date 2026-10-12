@@ -139,7 +139,7 @@ itertools = "0.15.0"
 strum = "0.28.0"
 thiserror = "2.0.18"
 tracing = "0.1.44"
-winnow-args = { version = "0.2.0", default-features = false, features = ["derive", "help-text"] }
+winnow-args = { version = "0.3.0", default-features = false, features = ["derive", "help-text"] }
 utf8-chars = "3.0.6"
 
 [target.'cfg(target_family = "wasm")'.dependencies]

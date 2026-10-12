@@ -24,5 +24,5 @@ workspace = true
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-builtin-winnow = { version = "^0.1.0", path = "../brush-builtin-winnow" }
 brush-builtin-utils = { version = "^0.1.0", path = "../brush-builtin-utils", default-features = false }
-winnow-args = { version = "0.2.0", default-features = false, features = ["derive", "help-text"] }
+winnow-args = { version = "0.3.0", default-features = false, features = ["derive", "help-text"] }
 serde_json = { version = "1.0.149", optional = true }
