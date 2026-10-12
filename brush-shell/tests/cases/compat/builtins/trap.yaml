@@ -733,3 +733,11 @@ cases:
       declare declared=$value
       printf '%s\n' "$value"
       trap - DEBUG
+
+  - name: "DEBUG trap - before each stage of a pipeline"
+    known_failure: true # TODO(pipeline): the DEBUG trap doesn't run before the commands of a pipeline of more than one command
+    stdin: |
+      trap 'echo "debug: $BASH_COMMAND"' DEBUG
+      true | false
+      echo done
+      trap - DEBUG
