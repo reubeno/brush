@@ -121,3 +121,15 @@ pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
 pub fn try_get_terminal_device_path() -> Option<PathBuf> {
     nix::unistd::ttyname(std::io::stdin()).ok()
 }
+
+/// Returns the width, in columns, of the terminal associated with the given file.
+/// Returns `None` if it isn't a terminal or doesn't report a width.
+///
+/// # Arguments
+///
+/// * `file` - A reference to the open terminal.
+pub fn get_columns(file: &openfiles::OpenFile) -> Option<usize> {
+    let fd = file.try_borrow_as_fd().ok()?;
+    let (terminal_size::Width(columns), _) = terminal_size::terminal_size_of(fd)?;
+    Some(usize::from(columns))
+}

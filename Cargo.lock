@@ -430,6 +430,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "tempfile",
+ "terminal_size",
  "terminfo",
  "thiserror 2.0.21",
  "tokio",
