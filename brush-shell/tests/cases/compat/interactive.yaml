@@ -158,3 +158,11 @@ cases:
       PS1='$( (exit 9) | (exit 8) )$ '
       (exit 4) | (exit 5)
       echo "AFTER[$?][${PIPESTATUS[*]}]"
+
+  - name: "Interactive -c running a program"
+    known_failure: true # TODO(jobs): the program takes the terminal's foreground from a background process group, and is stopped by SIGTTOU for good
+    pty: true
+    timeout_in_seconds: 5
+    args: ["-i", "-c", "cat /dev/null; echo done"]
+    stdin: |
+      #expect:done
