@@ -504,7 +504,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
                     func_registration,
                     self.command_name,
                     self.args,
-                ))
+                )
+                .await)
             }
             ShellForCommand::ParentShell(..) => {
                 self.execute_via_function_in_parent_shell(func_registration)
@@ -534,18 +535,17 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         func_registration: functions::Registration,
         command_name: String,
         args: Vec<CommandArg>,
-    ) -> ExecutionSpawnResult {
+    ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
-        let join_handle = tokio::task::spawn_blocking(move || {
+        let task = sys::tasks::spawn_blocking(async move {
             let cmd_context = ExecutionContext {
                 shell: &mut shell,
                 command_name,
                 params,
             };
 
-            let rt = tokio::runtime::Handle::current();
             let spawn_result =
-                rt.block_on(invoke_shell_function(func_registration, cmd_context, &args[1..]));
+                invoke_shell_function(func_registration, cmd_context, &args[1..]).await;
 
             // Update $_ after command execution.
             shell.update_last_arg_variable(last_arg);
@@ -561,7 +561,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             }
         });
 
-        ExecutionSpawnResult::StartedTask(join_handle)
+        async move { ExecutionSpawnResult::StartedTask(task.await) }
     }
 
     async fn execute_via_function_in_parent_shell(

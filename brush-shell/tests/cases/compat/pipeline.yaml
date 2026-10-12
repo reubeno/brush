@@ -57,6 +57,7 @@ cases:
   - name: "printf broken pipe returns 141 in PIPESTATUS"
     stdin: |
       printf '%s\n' {0..10000} | x=1
+      echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
 
   - name: "Function stage writing more than a pipe buffer before the next stage is spawned"
     # Regression test: a shell function used as a non-last pipeline stage
