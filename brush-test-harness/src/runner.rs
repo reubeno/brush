@@ -49,7 +49,7 @@ impl TestRunner {
             let entry = entry.unwrap();
 
             let yaml_file = std::fs::File::open(entry.as_path())?;
-            let mut test_case_set: TestCaseSet = serde_yaml::from_reader(yaml_file)
+            let mut test_case_set: TestCaseSet = yaml_serde::from_reader(yaml_file)
                 .context(format!("parsing {}", entry.to_string_lossy()))?;
 
             test_case_set.source_dir = entry.parent().unwrap().to_path_buf();

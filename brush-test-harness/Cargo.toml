@@ -37,7 +37,7 @@ junit-report = "0.9.0"
 os-release = "0.1.0"
 regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_yaml = "0.9.34"
+yaml_serde = "0.10.7"
 strip-ansi-escapes = "0.2.1"
 tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread", "sync"] }
 version-compare = "0.2.1"
