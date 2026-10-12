@@ -104,7 +104,8 @@ impl<T: Terminal> Drop for RawMode<'_, T> {
 }
 
 /// A [`Terminal`] for the process's own controlling terminal, controlled through
-/// the platform's terminal APIs.
+/// the platform's terminal APIs. Only on Unix can it switch to raw mode;
+/// elsewhere, [`Terminal::enable_raw_mode`] fails.
 #[derive(Default)]
 pub struct StdTerminal {
     mode: Option<brush_core::terminal::AutoModeGuard>,
@@ -112,6 +113,16 @@ pub struct StdTerminal {
 
 impl Terminal for StdTerminal {
     fn enable_raw_mode(&mut self) -> std::io::Result<()> {
+        // Only a Unix terminal can be set to send keys as bytes, unechoed: the
+        // Windows console sends them only in a mode brush doesn't set, and WASI
+        // has no raw mode. Fail, rather than edit with the terminal echoing keys.
+        if !cfg!(unix) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "the terminal can't be switched to raw mode on this platform",
+            ));
+        }
+
         // Restore any mode set before, so it isn't taken for the original one.
         self.mode = None;
         let mode = brush_core::terminal::AutoModeGuard::new(std::io::stdin().into())

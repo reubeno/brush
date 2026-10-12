@@ -15,8 +15,10 @@ use crate::{
 /// sequences, including hosts where the shell can't control the terminal through
 /// the platform and instead supplies a [`Terminal`] of its own.
 ///
-/// It doesn't work on the Windows console, which sends keys as bytes only in a
-/// mode that [`StdTerminal`] doesn't set.
+/// Its default terminal, [`StdTerminal`], works only on Unix: the Windows console
+/// sends keys as bytes only in a mode that it doesn't set, and WASI has no raw
+/// mode. Elsewhere, reading a line from a terminal fails, unless the host
+/// supplies a [`Terminal`] that can switch to raw mode.
 ///
 /// Key bindings start as readline's Emacs-mode defaults, and can be changed with
 /// `bind`: keys and sequences of keys can be bound to readline functions (those

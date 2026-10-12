@@ -91,7 +91,7 @@ jobs:
             arch: "wasm32"
             required_tools: ""
             binary_name: "brush.wasm"
-            extra_build_args: "--no-default-features --features minimal"
+            extra_build_args: ""
           # Build for WASI-0.3 target on x86_64/linux host. wasm32-wasip3 first
           # ships prebuilt std in Rust 1.100; until rust-toolchain.toml is at
           # 1.100+, use nightly. Drop `toolchain` once it is.
@@ -103,7 +103,7 @@ jobs:
             arch: "wasm32"
             required_tools: ""
             binary_name: "brush.wasm"
-            extra_build_args: "--no-default-features --features minimal"
+            extra_build_args: ""
             toolchain: "nightly"
           # Build for x86_64/windows target on x86_64/linux host.
           - host: "ubuntu-24.04"

@@ -30,9 +30,9 @@ pub mod highlighting;
 mod completion;
 
 // Reedline-based shell
-#[cfg(feature = "reedline")]
+#[cfg(reedline_backend)]
 mod reedline;
-#[cfg(feature = "reedline")]
+#[cfg(reedline_backend)]
 pub use reedline::ReedlineInputBackend;
 
 // Minimal shell
