@@ -58,3 +58,31 @@ cases:
     stdin: |
       printf '%s\n' {0..10000} | x=1
       echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
+
+  - name: "Builtin that fails in a pipeline stage"
+    known_failure: true # TODO(pipeline): the builtin's error escapes its stage: it's shown on the shell's stderr despite the stage's redirects, and the pipeline's status is 1 rather than its last stage's
+    stdin: |
+      cd /nonexistent 2>/dev/null | true
+      echo "status: $?"
+      cd /nonexistent 2>&1 | { read -r line; echo "got an error message: ${line:+yes}"; }
+
+  - name: "Exit in a pipeline's last stage"
+    known_failure: true # TODO(pipeline): with lastpipe off the last stage runs in a subshell, but its exit ends the shell itself
+    stdin: |
+      echo hi | exit 3
+      echo "status: $?"
+
+  - name: "Break and return in a pipeline's last stage"
+    known_failure: true # TODO(pipeline): with lastpipe off the last stage runs in a subshell, but its break and return leave the enclosing loop and function
+    stdin: |
+      for i in 1 2; do
+        echo "$i" | break
+        echo "i=$i"
+      done
+
+      f() {
+        echo hi | return 5
+        echo "after return"
+      }
+      f
+      echo "f: $?"
