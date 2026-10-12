@@ -40,6 +40,10 @@ impl Config {
     ///
     /// * `settings` - The high-level terminal settings to apply to this configuration.
     pub fn update(&mut self, settings: &terminal::Settings) {
+        if settings.raw_input {
+            nix::sys::termios::cfmakeraw(&mut self.termios);
+        }
+
         if let Some(echo_input) = &settings.echo_input {
             if *echo_input {
                 self.termios.local_flags |= nix::sys::termios::LocalFlags::ECHO;

@@ -66,7 +66,7 @@ pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, erro
     Ok(signal)
 }
 
-pub(crate) use tokio::signal::ctrl_c as await_ctrl_c;
+pub use tokio::signal::ctrl_c as await_ctrl_c;
 
 pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     let ignore = nix::sys::signal::SigAction::new(

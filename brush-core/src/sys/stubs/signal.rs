@@ -77,7 +77,8 @@ pub(crate) fn chld_signal_listener() -> Result<FakeSignal, error::Error> {
     Ok(FakeSignal::new())
 }
 
-pub(crate) async fn await_ctrl_c() -> std::io::Result<()> {
+/// Waits for Ctrl-C; on this platform, it never arrives.
+pub async fn await_ctrl_c() -> std::io::Result<()> {
     FakeSignal::new().recv().await;
     Ok(())
 }

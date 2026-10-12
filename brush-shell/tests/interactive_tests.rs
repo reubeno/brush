@@ -201,6 +201,50 @@ precmd_functions+=(rc_precmd)
     Ok(())
 }
 
+/// A key bound with `bind -x` runs its command, which sees the line being edited.
+#[test]
+fn runs_commands_bound_to_keys() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+    session.expect_prompt()?;
+
+    session.send_line(r#"bind -x '"\C-x": echo "bound:[$READLINE_LINE]"'"#)?;
+    session.expect_prompt()?;
+
+    // Type a line, and press Ctrl-X.
+    session.send("abc\x18")?;
+    session
+        .expect("bound:[abc]")
+        .context("bound command didn't run with the line")?;
+
+    // The line comes back afterward; clear it with Ctrl-U before exiting.
+    session.send("\x15")?;
+    session.exit()?;
+
+    Ok(())
+}
+
+/// Enter sends Ctrl-M, which the terminal passes on as is, so a key binding can
+/// tell it from Ctrl-J (which is what `send_line` sends).
+#[test]
+fn tells_enter_from_ctrl_j() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+    session.expect_prompt()?;
+
+    session.send_line(r#"bind -x '"\C-m": echo "enter:[$READLINE_LINE]"'"#)?;
+    session.expect_prompt()?;
+
+    session.send("abc\r")?;
+    session
+        .expect("enter:[abc]")
+        .context("Enter didn't run the command bound to Ctrl-M")?;
+
+    // The line comes back afterward; clear it with Ctrl-U before exiting.
+    session.send("\x15")?;
+    session.exit()?;
+
+    Ok(())
+}
+
 /// Terminal shell integration brackets each command with a matched pair of OSC 633 markers:
 /// `E`/`C` before it runs, `D` after. A `preexec` hook that exits the shell means the command
 /// never runs, so neither marker may be emitted -- a lone `D` desynchronizes a terminal's

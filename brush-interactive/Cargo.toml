@@ -17,9 +17,11 @@ bench = false
 
 [features]
 default = []
-basic = ["dep:crossterm", "dep:unicode-width", "completion"]
+basic = ["vt"]
 completion = []
 minimal = []
+# `minimal` reads input when standard input isn't a terminal.
+vt = ["dep:unicode-width", "completion", "minimal"]
 reedline = ["dep:reedline", "dep:nu-ansi-term", "completion", "highlighting"]
 highlighting = []
 
@@ -30,7 +32,6 @@ workspace = true
 bon = "3.9.1"
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 brush-core = { version = "^0.5.0", path = "../brush-core" }
-crossterm = { version = "0.29.0", features = ["serde"], optional = true }
 indexmap = "2.13.0"
 nu-ansi-term = { version = "0.50.3", optional = true }
 radix_trie = "0.3.0"
@@ -42,3 +43,4 @@ unicode-width = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
+vt100 = "0.16.2"
