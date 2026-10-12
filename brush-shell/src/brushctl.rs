@@ -155,12 +155,13 @@ impl CompleteCommand {
     ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match self {
             Self::Line { cursor_index, line } => {
+                let prefs = context.shell.completion_config().edit_prefs.clone();
                 let completions = context
                     .shell
-                    .complete(line, cursor_index.unwrap_or(line.len()))
+                    .complete(line, cursor_index.unwrap_or(line.len()), &prefs)
                     .await?;
                 for candidate in completions.candidates {
-                    writeln!(context.stdout(), "{candidate}")?;
+                    writeln!(context.stdout(), "{}", candidate.value)?;
                 }
                 Ok(ExecutionResult::success())
             }

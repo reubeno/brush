@@ -81,7 +81,7 @@ impl BasicInputBackend {
         shell: &mut Shell<impl brush_core::ShellExtensions>,
         line: &str,
         cursor: usize,
-    ) -> Result<brush_core::completion::Completions, ShellError> {
+    ) -> Result<crate::completion::Offers, ShellError> {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current()
                 .block_on(Self::generate_completions_async(shell, line, cursor))
@@ -92,7 +92,7 @@ impl BasicInputBackend {
         shell: &mut Shell<impl brush_core::ShellExtensions>,
         line: &str,
         cursor: usize,
-    ) -> Result<brush_core::completion::Completions, ShellError> {
+    ) -> Result<crate::completion::Offers, ShellError> {
         Ok(completion::complete_async(shell, line, cursor).await)
     }
 }

@@ -10,6 +10,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// * `input` - The line being completed.
     /// * `cursor` - The cursor's byte offset in the line.
+    /// * `prefs` - The line editor's preferences for how completions edit the line.
     ///
     /// # Errors
     ///
@@ -18,8 +19,9 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         &mut self,
         input: &str,
         cursor: usize,
+        prefs: &completion::EditPrefs,
     ) -> Result<completion::Completions, error::Error> {
-        completion::complete(self, input, cursor).await
+        completion::complete(self, input, cursor, prefs).await
     }
 
     /// Returns the options of the programmable completion in progress, if any (e.g.

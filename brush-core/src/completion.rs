@@ -19,10 +19,17 @@
 //!    `compopt` can change its options. With no spec, basic completion completes
 //!    variables, file names, and commands.
 
+//!
+//! Each candidate comes back as an edit of the line: quoted as bash quotes it for readline,
+//! and, as readline does, closing the word's quote, marking a directory, or adding a
+//! trailing space, as fits. That's everything that decides what the line says; the line editor just
+//! chooses which edit to make and how to show the candidates.
+
 use itertools::Itertools;
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap},
+    ops::Range,
     path::Path,
 };
 use strum::IntoEnumIterator;
@@ -36,9 +43,12 @@ use crate::{
 };
 use brush_parser::unquote_str;
 
+mod edits;
+mod files;
 mod quoting;
 mod words;
 
+use files::resolve_file_names;
 use words::{LineWords, find_completion_word, find_line_words};
 
 // `compgen -W` splits unquoted literal IFS characters before expanding each resulting word.
@@ -199,22 +209,27 @@ pub struct Config {
     /// The specs used in place of a command's.
     specials: HashMap<SpecialSpec, Spec>,
 
-    /// Fallback options to use when 'default' completions are requested (not to be
-    /// confused with the 'default' completion spec, nor 'bashdefault' completions).
-    pub fallback_options: FallbackOptions,
+    /// The line editor's preferences for how completions edit the line, as the `bind`
+    /// builtin sets them.
+    pub edit_prefs: EditPrefs,
 }
 
-/// Options for fallback completions.
+/// A line editor's preferences for how completions edit the line: readline variables, such
+/// as `mark-directories`.
+///
+/// The line editor passes them to [`Shell::complete`]. For now, the [`Config`] stores them,
+/// since that's where the `bind` builtin can set them.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct FallbackOptions {
+pub struct EditPrefs {
     /// If true, mark directory completions with a trailing slash.
     pub mark_directories: bool,
     /// If true, mark symlinked directory completions with a trailing slash.
     pub mark_symlinked_directories: bool,
 }
 
-impl Default for FallbackOptions {
+impl Default for EditPrefs {
     fn default() -> Self {
         Self {
             mark_directories: true,
@@ -510,12 +525,12 @@ impl Spec {
     /// Completes the word being completed in `context`'s line, with a completion in
     /// progress for it (see [`InProgressCompletion`]) while its candidates are generated, so
     /// the `compopt` builtin can change the options applied to them. Returns the candidates,
-    /// sorted unless `nosort`, and how to process them.
+    /// sorted unless `nosort`, and the options applied to them.
     async fn complete(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         context: &Context<'_>,
-    ) -> Result<Generated<(Vec<String>, ProcessingOptions)>, crate::error::Error> {
+    ) -> Result<Generated<(Vec<String>, GenerationOptions)>, crate::error::Error> {
         let mut scope = InProgressScope::start(
             shell,
             InProgressCompletion {
@@ -537,13 +552,13 @@ impl Spec {
             options.set(CompleteOption::FileNames, true);
         }
         let sort = !options.get(CompleteOption::NoSort);
-        let (mut candidates, processing_options) = self
+        let (mut candidates, options) = self
             .apply_options(scope.shell, context, candidates, options)
             .await;
         if sort {
             candidates.sort();
         }
-        Ok(Generated::Candidates((candidates, processing_options)))
+        Ok(Generated::Candidates((candidates, options)))
     }
 
     /// Generates this spec's candidates, before its options are applied.
@@ -656,20 +671,15 @@ impl Spec {
     }
 
     /// Applies `options` to the candidates this spec generated, adding any fallbacks they
-    /// ask for; returns them and how to process them.
+    /// ask for; returns them and the options in effect for them, which have `filenames`
+    /// enabled if a fallback added only file names.
     async fn apply_options(
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
         context: &Context<'_>,
         mut candidates: Vec<String>,
-        options: GenerationOptions,
-    ) -> (Vec<String>, ProcessingOptions) {
-        let mut processing_options = ProcessingOptions {
-            treat_as_filenames: options.get(CompleteOption::FileNames),
-            no_autoquote_filenames: options.get(CompleteOption::NoQuote),
-            no_trailing_space_at_end_of_line: options.get(CompleteOption::NoSpace),
-        };
-
+        mut options: GenerationOptions,
+    ) -> (Vec<String>, GenerationOptions) {
         // plusdirs always adds directory names; dirnames only does so when nothing else matched.
         if options.get(CompleteOption::PlusDirs)
             || (options.get(CompleteOption::DirNames) && candidates.is_empty())
@@ -677,10 +687,9 @@ impl Spec {
             let mut dir_candidates =
                 get_file_completions(shell, context.word, /* must_be_dir */ true).await;
 
-            // If directories are all we have, let them be marked as such.
-            if candidates.is_empty() && shell.completion_config().fallback_options.mark_directories
-            {
-                processing_options.treat_as_filenames = true;
+            // If directories are all we have, they're file names.
+            if candidates.is_empty() {
+                options.set(CompleteOption::FileNames, true);
             }
 
             candidates.append(&mut dir_candidates);
@@ -706,12 +715,10 @@ impl Spec {
                 get_file_completions(shell, context.word, must_be_dir).await;
             candidates.append(&mut default_candidates);
 
-            if shell.completion_config().fallback_options.mark_directories {
-                processing_options.treat_as_filenames = true;
-            }
+            options.set(CompleteOption::FileNames, true);
         }
 
-        (candidates, processing_options)
+        (candidates, options)
     }
 
     /// Generates the candidates of this spec's actions.
@@ -964,38 +971,83 @@ async fn call_completion_function(
     Ok(Generated::Candidates(candidates))
 }
 
-/// Represents a set of generated command completions.
+/// The completions of the word at the cursor in a line, as edits of the line (see
+/// [`Shell::complete`]).
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct Completions {
-    /// The index in the input line where the completions should be inserted. Represented
-    /// as a byte offset into the input line; must be at a clean character boundary.
-    pub insertion_index: usize,
-    /// The number of elements in the input line that should be removed before insertion.
-    /// Represented as a byte count; must capture an exact character boundary.
-    pub delete_count: usize,
-    /// The ordered set of completions.
-    pub candidates: Vec<String>,
-    /// Options for processing the candidates.
-    pub options: ProcessingOptions,
+    /// The candidates, without duplicates, in the order generated: sorted, unless the spec
+    /// said not to ([`CompleteOption::NoSort`]).
+    pub candidates: Vec<Candidate>,
 }
 
-/// Options governing how command completion candidates are processed after being generated.
-#[derive(Debug)]
-pub struct ProcessingOptions {
-    /// Treat completions as file names.
-    pub treat_as_filenames: bool,
-    /// Don't auto-quote completions that are file names.
-    pub no_autoquote_filenames: bool,
-    /// Don't append a trailing space to completions at the end of the input line.
-    pub no_trailing_space_at_end_of_line: bool,
+/// A completion candidate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct Candidate {
+    /// The candidate, unquoted, as generated: e.g. a file name, with its directory as typed
+    /// (such as `~/Documents`).
+    pub value: String,
+    /// What kind of candidate it is.
+    pub kind: CandidateKind,
+    /// The edit of the line that completes the word with the candidate.
+    pub edit: Edit,
 }
 
-impl Default for ProcessingOptions {
-    fn default() -> Self {
+/// What kind of candidate a [`Candidate`] is.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum CandidateKind {
+    /// A file name: a candidate completed as one, which applies to all of a completion's
+    /// candidates -- if [`CompleteOption::FileNames`] is on, or like bash, the spec's `file`
+    /// action ran or its `directory` action found any. That includes the command names that
+    /// basic completion offers along with file names.
+    FileName {
+        /// Whether it names a directory.
+        is_dir: bool,
+    },
+    /// Anything else.
+    Other,
+}
+
+/// An edit of a line: replacing a range of it with text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Edit {
+    /// The byte range of the line to replace. For a candidate, it's the word being completed
+    /// (starting at the quote it's in, if any), up to the cursor -- or just past it, if the
+    /// edit closes the word's quote in place of a closing quote there.
+    pub replace: Range<usize>,
+    /// The text to put in its place, quoted as needed; the cursor goes after it.
+    pub text: String,
+}
+
+/// A candidate, once it's known what it names, before it's made an edit.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ResolvedCandidate {
+    /// The candidate's text, unquoted.
+    text: String,
+    /// What kind of candidate it is.
+    kind: CandidateKind,
+}
+
+impl ResolvedCandidate {
+    /// Returns a candidate with the given text, which isn't a file name.
+    fn new(text: impl Into<String>) -> Self {
         Self {
-            treat_as_filenames: true,
-            no_autoquote_filenames: false,
-            no_trailing_space_at_end_of_line: false,
+            text: text.into(),
+            kind: CandidateKind::Other,
+        }
+    }
+
+    /// Returns a candidate for the file name `text`, which, as when resolving file names,
+    /// names a directory if it ends with a `/`.
+    #[cfg(test)]
+    fn file_name(text: &str) -> Self {
+        Self {
+            kind: CandidateKind::FileName {
+                is_dir: text.ends_with('/'),
+            },
+            ..Self::new(text)
         }
     }
 }
@@ -1173,6 +1225,7 @@ pub(crate) async fn complete(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     input: &str,
     cursor: usize,
+    prefs: &EditPrefs,
 ) -> Result<Completions, error::Error> {
     /// How many times a completion function may ask for completion to restart.
     const MAX_RESTARTS: u32 = 10;
@@ -1200,15 +1253,23 @@ pub(crate) async fn complete(
     }
     let (candidates, options) = completed.unwrap_or_else(|| {
         tracing::warn!(target: trace_categories::COMPLETION, "completion kept restarting; giving up");
-        (Vec::new(), ProcessingOptions::default())
+        (Vec::new(), GenerationOptions::default())
     });
 
-    Ok(Completions {
-        insertion_index: word.range.start,
-        delete_count: word.range.len(),
-        candidates,
-        options,
-    })
+    let candidates = if options.get(CompleteOption::FileNames) {
+        resolve_file_names(shell, candidates)
+    } else {
+        candidates.into_iter().map(ResolvedCandidate::new).collect()
+    };
+
+    let edits = edits::CandidateEdits {
+        line: input,
+        word: word.range.clone(),
+        open_quote: word.quoting.quote,
+        options: &options,
+        prefs,
+    };
+    Ok(edits.completions(candidates))
 }
 
 fn word_break_chars(shell: &Shell<impl extensions::ShellExtensions>) -> Vec<char> {
@@ -1223,11 +1284,11 @@ fn word_break_chars(shell: &Shell<impl extensions::ShellExtensions>) -> Vec<char
 
 /// Completes the word being completed in `context`'s line, with the completion spec that
 /// applies to it if there is one, or else with basic completion. Returns the candidates and
-/// how to process them.
+/// the options in effect for them.
 async fn complete_word(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     mut context: Context<'_>,
-) -> Generated<(Vec<String>, ProcessingOptions)> {
+) -> Generated<(Vec<String>, GenerationOptions)> {
     // Look the spec up afresh each time: a completion function that asks for completion to
     // restart may have registered a new one.
     let Some((spec, command_name)) = shell.completion_config().find_spec(&context.line) else {
@@ -1238,7 +1299,7 @@ async fn complete_word(
 
     spec.complete(shell, &context).await.unwrap_or_else(|err| {
         tracing::debug!(target: trace_categories::COMPLETION, "completion spec failed: {err}");
-        Generated::Candidates((Vec::new(), ProcessingOptions::default()))
+        Generated::Candidates((Vec::new(), GenerationOptions::default()))
     })
 }
 
@@ -1306,7 +1367,7 @@ async fn get_file_completions(
 }
 
 /// Attempts to complete a variable name from the given token.
-/// Returns the candidates and how to process them if the token looks like a variable reference being typed,
+/// Returns the candidates if the token looks like a variable reference being typed,
 /// or `None` if file/command completion should be used instead.
 ///
 /// # Arguments
@@ -1316,7 +1377,7 @@ async fn get_file_completions(
 fn try_get_variable_completions(
     shell: &Shell<impl extensions::ShellExtensions>,
     token: &str,
-) -> Option<(Vec<String>, ProcessingOptions)> {
+) -> Option<Vec<String>> {
     // Determine if this is a braced or unbraced variable reference
     let (var_prefix, use_braces) = if let Some(prefix) = token.strip_prefix("${") {
         // For braced: only complete if brace isn't closed yet
@@ -1349,13 +1410,7 @@ fn try_get_variable_completions(
         .collect();
     candidates.sort();
 
-    // Variable completions should not be treated as filenames (no escaping needed)
-    let options = ProcessingOptions {
-        treat_as_filenames: false,
-        ..ProcessingOptions::default()
-    };
-
-    Some((candidates, options))
+    Some(candidates)
 }
 
 /// Returns the names of the commands that start with `prefix`, in the order bash lists
@@ -1414,12 +1469,13 @@ fn extend_matching<S: AsRef<str>>(
 async fn get_completions_using_basic_lookup(
     shell: &Shell<impl extensions::ShellExtensions>,
     context: &Context<'_>,
-) -> (Vec<String>, ProcessingOptions) {
+) -> (Vec<String>, GenerationOptions) {
     let token = context.word;
 
     // Try variable completion first (e.g., $HO -> $HOME, ${HO -> ${HOME})
-    if let Some(answer) = try_get_variable_completions(shell, token) {
-        return answer;
+    // (Variable names aren't file names, so aren't quoted as such.)
+    if let Some(candidates) = try_get_variable_completions(shell, token) {
+        return (candidates, GenerationOptions::default());
     }
 
     // File completions
@@ -1438,7 +1494,10 @@ async fn get_completions_using_basic_lookup(
         candidates.sort();
     }
 
-    (candidates, ProcessingOptions::default())
+    (
+        candidates,
+        std::iter::once(CompleteOption::FileNames).collect(),
+    )
 }
 
 fn completion_filter_pattern_matches(

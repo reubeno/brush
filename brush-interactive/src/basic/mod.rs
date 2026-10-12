@@ -10,10 +10,6 @@ pub(crate) trait LineReader {
     fn read_line(
         &self,
         prompt: Option<&str>,
-        completion_handler: impl FnMut(
-            &str,
-            usize,
-        )
-            -> Result<brush_core::completion::Completions, ShellError>,
+        completion_handler: impl FnMut(&str, usize) -> Result<crate::completion::Offers, ShellError>,
     ) -> Result<ReadResult, ShellError>;
 }

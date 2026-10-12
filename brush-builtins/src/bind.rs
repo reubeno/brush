@@ -172,7 +172,7 @@ impl BindCommand {
         }
 
         if self.list_vars {
-            let options = &context.shell.completion_config().fallback_options;
+            let options = &context.shell.completion_config().edit_prefs;
 
             // For now we'll just display a few items and show defaults.
             writeln!(
@@ -188,7 +188,7 @@ impl BindCommand {
         }
 
         if self.list_vars_reusable {
-            let options = &context.shell.completion_config().fallback_options;
+            let options = &context.shell.completion_config().edit_prefs;
 
             // For now we'll just display a few items and show defaults.
             writeln!(
