@@ -1,15 +1,14 @@
-use clap::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
+    #[arg(short = 'v', allow_hyphen_values)]
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
@@ -18,8 +17,63 @@ pub(crate) struct PrintfCommand {
     /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
     /// a positional argument. With it disabled, a format string that genuinely needs to
     /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
+    #[arg(positional, double_dash = "automatic", required)]
     format_and_args: Vec<String>,
+}
+
+// Parsed by hand: only leading `-v` options come before the format, at most
+// one `--` ends them, and every later word is data. That is the whole
+// grammar, and a loop over the words is the cheapest way
+// to read it; the derive above still provides the help.
+brush_builtin_winnow::__winnow_builtin_help!(PrintfCommand);
+
+impl builtins::FromArgs for PrintfCommand {
+    fn from_args(
+        name: &str,
+        args: Vec<brush_core::CommandArg>,
+    ) -> Result<Self, builtins::ArgsError> {
+        let error = |error: winnow_args::Error| {
+            brush_builtin_winnow::adapter::to_args_error::<Self>(name, &error)
+        };
+        let mut words = brush_builtin_utils::into_words(args);
+        let mut output_variable = None;
+        let mut index = 0;
+
+        while let Some(word) = words.get(index) {
+            if word == "--" {
+                index += 1;
+                break;
+            } else if word == "-v" {
+                let Some(value) = words.get_mut(index + 1) else {
+                    return Err(error(winnow_args::Error::missing_value(index, "-v")));
+                };
+                output_variable = Some(std::mem::take(value));
+                index += 2;
+            } else if let Some(value) = word.strip_prefix("-v") {
+                output_variable = Some(value.to_owned());
+                index += 1;
+            } else if word.len() > 1 && word.starts_with('-') {
+                return Err(error(winnow_args::Error::unknown_flag(
+                    index,
+                    word.as_str(),
+                )));
+            } else {
+                break;
+            }
+        }
+
+        if index >= words.len() {
+            return Err(error(winnow_args::Error::missing_argument(
+                index,
+                "<format_and_args>",
+            )));
+        }
+        words.drain(..index);
+        Ok(Self {
+            output_variable,
+            format_and_args: words,
+        })
+    }
 }
 
 impl builtins::Command for PrintfCommand {
@@ -60,8 +114,8 @@ fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_co
     match format_and_args {
         // Handle format string with arguments using uucore
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
-        // Handle case with no format string (we shouldn't be able to get here since clap will
-        // fail parsing when the format string is missing)
+        // Handle case with no format string (we shouldn't be able to get here since parsing
+        // fails when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }

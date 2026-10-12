@@ -259,3 +259,13 @@ cases:
 
       echo "[Checking after unset]"
       type [
+
+  - name: "unset -f with -v is an error"
+    ignore_stderr: true
+    stdin: |
+      x=1
+      unset -f -v x
+      echo "result: $?"
+      unset -fv x
+      echo "result: $?"
+      echo "x=${x-unset}"

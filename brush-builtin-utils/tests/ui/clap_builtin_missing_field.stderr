@@ -1,0 +1,7 @@
+error: clap_builtin!: `trailing_args` takes a field name, as in `clap_builtin!(Type, trailing_args = field)`, where `field` is a `Vec<String>`
+ --> tests/ui/clap_builtin_missing_field.rs:6:1
+  |
+6 | brush_builtin_utils::clap_builtin!(Command, trailing_args = "args");
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `brush_builtin_utils::clap_builtin` (in Nightly builds, run with -Z macro-backtrace for more info)

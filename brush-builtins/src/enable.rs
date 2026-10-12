@@ -1,5 +1,4 @@
 use brush_core::ExecutionResult;
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
@@ -7,11 +6,16 @@ use brush_core::builtins;
 use brush_core::error;
 
 /// Enable, disable, or display built-in commands.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct EnableCommand {
     /// Print a list of built-in commands.
     #[arg(short = 'a')]
     print_list: bool,
+
+    /// Remove the built-in commands loaded from the indicated object path.
+    #[arg(short = 'd')]
+    remove_loaded_builtin: bool,
 
     /// Disables the specified built-in commands.
     #[arg(short = 'n')]
@@ -29,13 +33,12 @@ pub(crate) struct EnableCommand {
     #[arg(short = 'f', value_name = "PATH")]
     shared_object_path: Option<String>,
 
-    /// Remove the built-in commands loaded from the indicated object path.
-    #[arg(short = 'd')]
-    remove_loaded_builtin: bool,
-
     /// Names of built-in commands to operate on.
+    #[arg(positional)]
     names: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(EnableCommand);
 
 impl builtins::Command for EnableCommand {
     type Error = brush_core::Error;
@@ -56,7 +59,7 @@ impl builtins::Command for EnableCommand {
         if !self.names.is_empty() {
             for name in &self.names {
                 if let Some(builtin) = context.shell.builtin_mut(name) {
-                    builtin.disabled = self.disable;
+                    builtin.set_disabled(self.disable);
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
                     result = ExecutionResult::general_error();
@@ -72,20 +75,20 @@ impl builtins::Command for EnableCommand {
 
             for (builtin_name, builtin) in builtins {
                 if self.disable {
-                    if !builtin.disabled {
+                    if !builtin.is_disabled() {
                         continue;
                     }
                 } else if self.print_list {
-                    if builtin.disabled {
+                    if builtin.is_disabled() {
                         continue;
                     }
                 }
 
-                if self.special_only && !builtin.special_builtin {
+                if self.special_only && !builtin.is_special() {
                     continue;
                 }
 
-                let prefix = if builtin.disabled { "-n " } else { "" };
+                let prefix = if builtin.is_disabled() { "-n " } else { "" };
 
                 writeln!(context.stdout(), "enable {prefix}{builtin_name}")?;
             }
