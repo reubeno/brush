@@ -15,7 +15,11 @@ use super::{non_term_line_reader, term_line_reader};
 pub struct BasicInputBackend;
 
 impl InputBackend for BasicInputBackend {
-    fn read_line(
+    #[allow(
+        clippy::unused_async_trait_impl,
+        reason = "this backend reads synchronously; the trait is async for those that don't"
+    )]
+    async fn read_line(
         &mut self,
         shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
