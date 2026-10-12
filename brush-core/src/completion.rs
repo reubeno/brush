@@ -99,6 +99,7 @@ fn split_completion_word_list(
     strum_macros::EnumMessage,
     strum_macros::EnumString,
     strum_macros::IntoStaticStr,
+    strum_macros::VariantNames,
 )]
 #[strum(serialize_all = "lowercase")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -168,6 +169,7 @@ pub enum CompleteAction {
     strum_macros::EnumMessage,
     strum_macros::EnumString,
     strum_macros::IntoStaticStr,
+    strum_macros::VariantNames,
 )]
 #[strum(serialize_all = "lowercase")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -762,7 +764,7 @@ impl Spec {
                     shell
                         .builtins()
                         .iter()
-                        .filter(|(_, registration)| registration.disabled)
+                        .filter(|(_, registration)| registration.is_disabled())
                         .map(|(name, _)| name),
                     prefix,
                 ),
@@ -771,7 +773,7 @@ impl Spec {
                     shell
                         .builtins()
                         .iter()
-                        .filter(|(_, registration)| !registration.disabled)
+                        .filter(|(_, registration)| !registration.is_disabled())
                         .map(|(name, _)| name),
                     prefix,
                 ),
@@ -1380,7 +1382,7 @@ fn command_completions(
         shell
             .builtins()
             .iter()
-            .filter(|(_, registration)| !registration.disabled)
+            .filter(|(_, registration)| !registration.is_disabled())
             .map(|(name, _)| name)
             .sorted(),
         prefix,

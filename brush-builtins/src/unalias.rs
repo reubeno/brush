@@ -1,18 +1,21 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
 /// Unset a shell alias.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct UnaliasCommand {
     /// Remove all aliases.
     #[arg(short = 'a')]
     remove_all: bool,
 
     /// Names of aliases to operate on.
+    #[arg(positional)]
     aliases: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(UnaliasCommand);
 
 impl builtins::Command for UnaliasCommand {
     type Error = brush_core::Error;

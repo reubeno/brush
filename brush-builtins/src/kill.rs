@@ -1,11 +1,16 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::traps::TrapSignal;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
 
 /// Signal a job or process.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct KillCommand {
     /// Name of the signal to send.
     #[arg(short = 's', value_name = "SIG_NAME")]
@@ -15,16 +20,15 @@ pub(crate) struct KillCommand {
     #[arg(short = 'n', value_name = "SIG_NUM")]
     signal_number: Option<usize>,
 
-    //
-    // TODO(kill): implement -sigspec syntax
     /// List known signal names.
-    #[arg(short = 'l', short_alias = 'L')]
+    #[arg(short = 'l', short = 'L')]
     list_signals: bool,
 
-    // Interpretation of these depends on whether -l is present.
-    #[arg(allow_hyphen_values = true)]
+    #[arg(positional, allow_negative_numbers)]
     args: Vec<String>,
 }
+
+brush_builtin_winnow::winnow_builtin!(KillCommand);
 
 impl builtins::Command for KillCommand {
     type Error = brush_core::Error;

@@ -375,15 +375,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "brush-builtin-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "brush-core",
+ "clap",
+ "thiserror 2.0.21",
+ "tokio",
+ "trybuild",
+]
+
+[[package]]
+name = "brush-builtin-winnow"
+version = "0.1.0"
+dependencies = [
+ "brush-builtin-utils",
+ "brush-core",
+ "thiserror 2.0.21",
+ "tokio",
+ "winnow-args",
+]
+
+[[package]]
 name = "brush-builtins"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "brush-builtin-utils",
+ "brush-builtin-winnow",
  "brush-core",
  "brush-parser",
  "cfg-if",
  "chrono",
- "clap",
  "fancy-regex",
  "itertools 0.15.0",
  "nix 0.31.3",
@@ -396,6 +420,7 @@ dependencies = [
  "tracing",
  "utf8-chars",
  "uucore",
+ "winnow-args",
 ]
 
 [[package]]
@@ -411,7 +436,6 @@ dependencies = [
  "cfg-if",
  "check_elevation",
  "chrono",
- "clap",
  "color-print",
  "command-fds",
  "fancy-regex",
@@ -532,9 +556,11 @@ dependencies = [
 name = "brush-experimental-builtins"
 version = "0.1.0"
 dependencies = [
+ "brush-builtin-utils",
+ "brush-builtin-winnow",
  "brush-core",
- "clap",
  "serde_json",
+ "winnow-args",
 ]
 
 [[package]]
@@ -601,6 +627,8 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
+ "brush-builtin-utils",
+ "brush-builtin-winnow",
  "brush-builtins",
  "brush-core",
  "brush-coreutils-builtins",
@@ -609,9 +637,6 @@ dependencies = [
  "brush-parser",
  "brush-test-harness",
  "clap",
- "clap-markdown",
- "clap_complete",
- "clap_mangen",
  "color-print",
  "colored",
  "const_format",
@@ -649,6 +674,7 @@ dependencies = [
  "version-compare",
  "walkdir",
  "which",
+ "winnow-args",
 ]
 
 [[package]]
@@ -853,15 +879,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clap-markdown"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2a2617956a06d4885b490697b5307ebb09fec10b088afc18c81762d848c2339"
-dependencies = [
- "clap",
-]
-
-[[package]]
 name = "clap_builder"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -872,15 +889,6 @@ dependencies = [
  "clap_lex",
  "strsim",
  "terminal_size",
-]
-
-[[package]]
-name = "clap_complete"
-version = "4.6.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f"
-dependencies = [
- "clap",
 ]
 
 [[package]]
@@ -900,16 +908,6 @@ name = "clap_lex"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
-
-[[package]]
-name = "clap_mangen"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "211d617eaa4b735c96c9e0228fcbdb5120ef623f2b8cb67ffb84c3e02dbc28a4"
-dependencies = [
- "clap",
- "roff",
-]
 
 [[package]]
 name = "color-print"
@@ -4103,6 +4101,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
+name = "target-tuple"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "876fef147edbcbddc8ac5cbbba92c7b86519e314e86638596c09673b2ed01e7f"
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4113,6 +4117,15 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
 ]
 
 [[package]]
@@ -4413,6 +4426,21 @@ name = "triomphe"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b40688ea6389c8171614b25491f71d4a27946e0c7ce2da1c6de27e25abf1a0ae"
+
+[[package]]
+name = "trybuild"
+version = "1.0.121"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0cabaa10be1917331a313866bd94526343e03c77bcf69144b62b072ad35d47c"
+dependencies = [
+ "glob",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "target-tuple",
+ "termcolor",
+ "toml",
+]
 
 [[package]]
 name = "type-map"
@@ -6273,6 +6301,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "winnow-args"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88f6430d464c236cf378fa927daeb53c7882ff81a8d935f37dff0fc41b014a09"
+dependencies = [
+ "winnow",
+ "winnow-args-derive",
+]
+
+[[package]]
+name = "winnow-args-derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47fb0bc93576936655cd1d31f91be343491564c433f7279bf29d5f40e7a4dacc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "winnow-args-man"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b328dcf410bf61e957beb5e63390e3a91a54e7880a4d3db5c37ec78235b434e"
+dependencies = [
+ "roff",
+ "winnow-args-spec",
+]
+
+[[package]]
+name = "winnow-args-markdown"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f70dfe20388f6a2f829d9c70b24d1062919b93b250de6c61601c1dc15d35448"
+dependencies = [
+ "winnow-args-spec",
+]
+
+[[package]]
+name = "winnow-args-spec"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d90b16e2676fd850a1a8ffc78838ecfeb1f5cdd8dca344dc7a8377ff268c2e3a"
+dependencies = [
+ "toml",
+]
+
+[[package]]
 name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6338,6 +6415,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "winnow-args-man",
+ "winnow-args-markdown",
+ "winnow-args-spec",
  "xshell",
 ]
 
