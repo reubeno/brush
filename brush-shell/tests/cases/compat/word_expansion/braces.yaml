@@ -183,6 +183,13 @@ cases:
       echo {1..99999999999999999999}
       echo {-9223372036854775809..-9223372036854775807}
 
+  - name: "Expansion with curly braces: increment too large for the sequence"
+    known_failure: true # brush-parser's `number()` rule unwraps the increment, so the parser panics
+    stdin: |
+      echo {1..5..99999999999999999999}
+      echo {1..5..-99999999999999999999}
+      echo "still running"
+
   - name: "Expansion with curly braces: numeric bounds at the edge of the range"
     stdin: |
       echo {-9223372036854775808..-9223372036854775806}
