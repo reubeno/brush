@@ -154,7 +154,7 @@ predicates = "3.1.4"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 regex = "1.12.3"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_yaml = "0.9.34"
+yaml_serde = "0.10.7"
 strip-ansi-escapes = "0.2.1"
 test-with = { version = "0.17.0", default-features = false, features = [
     "executable",
