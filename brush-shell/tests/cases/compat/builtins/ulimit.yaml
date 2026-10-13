@@ -35,3 +35,10 @@ cases:
   - name: "ulimit -m unlimited"
     stdin: |
       ulimit -m unlimited
+
+  - name: "ulimit with an invalid number fails with status 1"
+    known_failure: true # TODO(ulimit): fails with status 2, where bash fails with 1
+    ignore_stderr: true
+    stdin: |
+      ulimit -n abc
+      echo "ulimit: $?"

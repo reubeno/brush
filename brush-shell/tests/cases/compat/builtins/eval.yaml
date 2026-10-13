@@ -52,3 +52,10 @@ cases:
     stdin: |
       eval 'echo "a'
       echo "rc=$?"
+
+  - name: "eval with a syntax error returns 2"
+    known_failure: true # TODO(eval): a syntax error in eval's input ends a brush script
+    ignore_stderr: true
+    stdin: |
+      eval 'if'
+      echo "after eval: $?"

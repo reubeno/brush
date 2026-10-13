@@ -163,3 +163,58 @@ cases:
       value=world
       command export wrapped=$value
       declare -p wrapped
+
+  - name: "export rejects dash-prefixed operands after a name"
+    known_failure: true # TODO(export): a -x after a name is taken as an option, not rejected as an invalid identifier
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export v -x; echo "export v -x: $?"; } 2>&1 | strip
+      { export -- -x; echo "export -- -x: $?"; } 2>&1 | strip
+      { export w=1 +r; echo "export w=1 +r: $?"; } 2>&1 | strip
+
+  - name: "Usage error in a special builtin is fatal in POSIX mode"
+    known_failure: true # TODO(posix): a special builtin's usage error doesn't end a non-interactive POSIX shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      export --bogus
+      echo "not reached"
+
+  - name: "Usage error in a special builtin is not fatal outside POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      export --bogus
+      echo "still running: $?"
+
+  - name: "export --help prints help on stdout"
+    known_failure: true # TODO(export): --help prints on stderr
+    stdin: |
+      export --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(export --help 2>/dev/null) ]] && echo "help on stdout"
+
+
+  - name: "export --help is fatal in POSIX mode"
+    known_failure: true # TODO(posix): a special builtin's --help doesn't end a non-interactive POSIX shell
+    stdin: |
+      set -o posix
+      export --help >/dev/null
+      echo "still running: $?"
+
+  - name: "export -f of a missing function"
+    known_failure: true # TODO(export): fails with status 2, without attribution, where bash fails with 1
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      export -f nofunc 2>&1 | strip
+      echo "export: ${PIPESTATUS[0]}"
+
+  - name: "export reports a readonly variable and goes on"
+    known_failure: true # TODO(export): stops at a readonly variable instead of going on to the next operand
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      export r=2 y=3
+      echo "export: $? r=$r y=$y"
+      readonly r=4 z=5
+      echo "readonly: $? r=$r z=$z"
+      unset r w
+      echo "unset: $? r=$r"

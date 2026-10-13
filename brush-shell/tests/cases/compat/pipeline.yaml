@@ -124,3 +124,35 @@ cases:
     stdin: |
       i=0
       while [ $i -lt 4096 ]; do printf '%s\n' 0123456789012345678901234567890; i=$((i+1)); done | wc -l
+
+  - name: "Control flow in a pipeline stage stays in its subshell"
+    known_failure: true # TODO(pipeline): exit, return, or break in a stage run in a subshell reaches the shell running the pipeline
+    stdin: |
+      echo x | exit 3
+      echo "after exit: $?"
+      echo x | exec cat
+      echo "after exec: $?"
+      echo x | { exit 6; }
+      echo "after group: $?"
+      f() { true | return 4; echo "f still running: $?"; }
+      f
+      for i in 1 2; do echo x | break; echo "loop body $i"; done
+
+  - name: "A special builtin's fatal error in a pipeline stage ends only that stage"
+    known_failure: true # TODO(pipeline): a special builtin's fatal error in a stage ends the shell running the pipeline
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      true | export -Z
+      echo "after usage error: $?"
+      true | exit 1 2
+      echo "after exit: $?"
+
+  - name: "Control flow in the last stage applies with lastpipe"
+    stdin: |
+      shopt -s lastpipe
+      f() { echo x | return 4; echo "f still running"; }
+      f
+      echo "f returned $?"
+      echo x | exit 5
+      echo "not reached"

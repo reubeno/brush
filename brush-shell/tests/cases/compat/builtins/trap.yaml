@@ -160,6 +160,13 @@ cases:
       (exit 42)
       echo "after"
 
+  - name: "trap ERR - exit in the handler ends the shell"
+    known_failure: true # TODO(traps): the ERR trap handler's control flow is dropped
+    stdin: |
+      trap 'echo "in ERR"; exit 3' ERR
+      false
+      echo "after"
+
   - name: "trap ERR - has access to BASH_COMMAND"
     known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |

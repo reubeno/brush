@@ -4,3 +4,47 @@ cases:
     stdin: |
       echo hi &
       wait
+
+  - name: "fg without a current job reports on stderr"
+    known_failure: true # TODO(fg): "no current job" is reported on stdout
+    ignore_stderr: true
+    stdin: |
+      fg
+      echo "fg: $?"
+
+  - name: "fg and bg report a job that doesn't exist on stderr, naming the builtin first"
+    known_failure: true # TODO(fg): fg reports a missing job on stdout, as "%5: fg: no such job"
+    # The leading "file: line N:" a shell prefixes is stripped.
+    stdin: |
+      set -m
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      fg %5 2>err.txt; echo "fg: $?"; strip < err.txt
+      bg %5 2>err.txt; echo "bg: $?"; strip < err.txt
+      rm err.txt
+
+  - name: "fg without job control says so"
+    known_failure: true # TODO(jobs): brush doesn't check for job control
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      fg %5 2>err.txt; echo "fg: $?"; strip < err.txt
+      rm err.txt
+
+  - name: "Job builtins fail with status 1 for a job that doesn't exist"
+    known_failure: true # TODO(jobs): brush returns 99 (unimplemented)
+    ignore_stderr: true
+    stdin: |
+      jobs %9
+      echo "jobs: $?"
+      disown %9
+      echo "disown: $?"
+
+  - name: "Job builtins check for job control before their options"
+    known_failure: true # TODO(jobs): brush reads options first
+    ignore_stderr: true
+    stdin: |
+      fg -Z
+      echo "fg: $?"
+      bg -Z
+      echo "bg: $?"
+      disown -Z
+      echo "disown: $?"

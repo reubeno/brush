@@ -49,3 +49,23 @@ cases:
   - name: "exec -a"
     stdin: |
       exec -a shellname $0 -c 'echo "0: $0"'
+
+  - name: "exec of a missing command exits the shell"
+    known_failure: true # TODO(exec): a failed exec doesn't end a non-interactive shell
+    ignore_stderr: true
+    stdin: |
+      (exec nonexistent-command; echo "subshell still running: $?")
+      echo "subshell: $?"
+      exec /nonexistent-command
+      echo "still running: $?"
+
+  - name: "exec in a subshell ends the subshell"
+    known_failure: true # TODO(exec): exec in a subshell doesn't end the subshell, and -a/-l are unimplemented there
+    stdin: |
+      (exec true; echo "still running")
+      echo "true: $?"
+      (exec sh -c 'exit 3'; echo "still running")
+      echo "exit 3: $?"
+      (exec -a renamed sh -c 'echo "argv0: $0"')
+      (exec -l sh -c 'echo "login argv0: $0"')
+      echo hello | (exec cat; echo "still running")

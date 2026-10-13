@@ -30,3 +30,10 @@ cases:
       # Re-check
       type printf
       printf "Back\n"
+
+  - name: "enable -p lists only enabled builtins"
+    known_failure: true # TODO(enable): brush also lists disabled builtins
+    stdin: |
+      enable -n echo
+      enable -p | grep -c echo
+      enable -n -p | grep echo

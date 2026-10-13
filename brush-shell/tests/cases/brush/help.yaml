@@ -1,0 +1,36 @@
+name: "Help colors"
+cases:
+  - name: "Help printed to a pipe isn't painted"
+    known_failure: true # TODO(help): expects the synopsis and colors winnow-args renders, and help that follows NO_COLOR, CLICOLOR_FORCE, and --disable-color
+    removed_default_args: ["--disable-color"]
+    stdin: |
+      help -s cd
+    expected_stdout: "cd: cd [-LPe@] [target_dir]\n"
+
+  - name: "Help is painted where color is forced"
+    known_failure: true # TODO(help): expects the synopsis and colors winnow-args renders, and help that follows NO_COLOR, CLICOLOR_FORCE, and --disable-color
+    removed_default_args: ["--disable-color"]
+    stdin: |
+      CLICOLOR_FORCE=1
+      help -s cd | cat -v
+      cd --help | head -n 1 | cat -v
+    expected_stdout: |
+      cd: cd [^[[1;35m-LPe@^[[0m] [^[[36mtarget_dir^[[0m]
+      cd: cd [^[[1;35m-LPe@^[[0m] [^[[36mtarget_dir^[[0m]
+
+  - name: "NO_COLOR wins over forced color"
+    known_failure: true # TODO(help): expects the synopsis and colors winnow-args renders, and help that follows NO_COLOR, CLICOLOR_FORCE, and --disable-color
+    removed_default_args: ["--disable-color"]
+    stdin: |
+      CLICOLOR_FORCE=1
+      NO_COLOR=1
+      help -s cd
+    expected_stdout: "cd: cd [-LPe@] [target_dir]\n"
+
+  # The harness runs brush with --disable-color.
+  - name: "--disable-color turns help colors off"
+    known_failure: true # TODO(help): expects the synopsis and colors winnow-args renders, and help that follows NO_COLOR, CLICOLOR_FORCE, and --disable-color
+    stdin: |
+      CLICOLOR_FORCE=1
+      help -s cd
+    expected_stdout: "cd: cd [-LPe@] [target_dir]\n"

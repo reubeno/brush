@@ -156,3 +156,19 @@ cases:
       }
 
       myfunc a b c
+
+  - name: "return with a non-numeric argument returns 2"
+    known_failure: true # TODO(return): a non-numeric argument is a usage error, and the function doesn't return
+    ignore_stderr: true
+    stdin: |
+      f() { return abc; echo "still in f"; }
+      f
+      echo "f returned $?"
+
+  - name: "return with too many arguments abandons the rest of the line"
+    known_failure: true # TODO(builtins): a usage error skips return, so the function keeps running
+    ignore_stderr: true
+    stdin: |
+      f() { return 1 2; echo "still in f"; }
+      f; echo "same line: $?"
+      echo "next line: $?"

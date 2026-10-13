@@ -63,3 +63,12 @@ cases:
       pushd /
       dirs -c
       dirs
+
+  - name: "Directory stack errors fail with status 1"
+    known_failure: true # TODO(dirs): brush treats them as usage errors, status 2
+    ignore_stderr: true
+    stdin: |
+      pushd
+      echo "pushd: $?"
+      dirs +9
+      echo "dirs: $?"

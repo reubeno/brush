@@ -10,3 +10,26 @@ cases:
     stdin: |
       echo -e "1. \x65" | hexdump -C
       echo -e "2. \x{65}" | hexdump -C
+
+  - name: "echo options after an operand are operands"
+    stdin: |
+      echo hi -n
+      echo a -e 'x\ty'
+      echo -e a -n
+      f() { echo "$@"; }
+      f a -n
+
+  - name: "echo interprets escapes with xpg_echo"
+    known_failure: true # TODO(echo): xpg_echo is not implemented
+    stdin: |
+      shopt -s xpg_echo
+      echo 'a\tb'
+      echo -E 'c\td'
+
+  - name: "echo takes no options in POSIX mode with xpg_echo"
+    known_failure: true # TODO(echo): xpg_echo is not implemented
+    stdin: |
+      set -o posix
+      shopt -s xpg_echo
+      echo -n 'a\tb'
+      echo -e 'c'

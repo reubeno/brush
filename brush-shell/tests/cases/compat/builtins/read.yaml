@@ -434,3 +434,17 @@ cases:
       printf '\xf0\x9f\x98\x80\xf0\x9f\x98\x80z\n' | { read -r -N 2 x; echo "[$x]"; }
       # The limit is checked separately on the character after a backslash escape.
       printf '\\\xc3\xa9\xed\x85\x8cx\n' | { read -n 2 x; echo "[$x]"; }
+
+  - name: "read into an invalid variable name fails"
+    known_failure: true # TODO(read): an invalid variable name is accepted
+    ignore_stderr: true
+    stdin: |
+      read 1x <<< "hello"
+      echo "read: $?"
+
+  - name: "read with an invalid timeout fails with status 1"
+    known_failure: true # TODO(read): fails with status 2, where bash fails with 1
+    ignore_stderr: true
+    stdin: |
+      read -t abc x <<< "hello"
+      echo "read: $?"

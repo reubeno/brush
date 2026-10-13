@@ -355,3 +355,12 @@ cases:
       # All should have the same result
       [ $r1 -eq $r2 ] && [ $r2 -eq $r3 ] && [ $r3 -eq $r4 ] && echo "All -t results match"
 
+
+  - name: "test with a non-integer operand fails with status 2"
+    known_failure: true # TODO(test): brush returns 1
+    ignore_stderr: true
+    stdin: |
+      test 1 -eq a
+      echo "test: $?"
+      [ 1 -lt b ]
+      echo "[: $?"

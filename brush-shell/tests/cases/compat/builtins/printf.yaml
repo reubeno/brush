@@ -446,3 +446,18 @@ cases:
   - name: "printf %q escapes commas"
     stdin: |
       printf '%q\n' 'a,b' ',' '{a,b}'
+
+  - name: "printf -v followed by --"
+    stdin: |
+      printf -v x -- '%s' ho
+      echo "x=$x"
+      printf -vy -- '%s-' -- a
+      echo "y=$y"
+
+  - name: "printf --help prints help on stdout"
+    known_failure: true # TODO(printf): --help is taken for an invalid option
+    stdin: |
+      printf --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(printf --help 2>/dev/null) ]] && echo "help on stdout"
+      printf -v x --help >/dev/null 2>&1; echo "after -v: rc=$?"
+      printf -- --help; echo " after --: rc=$?"

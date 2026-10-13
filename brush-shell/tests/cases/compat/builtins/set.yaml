@@ -136,3 +136,12 @@ cases:
       declare -A m=([a,b]=1 [c]=2)
       set | grep "^m="
       declare -p m
+
+  - name: "set -o with an unknown option name"
+    known_failure: true # TODO(set): set -o bogus fails without bash's message
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      set -o bogus 2>&1 | strip
+      echo "set -o: ${PIPESTATUS[0]}"
+      set +o bogus 2>&1 | strip
+      echo "set +o: ${PIPESTATUS[0]}"

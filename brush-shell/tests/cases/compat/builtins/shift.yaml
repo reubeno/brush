@@ -1,0 +1,9 @@
+name: "Builtins: shift"
+cases:
+  - name: "shift past the end fails with status 1"
+    known_failure: true # TODO(shift): fails with status 2, where bash fails with 1
+    ignore_stderr: true
+    stdin: |
+      set -- a
+      shift 2
+      echo "shift: $?"
