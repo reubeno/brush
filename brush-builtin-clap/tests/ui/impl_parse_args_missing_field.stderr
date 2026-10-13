@@ -1,0 +1,7 @@
+error: impl_parse_args!: `keep_double_dash` takes a field name, as in `impl_parse_args!(Type, keep_double_dash = field)`, where `field` is a `Vec<String>`
+ --> tests/ui/impl_parse_args_missing_field.rs:6:1
+  |
+6 | brush_builtin_clap::impl_parse_args!(Command, keep_double_dash = "args");
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `brush_builtin_clap::impl_parse_args` (in Nightly builds, run with -Z macro-backtrace for more info)

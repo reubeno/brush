@@ -26,13 +26,14 @@ pub(crate) struct KillCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for KillCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(KillCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for KillCommand {
+    #[allow(clippy::too_many_lines)]
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut signal_zero = false;
 
         // Default signal is SIGKILL.
@@ -46,7 +47,7 @@ impl builtins::Command for KillCommand {
                 writeln!(
                     context.stderr(),
                     "{}: invalid signal name: {}",
-                    context.command_name,
+                    context.command_name(),
                     signal_name
                 )?;
                 return Ok(ExecutionExitCode::InvalidUsage.into());
@@ -66,7 +67,7 @@ impl builtins::Command for KillCommand {
                     writeln!(
                         context.stderr(),
                         "{}: invalid signal number: {}",
-                        context.command_name,
+                        context.command_name(),
                         signal_number
                     )?;
                     return Ok(ExecutionExitCode::InvalidUsage.into());
@@ -89,7 +90,7 @@ impl builtins::Command for KillCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {}: invalid signal specification",
-                        context.command_name,
+                        context.command_name(),
                         possible_sigspec
                     )?;
                     return Ok(ExecutionResult::general_error());
@@ -100,7 +101,7 @@ impl builtins::Command for KillCommand {
                 writeln!(
                     context.stderr(),
                     "{}: too many jobs or processes specified",
-                    context.command_name
+                    context.command_name()
                 )?;
                 return Ok(ExecutionExitCode::InvalidUsage.into());
             }
@@ -110,7 +111,11 @@ impl builtins::Command for KillCommand {
             return print_signals(&context, self.args.as_ref());
         } else {
             let Some(pid_or_job_spec) = pid_or_job_spec else {
-                writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
+                writeln!(
+                    context.stderr(),
+                    "{}: invalid usage",
+                    context.command_name()
+                )?;
                 return Ok(ExecutionExitCode::InvalidUsage.into());
             };
 
@@ -126,7 +131,7 @@ impl builtins::Command for KillCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {}: no such job",
-                        context.command_name,
+                        context.command_name(),
                         pid_or_job_spec
                     )?;
                     return Ok(ExecutionResult::general_error());

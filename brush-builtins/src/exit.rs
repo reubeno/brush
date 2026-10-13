@@ -10,13 +10,13 @@ pub(crate) struct ExitCommand {
     code: Option<i64>,
 }
 
-impl builtins::Command for ExitCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(ExitCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for ExitCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         #[expect(clippy::cast_sign_loss)]
         let code_8bit = if let Some(code_32bit) = &self.code {
             (code_32bit & 0xFF) as u8

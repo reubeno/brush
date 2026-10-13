@@ -31,14 +31,14 @@ pub(crate) struct ShoptCommand {
     options: Vec<String>,
 }
 
-impl builtins::Command for ShoptCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(ShoptCommand);
 
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for ShoptCommand {
     #[allow(clippy::too_many_lines)]
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.set && self.unset {
             writeln!(
                 context.stderr(),
@@ -140,7 +140,7 @@ impl builtins::Command for ShoptCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {}: invalid shell option name",
-                        context.command_name,
+                        context.command_name(),
                         option_name
                     )?;
                     return_value = ExecutionResult::general_error();

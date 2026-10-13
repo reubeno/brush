@@ -1265,3 +1265,9 @@ cases:
       e=
       $e declare x=$v
       declare -p x
+
+  - name: "An unknown + option is named as it was given"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      { declare +Z; } 2>&1 | head -n 1 | strip
+      { typeset +Z x; } 2>&1 | head -n 1 | strip

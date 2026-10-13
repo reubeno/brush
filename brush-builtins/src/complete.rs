@@ -188,13 +188,13 @@ const fn special_spec_flag(special: SpecialSpec) -> &'static str {
     }
 }
 
-impl builtins::Command for CompleteCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(CompleteCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for CompleteCommand {
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         // Like bash, -D, -E, or -I name a special spec in place of any names given; they
         // take precedence in that order.
         let special = [
@@ -377,13 +377,13 @@ pub(crate) struct CompGenCommand {
     word: Option<String>,
 }
 
-impl builtins::Command for CompGenCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(CompGenCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for CompGenCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let spec = self.common_args.create_spec();
         let word = self.word.as_deref().unwrap_or_default();
         let candidates = spec.generate(context.shell, word).await?;
@@ -427,17 +427,13 @@ pub(crate) struct CompOptCommand {
     names: Vec<String>,
 }
 
-impl builtins::Command for CompOptCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(CompOptCommand);
 
-    fn takes_plus_options() -> bool {
-        true
-    }
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for CompOptCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         // Like bash, an option given with both `-o` and `+o` is disabled, whatever their
         // order.
         let mut options =

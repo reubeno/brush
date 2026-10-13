@@ -10,13 +10,13 @@ pub(crate) struct FgCommand {
     job_spec: Option<String>,
 }
 
-impl builtins::Command for FgCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(FgCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for FgCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut stderr = context.stdout();
 
         // Read interactive option before taking mutable borrow on jobs
@@ -43,7 +43,8 @@ impl builtins::Command for FgCommand {
                 writeln!(
                     stderr,
                     "{}: {}: no such job",
-                    job_spec, context.command_name
+                    job_spec,
+                    context.command_name()
                 )?;
                 Ok(ExecutionResult::general_error())
             }
@@ -65,7 +66,7 @@ impl builtins::Command for FgCommand {
 
                 Ok(result)
             } else {
-                writeln!(stderr, "{}: no current job", context.command_name)?;
+                writeln!(stderr, "{}: no current job", context.command_name())?;
                 Ok(ExecutionResult::general_error())
             }
         }

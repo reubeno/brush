@@ -22,13 +22,13 @@ pub(crate) struct PrintfCommand {
     format_and_args: Vec<String>,
 }
 
-impl builtins::Command for PrintfCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(PrintfCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for PrintfCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if let Some(variable_name) = &self.output_variable {
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];

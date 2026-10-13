@@ -5,7 +5,6 @@ use std::{io::Write, sync::LazyLock};
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
-    parser::ast,
     variables::{
         self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
         ShellVariableUpdateTransform,
@@ -98,7 +97,7 @@ pub(crate) struct DeclareCommand {
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
+    // N.B. These are skipped by clap, but filled in by `parse_declare_args`.
     #[clap(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
@@ -110,24 +109,28 @@ enum DeclareVerb {
     Readonly,
 }
 
-impl builtins::DeclarationCommand for DeclareCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
+fn parse_declare_args(
+    invocation: builtins::Invocation<'_>,
+) -> Result<DeclareCommand, builtins::UsageError> {
+    let (mut this, declarations) = crate::parse_declaration_args::<DeclareCommand>(invocation)?;
+    this.declarations = declarations;
+    Ok(this)
 }
 
-impl builtins::Command for DeclareCommand {
-    fn takes_plus_options() -> bool {
-        true
-    }
+brush_builtin_clap::impl_parse_args!(
+    DeclareCommand,
+    help_from = DeclareCommand,
+    parse = parse_declare_args
+);
 
-    type Error = brush_core::Error;
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for DeclareCommand {
+    const DECLARATIONS: builtins::Declarations = builtins::Declarations::Yes;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let verb = match context.command_name.as_str() {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        let verb = match context.command_name() {
             "local" => DeclareVerb::Local,
             "readonly" => DeclareVerb::Readonly,
             _ => DeclareVerb::Declare,
@@ -176,12 +179,9 @@ impl DeclareCommand {
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
-        let name = match declaration {
-            brush_core::CommandArg::String(s) => s,
-            brush_core::CommandArg::Assignment(_) => {
-                writeln!(context.stderr(), "declare: {declaration}: not found")?;
-                return Ok(false);
-            }
+        let brush_core::CommandArg::String(name) = declaration else {
+            writeln!(context.stderr(), "declare: {declaration}: not found")?;
+            return Ok(false);
         };
 
         let lookup = if matches!(verb, DeclareVerb::Local) {
@@ -241,7 +241,7 @@ impl DeclareCommand {
     ) -> bool {
         let func = match declaration {
             brush_core::CommandArg::String(name) => context.shell.func_mut(name),
-            brush_core::CommandArg::Assignment(_) => None,
+            brush_core::CommandArg::Declaration(_) => None,
         };
 
         // As with display, bash reports failure without printing an error message here.
@@ -297,7 +297,7 @@ impl DeclareCommand {
             writeln!(
                 context.stderr(),
                 "{}: {name}: not a valid variable name",
-                context.command_name
+                context.command_name()
             )?;
             return Ok(false);
         }
@@ -454,46 +454,37 @@ impl DeclareCommand {
                 initial_value = None;
                 append = false;
             }
-            brush_core::CommandArg::Assignment(assignment) => {
-                match &assignment.name {
-                    ast::AssignmentName::VariableName(var_name) => {
-                        name = var_name.to_owned();
-                        assigned_index = None;
-                    }
-                    ast::AssignmentName::ArrayElementName(var_name, index) => {
-                        if matches!(assignment.value, ast::AssignmentValue::Array(_)) {
-                            return Err(ErrorKind::AssigningListToArrayMember.into());
-                        }
-
-                        name = var_name.to_owned();
-                        assigned_index = Some(index.to_owned());
-                    }
+            brush_core::CommandArg::Declaration(declaration) => {
+                if declaration.index.is_some()
+                    && matches!(declaration.value, Some(ShellValueLiteral::Array(_)))
+                {
+                    return Err(ErrorKind::AssigningListToArrayMember.into());
                 }
 
-                append = assignment.append;
+                name = declaration.name.clone();
+                assigned_index = declaration.index.clone();
+                append = declaration.append;
 
-                match &assignment.value {
-                    ast::AssignmentValue::Scalar(s) => {
+                match &declaration.value {
+                    Some(ShellValueLiteral::Scalar(s)) => {
                         if let Some(index) = &assigned_index {
                             initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
                                 Some(index.to_owned()),
-                                s.value.clone(),
+                                s.clone(),
                             )])));
                             name_is_array = true;
                         } else {
-                            initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
+                            initial_value = Some(ShellValueLiteral::Scalar(s.clone()));
                             name_is_array = false;
                         }
                     }
-                    ast::AssignmentValue::Array(a) => {
-                        initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
-                            a.iter()
-                                .map(|(i, v)| {
-                                    (i.as_ref().map(|w| w.value.clone()), v.value.clone())
-                                })
-                                .collect(),
-                        )));
+                    Some(ShellValueLiteral::Array(a)) => {
+                        initial_value = Some(ShellValueLiteral::Array(a.clone()));
                         name_is_array = true;
+                    }
+                    None => {
+                        initial_value = None;
+                        name_is_array = assigned_index.is_some();
                     }
                 }
             }

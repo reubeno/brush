@@ -23,13 +23,13 @@ pub(crate) struct WaitCommand {
     ids: Vec<String>,
 }
 
-impl builtins::Command for WaitCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(WaitCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for WaitCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if self.wait_for_terminate {
             return error::unimp("wait -f");
         }
@@ -52,7 +52,7 @@ impl builtins::Command for WaitCommand {
                         writeln!(
                             context.stderr(),
                             "{}: no such job: {}",
-                            context.command_name,
+                            context.command_name(),
                             id
                         )?;
 

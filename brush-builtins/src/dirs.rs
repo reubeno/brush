@@ -3,27 +3,19 @@ use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
+/// What can go wrong in `dirs`, `pushd`, and `popd`, in their own terms.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DirError {
     /// Directory stack is empty.
     #[error("directory stack is empty")]
     DirStackEmpty,
-
-    /// A shell error occurred.
-    #[error(transparent)]
-    ShellError(#[from] brush_core::Error),
 }
 
-impl From<&DirError> for brush_core::ExecutionExitCode {
-    fn from(value: &DirError) -> Self {
-        match value {
-            DirError::DirStackEmpty => Self::GeneralError,
-            DirError::ShellError(e) => e.into(),
-        }
+impl From<DirError> for brush_core::Error {
+    fn from(error: DirError) -> Self {
+        builtins::Failure::new(error).into()
     }
 }
-
-impl brush_core::BuiltinError for DirError {}
 
 /// Manage the current directory stack.
 #[derive(Default, Parser)]
@@ -47,13 +39,13 @@ pub(crate) struct DirsCommand {
     // TODO(dirs): implement +N and -N
 }
 
-impl builtins::Command for DirsCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(DirsCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for DirsCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.clear {
             context.shell.directory_stack_mut().clear();
         } else {
@@ -97,5 +89,23 @@ impl builtins::Command for DirsCommand {
         }
 
         Ok(ExecutionResult::success())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::{assert_eq, assert_matches};
+
+    #[test]
+    fn dir_errors_stay_dir_errors_in_the_shell_error() {
+        let error = brush_core::Error::from(DirError::DirStackEmpty);
+        assert_eq!(error.to_string(), "directory stack is empty");
+        assert_eq!(u8::from(brush_core::ExecutionExitCode::from(&error)), 1);
+        assert_matches!(
+            error.kind(),
+            brush_core::ErrorKind::BuiltinFailure(failure)
+                if matches!(failure.downcast_ref::<DirError>(), Some(DirError::DirStackEmpty))
+        );
     }
 }

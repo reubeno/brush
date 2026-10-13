@@ -10,13 +10,13 @@ pub(crate) struct BgCommand {
     job_specs: Vec<String>,
 }
 
-impl builtins::Command for BgCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(BgCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for BgCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut exit_code = ExecutionResult::success();
 
         if !self.job_specs.is_empty() {
@@ -29,7 +29,7 @@ impl builtins::Command for BgCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {}: no such job",
-                        context.command_name,
+                        context.command_name(),
                         job_spec
                     )?;
                     exit_code = ExecutionResult::general_error();
@@ -41,7 +41,11 @@ impl builtins::Command for BgCommand {
                 job.move_to_background()?;
                 warn_if_running(&context, running)?;
             } else {
-                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
+                writeln!(
+                    context.stderr(),
+                    "{}: no current job",
+                    context.command_name()
+                )?;
                 exit_code = ExecutionResult::general_error();
             }
         }
@@ -65,7 +69,7 @@ fn warn_if_running<SE: brush_core::ShellExtensions>(
         writeln!(
             context.stderr(),
             "{}: job {id} already in background",
-            context.command_name
+            context.command_name()
         )?;
     }
     Ok(())

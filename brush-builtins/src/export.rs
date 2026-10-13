@@ -5,8 +5,6 @@ use std::io::Write;
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{EnvironmentLookup, EnvironmentScope},
-    parser::ast,
-    variables,
 };
 
 /// Add or update exported shell variables.
@@ -27,24 +25,32 @@ pub(crate) struct ExportCommand {
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
+    // N.B. These are skipped by clap, but filled in by `parse_export_args`.
     #[clap(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for ExportCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
+fn parse_export_args(
+    invocation: builtins::Invocation<'_>,
+) -> Result<ExportCommand, builtins::UsageError> {
+    let (mut this, declarations) = crate::parse_declaration_args::<ExportCommand>(invocation)?;
+    this.declarations = declarations;
+    Ok(this)
 }
 
-impl builtins::Command for ExportCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(
+    ExportCommand,
+    help_from = ExportCommand,
+    parse = parse_export_args
+);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for ExportCommand {
+    const DECLARATIONS: builtins::Declarations = builtins::Declarations::Yes;
+
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.declarations.is_empty() {
             display_all_exported_vars(&context)?;
             return Ok(ExecutionResult::success());
@@ -95,33 +101,22 @@ impl ExportCommand {
                     }
                 }
             }
-            brush_core::CommandArg::Assignment(assignment) => {
-                let name = match &assignment.name {
-                    ast::AssignmentName::VariableName(name) => name,
-                    ast::AssignmentName::ArrayElementName(_, _) => {
-                        writeln!(context.stderr(), "not a valid variable name")?;
-                        return Ok(ExecutionExitCode::InvalidUsage.into());
-                    }
-                };
-
-                let value = match &assignment.value {
-                    ast::AssignmentValue::Scalar(s) => {
-                        variables::ShellValueLiteral::Scalar(s.flatten())
-                    }
-                    ast::AssignmentValue::Array(a) => {
-                        variables::ShellValueLiteral::Array(variables::ArrayLiteral(
-                            a.iter()
-                                .map(|(k, v)| (k.as_ref().map(|k| k.flatten()), v.flatten()))
-                                .collect(),
-                        ))
-                    }
+            brush_core::CommandArg::Declaration(declaration) => {
+                if declaration.index.is_some() {
+                    writeln!(context.stderr(), "not a valid variable name")?;
+                    return Ok(ExecutionExitCode::InvalidUsage.into());
+                }
+                let name = &declaration.name;
+                let Some(value) = declaration.value.clone() else {
+                    return self
+                        .process_decl(context, &brush_core::CommandArg::String(name.clone()));
                 };
 
                 // `export name+=value` appends to the existing value, exactly like a
                 // bare `name+=value`. update_or_add always replaces, so when the
                 // variable already exists honor the append here. A missing variable
                 // falls through: appending to nothing is a plain assignment.
-                if assignment.append
+                if declaration.append
                     && let Some((_, variable)) = context.shell.env_mut().get_mut(name)
                 {
                     variable.assign(value, true)?;

@@ -80,33 +80,19 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
     }
 }
 
-impl builtins::Command for GetOptsCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(GetOptsCommand, keep_double_dash = args);
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(command): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
-    }
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for GetOptsCommand {
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         // Validate the target variable name.
         if !env::valid_variable_name(&self.variable_name) {
             writeln!(
                 context.stderr(),
                 "{}: `{}': not a valid identifier",
-                context.command_name,
+                context.command_name(),
                 self.variable_name
             )?;
             return Ok(ExecutionResult::new(1));

@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use brush_core::ExecutionExitCode;
-use brush_core::builtins::{BoxFuture, ContentOptions, ContentType, Registration};
+use brush_core::builtins::{self, Help, Invocation, Registration, UsageError};
 use brush_core::commands::{self, CommandArg, ExecutionContext};
 use brush_core::extensions::ShellExtensions;
 
@@ -151,32 +151,35 @@ fn self_exe() -> Option<&'static PathBuf> {
         .as_ref()
 }
 
-/// Help/usage content provider for the shim builtin. brush calls this for
-/// `help <name>`, `type <name>`, etc.
-#[allow(
-    clippy::needless_pass_by_value,
-    clippy::unnecessary_wraps,
-    reason = "signature dictated by brush_core::builtins::CommandContentFunc"
-)]
-fn shim_content(
-    name: &str,
-    content_type: ContentType,
-    _options: &ContentOptions,
-) -> Result<String, brush_core::Error> {
-    match content_type {
-        ContentType::ShortDescription => Ok(format!("{name} - bundled command")),
-        ContentType::DetailedHelp => Ok(format!(
-            "{name} - bundled command (executes via `brush {DISPATCH_FLAG} {name}`)\n"
-        )),
-        // A bundled command never contributes its own short-usage or man page
-        // through this path; detailed help comes from the bundled utility
-        // itself (`brush <DISPATCH_FLAG> <name> --help` or equivalent).
-        ContentType::ShortUsage | ContentType::ManPage => Ok(String::new()),
+/// The builtin for every bundled command. The same value serves every bundled
+/// name; it runs the command it was invoked as (`context.command_name()`). Its
+/// arguments are not parsed: they all go to the bundled command, which
+/// documents itself (`brush <DISPATCH_FLAG> <name> --help` or equivalent).
+struct BundledShim;
+
+impl<SE: ShellExtensions> builtins::Builtin<SE> for BundledShim {
+    type Args = Vec<CommandArg>;
+
+    fn help(&self, name: &str) -> Help {
+        Help::new(name, "bundled command")
+            .with_details(format!("Executes via `brush {DISPATCH_FLAG} {name}`."))
+    }
+
+    fn parse(&self, invocation: Invocation<'_>) -> Result<Vec<CommandArg>, UsageError> {
+        Ok(invocation.into_args())
+    }
+
+    async fn execute(
+        &self,
+        context: ExecutionContext<'_, SE>,
+        args: Vec<CommandArg>,
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+        shim_execute(context, args).await
     }
 }
 
-/// Builtin execute function shared by all bundled commands. Looks up the
-/// invoked name from `context.command_name` and re-executes the running
+/// Runs a bundled command: looks up the invoked name from
+/// `context.command_name()` and re-executes the running
 /// brush binary as `brush <DISPATCH_FLAG> <name> <args>`.
 ///
 /// Reuses the same entry point the `command` builtin uses (see
@@ -212,66 +215,58 @@ fn shim_content(
 // `ExecutionSpawnResult::StartedProcess` directly (same shape as external
 // dispatch), or generalize the builtin API so a builtin can return a
 // spawn handle instead of a finished result.
-fn shim_execute<SE: ShellExtensions>(
+async fn shim_execute<SE: ShellExtensions>(
     context: ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<brush_core::ExecutionResult, brush_core::Error>> {
-    Box::pin(async move {
-        let exe_path = if let Some(p) = self_exe() {
-            p.to_string_lossy().into_owned()
-        } else {
-            let _ = writeln!(
-                context.stderr(),
-                "brush: cannot determine path to running executable"
-            );
-            return Ok(ExecutionExitCode::CannotExecute.into());
-        };
-
-        // Build the argv for the spawned brush. `SimpleCommand::args[0]` is
-        // dropped by the external-execution path (argv[0] of the spawned
-        // process comes from `cmd.argv0` below), so a placeholder suffices;
-        // args[1..] become the spawned process's argv[1..]. The caller's
-        // `args[0]` is the bundled name by builtin-dispatch convention — we
-        // replace it with an explicit `<name>` after `DISPATCH_FLAG` so the
-        // child's dispatcher sees it in a fixed slot.
-        let bundled_name = context.command_name.clone();
-        let mut child_args: Vec<CommandArg> = Vec::with_capacity(args.len() + 2);
-        child_args.push(CommandArg::String(String::new())); // args[0], dropped
-        child_args.push(CommandArg::String(DISPATCH_FLAG.into()));
-        child_args.push(CommandArg::String(bundled_name.clone()));
-        child_args.extend(args.into_iter().skip(1));
-
-        let mut cmd = commands::SimpleCommand::new(
-            commands::ShellForCommand::ParentShell(context.shell),
-            context.params,
-            exe_path,
-            child_args,
+) -> Result<brush_core::ExecutionResult, brush_core::Error> {
+    let exe_path = if let Some(p) = self_exe() {
+        p.to_string_lossy().into_owned()
+    } else {
+        let _ = writeln!(
+            context.stderr(),
+            "brush: cannot determine path to running executable"
         );
-        cmd.use_functions = false;
-        // Override the spawned process's argv[0] so tools that report errors
-        // via their own argv[0] (uutils' `uucore::util_name()` reads
-        // `std::env::args_os()[0]` into a LazyLock at first use) render as
-        // `<name>:` rather than `brush:`. Without this the child sees the
-        // brush exe path as argv[0] and misattributes errors.
-        cmd.argv0 = Some(bundled_name);
+        return Ok(ExecutionExitCode::CannotExecute.into());
+    };
 
-        let spawn_result = cmd.execute().await?;
-        let wait_result = spawn_result.wait().await?;
-        Ok(wait_result.into())
-    })
+    // Build the argv for the spawned brush. `SimpleCommand::args[0]` is
+    // dropped by the external-execution path (argv[0] of the spawned
+    // process comes from `cmd.argv0` below), so a placeholder suffices;
+    // args[1..] become the spawned process's argv[1..]. Builtins receive
+    // only the words after their own name, so we insert the bundled name
+    // explicitly after `DISPATCH_FLAG`, where the child's dispatcher
+    // expects it.
+    let bundled_name = context.command_name().to_owned();
+    let mut child_args: Vec<CommandArg> = Vec::with_capacity(args.len() + 2);
+    child_args.push(CommandArg::String(String::new())); // args[0], dropped
+    child_args.push(CommandArg::String(DISPATCH_FLAG.into()));
+    child_args.push(CommandArg::String(bundled_name.clone()));
+    child_args.extend(args);
+
+    let mut cmd = commands::SimpleCommand::new(
+        commands::ShellForCommand::ParentShell(context.shell),
+        context.params,
+        exe_path,
+        child_args,
+    );
+    cmd.use_functions = false;
+    // Override the spawned process's argv[0] so tools that report errors
+    // via their own argv[0] (uutils' `uucore::util_name()` reads
+    // `std::env::args_os()[0]` into a LazyLock at first use) render as
+    // `<name>:` rather than `brush:`. Without this the child sees the
+    // brush exe path as argv[0] and misattributes errors.
+    cmd.argv0 = Some(bundled_name);
+
+    let spawn_result = cmd.execute().await?;
+    let wait_result = spawn_result.wait().await?;
+    Ok(wait_result.into())
 }
 
 /// Constructs a [`Registration`] for the bundled-shim builtin. The same
 /// registration value can be reused for every bundled name; per-name
-/// dispatch happens via `context.command_name` at execution time.
+/// dispatch happens via `context.command_name()` at execution time.
 fn shim_registration<SE: ShellExtensions>() -> Registration<SE> {
-    Registration {
-        execute_func: shim_execute::<SE>,
-        content_func: shim_content,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: false,
-    }
+    Registration::new(BundledShim)
 }
 
 /// Registers a shim builtin for every name in the installed bundled-command

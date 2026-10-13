@@ -9,16 +9,16 @@ pub(crate) struct UnimplementedCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for UnimplementedCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(UnimplementedCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for UnimplementedCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         tracing::warn!(target: trace_categories::UNIMPLEMENTED,
             "unimplemented built-in: {} {}",
-            context.command_name,
+            context.command_name(),
             self.args.join(" ")
         );
         Ok(ExecutionExitCode::Unimplemented.into())

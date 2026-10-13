@@ -30,13 +30,13 @@ pub(crate) struct CdCommand {
     target_dir: Option<PathBuf>,
 }
 
-impl builtins::Command for CdCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(CdCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for CdCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         // TODO(cd): implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");

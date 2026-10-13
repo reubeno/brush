@@ -9,8 +9,8 @@ use std::{
 use brush_parser::ast;
 
 use crate::{
-    ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
-    Shell, ShellFd, builtins, commands, env, error, escape,
+    ErrorKind, ExecutionControlFlow, ExecutionParameters, ExecutionResult, Shell, ShellFd,
+    builtins, commands, env, error, escape,
     extensions::{self, ProcessLauncher as _, ShellExtensions},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
@@ -29,28 +29,89 @@ pub enum CommandWaitResult {
 }
 
 /// Represents the context for executing a command.
+///
+/// Its public fields are part of the contract on purpose: a builtin often
+/// borrows the shell and the parameters separately
+/// (`context.shell.f(&context.params)`). Only the shell creates one, so it can
+/// carry more later without breaking anyone.
 pub struct ExecutionContext<'a, SE: ShellExtensions = extensions::DefaultShellExtensions> {
     /// The shell in which the command is being executed.
     pub shell: &'a mut Shell<SE>,
-    /// The name of the command being executed.
-    pub command_name: String,
+    /// The name of the command being executed; see
+    /// [`ExecutionContext::command_name`].
+    command_name: String,
     /// The parameters for the execution.
     pub params: ExecutionParameters,
 }
 
+impl<'a, SE: ShellExtensions> ExecutionContext<'a, SE> {
+    pub(crate) const fn new(
+        shell: &'a mut Shell<SE>,
+        command_name: String,
+        params: ExecutionParameters,
+    ) -> Self {
+        Self {
+            shell,
+            command_name,
+            params,
+        }
+    }
+}
+
 impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
-    /// Returns the standard input file; usable with `write!` et al.
-    pub fn stdin(&self) -> impl std::io::Read + 'static {
+    /// Returns the name the command was invoked under, which the shell
+    /// attributes its failures to (`name: message`).
+    pub fn command_name(&self) -> &str {
+        &self.command_name
+    }
+
+    /// Returns how help printed to the standard output is rendered: for a
+    /// terminal of the returned style, or plain (`None`). It's a terminal style
+    /// when the standard output is a terminal, or color is forced on for it.
+    /// The width is the shell's `COLUMNS`, or 80. See
+    /// [`builtins::Registration::help`].
+    ///
+    /// The shell's variables decide whether it's painted with color, by the
+    /// conventions most programs follow:
+    ///
+    /// - a non-empty `NO_COLOR` means no color, whatever else is set;
+    /// - `FORCE_COLOR=0` or `false` means none too; any other `FORCE_COLOR`,
+    ///   or a `CLICOLOR_FORCE` other than `0`, means color, even for output
+    ///   that isn't a terminal;
+    /// - otherwise, color for a terminal, unless `CLICOLOR=0`, or `TERM` is
+    ///   `dumb` or unset.
+    pub fn help_style(&self) -> Option<builtins::TerminalStyle> {
+        let is_terminal = self
+            .try_fd(openfiles::OpenFiles::STDOUT_FD)
+            .is_some_and(|file| file.is_terminal());
+        let color = builtins::wants_color(is_terminal, |name| {
+            self.shell.env_str(name).map(Cow::into_owned)
+        });
+        (is_terminal || color).then(|| {
+            let columns = self
+                .shell
+                .env_str("COLUMNS")
+                .and_then(|columns| columns.trim().parse().ok())
+                .filter(|&columns| columns > 0)
+                .unwrap_or(80);
+            builtins::TerminalStyle::for_columns(columns, color)
+        })
+    }
+
+    /// Returns the standard input file. Reading from it blocks the thread
+    /// it runs on, and can't be cancelled (see
+    /// [Cancellation](builtins::Builtin#cancellation)).
+    pub fn stdin(&self) -> impl std::io::Read + Send + 'static {
         self.params.stdin(self.shell)
     }
 
     /// Returns the standard output file; usable with `write!` et al.
-    pub fn stdout(&self) -> impl std::io::Write + 'static {
+    pub fn stdout(&self) -> impl std::io::Write + Send + 'static {
         self.params.stdout(self.shell)
     }
 
     /// Returns the standard error file; usable with `write!` et al.
-    pub fn stderr(&self) -> impl std::io::Write + 'static {
+    pub fn stderr(&self) -> impl std::io::Write + Send + 'static {
         self.params.stderr(self.shell)
     }
 
@@ -68,6 +129,47 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
     }
+
+    /// Runs the builtin named by `argv[0]`, with the rest of `argv` as its
+    /// arguments, as the `builtin` builtin does. It runs as any builtin does,
+    /// except that a special builtin loses its special properties (as in
+    /// bash). An empty `argv` runs nothing and succeeds.
+    ///
+    /// The result carries the builtin's control flow (a `return`, say): return
+    /// it as the caller's own result to pass that on, as the `builtin` builtin
+    /// does.
+    ///
+    /// # Arguments
+    ///
+    /// * `argv` - The builtin's name, then its arguments; declarations keep
+    ///   their form.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there is no enabled builtin named `argv[0]`, or the
+    /// error the builtin failed with.
+    pub async fn run_builtin(
+        &mut self,
+        argv: impl IntoIterator<Item = CommandArg>,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut argv = argv.into_iter();
+        let Some(name) = argv.next().map(CommandArg::into_word) else {
+            return Ok(ExecutionResult::success());
+        };
+
+        let Some(registration) = self
+            .shell
+            .builtins()
+            .get(&name)
+            .filter(|r| r.is_enabled())
+            .cloned()
+        else {
+            return Err(ErrorKind::BuiltinNotFound(name).into());
+        };
+
+        let target = ExecutionContext::new(&mut *self.shell, name, self.params.clone());
+        builtins::invoke(&registration, target, argv.collect(), false).await
+    }
 }
 
 /// An argument to a command.
@@ -75,16 +177,16 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
 pub enum CommandArg {
     /// A simple string argument.
     String(String),
-    /// An assignment/declaration; typically treated as a string, but will
-    /// be specially handled by a limited set of built-in commands.
-    Assignment(ast::Assignment),
+    /// An assignment-shaped argument given to a declaration utility, expanded as
+    /// an assignment; see [`builtins::Declarations`].
+    Declaration(builtins::Declaration),
 }
 
 impl Display for CommandArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::String(s) => f.write_str(s),
-            Self::Assignment(a) => write!(f, "{a}"),
+            Self::Declaration(d) => write!(f, "{d}"),
         }
     }
 }
@@ -101,25 +203,42 @@ impl From<&String> for CommandArg {
     }
 }
 
+impl From<&str> for CommandArg {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_owned())
+    }
+}
+
 impl CommandArg {
     const fn to_string_len_hint(&self) -> usize {
         match self {
             Self::String(s) => s.len(),
-            Self::Assignment(_) => 0,
+            Self::Declaration(_) => 0,
+        }
+    }
+
+    /// Returns the argument as a word. A declaration renders as `name=value`.
+    pub fn into_word(self) -> String {
+        match self {
+            Self::String(s) => s,
+            Self::Declaration(d) => d.to_string(),
         }
     }
 
     pub(crate) fn quote_for_tracing(&self) -> Cow<'_, str> {
         match self {
             Self::String(s) => escape::quote_if_needed(s, escape::QuoteMode::SingleQuote),
-            Self::Assignment(a) => {
-                let mut s = a.name.to_string();
-                let op = if a.append { "+=" } else { "=" };
-                s.push_str(op);
-                s.push_str(&escape::quote_if_needed(
-                    a.value.to_string().as_str(),
-                    escape::QuoteMode::SingleQuote,
-                ));
+            Self::Declaration(d) => {
+                let mut s = d.name.clone();
+                if let Some(index) = &d.index {
+                    s.push('[');
+                    s.push_str(index);
+                    s.push(']');
+                }
+                if let Some(value) = &d.value {
+                    s.push_str(if d.append { "+=" } else { "=" });
+                    s.push_str(&value.to_string());
+                }
                 s.into()
             }
         }
@@ -357,7 +476,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         if self.shell.options().posix_mode
             && builtin
                 .as_ref()
-                .is_some_and(|r| !r.disabled && r.special_builtin)
+                .is_some_and(|r| r.is_enabled() && builtins::is_special(&self.command_name))
         {
             #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
             let builtin = builtin.unwrap();
@@ -377,7 +496,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // If we haven't yet resolved the command name and found a builtin that's not disabled,
         // then invoke it.
         if let Some(builtin) = builtin {
-            if !builtin.disabled {
+            if builtin.is_enabled() {
                 return self.execute_via_builtin(builtin).await;
             }
         }
@@ -444,11 +563,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Builtins may block (e.g., reading input), so keep them from holding up the
         // rest of the pipeline.
         let task = sys::tasks::spawn_blocking(async move {
-            let cmd_context = ExecutionContext {
-                shell: &mut shell,
-                command_name,
-                params,
-            };
+            let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let result = execute_builtin_command(&builtin, cmd_context, args).await;
 
@@ -468,11 +583,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         let result = execute_builtin_command(&builtin, cmd_context, self.args).await;
 
@@ -530,11 +641,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
         let task = sys::tasks::spawn_blocking(async move {
-            let cmd_context = ExecutionContext {
-                shell: &mut shell,
-                command_name,
-                params,
-            };
+            let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let spawn_result =
                 invoke_shell_function(func_registration, cmd_context, &args[1..]).await;
@@ -563,11 +670,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         // Strip the function name off args.
         let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await;
@@ -585,11 +688,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         let result = execute_external_command(
             cmd_context,
@@ -698,24 +797,15 @@ fn spawn_error(
 async fn execute_builtin_command<SE: extensions::ShellExtensions>(
     builtin: &builtins::Registration<SE>,
     context: ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
+    mut args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
-    // In POSIX mode, special builtins that return errors are to be treated as fatal.
-    let mark_errors_fatal = builtin.special_builtin && context.shell.options().posix_mode;
-
-    match (builtin.execute_func)(context, args).await {
-        Ok(result) => Ok(result),
-        Err(e) => {
-            // Broken pipe errors should silently return the appropriate exit code
-            if let Some(io_err) = e.as_io_error() {
-                if io_err.kind() == std::io::ErrorKind::BrokenPipe {
-                    return Ok(ExecutionExitCode::from(io_err).into());
-                }
-            }
-
-            Err(if mark_errors_fatal { e.into_fatal() } else { e })
-        }
+    // The invoked name arrives as args[0] but is already carried by
+    // `context.command_name`; builtins receive only what followed it.
+    if !args.is_empty() {
+        args.remove(0);
     }
+
+    builtins::invoke(builtin, context, args, true).await
 }
 
 pub(crate) async fn invoke_shell_function(

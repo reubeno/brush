@@ -15,13 +15,13 @@ pub(crate) struct PushdCommand {
     // TODO(pushd): implement +N and -N
 }
 
-impl builtins::Command for PushdCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(PushdCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for PushdCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.no_directory_change {
             context
                 .shell
@@ -38,7 +38,7 @@ impl builtins::Command for PushdCommand {
 
         // Display dirs.
         let dirs_cmd = crate::dirs::DirsCommand::default();
-        dirs_cmd.execute(context).await?;
+        builtins::StatelessBuiltin::execute(dirs_cmd, context).await?;
 
         Ok(ExecutionResult::success())
     }

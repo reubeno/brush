@@ -428,7 +428,29 @@ cases:
 
 
   - name: "command reports a forwarded builtin's errors as the builtin's own"
-    known_failure: true # TODO(command): a forwarded builtin's errors are attributed to command too
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       { command export -Z; } 2>&1 | head -n 1 | strip
+
+  - name: "command drops a special builtin's special properties for the errors it returns"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      command . /nonexistent
+      echo "after .: $?"
+      command source /nonexistent
+      echo "after source: $?"
+      command trap "echo" BOGUS
+      echo "after trap: $?"
+
+  - name: "command rejects an option it doesn't have"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      { command -x echo hi; } 2>&1 | head -n 1 | strip
+      command -x echo hi 2>/dev/null; echo "status: $?"
+
+  - name: "command and builtin leave a forwarded builtin's errors attributed to it"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      { command cd /nonexistent; } 2>&1 | strip | cut -d: -f1
+      { builtin cd /nonexistent; } 2>&1 | strip | cut -d: -f1

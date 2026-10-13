@@ -1,0 +1,7 @@
+error: impl_parse_args!: unknown option `trailing`. Accepted forms: `impl_parse_args!(Type)`, `impl_parse_args!(Type, keep_double_dash = field)`, `impl_parse_args!(Type, help_from = HelpType, parse = parser)`
+ --> tests/ui/impl_parse_args_unknown_option.rs:6:1
+  |
+6 | brush_builtin_clap::impl_parse_args!(Command, trailing = args);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `brush_builtin_clap::impl_parse_args` (in Nightly builds, run with -Z macro-backtrace for more info)

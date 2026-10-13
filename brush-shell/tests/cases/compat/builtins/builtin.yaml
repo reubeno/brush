@@ -99,13 +99,11 @@ cases:
       echo
 
   - name: "builtin --help prints help on stdout"
-    known_failure: true # TODO(builtin): --help is looked up as a builtin's name
     stdin: |
       builtin --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(builtin --help 2>/dev/null) ]] && echo "help on stdout"
 
   - name: "builtin rejects options"
-    known_failure: true # TODO(builtin): options are looked up as builtin names
     ignore_stderr: true
     stdin: |
       builtin -z true; echo "rc=$?"
@@ -117,3 +115,14 @@ cases:
       set -o posix
       builtin export --bogus
       echo "still running: $?"
+
+  - name: "builtin reports a name that isn't a builtin as bash does"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      { builtin not-a-builtin; } 2>&1 | strip
+      builtin not-a-builtin 2>/dev/null; echo "status: $?"
+
+  - name: "builtin reads -- as the end of its options"
+    stdin: |
+      builtin -- echo hi
+      builtin -- 2>/dev/null; echo "status: $?"

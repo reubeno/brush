@@ -9,13 +9,13 @@ pub(crate) struct CallerCommand {
     expr: Option<usize>,
 }
 
-impl builtins::Command for CallerCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(CallerCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for CallerCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         let stack = context.shell.call_stack();
 
         // See how far back we need to look. Frame N represents the Nth caller

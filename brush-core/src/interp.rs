@@ -6,6 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
+use crate::builtins;
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
@@ -1118,10 +1119,8 @@ impl Execute for ast::FunctionDefinition {
 
         // In POSIX mode, function names can't shadow special builtins.
         if shell.options().posix_mode
-            && shell
-                .builtins()
-                .get(&func_name)
-                .is_some_and(|r| r.special_builtin)
+            && shell.builtins().contains_key(&func_name)
+            && builtins::is_special(&func_name)
         {
             return Err(
                 error::Error::from(error::ErrorKind::FunctionNameShadowsSpecialBuiltin {
@@ -1208,7 +1207,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                             // assignments (but which are processed by the builtin).
                             let expanded =
                                 expand_assignment(&mut context.shell, &params, assignment).await?;
-                            args.push(CommandArg::Assignment(expanded));
+                            args.push(CommandArg::Declaration(into_declaration(expanded)));
                         } else {
                             // This *looks* like an assignment, but it's really a string we should
                             // fully treat as a regular looking
@@ -1263,7 +1262,10 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                                     .shell
                                     .builtins()
                                     .get(first_arg.as_str())
-                                    .is_some_and(|r| !r.disabled && r.declaration_builtin)
+                                    .is_some_and(|r| {
+                                        r.is_enabled()
+                                            && r.declarations() == builtins::Declarations::Yes
+                                    })
                             {
                                 command_takes_assignments = true;
                             }
@@ -1439,6 +1441,28 @@ async fn expand_words(
         fields.extend(expansion::full_expand_and_split_word(shell, params, word).await?);
     }
     Ok(fields)
+}
+
+/// Converts an expanded assignment into the declaration a builtin receives.
+fn into_declaration(assignment: ast::Assignment) -> builtins::Declaration {
+    let (name, index) = match assignment.name {
+        ast::AssignmentName::VariableName(name) => (name, None),
+        ast::AssignmentName::ArrayElementName(name, index) => (name, Some(index)),
+    };
+    let value = match assignment.value {
+        ast::AssignmentValue::Scalar(word) => ShellValueLiteral::Scalar(word.value),
+        ast::AssignmentValue::Array(elements) => ShellValueLiteral::Array(ArrayLiteral(
+            elements
+                .into_iter()
+                .map(|(key, value)| (key.map(|key| key.value), value.value))
+                .collect(),
+        )),
+    };
+    let mut declaration = builtins::Declaration::new(name);
+    declaration.index = index;
+    declaration.append = assignment.append;
+    declaration.value = Some(value);
+    declaration
 }
 
 async fn expand_assignment(

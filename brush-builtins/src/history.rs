@@ -53,13 +53,13 @@ struct HistoryConfig {
     time_format: Option<String>,
 }
 
-impl builtins::Command for HistoryCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(HistoryCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for HistoryCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         // Retrieve the shell's history config while we still can.
         let config = HistoryConfig {
             default_history_file_path: context.shell.history_file_path(),

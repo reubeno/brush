@@ -1,7 +1,7 @@
 //! Standard builtins.
 
-// `brush_core::builtins::Command::execute` is async by contract: the trait declares a desugared
-// `-> impl Future<...> + Send` so that `brush_core::builtins::exec_builtin` can box and dispatch
+// `brush_core::builtins::StatelessBuiltin::execute` is async by contract: the trait declares a desugared
+// `-> impl Future<...> + Send` so that the shell can box and dispatch
 // every builtin uniformly. Most builtins in this crate do purely synchronous work, so their
 // `execute` bodies contain no `.await` -- that is the trait contract being honored, not a defect.
 #![allow(
@@ -137,6 +137,40 @@ fn write_alias_definition(
         "alias {name}={}",
         brush_core::escape::single_quote(value)
     )
+}
+
+/// Parses a declaration builtin's options with clap. Every string argument that
+/// begins with `-` or `+` (and is longer than that) is an option, wherever it
+/// appears; the rest are the operands, returned as they arrived, so
+/// declarations keep their form.
+#[cfg(any(feature = "builtin.declare", feature = "builtin.export"))]
+fn parse_declaration_args<T: clap::Parser>(
+    invocation: brush_core::builtins::Invocation<'_>,
+) -> Result<(T, Vec<brush_core::CommandArg>), brush_core::builtins::UsageError> {
+    let mut options = vec![invocation.name().to_owned()];
+    let mut operands = vec![];
+    let mut options_ended = false;
+    for arg in invocation.into_args() {
+        match arg {
+            brush_core::CommandArg::String(s) if s.len() > 1 && s.starts_with(['-', '+']) => {
+                // clap has no notion of '+'-prefixed options, so each `+x` (up to a
+                // `--`) is renamed to the `--+x` long option it's declared as.
+                match s.strip_prefix('+') {
+                    Some(plus_options) if !options_ended => {
+                        options.extend(plus_options.chars().map(|c| format!("--+{c}")));
+                    }
+                    _ => {
+                        options_ended |= s == "--";
+                        options.push(s);
+                    }
+                }
+            }
+            other => operands.push(other),
+        }
+    }
+
+    let parsed = T::try_parse_from(options).map_err(|e| brush_builtin_clap::to_usage_error(&e))?;
+    Ok((parsed, operands))
 }
 
 /// Macro to define a struct that represents a shell built-in flag argument that can be

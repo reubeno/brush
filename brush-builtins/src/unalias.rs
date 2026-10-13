@@ -14,13 +14,13 @@ pub(crate) struct UnaliasCommand {
     aliases: Vec<String>,
 }
 
-impl builtins::Command for UnaliasCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(UnaliasCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for UnaliasCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut exit_code = ExecutionResult::success();
 
         if self.remove_all {
@@ -31,7 +31,7 @@ impl builtins::Command for UnaliasCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {}: not found",
-                        context.command_name,
+                        context.command_name(),
                         alias
                     )?;
                     exit_code = ExecutionResult::general_error();

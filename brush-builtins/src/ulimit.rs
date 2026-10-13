@@ -433,13 +433,13 @@ pub(crate) struct ULimitCommand {
     limit: Option<LimitValue>,
 }
 
-impl builtins::Command for ULimitCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(ULimitCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for ULimitCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let exit_code = ExecutionResult::success();
         let mut resources_to_set = Vec::new();
         let mut resources_to_get = Vec::new();

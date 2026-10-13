@@ -1,577 +1,597 @@
-//! Facilities for implementing and managing builtins
+//! The contract between the shell and its builtins.
+//!
+//! A builtin is a value implementing [`Builtin`]. It describes itself (its
+//! [`Builtin::help`] and how it relates to [`Declarations`]), turns an
+//! invocation's arguments into a typed value ([`Builtin::parse`]), and runs
+//! ([`Builtin::execute`]). Because the value *is* the builtin, it can hold
+//! configuration or state, and one type can be registered under several names,
+//! each configured differently.
+//!
+//! Most builtins need no state of their own: their arguments type is the whole
+//! builtin. They implement [`StatelessBuiltin`], whose parsing half,
+//! [`ParseArgs`], an engine adapter can implement from a derive, and register
+//! with [`Registration::stateless`].
+//!
+//! The shell owns everything around a builtin: expanding its arguments,
+//! rendering its help and its usage errors, and printing and attributing the
+//! failures it returns. Builtins run other builtins through the shell too
+//! ([`crate::ExecutionContext::run_builtin`]).
+//!
+//! # Failure
+//!
+//! * For a problem with the arguments, return a [`UsageError`] from `parse`.
+//!   The shell prints it, attributed to the builtin and with its usage line if
+//!   the error asks for one, and the command fails with the error's exit code.
+//! * For an ordinary failure, in the builtin's own words, return a [`Failure`]
+//!   from `execute`. It's made from a message, or from an error of the
+//!   builtin's own type, which it keeps for whatever reports it.
+//! * For anything else, return the error from `execute`, with `?`. The shell
+//!   prints it, attributed to the builtin (`name: message`), and the command
+//!   fails with the error's exit code. A broken pipe isn't printed. For a
+//!   special builtin ([`is_special`]) in POSIX mode, a returned error ends a
+//!   non-interactive shell.
+//!
+//! A builtin with an error type of its own converts it into a
+//! [`crate::Error`], so that `?` works in `execute`: a shell error it wraps
+//! passes through as it is, and the rest become [`Failure`]s, each with the
+//! exit code it fails with. [`Failure`]'s docs show one.
 
-use clap::builder::styling;
-pub use futures::future::BoxFuture;
-use std::io::Write;
+use futures::future::BoxFuture;
+use std::io::Write as _;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
-use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
+mod args;
+mod failure;
+mod help;
 
-/// Type of a function implementing a built-in command.
-///
-/// # Arguments
-///
-/// * The context in which the command is being executed.
-/// * The arguments to the command.
-#[allow(type_alias_bounds)]
-pub type CommandExecuteFunc<SE: extensions::ShellExtensions> =
-    fn(
-        commands::ExecutionContext<'_, SE>,
-        Vec<commands::CommandArg>,
-    ) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>>;
+use crate::{CommandArg, commands, error, extensions, results, variables};
+pub use args::{Invocation, ParseArgs, UsageError};
+pub use failure::Failure;
+pub(crate) use help::wants_color;
+pub use help::{Help, HelpForm, TerminalStyle};
 
-/// Type of a function to retrieve help content for a built-in command.
-///
-/// # Arguments
-///
-/// * `name` - The name of the command.
-/// * `content_type` - The type of content to retrieve.
-/// * `options` - Additional options for content retrieval.
-pub type CommandContentFunc =
-    fn(&str, ContentType, &ContentOptions) -> Result<String, error::Error>;
+/// A declaration operand (`name`, `name=value`, `name[index]+=value`, or
+/// `name=(...)`), as a declaration builtin receives one in a
+/// [`CommandArg::Declaration`].
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct Declaration {
+    /// The variable's name.
+    pub name: String,
+    /// The array subscript, for `name[index]=value`, as written (expanded if
+    /// the shell expanded the declaration). It isn't evaluated or validated;
+    /// the shell's assignment code interprets it when assigning.
+    pub index: Option<String>,
+    /// Whether the value is appended (`+=`).
+    pub append: bool,
+    /// The value, already expanded, if one was given.
+    pub value: Option<variables::ShellValueLiteral>,
+}
 
-/// Trait implemented by built-in shell commands.
-pub trait Command: clap::Parser {
-    /// The error type returned by the command.
-    type Error: BuiltinError + 'static;
-
-    /// Instantiates the built-in command with the given arguments.
+impl Declaration {
+    /// Returns a declaration of `name` with no value.
     ///
     /// # Arguments
     ///
-    /// * `args` - The arguments to the command.
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        if !Self::takes_plus_options() {
-            Self::try_parse_from(args)
-        } else {
-            let args = args.into_iter();
-
-            let (lower, _) = args.size_hint();
-
-            // N.B. clap doesn't support named options like '+x'. To work around this, we
-            // establish a pattern of renaming them. Arguments after `--` aren't options, so
-            // they're left alone (e.g. a command name starting with '+').
-            let mut updated_args = Vec::with_capacity(lower);
-            let mut options_ended = false;
-            for arg in args {
-                if options_ended {
-                    updated_args.push(arg);
-                } else if let Some(plus_options) = arg.strip_prefix("+") {
-                    updated_args.extend(plus_options.chars().map(|c| format!("--+{c}")));
-                } else {
-                    options_ended = arg == "--";
-                    updated_args.push(arg);
-                }
-            }
-
-            Self::try_parse_from(updated_args)
+    /// * `name` - The variable's name.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            index: None,
+            append: false,
+            value: None,
         }
     }
+}
 
-    /// Returns whether or not the command takes options with a leading '+' or '-' character.
-    fn takes_plus_options() -> bool {
-        false
+/// Renders the declaration as the word it came from (`name[index]+=value`),
+/// with the value as expanded, unquoted.
+impl std::fmt::Display for Declaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name)?;
+        if let Some(index) = &self.index {
+            write!(f, "[{index}]")?;
+        }
+        let Some(value) = &self.value else {
+            return Ok(());
+        };
+        f.write_str(if self.append { "+=" } else { "=" })?;
+        match value {
+            variables::ShellValueLiteral::Scalar(value) => f.write_str(value),
+            variables::ShellValueLiteral::Array(elements) => {
+                f.write_str("(")?;
+                for (i, (key, value)) in elements.0.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(" ")?;
+                    }
+                    if let Some(key) = key {
+                        write!(f, "[{key}]=")?;
+                    }
+                    f.write_str(value)?;
+                }
+                f.write_str(")")
+            }
+        }
+    }
+}
+
+/// How a builtin relates to declarations.
+///
+/// The shell reads this *before* expanding a command's arguments, because it
+/// changes how assignment-shaped words expand: for a declaration utility, a word
+/// like `x=$v` expands as an assignment (no field splitting or globbing) and
+/// arrives as [`CommandArg::Declaration`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Declarations {
+    /// Assignment-shaped words are ordinary words.
+    #[default]
+    No,
+    /// A declaration utility (`declare`, `export`, `local`, `readonly`,
+    /// `typeset`).
+    Yes,
+}
+
+/// A builtin.
+///
+/// The implementing value is the builtin, so it can hold configuration or
+/// state; [`Builtin::Args`] is what one invocation's arguments parse to.
+/// Builtins with no state of their own (they may still change the shell's)
+/// usually implement [`StatelessBuiltin`] instead.
+///
+/// # Shells
+///
+/// A builtin is implemented for the shells it runs in, by their extensions
+/// type (`SE`). One meant to run in any shell implements it for every `SE`
+/// (`impl<SE: ShellExtensions> Builtin<SE> for Tally`), as brush's own builtins
+/// do; an embedder's builtin can instead implement it for its own shell's type
+/// alone (`impl Builtin<MyExtensions> for Tally`), to rely on that type.
+///
+/// # State
+///
+/// State an embedder's builtin needs belongs in the builtin value.
+///
+/// A registration shares its value with every copy of the shell, including
+/// subshells (`( ... )`, a pipeline stage, `$( ... )`). So, unlike the shell's
+/// own state, a change a builtin makes to its own state (behind interior
+/// mutability) in a subshell is seen by the shell that started it. Keep state
+/// that should follow subshell rules in the shell, in a variable say.
+///
+/// # Cancellation
+///
+/// The future `execute` returns may be dropped before it completes, at any
+/// `.await`: by the shell, or by an embedder cancelling the command that's
+/// running it. Leave the builtin's own state consistent at each `.await`.
+/// Changes it has already made to the shell (to variables, say) stay made.
+/// Dropping the future doesn't stop blocking work it started (a synchronous
+/// read, or a task given to `spawn_blocking`), so a builtin that may wait a
+/// long time should wait on something that is safe to cancel.
+pub trait Builtin<SE: extensions::ShellExtensions>: Send + Sync + 'static {
+    /// What one invocation's arguments parse to.
+    type Args: Send;
+
+    /// Returns the builtin's help, as invoked under `name`; see
+    /// [`ParseArgs::help`].
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin was invoked under.
+    fn help(&self, name: &str) -> Help;
+
+    /// Returns the builtin's help rendered for a terminal of `style`, or `None`
+    /// for the shell to print [`help`](Self::help) as it is; see
+    /// [`ParseArgs::terminal_help`]. By default, `None`.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin was invoked under.
+    /// * `style` - The terminal's width and color depth.
+    fn terminal_help(&self, name: &str, style: &TerminalStyle) -> Option<Help> {
+        let _ = (name, style);
+        None
     }
 
-    /// Executes the built-in command in the provided context.
+    /// Returns how the builtin relates to declarations; see [`Declarations`].
+    fn declarations(&self) -> Declarations {
+        Declarations::No
+    }
+
+    /// Parses an invocation's arguments. Sees only the words, not the shell's
+    /// state; see [`Invocation`].
+    ///
+    /// # Arguments
+    ///
+    /// * `invocation` - The invocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the arguments are invalid, or if they ask for help;
+    /// the shell reports it (see [`UsageError`]).
+    fn parse(&self, invocation: Invocation<'_>) -> Result<Self::Args, UsageError>;
+
+    /// Runs one invocation.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The context in which the builtin is running.
+    /// * `args` - The parsed arguments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a failure that stops the builtin; the shell
+    /// reports it. See [Failure](crate::builtins#failure).
+    fn execute(
+        &self,
+        context: commands::ExecutionContext<'_, SE>,
+        args: Self::Args,
+    ) -> impl Future<Output = Result<results::ExecutionResult, error::Error>> + Send;
+}
+
+/// A builtin with no state of its own: its arguments type is the whole
+/// builtin.
+///
+/// Each invocation is parsed (by its [`ParseArgs`] implementation) into a
+/// value, which is then executed, and consumed. It may still change the
+/// shell's state, as `cd` does. Register one with
+/// [`Registration::stateless`]; it then runs as a [`Builtin`]. A builtin with
+/// state or configuration of its own implements [`Builtin`] instead. Like
+/// [`Builtin`], it's implemented for the shells it runs in (see
+/// [Shells](Builtin#shells)): usually every one, as
+/// `impl<SE: ShellExtensions> StatelessBuiltin<SE> for Cd`.
+pub trait StatelessBuiltin<SE: extensions::ShellExtensions>: ParseArgs + 'static {
+    /// How the builtin relates to declarations; see [`Declarations`]. A
+    /// declaration utility's parser should keep its operands as they arrive,
+    /// since a declaration flattened to a word loses an array value's elements.
+    const DECLARATIONS: Declarations = Declarations::No;
+
+    /// Executes the built-in command in the provided context, consuming its
+    /// parsed arguments. The shell has already reported any problem
+    /// [`ParseArgs::parse`] found.
     ///
     /// # Arguments
     ///
     /// * `context` - The context in which the command is being executed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a failure that stops the builtin; the shell
+    /// reports it. See [Failure](crate::builtins#failure).
     // NOTE: we use desugared async here because we need a Send marker
-    fn execute<SE: extensions::ShellExtensions>(
+    fn execute(
+        self,
+        context: commands::ExecutionContext<'_, SE>,
+    ) -> impl Future<Output = Result<results::ExecutionResult, error::Error>> + Send;
+}
+
+/// The [`Builtin`] for a [`StatelessBuiltin`].
+struct Typed<C>(PhantomData<fn() -> C>);
+
+impl<SE: extensions::ShellExtensions, C: StatelessBuiltin<SE>> Builtin<SE> for Typed<C> {
+    type Args = C;
+
+    fn help(&self, name: &str) -> Help {
+        C::help(name)
+    }
+
+    fn terminal_help(&self, name: &str, style: &TerminalStyle) -> Option<Help> {
+        C::terminal_help(name, style)
+    }
+
+    fn declarations(&self) -> Declarations {
+        C::DECLARATIONS
+    }
+
+    fn parse(&self, invocation: Invocation<'_>) -> Result<C, UsageError> {
+        C::parse(invocation)
+    }
+
+    async fn execute(
         &self,
         context: commands::ExecutionContext<'_, SE>,
-    ) -> impl std::future::Future<Output = Result<results::ExecutionResult, Self::Error>>
-    + std::marker::Send;
-
-    /// Returns the textual help content associated with the command.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the command.
-    /// * `content_type` - The type of content to retrieve.
-    /// * `options` - Additional options for content retrieval.
-    fn get_content(
-        name: &str,
-        content_type: ContentType,
-        options: &ContentOptions,
-    ) -> Result<String, error::Error> {
-        let mut clap_command = Self::command()
-            .styles(brush_help_styles())
-            .next_line_help(false);
-        clap_command.set_bin_name(name);
-
-        let s = match content_type {
-            ContentType::DetailedHelp => {
-                let rendered = clap_command.render_help();
-                if options.colorized {
-                    rendered.ansi().to_string()
-                } else {
-                    rendered.to_string()
-                }
-            }
-            ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
-            ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
-            ContentType::ManPage => get_builtin_man_page(name, &clap_command)?,
-        };
-
-        Ok(s)
+        command: C,
+    ) -> Result<results::ExecutionResult, error::Error> {
+        command.execute(context).await
     }
 }
 
-/// Trait implemented by built-in shell commands that take specially handled declarations
-/// as arguments.
-pub trait DeclarationCommand: Command {
-    /// Stores the declarations within the command instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `declarations` - The declarations to store.
-    fn set_declarations(&mut self, declarations: Vec<commands::CommandArg>);
+/// The object-safe form of [`Builtin`] that a [`Registration`] holds.
+trait DynBuiltin<SE: extensions::ShellExtensions>: Send + Sync {
+    fn help(&self, name: &str) -> Help;
+
+    fn terminal_help(&self, name: &str, style: &TerminalStyle) -> Option<Help>;
+
+    fn declarations(&self) -> Declarations;
+
+    /// Parses and runs one invocation. Reports a problem with the arguments
+    /// itself; attributes an error the builtin returns to it.
+    fn invoke<'a>(
+        &'a self,
+        context: commands::ExecutionContext<'a, SE>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'a, Result<results::ExecutionResult, error::Error>>;
 }
 
-/// Type of help content, typically associated with a built-in command.
-pub enum ContentType {
-    /// Detailed help content for the command.
-    DetailedHelp,
-    /// Short usage information for the command.
-    ShortUsage,
-    /// Short description for the command.
-    ShortDescription,
-    /// man-style help page.
-    ManPage,
+impl<SE: extensions::ShellExtensions, B: Builtin<SE>> DynBuiltin<SE> for B {
+    fn help(&self, name: &str) -> Help {
+        Builtin::help(self, name)
+    }
+
+    fn terminal_help(&self, name: &str, style: &TerminalStyle) -> Option<Help> {
+        Builtin::terminal_help(self, name, style)
+    }
+
+    fn declarations(&self) -> Declarations {
+        Builtin::declarations(self)
+    }
+
+    fn invoke<'a>(
+        &'a self,
+        context: commands::ExecutionContext<'a, SE>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'a, Result<results::ExecutionResult, error::Error>> {
+        Box::pin(async move {
+            let invocation = Invocation::new(context.command_name(), args);
+            let parsed = match self.parse(invocation) {
+                Ok(parsed) => parsed,
+                Err(error) => return Ok(report_usage_error(self, &context, &error)),
+            };
+
+            let name = context.command_name().to_owned();
+            self.execute(context, parsed)
+                .await
+                .map_err(|e| attribute(&name, e))
+        })
+    }
 }
 
-/// Options for retrieving built-in command content.
-#[derive(Default)]
-pub struct ContentOptions {
-    /// Whether or not the content should be colorized.
-    pub colorized: bool,
-}
-
-/// Encapsulates a registration for a built-in command.
-#[derive(Clone)]
+/// A builtin as registered with a shell, with the facts the shell keeps about
+/// it. Cloning a registration shares the builtin.
 pub struct Registration<SE: extensions::ShellExtensions> {
-    /// Function to execute the builtin.
-    pub execute_func: CommandExecuteFunc<SE>,
+    builtin: Arc<dyn DynBuiltin<SE>>,
 
-    /// Function to retrieve the builtin's content/help text.
-    pub content_func: CommandContentFunc,
+    /// Whether the registration is enabled (see `enable`).
+    enabled: bool,
+}
 
-    /// Has this registration been disabled?
-    pub disabled: bool,
-
-    /// Is the builtin classified as "special" by specification?
-    pub special_builtin: bool,
-
-    /// Is this builtin one that takes specially handled declarations?
-    pub declaration_builtin: bool,
+impl<SE: extensions::ShellExtensions> Clone for Registration<SE> {
+    fn clone(&self) -> Self {
+        Self {
+            builtin: Arc::clone(&self.builtin),
+            enabled: self.enabled,
+        }
+    }
 }
 
 impl<SE: extensions::ShellExtensions> Registration<SE> {
-    /// Updates the given registration to mark it for a special builtin.
-    #[must_use]
-    pub const fn special(self) -> Self {
+    /// Returns a registration for `builtin`. For a [`StatelessBuiltin`], see
+    /// [`Registration::stateless`].
+    ///
+    /// # Arguments
+    ///
+    /// * `builtin` - The builtin.
+    pub fn new(builtin: impl Builtin<SE>) -> Self {
         Self {
-            special_builtin: true,
-            ..self
-        }
-    }
-}
-
-fn get_builtin_man_page(_name: &str, _command: &clap::Command) -> Result<String, error::Error> {
-    error::unimp("man page rendering is not yet implemented")
-}
-
-fn get_builtin_short_description(name: &str, command: &clap::Command) -> String {
-    let about = command
-        .get_about()
-        .map_or_else(String::new, |s| s.to_string());
-
-    std::format!("{name} - {about}\n")
-}
-
-fn get_builtin_short_usage(name: &str, command: &clap::Command) -> String {
-    let mut usage = String::new();
-
-    let mut needs_space = false;
-
-    let mut optional_short_opts = vec![];
-    let mut required_short_opts = vec![];
-    for opt in command.get_opts() {
-        if opt.is_hide_set() {
-            continue;
-        }
-
-        if let Some(c) = opt.get_short() {
-            if !opt.is_required_set() {
-                optional_short_opts.push(c);
-            } else {
-                required_short_opts.push(c);
-            }
+            builtin: Arc::new(builtin),
+            enabled: true,
         }
     }
 
-    if !optional_short_opts.is_empty() {
-        if needs_space {
-            usage.push(' ');
-        }
-
-        usage.push('[');
-        usage.push('-');
-        for c in optional_short_opts {
-            usage.push(c);
-        }
-
-        usage.push(']');
-        needs_space = true;
+    /// Returns a registration for the [`StatelessBuiltin`] `B`.
+    pub fn stateless<B: StatelessBuiltin<SE>>() -> Self {
+        Self::new(Typed::<B>(PhantomData))
     }
 
-    if !required_short_opts.is_empty() {
-        if needs_space {
-            usage.push(' ');
-        }
-
-        usage.push('-');
-        for c in required_short_opts {
-            usage.push(c);
-        }
-
-        needs_space = true;
+    /// Returns the builtin's help, as invoked under `name`, as the shell
+    /// prints it: rendered for a terminal of `style`, if there is one and the
+    /// builtin renders it, and otherwise plain. See
+    /// [`ParseArgs::terminal_help`].
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin was invoked under.
+    /// * `style` - The terminal the help is printed to, if it is; see
+    ///   [`crate::ExecutionContext::help_style`]. `None` for plain help.
+    pub fn help(&self, name: &str, style: Option<&TerminalStyle>) -> Help {
+        help_for(self.builtin.as_ref(), name, style)
     }
 
-    for pos in command.get_positionals() {
-        if pos.is_hide_set() {
-            continue;
-        }
-
-        if !pos.is_required_set() {
-            if needs_space {
-                usage.push(' ');
-            }
-
-            usage.push('[');
-            needs_space = false;
-        }
-
-        if let Some(names) = pos.get_value_names() {
-            for name in names {
-                if needs_space {
-                    usage.push(' ');
-                }
-
-                usage.push_str(name);
-                needs_space = true;
-            }
-        }
-
-        if !pos.is_required_set() {
-            usage.push(']');
-            needs_space = true;
-        }
+    /// Returns how the builtin relates to declarations.
+    pub fn declarations(&self) -> Declarations {
+        self.builtin.declarations()
     }
 
-    std::format!("{name}: {name} {usage}\n")
+    /// Returns whether the registration is enabled. A registration starts
+    /// enabled; `enable -n` disables one, and a disabled builtin isn't found by
+    /// name.
+    pub const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Enables or disables the registration, as `enable` and `enable -n` do.
+    ///
+    /// # Arguments
+    ///
+    /// * `enabled` - Whether the builtin should be enabled.
+    pub const fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
 }
 
-fn brush_help_styles() -> clap::builder::Styles {
-    styling::Styles::styled()
-        .header(
-            styling::AnsiColor::Yellow.on_default()
-                | styling::Effects::BOLD
-                | styling::Effects::UNDERLINE,
-        )
-        .usage(styling::AnsiColor::Green.on_default() | styling::Effects::BOLD)
-        .literal(styling::AnsiColor::Magenta.on_default() | styling::Effects::BOLD)
-        .placeholder(styling::AnsiColor::Cyan.on_default())
-}
+/// The special builtins' names: POSIX's, and, as in bash, `source`.
+const SPECIAL_BUILTINS: [&str; 16] = [
+    ":", ".", "break", "continue", "eval", "exec", "exit", "export", "readonly", "return", "set",
+    "shift", "source", "times", "trap", "unset",
+];
 
-/// This function and the [`try_parse_known`] exists to deal with
-/// the Clap's limitation of treating `--` like a regular value
-/// `https://github.com/clap-rs/clap/issues/5055`
+/// Returns whether `name` is a special builtin's name.
+///
+/// The special builtins are POSIX's (`break`, `:`, `.`, `continue`, `eval`,
+/// `exec`, `exit`, `export`, `readonly`, `return`, `set`, `shift`, `times`,
+/// `trap`, `unset`) and, as in bash, `source`.
+///
+/// Being special is a matter of the name, as in bash, not of the builtin: any
+/// builtin registered under one of these names is special, and no other is.
+/// In POSIX mode, a special builtin is found before a function of the same
+/// name, no function can be given its name, and an error it returns ends a
+/// non-interactive shell (see [Failure](crate::builtins#failure)).
 ///
 /// # Arguments
 ///
-/// * `args` - An Iterator from [`std::env::args`]
-///
-/// # Returns
-///
-/// * a parsed struct T from [`clap::Parser::parse_from`]
-/// * the remain iterator `args` with `--` and the rest arguments if they present otherwise None
-///
-/// # Examples
-/// ```
-///    use clap::{builder::styling, Parser};
-///    #[derive(Parser)]
-///    struct CommandLineArgs {
-///       #[clap(allow_hyphen_values = true, num_args=1..)]
-///       script_args: Vec<String>,
-///    }
-///
-///    let (mut parsed_args, raw_args) =
-///        brush_core::builtins::parse_known::<CommandLineArgs, _>(std::env::args());
-///    if raw_args.is_some() {
-///        parsed_args.script_args = raw_args.unwrap().collect();
-///    }
-/// ```
-pub fn parse_known<T: clap::Parser, S>(
-    args: impl IntoIterator<Item = S>,
-) -> (T, Option<impl Iterator<Item = S>>)
-where
-    S: Into<std::ffi::OsString> + Clone + PartialEq<&'static str>,
-{
-    let mut args = args.into_iter();
-    // the best way to save `--` is to get it out with a side effect while `clap` iterates over the
-    // args this way we can be 100% sure that we have '--' and the remaining args
-    // and we will iterate only once
-    let mut hyphen = None;
-    let args_before_hyphen = args.by_ref().take_while(|a| {
-        let is_hyphen = *a == "--";
-        if is_hyphen {
-            hyphen = Some(a.clone());
-        }
-        !is_hyphen
+/// * `name` - The name a builtin is registered or invoked under.
+pub fn is_special(name: &str) -> bool {
+    SPECIAL_BUILTINS.contains(&name)
+}
+
+/// Attributes an error a builtin returned to the builtin, keeping whether it's
+/// fatal. An error already attributed to a builtin (one that `builtin` or
+/// `command` ran for it, say) keeps that attribution, as in bash.
+fn attribute(name: &str, error: error::Error) -> error::Error {
+    if matches!(error.kind(), error::ErrorKind::BuiltinError { .. }) {
+        return error;
+    }
+    let fatal = error.is_fatal();
+    let error = error::Error::from(error::ErrorKind::BuiltinError {
+        builtin: name.to_owned(),
+        error,
     });
-    let parsed_args = T::parse_from(args_before_hyphen);
-    let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
-    (parsed_args, raw_args)
+    if fatal { error.into_fatal() } else { error }
 }
 
-/// Similar to [`parse_known`] but with [`clap::Parser::try_parse_from`]
-/// This function is used to parse arguments in builtins such as
-/// `crate::echo::EchoCommand`
-pub fn try_parse_known<T: clap::Parser>(
-    args: impl IntoIterator<Item = String>,
-) -> Result<(T, Option<impl Iterator<Item = String>>), clap::Error> {
-    let mut args = args.into_iter();
-    let mut hyphen = None;
-    let args_before_hyphen = args.by_ref().take_while(|a| {
-        let is_hyphen = a == "--";
-        if is_hyphen {
-            hyphen = Some(a.clone());
-        }
-        !is_hyphen
-    });
-    let parsed_args = T::try_parse_from(args_before_hyphen)?;
-
-    let raw_args = hyphen.map(|hyphen| std::iter::once(hyphen).chain(args));
-    Ok((parsed_args, raw_args))
+/// Reports a problem with a builtin's arguments: prints it on the builtin's
+/// standard error, attributed to the builtin, with its usage line if called
+/// for, or, for a help request, prints the builtin's help on its standard
+/// output. Returns the error's exit code as the command's result.
+///
+/// Only a failed parse gets here, so a builtin that parses pays for none of
+/// this: not the help's terminal style, nor its output files.
+fn report_usage_error<SE: extensions::ShellExtensions>(
+    builtin: &dyn DynBuiltin<SE>,
+    context: &commands::ExecutionContext<'_, SE>,
+    error: &UsageError,
+) -> results::ExecutionResult {
+    let name = context.command_name();
+    if error.is_help_request() {
+        let help = help_for(builtin, name, context.help_style().as_ref());
+        let _ = context
+            .stdout()
+            .write_all(help.render(name, HelpForm::Full).as_bytes());
+    } else {
+        let text = render_usage_error(name, error, || builtin.help(name));
+        let _ = context.stderr().write_all(text.as_bytes());
+    }
+    error.exit_code().into()
 }
 
-/// A simple command that can be registered as a built-in.
-pub trait SimpleCommand {
-    /// Returns the content of the built-in command.
-    fn get_content(
-        name: &str,
-        content_type: ContentType,
-        options: &ContentOptions,
-    ) -> Result<String, error::Error>;
-
-    /// Executes the built-in command.
-    fn execute<SE: extensions::ShellExtensions, I: Iterator<Item = S>, S: AsRef<str>>(
-        context: commands::ExecutionContext<'_, SE>,
-        args: I,
-    ) -> Result<results::ExecutionResult, error::Error>;
-}
-
-/// Returns a built-in command registration, given an implementation of the
-/// `SimpleCommand` trait.
-pub fn simple_builtin<B: SimpleCommand + Send + Sync, SE: extensions::ShellExtensions>()
--> Registration<SE> {
-    Registration {
-        execute_func: exec_simple_builtin::<B, SE>,
-        content_func: B::get_content,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: false,
+/// Renders a problem with a builtin's arguments as the shell reports it:
+/// attributed to the builtin, with its usage line if called for.
+fn render_usage_error(name: &str, error: &UsageError, help: impl FnOnce() -> Help) -> String {
+    if error.shows_usage_line() {
+        format!("{name}: {error}\n{name}: usage: {}\n", help().synopsis)
+    } else {
+        format!("{name}: {error}\n")
     }
 }
 
-/// Returns a built-in command registration, given an implementation of the
-/// `Command` trait.
-pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> Registration<SE> {
-    Registration {
-        execute_func: exec_builtin::<B, SE>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: false,
-    }
-}
-
-/// Returns a built-in command registration, given an implementation of the
-/// `DeclarationCommand` trait. Used for select commands that can take parsed
-/// declarations as arguments.
-pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellExtensions>()
--> Registration<SE> {
-    Registration {
-        execute_func: exec_declaration_builtin::<B, SE>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: true,
-    }
-}
-
-#[allow(clippy::too_long_first_doc_paragraph)]
-/// Returns a built-in command registration, given an implementation of the
-/// `DeclarationCommand` trait that can be default-constructed. The command
-/// implementation is expected to implement clap's `Parser` trait solely
-/// for help/usage information. Arguments are passed directly to the command
-/// via `set_declarations`. This is primarily only expected to be used with
-/// select builtin commands that wrap other builtins (e.g., "builtin").
-pub fn raw_arg_builtin<
-    B: DeclarationCommand + Default + Send + Sync,
-    SE: extensions::ShellExtensions,
->() -> Registration<SE> {
-    Registration {
-        execute_func: exec_raw_arg_builtin::<B, SE>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: true,
-    }
-}
-
-fn get_builtin_content<T: Command + Send + Sync>(
+/// Returns `builtin`'s help for a terminal of `style`, if there is one and it
+/// renders it, and otherwise plain.
+fn help_for<SE: extensions::ShellExtensions>(
+    builtin: &dyn DynBuiltin<SE>,
     name: &str,
-    content_type: ContentType,
-    options: &ContentOptions,
-) -> Result<String, error::Error> {
-    T::get_content(name, content_type, options)
+    style: Option<&TerminalStyle>,
+) -> Help {
+    style
+        .and_then(|style| builtin.terminal_help(name, style))
+        .unwrap_or_else(|| builtin.help(name))
 }
 
-fn exec_simple_builtin<T: SimpleCommand + Send + Sync, SE: extensions::ShellExtensions>(
+/// Runs a builtin, applying the shell's policy to how it fails:
+///
+/// * A problem with its arguments (a [`UsageError`]) is printed on the
+///   builtin's standard error, attributed to it, with its usage line if called
+///   for, and a help request prints the builtin's help on standard output.
+///   Either way, the command fails with the error's exit code.
+/// * Any other error is attributed to the builtin. A broken pipe isn't
+///   reported. If `as_special`, an error is fatal for a special builtin in
+///   POSIX mode.
+///
+/// # Arguments
+///
+/// * `registration` - The builtin's registration.
+/// * `context` - The context to run it in; names the builtin.
+/// * `args` - The arguments following the builtin's name.
+/// * `as_special` - Whether a special builtin keeps its special properties.
+///   Running a builtin through `builtin` drops them.
+pub(crate) async fn invoke<SE: extensions::ShellExtensions>(
+    registration: &Registration<SE>,
     context: commands::ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_simple_builtin_impl::<T, SE>(context, args).await })
-}
-
-#[expect(clippy::unused_async)]
-async fn exec_simple_builtin_impl<
-    T: SimpleCommand + Send + Sync,
-    SE: extensions::ShellExtensions,
->(
-    context: commands::ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
+    as_special: bool,
 ) -> Result<results::ExecutionResult, error::Error> {
-    let plain_args = args.into_iter().map(|arg| match arg {
-        CommandArg::String(s) => s,
-        CommandArg::Assignment(a) => a.to_string(),
-    });
+    // In POSIX mode, special builtins that return errors are to be treated as
+    // fatal.
+    let posix_fatal =
+        as_special && is_special(context.command_name()) && context.shell.options().posix_mode;
 
-    T::execute(context, plain_args)
-}
-
-fn exec_builtin<T: Command + Send + Sync, SE: extensions::ShellExtensions>(
-    context: commands::ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_builtin_impl::<T, SE>(context, args).await })
-}
-
-async fn exec_builtin_impl<T: Command + Send + Sync, SE: extensions::ShellExtensions>(
-    context: commands::ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
-) -> Result<results::ExecutionResult, error::Error> {
-    let plain_args = args.into_iter().map(|arg| match arg {
-        CommandArg::String(s) => s,
-        CommandArg::Assignment(a) => a.to_string(),
-    });
-
-    let result = T::new(plain_args);
-    let command = match result {
-        Ok(command) => command,
-        Err(e) => {
-            let _ = writeln!(context.stderr(), "{e}");
-            return Ok(results::ExecutionExitCode::InvalidUsage.into());
-        }
-    };
-
-    call_builtin(command, context).await
-}
-
-fn exec_declaration_builtin<
-    T: DeclarationCommand + Send + Sync,
-    SE: extensions::ShellExtensions,
->(
-    context: commands::ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_declaration_builtin_impl::<T, SE>(context, args).await })
-}
-
-async fn exec_declaration_builtin_impl<
-    T: DeclarationCommand + Send + Sync,
-    SE: extensions::ShellExtensions,
->(
-    context: commands::ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
-) -> Result<results::ExecutionResult, error::Error> {
-    let mut options = vec![];
-    let mut declarations = vec![];
-
-    for (i, arg) in args.into_iter().enumerate() {
-        match arg {
-            CommandArg::String(s)
-                if i == 0 || (s.len() > 1 && (s.starts_with('-') || s.starts_with('+'))) =>
+    match registration.builtin.invoke(context, args).await {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            // Broken pipe errors should silently return the appropriate exit code.
+            if let Some(io_err) = error.as_io_error()
+                && io_err.kind() == std::io::ErrorKind::BrokenPipe
             {
-                options.push(s);
+                return Ok(results::ExecutionExitCode::from(io_err).into());
             }
-            _ => declarations.push(arg),
+            Err(if posix_fatal {
+                error.into_fatal()
+            } else {
+                error
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn special_builtins_are_bash_s() {
+        for name in [".", ":", "export", "readonly", "source", "times", "unset"] {
+            assert!(is_special(name), "{name}");
+        }
+        for name in ["declare", "local", "cd", "command", "builtin", "Export", ""] {
+            assert!(!is_special(name), "{name}");
         }
     }
 
-    let result = T::new(options);
-    let mut command = match result {
-        Ok(command) => command,
-        Err(e) => {
-            let _ = writeln!(context.stderr(), "{e}");
-            return Ok(results::ExecutionExitCode::InvalidUsage.into());
-        }
-    };
+    #[test]
+    fn declarations_render_as_the_word_they_came_from() {
+        let mut declaration = Declaration::new("a");
+        assert_eq!(declaration.to_string(), "a");
 
-    command.set_declarations(declarations);
+        declaration.index = Some("1".into());
+        declaration.append = true;
+        declaration.value = Some(variables::ShellValueLiteral::Scalar("v".into()));
+        assert_eq!(declaration.to_string(), "a[1]+=v");
 
-    call_builtin(command, context).await
-}
+        let mut declaration = Declaration::new("a");
+        declaration.value = Some(variables::ShellValueLiteral::Array(
+            variables::ArrayLiteral(vec![(None, "x y".into()), (Some("k".into()), "v".into())]),
+        ));
+        assert_eq!(declaration.to_string(), "a=(x y [k]=v)");
+    }
 
-fn exec_raw_arg_builtin<
-    T: DeclarationCommand + Default + Send + Sync,
-    SE: extensions::ShellExtensions,
->(
-    context: commands::ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
-    Box::pin(async move { exec_raw_arg_builtin_impl::<T, SE>(context, args).await })
-}
-
-async fn exec_raw_arg_builtin_impl<
-    T: DeclarationCommand + Default + Send + Sync,
-    SE: extensions::ShellExtensions,
->(
-    context: commands::ExecutionContext<'_, SE>,
-    args: Vec<CommandArg>,
-) -> Result<results::ExecutionResult, error::Error> {
-    let mut command = T::default();
-    command.set_declarations(args);
-
-    call_builtin(command, context).await
-}
-
-async fn call_builtin(
-    command: impl Command,
-    context: commands::ExecutionContext<'_, impl extensions::ShellExtensions>,
-) -> Result<results::ExecutionResult, error::Error> {
-    let builtin_name = context.command_name.clone();
-    let result = command
-        .execute(context)
-        .await
-        .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e), builtin_name))?;
-
-    Ok(result)
+    #[test]
+    fn usage_errors_render_with_their_usage_line() {
+        let help = || Help::new("t [-a]", "Does t.");
+        assert_eq!(
+            render_usage_error("t", &UsageError::new("bad"), help),
+            "t: bad\n"
+        );
+        assert_eq!(
+            render_usage_error("t", &UsageError::invalid_option("-z"), help),
+            "t: -z: invalid option\nt: usage: t [-a]\n"
+        );
+    }
 }

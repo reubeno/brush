@@ -10,13 +10,13 @@ pub(crate) struct BreakCommand {
     which_loop: i8,
 }
 
-impl builtins::Command for BreakCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(BreakCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for BreakCommand {
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         // If specified, which_loop needs to be positive.
         if self.which_loop <= 0 {
             return Ok(ExecutionExitCode::InvalidUsage.into());

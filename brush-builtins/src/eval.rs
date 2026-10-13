@@ -9,13 +9,13 @@ pub(crate) struct EvalCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for EvalCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(EvalCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for EvalCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if !self.args.is_empty() {
             let args_concatenated = self.args.join(" ");
 

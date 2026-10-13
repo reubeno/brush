@@ -18,13 +18,13 @@ pub(crate) struct AliasCommand {
     aliases: Vec<String>,
 }
 
-impl builtins::Command for AliasCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(AliasCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for AliasCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut exit_code = ExecutionResult::success();
 
         if self.print || self.aliases.is_empty() {
@@ -47,7 +47,7 @@ impl builtins::Command for AliasCommand {
                     writeln!(
                         context.stderr(),
                         "{}: {alias}: not found",
-                        context.command_name
+                        context.command_name()
                     )?;
                     exit_code = ExecutionResult::general_error();
                 }

@@ -34,13 +34,13 @@ pub(crate) struct FcCommand {
     last: Option<String>,
 }
 
-impl builtins::Command for FcCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(FcCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for FcCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if self.substitute {
             return self.do_execute(context).await;
         }

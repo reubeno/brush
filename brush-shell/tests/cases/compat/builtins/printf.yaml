@@ -461,3 +461,9 @@ cases:
       [[ -n $(printf --help 2>/dev/null) ]] && echo "help on stdout"
       printf -v x --help >/dev/null 2>&1; echo "after -v: rc=$?"
       printf -- --help; echo " after --: rc=$?"
+
+  - name: "An option missing its value is reported as bash does"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      { printf -v; } 2>&1 | head -n 1 | strip
+      printf -v 2>/dev/null; echo "status: $?"

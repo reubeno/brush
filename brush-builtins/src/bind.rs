@@ -111,21 +111,20 @@ pub(crate) enum BindError {
     BindingParseError(#[from] brush_parser::BindingParseError),
 }
 
-impl brush_core::BuiltinError for BindError {}
-
-impl From<&BindError> for brush_core::ExecutionExitCode {
-    fn from(_err: &BindError) -> Self {
-        Self::GeneralError
+impl From<BindError> for brush_core::Error {
+    fn from(error: BindError) -> Self {
+        // A broken pipe stays quiet: the shell finds the I/O error inside.
+        builtins::Failure::new(error).into()
     }
 }
 
-impl builtins::Command for BindCommand {
-    type Error = BindError;
+brush_builtin_clap::impl_parse_args!(BindCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for BindCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if let Some(key_bindings) = context.shell.key_bindings() {
             Ok(self.execute_impl(key_bindings, &context).await?)
         } else {
@@ -567,6 +566,30 @@ mod tests {
         assert_matches!(
             target,
             BindableReadlineTarget::Function(interfaces::InputFunction::TransposeChars)
+        );
+    }
+
+    #[test]
+    fn bind_errors_stay_bind_errors_in_the_shell_error() {
+        let error = brush_core::Error::from(BindError::UnknownFunction("nope".into()));
+        assert_eq!(error.to_string(), "unknown function: nope");
+        assert_matches!(
+            error.kind(),
+            brush_core::ErrorKind::BuiltinFailure(failure)
+                if matches!(
+                    failure.downcast_ref::<BindError>(),
+                    Some(BindError::UnknownFunction(name)) if name == "nope"
+                )
+        );
+        assert!(error.as_io_error().is_none());
+
+        // The I/O error inside stays reachable, so a broken pipe stays quiet.
+        let error = brush_core::Error::from(BindError::from(std::io::Error::from(
+            std::io::ErrorKind::BrokenPipe,
+        )));
+        assert_eq!(
+            error.as_io_error().map(std::io::Error::kind),
+            Some(std::io::ErrorKind::BrokenPipe)
         );
     }
 }

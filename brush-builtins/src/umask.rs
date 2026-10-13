@@ -20,13 +20,13 @@ pub(crate) struct UmaskCommand {
     mode: Option<String>,
 }
 
-impl builtins::Command for UmaskCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(UmaskCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for UmaskCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if let Some(mode) = &self.mode {
             if mode.starts_with(|c: char| c.is_digit(8)) {
                 let parsed = brush_core::int_utils::parse(mode.as_str(), 8)?;

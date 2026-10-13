@@ -1,11 +1,21 @@
-//! Example of implementing a custom builtin command for a brush-core based shell.
+//! Example of implementing custom builtin commands for a brush-core based shell.
 //!
-//! This example demonstrates best practices for:
-//! - Creating a custom builtin command using the `Command` trait
-//! - Defining custom error types with `thiserror`
-//! - Parsing command-line arguments with `clap`
-//! - Implementing proper error handling and exit code conversion
-//! - Using the execution context to interact with shell state and I/O streams
+//! `brush-core` depends on no argument-parsing engine, and neither does this
+//! example: its builtins interpret their arguments and describe their help by
+//! hand. That, plus running, is the whole contract a builtin has to satisfy.
+//!
+//! It shows the contract's two shapes:
+//!
+//! - `greet` is a [`builtins::StatelessBuiltin`]: it has no state of its own,
+//!   and its arguments type is the whole builtin. Most builtins look like this.
+//!   It also reports failures of its own, in an error type of its own with an
+//!   exit code for each variant.
+//! - `tally` is a [`builtins::Builtin`]: the registered value is the builtin, so
+//!   it can hold state or configuration of its own; here, a running count.
+//!
+//! For builtins whose arguments are parsed by a library, see the
+//! `clap-builtin` example in `brush-builtin-clap`, whose `impl_parse_args!`
+//! implements [`ParseArgs`] from a derive.
 //!
 //! Run this example with:
 //! ```bash
@@ -13,140 +23,213 @@
 //! ```
 
 use anyhow::Result;
-use clap::Parser;
 use std::io::Write;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::builtins::{self, Help, Invocation, ParseArgs, Registration, UsageError};
+use brush_core::{ExecutionExitCode, ExecutionResult};
 
 //
-// Step 1 (optional): Define a custom error type for your builtin
+// A stateless builtin: its arguments type is the whole builtin.
 // ==============================================
-// We recommend using `thiserror` to create descriptive error types that can be converted
-// to appropriate exit codes.
 //
 
+/// What can go wrong in `greet`, in its own terms.
 #[derive(Debug, thiserror::Error)]
 enum GreetError {
-    /// The requested repeat count is beyond the supported range.
-    #[error("repeat count out of range")]
-    RepeatCountOutOfRange,
+    /// There's nobody to greet.
+    #[error("nobody to greet: USER is empty")]
+    NoUser,
 
-    /// A shell error occurred during execution; we transparently forward error display
-    /// to the underlying error.
-    #[error(transparent)]
-    ShellError(#[from] brush_core::Error),
-
-    /// An I/O error occurred.
-    #[error("I/O error occurred during greeting: {0}")]
-    IoError(#[from] std::io::Error),
+    /// More greetings were asked for than `GREET_LIMIT` allows.
+    #[error("{requested}: more greetings than GREET_LIMIT ({limit}) allows")]
+    OverLimit { requested: usize, limit: usize },
 }
 
-// Mark your error type as a builtin error. This is required to use this error
-// type in your command implementation.
-impl brush_core::BuiltinError for GreetError {}
+// A failure of the builtin's own goes in a `builtins::Failure`, which keeps the
+// error it's made from: an error formatter, or a test, gets it back with
+// `Failure::downcast_ref`. Converting the type into a `brush_core::Error` in
+// one place, choosing each variant's exit code there, lets `?` work in
+// `execute`. (The shell's own errors aren't wrapped: they pass through `?` as
+// they are, so a fatal one stays fatal and a broken pipe stays quiet.)
+impl From<GreetError> for brush_core::Error {
+    fn from(error: GreetError) -> Self {
+        let exit_code = match &error {
+            GreetError::NoUser => ExecutionExitCode::GeneralError,
+            GreetError::OverLimit { .. } => ExecutionExitCode::InvalidUsage,
+        };
+        builtins::Failure::new(error)
+            .with_exit_code(exit_code)
+            .into()
+    }
+}
 
-// If you define a custom error type, you must map each error variant to an appropriate
-// exit code. This ensures the shell interpreter will translate a returned error to
-// the appropriate code during execution.
-impl From<&GreetError> for brush_core::ExecutionExitCode {
-    fn from(value: &GreetError) -> Self {
-        match value {
-            GreetError::RepeatCountOutOfRange => Self::InvalidUsage,
-            GreetError::ShellError(e) => e.into(),
-            GreetError::IoError(_) => Self::GeneralError,
+/// Greet the user, optionally more than once.
+struct GreetCommand {
+    repeat_count: usize,
+}
+
+// Describe the builtin, and interpret its arguments. `invocation` holds the name
+// the builtin was invoked as and the words after it, exactly as the shell
+// expanded them. Return a `UsageError` for anything unacceptable: the shell
+// reports it as `greet: <message>`, adds the usage line built from the help, and
+// fails the command with the usual usage status.
+impl ParseArgs for GreetCommand {
+    fn help(name: &str) -> Help {
+        // `help -s`, `help -d`, `help greet`, and `greet --help` all render this.
+        Help::new(format!("{name} [-n count]"), "Greet the user.").with_details(
+            "Prints a greeting COUNT times (once, by default), up to GREET_LIMIT (10).",
+        )
+    }
+
+    fn parse(invocation: Invocation<'_>) -> Result<Self, UsageError> {
+        let words = invocation.into_words();
+        let words: Vec<&str> = words.iter().map(String::as_str).collect();
+
+        match words.as_slice() {
+            [] => Ok(Self { repeat_count: 1 }),
+            ["--help"] => Err(UsageError::help_requested()),
+            ["-n"] => Err(UsageError::requires_argument("-n")),
+            ["-n", count] => count
+                .parse()
+                .map(|repeat_count| Self { repeat_count })
+                .map_err(|_| UsageError::new(format!("{count}: numeric argument required"))),
+            [option, ..] if option.starts_with('-') => Err(UsageError::invalid_option(option)),
+            _ => Err(UsageError::new("too many arguments").with_usage_line()),
         }
     }
 }
 
-//
-// Step 2 (recommended): Define your builtin command arguments
-// ==============================================
-// We recommend using the `clap` crate and the derive-able `clap::Parser` to define
-// command-line arguments and options. This will simplify the work you need to do
-// to provide helpful usage information and auto-generated argument validation.
-//
-
-/// Greet the user with a friendly message.
-#[derive(Parser)]
-struct GreetCommand {
-    /// Number of times to repeat the greeting.
-    #[arg(short = 'n', long = "repeat", default_value_t = 1)]
-    repeat_count: usize,
-}
-
-//
-// Step 3: Implement the Command trait
-// ==============================================
-// The `Command` trait requires implementing the `execute` method.
-//
-
-impl builtins::Command for GreetCommand {
-    // Specify the error type you will use; this will either be your custom type or
-    // the default-provided `brush_core::Error` type.
-    type Error = GreetError;
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+// Run it, with the parsed arguments and a context giving access to the shell
+// and its I/O streams.
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for GreetCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        // Additional validation.
-        if self.repeat_count == 0 || self.repeat_count > 10 {
-            return Err(GreetError::RepeatCountOutOfRange);
+    ) -> Result<ExecutionResult, brush_core::Error> {
+        // Failures of the builtin's own, which depend on the shell's state, so
+        // they're found here rather than in `parse`. The shell reports them as
+        // `greet: <message>`, and the command fails with the variant's code.
+        let user = context.shell.env_str("USER").unwrap_or_default();
+        if user.is_empty() {
+            return Err(GreetError::NoUser.into());
+        }
+        let limit = context
+            .shell
+            .env_str("GREET_LIMIT")
+            .and_then(|limit| limit.parse().ok())
+            .unwrap_or(10);
+        if self.repeat_count > limit {
+            return Err(GreetError::OverLimit {
+                requested: self.repeat_count,
+                limit,
+            }
+            .into());
         }
 
-        // For demonstration, we expand a greeting string using shell variable expansion.
-        // This is a bit contrived, but it shows how to wrap errors coming back from
-        // `brush_core`.
+        // Errors from the shell's own work, expanding a word or writing, are the
+        // shell's; `?` passes them on as they are.
         let greeting = context
             .shell
-            .basic_expand_string(&context.params, "Hello, ${USER}!")
+            .basic_expand_string(&context.params, "Hello, $USER!")
             .await?;
-
-        // Execute the greeting.
         for _ in 0..self.repeat_count {
             writeln!(context.stdout(), "{greeting}")?;
         }
 
-        // Return success
         Ok(ExecutionResult::success())
     }
 }
 
 //
-// Step 4: Integrate your builtin into a shell
+// A builtin with state of its own.
 // ==============================================
-// This example shows how to register and use your custom builtin.
 //
 
-type SE = brush_core::extensions::DefaultShellExtensions;
+/// Counts its calls, under a configured label.
+struct Tally {
+    label: &'static str,
+    calls: AtomicUsize,
+}
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for Tally {
+    // What one invocation's arguments parse to: here, nothing.
+    type Args = ();
+    fn help(&self, name: &str) -> Help {
+        Help::new(name, format!("Count {} calls.", self.label))
+    }
+
+    fn parse(&self, invocation: Invocation<'_>) -> Result<(), UsageError> {
+        match invocation.into_words().as_slice() {
+            [] => Ok(()),
+            [help] if help == "--help" => Err(UsageError::help_requested()),
+            _ => Err(UsageError::new("takes no arguments").with_usage_line()),
+        }
+    }
+
+    #[allow(
+        clippy::unused_async_trait_impl,
+        reason = "the trait's method is async; this one has nothing to wait for"
+    )]
+    async fn execute(
+        &self,
+        context: brush_core::ExecutionContext<'_, SE>,
+        (): (),
+    ) -> Result<ExecutionResult, brush_core::Error> {
+        let calls = self.calls.fetch_add(1, Ordering::Relaxed) + 1;
+        writeln!(context.stdout(), "{} calls: {calls}", self.label)?;
+        Ok(ExecutionResult::success())
+    }
+}
+
+//
+// Register the builtins with a shell.
+// ==============================================
+//
 
 async fn run_example() -> Result<()> {
-    // Create a shell instance with custom builtin registered.
+    let tally = |label| Tally {
+        label,
+        calls: AtomicUsize::new(0),
+    };
+
     let mut shell = brush_core::Shell::builder()
-        .builtin("greet", brush_core::builtins::builtin::<GreetCommand, SE>())
+        .builtin("greet", Registration::stateless::<GreetCommand>())
+        // One builtin type, registered twice with different state.
+        .builtin("tally-a", Registration::new(tally("a")))
+        .builtin("tally-b", Registration::new(tally("b")))
         .build()
         .await?;
 
-    // Demonstrate basic usage.
-    let result = shell
-        .run_string(
-            "greet -n 4",
-            &brush_core::SourceInfo::default(),
-            &shell.default_exec_params(),
-        )
-        .await?;
-    println!("Exit code: {}\n", u8::from(result.exit_code));
+    for command in [
+        "USER=friend; greet",
+        "greet -n 2",
+        "greet -n two",
+        "greet -x",
+        "greet --help",
+        "greet -n 11",
+        "USER=; greet",
+        "tally-a; tally-a; tally-b",
+        "tally-a --help",
+    ] {
+        println!("$ {command}");
+        let result = shell
+            .run_string(
+                command,
+                &brush_core::SourceInfo::default(),
+                &shell.default_exec_params(),
+            )
+            .await?;
+        println!("(exit code: {})\n", u8::from(result.exit_code));
+    }
 
     Ok(())
 }
 
 fn main() -> Result<()> {
-    // Construct a `tokio` runtime for async execution
-    let rt = tokio::runtime::Builder::new_multi_thread()
+    let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
 
-    rt.block_on(run_example())?;
-
-    Ok(())
+    rt.block_on(run_example())
 }

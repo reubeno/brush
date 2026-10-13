@@ -26,13 +26,13 @@ pub(crate) struct ExecCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for ExecCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(ExecCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for ExecCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if self.args.is_empty() {
             // When no arguments are present, then there's nothing for us to execute -- but we need
             // to ensure that any redirections setup for this builtin get applied to the calling
@@ -58,7 +58,7 @@ impl builtins::Command for ExecCommand {
                 ..Default::default()
             };
 
-            return cmd_cmd.execute(context).await;
+            return builtins::StatelessBuiltin::execute(cmd_cmd, context).await;
         }
 
         let mut argv0 = Cow::Borrowed(self.name_for_argv0.as_ref().unwrap_or(&self.args[0]));

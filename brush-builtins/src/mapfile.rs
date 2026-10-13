@@ -44,13 +44,13 @@ pub(crate) struct MapFileCommand {
     array_var_name: String,
 }
 
-impl builtins::Command for MapFileCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(MapFileCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for MapFileCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.callback_group_size != 5000 || self.callback.is_some() {
             return error::unimp("mapfile -C/-c is not yet implemented");
         }
@@ -60,7 +60,7 @@ impl builtins::Command for MapFileCommand {
                 writeln!(
                     context.stderr(),
                     "{}: {origin}: invalid array origin",
-                    context.command_name
+                    context.command_name()
                 )?;
                 return Ok(ExecutionExitCode::GeneralError.into());
             }
@@ -71,7 +71,7 @@ impl builtins::Command for MapFileCommand {
                 writeln!(
                     context.stderr(),
                     "{}: {}: not an indexed array",
-                    context.command_name,
+                    context.command_name(),
                     self.array_var_name
                 )?;
                 return Ok(ExecutionExitCode::GeneralError.into());

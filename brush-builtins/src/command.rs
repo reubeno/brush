@@ -22,8 +22,9 @@ pub(crate) struct CommandCommand {
     #[arg(short = 'V', overrides_with = "print_description")]
     pub print_verbose_description: bool,
 
-    /// Command and arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    /// Command and arguments. Options end at the command's name, so a word
+    /// after it is the command's even if it looks like an option.
+    #[arg(trailing_var_arg = true)]
     pub command_and_args: Vec<String>,
 }
 
@@ -110,7 +111,22 @@ impl CommandCommand {
         mut context: brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         command_name: &str,
     ) -> Result<ExecutionResult, brush_core::Error> {
-        command_name.clone_into(&mut context.command_name);
+        // A builtin runs as `builtin` runs it: a special builtin loses its
+        // special properties, as POSIX requires of `command`.
+        if context
+            .shell
+            .builtins()
+            .get(command_name)
+            .is_some_and(builtins::Registration::is_enabled)
+        {
+            let argv: Vec<_> = self
+                .command_and_args
+                .iter()
+                .map(brush_core::CommandArg::from)
+                .collect();
+            return context.run_builtin(argv).await;
+        }
+
         let command_and_args = self
             .command_and_args
             .iter()
@@ -119,7 +135,7 @@ impl CommandCommand {
         let mut cmd = commands::SimpleCommand::new(
             commands::ShellForCommand::ParentShell(context.shell),
             context.params,
-            context.command_name,
+            command_name.to_owned(),
             command_and_args,
         );
         cmd.use_functions = false;
@@ -132,13 +148,13 @@ impl CommandCommand {
     }
 }
 
-impl builtins::Command for CommandCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(CommandCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for CommandCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         if self.print_description || self.print_verbose_description {
             return self.describe_names(&context);
         }

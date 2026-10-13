@@ -9,13 +9,13 @@ pub(crate) struct ShiftCommand {
     n: Option<i32>,
 }
 
-impl builtins::Command for ShiftCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(ShiftCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for ShiftCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let n = self.n.unwrap_or(1);
 
         if n < 0 {

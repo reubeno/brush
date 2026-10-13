@@ -11,13 +11,13 @@ pub(crate) struct LetCommand {
     exprs: Vec<String>,
 }
 
-impl builtins::Command for LetCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(LetCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for LetCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut result = ExecutionExitCode::InvalidUsage.into();
 
         if self.exprs.is_empty() {

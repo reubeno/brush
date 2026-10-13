@@ -77,13 +77,13 @@ pub(crate) struct ReadCommand {
     variable_names: Vec<String>,
 }
 
-impl builtins::Command for ReadCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(ReadCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for ReadCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.use_readline {
             return error::unimp("read -e");
         }
@@ -630,7 +630,7 @@ impl ReadCommand {
                 writeln!(
                     context.stderr(),
                     "{}: -t: invalid timeout specification",
-                    context.command_name
+                    context.command_name()
                 )?;
                 return Ok(Some(brush_core::ExecutionResult::general_error()));
             }

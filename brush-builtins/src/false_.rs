@@ -1,25 +1,25 @@
-use brush_core::{ExecutionResult, builtins, error};
+use brush_core::ExecutionResult;
+use brush_core::builtins::{self, Help, Invocation, ParseArgs, UsageError};
 
 /// Return exit code 1.
-pub(crate) struct FalseCommand {}
+pub(crate) struct FalseCommand;
 
-impl builtins::SimpleCommand for FalseCommand {
-    fn get_content(
-        _name: &str,
-        content_type: builtins::ContentType,
-        _options: &builtins::ContentOptions,
-    ) -> Result<String, brush_core::Error> {
-        match content_type {
-            builtins::ContentType::DetailedHelp => Ok("Returns a failure exit status.".into()),
-            builtins::ContentType::ShortUsage => Ok("false".into()),
-            builtins::ContentType::ShortDescription => Ok("false - fail".into()),
-            builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
-        }
+// Takes no options and ignores its arguments, `--help` included, as bash's does.
+impl ParseArgs for FalseCommand {
+    fn help(_name: &str) -> Help {
+        Help::new("false", "Return an unsuccessful result.")
+            .with_details("Exit Status:\nAlways fails.")
     }
 
-    fn execute<SE: brush_core::ShellExtensions, I: Iterator<Item = S>, S: AsRef<str>>(
+    fn parse(_invocation: Invocation<'_>) -> Result<Self, UsageError> {
+        Ok(Self)
+    }
+}
+
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for FalseCommand {
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
-        _args: I,
     ) -> Result<ExecutionResult, brush_core::Error> {
         Ok(ExecutionResult::general_error())
     }

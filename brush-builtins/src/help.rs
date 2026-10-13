@@ -22,13 +22,13 @@ pub(crate) struct HelpCommand {
     topic_patterns: Vec<String>,
 }
 
-impl builtins::Command for HelpCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(HelpCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for HelpCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         if self.topic_patterns.is_empty() {
             Self::display_general_help(&context)?;
             return Ok(ExecutionResult::success());
@@ -72,7 +72,7 @@ impl HelpCommand {
         for i in 0..items_per_column {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
-                    let prefix = if builtin.disabled { "*" } else { " " };
+                    let prefix = if builtin.is_enabled() { " " } else { "*" };
                     write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
                     // column width
                 }
@@ -119,14 +119,14 @@ impl HelpCommand {
         name: &str,
         registration: &builtins::Registration<SE>,
     ) -> Result<(), brush_core::Error> {
-        let content_type = if self.short_description {
-            builtins::ContentType::ShortDescription
+        let form = if self.short_description {
+            builtins::HelpForm::Description
         } else if self.man_page_style {
-            builtins::ContentType::ManPage
+            return brush_core::error::unimp("man page rendering is not yet implemented");
         } else if self.short_usage {
-            builtins::ContentType::ShortUsage
+            builtins::HelpForm::Synopsis
         } else {
-            builtins::ContentType::DetailedHelp
+            builtins::HelpForm::Full
         };
 
         let Some(mut stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
@@ -134,12 +134,9 @@ impl HelpCommand {
             return Ok(());
         };
 
-        // For now, we assume colorized output if stdout is a terminal.
-        let options = builtins::ContentOptions {
-            colorized: stdout.is_terminal(),
-        };
-
-        let content = (registration.content_func)(name, content_type, &options)?;
+        let content = registration
+            .help(name, context.help_style().as_ref())
+            .render(name, form);
 
         write!(stdout, "{content}")?;
         stdout.flush()?;

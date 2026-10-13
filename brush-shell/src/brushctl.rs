@@ -19,11 +19,11 @@ impl<SE: brush_core::extensions::ShellExtensions, S: brush_core::ShellBuilderSta
         // `brushctl` and `brushinfo` names. It will behave identically across the two.
         self.builtin(
             "brushctl",
-            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
+            brush_core::builtins::Registration::stateless::<BrushCtlCommand>(),
         )
         .builtin(
             "brushinfo",
-            brush_core::builtins::builtin::<BrushCtlCommand, SE>(),
+            brush_core::builtins::Registration::stateless::<BrushCtlCommand>(),
         )
     }
 }
@@ -111,13 +111,15 @@ enum ProcessCommand {
     ShowParentProcessId,
 }
 
-impl brush_core::builtins::Command for BrushCtlCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(BrushCtlCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> brush_core::builtins::StatelessBuiltin<SE>
+    for BrushCtlCommand
+{
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         match &self.command_group {
             CommandGroup::Call(call) => call.execute(&context),
             CommandGroup::Complete(complete) => complete.execute(&mut context).await,

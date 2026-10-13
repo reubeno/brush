@@ -71,7 +71,7 @@ pub(crate) fn resolve<'a, SE: ShellExtensions>(
         }
 
         // Check for builtins.
-        if shell.builtins().get(name).is_some_and(|b| !b.disabled) {
+        if shell.builtins().get(name).is_some_and(|b| b.is_enabled()) {
             resolved.push(Resolved::Builtin);
         }
     }

@@ -7,13 +7,13 @@ use brush_core::{ExecutionResult, builtins, timing};
 #[derive(Parser)]
 pub(crate) struct TimesCommand {}
 
-impl builtins::Command for TimesCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(TimesCommand);
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for TimesCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    ) -> Result<ExecutionResult, brush_core::Error> {
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;
         writeln!(
             context.stdout(),

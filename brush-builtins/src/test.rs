@@ -13,30 +13,16 @@ pub(crate) struct TestCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for TestCommand {
-    type Error = brush_core::Error;
+brush_builtin_clap::impl_parse_args!(TestCommand, keep_double_dash = args);
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(test): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
-    }
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for TestCommand {
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<brush_core::ExecutionResult, Self::Error> {
+    ) -> Result<brush_core::ExecutionResult, brush_core::Error> {
         let mut args = self.args.as_slice();
 
-        if context.command_name == "[" {
+        if context.command_name() == "[" {
             match args.last() {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::{Shell, ShellFd, extensions, results, sys};
+use crate::{Shell, ShellFd, builtins, extensions, results, sys};
 
 /// Unified error type for this crate. Contains just a kind for now,
 /// but will be extended later with additional context.
@@ -70,7 +70,7 @@ pub enum ErrorKind {
     CommandNotFound(String),
 
     /// Not a builtin.
-    #[error("not a shell builtin: {0}")]
+    #[error("{0}: not a shell builtin")]
     BuiltinNotFound(String),
 
     /// The working directory does not exist.
@@ -272,9 +272,20 @@ pub enum ErrorKind {
     #[error("unhandled key code: {0:?}")]
     UnhandledKeyCode(Vec<u8>),
 
-    /// An error occurred in a built-in command.
-    #[error("{1}: {0}")]
-    BuiltinError(Box<dyn BuiltinError>, String),
+    /// An ordinary failure, in a builtin's own words; see
+    /// [`builtins::Failure`], which converts into one.
+    #[error(transparent)]
+    BuiltinFailure(builtins::Failure),
+
+    /// A failure a builtin returned, attributed to it.
+    #[error("{builtin}: {error}")]
+    #[non_exhaustive]
+    BuiltinError {
+        /// The name the builtin was invoked under.
+        builtin: String,
+        /// The failure, as the builtin returned it.
+        error: Error,
+    },
 
     /// Operation not supported on this platform.
     #[error("operation not supported on this platform: {0}")]
@@ -332,35 +343,9 @@ pub enum ErrorKind {
     NoMatch(String),
 }
 
-/// Trait implementable by built-in commands to represent errors.
-pub trait BuiltinError: std::error::Error + ConvertibleToExitCode + Send + Sync {
-    /// Try to extract a reference to the underlying `std::io::Error`, if any.
-    /// Implementations should return `None` if there is no inner I/O error.
-    /// They should not attempt to *synthesize* an I/O error if one does not
-    /// naturally exist.
-    fn as_io_error(&self) -> Option<&std::io::Error> {
-        None
-    }
-}
-
-impl BuiltinError for Error {
-    fn as_io_error(&self) -> Option<&std::io::Error> {
-        self.as_io_error()
-    }
-}
-
-/// Helper trait for converting values to exit codes.
-pub trait ConvertibleToExitCode {
-    /// Converts to an exit code.
-    fn as_exit_code(&self) -> results::ExecutionExitCode;
-}
-
-impl<T> ConvertibleToExitCode for T
-where
-    results::ExecutionExitCode: for<'a> From<&'a T>,
-{
-    fn as_exit_code(&self) -> results::ExecutionExitCode {
-        self.into()
+impl From<builtins::Failure> for ErrorKind {
+    fn from(failure: builtins::Failure) -> Self {
+        Self::BuiltinFailure(failure)
     }
 }
 
@@ -377,7 +362,8 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
             ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
             ErrorKind::IoError(io_err) => io_err.into(),
-            ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
+            ErrorKind::BuiltinError { error, .. } => Self::from(error),
+            ErrorKind::BuiltinFailure(failure) => failure.exit_code(),
             _ => Self::GeneralError,
         }
     }
@@ -430,10 +416,13 @@ impl Error {
     }
 
     /// Try to extract a reference to the underlying `std::io::Error`, if any.
+    /// For a builtin's [`Failure`](crate::builtins::Failure), that's the error
+    /// it was made from or one of that error's causes, if one is an I/O error.
     pub fn as_io_error(&self) -> Option<&std::io::Error> {
         match &*self.kind {
             ErrorKind::IoError(io_err) => Some(io_err),
-            ErrorKind::BuiltinError(inner, _) => inner.as_io_error(),
+            ErrorKind::BuiltinError { error, .. } => error.as_io_error(),
+            ErrorKind::BuiltinFailure(failure) => failure.io_error(),
             _ => None,
         }
     }

@@ -145,3 +145,10 @@ cases:
       echo "set -o: ${PIPESTATUS[0]}"
       set +o bogus 2>&1 | strip
       echo "set +o: ${PIPESTATUS[0]}"
+
+  - name: "set rejects an option it doesn't have"
+    known_failure: true # TODO(set): set -Z and set +Z succeed with status 0
+    ignore_stderr: true
+    stdin: |
+      set -Z; echo "set -Z: $?"
+      set +Z; echo "set +Z: $?"
