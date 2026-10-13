@@ -63,3 +63,11 @@ cases:
       echo "unknown signal: $?"
       kill -s
       echo "missing signal: $?"
+
+  - name: "kill sends SIGTERM by default"
+    known_failure: true # TODO(kill): sends SIGKILL by default, where bash sends SIGTERM
+    stdin: |
+      sh -c 'trap "echo got TERM; exit 0" TERM; echo $$ > pidfile; while :; do sleep 0.05; done' &
+      while [ ! -s pidfile ]; do sleep 0.05; done
+      kill "$(cat pidfile)"
+      wait
