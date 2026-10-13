@@ -19,7 +19,7 @@ pub(crate) async fn complete_async(
         result = &mut completion_future => {
             result
         }
-        _ = tokio::signal::ctrl_c() => {
+        _ = brush_core::sys::signal::await_ctrl_c() => {
             Err(brush_core::ErrorKind::Interrupted.into())
         },
     };

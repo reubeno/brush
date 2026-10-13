@@ -211,7 +211,7 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
         drop(shell);
 
         // Read input.
-        match self.input.read_line(&self.shell, prompt)? {
+        match self.input.read_line(&self.shell, prompt).await? {
             ReadResult::Input(read_result) => {
                 // We got a line of input -- execute it.
                 self.execute_line(read_result, true /* user input */).await
@@ -430,7 +430,8 @@ mod tests {
     struct FailingInput;
 
     impl InputBackend for FailingInput {
-        fn read_line(
+        #[allow(clippy::unused_async_trait_impl, reason = "a test double")]
+        async fn read_line(
             &mut self,
             _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
             _prompt: InteractivePrompt,

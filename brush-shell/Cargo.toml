@@ -65,10 +65,11 @@ path = "benches/shell.rs"
 harness = false
 
 [features]
-default = ["basic", "reedline", "minimal"]
+default = ["basic", "reedline", "minimal", "vt"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
+vt = ["brush-interactive/vt"]
 experimental = [
     "experimental-builtins",
     "experimental-bundled-coreutils",

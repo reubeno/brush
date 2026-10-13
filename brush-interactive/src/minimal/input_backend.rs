@@ -10,7 +10,11 @@ use crate::{
 pub struct MinimalInputBackend;
 
 impl InputBackend for MinimalInputBackend {
-    fn read_line(
+    #[allow(
+        clippy::unused_async_trait_impl,
+        reason = "this backend reads synchronously; the trait is async for those that don't"
+    )]
+    async fn read_line(
         &mut self,
         shell_ref: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,

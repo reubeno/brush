@@ -35,14 +35,14 @@ mod reedline;
 #[cfg(feature = "reedline")]
 pub use reedline::ReedlineInputBackend;
 
-// Basic shell
-#[cfg(feature = "basic")]
-mod basic;
-#[cfg(feature = "basic")]
-pub use basic::BasicInputBackend;
-
 // Minimal shell
 #[cfg(feature = "minimal")]
 mod minimal;
 #[cfg(feature = "minimal")]
 pub use minimal::MinimalInputBackend;
+
+// Line editing over plain bytes
+#[cfg(feature = "vt")]
+pub mod vt;
+#[cfg(feature = "vt")]
+pub use vt::VtInputBackend;

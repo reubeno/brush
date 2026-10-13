@@ -77,3 +77,10 @@ pub fn move_self_to_foreground() -> Result<(), std::io::Error> {
 pub fn try_get_terminal_device_path() -> Option<std::path::PathBuf> {
     None
 }
+
+/// Returns the width, in columns, of the terminal associated with the given file.
+///
+/// This is a stub implementation that always returns `None`.
+pub const fn get_columns(_file: &openfiles::OpenFile) -> Option<usize> {
+    None
+}

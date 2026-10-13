@@ -39,10 +39,15 @@ const HEADING_EXPERIMENTAL_OPTIONS: &str = "*Experimental* options (unstable)";
 pub enum InputBackendType {
     /// Richest input backend, based on reedline.
     Reedline,
-    /// Basic input backend that provides minimal completion support for testing.
+    /// The `vt` backend's line editing, drawn with backspaces alone and listing
+    /// ambiguous completions straight away: output that test harnesses can follow.
+    /// Not available on Windows.
     Basic,
     /// Most minimal input backend.
     Minimal,
+    /// Line editing with completion and history, drawn with VT100-style escape
+    /// sequences; needs no terminal library. Not available on Windows.
+    Vt,
 }
 
 /// Parsed command-line arguments for the brush shell.

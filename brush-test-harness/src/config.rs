@@ -311,11 +311,12 @@ impl TestOptions {
             "--disable-color".into(),
         ];
 
-        // Use the basic input backend for native builds. WASI builds are
-        // compiled with `--features minimal` which doesn't include the basic
-        // backend, so passing this flag would cause a startup error. Omitting
-        // it lets brush pick its own default (Minimal on wasm targets).
-        if !self.platform_tags().contains("wasi") {
+        // Use the basic input backend where brush offers it: natively, on Unix.
+        // WASI builds (run here under a runtime) and Windows builds don't, so
+        // asking for it would cause a startup error. Omitting it lets brush pick
+        // its own default (Minimal, when input isn't a terminal).
+        let tags = self.platform_tags();
+        if !tags.contains("wasi") && !tags.contains("windows") {
             default_args.push("--input-backend=basic".into());
         }
 

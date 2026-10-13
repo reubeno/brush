@@ -229,12 +229,17 @@ async fn run_async(
         #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
         InputBackendType::Reedline => Err(brush_interactive::ShellError::InputBackendNotSupported),
 
-        #[cfg(feature = "basic")]
+        // The VT backend reads keys from stdin as bytes, which the Windows console
+        // doesn't send without changes to its mode that brush doesn't make.
+        #[cfg(all(feature = "basic", not(windows)))]
         InputBackendType::Basic => {
-            let mut input_backend = brush_interactive::BasicInputBackend;
+            let mut input_backend = brush_interactive::VtInputBackend::default().with_basic_style();
+            let mut locked_shell = shell.lock().await;
+            input_backend.install_key_bindings(&mut locked_shell);
+            drop(locked_shell);
             run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
-        #[cfg(not(feature = "basic"))]
+        #[cfg(any(not(feature = "basic"), windows))]
         InputBackendType::Basic => Err(brush_interactive::ShellError::InputBackendNotSupported),
 
         #[cfg(feature = "minimal")]
@@ -244,6 +249,17 @@ async fn run_async(
         }
         #[cfg(not(feature = "minimal"))]
         InputBackendType::Minimal => Err(brush_interactive::ShellError::InputBackendNotSupported),
+
+        #[cfg(all(feature = "vt", not(windows)))]
+        InputBackendType::Vt => {
+            let mut input_backend = brush_interactive::VtInputBackend::default();
+            let mut locked_shell = shell.lock().await;
+            input_backend.install_key_bindings(&mut locked_shell);
+            drop(locked_shell);
+            run_in_shell(&shell, args, &mut input_backend, &ui_options).await
+        }
+        #[cfg(any(not(feature = "vt"), windows))]
+        InputBackendType::Vt => Err(brush_interactive::ShellError::InputBackendNotSupported),
     };
 
     // Display any error that percolated up.
