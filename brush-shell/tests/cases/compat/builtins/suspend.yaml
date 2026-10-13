@@ -1,0 +1,10 @@
+name: "Builtins: suspend"
+cases:
+  - name: "suspend without job control fails"
+    known_failure: true # TODO(suspend): brush stops itself
+    # brush stops until the timeout kills it.
+    timeout_in_seconds: 2
+    ignore_stderr: true
+    stdin: |
+      suspend
+      echo "suspend: $?"

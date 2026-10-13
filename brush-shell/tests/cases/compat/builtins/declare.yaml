@@ -1209,3 +1209,59 @@ cases:
       f() { :; }
       declare -ft f
       declare -F
+
+  - name: "Declaration builtins quote an invalid operand in full"
+    known_failure: true # TODO(declare): reports `1x=2` as "not a valid variable name", not bash's quoted "not a valid identifier"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare 1x=2 2>&1 | strip
+      typeset 1x 2>&1 | strip
+      readonly 'a b=1' 2>&1 | strip
+      f() { local 1x=2 2>&1 | strip; }; f
+
+  - name: "Quoted declaration with = in its subscript"
+    known_failure: true # TODO(declare): a quoted declaration whose subscript contains `=` isn't assigned
+    ignore_stderr: true
+    stdin: |
+      declare -A m
+      declare 'm[a=b]=1'
+      echo "declare: $?"
+      declare -p m
+
+  - name: "Quoted declaration with text after its subscript"
+    ignore_stderr: true
+    stdin: |
+      declare 'x[1]]=2'
+      echo "declare: $?"
+      declare 'y[1]z=2'
+      echo "declare: $?"
+      declare -p x y
+
+  - name: "Declaration expansion depends on the command name as written"
+    known_failure: true # TODO(declare): declaration expansion is decided by the expanded command name, not the name as written
+    stdin: |
+      v="a b"
+      declare x=$v; declare -p x
+      "declare" y=$v; declare -p y
+      \declare z=$v; declare -p z
+      cmd=declare
+      $cmd w=$v; declare -p w
+
+  - name: "A quoted declaration's subscript is expanded and evaluated"
+    known_failure: true # TODO(declare): a word operand's subscript is used as written
+    stdin: |
+      i=3
+      declare 'a[$i]=x'
+      declare -p a
+      k=foo
+      declare -A m
+      declare "m[\$k]=x"
+      declare -p m
+
+  - name: "A command word that expands to nothing doesn't make the next word a declaration utility"
+    known_failure: true # TODO(declare): brush decides from the first word after expansion
+    stdin: |
+      v="a b"
+      e=
+      $e declare x=$v
+      declare -p x

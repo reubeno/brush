@@ -259,3 +259,26 @@ cases:
 
       echo "[Checking after unset]"
       type [
+
+  - name: "unset -f with -v is an error"
+    known_failure: true # TODO(unset): fails with clap's conflict message and status 2, where bash fails with 1
+    ignore_stderr: true
+    stdin: |
+      x=1
+      unset -f -v x
+      echo "result: $?"
+      unset -fv x
+      echo "result: $?"
+      echo "x=${x-unset}"
+
+  - name: "unset -v rejects a name that isn't a variable's"
+    known_failure: true # TODO(unset): an invalid name is accepted silently
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      a=(1 2)
+      unset -v 1x 'a[1' 'b c' 'a[0]' 2>errors.txt
+      echo "unset -v: $? ${#a[@]}"
+      strip <errors.txt
+      rm errors.txt
+      unset 1x
+      echo "unset: $?"

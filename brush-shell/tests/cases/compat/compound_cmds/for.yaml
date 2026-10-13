@@ -193,3 +193,75 @@ cases:
           echo "loop: target=$target"
       done
       echo "final: target=$target"
+
+  - name: "continue with a non-numeric argument aborts the script"
+    known_failure: true # TODO(builtins): a usage error skips continue, so the loop body keeps running
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do continue abc; echo "body $i"; done
+      echo "after loop: $?"
+
+  - name: "break with a count of zero"
+    known_failure: true # TODO(loops): break 0 doesn't report "loop count out of range" and fail with 1
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do break 0; echo "body $i"; done
+      echo "after loop: $?"
+
+  - name: "break and continue with a count of zero leave every loop"
+    known_failure: true # TODO(loops): a count of zero doesn't leave every loop
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do for j in a b; do break 0; done; echo "outer $i"; done
+      echo "after break: $?"
+      for i in 1 2; do for j in a b; do continue -1; done; echo "outer $i"; done
+      echo "after continue: $?"
+
+  - name: "break and continue outside a loop"
+    known_failure: true # TODO(loops): outside a loop, they end the line (or fail in a function), where bash reports it and goes on
+    ignore_stderr: true
+    stdin: |
+      break; echo "after break: $?"
+      continue; echo "after continue: $?"
+
+  - name: "break and continue check for a loop before their options"
+    known_failure: true # TODO(loops): the loop check doesn't come before option parsing
+    ignore_stderr: true
+    stdin: |
+      f() { break -Z; echo "after break -Z: $?"; continue -Z; echo "after continue -Z: $?"; }
+      f
+
+  - name: "break and continue act only on the loops of the current function"
+    known_failure: true # TODO(loops): a function's body doesn't start outside its caller's loops
+    ignore_stderr: true
+    stdin: |
+      f() { break; echo "f went on: $?"; }
+      for i in 1 2; do f; echo "loop body $i"; done
+      g() { for j in a; do break 2; done; echo "g went on"; }
+      for i in 1 2; do g; echo "loop body $i"; done
+      for i in 1; do ( break; echo "subshell went on" ); echo "after subshell: $?"; done
+
+  - name: "break and continue in a substitution act on the enclosing loops"
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do x=$(break; echo "not captured"); echo "captured [$x]"; done
+      for i in 1; do x=$(for j in 1; do break 2; done; echo "not captured"); echo "[$x]"; done
+      for i in 1; do cat <(break; echo "not read"); echo "after process substitution"; done
+
+  - name: "break and continue past the outermost loop"
+    known_failure: true # TODO(loops): a count past the outermost loop doesn't stop there
+    stdin: |
+      for i in 1 2; do for j in a b; do break 5; done; echo "not reached"; done
+      echo "after break: $?"
+      for i in 1 2; do for j in a b; do echo "$i$j"; continue 9; done; done
+      echo "after continue: $?"
+
+  - name: "break and continue read their operand as bash does"
+    known_failure: true # TODO(loops): break and continue don't read their operand as bash does
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do break -- 1; echo "not reached"; done
+      echo "after --: $?"
+      for i in 1 2; do break " 1 "; echo "not reached"; done
+      echo "after blanks: $?"
+      for i in 1; do break --help >/dev/null; echo "help: $?"; done

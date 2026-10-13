@@ -400,3 +400,25 @@ cases:
       i=1
       d[(i+1)*2]=y
       declare -p d
+
+  - name: "Compound assignment appends to an element with [key]+="
+    known_failure: true # TODO(parser): an element's += isn't parsed, so the word is taken as a value
+    stdin: |
+      a=(x y)
+      a+=([0]+=z)
+      declare -p a
+      declare -A m=([k]=v)
+      m+=([k]+=w [j]+=u)
+      declare -p m
+      declare -a d=(p q)
+      declare -a d+=([1]+=r)
+      declare -p d
+
+  - name: "Compound assignment evaluates an indexed array's subscripts"
+    known_failure: true # TODO(arrays): an element's subscript isn't evaluated as arithmetic
+    stdin: |
+      a=([1+1]=x)
+      declare -p a
+      i=1
+      declare -a b=([i+1]=y [i*5]=z)
+      declare -p b

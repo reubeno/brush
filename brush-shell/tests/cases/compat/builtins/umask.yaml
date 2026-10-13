@@ -1,0 +1,8 @@
+name: "Builtins: umask"
+cases:
+  - name: "umask with an out-of-range mode fails with status 1"
+    known_failure: true # TODO(umask): fails as unimplemented (99) or with status 2, where bash fails with 1
+    ignore_stderr: true
+    stdin: |
+      umask 999
+      echo "umask: $?"

@@ -83,3 +83,19 @@ cases:
         echo "Got past exit"
       }
       echo "Got past brace group"
+
+  - name: "exit with too many arguments abandons the rest of the line"
+    known_failure: true # TODO(builtins): a usage error only skips exit
+    ignore_stderr: true
+    stdin: |
+      exit 1 2; echo "same line: $?"
+      echo "next line: $?"
+
+  - name: "logout outside a login shell fails"
+    known_failure: true # TODO(logout): brush reports logout as unimplemented (status 99)
+    ignore_stderr: true
+    stdin: |
+      logout
+      echo "logout: $?"
+      logout -Z
+      echo "logout -Z: $?"

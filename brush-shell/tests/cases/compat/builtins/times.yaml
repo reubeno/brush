@@ -4,3 +4,10 @@ cases:
     ignore_stdout: true
     stdin: |
       times
+
+  - name: "times ignores its arguments"
+    known_failure: true # TODO(times): brush rejects arguments
+    ignore_stderr: true
+    stdin: |
+      times x >/dev/null
+      echo "times: $?"

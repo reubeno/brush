@@ -474,3 +474,15 @@ cases:
       echo "Result: $?"
       echo "arr[1]: ${arr[1]}"
       echo "ref: ${ref}"
+
+  - name: "getopts reads a leading -- as the end of its own options"
+    known_failure: true # TODO(getopts): its arguments are split at the first `--`, so a leading one isn't the end of getopts' own options
+    stdin: |
+      getopts -- ab opt -a
+      echo "status=$? opt=$opt"
+
+  - name: "getopts --help prints help on stdout"
+    known_failure: true # TODO(getopts): brush reports missing operands instead
+    stdin: |
+      getopts --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(getopts --help 2>/dev/null) ]] && echo "help on stdout"

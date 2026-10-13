@@ -424,3 +424,115 @@ cases:
       unset zz
       { echo "${zz?unset}"; } 2>/dev/null
       echo "not reached"
+
+  - name: "Builtin diagnostics carry the script location"
+    known_failure: true # TODO(errors): brush prints no "file: line N:" location
+    stdin: |
+      export 1x=2
+
+  - name: "Builtin usage errors are reported without an error prefix"
+    known_failure: true # TODO(errors): brush's error formatter prints "error: " and no location
+    stdin: |
+      { export -Z; } 2>&1 | head -n 1
+
+  - name: "Builtin I/O errors are reported as bash reports them"
+    known_failure: true # TODO(errors): brush reports "i/o error: ... (os error 2)"
+    stdin: |
+      cd /nonexistent-dir
+
+  - name: "Special builtin runtime error is fatal in POSIX mode"
+    known_failure: true # TODO(posix): this special builtin error doesn't end a non-interactive POSIX shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      export 1x=2
+      echo "after export: $?"
+
+  - name: "Builtin errors in a pipeline are reported on the command's stderr"
+    known_failure: true # TODO(pipeline): a builtin's error in a stage escapes the stage's stderr
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      shopt -s -u extglob 2>&1 | strip
+      echo "shopt: ${PIPESTATUS[*]}"
+      export -Z 2>/dev/null | cat
+      echo "export: ${PIPESTATUS[*]}"
+      cd /nonexistent-dir 2>/dev/null | cat
+      echo "cd: ${PIPESTATUS[*]}"
+      true | cd /nonexistent-dir 2>/dev/null
+      echo "last stage: ${PIPESTATUS[*]}"
+
+  - name: "A special builtin's usage and assignment errors are fatal in POSIX mode"
+    known_failure: true # TODO(posix): a special builtin's usage and assignment errors don't end a non-interactive POSIX shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (set -o bogus; echo "survived: $?")
+      echo "status $?: set -o bogus"
+      (set --bogus; echo "survived: $?")
+      echo "status $?: set --bogus"
+      (trap -Z; echo "survived: $?")
+      echo "status $?: trap -Z"
+      (shift abc; echo "survived: $?")
+      echo "status $?: shift abc"
+      (readonly 1x; echo "survived: $?")
+      echo "status $?: readonly 1x"
+      (export 1x=2 y=3; echo "survived: $?")
+      echo "status $?: export 1x=2 y=3"
+      (readonly r=1; readonly r=2; echo "survived: $?")
+      echo "status $?: readonly r=1; readonly r=2"
+      (readonly r=1; unset r; echo "survived: $?")
+      echo "status $?: readonly r=1; unset r"
+      (readonly r=1; export r=2; echo "survived: $?")
+      echo "status $?: readonly r=1; export r=2"
+      (. /nonexistent-file; echo "survived: $?")
+      echo "status $?: . /nonexistent-file"
+      (f() { return abc; }; f; echo "survived: $?")
+      echo "status $?: f() { return abc; }; f"
+      (return 3; echo "survived: $?")
+      echo "status $?: return 3"
+      (exec -Z; echo "survived: $?")
+      echo "status $?: exec -Z"
+      (export --help >/dev/null; echo "survived: $?")
+      echo "status $?: export --help >/dev/null"
+      (for i in 1; do break abc; done; echo "survived: $?")
+      echo "status $?: for i in 1; do break abc; done"
+
+  - name: "A special builtin's ordinary failures are not fatal in POSIX mode"
+    known_failure: true # TODO(posix): any error a special builtin returns ends a non-interactive POSIX shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      for cmd in 'trap x BOGUS' 'set -- a; shift 3' 'export -f nofunc' 'unset -f -v x' \
+          'unset 1x' 'for i in 1; do break 0; done' 'break' 'continue 2'; do
+        (eval "$cmd"; echo "survived $?: $cmd")
+      done
+
+  - name: "A failed exec ends a non-interactive shell unless execfail is set"
+    known_failure: true # TODO(exec): a failed exec doesn't end a non-interactive shell
+    ignore_stderr: true
+    stdin: |
+      (exec /nonexistent-command; echo "survived")
+      echo "missing: $?"
+      (exec /etc/passwd; echo "survived")
+      echo "not executable: $?"
+      (shopt -s execfail; exec /nonexistent-command; echo "survived execfail: $?")
+
+  - name: "A special builtin's redirection error is fatal in POSIX mode"
+    known_failure: true # TODO(posix): the shell reports a redirection error before it knows the command
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      exec 3</nonexistent-file
+      echo "survived: $?"
+
+  - name: "Builtins attribute their diagnostics as bash does"
+    known_failure: true # TODO(errors): some builtins print diagnostics without bash's attribution or wording
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      enable nosuch 2>&1 | strip
+      (unset HOME; cd) 2>&1 | strip
+      [ 1 = 1 2>&1 | strip
+      help nosuchtopic 2>&1 | strip
+      kill -s BOGUS $$ 2>&1 | strip
+      type nosuch 2>&1 | strip
+      unalias nosuch 2>&1 | strip

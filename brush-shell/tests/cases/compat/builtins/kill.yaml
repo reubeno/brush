@@ -54,3 +54,12 @@ cases:
     stdin: |
       kill -9999 $$
       echo "exit code: $?"
+
+  - name: "kill with a bad or missing signal fails with status 1"
+    known_failure: true # TODO(kill): brush returns 2
+    ignore_stderr: true
+    stdin: |
+      kill -s BOGUS $$
+      echo "unknown signal: $?"
+      kill -s
+      echo "missing signal: $?"

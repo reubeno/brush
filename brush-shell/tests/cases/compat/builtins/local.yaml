@@ -28,3 +28,10 @@ cases:
         declare -p first second
       }
       myfunc
+
+  - name: "local outside a function is refused before its options are read"
+    known_failure: true # TODO(local): brush reads options first
+    ignore_stderr: true
+    stdin: |
+      local -Z
+      echo "local: $?"

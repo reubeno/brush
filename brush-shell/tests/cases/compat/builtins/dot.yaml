@@ -143,3 +143,9 @@ cases:
         echo "After source"
       done
       echo "After loop"
+
+  - name: "Sourcing a missing file fails and goes on"
+    ignore_stderr: true
+    stdin: |
+      . /nonexistent-file
+      echo "after: $?"

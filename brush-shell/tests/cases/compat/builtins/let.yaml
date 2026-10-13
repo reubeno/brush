@@ -26,3 +26,10 @@ cases:
       echo "target: $target"
       let ref++
       echo "target: $target"
+
+  - name: "let with no arguments fails with status 1"
+    known_failure: true # TODO(let): fails with status 2, where bash fails with 1
+    ignore_stderr: true
+    stdin: |
+      let
+      echo "let: $?"

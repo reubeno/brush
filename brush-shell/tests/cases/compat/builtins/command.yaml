@@ -393,3 +393,42 @@ cases:
       command -v cat; echo "rc=$?"
       command -p -v cat; echo "rc=$?"
       command -p -V cat; echo "rc=$?"
+
+  - name: "command passes on declaration expansion in POSIX mode"
+    known_failure: true # TODO(command): in POSIX mode, command doesn't expand c=$x as the declaration utility after it would
+    stdin: |
+      set -o posix
+      v="x y"
+      command declare b=$v
+      command command declare c=$v
+      declare -p b c
+
+  - name: "command passes on declaration expansion only to the next word"
+    known_failure: true # TODO(command): in POSIX mode, command doesn't expand c=$x as the declaration utility after it would
+    stdin: |
+      set -o posix
+      v="x y"
+      command -p declare d=$v
+      command -- declare e=$v
+      declare -p d e
+
+  - name: "command -v runs nothing, so expands no declarations"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      v="x y"
+      command -v printf b=$v; echo "rc=$?"
+
+  - name: "command drops a special builtin's fatal errors in POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      command export --bogus
+      echo "still running: $?"
+
+
+  - name: "command reports a forwarded builtin's errors as the builtin's own"
+    known_failure: true # TODO(command): a forwarded builtin's errors are attributed to command too
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      { command export -Z; } 2>&1 | head -n 1 | strip

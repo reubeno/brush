@@ -50,3 +50,30 @@ cases:
       pid=$!
       wait $pid
       echo "status: $?"
+
+  - name: "wait %job returns the job's status"
+    known_failure: true # TODO(wait): wait %1 returns 0, not the job's status
+    ignore_stderr: true # brush also prints "[1]+Done" for the job; see the next case
+    stdin: |
+      set -m
+      { sleep 0.2; exit 3; } &
+      wait %1
+      echo "status: $?"
+
+  - name: "wait %job for a job that already finished"
+    known_failure: true # TODO(jobs): brush prints "[1]+Done" for a finished job and drops it before wait sees it
+    stdin: |
+      set -m
+      (exit 3) &
+      sleep 0.1
+      wait %1
+      echo "status: $?"
+
+  - name: "wait for a job that doesn't exist fails with status 127"
+    known_failure: true # TODO(wait): wait with job specs not implemented
+    ignore_stderr: true
+    stdin: |
+      wait %9
+      echo "wait %9: $?"
+      wait -n
+      echo "wait -n: $?"
