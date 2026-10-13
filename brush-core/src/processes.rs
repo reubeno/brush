@@ -64,11 +64,16 @@ impl ChildProcess {
                 output = &mut self.exec_future => {
                     break Ok(ProcessWaitResult::Completed(output?))
                 },
+                // Only this child's stop counts: another wait may be under way at the same time
+                // (e.g., a background job's), for a child of its own, and the terminal's stop
+                // may reach the shell without stopping this child.
                 _ = sigtstp.recv() => {
-                    break Ok(ProcessWaitResult::Stopped)
+                    if self.poll_for_stop()? {
+                        break Ok(ProcessWaitResult::Stopped);
+                    }
                 },
                 _ = sigchld.recv() => {
-                    if sys::signal::poll_for_stopped_children()? {
+                    if self.poll_for_stop()? {
                         break Ok(ProcessWaitResult::Stopped);
                     }
                 },
@@ -78,6 +83,14 @@ impl ChildProcess {
                     // terminated (in which case we'll see the child exit).
                 },
             }
+        }
+    }
+
+    /// Returns whether the process has stopped, consuming its stop status.
+    fn poll_for_stop(&self) -> Result<bool, error::Error> {
+        match self.pid {
+            Some(pid) => sys::signal::poll_for_stopped_children(pid),
+            None => Ok(false),
         }
     }
 

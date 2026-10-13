@@ -253,6 +253,64 @@ fn osc_command_markers_stay_paired_when_preexec_exits() -> anyhow::Result<()> {
 // Helpers
 //
 
+#[test_with::executable(sh, sleep)]
+#[test]
+fn suspend_program_while_background_jobs_wait() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+    session.expect_prompt()?;
+
+    // Background jobs wait for programs of their own while the foreground program runs; the
+    // foreground program's stop is for its own wait alone. (Which wait hears of it first
+    // varies, so more background jobs make for a likelier failure without the fix.)
+    session.send_line("for i in {1..16}; do { sleep 5; } & done")?;
+    session.expect_prompt()?;
+    session.send_line("sh -c 'echo ready-$((1 + 1)); exec sleep 1061'")?;
+    session.expect("ready-2")?;
+    session.suspend()?;
+    session
+        .expect_prompt()
+        .context("Prompt after suspending the program")?;
+
+    let jobs_output = session.exec_output("jobs")?;
+    assert!(
+        jobs_output
+            .lines()
+            .any(|line| line.contains("Stopped") && line.contains("1061")),
+        "unexpected jobs: {jobs_output}"
+    );
+
+    session.send_line("kill -9 %+")?;
+    session.expect_prompt()?;
+
+    session.exit()?;
+
+    Ok(())
+}
+
+#[test_with::executable(sleep)]
+#[test]
+fn stop_signal_to_shell_leaves_background_jobs_alone() -> anyhow::Result<()> {
+    let mut session = start_shell_session()?;
+    session.expect_prompt()?;
+
+    // A stop signal that reaches the shell stops none of the programs that background jobs are
+    // waiting for, so none of them is taken to be stopped.
+    session.send_line("{ sleep 3; echo bg-$((1 + 1)); } &")?;
+    session.expect_prompt()?;
+    // (The background job's program has started by the time the signal is sent.)
+    let output =
+        session.exec_output("sleep 0.5; kill -TSTP $$; sleep 1; echo marker-$((1 + 2))")?;
+    assert!(output.contains("marker-3"), "unexpected output: {output}");
+    assert!(
+        !output.contains("Stopped") && !output.contains("bg-2"),
+        "unexpected output: {output}"
+    );
+
+    session.exit()?;
+
+    Ok(())
+}
+
 type ShellSession = ReplSession<Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>>;
 // N.B. Comment out the above line and uncomment out the following line to disable logging of the
 // session. type ShellSession = ReplSession<Session<UnixProcess, PtyStream>>;
