@@ -9,6 +9,15 @@ cases:
     stdin: "exit 42"
     expected_exit_code: 42
 
+  - name: "Exit code propagates from an interactive session"
+    incompatible_platforms: ["windows"] # (No pty to run it in)
+    pty: true
+    stdin: |
+      #expect-prompt
+      exit 42
+      #send:Enter
+    expected_exit_code: 42
+
   - name: "Echo via args"
     args:
       - "-c"
