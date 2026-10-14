@@ -10,6 +10,16 @@ pub(crate) fn continue_process(pid: sys::process::ProcessId) -> Result<(), error
     Ok(())
 }
 
+/// Continues every process in a process group.
+///
+/// # Arguments
+/// * `pgid` - The process group's ID.
+pub(crate) fn continue_process_group(pgid: sys::process::ProcessId) -> Result<(), error::Error> {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), nix::sys::signal::SIGCONT)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+    Ok(())
+}
+
 /// Sends a signal to a specific process.
 ///
 /// # Arguments
@@ -19,20 +29,47 @@ pub fn kill_process(
     pid: sys::process::ProcessId,
     signal: traps::TrapSignal,
 ) -> Result<(), error::Error> {
-    let translated_signal = match signal {
-        traps::TrapSignal::Signal(signal) => signal,
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), real_signal(signal)?)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+
+    Ok(())
+}
+
+/// Sends a signal to every process in a process group.
+///
+/// # Arguments
+/// * `pgid` - The process group's ID.
+/// * `signal` - The signal to send (must be a real signal, not a trap signal)
+pub(crate) fn kill_process_group(
+    pgid: sys::process::ProcessId,
+    signal: traps::TrapSignal,
+) -> Result<(), error::Error> {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), real_signal(signal)?)
+        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
+
+    Ok(())
+}
+
+/// Returns whether a stopped process sent the given signal must be continued for it to act on
+/// it, as bash continues a stopped job sent SIGTERM or SIGHUP: some systems leave those pending
+/// until then.
+pub(crate) const fn continue_stopped_on(signal: traps::TrapSignal) -> bool {
+    matches!(
+        signal,
+        traps::TrapSignal::Signal(Signal::SIGTERM | Signal::SIGHUP)
+    )
+}
+
+fn real_signal(signal: traps::TrapSignal) -> Result<Signal, error::Error> {
+    match signal {
+        traps::TrapSignal::Signal(signal) => Ok(signal),
         traps::TrapSignal::Debug
         | traps::TrapSignal::Err
         | traps::TrapSignal::Exit
         | traps::TrapSignal::Return => {
-            return Err(error::ErrorKind::InvalidSignal(signal.to_string()).into());
+            Err(error::ErrorKind::InvalidSignal(signal.to_string()).into())
         }
-    };
-
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), translated_signal)
-        .map_err(|_errno| error::ErrorKind::FailedToSendSignal)?;
-
-    Ok(())
+    }
 }
 
 /// Checks whether a specific process exists and can be signaled.
@@ -40,13 +77,27 @@ pub fn kill_process(
 /// # Arguments
 /// * `pid` - The process ID to signal-zero check.
 pub fn check_signalable(pid: sys::process::ProcessId) -> Result<(), error::Error> {
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).map_err(|errno| match errno {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).map_err(signal_error)?;
+    Ok(())
+}
+
+/// Checks whether a process group exists and can be signaled.
+///
+/// # Arguments
+/// * `pgid` - The process group's ID.
+pub(crate) fn check_process_group_signalable(
+    pgid: sys::process::ProcessId,
+) -> Result<(), error::Error> {
+    nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pgid), None).map_err(signal_error)?;
+    Ok(())
+}
+
+const fn signal_error(errno: nix::errno::Errno) -> error::ErrorKind {
+    match errno {
         nix::errno::Errno::ESRCH => error::ErrorKind::NoSuchProcess,
         nix::errno::Errno::EPERM => error::ErrorKind::PermissionDenied,
         _ => error::ErrorKind::FailedToSendSignal,
-    })?;
-
-    Ok(())
+    }
 }
 
 pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {

@@ -36,6 +36,10 @@ pub(crate) fn continue_process(_pid: sys::process::ProcessId) -> Result<(), erro
     Err(error::ErrorKind::NotSupportedOnThisPlatform("continuing process").into())
 }
 
+pub(crate) fn continue_process_group(_pgid: sys::process::ProcessId) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("continuing process group").into())
+}
+
 /// Checks whether a specific process exists and can be signaled.
 ///
 /// This is a stub implementation that returns an error.
@@ -51,6 +55,23 @@ pub fn kill_process(
     _signal: traps::TrapSignal,
 ) -> Result<(), error::Error> {
     Err(error::ErrorKind::NotSupportedOnThisPlatform("killing process").into())
+}
+
+pub(crate) fn check_process_group_signalable(
+    _pgid: sys::process::ProcessId,
+) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("checking process group").into())
+}
+
+pub(crate) fn kill_process_group(
+    _pgid: sys::process::ProcessId,
+    _signal: traps::TrapSignal,
+) -> Result<(), error::Error> {
+    Err(error::ErrorKind::NotSupportedOnThisPlatform("killing process group").into())
+}
+
+pub(crate) const fn continue_stopped_on(_signal: traps::TrapSignal) -> bool {
+    false
 }
 
 pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
