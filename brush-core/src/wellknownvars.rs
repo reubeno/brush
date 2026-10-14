@@ -642,9 +642,10 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
-        let top_frame = stack.iter_script_calls().next();
-        top_frame
-            .map_or_else(Vec::new, |frame| vec![frame.source_info.source.clone()])
+        stack
+            .iter_script_calls()
+            .map(|frame| frame.source_info.source.clone())
+            .collect::<Vec<_>>()
             .into()
     } else {
         // When in a function, include both functions and sourced scripts in the stack
