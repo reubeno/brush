@@ -125,7 +125,7 @@ pub struct IntegrationTestArgs {
     pub results_output: Option<PathBuf>,
 
     /// Build and test against a wasm32-wasip3 target under a WASI runtime
-    /// (wasmtime by default). Builds brush for wasm32-wasip3 with minimal
+    /// (wasmtime by default). Builds brush for wasm32-wasip3 with its default
     /// features, then runs a subset of integration tests (excluding compat,
     /// interactive, and completion suites) under the WASI launcher. Needs a
     /// toolchain with the wasm32-wasip3 target (Rust 1.100+, or nightly) and
@@ -281,9 +281,6 @@ fn run_integration_tests_wasi(
             "brush-shell",
             "--bin",
             "brush",
-            "--no-default-features",
-            "--features",
-            "minimal",
         ];
         if is_release {
             build_args.push("--release");

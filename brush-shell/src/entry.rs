@@ -12,12 +12,10 @@ use brush_builtins::ShellBuilderExt as _;
 #[cfg(feature = "experimental-builtins")]
 use brush_experimental_builtins::ShellBuilderExt as _;
 use clap::CommandFactory;
+use std::io::IsTerminal;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
-
-#[allow(unused_imports, reason = "only used in some configs")]
-use std::io::IsTerminal;
 
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
     LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
@@ -220,18 +218,16 @@ async fn run_async(
     let ui_options = file_config.to_ui_options(&args);
 
     let result = match selected_backend {
-        #[cfg(all(feature = "reedline", any(unix, windows)))]
+        #[cfg(reedline_backend)]
         InputBackendType::Reedline => {
             let mut input_backend =
                 brush_interactive::ReedlineInputBackend::new(&ui_options, &shell)?;
             run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
-        #[cfg(any(not(feature = "reedline"), not(any(unix, windows))))]
+        #[cfg(not(reedline_backend))]
         InputBackendType::Reedline => Err(brush_interactive::ShellError::InputBackendNotSupported),
 
-        // The VT backend reads keys from stdin as bytes, which the Windows console
-        // doesn't send without changes to its mode that brush doesn't make.
-        #[cfg(all(feature = "basic", not(windows)))]
+        #[cfg(basic_backend)]
         InputBackendType::Basic => {
             let mut input_backend = brush_interactive::VtInputBackend::default().with_basic_style();
             let mut locked_shell = shell.lock().await;
@@ -239,18 +235,18 @@ async fn run_async(
             drop(locked_shell);
             run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
-        #[cfg(any(not(feature = "basic"), windows))]
+        #[cfg(not(basic_backend))]
         InputBackendType::Basic => Err(brush_interactive::ShellError::InputBackendNotSupported),
 
-        #[cfg(feature = "minimal")]
+        #[cfg(minimal_backend)]
         InputBackendType::Minimal => {
             let mut input_backend = brush_interactive::MinimalInputBackend;
             run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
-        #[cfg(not(feature = "minimal"))]
+        #[cfg(not(minimal_backend))]
         InputBackendType::Minimal => Err(brush_interactive::ShellError::InputBackendNotSupported),
 
-        #[cfg(all(feature = "vt", not(windows)))]
+        #[cfg(vt_backend)]
         InputBackendType::Vt => {
             let mut input_backend = brush_interactive::VtInputBackend::default();
             let mut locked_shell = shell.lock().await;
@@ -258,7 +254,7 @@ async fn run_async(
             drop(locked_shell);
             run_in_shell(&shell, args, &mut input_backend, &ui_options).await
         }
-        #[cfg(any(not(feature = "vt"), windows))]
+        #[cfg(not(vt_backend))]
         InputBackendType::Vt => Err(brush_interactive::ShellError::InputBackendNotSupported),
     };
 
@@ -577,23 +573,48 @@ const fn new_error_behavior(args: &CommandLineArgs) -> error_formatter::Formatte
     }
 }
 
+// The default input backend must be one this build offers.
+#[cfg(not(any(reedline_backend, vt_backend, basic_backend, minimal_backend)))]
+compile_error!("no input backend is enabled that works on this target; enable `minimal`");
+
+/// Whether this build offers the given input backend; see `build.rs`.
+const fn is_input_backend_available(backend: InputBackendType) -> bool {
+    match backend {
+        InputBackendType::Reedline => cfg!(reedline_backend),
+        InputBackendType::Basic => cfg!(basic_backend),
+        InputBackendType::Minimal => cfg!(minimal_backend),
+        InputBackendType::Vt => cfg!(vt_backend),
+    }
+}
+
 fn get_default_input_backend_type(args: &CommandLineArgs) -> InputBackendType {
-    #[cfg(any(unix, windows))]
-    {
-        // If stdin isn't a terminal, then `reedline` doesn't do the right thing
-        // (reference: https://github.com/nushell/reedline/issues/509). Switch to
-        // the minimal input backend instead for that scenario.
-        if std::io::stdin().is_terminal() && args.will_read_commands_from_stdin() {
-            InputBackendType::Reedline
-        } else {
-            InputBackendType::Minimal
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _args = args;
-        InputBackendType::Minimal
-    }
+    default_input_backend_type(
+        std::io::stdin().is_terminal() && args.will_read_commands_from_stdin(),
+    )
+}
+
+/// Returns the input backend to use if none is requested: the first this build
+/// offers, of the richest for commands typed at a terminal, or else the simplest.
+///
+/// # Arguments
+///
+/// * `at_terminal` - Whether commands are typed at a terminal.
+fn default_input_backend_type(at_terminal: bool) -> InputBackendType {
+    use InputBackendType as B;
+
+    // If stdin isn't a terminal, then `reedline` doesn't do the right thing
+    // (reference: https://github.com/nushell/reedline/issues/509), so it comes last.
+    let preferred = if at_terminal {
+        [B::Reedline, B::Vt, B::Basic, B::Minimal]
+    } else {
+        [B::Minimal, B::Vt, B::Basic, B::Reedline]
+    };
+
+    // Some backend is always offered (see the `compile_error!` above).
+    preferred
+        .into_iter()
+        .find(|backend| is_input_backend_available(*backend))
+        .unwrap_or(B::Minimal)
 }
 
 pub(crate) fn get_event_config() -> Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>> {
@@ -936,5 +957,31 @@ mod tests {
         assert!(!parsed_args.command_string_mode);
         assert_eq!(parsed_args.enabled_options, ["c"]);
         Ok(())
+    }
+
+    #[test]
+    fn defaults_to_an_available_input_backend() {
+        for at_terminal in [true, false] {
+            let backend = default_input_backend_type(at_terminal);
+            assert!(is_input_backend_available(backend), "{backend:?}");
+        }
+    }
+
+    #[cfg(reedline_backend)]
+    #[test]
+    fn defaults_to_reedline_at_a_terminal() {
+        assert_eq!(default_input_backend_type(true), InputBackendType::Reedline);
+    }
+
+    #[cfg(all(not(reedline_backend), vt_backend))]
+    #[test]
+    fn defaults_to_vt_at_a_terminal_without_reedline() {
+        assert_eq!(default_input_backend_type(true), InputBackendType::Vt);
+    }
+
+    #[cfg(minimal_backend)]
+    #[test]
+    fn defaults_to_minimal_away_from_a_terminal() {
+        assert_eq!(default_input_backend_type(false), InputBackendType::Minimal);
     }
 }
