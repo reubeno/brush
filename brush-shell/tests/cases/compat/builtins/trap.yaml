@@ -748,3 +748,12 @@ cases:
       true | false
       echo done
       trap - DEBUG
+
+  - name: "ERR trap with errtrace runs once for a subshell that exits"
+    known_failure: true # TODO(trap): the ERR trap runs again for each level the subshell's exit leaves, not once
+    stdin: |
+      set -E
+      trap 'echo "ERR $?"' ERR
+      f() { exit 3; }
+      (f)
+      echo "after: $?"

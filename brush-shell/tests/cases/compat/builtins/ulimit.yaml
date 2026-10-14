@@ -42,3 +42,12 @@ cases:
     stdin: |
       ulimit -n abc
       echo "ulimit: $?"
+
+  - name: "ulimit in a subshell stays there"
+    known_failure: true # TODO(ulimit): a subshell runs in the shell's own process, so its limits are the shell's
+    stdin: |
+      ulimit -S -n 512
+      ( ulimit -S -n 256 )
+      echo "after a subshell: $(ulimit -S -n)"
+      ulimit -S -n 256 | true
+      echo "after a pipeline stage: $(ulimit -S -n)"

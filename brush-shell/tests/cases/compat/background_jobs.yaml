@@ -97,6 +97,13 @@ cases:
       wait %1
       echo "status: $?"
 
+  - name: "$! names the last background job's process"
+    known_failure: true # TODO(jobs): a background job isn't tied to its processes, so `$!` is empty
+    stdin: |
+      sleep 0.1 &
+      if [ -n "$!" ] && kill -0 "$!"; then echo "running"; fi
+      wait
+
   - name: "Background job started in a pipeline stage"
     known_failure: true # TODO(jobs): the background job's task holds the stage's standard output open, so the next stage waits for the job, though its program writes elsewhere
     timeout_in_seconds: 2

@@ -139,7 +139,7 @@ cases:
       for i in 1 2; do echo x | break; echo "loop body $i"; done
 
   - name: "A special builtin's fatal error in a pipeline stage ends only that stage"
-    known_failure: true # TODO(pipeline): a special builtin's fatal error in a stage ends the shell running the pipeline
+    known_failure: true # TODO(builtins): a usage error only skips exit, which returns 2 rather than exiting with 1 (see builtins/exit.yaml)
     ignore_stderr: true
     stdin: |
       set -o posix
