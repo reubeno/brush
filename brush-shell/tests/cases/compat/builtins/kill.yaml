@@ -27,6 +27,24 @@ cases:
       kill -n $((5-5)) $$
       echo OK
 
+  - name: "A shell ignores SIGQUIT, even when not interactive"
+    known_failure: true # TODO(signals): bash ignores SIGQUIT in all cases, but a brush that isn't interactive takes its default action
+    stdin: |
+      "$BASH" -c 'kill -QUIT $$; echo survived'
+      echo "status: $?"
+
+  - name: "A program that a signal ends is reported"
+    known_failure: true # TODO(jobs): brush reports nothing when a signal other than SIGINT or SIGPIPE ends a program, as bash does on stderr
+    stdin: |
+      sh -c 'kill -TERM $$'
+      echo "status: $?"
+
+  - name: "An interactive shell without a terminal survives SIGTERM"
+    known_failure: true # TODO(signals): brush has an interactive shell survive signals only once it takes a terminal
+    stdin: |
+      echo 'kill -TERM $$; echo survived' | "$BASH" --norc --noprofile -i 2>/dev/null
+      echo "status: $?"
+
   - name: "kill -sigspec"
     stdin: |
       kill -USR1 $$
