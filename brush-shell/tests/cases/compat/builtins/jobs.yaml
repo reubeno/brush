@@ -5,6 +5,32 @@ cases:
       echo hi &
       wait
 
+  - name: "fg resumes a stopped job without a terminal to give it"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'kill -STOP $$; echo resumed'
+      fg >/dev/null
+      echo "fg: $?"
+
+  - name: "fg resumes every process of a stopped job"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c '(kill -STOP 0; echo child resumed); echo parent resumed'
+      fg >/dev/null
+      echo "fg: $?"
+
+  - name: "bg on a job already in the background says so"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      sleep 1 &
+      bg %1 2>err.txt; echo "bg: $?"; strip < err.txt
+      wait %1
+      rm err.txt
+
   - name: "fg without a current job reports on stderr"
     known_failure: true # TODO(fg): "no current job" is reported on stdout
     ignore_stderr: true

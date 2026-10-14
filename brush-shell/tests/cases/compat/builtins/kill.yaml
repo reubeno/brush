@@ -45,6 +45,42 @@ cases:
     stdin: |
       kill -0 99999999
 
+  - name: "kill continues a stopped job sent SIGTERM, so it can act on it"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'trap "echo terminated >status.txt; exit 3" TERM; kill -STOP $$; echo resumed'
+      kill -TERM %1
+      for i in $(seq 100); do [ -s status.txt ] && break; sleep 0.1; done
+      cat status.txt
+      rm -f status.txt
+
+  - name: "kill continues a job sent SIGTERM that stopped again in the background"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'echo $$ >pid.txt; trap "echo terminated >status.txt; exit 3" TERM; kill -STOP $$; kill -STOP $$'
+      bg >/dev/null
+      for i in $(seq 100); do case $(ps -o stat= -p "$(cat pid.txt)") in T*) break ;; esac; sleep 0.1; done
+      kill -TERM %1
+      for i in $(seq 100); do [ -s status.txt ] && break; sleep 0.1; done
+      cat status.txt
+      rm -f pid.txt status.txt
+
+  - name: "A stopped job that survives SIGTERM runs on"
+    ignore_stderr: true
+    stdin: |
+      set -m
+      sh -c 'trap "echo caught >status.txt" TERM; kill -STOP $$; while [ ! -e done.txt ]; do sleep 0.1; done'
+      kill -TERM %1
+      for i in $(seq 100); do [ -s status.txt ] && break; sleep 0.1; done
+      cat status.txt
+      jobs -r >running.txt; echo "running: $(( $(wc -l <running.txt) ))"
+      jobs -s >stopped.txt; echo "stopped: $(( $(wc -l <stopped.txt) ))"
+      touch done.txt
+      wait %1
+      rm -f status.txt done.txt running.txt stopped.txt
+
   - name: "kill -sigspec (numeric, full name resolution)"
     stdin: |
       kill -l $(kill -l KILL)

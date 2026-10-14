@@ -258,9 +258,6 @@ pub struct Job {
     /// The tasks that make up the job.
     tasks: VecDeque<JobTask>,
 
-    /// If available, the process group ID of the job's processes.
-    pgid: Option<sys::process::ProcessId>,
-
     /// The annotation of the job (e.g., current, previous).
     annotation: JobAnnotation,
 
@@ -299,7 +296,6 @@ impl Job {
         Self {
             id: 0,
             tasks: tasks.into_iter().collect(),
-            pgid: None,
             annotation: JobAnnotation::None,
             command_line,
             state,
@@ -391,57 +387,81 @@ impl Job {
 
     /// Moves the job to execute in the background.
     pub fn move_to_background(&mut self) -> Result<(), error::Error> {
-        if matches!(self.state, JobState::Stopped) {
-            if let Some(pgid) = self.process_group_id() {
-                sys::signal::continue_process(pgid)?;
-                self.state = JobState::Running;
-                Ok(())
-            } else {
-                Err(error::ErrorKind::FailedToSendSignal.into())
-            }
-        } else {
-            error::unimp("move job to background")
-        }
+        self.continue_job()
     }
 
     /// Moves the job to execute in the foreground.
     pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
-        if matches!(self.state, JobState::Stopped) {
-            if let Some(pgid) = self.process_group_id() {
-                sys::signal::continue_process(pgid)?;
-                self.state = JobState::Running;
-            } else {
-                return Err(error::ErrorKind::FailedToSendSignal.into());
-            }
+        // The job gets the terminal before it's continued, so that it doesn't find itself in the
+        // background and stop again on reading from the terminal. (Without a terminal, as in a
+        // script that enables job control, there's none to give it, and it's continued anyway.)
+        if let Some(pgid) = self.own_process_group()
+            && let Err(err) = sys::terminal::move_to_foreground(pgid)
+        {
+            tracing::debug!(target: trace_categories::JOBS, "not giving job {} the terminal: {err}", self.id);
         }
 
-        if let Some(pgid) = self.process_group_id() {
-            sys::terminal::move_to_foreground(pgid)?;
+        self.continue_job()
+    }
+
+    /// Continues the job, and records it running.
+    fn continue_job(&mut self) -> Result<(), error::Error> {
+        if matches!(self.state, JobState::Stopped) {
+            self.continue_processes()?;
+            self.state = JobState::Running;
+        } else {
+            // As bash does for `fg`, continue it anyway: it may have been stopped without the
+            // shell noticing yet (e.g., by reading from the terminal in the background).
+            let _ = self.continue_processes();
         }
 
         Ok(())
     }
 
+    /// Continues the job's stopped processes: all of its process group, if it has one.
+    fn continue_processes(&self) -> Result<(), error::Error> {
+        if let Some(pgid) = self.own_process_group() {
+            sys::signal::continue_process_group(pgid)
+        } else if let Some(pid) = self.representative_pid() {
+            sys::signal::continue_process(pid)
+        } else {
+            Err(error::ErrorKind::FailedToSendSignal.into())
+        }
+    }
+
     /// Checks whether the job can be signaled.
     pub fn check_signalable(&self) -> Result<(), error::Error> {
-        if let Some(pid) = self.process_group_id() {
+        if let Some(pgid) = self.own_process_group() {
+            sys::signal::check_process_group_signalable(pgid)
+        } else if let Some(pid) = self.representative_pid() {
             sys::signal::check_signalable(pid)
         } else {
             Err(error::ErrorKind::FailedToSendSignal.into())
         }
     }
 
-    /// Kills the job.
+    /// Kills the job: sends the signal to all of its process group, if it has one. A job sent
+    /// SIGTERM or SIGHUP is also continued, so that it acts on it if it's stopped.
     ///
     /// # Arguments
     ///
     /// * `signal` - The signal to send to the job.
-    pub fn kill(&self, signal: traps::TrapSignal) -> Result<(), error::Error> {
-        if let Some(pid) = self.process_group_id() {
-            sys::signal::kill_process(pid, signal)
+    pub fn kill(&mut self, signal: traps::TrapSignal) -> Result<(), error::Error> {
+        if let Some(pgid) = self.own_process_group() {
+            sys::signal::kill_process_group(pgid, signal)?;
+        } else if let Some(pid) = self.representative_pid() {
+            sys::signal::kill_process(pid, signal)?;
         } else {
-            Err(error::ErrorKind::FailedToSendSignal.into())
+            return Err(error::ErrorKind::FailedToSendSignal.into());
         }
+
+        // As bash does, continue a stopped job sent SIGTERM or SIGHUP, so that it acts on it;
+        // and one not known to be stopped, which may have stopped without the shell's noticing.
+        if sys::signal::continue_stopped_on(signal) {
+            self.continue_job()?;
+        }
+
+        Ok(())
     }
 
     /// Tries to retrieve a "representative" pid for the job.
@@ -459,9 +479,19 @@ impl Job {
         None
     }
 
-    /// Tries to retrieve the process group ID (PGID) of the job.
+    /// Tries to retrieve the process group ID (PGID) of the job: that of its own process group,
+    /// if it has one, or else its representative pid.
     pub fn process_group_id(&self) -> Option<sys::process::ProcessId> {
-        // TODO(jobs): Don't assume that the first PID is the PGID.
-        self.pgid.or_else(|| self.representative_pid())
+        self.own_process_group()
+            .or_else(|| self.representative_pid())
+    }
+
+    /// Returns the job's own process group, if it has one: under job control, its processes
+    /// run in a group of their own, which needn't be led by the first of them.
+    fn own_process_group(&self) -> Option<sys::process::ProcessId> {
+        self.tasks.iter().find_map(|task| match task {
+            JobTask::External(child) => child.pgid(),
+            JobTask::Internal(_) => None,
+        })
     }
 }
