@@ -225,8 +225,10 @@ impl TestCase {
                 if let Some(expectation) = line.strip_prefix("#expect:") {
                     if let Err(inner) = p.expect(expectation) {
                         return Ok(RunResult {
-                            exit_status: ExitStatus::from_raw(1),
-                            stdout: read_expectrl_log(log).unwrap_or_default(),
+                            exit_status: exited_with(1),
+                            stdout: read_expectrl_log(log)
+                                .map(make_expectrl_output_readable)
+                                .unwrap_or_default(),
                             stderr: std::format!("failed to expect '{expectation}': {inner}"),
                             duration: start_time.elapsed(),
                         });
@@ -241,8 +243,10 @@ impl TestCase {
                 } else if line.trim() == "#expect-prompt" {
                     if let Err(inner) = p.expect("test$ ") {
                         return Ok(RunResult {
-                            exit_status: ExitStatus::from_raw(1),
-                            stdout: read_expectrl_log(log).unwrap_or_default(),
+                            exit_status: exited_with(1),
+                            stdout: read_expectrl_log(log)
+                                .map(make_expectrl_output_readable)
+                                .unwrap_or_default(),
                             stderr: std::format!("failed to expect prompt: {inner}"),
                             duration: start_time.elapsed(),
                         });
@@ -255,8 +259,10 @@ impl TestCase {
 
         if let Err(inner) = p.expect(expectrl::Eof) {
             return Ok(RunResult {
-                exit_status: ExitStatus::from_raw(1),
-                stdout: read_expectrl_log(log).unwrap_or_default(),
+                exit_status: exited_with(1),
+                stdout: read_expectrl_log(log)
+                    .map(make_expectrl_output_readable)
+                    .unwrap_or_default(),
                 stderr: std::format!("failed to expect EOF: {inner}"),
                 duration: start_time.elapsed(),
             });
@@ -277,7 +283,7 @@ impl TestCase {
 
         match wait_status {
             expectrl::process::unix::WaitStatus::Exited(_, code) => Ok(RunResult {
-                exit_status: ExitStatus::from_raw(code),
+                exit_status: exited_with(code),
                 stdout: cleaned,
                 stderr: String::new(),
                 duration,
@@ -331,4 +337,11 @@ impl TestCase {
             duration,
         })
     }
+}
+
+/// Returns the status of a process that exited with the given code.
+#[cfg(pty)]
+fn exited_with(code: i32) -> ExitStatus {
+    // (A raw wait status holds a process's exit code above its low byte.)
+    ExitStatus::from_raw((code & 0xff) << 8)
 }
