@@ -194,6 +194,43 @@ async fn a_closed_stream_is_launched_closed() -> Result<()> {
 }
 
 #[tokio::test]
+async fn a_standard_stream_the_shell_lacks_is_launched_closed() -> Result<()> {
+    // As in a shell an embedder made without any open files: its processes get none
+    // of the shell process's own, as they'd get none of a stream the shell closed.
+    let launcher = RecordingLauncher::default();
+    let mut shell = brush_core::Shell::builder_with_extensions::<Host>()
+        .default_builtins(BuiltinSet::BashMode)
+        .process_launcher(launcher.clone())
+        .build()
+        .await?;
+    *shell.open_files_mut() = OpenFiles::default();
+
+    let params = shell.default_exec_params();
+    shell
+        .run_string(
+            "./prog\n./prog >&-",
+            &brush_core::SourceInfo::default(),
+            &params,
+        )
+        .await?;
+
+    let launches = launcher.take()?;
+    let fds: Vec<_> = launches.iter().map(|l| l.fds.clone()).collect();
+    assert_eq!(fds, [Vec::<ShellFd>::new(), vec![]]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_stream_the_shell_closed_is_launched_closed() -> Result<()> {
+    let launch = run_one(&RecordingLauncher::default(), "exec 1>&-\n./prog").await?;
+
+    assert_eq!(launch.fds, [0, 2]);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn other_open_files_are_launched_open() -> Result<()> {
     let launch = run_one(&RecordingLauncher::default(), "./prog 3<&0 4>&1").await?;
 
