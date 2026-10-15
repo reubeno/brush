@@ -42,7 +42,8 @@ without its front end. Keep that in mind when deciding what to export.
 
 - Shells are built with `Shell::builder()`, a type-safe builder.
 - `Shell` is generic over `ShellExtensions`, which lets embedders swap in parts of its
-  behavior (today, how errors are formatted) at compile time.
+  behavior (today, how errors are formatted and how processes are launched) at compile
+  time.
 - Platform-specific code lives under the `sys` module, so the rest of the crate stays
   platform-neutral.
 

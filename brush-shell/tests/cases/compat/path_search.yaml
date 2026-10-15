@@ -57,6 +57,34 @@ cases:
       hash prog; echo "rc=$?"
       hash -t prog; echo "rc=$?"
 
+  - name: "empty PATH entry is passed to the command as the working directory"
+    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
+    stdin: |
+      # A copy of env, found through the empty entry before the real one, reports the _
+      # it's started with: the path the shell ran it by. (It keeps env's name, which a
+      # multi-call binary such as NixOS's coreutils goes by.)
+      cp "$(command -v env)" env
+      PATH=":$PATH"
+
+      env | grep '^_='
+
+  - name: "relative PATH entry is relative to the working directory"
+    known_failure: true # TODO(path): a relative PATH entry is searched relative to the directory brush started in, not the shell's working directory
+    test_files:
+      - path: "sub/bin/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "ran prog"
+    stdin: |
+      cd sub
+      PATH=bin
+      type prog
+      command -v prog
+      prog; echo "command: $?"
+      (exec prog); echo "exec in a subshell: $?"
+      exec prog
+
   #
   # These two surfaces already agree with the oracle; they guard the parts of the
   # behavior that work, so that a fix for the cases above doesn't regress them.

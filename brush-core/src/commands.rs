@@ -2,23 +2,19 @@
 
 use std::{
     borrow::Cow,
-    ffi::OsStr,
     fmt::{Display, Write as _},
     path::{Path, PathBuf},
-    process::Stdio,
 };
 
 use brush_parser::ast;
-use itertools::Itertools;
-use sys::commands::{CommandExt, CommandFdInjectionExt, CommandFgControlExt};
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
-    extensions::{self, ShellExtensions},
+    extensions::{self, ProcessLauncher as _, ShellExtensions},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
-    openfiles::{self, OpenFile, OpenFiles},
+    openfiles::{self, OpenFiles},
     pathsearch, processes,
     results::ExecutionSpawnResult,
     sys, trace_categories, traps, variables,
@@ -164,100 +160,79 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
     }
 }
 
-/// Composes a `std::process::Command` to execute the given command. Appropriately
-/// configures the command name and arguments, redirections, injected file
-/// descriptors, environment variables, etc.
+/// Composes the [`processes::LaunchRequest`] for the process that runs the given
+/// external command.
+///
+/// The process gets the shell's working directory and the context's open files,
+/// and runs in the shell's process group; callers may change that.
 ///
 /// # Arguments
 ///
 /// * `context` - The execution context in which the command is being composed.
-/// * `command_name` - The name of the command to execute.
+/// * `program` - The resolved path of the program to execute.
 /// * `argv0` - The value to use for `argv[0]` (may be different from the command).
 /// * `args` - The arguments to pass to the command.
 /// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
 ///   command will inherit environment variables marked as exported in the provided `Shell`.
-#[allow(unused_variables, reason = "argv0 is only used on unix platforms")]
-pub fn compose_std_command<S: AsRef<OsStr>, SE: extensions::ShellExtensions>(
+pub fn compose_launch_request<S: AsRef<str>, SE: extensions::ShellExtensions>(
     context: &ExecutionContext<'_, SE>,
-    command_name: &str,
+    program: &Path,
     argv0: &str,
     args: &[S],
     empty_env: bool,
-) -> Result<std::process::Command, error::Error> {
-    let mut cmd = std::process::Command::new(command_name);
-
-    // Override argv[0].
-    // NOTE: Not supported on all platforms.
-    cmd.arg0(argv0);
-
-    // Pass through args.
-    cmd.args(args);
-
-    // Use the shell's current working dir.
-    cmd.current_dir(context.shell.working_dir());
-
-    // Start with a clear environment.
-    cmd.env_clear();
-
-    // Add in exported variables.
-    if !empty_env {
-        for (k, v) in context.shell.env().iter_exported() {
-            // NOTE: To match bash behavior, we only include exported variables
-            // that are set (i.e., have a value). This means a variable that
-            // shows up in `declare -p` but has no *set* value will be omitted.
-            if v.value().is_set() {
-                cmd.env(k.as_str(), v.value().to_cow_str(context.shell).as_ref());
-            }
-        }
-        // Set _ to the resolved command path for external commands.
-        cmd.env("_", command_name);
+) -> processes::LaunchRequest {
+    processes::LaunchRequest {
+        program: program.to_owned(),
+        argv0: argv0.to_owned(),
+        args: args.iter().map(|arg| arg.as_ref().to_owned()).collect(),
+        env: if empty_env {
+            vec![]
+        } else {
+            compose_env(context.shell, &program.to_string_lossy())
+        },
+        working_dir: context.shell.working_dir().to_owned(),
+        open_files: context.iter_fds().into(),
+        process_group: processes::ProcessGroup::Inherit,
+        kill_on_drop: context.shell.options().kill_external_commands_on_drop,
     }
+}
+
+/// Composes the environment for an external command: the shell's exported
+/// variables and functions.
+///
+/// # Arguments
+///
+/// * `shell` - The shell whose exported state should be used.
+/// * `program` - The resolved path of the program, used for `$_`.
+fn compose_env(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    program: &str,
+) -> Vec<(String, String)> {
+    let mut env = vec![];
+
+    // Add in exported variables, but `_`, which is set below.
+    for (k, v) in shell.env().iter_exported() {
+        // NOTE: To match bash behavior, we only include exported variables
+        // that are set (i.e., have a value). This means a variable that
+        // shows up in `declare -p` but has no *set* value will be omitted.
+        if k != "_" && v.value().is_set() {
+            env.push((k.clone(), v.value().to_cow_str(shell).into_owned()));
+        }
+    }
+
+    // Set _ to the resolved command path for external commands.
+    env.push(("_".to_string(), program.to_string()));
 
     // Add in exported functions.
-    if !empty_env {
-        for (func_name, registration) in context.shell.funcs().iter() {
-            if registration.is_exported() {
-                let var_name = std::format!("BASH_FUNC_{func_name}%%");
-                let value = std::format!("() {}", registration.definition().body);
-                cmd.env(var_name, value);
-            }
+    for (func_name, registration) in shell.funcs().iter() {
+        if registration.is_exported() {
+            let var_name = std::format!("BASH_FUNC_{func_name}%%");
+            let value = std::format!("() {}", registration.definition().body);
+            env.push((var_name, value));
         }
     }
 
-    // Redirect stdin, if applicable.
-    match context.try_fd(OpenFiles::STDIN_FD) {
-        Some(OpenFile::Stdin(_)) | None => (),
-        Some(stdin_file) => {
-            let as_stdio: Stdio = stdin_file.try_into()?;
-            cmd.stdin(as_stdio);
-        }
-    }
-
-    // Redirect stdout, if applicable.
-    match context.try_fd(OpenFiles::STDOUT_FD) {
-        Some(OpenFile::Stdout(_)) | None => (),
-        Some(stdout_file) => {
-            let as_stdio: Stdio = stdout_file.try_into()?;
-            cmd.stdout(as_stdio);
-        }
-    }
-
-    // Redirect stderr, if applicable.
-    match context.try_fd(OpenFiles::STDERR_FD) {
-        Some(OpenFile::Stderr(_)) | None => {}
-        Some(stderr_file) => {
-            let as_stdio: Stdio = stderr_file.try_into()?;
-            cmd.stderr(as_stdio);
-        }
-    }
-
-    // Inject any other fds.
-    let other_files = context.iter_fds().filter(|(fd, _)| {
-        *fd != OpenFiles::STDIN_FD && *fd != OpenFiles::STDOUT_FD && *fd != OpenFiles::STDERR_FD
-    });
-    cmd.inject_fds(other_files)?;
-
-    Ok(cmd)
+    env
 }
 
 pub(crate) async fn on_preexecute(
@@ -408,32 +383,24 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         }
 
         // We still haven't found a command to invoke. We'll need to look for an external command.
-        if !sys::fs::contains_path_separator(&self.command_name) {
-            // All else failed; if we were given path directories to search, look through them
-            // for a match. Otherwise, use our default search logic.
-            let path = if let Some(path_dirs) = &self.path_dirs {
+        // If we were given path directories to search, look through them for a match.
+        // Otherwise, use our default search logic.
+        let path = match &self.path_dirs {
+            Some(path_dirs) if !sys::fs::contains_path_separator(&self.command_name) => {
                 pathsearch::resolve_command(path_dirs, self.command_name.as_str())
-            } else {
-                self.shell
-                    .resolve_command_in_path_using_cache(&self.command_name)
-            };
-
-            if let Some(path) = path {
-                self.execute_via_external(&path)
-            } else {
-                // Bash updates $_ even when the command is not found, so mirror
-                // that here before reporting the error.
-                let last_arg = Self::take_last_arg(&self.args);
-                self.shell.update_last_arg_variable(last_arg);
-
-                Err(ErrorKind::CommandNotFound(self.command_name).into())
             }
+            _ => self.shell.resolve_external_command(&self.command_name),
+        };
+
+        if let Some(path) = path {
+            self.execute_via_external(&path)
         } else {
-            let command_name = sys::fs::resolve_executable_path(
-                PathBuf::from(&self.command_name),
-                self.shell.working_dir(),
-            );
-            self.execute_via_external(command_name.as_path())
+            // Bash updates $_ even when the command is not found, so mirror
+            // that here before reporting the error.
+            let last_arg = Self::take_last_arg(&self.args);
+            self.shell.update_last_arg_variable(last_arg);
+
+            Err(ErrorKind::CommandNotFound(self.command_name).into())
         }
     }
 
@@ -624,10 +591,9 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             params: self.params,
         };
 
-        let resolved_path = path.to_string_lossy();
         let result = execute_external_command(
             cmd_context,
-            resolved_path.as_ref(),
+            path,
             self.process_group_id,
             self.argv0.as_deref(),
             &self.args[1..],
@@ -642,7 +608,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
-    executable_path: &str,
+    executable_path: &Path,
     process_group_id: Option<i32>,
     argv0_override: Option<&str>,
     args: &[CommandArg],
@@ -670,88 +636,62 @@ pub(crate) fn execute_external_command(
         ProcessGroupPolicy::NewProcessGroup
     );
 
-    // Compose the std::process::Command that encapsulates what we want to launch.
     // argv[0] defaults to context.command_name (the user-facing name of the
     // command) unless the caller specified an explicit override.
     let argv0 = argv0_override.unwrap_or(context.command_name.as_str());
-    #[allow(unused_mut, reason = "only mutated on unix platforms")]
-    let mut cmd = compose_std_command(
-        &context,
-        executable_path,
-        argv0,
-        cmd_args.as_slice(),
-        false, /* empty environment? */
-    )?;
+
+    let mut request =
+        compose_launch_request(&context, executable_path, argv0, cmd_args.as_slice(), false);
 
     // Set up process group state.
-    if new_pg {
-        // Check if we'll be doing terminal control setup (which includes setsid)
+    request.process_group = if new_pg {
         if child_stdin_is_terminal && context.shell.options().external_cmd_leads_session {
-            // Don't set process_group(0) - setsid() in pre_exec will handle it
-            cmd.lead_session();
+            processes::ProcessGroup::NewSession
         } else {
-            // Normal case: create new process group in current session
-            cmd.process_group(0);
-            if child_stdin_is_terminal {
-                cmd.take_foreground();
+            processes::ProcessGroup::New {
+                take_foreground: child_stdin_is_terminal,
             }
         }
-    } else {
+    } else if let Some(pgid) = process_group_id {
         // We need to join an established process group.
-        if let Some(pgid) = process_group_id {
-            cmd.process_group(pgid);
-        }
-    }
+        processes::ProcessGroup::Join(pgid)
+    } else {
+        processes::ProcessGroup::Inherit
+    };
 
     // When tracing is enabled, report.
     tracing::debug!(
         target: trace_categories::COMMANDS,
         "Spawning: cmd='{} {}'",
-        cmd.get_program().to_string_lossy().to_string(),
-        cmd.get_args()
-            .map(|a| a.to_string_lossy().to_string())
-            .join(" ")
+        executable_path.display(),
+        request.args.join(" ")
     );
 
-    match sys::process::spawn(cmd, context.shell.options().kill_external_commands_on_drop) {
-        Ok(child) => {
-            // Retrieve the pid.
-            #[expect(clippy::cast_possible_wrap)]
-            let pid = child.id().map(|id| id as i32);
-            let mut actual_pgid = process_group_id;
-            if let Some(pid) = &pid {
-                if new_pg {
-                    actual_pgid = Some(*pid);
-                }
-            } else {
-                tracing::warn!("could not retrieve pid for child process");
-            }
-
-            Ok(ExecutionSpawnResult::StartedProcess(
-                processes::ChildProcess::new(child, pid, actual_pgid),
-            ))
-        }
+    match context.shell.process_launcher().spawn(request) {
+        Ok(child) => Ok(ExecutionSpawnResult::StartedProcess(child)),
         Err(spawn_err) => {
             if context.shell.options().interactive {
                 sys::terminal::move_self_to_foreground()?;
             }
 
-            if spawn_err.kind() == std::io::ErrorKind::NotFound {
-                if !context.shell.working_dir().exists() {
-                    Err(
-                        error::ErrorKind::WorkingDirMissing(context.shell.working_dir().to_owned())
-                            .into(),
-                    )
-                } else {
-                    Err(error::ErrorKind::CommandNotFound(context.command_name).into())
-                }
-            } else {
-                Err(
-                    error::ErrorKind::FailedToExecuteCommand(context.command_name, spawn_err)
-                        .into(),
-                )
-            }
+            Err(spawn_error(context, spawn_err))
         }
+    }
+}
+
+/// Translates an error from starting an external command into a shell error.
+fn spawn_error(
+    context: ExecutionContext<'_, impl extensions::ShellExtensions>,
+    spawn_err: std::io::Error,
+) -> error::Error {
+    if spawn_err.kind() == std::io::ErrorKind::NotFound {
+        if !context.shell.working_dir().exists() {
+            error::ErrorKind::WorkingDirMissing(context.shell.working_dir().to_owned()).into()
+        } else {
+            error::ErrorKind::CommandNotFound(context.command_name).into()
+        }
+    } else {
+        error::ErrorKind::FailedToExecuteCommand(context.command_name, spawn_err).into()
     }
 }
 

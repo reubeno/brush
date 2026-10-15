@@ -1,7 +1,10 @@
 use clap::Parser;
-use std::{borrow::Cow, os::unix::process::CommandExt};
+use std::borrow::Cow;
 
-use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands};
+use brush_core::{
+    ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands,
+    extensions::ProcessLauncher as _,
+};
 
 /// Exec the provided command.
 #[derive(Parser)]
@@ -64,15 +67,20 @@ impl builtins::Command for ExecCommand {
             argv0 = Cow::Owned(std::format!("-{argv0}"));
         }
 
-        let mut cmd = commands::compose_std_command(
+        // Resolve the program as running it as a command would.
+        let Some(program) = context.shell.resolve_external_command(&self.args[0]) else {
+            return Ok(ExecutionExitCode::NotFound.into());
+        };
+
+        let request = commands::compose_launch_request(
             &context,
-            &self.args[0],
+            &program,
             argv0.as_str(),
             &self.args[1..],
             self.empty_environment,
-        )?;
+        );
 
-        let exec_error = cmd.exec();
+        let exec_error = context.shell.process_launcher().exec(request);
 
         if exec_error.kind() == std::io::ErrorKind::NotFound {
             Ok(ExecutionExitCode::NotFound.into())

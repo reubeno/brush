@@ -51,8 +51,8 @@ impl JobTask {
             Self::External(process) => {
                 let wait_result = process.wait().await?;
                 match wait_result {
-                    processes::ProcessWaitResult::Completed(output) => {
-                        Ok(JobTaskWaitResult::Completed(output.into()))
+                    processes::ProcessWaitResult::Completed(result) => {
+                        Ok(JobTaskWaitResult::Completed(result))
                     }
                     processes::ProcessWaitResult::Stopped => Ok(JobTaskWaitResult::Stopped),
                 }
@@ -67,10 +67,7 @@ impl JobTask {
     /// it will return `None`.
     fn poll(&mut self) -> Option<Result<ExecutionResult, error::Error>> {
         match self {
-            Self::External(process) => {
-                let check_result = process.poll();
-                check_result.map(|polled_result| polled_result.map(|output| output.into()))
-            }
+            Self::External(process) => process.poll(),
             Self::Internal(handle) => {
                 let checkable_handle = handle;
                 checkable_handle.now_or_never().and_then(|r| r.ok())

@@ -32,7 +32,8 @@ pub(crate) mod tokio_tasks;
 pub mod fs;
 
 pub use platform::async_pipe;
-pub use platform::commands;
+#[cfg(any(unix, windows))]
+pub(crate) use platform::commands;
 pub(crate) use platform::env;
 pub use platform::fd;
 pub use platform::input;

@@ -9,6 +9,12 @@ use crate::ShellFd;
 use crate::error;
 use crate::openfiles;
 
+/// Replaces the current process with `command`. Returns only if that fails, with
+/// the reason why.
+pub(crate) fn exec(mut command: std::process::Command) -> std::io::Error {
+    CommandExt::exec(&mut command)
+}
+
 /// Extension trait for injecting file descriptors into commands.
 pub trait CommandFdInjectionExt {
     /// Injects the given open files as file descriptors into the command.
