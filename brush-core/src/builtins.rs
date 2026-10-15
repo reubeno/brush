@@ -51,9 +51,11 @@ pub use failure::Failure;
 pub(crate) use help::wants_color;
 pub use help::{Help, HelpForm, TerminalStyle};
 
-/// A declaration operand (`name`, `name=value`, `name[index]+=value`, or
-/// `name=(...)`), as a declaration builtin receives one in a
-/// [`CommandArg::Declaration`].
+/// A declaration operand: `name`, `name=value`, `name[index]+=value`, or
+/// `name=(...)`.
+///
+/// A declaration builtin receives one in a [`CommandArg::Declaration`], or
+/// reads one from a plain word with [`Declaration::from_word`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Declaration {
@@ -83,6 +85,66 @@ impl Declaration {
             value: None,
         }
     }
+
+    /// Reads a word as a declaration operand, as a declaration builtin reads
+    /// one the shell didn't expand as an assignment: a quoted word
+    /// (`declare 'x=1'`), one that came from an expansion (`export "$a"`), or
+    /// one `command` or `builtin` passed on.
+    ///
+    /// As in bash, the name is what precedes the first `[`, `+=`, or `=`; a
+    /// subscript follows in brackets, up to the `]` that closes it (so it may
+    /// contain `=`, as in `m[a=b]=1`); then `=` or `+=`, and the value, taken
+    /// as it is: `x=(1 2)` in a word is the string `(1 2)`. A word of any
+    /// other shape is all name. The name isn't validated; that's the builtin's
+    /// job.
+    ///
+    /// # Arguments
+    ///
+    /// * `word` - The word.
+    pub fn from_word(word: &str) -> Self {
+        let (name, rest) = word.split_at(word.find(['[', '+', '=']).unwrap_or(word.len()));
+
+        let (index, rest) = match rest.strip_prefix('[') {
+            Some(subscript) => match split_subscript(subscript) {
+                Some((index, rest)) => (Some(index), rest),
+                None => return Self::new(word),
+            },
+            None => (None, rest),
+        };
+
+        let (append, value) = if rest.is_empty() {
+            (false, None)
+        } else if let Some(value) = rest.strip_prefix("+=") {
+            (true, Some(value))
+        } else if let Some(value) = rest.strip_prefix('=') {
+            (false, Some(value))
+        } else {
+            return Self::new(word);
+        };
+
+        Self {
+            name: name.to_owned(),
+            index: index.map(str::to_owned),
+            append,
+            value: value.map(|value| variables::ShellValueLiteral::Scalar(value.to_owned())),
+        }
+    }
+}
+
+/// Splits `text`, which follows an opening `[`, at the `]` that closes it, into
+/// the subscript and what follows the `]`.
+fn split_subscript(text: &str) -> Option<(&str, &str)> {
+    let mut depth = 1_usize;
+    let close = text.find(|c| {
+        match c {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            _ => {}
+        }
+        depth == 0
+    })?;
+    let (subscript, rest) = text.split_at(close);
+    Some((subscript, rest.strip_prefix(']')?))
 }
 
 /// Renders the declaration as the word it came from (`name[index]+=value`),
@@ -580,6 +642,40 @@ mod tests {
             variables::ArrayLiteral(vec![(None, "x y".into()), (Some("k".into()), "v".into())]),
         ));
         assert_eq!(declaration.to_string(), "a=(x y [k]=v)");
+    }
+
+    #[test]
+    fn declarations_read_from_words_as_bash_reads_them() {
+        let read = |word| {
+            let d = Declaration::from_word(word);
+            let value = match d.value {
+                Some(variables::ShellValueLiteral::Scalar(value)) => Some(value),
+                Some(variables::ShellValueLiteral::Array(_)) => Some("<array>".into()),
+                None => None,
+            };
+            (d.name, d.index, d.append, value)
+        };
+        let scalar = |s: &str| Some(s.to_owned());
+        assert_eq!(read("x=1"), ("x".into(), None, false, scalar("1")));
+        assert_eq!(read("x+=1"), ("x".into(), None, true, scalar("1")));
+        assert_eq!(read("x="), ("x".into(), None, false, scalar("")));
+        assert_eq!(read("x"), ("x".into(), None, false, None));
+        assert_eq!(
+            read("m[a=b]=1"),
+            ("m".into(), Some("a=b".into()), false, scalar("1"))
+        );
+        assert_eq!(
+            read("a[i[0]]+=v"),
+            ("a".into(), Some("i[0]".into()), true, scalar("v"))
+        );
+        // An array value in a word is just text.
+        assert_eq!(read("x=(1 2)"), ("x".into(), None, false, scalar("(1 2)")));
+        // The name isn't validated.
+        assert_eq!(read("a b=1"), ("a b".into(), None, false, scalar("1")));
+        // Any other shape is all name, for the builtin to reject.
+        for word in ["x+y=1", "m[1", "m[1]x"] {
+            assert_eq!(read(word), (word.into(), None, false, None), "{word}");
+        }
     }
 
     #[test]

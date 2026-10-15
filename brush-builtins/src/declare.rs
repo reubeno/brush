@@ -259,6 +259,45 @@ impl DeclareCommand {
         true
     }
 
+    /// Reports, and returns true, if the operand naming `name` is refused: the
+    /// name isn't a valid one, or `+a` or `+A` would turn an array of that kind
+    /// into a scalar, which bash refuses.
+    fn refuses_operand(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        lookup: EnvironmentLookup,
+    ) -> Result<bool, brush_core::Error> {
+        if !env::valid_variable_name(name) {
+            writeln!(
+                context.stderr(),
+                "{}: {name}: not a valid variable name",
+                context.command_name()
+            )?;
+            return Ok(true);
+        }
+
+        let destroys_array = context
+            .shell
+            .env()
+            .get_using_policy(name, lookup)
+            .is_some_and(|var| match var.value() {
+                ShellValue::IndexedArray(_) => self.make_indexed_array.to_bool() == Some(false),
+                ShellValue::AssociativeArray(_) => {
+                    self.make_associative_array.to_bool() == Some(false)
+                }
+                _ => false,
+            });
+        if destroys_array {
+            writeln!(
+                context.stderr(),
+                "{}: {name}: cannot destroy array variables in this way",
+                context.command_name()
+            )?;
+        }
+        Ok(destroys_array)
+    }
+
     fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -292,22 +331,16 @@ impl DeclareCommand {
             return Ok(true);
         }
 
-        // Make sure it's a valid name.
-        if !env::valid_variable_name(name.as_str()) {
-            writeln!(
-                context.stderr(),
-                "{}: {name}: not a valid variable name",
-                context.command_name()
-            )?;
-            return Ok(false);
-        }
-
         // Figure out where we should look.
         let lookup = if create_var_local {
             EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
         } else {
             EnvironmentLookup::Anywhere
         };
+
+        if self.refuses_operand(context, &name, lookup)? {
+            return Ok(false);
+        }
 
         // `local -I x[=v]` / `declare -I` (bash 5.0+): the new local inherits
         // value and attributes from the nearest same-name variable in an
@@ -350,10 +383,10 @@ impl DeclareCommand {
             .env_mut()
             .get_mut_using_policy(name.as_str(), lookup)
         {
-            if self.make_associative_array.is_some() {
+            if self.make_associative_array.to_bool() == Some(true) {
                 var.convert_to_associative_array()?;
             }
-            if self.make_indexed_array.is_some() {
+            if self.make_indexed_array.to_bool() == Some(true) {
                 var.convert_to_indexed_array()?;
             }
 

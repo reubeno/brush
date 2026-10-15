@@ -584,20 +584,17 @@ cases:
       declare -p -n 2>/dev/null | sort
 
   - name: "Single-quoted scalar assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'x=hello'
       echo "$x"
 
   - name: "Single-quoted scalar with dollar sign preserved"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare 'x=$Y'
       echo "$x"
 
   - name: "Double-quoted scalar assignment expands"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       Y=world
       declare "x=$Y"
@@ -660,7 +657,6 @@ cases:
       echo "${#arr[@]}"
 
   - name: "Single-quoted array assignment without -a is scalar"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr=(1 2 3)'
       declare -p arr
@@ -684,13 +680,11 @@ cases:
       f
 
   - name: "Single-quoted indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[0]=hello'
       declare -p arr
 
   - name: "Quoted array assignment does not execute value as shell code"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       payload='(x); printf "INJECTED\n"; #'
       declare -a "arr=$payload"
@@ -756,7 +750,6 @@ cases:
       declare -p arr
 
   - name: "Quoted local declaration does not inherit global array type"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       arr=(global)
       f() {
@@ -767,7 +760,6 @@ cases:
       declare -p arr
 
   - name: "Single-quoted nonzero indexed element assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'arr[5]=hello'
       declare -p arr
@@ -837,7 +829,6 @@ cases:
       declare -p map
 
   - name: "Single-quoted append assignment"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'text=one'
       declare 'text+=two' 2>/dev/null
@@ -852,7 +843,6 @@ cases:
       declare -p arr
 
   - name: "Cannot remove indexed array attribute with +a"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -a arr=(1 2)
       declare +a arr 2>/dev/null
@@ -897,7 +887,6 @@ cases:
       f
 
   - name: "Function shadowing declare is reached through command"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare() { echo "shadow declare: [$*]"; }
       command declare cx=1
@@ -979,14 +968,12 @@ cases:
   # like a subscript.
   #
   - name: "Assignment value ending in a bracket is not a subscripted name"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       v='[a]'
       declare "x=$v"
       declare -p x
 
   - name: "Assignment value containing brackets is preserved"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare 'a[1]=v[2]'
       declare -p a
@@ -1000,7 +987,6 @@ cases:
   # Regression coverage: `+a`/`+A` report why they refuse to remove an array attribute.
   #
   - name: "Removing array attribute reports an error"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -a arr=(1 2)
@@ -1018,7 +1004,6 @@ cases:
       declare -p arr
 
   - name: "Removing associative array attribute fails"
-    known_failure: true # TODO: declare improvements required
     ignore_stderr: true
     stdin: |
       declare -A map=([k]=v)
@@ -1220,7 +1205,6 @@ cases:
       f() { local 1x=2 2>&1 | strip; }; f
 
   - name: "Quoted declaration with = in its subscript"
-    known_failure: true # TODO(declare): a quoted declaration whose subscript contains `=` isn't assigned
     ignore_stderr: true
     stdin: |
       declare -A m
@@ -1271,3 +1255,9 @@ cases:
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       { declare +Z; } 2>&1 | head -n 1 | strip
       { typeset +Z x; } 2>&1 | head -n 1 | strip
+
+  - name: "declare +a and +A leave other kinds of variable alone"
+    stdin: |
+      declare -A n=([k]=v); declare +a n; echo "+a on an associative array: $?"; declare -p n
+      declare -a i=(1); declare +A i; echo "+A on an indexed array: $?"; declare -p i
+      s=1; declare +a s; echo "+a on a scalar: $?"; declare -p s

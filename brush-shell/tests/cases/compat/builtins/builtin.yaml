@@ -81,10 +81,9 @@ cases:
       declare -p declared exported
 
   - name: "builtin does not preserve assignment splitting semantics"
-    # brush treats `builtin` as a declaration wrapper, so an assignment argument passed through it
-    # keeps assignment semantics (no field splitting). Bash applies ordinary word expansion here,
-    # splitting the value and leaving a separate bare-name operand.
-    known_failure: true
+    # Bash applies ordinary word expansion here, splitting the value and leaving a separate
+    # bare-name operand.
+    known_failure: true # TODO(builtin): brush's builtin stays a declaration utility until a `~` after `=` in an ordinary argument expands, as in bash
     ignore_stderr: true
     stdin: |
       v="x y"
@@ -92,7 +91,7 @@ cases:
       declare -p c y
 
   - name: "builtin splits assignment-shaped words for ordinary builtins"
-    known_failure: true # TODO(builtin): brush's builtin is a declaration utility, so a=$x isn't split
+    known_failure: true # TODO(builtin): brush's builtin stays a declaration utility until a `~` after `=` in an ordinary argument expands, as in bash
     stdin: |
       x="1 2"
       builtin printf '[%s]' a=$x
@@ -126,3 +125,12 @@ cases:
     stdin: |
       builtin -- echo hi
       builtin -- 2>/dev/null; echo "status: $?"
+
+  - name: "builtin expands a ~ after the = of a declaration it passes on"
+    home_dir: .
+    stdin: |
+      test_root=~
+      builtin export y=~/z
+      echo "${y//${test_root}/ROOT}"
+      builtin declare d=~/w
+      echo "${d//${test_root}/ROOT}"

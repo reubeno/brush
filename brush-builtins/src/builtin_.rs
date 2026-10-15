@@ -49,6 +49,9 @@ impl ParseArgs for BuiltinCommand {
 }
 
 impl<SE: brush_core::ShellExtensions> builtins::StatelessBuiltin<SE> for BuiltinCommand {
+    // Unlike bash's, brush's `builtin` is a declaration utility, so that
+    // `builtin export x=~/y` still expands its `~`: brush doesn't yet expand a
+    // `~` after the `=` of an ordinary argument, as bash does.
     const DECLARATIONS: builtins::Declarations = builtins::Declarations::Yes;
 
     async fn execute(

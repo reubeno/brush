@@ -141,8 +141,9 @@ fn write_alias_definition(
 
 /// Parses a declaration builtin's options with clap. Every string argument that
 /// begins with `-` or `+` (and is longer than that) is an option, wherever it
-/// appears; the rest are the operands, returned as they arrived, so
-/// declarations keep their form.
+/// appears; the rest are the operands. A declaration the shell expanded keeps
+/// its form, and a word shaped like one (`'x=1'`, or `x=1` passed on by
+/// `command`) is read as one, as bash reads it.
 #[cfg(any(feature = "builtin.declare", feature = "builtin.export"))]
 fn parse_declaration_args<T: clap::Parser>(
     invocation: brush_core::builtins::Invocation<'_>,
@@ -164,6 +165,11 @@ fn parse_declaration_args<T: clap::Parser>(
                         options.push(s);
                     }
                 }
+            }
+            brush_core::CommandArg::String(s) if s.contains('=') => {
+                operands.push(brush_core::CommandArg::Declaration(
+                    brush_core::builtins::Declaration::from_word(&s),
+                ));
             }
             other => operands.push(other),
         }
