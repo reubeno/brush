@@ -197,10 +197,14 @@ cases:
       echo {1..5..9223372036854775807}
       echo {5..1..9223372036854775807}
       echo {1..5..-9223372036854775808}
-      echo {5..1..-9223372036854775808}
-      echo {3..3..-9223372036854775808}
       echo {a..e..9223372036854775807}
       echo {a..e..-9223372036854775808}
+
+  - name: "Expansion with curly braces: decreasing sequence with an increment of i64::MIN"
+    min_oracle_version: "5.3" # 5.2 still expanded these
+    stdin: |
+      echo {5..1..-9223372036854775808}
+      echo {3..3..-9223372036854775808}
       echo {e..a..-9223372036854775808}
 
   - name: "Expansion with curly braces: decreasing sequence stepping past the end of the range"
