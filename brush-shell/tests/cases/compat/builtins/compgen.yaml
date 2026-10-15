@@ -555,3 +555,12 @@ cases:
     stdin: |
       ( set -u; compgen -W '$nope'; echo in-sub ); echo "rc=$?"
       echo next
+
+  - name: "compgen -A command finds commands through a relative PATH entry after cd"
+    stdin: |
+      mkdir -p sub/bin
+      printf '#!/bin/sh\n' > sub/bin/zzqrel
+      chmod +x sub/bin/zzqrel
+      cd sub
+      PATH=bin
+      compgen -A command zzqrel

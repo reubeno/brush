@@ -189,7 +189,6 @@ cases:
       done
 
   - name: "Hash a builtin or function"
-    known_failure: true # TODO(hash): hashing a builtin's name hashes a program of that name, and a function's fails, where bash does neither
     ignore_stderr: true # How shells word what's not found differs
     stdin: |
       f() { :; }

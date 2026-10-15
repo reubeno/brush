@@ -1387,10 +1387,8 @@ fn command_completions(
     );
     names.extend(
         shell
-            .find_executables_in_path_with_prefix(
-                prefix,
-                shell.options().case_insensitive_pathname_expansion,
-            )
+            .command_search_path()
+            .executables_with_prefix(prefix, shell.options().case_insensitive_pathname_expansion)
             .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned())),
     );
 
