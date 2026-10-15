@@ -61,6 +61,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default = "default_error_formatter"))]
     error_formatter: SE::ErrorFormatter,
 
+    /// Injected process launcher.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_process_launcher"))]
+    process_launcher: SE::ProcessLauncher,
+
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
 
@@ -151,6 +155,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     fn clone(&self) -> Self {
         Self {
             error_formatter: self.error_formatter.clone(),
+            process_launcher: self.process_launcher.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -217,6 +222,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Instantiate the shell with some defaults.
         let mut shell = Self {
             error_formatter: options.error_formatter,
+            process_launcher: options.process_launcher,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -360,6 +366,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Returns the keywords that are reserved by the shell, in the order bash lists them.
     pub(crate) fn get_keywords(&self) -> impl IntoIterator<Item = &'static str> {
         keywords::keywords(self.options.sh_mode)
+    }
+
+    /// Returns the launcher that starts the processes the shell runs.
+    pub const fn process_launcher(&self) -> &SE::ProcessLauncher {
+        &self.process_launcher
     }
 
     /// Checks if the given string is a keyword reserved in this shell.
@@ -587,6 +598,11 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 #[cfg(feature = "serde")]
 fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
     EF::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_process_launcher<PL: extensions::ProcessLauncher>() -> PL {
+    PL::default()
 }
 
 #[cfg(test)]

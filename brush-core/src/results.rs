@@ -270,8 +270,8 @@ impl ExecutionSpawnResult {
                 // Wait for the process to exit or for a relevant signal, whichever happens
                 // first.
                 match child.wait().await? {
-                    processes::ProcessWaitResult::Completed(output) => {
-                        ExecutionWaitResult::Completed(ExecutionResult::from(output))
+                    processes::ProcessWaitResult::Completed(result) => {
+                        ExecutionWaitResult::Completed(result)
                     }
                     processes::ProcessWaitResult::Stopped => ExecutionWaitResult::Stopped(child),
                 }

@@ -50,6 +50,11 @@ impl ExitStatusExt for std::process::ExitStatus {
     }
 }
 
+/// Replaces the current process with `command`; not supported on this platform.
+pub(crate) fn exec(_command: std::process::Command) -> std::io::Error {
+    std::io::ErrorKind::Unsupported.into()
+}
+
 /// Extension trait for injecting file descriptors into commands.
 pub trait CommandFdInjectionExt {
     /// Injects the given open files as file descriptors into the command.

@@ -200,6 +200,48 @@ cases:
       non-existent-command 2>&-
       echo "This should appear"
 
+  - name: "Close stdout of external command"
+    known_failure: true # TODO(redirection): a closed standard stream is the shell's own for the process
+    ignore_stderr: true
+    stdin: |
+      env echo "This should not appear" 1>&-
+      echo "This should appear"
+
+  - name: "Close standard streams of external commands: exit status"
+    known_failure: true # TODO(redirection): a closed standard stream isn't closed for the process
+    ignore_stderr: true
+    stdin: |
+      env echo "This should not appear" 1>&-
+      echo "echo: $?"
+      cat <&-
+      echo "cat: $?"
+
+  - name: "Redirect for an external command with one file descriptor to spare"
+    known_failure: true # TODO(redirection): the shell duplicates a redirected file to hand it to the process, which fails with no descriptor left (bash doesn't need one)
+    ignore_stderr: true
+    stdin: |
+      ulimit -n 64
+      # Open files until none are left, then free one, so that opening the
+      # redirection's target succeeds, but nothing past that can be opened.
+      fd=10
+      while [[ $fd -lt 64 ]] && eval "exec $fd</dev/null" 2>/dev/null; do fd=$((fd+1)); done
+      eval "exec $((fd-1))<&-"
+      env true 3</dev/null
+      echo "status: $?"
+
+  - name: "Redirect external command output between stdout and stderr"
+    known_failure: true # TODO(redirection): an external command's output redirected to the shell's stderr goes to its stdout, and vice versa
+    stdin: |
+      env echo "to stderr" >&2
+      env sh -c 'echo "to stdout" >&2' 2>&1
+
+  - name: "Redirect external command output to the shell's stdin"
+    known_failure: true # TODO(redirection): the shell's stdin as an external command's output stream is replaced by the shell's stdout
+    ignore_stderr: true
+    stdin: |
+      env echo "to stdin" >&0
+      echo "status: $?"
+
   - name: "Close output file descriptor"
     ignore_stderr: true
     stdin: |

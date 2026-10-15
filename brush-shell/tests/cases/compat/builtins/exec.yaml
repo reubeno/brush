@@ -50,6 +50,18 @@ cases:
     stdin: |
       exec -a shellname $0 -c 'echo "0: $0"'
 
+  - name: "exec -c of a command found in the shell's PATH"
+    test_files:
+      - path: "bin/myscript"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "in myscript"
+    stdin: |
+      PATH="${PWD}/bin:${PATH}"
+      exec -c myscript
+      echo "not reached"
+
   - name: "exec of a missing command exits the shell"
     known_failure: true # TODO(exec): a failed exec doesn't end a non-interactive shell
     ignore_stderr: true
@@ -69,3 +81,10 @@ cases:
       (exec -a renamed sh -c 'echo "argv0: $0"')
       (exec -l sh -c 'echo "login argv0: $0"')
       echo hello | (exec cat; echo "still running")
+
+  - name: "exec in a subshell runs the program, not a builtin"
+    known_failure: true # TODO(exec): exec in a subshell runs a builtin of the same name instead
+    ignore_stderr: true
+    stdin: |
+      # The printf builtin would print nothing; the program prints "-v".
+      (exec printf -v out hi)
