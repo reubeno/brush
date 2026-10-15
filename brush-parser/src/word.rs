@@ -785,11 +785,11 @@ peg::parser! {
                 BraceExpressionMember::Child(child_pieces)
             }
 
-        // As in bash, an ascending sequence with an increment of `i64::MIN` is left as
-        // text: its magnitude can't be taken without overflowing.
+        // As in bash 5.3, a sequence with an increment of `i64::MIN` is left as text,
+        // whichever way it goes: its magnitude can't be taken without overflowing.
         pub(crate) rule brace_sequence_expr() -> BraceExpressionMember =
             start:sequence_bound() ".." end:sequence_bound() increment:(".." n:number() { n })? {?
-                if start.0 < end.0 && increment == Some(i64::MIN) {
+                if increment == Some(i64::MIN) {
                     Err("increment out of range")
                 } else {
                     Ok(BraceExpressionMember::NumberSequence {
@@ -801,7 +801,7 @@ peg::parser! {
                 }
             } /
             start:character() ".." end:character() increment:(".." n:number() { n })? {?
-                if start < end && increment == Some(i64::MIN) {
+                if increment == Some(i64::MIN) {
                     Err("increment out of range")
                 } else {
                     Ok(BraceExpressionMember::CharSequence { start, end, increment: increment.unwrap_or(1) })
@@ -1689,9 +1689,12 @@ mod tests {
             "{1..5..99999999999999999999}",
             "{1..5..-99999999999999999999}",
             "{a..e..99999999999999999999}",
-            // An ascending sequence can't step by `i64::MIN`, whose magnitude overflows.
+            // No sequence steps by `i64::MIN`, whose magnitude overflows.
             "{1..5..-9223372036854775808}",
+            "{5..1..-9223372036854775808}",
+            "{3..3..-9223372036854775808}",
             "{a..e..-9223372036854775808}",
+            "{e..a..-9223372036854775808}",
         ] {
             let pieces = super::parse_brace_expansions(input, &options)?.unwrap_or_default();
             assert!(
@@ -1701,16 +1704,6 @@ mod tests {
                 "{input} should not parse as a brace sequence: {pieces:?}"
             );
         }
-
-        // A decreasing sequence can, since it never takes the magnitude.
-        assert_matches!(
-            super::parse_brace_expansions("{5..1..-9223372036854775808}", &options)?.as_deref(),
-            Some([BraceExpressionOrText::Expr(members)])
-                if matches!(
-                    members.as_slice(),
-                    [BraceExpressionMember::NumberSequence { increment: i64::MIN, .. }]
-                )
-        );
 
         Ok(())
     }
