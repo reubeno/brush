@@ -66,13 +66,14 @@ fn sorted_fds(open_files: &OpenFiles) -> Vec<ShellFd> {
     fds
 }
 
-/// How the processes a launcher spawns fail, if they do.
-#[derive(Clone, Copy, Default)]
+/// How the processes a launcher starts fail, if they do.
+#[derive(Clone, Copy, Debug, Default)]
 enum Failure {
-    /// They don't: each exits with 42.
+    /// They don't: each exits with 42 (and the shell's process can't be replaced).
     #[default]
     None,
-    /// Starting them fails with an error of this kind.
+    /// Starting them (or replacing the shell's process) fails with an error of this
+    /// kind.
     Spawn(std::io::ErrorKind),
     /// They start, but waiting for them fails.
     Wait,
@@ -125,10 +126,10 @@ impl ProcessLauncher for RecordingLauncher {
             return err;
         }
 
-        if self.can_exec {
-            std::io::ErrorKind::PermissionDenied.into()
-        } else {
-            std::io::ErrorKind::Unsupported.into()
+        match self.failure {
+            _ if !self.can_exec => std::io::ErrorKind::Unsupported.into(),
+            Failure::Spawn(kind) => kind.into(),
+            Failure::None | Failure::Wait => std::io::ErrorKind::PermissionDenied.into(),
         }
     }
 }
@@ -277,15 +278,39 @@ async fn exec_leaves_underscore_as_the_shell_exports_it() -> Result<()> {
         can_exec: true,
         ..Default::default()
     };
-    let mut shell = shell_with_inherited_underscore(&launcher).await?;
-    let params = shell.default_exec_params();
-    shell
-        .run_string("exec ./prog", &brush_core::SourceInfo::default(), &params)
-        .await?;
+    for script in ["exec ./prog", "(exec ./prog)"] {
+        // A fresh shell each time: running a command unexports `_`, as in bash.
+        let mut shell = shell_with_inherited_underscore(&launcher).await?;
+        let params = shell.default_exec_params();
+        shell
+            .run_string(script, &brush_core::SourceInfo::default(), &params)
+            .await?;
 
+        let launches = launcher.take()?;
+        let launch = launches.first().context("nothing was launched")?;
+        assert_eq!(launch.env_values("_"), ["/from/parent"], "{script}");
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn exec_in_a_subshell_has_the_launcher_spawn_its_request() -> Result<()> {
+    let launcher = RecordingLauncher {
+        can_exec: true,
+        ..Default::default()
+    };
+    let shell = run(&launcher, "(exec -a NAME ./prog x)").await?;
+
+    assert_eq!(shell.last_exit_status(), 42);
     let launches = launcher.take()?;
-    let launch = launches.first().context("nothing was launched")?;
-    assert_eq!(launch.env_values("_"), ["/from/parent"]);
+    let [launch] = launches.as_slice() else {
+        anyhow::bail!("expected one launch, got {}", launches.len());
+    };
+    assert_eq!(launch.how, How::Spawn);
+    assert_eq!(launch.program, Path::new("./prog"));
+    assert_eq!(launch.argv0, "NAME");
+    assert_eq!(launch.args, ["x"]);
 
     Ok(())
 }
@@ -308,6 +333,26 @@ async fn exec_hands_the_launcher_its_request() -> Result<()> {
 
     let launch = run_one(&launcher, "export GREETING=hi\nexec -c ./prog").await?;
     assert_eq!(launch.env, []);
+
+    Ok(())
+}
+
+/// `exec` reports a program the launcher can't start as running it would: as not
+/// found, or as not executable.
+#[tokio::test]
+async fn exec_of_a_program_the_launcher_cant_start_fails_as_running_it_would() -> Result<()> {
+    for (failure, status) in [
+        (Failure::Spawn(std::io::ErrorKind::NotFound), 127),
+        (Failure::None, 126),
+    ] {
+        let launcher = RecordingLauncher {
+            can_exec: true,
+            failure,
+            ..Default::default()
+        };
+        let shell = run(&launcher, "exec ./prog").await?;
+        assert_eq!(shell.last_exit_status(), status, "{failure:?}");
+    }
 
     Ok(())
 }
@@ -390,7 +435,13 @@ async fn without_job_control_processes_stay_in_the_shells_group() -> Result<()> 
     run(&launcher, "./a\n./b | ./c").await?;
 
     for launch in launcher.take()? {
-        assert_eq!(launch.process_group, ProcessGroup::Inherit, "{launch:?}");
+        assert_eq!(
+            launch.process_group,
+            ProcessGroup::Inherit,
+            "{}: {:?}",
+            launch.program.display(),
+            launch.process_group
+        );
     }
 
     Ok(())
@@ -400,6 +451,7 @@ async fn without_job_control_processes_stay_in_the_shells_group() -> Result<()> 
 async fn with_job_control_a_command_gets_a_group_of_its_own() -> Result<()> {
     let launcher = RecordingLauncher::default();
     let mut shell = brush_core::Shell::builder_with_extensions::<Host>()
+        .default_builtins(BuiltinSet::BashMode)
         .process_launcher(launcher.clone())
         .build()
         .await?;
@@ -407,16 +459,23 @@ async fn with_job_control_a_command_gets_a_group_of_its_own() -> Result<()> {
 
     let params = shell.default_exec_params();
     shell
-        .run_string("./prog", &brush_core::SourceInfo::default(), &params)
+        .run_string(
+            "./prog\n(./prog)\n(exec ./prog)",
+            &brush_core::SourceInfo::default(),
+            &params,
+        )
         .await?;
 
     let launches = launcher.take()?;
-    let launch = launches.first().context("nothing was launched")?;
-    assert!(
-        matches!(launch.process_group, ProcessGroup::New { .. }),
-        "{:?}",
-        launch.process_group
-    );
+    assert_eq!(launches.len(), 3);
+    for launch in launches {
+        assert!(
+            matches!(launch.process_group, ProcessGroup::New { .. }),
+            "{}: {:?}",
+            launch.program.display(),
+            launch.process_group
+        );
+    }
 
     Ok(())
 }

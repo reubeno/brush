@@ -34,7 +34,7 @@ use std::sync::OnceLock;
 
 use brush_core::ExecutionExitCode;
 use brush_core::builtins::{BoxFuture, ContentOptions, ContentType, Registration};
-use brush_core::commands::{self, CommandArg, ExecutionContext};
+use brush_core::commands::{CommandArg, ExecutionContext};
 use brush_core::extensions::ShellExtensions;
 
 /// The leading flag that signals a bundled-command dispatch.
@@ -177,18 +177,9 @@ fn shim_content(
 
 /// Builtin execute function shared by all bundled commands. Looks up the
 /// invoked name from `context.command_name` and re-executes the running
-/// brush binary as `brush <DISPATCH_FLAG> <name> <args>`.
-///
-/// Reuses the same entry point the `command` builtin uses (see
-/// `brush-builtins/src/command.rs`): constructs a [`commands::SimpleCommand`]
-/// whose `command_name` is the absolute brush exe path. Because that contains
-/// a path separator, `SimpleCommand::execute` routes directly to the
-/// external-execution path, bypassing the builtin/function lookup that would
-/// otherwise re-enter this very shim.
-///
-/// `use_functions = false` is defensive: even though the path-separator
-/// branch already skips function dispatch, we don't want a hypothetical
-/// refactor of `SimpleCommand` to silently break us.
+/// brush binary as `brush <DISPATCH_FLAG> <name> <args>`, started as the shell
+/// starts any external command: with the command's open files, in the
+/// pipeline's process group.
 //
 // TODO(bundled): Pipeline serialization.
 // The builtin contract returns an `ExecutionResult` (a completed command),
@@ -208,9 +199,7 @@ fn shim_execute<SE: ShellExtensions>(
     args: Vec<CommandArg>,
 ) -> BoxFuture<'_, Result<brush_core::ExecutionResult, brush_core::Error>> {
     Box::pin(async move {
-        let exe_path = if let Some(p) = self_exe() {
-            p.to_string_lossy().into_owned()
-        } else {
+        let Some(exe_path) = self_exe() else {
             let _ = writeln!(
                 context.stderr(),
                 "brush: cannot determine path to running executable"
@@ -218,36 +207,22 @@ fn shim_execute<SE: ShellExtensions>(
             return Ok(ExecutionExitCode::CannotExecute.into());
         };
 
-        // Build the argv for the spawned brush. `SimpleCommand::args[0]` is
-        // dropped by the external-execution path (argv[0] of the spawned
-        // process comes from `cmd.argv0` below), so a placeholder suffices;
-        // args[1..] become the spawned process's argv[1..]. The caller's
-        // `args[0]` is the bundled name by builtin-dispatch convention — we
-        // replace it with an explicit `<name>` after `DISPATCH_FLAG` so the
-        // child's dispatcher sees it in a fixed slot.
-        let bundled_name = context.command_name.clone();
-        let mut child_args: Vec<CommandArg> = Vec::with_capacity(args.len() + 2);
-        child_args.push(CommandArg::String(String::new())); // args[0], dropped
-        child_args.push(CommandArg::String(DISPATCH_FLAG.into()));
-        child_args.push(CommandArg::String(bundled_name.clone()));
-        child_args.extend(args.into_iter().skip(1));
+        // The caller's `args[0]` is the bundled name by builtin-dispatch convention;
+        // the child's dispatcher sees it in a fixed slot after `DISPATCH_FLAG`, and
+        // as its `argv[0]`, so tools that report errors via their own argv[0]
+        // (uutils' `uucore::util_name()` reads `std::env::args_os()[0]` into a
+        // LazyLock at first use) render as `<name>:` rather than `brush:`.
+        let bundled_name = &context.command_name;
+        let mut child_args = Vec::with_capacity(args.len() + 1);
+        child_args.push(DISPATCH_FLAG.to_owned());
+        child_args.push(bundled_name.clone());
+        child_args.extend(args.into_iter().skip(1).filter_map(|arg| match arg {
+            CommandArg::String(s) => Some(s),
+            CommandArg::Assignment(_) => None,
+        }));
 
-        let mut cmd = commands::SimpleCommand::new(
-            commands::ShellForCommand::ParentShell(context.shell),
-            context.params,
-            exe_path,
-            child_args,
-        );
-        cmd.use_functions = false;
-        // Override the spawned process's argv[0] so tools that report errors
-        // via their own argv[0] (uutils' `uucore::util_name()` reads
-        // `std::env::args_os()[0]` into a LazyLock at first use) render as
-        // `<name>:` rather than `brush:`. Without this the child sees the
-        // brush exe path as argv[0] and misattributes errors.
-        cmd.argv0 = Some(bundled_name);
-
-        let spawn_result = cmd.execute().await?;
-        let wait_result = spawn_result.wait().await?;
+        let request = context.compose_launch_request(exe_path, bundled_name, &child_args);
+        let wait_result = context.spawn_program(request)?.wait().await?;
         Ok(wait_result.into())
     })
 }

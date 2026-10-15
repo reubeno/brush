@@ -236,7 +236,6 @@ cases:
       echo "[$_]"
 
   - name: "$_ - exec does not override _ in child env"
-    known_failure: true # TODO(exec): exec sets _ to the program's path, as for any external command
     stdin: |
       # bash does not set _ in the child's env for exec; the child inherits
       # the parent's _ value.
