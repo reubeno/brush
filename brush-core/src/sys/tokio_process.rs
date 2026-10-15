@@ -70,7 +70,7 @@ fn compose_std_command(command: LaunchRequest) -> std::io::Result<std::process::
     cmd.env_clear();
     cmd.envs(command.env);
 
-    // A closed standard stream is inherited from the shell.
+    // A closed standard stream gets the null device.
     // TODO(redirection): close it instead, as bash does (e.g., with a `pre_exec`
     // on Unix), so that the process fails to use it.
     let mut open_files = command.open_files;
@@ -100,10 +100,10 @@ fn compose_std_command(command: LaunchRequest) -> std::io::Result<std::process::
 }
 
 /// Takes the file for standard stream `fd` out of `open_files`, for the process
-/// to have as that stream: the shell's own if it's closed.
+/// to have as that stream: the null device if it's closed.
 fn take_stdio(open_files: &mut OpenFiles, fd: ShellFd) -> std::io::Result<Stdio> {
     match open_files.remove_fd(fd) {
         Some(file) => Stdio::try_from(file).map_err(std::io::Error::other),
-        None => Ok(Stdio::inherit()),
+        None => Ok(Stdio::null()),
     }
 }

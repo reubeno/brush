@@ -13,7 +13,6 @@ cases:
       err
 
   - name: "Standard output redirected to the shell's standard error"
-    known_failure: true # TODO(redirection): an external command's output redirected to the shell's stderr goes to its stdout
     stdin: |
       "$0" -c 'echo out' >&2
     expected_exit_code: 0
@@ -22,7 +21,6 @@ cases:
       out
 
   - name: "Standard error redirected to the shell's standard output"
-    known_failure: true # TODO(redirection): an external command's stderr redirected to the shell's stdout goes to its stderr
     stdin: |
       "$0" -c 'echo err >&2' 2>&1
     expected_exit_code: 0
@@ -31,7 +29,6 @@ cases:
     expected_stderr: ""
 
   - name: "Standard output and error swapped"
-    known_failure: true # TODO(redirection): an external command's output redirected between the shell's stdout and stderr isn't swapped
     stdin: |
       "$0" -c 'echo out; echo err >&2' 3>&1 1>&2 2>&3 3>&-
     expected_exit_code: 0
@@ -53,7 +50,6 @@ cases:
     expected_stderr: ""
 
   - name: "Closed standard output isn't the shell's"
-    known_failure: true # TODO(redirection): a closed standard stream is the shell's own for the process
     stdin: |
       "$0" -c 'echo hidden' >&-
       echo after
