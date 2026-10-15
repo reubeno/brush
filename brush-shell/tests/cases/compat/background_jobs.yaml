@@ -110,3 +110,23 @@ cases:
     stdin: |
       { sleep 3 >/dev/null & } | cat
       echo "done"
+
+  - name: "A background program stops on writing to the terminal, with tostop set"
+    known_failure: true # TODO(jobs): programs inherit the ignored SIGTTOU an interactive shell sets for itself, so the program writes instead
+    pty: true
+    ignore_stdout: true # Prompts and job notices don't line up
+    stdin: |
+      #expect-prompt
+      stty tostop
+      #send:Enter
+      #expect-prompt
+      sh -c 'echo to-terminal; touch written.txt' &
+      #send:Enter
+      #expect-prompt
+      sleep 1
+      #send:Enter
+      #expect-prompt
+      kill -9 %1; stty -tostop
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D

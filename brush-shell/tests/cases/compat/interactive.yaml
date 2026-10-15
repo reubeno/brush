@@ -13,6 +13,34 @@ cases:
       #expect-prompt
       #send:Ctrl+D
 
+  - name: "SIGINT ends the command an interactive shell is running"
+    known_failure: true # TODO(signals): an interactive brush goes on with the command it's running
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      kill -INT $$; touch went-on.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "Programs inherit an ignored SIGINT after the shell first waits for one"
+    known_failure: true # TODO(signals): tokio's SIGINT listener, which the shell starts on first waiting for a program, replaces the ignore the shell inherited, so later programs get the default action
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    # The shell replaces itself with one started ignoring SIGINT, given the flags the harness
+    # gives brush; it waits for one program, and then another sends itself SIGINT.
+    stdin: |
+      #expect-prompt
+      exec sh -c 'p=$1; shift; trap "" INT; exec env PS1="$p" "$0" --norc --noprofile -i "$@"' "$BASH" "$PS1" ${BRUSH_VERSION:+--no-config --disable-bracketed-paste --disable-color --input-backend=basic}
+      #send:Enter
+      #expect-prompt
+      sh -c 'exit 0'; sh -c 'kill -INT $$; touch survived.txt'; echo "done-$((2 + 2))"
+      #send:Enter
+      #expect:done-4
+      #expect-prompt
+      #send:Ctrl+D
+
   - name: "Simple tab completion"
     skip: true # TODO(input): Need to find the right way to enable this with a rich input backend.
     pty: true
