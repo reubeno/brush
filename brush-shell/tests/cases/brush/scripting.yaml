@@ -132,7 +132,6 @@ cases:
     expected_stderr: ""
 
   - name: "-ef tells files apart"
-    known_failure_platforms: ["wasi", "windows"] # TODO(test): -ef has no device and inode to compare on Windows, and on wasm every file has the same ones
     test_files:
       - path: "a.txt"
         contents: |

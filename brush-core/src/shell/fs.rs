@@ -17,7 +17,7 @@ enum Located {
     /// The shell's hash table has a path for it.
     Hashed(PathBuf),
     /// A search of `PATH` found it.
-    Found(PathBuf),
+    Found(pathsearch::Found),
 }
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
@@ -104,11 +104,25 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Looks up where the name of a command leads, if not to a path: the shell's hash
     /// table, or else a search of `PATH` (see [`pathsearch::SearchPath::resolve`]).
     fn locate_command(&self, name: &str) -> Option<Located> {
-        if let Some(path) = self.program_location_cache.get(name) {
+        if let Some(path) = self.hashed_command(name) {
             return Some(Located::Hashed(path));
         }
 
-        self.command_search_path().resolve(name).map(Located::Found)
+        self.command_search_path()
+            .search(name, false)
+            .map(Located::Found)
+    }
+
+    /// Returns the path the shell's hash table has for a command's name, as the shell
+    /// looks it up when it's about to run the command (see
+    /// [`crate::pathcache::PathCache::lookup`]): a path that depends on the working
+    /// directory is looked for there first.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
+    pub fn hashed_command(&self, name: &str) -> Option<PathBuf> {
+        self.program_location_cache.lookup(name, self.working_dir())
     }
 
     /// Looks up the program an external command's name refers to, as running the
@@ -116,8 +130,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ///
     /// A name with a path separator is a path, relative to the working directory, which
     /// is a command only if it's executable and not a directory. Any other is looked up
-    /// in the shell's hash table, or else searched for in `PATH` (see
-    /// [`pathsearch::SearchPath::resolve`]).
+    /// in the shell's hash table (see [`Self::hashed_command`]), or else searched for in
+    /// `PATH` (see [`pathsearch::SearchPath::resolve`]).
     ///
     /// Returns the program's path (relative to the working directory, if it's
     /// relative), and whether it came from the hash table.
@@ -135,7 +149,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         match self.locate_command(name)? {
             Located::Hashed(path) => Some((path, true)),
-            Located::Found(path) => Some((path, false)),
+            Located::Found(found) => Some((found.path, false)),
         }
     }
 
@@ -143,8 +157,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// command would.
     ///
     /// A name with a path separator is a path, relative to the working directory. Any
-    /// other is looked up in the shell's hash table, or else searched for in `PATH`
-    /// (see [`pathsearch::SearchPath::resolve`]), and what the search finds is hashed.
+    /// other is looked up in the shell's hash table (see [`Self::hashed_command`]), or
+    /// else searched for in `PATH` (see [`pathsearch::SearchPath::resolve`]), and what
+    /// the search finds is hashed.
     ///
     /// Returns the program's path, relative to the working directory if it's relative.
     ///
@@ -161,8 +176,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         match self.locate_command(name)? {
             Located::Hashed(path) => Some(path),
-            Located::Found(path) => {
-                self.program_location_cache.set(name, path.clone());
+            Located::Found(found) => {
+                let path = found.path.clone();
+                self.program_location_cache.set_found(name, found);
                 Some(path)
             }
         }
@@ -190,10 +206,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             return true;
         }
 
-        let Some(path) = self.command_search_path().find(name) else {
+        let Some(found) = self.command_search_path().search(name, true) else {
             return false;
         };
-        self.program_location_cache.set(name, path);
+        self.program_location_cache.set_found(name, found);
         true
     }
 

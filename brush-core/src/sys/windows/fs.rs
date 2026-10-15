@@ -317,6 +317,17 @@ pub fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Returns whether two paths are the same file: by canonical path, which takes two
+/// hard links to one file to be different files.
+// TODO(fs): compare what identifies a file on the platform instead (on Windows, its
+// index and volume serial number).
+pub(crate) fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

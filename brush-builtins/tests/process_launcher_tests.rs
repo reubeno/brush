@@ -326,6 +326,51 @@ async fn exec_leaves_underscore_as_the_shell_exports_it() -> Result<()> {
 }
 
 #[tokio::test]
+async fn a_command_found_through_the_working_dir_is_looked_up_again_after_cd() -> Result<()> {
+    // With PATH `.` and then another directory, as bash does: a command hashed as
+    // found in the working directory is searched for again once that directory is
+    // gone, and one hashed from a later directory is looked for in the working
+    // directory first.
+    let scratch = tempfile::tempdir()?;
+    let fallback = scratch.path().join("fallback");
+    for dir in ["here", "other"] {
+        write_program(&scratch.path().join(dir))?;
+    }
+    write_program(&fallback)?;
+    std::fs::create_dir_all(scratch.path().join("there"))?;
+
+    let path = std::env::join_paths([Path::new("."), fallback.as_path()])?;
+    let script = std::format!(
+        "PATH='{}'\ncd '{}'\nprog\ncd ../there\nprog\ncd ../other\nprog",
+        path.to_string_lossy(),
+        scratch.path().join("here").display()
+    );
+    let launcher = RecordingLauncher::default();
+    run(&launcher, &script).await?;
+
+    let started: Vec<_> = launcher
+        .take()?
+        .into_iter()
+        .map(|l| {
+            let dir = l.program.parent().map(Path::to_path_buf);
+            let stem = l
+                .program
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned());
+            (dir, stem)
+        })
+        .collect();
+    let in_working_dir = (Some(PathBuf::from(".")), Some("prog".to_owned()));
+    let in_fallback = (Some(fallback), Some("prog".to_owned()));
+    assert_eq!(
+        started,
+        [in_working_dir.clone(), in_fallback, in_working_dir]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn exec_hands_the_launcher_its_request() -> Result<()> {
     let launcher = RecordingLauncher {
         can_exec: true,

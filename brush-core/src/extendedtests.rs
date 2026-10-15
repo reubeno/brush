@@ -298,7 +298,9 @@ async fn apply_binary_predicate(
                     .await;
             }
 
-            files_refer_to_same_device_and_inode_numbers(shell, left, right)
+            Ok(files_refer_to_same_device_and_inode_numbers(
+                shell, left, right,
+            ))
         }
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
             let left = expansion::basic_expand_word(shell, params, left).await?;
@@ -500,9 +502,9 @@ pub(crate) fn apply_binary_predicate_to_strs(
     shell: &Shell<impl extensions::ShellExtensions>,
 ) -> Result<bool, error::Error> {
     match op {
-        ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => {
-            files_refer_to_same_device_and_inode_numbers(shell, left, right)
-        }
+        ast::BinaryPredicate::FilesReferToSameDeviceAndInodeNumbers => Ok(
+            files_refer_to_same_device_and_inode_numbers(shell, left, right),
+        ),
         ast::BinaryPredicate::LeftFileIsNewerOrExistsWhenRightDoesNot => {
             left_file_is_newer_or_exists_when_right_does_not(shell, left, right)
         }
@@ -618,15 +620,11 @@ fn files_refer_to_same_device_and_inode_numbers(
     shell: &Shell<impl extensions::ShellExtensions>,
     left: impl AsRef<str>,
     right: impl AsRef<str>,
-) -> Result<bool, error::Error> {
+) -> bool {
     let (l_path, r_path) = (
         shell.absolute_path(Path::new(left.as_ref())),
         shell.absolute_path(Path::new(right.as_ref())),
     );
 
-    if !l_path.readable() || !r_path.readable() {
-        return Ok(false);
-    }
-
-    Ok(l_path.get_device_and_inode()? == r_path.get_device_and_inode()?)
+    crate::sys::fs::same_file(&l_path, &r_path)
 }

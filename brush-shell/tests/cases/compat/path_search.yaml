@@ -121,7 +121,6 @@ cases:
       type only-here
 
   - name: "command found through an empty PATH entry is searched for again after cd"
-    known_failure: true # TODO(hash): a command hashed as found in the working directory isn't searched for again after cd
     test_files:
       - path: "a/prog"
         executable: true
@@ -150,7 +149,6 @@ cases:
       done
 
   - name: "PATH entry for the working directory written another way"
-    known_failure: true # TODO(path): a PATH entry such as `./` or `../dir` isn't taken to be the working directory
     test_files:
       - path: "a/prog"
         executable: true
@@ -191,7 +189,6 @@ cases:
       prog
 
   - name: "PATH entry starting with a dot is the working directory only if it's the same"
-    known_failure: true # TODO(path): a PATH entry that's the working directory under another name isn't taken to be it
     test_files:
       - path: "a/prog"
         executable: true
@@ -245,7 +242,6 @@ cases:
       prog
 
   - name: "relative PATH entry is hashed as bash hashes it"
-    known_failure: true # TODO(hash): bash hashes a command found through a relative PATH entry as ./entry/name
     test_files:
       - path: "sub/bin/prog"
         executable: true
@@ -280,3 +276,21 @@ cases:
       PATH=":$PATH"
 
       command -V prog | scrub; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "a file that can't be run, hashed from PATH, is looked for in the working directory first"
+    ignore_stderr: true # How shells word what can't be run differs
+    test_files:
+      - path: "abs/prog"
+        contents: |
+          #!/bin/sh
+          echo "not executable"
+    stdin: |
+      CHMOD=$(command -v chmod)
+      PATH="${PWD}/abs:."
+      prog; echo "status: $?"
+      # An executable turns up in the working directory, which the search passed: as in
+      # bash, it's looked for there first.
+      printf '#!/bin/sh\necho "in the working dir"\n' > prog
+      "$CHMOD" +x prog
+      prog; echo "status: $?"
+      hash -t prog
