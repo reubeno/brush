@@ -657,9 +657,9 @@ pub(crate) fn parse_array_assignment(
     })
 }
 
-/// Parses one bound of a numeric brace sequence, e.g. `-007`.
+/// Parses one bound of a numeric brace sequence, e.g. `-007`, or its increment.
 ///
-/// Returns `None` when the bound does not fit in an `i64`, which lets the sequence
+/// Returns `None` when the number does not fit in an `i64`, which lets the sequence
 /// rule decline rather than panic on something like `{99999999999999999999..1}`.
 ///
 /// The sign goes to the parser along with the digits, so `i64::MIN` is accepted even
@@ -785,17 +785,27 @@ peg::parser! {
                 BraceExpressionMember::Child(child_pieces)
             }
 
+        // As in bash, an ascending sequence with an increment of `i64::MIN` is left as
+        // text: its magnitude can't be taken without overflowing.
         pub(crate) rule brace_sequence_expr() -> BraceExpressionMember =
-            start:sequence_bound() ".." end:sequence_bound() increment:(".." n:number() { n })? {
-                BraceExpressionMember::NumberSequence {
-                    start: start.0,
-                    end: end.0,
-                    increment: increment.unwrap_or(1),
-                    zero_padded_width: zero_padded_width(start.1, end.1),
+            start:sequence_bound() ".." end:sequence_bound() increment:(".." n:number() { n })? {?
+                if start.0 < end.0 && increment == Some(i64::MIN) {
+                    Err("increment out of range")
+                } else {
+                    Ok(BraceExpressionMember::NumberSequence {
+                        start: start.0,
+                        end: end.0,
+                        increment: increment.unwrap_or(1),
+                        zero_padded_width: zero_padded_width(start.1, end.1),
+                    })
                 }
             } /
-            start:character() ".." end:character() increment:(".." n:number() { n })? {
-                BraceExpressionMember::CharSequence { start, end, increment: increment.unwrap_or(1) }
+            start:character() ".." end:character() increment:(".." n:number() { n })? {?
+                if start < end && increment == Some(i64::MIN) {
+                    Err("increment out of range")
+                } else {
+                    Ok(BraceExpressionMember::CharSequence { start, end, increment: increment.unwrap_or(1) })
+                }
             }
 
         // A bound of a numeric sequence, kept alongside the text it was written as.
@@ -805,10 +815,10 @@ peg::parser! {
             parse_sequence_bound(text).map(|n| (n, text)).ok_or("number out of range")
         }
 
-        rule number() -> i64 = sign:number_sign()? n:$(['0'..='9']+) {
-            let sign = sign.unwrap_or(1);
-            let num: i64 = n.parse().unwrap();
-            num * sign
+        // The increment of a brace sequence. One that does not fit in an `i64` makes
+        // the sequence rule decline, so the expression is left as text, as bash does.
+        rule number() -> i64 = text:$(number_sign()? ['0'..='9']+) {?
+            parse_sequence_bound(text).ok_or("number out of range")
         }
 
         rule number_sign() -> i64 =
@@ -1667,6 +1677,40 @@ mod tests {
                 || anyhow::anyhow!("Expected brace expansion to be parsed successfully")
             )?);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn brace_sequence_with_out_of_range_increment_is_text() -> Result<()> {
+        let options = ParserOptions::default();
+
+        for input in [
+            "{1..5..99999999999999999999}",
+            "{1..5..-99999999999999999999}",
+            "{a..e..99999999999999999999}",
+            // An ascending sequence can't step by `i64::MIN`, whose magnitude overflows.
+            "{1..5..-9223372036854775808}",
+            "{a..e..-9223372036854775808}",
+        ] {
+            let pieces = super::parse_brace_expansions(input, &options)?.unwrap_or_default();
+            assert!(
+                pieces
+                    .iter()
+                    .all(|piece| matches!(piece, BraceExpressionOrText::Text(_))),
+                "{input} should not parse as a brace sequence: {pieces:?}"
+            );
+        }
+
+        // A decreasing sequence can, since it never takes the magnitude.
+        assert_matches!(
+            super::parse_brace_expansions("{5..1..-9223372036854775808}", &options)?.as_deref(),
+            Some([BraceExpressionOrText::Expr(members)])
+                if matches!(
+                    members.as_slice(),
+                    [BraceExpressionMember::NumberSequence { increment: i64::MIN, .. }]
+                )
+        );
 
         Ok(())
     }
