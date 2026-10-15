@@ -72,7 +72,7 @@ cases:
       echo "still running: $?"
 
   - name: "exec in a subshell ends the subshell"
-    known_failure: true # TODO(exec): exec in a subshell doesn't end the subshell, and -a/-l are unimplemented there
+    known_failure: true # TODO(exec): exec in a subshell doesn't end the subshell
     stdin: |
       (exec true; echo "still running")
       echo "true: $?"
@@ -88,3 +88,25 @@ cases:
     stdin: |
       # The printf builtin would print nothing; the program prints "-v".
       (exec printf -v out hi)
+
+  - name: "exec of a missing program reports it"
+    known_failure: true # TODO(exec): exec of a program that can't be found reports nothing at the top level
+    stdin: |
+      "$0" -c 'exec ./no-such-program' 2> err.txt
+      echo "status: $?"
+      [[ -s err.txt ]] && echo "reported" || echo "silent"
+      # (What it says has the test's directory in it, which differs between shells.)
+      rm err.txt
+
+  - name: "exec starts a program by its full path"
+    known_failure: true # TODO(exec): exec starts a program by the path it was found by, not its full path, so a script sees that as its $0
+    test_files:
+      - path: "sub/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "$0"
+    stdin: |
+      cd sub
+      started_by=$("$0" -c 'exec ./prog')
+      [[ ${started_by} == "${PWD}/prog" ]] && echo "full path" || echo "other: ${started_by}"

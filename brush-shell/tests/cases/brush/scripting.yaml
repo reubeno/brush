@@ -131,6 +131,24 @@ cases:
       compare
     expected_stderr: ""
 
+  - name: "-ef tells files apart"
+    known_failure_platforms: ["wasi", "windows"] # TODO(test): -ef has no device and inode to compare on Windows, and on wasm every file has the same ones
+    test_files:
+      - path: "a.txt"
+        contents: |
+          a
+      - path: "b.txt"
+        contents: |
+          b
+    stdin: |
+      [[ a.txt -ef b.txt ]] && echo "a.txt is b.txt" || echo "a.txt isn't b.txt"
+      [[ a.txt -ef ./a.txt ]] && echo "a.txt is ./a.txt" || echo "a.txt isn't ./a.txt"
+    expected_exit_code: 0
+    expected_stdout: |
+      a.txt isn't b.txt
+      a.txt is ./a.txt
+    expected_stderr: ""
+
   - name: "test and ["
     test_files:
       - path: "exists.txt"
