@@ -149,3 +149,14 @@ cases:
     stdin: |
       . /nonexistent-file
       echo "after: $?"
+
+  - name: "Sourcing a file with an unset variable under set -u ends the shell"
+    ignore_stderr: true
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "sourced $nope"
+    stdin: |
+      set -u
+      . ./script.sh; echo "rc=$?"
+      echo next

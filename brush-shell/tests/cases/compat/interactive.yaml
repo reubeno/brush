@@ -194,3 +194,81 @@ cases:
     args: ["-i", "-c", "cat /dev/null; echo done"]
     stdin: |
       #expect:done
+
+  - name: "A fatal error in a function drops the rest of the interactive line"
+    known_failure: true # TODO(interactive): runs the rest of the line
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      f() { set -u; echo "$unset_var"; }; f; touch went-on.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "A fatal error in a builtin drops the rest of the interactive line"
+    known_failure: true # TODO(interactive): runs the rest of the line
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      set -u; compgen -W '$unset_var'; touch went-on.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "A fatal error in a builtin ends an interactive shell's subshell"
+    known_failure: true # TODO(interactive): the subshell carries on
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      ( set -u; compgen -W '$unset_var'; touch went-on.txt )
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "A fatal expansion error drops the rest of the interactive line"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      set -u; echo "$unset_var"; touch went-on.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "A fatal expansion error ends an interactive shell's subshell"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      ( set -u; echo "$unset_var"; touch went-on.txt )
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "A fatal error in eval drops only the eval'd code in an interactive shell"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      set -u; eval 'echo "$unset_var"; touch skipped.txt'; touch went-on.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "A fatal error in a sourced file drops only that file in an interactive shell"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "$unset_var"
+          touch skipped.txt
+    stdin: |
+      #expect-prompt
+      set -u; . ./script.sh; touch went-on.txt
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D

@@ -33,3 +33,11 @@ cases:
     stdin: |
       let
       echo "let: $?"
+
+  - name: "let with an unset variable under set -u ends the shell"
+    known_failure: true # TODO(let): fails with status 1, and the script carries on
+    ignore_stderr: true
+    stdin: |
+      set -u
+      let 'y = nope + 1'; echo "rc=$?"
+      echo next

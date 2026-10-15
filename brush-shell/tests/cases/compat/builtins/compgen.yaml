@@ -517,3 +517,41 @@ cases:
       set -u
       compgen -W '$nope'; echo "rc=$?"
       echo next
+
+  - name: "compgen -W with ${x?} on an unset variable"
+    known_failure: true # TODO(builtins): brush's compgen fails with status 1, and the script carries on
+    ignore_stderr: true
+    stdin: |
+      compgen -W '${nope?boom}'; echo "rc=$?"
+      echo next
+
+  - name: "compgen -W with an unset variable under set -u, in a function"
+    known_failure: true # TODO(builtins): brush's compgen fails with status 1, and the function and script carry on
+    ignore_stderr: true
+    stdin: |
+      set -u
+      f() { compgen -W '$nope'; echo "in f: $?"; }
+      f; echo "rc=$?"
+      echo next
+
+  - name: "compgen -W with an unset variable under set -u, before ||"
+    known_failure: true # TODO(builtins): brush's compgen fails with status 1, and || handles it
+    ignore_stderr: true
+    stdin: |
+      set -u
+      compgen -W '$nope' || echo handled; echo "rc=$?"
+      echo next
+
+  - name: "command compgen -W with ${x?} on an unset variable"
+    known_failure: true # TODO(builtins): brush's compgen fails with status 1, and the script carries on
+    ignore_stderr: true
+    stdin: |
+      command compgen -W '${nope?boom}'; echo "rc=$?"
+      echo next
+
+  - name: "compgen -W with an unset variable under set -u ends only its subshell"
+    known_failure: true # TODO(builtins): brush's compgen fails with status 1, and the subshell carries on
+    ignore_stderr: true
+    stdin: |
+      ( set -u; compgen -W '$nope'; echo in-sub ); echo "rc=$?"
+      echo next
