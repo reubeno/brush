@@ -169,3 +169,13 @@ cases:
 
       echo "[5]"
       env | grep -o "^OLDPWD="
+
+  - name: "cd .. from a deleted directory"
+    known_failure: true # TODO(cd): `cd ..` fails from a working directory that's been deleted
+    stdin: |
+      start=$PWD
+      mkdir gone
+      cd gone
+      rmdir "${start}/gone"
+      cd ..; echo "status: $?"
+      [[ $PWD == "${start}" ]] && echo "back at the start" || echo "somewhere else"

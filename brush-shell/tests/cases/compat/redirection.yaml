@@ -208,7 +208,7 @@ cases:
       echo "This should appear"
 
   - name: "Close standard streams of external commands: exit status"
-    known_failure: true # TODO(redirection): a closed standard stream isn't closed for the process
+    known_failure: true # TODO(redirection): a closed standard stream is opened on the null device, not closed
     ignore_stderr: true
     stdin: |
       env echo "This should not appear" 1>&-

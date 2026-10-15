@@ -147,3 +147,66 @@ cases:
       prog
       prog
       hash | scrub; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "Assigning PATH empties the table"
+    known_failure: true # TODO(hash): assigning PATH doesn't empty the table, so a command keeps being run from a directory no longer in PATH
+    ignore_stderr: true # How shells word what's not found differs
+    test_files:
+      - path: "x/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "prog in x"
+      - path: "y/.keep"
+    stdin: |
+      PATH="${PWD}/x"
+      prog
+      PATH="${PWD}/y"
+      prog; echo "status: $?"
+
+  - name: "Hash a path starting with a dot"
+    stdin: |
+      hash -p .nosuch foo
+      hash -t foo; echo "status: $?"
+
+  - name: "Hash paths starting with a dot, as given"
+    test_files:
+      - path: "sub/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "0=$0"
+    stdin: |
+      cd sub
+      for path in ./././prog .//prog; do
+        hash -p "${path}" p
+        p
+        hash -t p
+      done
+      for path in ./nosuch/ ./nosuch//; do
+        hash -p "${path}" foo
+        hash -t foo; echo "status: $?"
+      done
+
+  - name: "Hash a builtin or function"
+    known_failure: true # TODO(hash): hashing a builtin's name hashes a program of that name, and a function's fails, where bash does neither
+    ignore_stderr: true # How shells word what's not found differs
+    stdin: |
+      f() { :; }
+      hash echo; echo "echo: $?"
+      hash f; echo "f: $?"
+      hash -t echo; echo "hashed: $?"
+
+  - name: "command -p hashes what it finds"
+    known_failure: true # TODO(hash): `command -p` doesn't hash the program it finds
+    stdin: |
+      command -p cat </dev/null
+      hash -t cat; echo "status: $?"
+
+  - name: "Run a hashed path that doesn't exist"
+    known_failure: true # TODO(hash): running a hashed path that doesn't exist reports the command as not found, not the path as missing
+    ignore_stderr: true
+    stdin: |
+      hash -p /no/such/prog prog
+      prog; echo "status: $?"
+      prog 2>&1 | grep -q 'No such file' && echo "says no such file" || echo "says something else"
