@@ -1,0 +1,355 @@
+name: "Signals"
+# Signals sent to the shell itself, how it acts on them, and the dispositions the programs
+# it starts inherit. Cases signal the shell from a program it runs (`sh -c 'kill … $PPID'`)
+# or with `kill … $$`, so that each arrives at a known point.
+incompatible_platforms: ["windows", "wasi"]
+cases:
+  #
+  # When traps run
+  #
+  - name: "trap runs once for signals that arrive while a program runs"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo got' USR1
+      sh -c 'kill -USR1 $PPID; kill -USR1 $PPID; kill -USR1 $PPID; echo child-done'
+      echo done
+
+  - name: "trap runs for each signal that arrives between commands"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo got' USR1
+      kill -USR1 $$
+      kill -USR1 $$
+      echo done
+
+  - name: "trap runs again for its signal arriving during the trap"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      n=0
+      trap 'n=$((n + 1)); echo "in $n"; [ "$n" -lt 3 ] && kill -USR1 $$; echo "out $n"' USR1
+      kill -USR1 $$
+      echo done
+
+  - name: "trapped signal interrupts wait"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo got' USR1
+      sleep 3 &
+      pid=$!
+      sh -c 'sleep 0.3; kill -USR1 $PPID' &
+      wait "$pid"
+      echo "wait=$?"
+      kill "$pid"
+      wait
+      echo done
+
+  # The process substitution signals the shell while `read` waits for its line.
+  - name: "trapped signal doesn't interrupt read"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo got' USR1
+      exec 3< <(sleep 0.5; kill -USR1 $$; sleep 0.3; echo line)
+      read -r -u 3 x
+      echo "read=$? x=$x"
+
+  - name: "trapped signal interrupts read in POSIX mode"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      set -o posix
+      trap 'echo got' USR1
+      exec 3< <(sleep 0.5; kill -USR1 $$; sleep 0.3; echo line)
+      read -r -u 3 x
+      echo "read=$? x=$x"
+
+  #
+  # Default actions, non-interactive
+  #
+  - name: "SIGTERM ends a non-interactive shell, after its EXIT trap"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo exit-trap' EXIT
+      kill -TERM $$
+      echo after
+
+  - name: "SIGINT ends a non-interactive shell, after its EXIT trap"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo exit-trap' EXIT
+      kill -INT $$
+      echo after
+
+  - name: "SIGHUP ends a non-interactive shell, after its EXIT trap"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo exit-trap' EXIT
+      kill -HUP $$
+      echo after
+
+  - name: "SIGUSR1 ends a non-interactive shell, after its EXIT trap"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo exit-trap' EXIT
+      kill -USR1 $$
+      echo after
+
+  # Sent from outside, through the kernel; it doesn't wait for the program to end.
+  - name: "SIGTERM ends a shell waiting for a program at once"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap '[ -e late ] && echo late || echo early' EXIT
+      sh -c 'kill -TERM $PPID; sleep 0.5; : > late'
+      echo after
+
+  - name: "SIGTERM ends a shell blocked in read"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo "x=[$x]"' EXIT
+      exec 3< <(sleep 1; echo line)
+      sh -c 'sleep 0.3; kill -TERM $PPID' &
+      read -r -u 3 x
+      echo after
+
+  # Each line is longer than a pipe holds: `head` must read all of the first before it exits,
+  # and the second can't be written without a reader, so it fails however the two are timed.
+  - name: "SIGPIPE from a builtin's write ends a pipeline stage"
+    known_failure: true # TODO(signals): EPIPE doesn't end the shell, as SIGPIPE ends bash
+    stdin: |
+      i=0; while [ "$i" -lt 3 ]; do printf '%065536d\n' 0; i=$((i + 1)); done | head -n 1 > /dev/null
+      echo "status=${PIPESTATUS[0]}"
+
+  - name: "trap '' ignores SIGTERM"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap '' TERM
+      kill -TERM $$
+      echo after
+
+  - name: "SIGTERM ends the shell again after its trap is reset"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo t' TERM
+      trap - TERM
+      trap 'echo exit-trap' EXIT
+      kill -TERM $$
+      echo after
+
+  #
+  # A program that handles SIGINT
+  #
+  - name: "SIGINT a program handled doesn't end the shell"
+    stdin: |
+      sh -c 'trap "" INT; kill -INT $PPID; echo child-done'
+      echo "after=$?"
+
+  - name: "SIGINT a program died of ends the shell"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo exit-trap' EXIT
+      sh -c 'kill -INT $PPID; kill -INT $$'
+      echo "after=$?"
+
+  - name: "INT trap runs though the program handled SIGINT"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo int-trap' INT
+      sh -c 'trap "" INT; kill -INT $PPID; echo child-done'
+      echo "after=$?"
+
+  - name: "INT trap runs when the program died of SIGINT"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo int-trap' INT
+      sh -c 'kill -INT $PPID; kill -INT $$'
+      echo "after=$?"
+
+  - name: "SIGINT during a command substitution ends the shell"
+    stdin: |
+      x=$(kill -INT $$; echo inner)
+      echo "x=$x"
+
+  - name: "signal sent to the shell isn't the subshell's"
+    known_failure: true # TODO(signals): a subshell shares its parent's signals
+    stdin: |
+      ( trap 'echo sub-int' INT; kill -INT $$; echo sub-after )
+      echo "after=$?"
+
+  # brush's $BASHPID is the process's ID, so the parent gets the signal too.
+  - name: "a subshell resets the signal traps it inherits"
+    known_failure: true # TODO(signals): a subshell's own process isn't addressable apart from its parent's
+    ignore_stderr: true # bash also reports the subshell's death; that's job reporting
+    stdin: |
+      trap 'echo T' USR1
+      ( kill -USR1 $BASHPID; echo sub-alive )
+      echo "after=$?"
+
+  - name: "a subshell keeps the signals its parent ignores"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap '' USR1
+      ( kill -USR1 $BASHPID; echo sub-alive )
+      echo "after=$?"
+
+  - name: "kill signals a background job running shell code"
+    known_failure: true # TODO(signals): a job running shell code can't be signalled
+    stdin: |
+      # Bounded, so that a shell that can't kill it doesn't wait forever.
+      n=0; while [ "$n" -lt 20 ]; do sleep 0.1; n=$((n + 1)); done &
+      kill %1
+      wait %1
+      echo "status=$?"
+
+  #
+  # SIGCHLD traps
+  #
+  - name: "CHLD trap runs for each program that ends"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo chld' CHLD
+      /bin/true
+      /bin/true
+      echo done
+
+  - name: "CHLD trap runs for each background job that ends"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      trap 'echo chld' CHLD
+      sleep 0.1 &
+      sleep 0.2 &
+      wait
+      echo done
+
+  - name: "CHLD trap runs for each background job that ends, with job control"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      set -m
+      trap 'echo chld' CHLD
+      sleep 0.1 &
+      sleep 0.2 &
+      wait
+      echo done
+
+  #
+  # Dispositions programs inherit (read from /proc, so Linux only)
+  #
+  - name: "programs inherit the signals the shell ignores"
+    incompatible_platforms: ["macos"]
+    known_failure: true # TODO(signals): programs inherit dispositions from the process
+    stdin: |
+      show() {
+        local hex=${1#*:}; hex=${hex//[[:space:]]/}
+        local m=$((16#$hex)) out="" s n
+        for s in INT QUIT USR1 PIPE TSTP TTIN TTOU; do
+          n=$(kill -l "$s"); out+="$s=$(( (m >> (n - 1)) & 1 )) "
+        done
+        echo "$2: $out"
+      }
+      grep SigIgn /proc/self/status > fg.txt; show "$(<fg.txt)" foreground
+      (grep SigIgn /proc/self/status > sub.txt); show "$(<sub.txt)" subshell
+      show "$(grep SigIgn /proc/self/status)" cmdsubst
+      trap '' USR1
+      grep SigIgn /proc/self/status > tr.txt; show "$(<tr.txt)" "trap '' USR1"
+
+  - name: "programs of async lists ignore SIGINT and SIGQUIT"
+    incompatible_platforms: ["macos"]
+    known_failure: true # TODO(signals): programs inherit dispositions from the process
+    stdin: |
+      show() {
+        local hex=${1#*:}; hex=${hex//[[:space:]]/}
+        local m=$((16#$hex)) out="" s n
+        for s in INT QUIT USR1 PIPE TSTP TTIN TTOU; do
+          n=$(kill -l "$s"); out+="$s=$(( (m >> (n - 1)) & 1 )) "
+        done
+        echo "$2: $out"
+      }
+      grep SigIgn /proc/self/status > bg.txt & wait; show "$(<bg.txt)" async
+      show "$(cat <(grep SigIgn /proc/self/status))" procsubst
+      coproc { grep SigIgn /proc/self/status; }
+      read -r line <&"${COPROC[0]}"
+      wait
+      show "$line" coproc
+
+  - name: "programs of substitutions ignore stop signals with job control"
+    incompatible_platforms: ["macos"]
+    known_failure: true # TODO(signals): programs inherit dispositions from the process
+    stdin: |
+      set -m
+      show() {
+        local hex=${1#*:}; hex=${hex//[[:space:]]/}
+        local m=$((16#$hex)) out="" s n
+        for s in INT QUIT USR1 PIPE TSTP TTIN TTOU; do
+          n=$(kill -l "$s"); out+="$s=$(( (m >> (n - 1)) & 1 )) "
+        done
+        echo "$2: $out"
+      }
+      grep SigIgn /proc/self/status > bg.txt & wait; show "$(<bg.txt)" async
+      show "$(grep SigIgn /proc/self/status)" cmdsubst
+      show "$(cat <(grep SigIgn /proc/self/status))" procsubst
+
+  #
+  # Default actions, interactive
+  #
+  - name: "SIGINT breaks out of a loop to the prompt"
+    pty: true
+    ignore_stdout: true # pty transcripts differ in echo and escape-sequence details
+    ignore_whitespace: true
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    # N.B. The markers are computed, so that the terminal's echo of the line can't match.
+    stdin: |
+      #expect-prompt
+      n=0; while :; do n=$((n + 1)); [ "$n" = 3 ] && kill -INT $$; done; echo "unreached"
+      #send:Enter
+      #expect-prompt
+      echo "N[$n] S[$?]"
+      #send:Enter
+      #expect:N[3] S[130]
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "INT trap runs and the loop goes on"
+    pty: true
+    ignore_stdout: true
+    ignore_whitespace: true
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      #expect-prompt
+      trap 'echo "T[$((2 + 2))]"' INT; n=0; while [ "$n" -lt 2 ]; do n=$((n + 1)); kill -INT $$; done; echo "D[$n]"
+      #send:Enter
+      #expect:T[4]
+      #expect:T[4]
+      #expect:D[2]
+      #expect-prompt
+      #send:Ctrl+D
+
+  - name: "an interactive shell ignores SIGTERM and SIGQUIT"
+    pty: true
+    ignore_stdout: true
+    ignore_whitespace: true
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      #expect-prompt
+      kill -TERM $$; kill -QUIT $$; echo "A[$((1 + 1))]"
+      #send:Enter
+      #expect:A[2]
+      #expect-prompt
+      #send:Ctrl+D
+
+  # With job control, Ctrl+C reaches only the program; the shell acts on its dying of it.
+  # The loop is bounded, and the shell ends after it, so that a shell that goes on with the
+  # loop fails at once rather than when the harness gives up waiting.
+  - name: "Ctrl+C ends a loop running a program"
+    pty: true
+    ignore_stdout: true
+    ignore_whitespace: true
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    stdin: |
+      #expect-prompt
+      echo "L[$((1 + 1))]"; for i in 1 2 3 4 5 6 7 8 9 10; do sleep 0.3; done; exit 7
+      #send:Enter
+      #expect:L[2]
+      #send:Ctrl+C
+      #expect-prompt
+      echo "S[$?]"
+      #send:Enter
+      #expect:S[130]
+      #expect-prompt
+      #send:Ctrl+D
