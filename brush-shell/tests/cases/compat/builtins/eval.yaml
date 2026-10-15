@@ -59,3 +59,30 @@ cases:
     stdin: |
       eval 'if'
       echo "after eval: $?"
+
+  - name: "eval with an unset variable under set -u ends the shell"
+    ignore_stderr: true
+    stdin: |
+      set -u
+      eval 'echo $nope'; echo "rc=$?"
+      echo next
+
+  - name: "eval with ${x?} on an unset variable ends the shell"
+    ignore_stderr: true
+    stdin: |
+      eval 'echo ${nope?boom}'; echo "rc=$?"
+      echo next
+
+  - name: "command eval with an unset variable under set -u ends the shell"
+    ignore_stderr: true
+    stdin: |
+      set -u
+      command eval 'echo $nope'; echo "rc=$?"
+      echo next
+
+  - name: "builtin eval with an unset variable under set -u ends the shell"
+    ignore_stderr: true
+    stdin: |
+      set -u
+      builtin eval 'echo $nope'; echo "rc=$?"
+      echo next
