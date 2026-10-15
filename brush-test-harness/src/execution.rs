@@ -235,6 +235,7 @@ impl TestCase {
                     }
                 } else if let Some(control_code) = line.strip_prefix("#send:") {
                     match control_code.to_lowercase().as_str() {
+                        "ctrl+c" => p.send(expectrl::ControlCode::EndOfText)?,
                         "ctrl+d" => p.send(expectrl::ControlCode::EndOfTransmission)?,
                         "tab" => p.send(expectrl::ControlCode::HorizontalTabulation)?,
                         "enter" => p.send(expectrl::ControlCode::LineFeed)?,
