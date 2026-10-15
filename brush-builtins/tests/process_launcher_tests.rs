@@ -194,6 +194,43 @@ async fn a_closed_stream_is_launched_closed() -> Result<()> {
 }
 
 #[tokio::test]
+async fn a_standard_stream_the_shell_lacks_is_launched_closed() -> Result<()> {
+    // As in a shell an embedder made without any open files: its processes get none
+    // of the shell process's own, as they'd get none of a stream the shell closed.
+    let launcher = RecordingLauncher::default();
+    let mut shell = brush_core::Shell::builder_with_extensions::<Host>()
+        .default_builtins(BuiltinSet::BashMode)
+        .process_launcher(launcher.clone())
+        .build()
+        .await?;
+    *shell.open_files_mut() = OpenFiles::default();
+
+    let params = shell.default_exec_params();
+    shell
+        .run_string(
+            "./prog\n./prog >&-",
+            &brush_core::SourceInfo::default(),
+            &params,
+        )
+        .await?;
+
+    let launches = launcher.take()?;
+    let fds: Vec<_> = launches.iter().map(|l| l.fds.clone()).collect();
+    assert_eq!(fds, [Vec::<ShellFd>::new(), vec![]]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_stream_the_shell_closed_is_launched_closed() -> Result<()> {
+    let launch = run_one(&RecordingLauncher::default(), "exec 1>&-\n./prog").await?;
+
+    assert_eq!(launch.fds, [0, 2]);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn other_open_files_are_launched_open() -> Result<()> {
     let launch = run_one(&RecordingLauncher::default(), "./prog 3<&0 4>&1").await?;
 
@@ -232,6 +269,49 @@ async fn shell_with_inherited_underscore(
         .process_launcher(launcher.clone())
         .build()
         .await?)
+}
+
+#[tokio::test]
+async fn exec_leaves_underscore_as_the_shell_exports_it() -> Result<()> {
+    let launcher = RecordingLauncher {
+        can_exec: true,
+        ..Default::default()
+    };
+    for script in ["exec ./prog", "(exec ./prog)"] {
+        // A fresh shell each time: running a command unexports `_`, as in bash.
+        let mut shell = shell_with_inherited_underscore(&launcher).await?;
+        let params = shell.default_exec_params();
+        shell
+            .run_string(script, &brush_core::SourceInfo::default(), &params)
+            .await?;
+
+        let launches = launcher.take()?;
+        let launch = launches.first().context("nothing was launched")?;
+        assert_eq!(launch.env_values("_"), ["/from/parent"], "{script}");
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn exec_in_a_subshell_has_the_launcher_spawn_its_request() -> Result<()> {
+    let launcher = RecordingLauncher {
+        can_exec: true,
+        ..Default::default()
+    };
+    let shell = run(&launcher, "(exec -a NAME ./prog x)").await?;
+
+    assert_eq!(shell.last_exit_status(), 42);
+    let launches = launcher.take()?;
+    let [launch] = launches.as_slice() else {
+        anyhow::bail!("expected one launch, got {}", launches.len());
+    };
+    assert_eq!(launch.how, How::Spawn);
+    assert_eq!(launch.program, Path::new("./prog"));
+    assert_eq!(launch.argv0, "NAME");
+    assert_eq!(launch.args, ["x"]);
+
+    Ok(())
 }
 
 #[tokio::test]
@@ -334,7 +414,13 @@ async fn without_job_control_processes_stay_in_the_shells_group() -> Result<()> 
     run(&launcher, "./a\n./b | ./c").await?;
 
     for launch in launcher.take()? {
-        assert_eq!(launch.process_group, ProcessGroup::Inherit, "{launch:?}");
+        assert_eq!(
+            launch.process_group,
+            ProcessGroup::Inherit,
+            "{}: {:?}",
+            launch.program.display(),
+            launch.process_group
+        );
     }
 
     Ok(())
@@ -344,6 +430,7 @@ async fn without_job_control_processes_stay_in_the_shells_group() -> Result<()> 
 async fn with_job_control_a_command_gets_a_group_of_its_own() -> Result<()> {
     let launcher = RecordingLauncher::default();
     let mut shell = brush_core::Shell::builder_with_extensions::<Host>()
+        .default_builtins(BuiltinSet::BashMode)
         .process_launcher(launcher.clone())
         .build()
         .await?;
@@ -351,16 +438,23 @@ async fn with_job_control_a_command_gets_a_group_of_its_own() -> Result<()> {
 
     let params = shell.default_exec_params();
     shell
-        .run_string("./prog", &brush_core::SourceInfo::default(), &params)
+        .run_string(
+            "./prog\n(./prog)\n(exec ./prog)",
+            &brush_core::SourceInfo::default(),
+            &params,
+        )
         .await?;
 
     let launches = launcher.take()?;
-    let launch = launches.first().context("nothing was launched")?;
-    assert!(
-        matches!(launch.process_group, ProcessGroup::New { .. }),
-        "{:?}",
-        launch.process_group
-    );
+    assert_eq!(launches.len(), 3);
+    for launch in launches {
+        assert!(
+            matches!(launch.process_group, ProcessGroup::New { .. }),
+            "{}: {:?}",
+            launch.program.display(),
+            launch.process_group
+        );
+    }
 
     Ok(())
 }

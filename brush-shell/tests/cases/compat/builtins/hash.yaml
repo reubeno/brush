@@ -147,3 +147,18 @@ cases:
       prog
       prog
       hash | scrub; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "Assigning PATH empties the table"
+    known_failure: true # TODO(hash): assigning PATH doesn't empty the table, so a command keeps being run from a directory no longer in PATH
+    test_files:
+      - path: "x/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "prog in x"
+      - path: "y/.keep"
+    stdin: |
+      PATH="${PWD}/x"
+      prog
+      PATH="${PWD}/y"
+      prog; echo "status: $?"

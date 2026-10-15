@@ -201,14 +201,13 @@ cases:
       echo "This should appear"
 
   - name: "Close stdout of external command"
-    known_failure: true # TODO(redirection): a closed standard stream is the shell's own for the process
     ignore_stderr: true
     stdin: |
       env echo "This should not appear" 1>&-
       echo "This should appear"
 
   - name: "Close standard streams of external commands: exit status"
-    known_failure: true # TODO(redirection): a closed standard stream isn't closed for the process
+    known_failure: true # TODO(redirection): a closed standard stream is opened on the null device, not closed
     ignore_stderr: true
     stdin: |
       env echo "This should not appear" 1>&-
@@ -230,7 +229,6 @@ cases:
       echo "status: $?"
 
   - name: "Redirect external command output between stdout and stderr"
-    known_failure: true # TODO(redirection): an external command's output redirected to the shell's stderr goes to its stdout, and vice versa
     stdin: |
       env echo "to stderr" >&2
       env sh -c 'echo "to stdout" >&2' 2>&1

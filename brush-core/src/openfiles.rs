@@ -238,7 +238,13 @@ impl TryFrom<OpenFile> for Stdio {
         // fail (e.g. under descriptor exhaustion), so the conversion is fallible and the error is
         // surfaced to the caller rather than silently degrading the child's streams.
         match open_file {
-            OpenFile::Stdin(_) | OpenFile::Stdout(_) | OpenFile::Stderr(_) => Ok(Self::inherit()),
+            // The shell's own output streams go to whichever stream the child has them as;
+            // e.g., the shell's stderr as the child's stdout, for `>&2`.
+            // TODO(redirection): the shell's stdin as an output stream (e.g., `>&0`) is
+            // inherited from the stream it replaces instead.
+            OpenFile::Stdin(_) => Ok(Self::inherit()),
+            OpenFile::Stdout(s) => Ok(s.into()),
+            OpenFile::Stderr(s) => Ok(s.into()),
             OpenFile::File(f) => Ok(f.try_clone()?.into()),
             OpenFile::PipeReader(r) => Ok(r.try_clone()?.into()),
             OpenFile::PipeWriter(w) => Ok(w.try_clone()?.into()),

@@ -31,7 +31,7 @@ impl builtins::Command for ExecCommand {
 
     async fn execute<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_, SE>,
+        mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.args.is_empty() {
             // When no arguments are present, then there's nothing for us to execute -- but we need
@@ -44,23 +44,6 @@ impl builtins::Command for ExecCommand {
             return Ok(ExecutionResult::success());
         }
 
-        // If we know we're already running in a subshell, then `exec`ing is actually
-        // unsafe, since it would also replace the *parent* shell instance. We instead
-        // delegate to the `command` builtin to perform the execution, with an expectation
-        // of returning.
-        if context.shell.is_subshell() {
-            if self.empty_environment || self.exec_as_login || self.name_for_argv0.is_some() {
-                return brush_core::error::unimp("exec with options in subshell not yet supported");
-            }
-
-            let cmd_cmd = crate::command::CommandCommand {
-                command_and_args: self.args.clone(),
-                ..Default::default()
-            };
-
-            return cmd_cmd.execute(context).await;
-        }
-
         let mut argv0 = Cow::Borrowed(self.name_for_argv0.as_ref().unwrap_or(&self.args[0]));
 
         if self.exec_as_login {
@@ -69,7 +52,7 @@ impl builtins::Command for ExecCommand {
 
         // Resolve the program as running it as a command would.
         let Some(program) = context.shell.resolve_external_command(&self.args[0]) else {
-            return Ok(ExecutionExitCode::NotFound.into());
+            return Err(ErrorKind::CommandNotFound(self.args[0].clone()).into());
         };
 
         let request = commands::compose_launch_request(
@@ -79,6 +62,16 @@ impl builtins::Command for ExecCommand {
             &self.args[1..],
             self.empty_environment,
         );
+
+        // If we know we're already running in a subshell, then `exec`ing is actually
+        // unsafe, since it would also replace the *parent* shell instance. We instead
+        // run the program, with an expectation of returning.
+        // TODO(exec): end the subshell once the program exits.
+        if context.shell.is_subshell() {
+            self.args[0].clone_into(&mut context.command_name);
+            let wait_result = commands::spawn_process(context, request)?.wait().await?;
+            return Ok(wait_result.into());
+        }
 
         let exec_error = context.shell.process_launcher().exec(request);
 

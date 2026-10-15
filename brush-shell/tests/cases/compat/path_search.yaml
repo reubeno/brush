@@ -2,13 +2,10 @@ name: "PATH search"
 
 #
 # An empty entry in PATH names the working directory, so a command found through one is
-# reported with a leading "./". brush finds the command but reports the bare name; the
-# `known_failure` cases below cover each surface that exposes the difference. They share
-# one root cause in the path search, so they should be retired together.
+# reported with a leading "./". The cases below cover each surface that exposes that.
 #
 cases:
   - name: "empty PATH entry is reported as the working directory"
-    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
     stdin: |
       printf '#!/bin/sh\necho ran\n' > prog
       chmod +x prog
@@ -26,7 +23,6 @@ cases:
       command -v prog; echo "rc=$?"
 
   - name: "empty PATH entry is reported the same wherever it appears"
-    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
     stdin: |
       printf '#!/bin/sh\necho ran\n' > prog
       chmod +x prog
@@ -47,7 +43,6 @@ cases:
       command -v prog; echo "rc=$?"
 
   - name: "empty PATH entry is hashed as the working directory"
-    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
     stdin: |
       printf '#!/bin/sh\necho ran\n' > prog
       chmod +x prog
@@ -58,7 +53,6 @@ cases:
       hash -t prog; echo "rc=$?"
 
   - name: "empty PATH entry is passed to the command as the working directory"
-    known_failure: true # TODO(path): an empty PATH entry should resolve as "."
     stdin: |
       # A copy of env, found through the empty entry before the real one, reports the _
       # it's started with: the path the shell ran it by. (It keeps env's name, which a
@@ -69,7 +63,6 @@ cases:
       env | grep '^_='
 
   - name: "relative PATH entry is relative to the working directory"
-    known_failure: true # TODO(path): a relative PATH entry is searched relative to the directory brush started in, not the shell's working directory
     test_files:
       - path: "sub/bin/prog"
         executable: true
@@ -80,10 +73,119 @@ cases:
       cd sub
       PATH=bin
       type prog
+      type -a prog
       command -v prog
+      hash prog; echo "hash: $?"
       prog; echo "command: $?"
       (exec prog); echo "exec in a subshell: $?"
       exec prog
+
+  - name: "script run by a relative path sees that path as its $0"
+    test_files:
+      - path: "sub/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "0=$0"
+      - path: "sub/bin/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "0=$0"
+    stdin: |
+      cd sub
+      ./prog
+      PATH=bin
+      prog
+
+  - name: "empty PATH entry runs the program in the working directory"
+    test_files:
+      - path: "sub/id"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "id in the working directory"
+      - path: "sub/only-here"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "only here"
+    stdin: |
+      # Unexported, so that the program can't be found again through the PATH a
+      # process is given, only as the shell found it.
+      cd sub
+      export -n PATH
+      PATH=":$PATH"
+      id
+      only-here
+      type only-here
+
+  - name: "command found through an empty PATH entry is searched for again after cd"
+    test_files:
+      - path: "a/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "prog in a"
+      - path: "b/.keep"
+      - path: "fallback/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "prog in fallback"
+    stdin: |
+      for first in "" "."; do
+        export PATH="${first}:${PWD}/fallback:${PATH}"
+        cd a
+        prog
+        hash -t prog; type prog
+        cd ../b
+        prog; echo "status: $?"
+        cd ../a
+        prog
+        hash -t prog; type prog
+        cd ..
+        export PATH="${PATH#"${first}:${PWD}/fallback:"}"
+      done
+
+  - name: "command hashed with hash -p is kept with an empty PATH entry"
+    test_files:
+      - path: "prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "prog in the working directory"
+    stdin: |
+      true_path=$(type -P true)
+      PATH=":$PATH"
+      hash -p "${true_path}" prog
+      prog; echo "status: $?"
+
+  - name: "with PATH unset, a command in the working directory is run by its name"
+    known_failure: true # TODO(path): with PATH unset, a command in the working directory is run as ./name, not by its bare name
+    test_files:
+      - path: "prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "0=$0"
+    stdin: |
+      unset PATH
+      prog
+
+  - name: "relative PATH entry is hashed as bash hashes it"
+    known_failure: true # TODO(path): bash hashes a command found through a relative PATH entry as ./entry/name
+    test_files:
+      - path: "sub/bin/prog"
+        executable: true
+        contents: |
+          #!/bin/sh
+          echo "ran prog"
+    stdin: |
+      cd sub
+      PATH=bin
+      prog
+      hash -t prog
 
   #
   # These two surfaces already agree with the oracle; they guard the parts of the

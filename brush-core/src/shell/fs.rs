@@ -94,7 +94,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
-        pathsearch::search_for_executable(paths, filename)
+        pathsearch::search_for_executable(paths, filename, self.working_dir())
     }
 
     /// Finds executables in the shell's current default PATH, with filenames matching the
@@ -111,7 +111,12 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
 
-        pathsearch::search_for_executable_with_prefix(paths, filename_prefix, case_insensitive)
+        pathsearch::search_for_executable_with_prefix(
+            paths,
+            filename_prefix,
+            case_insensitive,
+            self.working_dir(),
+        )
     }
 
     /// Determines whether the given filename is the name of an executable in one of the
@@ -142,11 +147,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     where
         String: From<S>,
     {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+        if let Some(cached_path) = self.cached_program_location(candidate_name.as_ref()) {
             Some(cached_path)
         } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
-            self.program_location_cache
-                .set(candidate_name, found_path.clone());
+            self.cache_found_program_location(candidate_name.into(), found_path.clone());
             Some(found_path)
         } else {
             None
@@ -165,7 +169,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub fn resolve_command_in_path<S: AsRef<str>>(&self, candidate_name: S) -> Option<PathBuf> {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
         let paths = crate::sys::fs::split_paths(path_var.as_ref());
-        pathsearch::resolve_command(paths, candidate_name.as_ref())
+        pathsearch::resolve_command(paths, candidate_name.as_ref(), self.working_dir())
     }
 
     /// Like [`Self::resolve_command_in_path`], but consults the shell's hash-based path cache
@@ -181,15 +185,53 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     where
         String: From<S>,
     {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
+        if let Some(cached_path) = self.cached_program_location(candidate_name.as_ref()) {
             return Some(cached_path);
         }
 
         let found_path = self.resolve_command_in_path(candidate_name.as_ref())?;
-        self.program_location_cache
-            .set(candidate_name, found_path.clone());
+        self.cache_found_program_location(candidate_name.into(), found_path.clone());
 
         Some(found_path)
+    }
+
+    /// Looks up a command in the shell's hash-based path cache.
+    ///
+    /// As in bash, a command found by a PATH search that passed the working directory
+    /// (an empty or `.` entry) on the way depends on which directory the shell is in,
+    /// which may have changed since: if the working directory now has the command, that
+    /// one's the cached one; if not, and it's the one that was cached, it isn't cached
+    /// any more.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
+    pub fn cached_program_location(&self, name: &str) -> Option<PathBuf> {
+        let path = self.program_location_cache.get(name)?;
+        if !self.program_location_cache.found_through_working_dir(name) {
+            return Some(path);
+        }
+
+        if let Some(in_working_dir) =
+            pathsearch::resolve_executable_in(&Path::new(".").join(name), self.working_dir())
+        {
+            Some(in_working_dir)
+        } else if path.parent() == Some(Path::new(".")) {
+            None
+        } else {
+            Some(path)
+        }
+    }
+
+    /// Caches the path that a PATH search found for a command, noting whether the search
+    /// passed the working directory on the way (see [`Self::cached_program_location`]).
+    fn cache_found_program_location(&mut self, name: String, path: PathBuf) {
+        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
+        let paths = crate::sys::fs::split_paths(path_var.as_ref());
+        let through_working_dir = pathsearch::search_passes_working_dir(paths, &name, &path);
+
+        self.program_location_cache
+            .set_found(name, path, through_working_dir);
     }
 
     /// Resolves the name of an external command to the program to run, as running

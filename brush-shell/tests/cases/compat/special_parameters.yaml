@@ -236,14 +236,12 @@ cases:
       echo "[$_]"
 
   - name: "$_ - exec does not override _ in child env"
-    known_failure: true # TODO(exec): exec sets _ to the program's path, as for any external command
     stdin: |
       # bash does not set _ in the child's env for exec; the child inherits
       # the parent's _ value.
       (exec $(which env)) | grep '^_='
 
   - name: "$_ - exec at the top level does not override _ in child env"
-    known_failure: true # TODO(exec): exec sets _ to the program's path, as for any external command
     stdin: |
       # Unlike in a subshell, exec here replaces the shell itself. What _ the child
       # inherits differs between shells (it's the shell's own path), so check only
@@ -253,20 +251,17 @@ cases:
       [[ "${underscore}" == "${printenv_path}" ]] && echo "exec set _" || echo "exec left _ alone"
 
   - name: "$_ - exec passes on the _ the shell inherited"
-    known_failure: true # TODO(exec): exec sets _ to the program's path, and the shell doesn't keep the _ it inherits
     stdin: |
       # The shell running "$0" sets its _ to the path it ran it by; exec passes that on.
       underscore=$("$0" -c 'exec printenv _')
       [[ "${underscore}" == "$0" ]] && echo "inherited _" || echo "other _: ${underscore}"
 
   - name: "$_ - without one to inherit, a shell starts with an unexported $0"
-    known_failure: true # TODO(exec): exec sets _ to the program's path, as for any external command
     stdin: |
       env -u _ "$0" -c '[[ $_ == "$0" ]] && echo "_ is \$0"; exec printenv _'
       echo "printenv: $?"
 
   - name: "$_ - exec after a command passes no _"
-    known_failure: true # TODO(exec): exec sets _ to the program's path, as for any external command
     stdin: |
       # Updating $_ unexports it, so a command run before exec leaves none to pass on.
       "$0" -c 'true; exec printenv _'
