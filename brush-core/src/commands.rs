@@ -32,7 +32,8 @@ pub enum CommandWaitResult {
 pub struct ExecutionContext<'a, SE: ShellExtensions = extensions::DefaultShellExtensions> {
     /// The shell in which the command is being executed.
     pub shell: &'a mut Shell<SE>,
-    /// The name of the command being executed.
+    /// The name of the command being executed. A failure to start a program as the
+    /// command (see [`Self::spawn_program`]) is reported by this name.
     pub command_name: String,
     /// The parameters for the execution.
     pub params: ExecutionParameters,
@@ -67,6 +68,128 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     /// Iterates over all open file descriptors.
     pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, openfiles::OpenFile)> {
         self.params.iter_fds(self.shell)
+    }
+
+    /// Composes the [`processes::LaunchRequest`] for a program to run as the
+    /// command: with the given arguments, the shell's exported variables and
+    /// functions as its environment, the shell's working directory, the command's
+    /// open files, and the shell's process group. A caller may change any of that
+    /// before starting the program, with [`Self::spawn_program`] or
+    /// [`Self::exec_program`].
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The path of the program (e.g., as
+    ///   [`Shell::resolve_external_command`] resolves a name to it).
+    /// * `argv0` - The value the program should see as `argv[0]`.
+    /// * `args` - The arguments to the program, not including `argv[0]`.
+    pub fn compose_launch_request<S: AsRef<str>>(
+        &self,
+        program: &Path,
+        argv0: &str,
+        args: &[S],
+    ) -> processes::LaunchRequest {
+        processes::LaunchRequest {
+            program: program.to_owned(),
+            argv0: argv0.to_owned(),
+            args: args.iter().map(|arg| arg.as_ref().to_owned()).collect(),
+            env: compose_env(self.shell),
+            working_dir: self.shell.working_dir().to_owned(),
+            open_files: self.iter_fds().into(),
+            process_group: processes::ProcessGroup::Inherit,
+            kill_on_drop: self.shell.options().kill_external_commands_on_drop,
+        }
+    }
+
+    /// Starts the process described by `request` as the command, as the shell
+    /// starts any external command: with the shell's process launcher, in the
+    /// process group the command's process-group policy calls for (which replaces
+    /// the request's). A failure to start it is reported as running the command
+    /// would report it, by [`Self::command_name`]. The caller waits for the process,
+    /// through the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The process to start (e.g., from [`Self::compose_launch_request`]).
+    pub fn spawn_program(
+        &self,
+        mut request: processes::LaunchRequest,
+    ) -> Result<ExecutionSpawnResult, error::Error> {
+        request.process_group = self.process_group_for(&request);
+
+        tracing::debug!(
+            target: trace_categories::COMMANDS,
+            "Spawning: cmd='{} {}'",
+            request.program.display(),
+            request.args.join(" ")
+        );
+
+        let working_dir = request.working_dir.clone();
+        match self.shell.process_launcher().spawn(request) {
+            Ok(child) => Ok(ExecutionSpawnResult::StartedProcess(child)),
+            Err(err) => {
+                if self.shell.options().interactive {
+                    sys::terminal::move_self_to_foreground()?;
+                }
+
+                Err(self.launch_error(err, &working_dir))
+            }
+        }
+    }
+
+    /// Replaces the shell's process with the process described by `request`, with
+    /// the shell's process launcher, as `exec` does. Returns only if that fails, with
+    /// the failure reported as running the command would report it, by
+    /// [`Self::command_name`].
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The process to replace the shell's with.
+    pub fn exec_program(&self, request: processes::LaunchRequest) -> error::Error {
+        let working_dir = request.working_dir.clone();
+        let err = self.shell.process_launcher().exec(request);
+        self.launch_error(err, &working_dir)
+    }
+
+    /// Returns the process group that a process started as the command should run
+    /// in, under the command's process-group policy.
+    fn process_group_for(&self, request: &processes::LaunchRequest) -> processes::ProcessGroup {
+        if matches!(
+            self.params.process_group_policy,
+            ProcessGroupPolicy::NewProcessGroup
+        ) {
+            let child_stdin_is_terminal = request
+                .open_files
+                .try_fd(openfiles::OpenFiles::STDIN_FD)
+                .is_some_and(|f| f.is_terminal());
+
+            if child_stdin_is_terminal && self.shell.options().external_cmd_leads_session {
+                processes::ProcessGroup::NewSession
+            } else {
+                processes::ProcessGroup::New {
+                    take_foreground: child_stdin_is_terminal,
+                }
+            }
+        } else if let Some(pgid) = self.params.process_group_id {
+            // We need to join an established process group.
+            processes::ProcessGroup::Join(pgid)
+        } else {
+            processes::ProcessGroup::Inherit
+        }
+    }
+
+    /// Translates an error from starting a process as the command into the shell's
+    /// error for it.
+    fn launch_error(&self, err: std::io::Error, working_dir: &Path) -> error::Error {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            if !working_dir.exists() {
+                error::ErrorKind::WorkingDirMissing(working_dir.to_owned()).into()
+            } else {
+                error::ErrorKind::CommandNotFound(self.command_name.clone()).into()
+            }
+        } else {
+            error::ErrorKind::FailedToExecuteCommand(self.command_name.clone(), err).into()
+        }
     }
 }
 
@@ -160,81 +283,23 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
     }
 }
 
-/// The environment to start an external program with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProgramEnvironment {
-    /// No variables at all (as for `exec -c`).
-    Empty,
-    /// The shell's exported variables and functions, as they are (as for `exec`).
-    Exported,
-    /// The shell's exported variables and functions, with `_` set to the program's
-    /// path, as for a command the shell runs.
-    Command,
-}
-
-/// Composes the [`processes::LaunchRequest`] for the process that runs the given
-/// external command.
-///
-/// The process gets the shell's working directory and the context's open files,
-/// and runs in the shell's process group; callers may change that.
-///
-/// # Arguments
-///
-/// * `context` - The execution context in which the command is being composed.
-/// * `program` - The resolved path of the program to execute.
-/// * `argv0` - The value to use for `argv[0]` (may be different from the command).
-/// * `args` - The arguments to pass to the command.
-/// * `env` - The environment to start the program with.
-pub fn compose_launch_request<S: AsRef<str>, SE: extensions::ShellExtensions>(
-    context: &ExecutionContext<'_, SE>,
-    program: &Path,
-    argv0: &str,
-    args: &[S],
-    env: ProgramEnvironment,
-) -> processes::LaunchRequest {
-    processes::LaunchRequest {
-        program: program.to_owned(),
-        argv0: argv0.to_owned(),
-        args: args.iter().map(|arg| arg.as_ref().to_owned()).collect(),
-        env: match env {
-            ProgramEnvironment::Empty => vec![],
-            ProgramEnvironment::Exported => compose_env(context.shell, None),
-            ProgramEnvironment::Command => {
-                compose_env(context.shell, Some(&program.to_string_lossy()))
-            }
-        },
-        working_dir: context.shell.working_dir().to_owned(),
-        open_files: context.iter_fds().into(),
-        process_group: processes::ProcessGroup::Inherit,
-        kill_on_drop: context.shell.options().kill_external_commands_on_drop,
-    }
-}
-
-/// Composes the environment for an external command: the shell's exported
+/// Composes the environment for an external program: the shell's exported
 /// variables and functions.
 ///
 /// # Arguments
 ///
 /// * `shell` - The shell whose exported state should be used.
-/// * `program` - The program's path, to set `_` to, if it's to be set.
-fn compose_env(
-    shell: &Shell<impl extensions::ShellExtensions>,
-    program: Option<&str>,
-) -> Vec<(String, String)> {
+fn compose_env(shell: &Shell<impl extensions::ShellExtensions>) -> Vec<(String, String)> {
     let mut env = vec![];
 
-    // Add in exported variables, but `_`, if it's to be set below.
+    // Add in exported variables.
     for (k, v) in shell.env().iter_exported() {
         // NOTE: To match bash behavior, we only include exported variables
         // that are set (i.e., have a value). This means a variable that
         // shows up in `declare -p` but has no *set* value will be omitted.
-        if v.value().is_set() && (program.is_none() || k != "_") {
+        if v.value().is_set() {
             env.push((k.clone(), v.value().to_cow_str(shell).into_owned()));
         }
-    }
-
-    if let Some(program) = program {
-        env.push(("_".to_owned(), program.to_owned()));
     }
 
     // Add in exported functions.
@@ -601,7 +666,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         };
 
         let result =
-            execute_external_command(cmd_context, path, self.argv0.as_deref(), &self.args[1..]);
+            execute_external_command(&cmd_context, path, self.argv0.as_deref(), &self.args[1..]);
 
         // Update $_ after command execution.
         shell.update_last_arg_variable(last_arg);
@@ -611,7 +676,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 }
 
 pub(crate) fn execute_external_command(
-    context: ExecutionContext<'_, impl extensions::ShellExtensions>,
+    context: &ExecutionContext<'_, impl extensions::ShellExtensions>,
     executable_path: &Path,
     argv0_override: Option<&str>,
     args: &[CommandArg],
@@ -628,78 +693,27 @@ pub(crate) fn execute_external_command(
         })
         .collect::<Vec<_>>();
 
-    // Before we lose ownership of the open files, figure out if stdin will be a terminal.
-    let child_stdin_is_terminal = context
-        .try_fd(openfiles::OpenFiles::STDIN_FD)
-        .is_some_and(|f| f.is_terminal());
-
-    // Figure out if we should be setting up a new process group.
-    let new_pg = matches!(
-        context.params.process_group_policy,
-        ProcessGroupPolicy::NewProcessGroup
-    );
-
     // argv[0] defaults to context.command_name (the user-facing name of the
     // command) unless the caller specified an explicit override.
     let argv0 = argv0_override.unwrap_or(context.command_name.as_str());
 
-    let mut request = compose_launch_request(
-        &context,
-        executable_path,
-        argv0,
-        cmd_args.as_slice(),
-        ProgramEnvironment::Command,
+    let mut request = context.compose_launch_request(executable_path, argv0, cmd_args.as_slice());
+
+    // As in bash, a command sees `_` as the program's path, whatever the shell exports.
+    set_env_var(
+        &mut request.env,
+        "_",
+        executable_path.to_string_lossy().into_owned(),
     );
 
-    // Set up process group state.
-    request.process_group = if new_pg {
-        if child_stdin_is_terminal && context.shell.options().external_cmd_leads_session {
-            processes::ProcessGroup::NewSession
-        } else {
-            processes::ProcessGroup::New {
-                take_foreground: child_stdin_is_terminal,
-            }
-        }
-    } else if let Some(pgid) = context.params.process_group_id {
-        // We need to join an established process group.
-        processes::ProcessGroup::Join(pgid)
-    } else {
-        processes::ProcessGroup::Inherit
-    };
-
-    // When tracing is enabled, report.
-    tracing::debug!(
-        target: trace_categories::COMMANDS,
-        "Spawning: cmd='{} {}'",
-        executable_path.display(),
-        request.args.join(" ")
-    );
-
-    match context.shell.process_launcher().spawn(request) {
-        Ok(child) => Ok(ExecutionSpawnResult::StartedProcess(child)),
-        Err(spawn_err) => {
-            if context.shell.options().interactive {
-                sys::terminal::move_self_to_foreground()?;
-            }
-
-            Err(spawn_error(context, spawn_err))
-        }
-    }
+    context.spawn_program(request)
 }
 
-/// Translates an error from starting an external command into a shell error.
-fn spawn_error(
-    context: ExecutionContext<'_, impl extensions::ShellExtensions>,
-    spawn_err: std::io::Error,
-) -> error::Error {
-    if spawn_err.kind() == std::io::ErrorKind::NotFound {
-        if !context.shell.working_dir().exists() {
-            error::ErrorKind::WorkingDirMissing(context.shell.working_dir().to_owned()).into()
-        } else {
-            error::ErrorKind::CommandNotFound(context.command_name).into()
-        }
-    } else {
-        error::ErrorKind::FailedToExecuteCommand(context.command_name, spawn_err).into()
+/// Sets `name` to `value` in `env`, in place of any value it has there.
+fn set_env_var(env: &mut Vec<(String, String)>, name: &str, value: String) {
+    match env.iter_mut().find(|(n, _)| n == name) {
+        Some((_, v)) => *v = value,
+        None => env.push((name.to_owned(), value)),
     }
 }
 

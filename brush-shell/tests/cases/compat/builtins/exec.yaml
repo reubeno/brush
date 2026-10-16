@@ -83,20 +83,31 @@ cases:
       echo hello | (exec cat; echo "still running")
 
   - name: "exec in a subshell runs the program, not a builtin"
-    known_failure: true # TODO(exec): exec in a subshell runs a builtin of the same name instead
     ignore_stderr: true
     stdin: |
       # The printf builtin would print nothing; the program prints "-v".
       (exec printf -v out hi)
 
   - name: "exec of a missing program reports it"
-    known_failure: true # TODO(exec): exec of a program that can't be found reports nothing at the top level
     stdin: |
       "$0" -c 'exec ./no-such-program' 2> err.txt
       echo "status: $?"
       [[ -s err.txt ]] && echo "reported" || echo "silent"
       # (What it says has the test's directory in it, which differs between shells.)
       rm err.txt
+
+  - name: "exec of a program that can't be started fails as running it would"
+    ignore_stderr: true # How shells word it differs
+    test_files:
+      - path: "noexec"
+        contents: |
+          #!/bin/sh
+          echo "ran"
+    stdin: |
+      "$0" -c 'exec ./noexec'; echo "status: $?"
+      "$0" -c '(exec ./noexec); echo "subshell: $?"'
+      "$0" -c 'exec ./no-such-program'; echo "status: $?"
+      "$0" -c '(exec ./no-such-program); echo "subshell: $?"'
 
   - name: "exec starts a program by its full path"
     known_failure: true # TODO(exec): exec starts a program by the path it was found by, not its full path, so a script sees that as its $0
