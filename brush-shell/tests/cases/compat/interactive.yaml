@@ -286,3 +286,17 @@ cases:
       #send:Enter
       #expect-prompt
       #send:Ctrl+D
+
+  - name: "A builtin's pipeline stage joins the pipeline's process group"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    incompatible_platforms: ["macos"] # Reads /proc
+    # Under job control, the pipeline's first process leads a group of its own, which the
+    # rest join: the program a builtin starts too. The lead stays alive for the look at its
+    # group (the fifth field of a process's stat).
+    stdin: |
+      #expect-prompt
+      sh -c 'echo $$; sleep 2' | command sh -c 'read lead; cut -d" " -f5 /proc/$lead/stat /proc/$$/stat | sort -u | wc -l > groups.txt'
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D
