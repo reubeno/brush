@@ -401,7 +401,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Otherwise, use our default search logic.
         let path = match &self.path_dirs {
             Some(path_dirs) if !sys::fs::contains_path_separator(&self.command_name) => {
-                pathsearch::resolve_command(path_dirs, self.command_name.as_str())
+                pathsearch::SearchPath::new(path_dirs, self.shell.working_dir())
+                    .resolve(self.command_name.as_str())
             }
             _ => self.shell.resolve_external_command(&self.command_name),
         };

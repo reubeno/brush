@@ -384,20 +384,10 @@ impl<'a, SE: brush_core::ShellExtensions> Highlighter<'a, SE> {
             return CommandType::Unknown;
         }
 
-        if brush_core::sys::fs::contains_path_separator(name) {
-            // TODO(highlighting): Should check for executable-ness.
-            let candidate_path = self.shell.absolute_path(std::path::Path::new(name));
-            if candidate_path.exists() {
-                CommandType::External
-            } else {
-                CommandType::NotFound
-            }
+        if self.shell.lookup_external_command(name).is_some() {
+            CommandType::External
         } else {
-            if self.shell.find_first_executable_in_path(name).is_some() {
-                CommandType::External
-            } else {
-                CommandType::NotFound
-            }
+            CommandType::NotFound
         }
     }
 }
@@ -426,6 +416,31 @@ mod tests {
             .iter()
             .find(|s| highlighted.text(s) == "somecommand");
         assert!(cmd_span.is_some(), "Should have a span for the command");
+    }
+
+    /// A command found by the shell's lookup is external, from the hash table included,
+    /// whether or not it's on `PATH`.
+    #[tokio::test]
+    async fn test_highlight_hashed_command_is_external() {
+        let mut shell = brush_core::Shell::builder().build().await.unwrap();
+        let kind_of = |shell: &brush_core::Shell, name: &str| {
+            let line = std::format!("{name} arg");
+            let highlighted = highlight_command(shell, &line, line.len());
+            highlighted.spans().first().map(|s| s.kind)
+        };
+        assert_eq!(
+            kind_of(&shell, "zzq-nosuch"),
+            Some(HighlightKind::NotFoundCommand)
+        );
+
+        shell.program_location_cache_mut().set(
+            "zzq-nosuch",
+            std::path::PathBuf::from("/nonexistent/zzq-nosuch"),
+        );
+        assert_eq!(
+            kind_of(&shell, "zzq-nosuch"),
+            Some(HighlightKind::ExternalCommand)
+        );
     }
 
     #[tokio::test]

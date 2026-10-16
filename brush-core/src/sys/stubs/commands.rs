@@ -50,6 +50,25 @@ impl ExitStatusExt for std::process::ExitStatus {
     }
 }
 
+/// Returns the path to start `program` by, for a process started in `working_dir`.
+/// Here, a relative path with a directory in it is looked for relative to the shell
+/// process's own working directory, so it's put under `working_dir`; a bare name is
+/// left to be looked up in `PATH`.
+pub(crate) fn program_to_start(
+    program: std::path::PathBuf,
+    working_dir: &std::path::Path,
+) -> std::path::PathBuf {
+    if program.is_relative()
+        && program
+            .parent()
+            .is_some_and(|dir| !dir.as_os_str().is_empty())
+    {
+        working_dir.join(program)
+    } else {
+        program
+    }
+}
+
 /// Replaces the current process with `command`; not supported on this platform.
 pub(crate) fn exec(_command: std::process::Command) -> std::io::Error {
     std::io::ErrorKind::Unsupported.into()

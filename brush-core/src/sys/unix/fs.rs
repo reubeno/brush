@@ -306,7 +306,7 @@ pub const fn normalize_path_separators(s: &str) -> std::borrow::Cow<'_, str> {
 /// Resolves an owned path to the actual on-disk executable file, if any.
 ///
 /// On Unix this is a straight passthrough: if the path is executable, the
-/// path is returned unchanged (no clone). This keeps `pathsearch::next`
+/// path is returned unchanged (no clone). This keeps a path search
 /// allocation-free on the happy path.
 ///
 /// On Windows this function may append a `PATHEXT` extension and return a
