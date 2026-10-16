@@ -156,7 +156,9 @@ pub struct LaunchRequest {
     /// The working directory the process should start in.
     pub working_dir: PathBuf,
     /// The process's file descriptors. A standard stream (0, 1, or 2) that isn't
-    /// among them is closed. The shell's own standard streams
+    /// among them is closed; a launcher that can't start a process with one closed
+    /// gives it the null device, as the default launcher does, never one of the
+    /// shell's own. The shell's own standard streams
     /// ([`OpenFile::Stdin`](crate::openfiles::OpenFile::Stdin), and so on) are
     /// shared with the process, under whichever descriptors hold them.
     pub open_files: OpenFiles,
