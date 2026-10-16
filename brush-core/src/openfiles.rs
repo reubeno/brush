@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
-use std::process::Stdio;
 use std::sync::Arc;
 
 use crate::ShellFd;
@@ -37,8 +36,8 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 /// tasks against one process-wide descriptor table (rather than via `fork(2)` like a traditional
 /// shell); sharing the descriptor keeps deeply nested or highly concurrent execution from
 /// exhausting that table. A descriptor is duplicated for real only when an independently owned
-/// copy is needed to hand to an external child process — see [`OpenFile::try_clone_to_owned`] and
-/// the `Stdio` conversion below.
+/// copy is needed to hand to an external child process (see `OpenFile::try_clone_to_owned`, which
+/// the native launcher uses for a process's standard streams and other descriptors alike).
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin(std::io::Stdin),
@@ -226,31 +225,6 @@ impl From<std::io::PipeReader> for OpenFile {
 impl From<std::io::PipeWriter> for OpenFile {
     fn from(writer: std::io::PipeWriter) -> Self {
         Self::PipeWriter(Arc::new(writer))
-    }
-}
-
-impl TryFrom<OpenFile> for Stdio {
-    type Error = error::Error;
-
-    fn try_from(open_file: OpenFile) -> Result<Self, Self::Error> {
-        // File and pipe handles are shared behind an `Arc`, so the descriptor cannot be moved
-        // out; duplicate it to give the child an independently owned descriptor. Duplication can
-        // fail (e.g. under descriptor exhaustion), so the conversion is fallible and the error is
-        // surfaced to the caller rather than silently degrading the child's streams.
-        match open_file {
-            // The shell's own output streams go to whichever stream the child has them as;
-            // e.g., the shell's stderr as the child's stdout, for `>&2`.
-            // TODO(redirection): the shell's stdin as an output stream (e.g., `>&0`) is
-            // inherited from the stream it replaces instead.
-            OpenFile::Stdin(_) => Ok(Self::inherit()),
-            OpenFile::Stdout(s) => Ok(s.into()),
-            OpenFile::Stderr(s) => Ok(s.into()),
-            OpenFile::File(f) => Ok(f.try_clone()?.into()),
-            OpenFile::PipeReader(r) => Ok(r.try_clone()?.into()),
-            OpenFile::PipeWriter(w) => Ok(w.try_clone()?.into()),
-            // Custom streams have no descriptor to hand to a child process.
-            OpenFile::Stream(_) => Ok(Self::null()),
-        }
     }
 }
 

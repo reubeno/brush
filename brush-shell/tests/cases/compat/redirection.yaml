@@ -234,7 +234,7 @@ cases:
       env sh -c 'echo "to stdout" >&2' 2>&1
 
   - name: "Redirect external command output to the shell's stdin"
-    known_failure: true # TODO(redirection): the shell's stdin as an external command's output stream is replaced by the shell's stdout
+    known_failure_platforms: ["windows"] # TODO(redirection): on Windows, the shell's stdin as an external command's output stream is replaced by the shell's stdout
     ignore_stderr: true
     stdin: |
       env echo "to stdin" >&0
