@@ -190,15 +190,6 @@ fn shim_content(
 /// branch already skips function dispatch, we don't want a hypothetical
 /// refactor of `SimpleCommand` to silently break us.
 //
-// TODO(bundled): Process-group propagation.
-// The shim leaves `SimpleCommand::process_group_id` as `None`, so when a
-// bundled command appears in a pipeline it doesn't join the pipeline's
-// pgid — job control and pipeline-wide signal delivery misbehave.
-// `ExecutionContext` doesn't currently carry the dispatcher's pgid, so
-// fixing this requires plumbing the pgid through the builtin dispatch
-// boundary (likely as a field on `ExecutionParameters` or a new
-// `ExecutionContext` accessor).
-//
 // TODO(bundled): Pipeline serialization.
 // The builtin contract returns an `ExecutionResult` (a completed command),
 // not an `ExecutionSpawnResult` (a spawn handle), so this function has to
