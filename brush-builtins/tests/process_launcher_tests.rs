@@ -272,6 +272,25 @@ async fn shell_with_inherited_underscore(
 }
 
 #[tokio::test]
+async fn exec_leaves_underscore_as_the_shell_exports_it() -> Result<()> {
+    let launcher = RecordingLauncher {
+        can_exec: true,
+        ..Default::default()
+    };
+    let mut shell = shell_with_inherited_underscore(&launcher).await?;
+    let params = shell.default_exec_params();
+    shell
+        .run_string("exec ./prog", &brush_core::SourceInfo::default(), &params)
+        .await?;
+
+    let launches = launcher.take()?;
+    let launch = launches.first().context("nothing was launched")?;
+    assert_eq!(launch.env_values("_"), ["/from/parent"]);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn exec_hands_the_launcher_its_request() -> Result<()> {
     let launcher = RecordingLauncher {
         can_exec: true,

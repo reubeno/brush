@@ -42,7 +42,6 @@ cases:
       #send:Ctrl+D
 
   - name: "An interactive shell's inherited _ isn't exported by its first prompt"
-    known_failure: true # TODO(exec): the shell resets `$_` to `$0` at startup, and exec sets `_` to the program's path
     pty: true
     ignore_stdout: true # Prompts don't line up
     min_oracle_version: "5.3" # bash 5.2 keeps the inherited `_` exported until a command updates it

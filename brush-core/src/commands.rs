@@ -160,6 +160,18 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
     }
 }
 
+/// The environment to start an external program with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProgramEnvironment {
+    /// No variables at all (as for `exec -c`).
+    Empty,
+    /// The shell's exported variables and functions, as they are (as for `exec`).
+    Exported,
+    /// The shell's exported variables and functions, with `_` set to the program's
+    /// path, as for a command the shell runs.
+    Command,
+}
+
 /// Composes the [`processes::LaunchRequest`] for the process that runs the given
 /// external command.
 ///
@@ -172,23 +184,24 @@ impl<SE: extensions::ShellExtensions> std::ops::DerefMut for ShellForCommand<'_,
 /// * `program` - The resolved path of the program to execute.
 /// * `argv0` - The value to use for `argv[0]` (may be different from the command).
 /// * `args` - The arguments to pass to the command.
-/// * `empty_env` - If true, the command will be executed with an empty environment; if false, the
-///   command will inherit environment variables marked as exported in the provided `Shell`.
+/// * `env` - The environment to start the program with.
 pub fn compose_launch_request<S: AsRef<str>, SE: extensions::ShellExtensions>(
     context: &ExecutionContext<'_, SE>,
     program: &Path,
     argv0: &str,
     args: &[S],
-    empty_env: bool,
+    env: ProgramEnvironment,
 ) -> processes::LaunchRequest {
     processes::LaunchRequest {
         program: program.to_owned(),
         argv0: argv0.to_owned(),
         args: args.iter().map(|arg| arg.as_ref().to_owned()).collect(),
-        env: if empty_env {
-            vec![]
-        } else {
-            compose_env(context.shell, &program.to_string_lossy())
+        env: match env {
+            ProgramEnvironment::Empty => vec![],
+            ProgramEnvironment::Exported => compose_env(context.shell, None),
+            ProgramEnvironment::Command => {
+                compose_env(context.shell, Some(&program.to_string_lossy()))
+            }
         },
         working_dir: context.shell.working_dir().to_owned(),
         open_files: context.iter_fds().into(),
@@ -203,25 +216,26 @@ pub fn compose_launch_request<S: AsRef<str>, SE: extensions::ShellExtensions>(
 /// # Arguments
 ///
 /// * `shell` - The shell whose exported state should be used.
-/// * `program` - The resolved path of the program, used for `$_`.
+/// * `program` - The program's path, to set `_` to, if it's to be set.
 fn compose_env(
     shell: &Shell<impl extensions::ShellExtensions>,
-    program: &str,
+    program: Option<&str>,
 ) -> Vec<(String, String)> {
     let mut env = vec![];
 
-    // Add in exported variables, but `_`, which is set below.
+    // Add in exported variables, but `_`, if it's to be set below.
     for (k, v) in shell.env().iter_exported() {
         // NOTE: To match bash behavior, we only include exported variables
         // that are set (i.e., have a value). This means a variable that
         // shows up in `declare -p` but has no *set* value will be omitted.
-        if k != "_" && v.value().is_set() {
+        if v.value().is_set() && (program.is_none() || k != "_") {
             env.push((k.clone(), v.value().to_cow_str(shell).into_owned()));
         }
     }
 
-    // Set _ to the resolved command path for external commands.
-    env.push(("_".to_string(), program.to_string()));
+    if let Some(program) = program {
+        env.push(("_".to_owned(), program.to_owned()));
+    }
 
     // Add in exported functions.
     for (func_name, registration) in shell.funcs().iter() {
@@ -640,8 +654,13 @@ pub(crate) fn execute_external_command(
     // command) unless the caller specified an explicit override.
     let argv0 = argv0_override.unwrap_or(context.command_name.as_str());
 
-    let mut request =
-        compose_launch_request(&context, executable_path, argv0, cmd_args.as_slice(), false);
+    let mut request = compose_launch_request(
+        &context,
+        executable_path,
+        argv0,
+        cmd_args.as_slice(),
+        ProgramEnvironment::Command,
+    );
 
     // Set up process group state.
     request.process_group = if new_pg {

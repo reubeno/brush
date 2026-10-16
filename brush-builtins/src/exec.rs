@@ -77,7 +77,11 @@ impl builtins::Command for ExecCommand {
             &program,
             argv0.as_str(),
             &self.args[1..],
-            self.empty_environment,
+            if self.empty_environment {
+                commands::ProgramEnvironment::Empty
+            } else {
+                commands::ProgramEnvironment::Exported
+            },
         );
 
         let exec_error = context.shell.process_launcher().exec(request);
