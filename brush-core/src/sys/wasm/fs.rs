@@ -44,7 +44,7 @@ impl crate::sys::fs::PathExt for std::path::Path {
     }
 
     fn get_device_and_inode(&self) -> Result<(u64, u64), crate::error::Error> {
-        Ok((0, 0))
+        Err(crate::error::ErrorKind::NotSupportedOnThisPlatform("get_device_and_inode").into())
     }
 }
 
@@ -62,4 +62,15 @@ pub fn split_paths<T: AsRef<std::ffi::OsStr> + ?Sized>(
         .map(std::path::PathBuf::from)
         .collect::<Vec<_>>()
         .into_iter()
+}
+
+/// Returns whether two paths are the same file: by canonical path, which takes two
+/// hard links to one file to be different files.
+// TODO(fs): compare what identifies a file on the platform instead (on Windows, its
+// index and volume serial number).
+pub(crate) fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }

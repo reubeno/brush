@@ -320,6 +320,14 @@ pub fn resolve_executable(path: PathBuf) -> Option<PathBuf> {
     }
 }
 
+/// Returns whether two paths are the same file: by device and inode.
+pub(crate) fn same_file(a: &Path, b: &Path) -> bool {
+    match (a.metadata(), b.metadata()) {
+        (Ok(a), Ok(b)) => (a.dev(), a.ino()) == (b.dev(), b.ino()),
+        _ => false,
+    }
+}
+
 /// Resolves a path to a potential executable.
 ///
 /// Unix does not need PATHEXT resolution, so the path is left unchanged.

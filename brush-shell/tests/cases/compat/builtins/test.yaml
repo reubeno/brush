@@ -364,3 +364,11 @@ cases:
       echo "test: $?"
       [ 1 -lt b ]
       echo "[: $?"
+
+  - name: "test: -ef compares files it can't read"
+    stdin: |
+      touch f
+      chmod 000 f
+      [ f -ef f ] && echo "same" || echo "not the same"
+      [ f -ef /dev/null ] && echo "same" || echo "not the same"
+      chmod 644 f

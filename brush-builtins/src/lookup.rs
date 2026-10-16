@@ -113,7 +113,7 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
     // name resolves to matches what the shell would actually try to run, which can be a
     // non-executable file if the search turns up nothing better. Either way, the hash
     // table comes first, as it does for the shell.
-    if let Some(path) = shell.program_location_cache().get(name) {
+    if let Some(path) = shell.hashed_command(name) {
         resolved.push(Resolved::File { path, hashed: true });
         if !options.all_locations {
             return;
