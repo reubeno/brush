@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
@@ -11,7 +10,8 @@ use brush_core::{
 };
 
 /// Add or update exported shell variables.
-#[derive(Parser)]
+#[derive(Default, winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExportCommand {
     /// Names are treated as function names.
     #[arg(short = 'f')]
@@ -28,12 +28,12 @@ pub(crate) struct ExportCommand {
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by `impl_parse_args!`.
-    #[clap(skip)]
+    // N.B. These are skipped by winnow-args, but filled in by `impl_parse_args!`.
+    #[arg(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
-brush_clap_adapter::impl_parse_args!(ExportCommand, declarations = declarations);
+brush_winnow_args_adapter::impl_parse_args!(ExportCommand, declarations = declarations);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
     type Error = brush_core::Error;
@@ -88,6 +88,13 @@ impl ExportCommand {
                         writeln!(context.stderr(), "{s}: not a function")?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
+                } else if !s.contains('=') && !brush_core::env::valid_variable_name(s) {
+                    writeln!(
+                        context.stderr(),
+                        "{}: `{s}': not a valid identifier",
+                        context.command_name
+                    )?;
+                    return Ok(ExecutionResult::general_error());
                 }
                 // A word argument that *expanded* into an assignment (e.g.
                 // `export ${var}=value`): the parser cannot classify it as an

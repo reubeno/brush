@@ -258,7 +258,6 @@ cases:
       type [
 
   - name: "unset -f with -v is an error"
-    known_failure: true # TODO(unset): fails with clap's conflict message and status 2, where bash fails with 1
     ignore_stderr: true
     stdin: |
       x=1

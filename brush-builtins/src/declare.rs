@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::{io::Write, sync::LazyLock};
 
@@ -12,44 +11,14 @@ use brush_core::{
     },
 };
 
-crate::minus_or_plus_flag_arg!(
-    MakeIndexedArrayFlag,
-    'a',
-    "Make the variable an indexed array."
-);
-crate::minus_or_plus_flag_arg!(
-    MakeAssociativeArrayFlag,
-    'A',
-    "Make the variable an associative array."
-);
-crate::minus_or_plus_flag_arg!(
-    CapitalizeValueOnAssignmentFlag,
-    'c',
-    "Enable capitalize-on-assignment for the variable."
-);
-crate::minus_or_plus_flag_arg!(MakeIntegerFlag, 'i', "Mark the variable as integer-typed");
-crate::minus_or_plus_flag_arg!(
-    LowercaseValueOnAssignmentFlag,
-    'l',
-    "Enable lowercase-on-assignment for the variable."
-);
-crate::minus_or_plus_flag_arg!(
-    MakeNameRefFlag,
-    'n',
-    "Mark the variable as a name reference"
-);
-crate::minus_or_plus_flag_arg!(MakeReadonlyFlag, 'r', "Mark the variable as read-only.");
-crate::minus_or_plus_flag_arg!(MakeTracedFlag, 't', "Enable tracing for the variable.");
-crate::minus_or_plus_flag_arg!(
-    UppercaseValueOnAssignmentFlag,
-    'u',
-    "Enable uppercase-on-assignment for the variable."
-);
-crate::minus_or_plus_flag_arg!(MakeExportedFlag, 'x', "Mark the variable for export.");
-
 /// Display or update variables and their attributes.
-#[derive(Parser)]
-#[clap(override_usage = "declare [OPTIONS] [DECLARATIONS]...")]
+#[derive(Default, winnow_args::Args)]
+#[arg(
+    plus_options,
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct DeclareCommand {
     /// Constrain to function names or definitions.
     #[arg(short = 'f')]
@@ -72,36 +41,45 @@ pub(crate) struct DeclareCommand {
     #[arg(short = 'p')]
     print: bool,
 
-    //
-    // Attribute options
-    #[clap(flatten)] // -a
-    make_indexed_array: MakeIndexedArrayFlag,
-    #[clap(flatten)] // -A
-    make_associative_array: MakeAssociativeArrayFlag,
-    #[clap(flatten)] // -c
-    capitalize_value_on_assignment: CapitalizeValueOnAssignmentFlag,
-    #[clap(flatten)] // -i
-    make_integer: MakeIntegerFlag,
-    #[clap(flatten)] // -l
-    lowercase_value_on_assignment: LowercaseValueOnAssignmentFlag,
-    #[clap(flatten)] // -n
-    make_nameref: MakeNameRefFlag,
-    #[clap(flatten)] // -r
-    make_readonly: MakeReadonlyFlag,
-    #[clap(flatten)] // -t
-    make_traced: MakeTracedFlag,
-    #[clap(flatten)] // -u
-    uppercase_value_on_assignment: UppercaseValueOnAssignmentFlag,
-    #[clap(flatten)] // -x
-    make_exported: MakeExportedFlag,
+    #[arg(short = 'a', plus = 'a')]
+    make_indexed_array: Option<bool>,
+
+    #[arg(short = 'A', plus = 'A')]
+    make_associative_array: Option<bool>,
+
+    #[arg(short = 'c', plus = 'c')]
+    capitalize_value_on_assignment: Option<bool>,
+
+    #[arg(short = 'l', plus = 'l')]
+    lowercase_value_on_assignment: Option<bool>,
+
+    #[arg(short = 'x', plus = 'x')]
+    make_exported: Option<bool>,
+
+    #[arg(short = 'i', plus = 'i')]
+    make_integer: Option<bool>,
+
+    #[arg(short = 'n', plus = 'n')]
+    make_nameref: Option<bool>,
+
+    #[arg(short = 'r', plus = 'r')]
+    make_readonly: Option<bool>,
+
+    #[arg(short = 't', plus = 't')]
+    make_traced: Option<bool>,
+
+    #[arg(short = 'u', plus = 'u')]
+    uppercase_value_on_assignment: Option<bool>,
 
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by `impl_parse_args!`.
-    #[clap(skip)]
+    // N.B. These are skipped by winnow-args, but filled in by `impl_parse_args!`.
+    #[arg(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
+
+brush_winnow_args_adapter::impl_parse_args!(DeclareCommand, declarations = declarations);
 
 #[derive(Clone, Copy)]
 enum DeclareVerb {
@@ -109,8 +87,6 @@ enum DeclareVerb {
     Local,
     Readonly,
 }
-
-brush_clap_adapter::impl_parse_args!(DeclareCommand, declarations = declarations, plus_options);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
     type Error = brush_core::Error;
@@ -150,12 +126,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
                         result = ExecutionResult::general_error();
                     }
                 } else {
-                    let ok = if self.make_associative_array.to_bool() == Some(true)
+                    let ok = if self.make_associative_array == Some(true)
                         && Self::is_scalar_compound_assign(declaration)
                     {
                         self.lift_scalar_assoc_array(&mut context, declaration, verb)
                             .await?
-                    } else if self.make_indexed_array.to_bool() == Some(true)
+                    } else if self.make_indexed_array == Some(true)
                         && Self::is_string_array_assignment(declaration)
                     {
                         self.lift_string_array_assignment(&mut context, declaration, verb)
@@ -286,7 +262,7 @@ impl DeclareCommand {
             return false;
         };
 
-        match self.make_exported.to_bool() {
+        match self.make_exported {
             Some(true) => func.export(),
             Some(false) => func.unexport(),
             None => (),
@@ -309,7 +285,7 @@ impl DeclareCommand {
                 && !self.create_global);
 
         if (self.function_names_or_defs_only || self.function_names_only)
-            && (self.make_traced.to_bool().is_some() || self.make_exported.to_bool().is_some())
+            && (self.make_traced.is_some() || self.make_exported.is_some())
         {
             return Ok(self.apply_function_attributes(context, declaration));
         }
@@ -356,8 +332,8 @@ impl DeclareCommand {
         // In bash, `declare -ni var=value` fails — the combination of nameref
         // and integer attributes with an initial value is rejected. Without a
         // value (e.g., `declare -ni var`), bash applies both attributes.
-        let nameref_integer_conflict = matches!(self.make_nameref.to_bool(), Some(true))
-            && matches!(self.make_integer.to_bool(), Some(true))
+        let nameref_integer_conflict = matches!(self.make_nameref, Some(true))
+            && matches!(self.make_integer, Some(true))
             && initial_value.is_some();
         if nameref_integer_conflict {
             return Ok(false);
@@ -376,7 +352,7 @@ impl DeclareCommand {
                             resolved.base_var().is_readonly(),
                         )
                     });
-                let integer_now = match self.make_integer.to_bool() {
+                let integer_now = match self.make_integer {
                     Some(explicit) => explicit,
                     None => existing_is_integer_or_readonly.is_some_and(|(is_int, _)| is_int),
                 };
@@ -506,8 +482,7 @@ impl DeclareCommand {
         // bash refuses to take the array attribute back off an existing array
         // ("cannot destroy array variables in this way") rather than quietly
         // turning it into a scalar, with or without a new value.
-        if (self.make_indexed_array.to_bool() == Some(false)
-            || self.make_associative_array.to_bool() == Some(false))
+        if (self.make_indexed_array == Some(false) || self.make_associative_array == Some(false))
             && context
                 .shell
                 .env()
@@ -918,7 +893,7 @@ impl DeclareCommand {
     /// attributes when no initial value is provided. (With an initial value,
     /// the declaration is rejected early in `process_declaration`.)
     const fn will_be_nameref(&self) -> bool {
-        matches!(self.make_nameref.to_bool(), Some(true))
+        matches!(self.make_nameref, Some(true))
             && !(self.make_indexed_array.is_some() || self.make_associative_array.is_some())
     }
 
@@ -955,7 +930,7 @@ impl DeclareCommand {
     ) -> Result<(String, EnvironmentLookup), brush_core::Error> {
         // When `-n` is explicitly being set or unset, we're operating on the
         // nameref variable itself — don't resolve through it.
-        let explicitly_modifying_nameref_attr = self.make_nameref.to_bool().is_some();
+        let explicitly_modifying_nameref_attr = self.make_nameref.is_some();
 
         // When `declare`/`local` would create a brand-new local variable
         // (rather than modifying an existing one), we don't resolve either —
@@ -1018,20 +993,21 @@ impl DeclareCommand {
             filters.push(Box::new(|(_, v)| v.is_readonly()));
         }
 
-        if let Some(value) = self.make_indexed_array.to_bool() {
+        // Add filters depending on attribute flags.
+        if let Some(value) = self.make_indexed_array {
             filters.push(Box::new(move |(_, v)| {
                 matches!(v.value(), ShellValue::IndexedArray(_)) == value
             }));
         }
-        if let Some(value) = self.make_associative_array.to_bool() {
+        if let Some(value) = self.make_associative_array {
             filters.push(Box::new(move |(_, v)| {
                 matches!(v.value(), ShellValue::AssociativeArray(_)) == value
             }));
         }
-        if let Some(value) = self.make_integer.to_bool() {
+        if let Some(value) = self.make_integer {
             filters.push(Box::new(move |(_, v)| v.is_treated_as_integer() == value));
         }
-        if let Some(value) = self.capitalize_value_on_assignment.to_bool() {
+        if let Some(value) = self.capitalize_value_on_assignment {
             filters.push(Box::new(move |(_, v)| {
                 matches!(
                     v.get_update_transform(),
@@ -1039,7 +1015,7 @@ impl DeclareCommand {
                 ) == value
             }));
         }
-        if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
+        if let Some(value) = self.lowercase_value_on_assignment {
             filters.push(Box::new(move |(_, v)| {
                 matches!(
                     v.get_update_transform(),
@@ -1047,16 +1023,16 @@ impl DeclareCommand {
                 ) == value
             }));
         }
-        if let Some(value) = self.make_nameref.to_bool() {
+        if let Some(value) = self.make_nameref {
             filters.push(Box::new(move |(_, v)| v.is_treated_as_nameref() == value));
         }
-        if let Some(value) = self.make_readonly.to_bool() {
+        if let Some(value) = self.make_readonly {
             filters.push(Box::new(move |(_, v)| v.is_readonly() == value));
         }
-        if let Some(value) = self.make_readonly.to_bool() {
+        if let Some(value) = self.make_readonly {
             filters.push(Box::new(move |(_, v)| v.is_trace_enabled() == value));
         }
-        if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
+        if let Some(value) = self.uppercase_value_on_assignment {
             filters.push(Box::new(move |(_, v)| {
                 matches!(
                     v.get_update_transform(),
@@ -1064,7 +1040,7 @@ impl DeclareCommand {
                 ) == value
             }));
         }
-        if let Some(value) = self.make_exported.to_bool() {
+        if let Some(value) = self.make_exported {
             filters.push(Box::new(move |(_, v)| v.is_exported() == value));
         }
 
@@ -1142,19 +1118,19 @@ impl DeclareCommand {
         //   -na: -n dropped, -a kept (creates indexed array, not a nameref)
         //   -nA: -n dropped, -A kept (creates assoc array, not a nameref)
         // The -l, -u, -c flags do NOT conflict with -n.
-        let requesting_nameref = matches!(self.make_nameref.to_bool(), Some(true));
+        let requesting_nameref = matches!(self.make_nameref, Some(true));
         let nameref_array_conflict = requesting_nameref
             && (self.make_indexed_array.is_some() || self.make_associative_array.is_some());
         let suppress_nameref = nameref_array_conflict;
 
-        if let Some(value) = self.make_integer.to_bool() {
+        if let Some(value) = self.make_integer {
             if value {
                 var.treat_as_integer();
             } else {
                 var.unset_treat_as_integer();
             }
         }
-        if let Some(value) = self.capitalize_value_on_assignment.to_bool() {
+        if let Some(value) = self.capitalize_value_on_assignment {
             if value {
                 var.set_update_transform(ShellVariableUpdateTransform::Capitalize);
             } else if matches!(
@@ -1164,7 +1140,7 @@ impl DeclareCommand {
                 var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
-        if let Some(value) = self.lowercase_value_on_assignment.to_bool() {
+        if let Some(value) = self.lowercase_value_on_assignment {
             if value {
                 var.set_update_transform(ShellVariableUpdateTransform::Lowercase);
             } else if matches!(
@@ -1175,7 +1151,7 @@ impl DeclareCommand {
             }
         }
         if !suppress_nameref {
-            if let Some(value) = self.make_nameref.to_bool() {
+            if let Some(value) = self.make_nameref {
                 if value {
                     var.treat_as_nameref();
                 } else {
@@ -1183,14 +1159,14 @@ impl DeclareCommand {
                 }
             }
         }
-        if let Some(value) = self.make_traced.to_bool() {
+        if let Some(value) = self.make_traced {
             if value {
                 var.enable_trace();
             } else {
                 var.disable_trace();
             }
         }
-        if let Some(value) = self.uppercase_value_on_assignment.to_bool() {
+        if let Some(value) = self.uppercase_value_on_assignment {
             if value {
                 var.set_update_transform(ShellVariableUpdateTransform::Uppercase);
             } else if matches!(
@@ -1200,7 +1176,7 @@ impl DeclareCommand {
                 var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
-        if let Some(value) = self.make_exported.to_bool() {
+        if let Some(value) = self.make_exported {
             if value {
                 var.export();
             } else {
@@ -1218,7 +1194,7 @@ impl DeclareCommand {
     ) -> Result<(), brush_core::Error> {
         if matches!(verb, DeclareVerb::Readonly) {
             var.set_readonly();
-        } else if let Some(value) = self.make_readonly.to_bool() {
+        } else if let Some(value) = self.make_readonly {
             if value {
                 var.set_readonly();
             } else {
