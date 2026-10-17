@@ -46,7 +46,11 @@ pub struct InteractiveOptions {
 fn read_prompt_commands<SE: brush_core::ShellExtensions>(
     shell: &brush_core::Shell<SE>,
 ) -> Vec<String> {
-    match shell.env_var("PROMPT_COMMAND").map(|var| var.value()) {
+    match shell
+        .env_var("PROMPT_COMMAND")
+        .map(|var| var.resolved_value(shell))
+        .as_deref()
+    {
         Some(brush_core::ShellValue::String(cmd)) => vec![cmd.to_owned()],
         Some(brush_core::ShellValue::IndexedArray(cmds)) => cmds.values().cloned().collect(),
         _ => vec![],

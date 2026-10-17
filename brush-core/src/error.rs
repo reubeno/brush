@@ -326,6 +326,10 @@ pub enum ErrorKind {
     /// A glob pattern failed to match any files (failglob).
     #[error("no match: {0}")]
     NoMatch(String),
+
+    /// A circular name reference was detected.
+    #[error("{0}: circular name reference")]
+    CircularNameReference(String),
 }
 
 /// Trait implementable by built-in commands to represent errors.

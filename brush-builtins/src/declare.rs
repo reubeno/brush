@@ -3,7 +3,7 @@ use std::{io::Write, sync::LazyLock};
 
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
-    env::{self, EnvironmentLookup, EnvironmentScope},
+    env::{self, EnvironmentLookup, EnvironmentScope, VarNameExt},
     parser::ast,
     variables::{
         self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
@@ -135,6 +135,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
         let mut output = Vec::new();
         let mut stderr_output = Vec::new();
         let mut result = ExecutionResult::success();
+
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
@@ -148,7 +149,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
                         result = ExecutionResult::general_error();
                     }
                 } else {
-                    if !self.process_declaration(&mut context, declaration, verb)? {
+                    let ok = if change(&self.make_associative_array) == Some(true)
+                        && Self::is_scalar_compound_assign(declaration)
+                    {
+                        self.lift_scalar_assoc_array(&mut context, declaration, verb)
+                            .await?
+                    } else if change(&self.make_indexed_array) == Some(true)
+                        && Self::is_string_array_assignment(declaration)
+                    {
+                        self.lift_string_array_assignment(&mut context, declaration, verb)
+                            .await?
+                    } else {
+                        self.process_declaration(&mut context, declaration, verb)?
+                    };
+                    if !ok {
                         result = ExecutionResult::general_error();
                     }
                 }
@@ -220,10 +234,15 @@ impl DeclareCommand {
                 }
                 Ok(true)
             } else {
-                // For some reason, bash does not print an error message in this case.
                 Ok(false)
             }
-        } else if let Some(variable) = context.shell.env().get_using_policy(name, lookup) {
+        } else if let Some((_, variable)) = context
+            .shell
+            .env()
+            .lookup(name.as_str().direct())
+            .in_scope(lookup)
+            .get_direct()
+        {
             let mut cs = variable.attribute_flags(context.shell);
             if cs.is_empty() {
                 cs.push('-');
@@ -333,6 +352,47 @@ impl DeclareCommand {
             return Ok(false);
         }
 
+        // In bash, `declare -ni var=value` fails — the combination of nameref
+        // and integer attributes with an initial value is rejected. Without a
+        // value (e.g., `declare -ni var`), bash applies both attributes.
+        let nameref_integer_conflict = matches!(change(&self.make_nameref), Some(true))
+            && matches!(change(&self.make_integer), Some(true))
+            && initial_value.is_some();
+        if nameref_integer_conflict {
+            return Ok(false);
+        }
+
+        // If the variable has (or is being given) the integer attribute,
+        // scalar values are evaluated as arithmetic expressions — in bash,
+        // `declare -i x=20+5` sets x to 25. Evaluate before borrowing the
+        // environment mutably.
+        let initial_value = match initial_value {
+            Some(ShellValueLiteral::Scalar(expr)) => {
+                let existing_is_integer_or_readonly =
+                    context.shell.env().get(name.as_str()).map(|resolved| {
+                        (
+                            resolved.base_var().is_treated_as_integer(),
+                            resolved.base_var().is_readonly(),
+                        )
+                    });
+                let integer_now = match change(&self.make_integer) {
+                    Some(explicit) => explicit,
+                    None => existing_is_integer_or_readonly.is_some_and(|(is_int, _)| is_int),
+                };
+                // A readonly target rejects the assignment before its value is
+                // examined, so the expression's side effects must not run either.
+                let target_is_readonly = existing_is_integer_or_readonly.is_some_and(|(_, ro)| ro);
+                if integer_now && !target_is_readonly {
+                    let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
+                    let result = brush_core::arithmetic::Evaluatable::eval(&parsed, context.shell)?;
+                    Some(ShellValueLiteral::Scalar(result.to_string()))
+                } else {
+                    Some(ShellValueLiteral::Scalar(expr))
+                }
+            }
+            other => other,
+        };
+
         // Figure out where we should look.
         let lookup = if create_var_local {
             EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
@@ -340,23 +400,70 @@ impl DeclareCommand {
             EnvironmentLookup::Anywhere
         };
 
+        // The standalone `readonly` command rejects subscripted nameref targets
+        // (e.g., `readonly ref` where ref→arr[1]). `declare -r` does NOT —
+        // it applies the attribute to the base variable. This asymmetry
+        // matches bash behavior.
+        if matches!(verb, DeclareVerb::Readonly) {
+            if let Ok(resolved) = context.shell.env().resolve_nameref(name.as_str()) {
+                if resolved.subscript().is_some() {
+                    let target = context
+                        .shell
+                        .env()
+                        .resolve_nameref_to_name(name.as_str())
+                        .unwrap_or_else(|_| name.clone());
+                    writeln!(
+                        context.stderr(),
+                        "{}: `{target}': not a valid identifier",
+                        context.command_name,
+                    )?;
+                    return Ok(false);
+                }
+            }
+        }
+
+        // Resolve namerefs for attribute-changing declarations and validate
+        // any nameref target before modifying variable state.
+        let (name, lookup) =
+            self.resolve_nameref_for_declaration(context, name, lookup, create_var_local)?;
+
+        let will_be_nameref = self.will_be_nameref();
+        if will_be_nameref {
+            if let Some(msg) =
+                Self::validate_initial_nameref_target(name.as_str(), initial_value.as_ref())
+            {
+                writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                return Ok(false);
+            }
+        }
+
+        // Look up the variable. Name is already resolved through
+        // resolve_nameref_for_declaration above.
+        let resolved_name = env::ResolvedName::already_resolved(name.as_str());
+
         // `local -I x[=v]` / `declare -I` (bash 5.0+): the new local inherits
         // value and attributes from the nearest same-name variable in an
         // enclosing scope instead of starting unset; `+=` appends to the
-        // inherited value. With no same-name variable anywhere, fall through
-        // to ordinary creation.
+        // inherited value.
         if self.locals_inherit_from_prev_scope && create_var_local {
             let inherited = context
                 .shell
                 .env()
-                .get_using_policy(name.as_str(), EnvironmentLookup::Anywhere)
-                .cloned();
+                .lookup(name.as_str())
+                .in_scope(EnvironmentLookup::Anywhere)
+                .get_direct()
+                .map(|(_, var)| var.clone());
 
             if let Some(mut var) = inherited {
                 self.apply_attributes_before_update(&mut var)?;
 
                 if let Some(initial_value) = initial_value {
                     var.assign(initial_value, append || assigned_index.is_some())?;
+                }
+
+                if let Some(msg) = Self::validate_existing_nameref_value(&var) {
+                    writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                    return Ok(false);
                 }
 
                 if context.shell.options().export_variables_on_modification
@@ -373,19 +480,69 @@ impl DeclareCommand {
                     .add(name, var, EnvironmentScope::Local)?;
                 return Ok(true);
             }
+            // No same-name variable anywhere: fall through to ordinary creation.
+        }
+
+        // If the variable currently holds a dynamic value, resolve its current
+        // reading now, before taking a mutable borrow of the shell below. This
+        // lets a scalar dynamic (e.g. RANDOM) that ends up getting materialized
+        // by a shape conversion freeze at its actual current value instead of
+        // an empty string.
+        let resolved_dynamic_value = context
+            .shell
+            .env()
+            .lookup(&resolved_name)
+            .in_scope(lookup)
+            .get_direct()
+            .and_then(|(_, var)| {
+                matches!(var.value(), brush_core::ShellValue::Dynamic { .. })
+                    .then(|| var.resolve_value(context.shell))
+            });
+
+        // bash refuses to take the array attribute back off an existing array
+        // ("cannot destroy array variables in this way") rather than quietly
+        // turning it into a scalar, with or without a new value.
+        if (change(&self.make_indexed_array) == Some(false)
+            || change(&self.make_associative_array) == Some(false))
+            && context
+                .shell
+                .env()
+                .lookup(&resolved_name)
+                .in_scope(lookup)
+                .get_direct()
+                .is_some_and(|(_, var)| var.value().is_array())
+        {
+            writeln!(
+                context.stderr(),
+                "{}: {name}: cannot destroy array variables in this way",
+                context.command_name
+            )?;
+            return Ok(false);
         }
 
         // Look up the variable.
-        if let Some(var) = context
+        if let Some((_, var)) = context
             .shell
             .env_mut()
-            .get_mut_using_policy(name.as_str(), lookup)
+            .lookup_mut(&resolved_name)
+            .in_scope(lookup)
+            .get_direct()
         {
             if change(&self.make_associative_array).is_some() {
-                var.convert_to_associative_array()?;
+                if initial_value.is_some() {
+                    var.convert_to_associative_array_for_reassignment(
+                        resolved_dynamic_value.as_ref(),
+                    )?;
+                } else {
+                    var.convert_to_associative_array(resolved_dynamic_value.as_ref())?;
+                }
             }
             if change(&self.make_indexed_array).is_some() {
-                var.convert_to_indexed_array()?;
+                if initial_value.is_some() {
+                    var.convert_to_indexed_array_for_reassignment(resolved_dynamic_value.as_ref())?;
+                } else {
+                    var.convert_to_indexed_array(resolved_dynamic_value.as_ref())?;
+                }
             }
 
             self.apply_attributes_before_update(var)?;
@@ -394,6 +551,13 @@ impl DeclareCommand {
                 // We append for `name+=value`, or if the declaration included
                 // an explicit index.
                 var.assign(initial_value, append || assigned_index.is_some())?;
+            }
+
+            // Validate existing value when -n is being added to a variable
+            // that wasn't given a new value (e.g., `x=x; declare -n x`).
+            if let Some(msg) = Self::validate_existing_nameref_value(var) {
+                writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                return Ok(false);
             }
 
             self.apply_attributes_after_update(var, verb)?;
@@ -416,6 +580,12 @@ impl DeclareCommand {
                 var.assign(initial_value, append)?;
             }
 
+            // Validate nameref target name after assignment.
+            if let Some(msg) = Self::validate_existing_nameref_value(&var) {
+                writeln!(context.stderr(), "{}: {msg}", context.command_name)?;
+                return Ok(false);
+            }
+
             if context.shell.options().export_variables_on_modification && !var.value().is_array() {
                 var.export();
             }
@@ -428,13 +598,138 @@ impl DeclareCommand {
                 EnvironmentScope::Global
             };
 
+            // N.B. We intentionally use `add()` (no nameref resolution) here. When
+            // `declare` creates a brand new variable (e.g., `declare -n ref=target`),
+            // we're defining the nameref itself, not writing through an existing one.
+            // In functions, `declare`/`local` always creates a new local variable in
+            // the current scope, even if a nameref with the same name exists in an
+            // outer scope — this matches bash behavior.
             context.shell.env_mut().add(name, var, scope)?;
         }
 
         Ok(true)
     }
 
+    /// Returns true if this declaration is a `CommandArg::String` containing
+    /// an `=` with an array-like value starting with `(`.
+    fn is_string_array_assignment(declaration: &brush_core::CommandArg) -> bool {
+        if let brush_core::CommandArg::String(s) = declaration {
+            if let Some((_name, value)) = s.split_once('=') {
+                return value.starts_with('(');
+            }
+        }
+        false
+    }
+
+    /// Returns true if this declaration is an assignment with a scalar value
+    /// that looks like a compound array literal, i.e. starts with `(`.
+    /// This is the pattern produced by `declare -p` roundtrips:
+    ///   `declare -A arr="${(declare -p OTHER)#*=}"`
+    fn is_scalar_compound_assign(declaration: &brush_core::CommandArg) -> bool {
+        if let brush_core::CommandArg::Assignment(a) = declaration {
+            if let ast::AssignmentValue::Scalar(s) = &a.value {
+                return s.value.starts_with('(');
+            }
+        }
+        false
+    }
+
+    /// Handle `declare -A varname="([key]=val ...)"` by feeding the compound-assignment
+    /// string back through the shell parser.  `declare -p` output is designed to be
+    /// eval-able, so the value is already valid shell syntax; we just need to let the
+    /// parser see it unquoted.
+    ///
+    /// After the roundtrip creates the array, any extra attributes requested on the
+    /// original declaration (readonly, export, …) are applied via a second call to
+    /// `process_declaration` on the name alone.
+    async fn lift_scalar_assoc_array<SE: brush_core::ShellExtensions>(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, SE>,
+        declaration: &brush_core::CommandArg,
+        verb: DeclareVerb,
+    ) -> Result<bool, brush_core::Error> {
+        let (name, _, initial_value, _, _) = Self::declaration_to_name_and_value(declaration)?;
+        let Some(ShellValueLiteral::Scalar(s)) = initial_value else {
+            return self.process_declaration(context, declaration, verb);
+        };
+
+        // Reconstruct the declaration so the parser sees an unquoted compound assignment.
+        // Use `local` when the original verb was `local`, `declare -g` when global was
+        // requested, and plain `declare` otherwise (which is local inside a function).
+        let script = if matches!(verb, DeclareVerb::Local) {
+            format!("local -A {name}={s}")
+        } else if self.create_global {
+            format!("declare -gA {name}={s}")
+        } else {
+            format!("declare -A {name}={s}")
+        };
+
+        let source_info = brush_core::SourceInfo::from("declare-array-literal");
+        let params = context.params.clone();
+        // The lifted declaration is the real one: if it failed (say the target is
+        // readonly), so did this command.
+        if !context
+            .shell
+            .run_string(script, &source_info, &params)
+            .await?
+            .is_success()
+        {
+            return Ok(false);
+        }
+
+        // Apply any further attributes (readonly, export, etc.) that were on the original
+        // declaration by re-processing just the variable name (no initial value).
+        let name_only = brush_core::CommandArg::String(name);
+        self.process_declaration(context, &name_only, verb)
+    }
+
+    /// Handle `declare -a 'arr=(${X})'` by feeding the string back through the
+    /// shell parser so the array literal and parameter expansions are evaluated
+    /// properly.  This mirrors the approach used by `lift_scalar_assoc_array`.
+    async fn lift_string_array_assignment<SE: brush_core::ShellExtensions>(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, SE>,
+        declaration: &brush_core::CommandArg,
+        verb: DeclareVerb,
+    ) -> Result<bool, brush_core::Error> {
+        let brush_core::CommandArg::String(s) = declaration else {
+            return self.process_declaration(context, declaration, verb);
+        };
+
+        let Some((var_name, value)) = s.split_once('=') else {
+            return self.process_declaration(context, declaration, verb);
+        };
+        // As in bash, a compound value given to an element (`'n[0]=(9 8)'`) is the whole
+        // array's: the subscript is dropped.
+        let var_name = var_name.split_once('[').map_or(var_name, |(name, _)| name);
+
+        let script = if matches!(verb, DeclareVerb::Local) {
+            format!("local -a {var_name}={value}")
+        } else if self.create_global {
+            format!("declare -ga {var_name}={value}")
+        } else {
+            format!("declare -a {var_name}={value}")
+        };
+
+        let source_info = brush_core::SourceInfo::from("declare-string-array");
+        let params = context.params.clone();
+        // The lifted declaration is the real one: if it failed (say the target is
+        // readonly), so did this command.
+        if !context
+            .shell
+            .run_string(script, &source_info, &params)
+            .await?
+            .is_success()
+        {
+            return Ok(false);
+        }
+
+        let name_only = brush_core::CommandArg::String(var_name.to_owned());
+        self.process_declaration(context, &name_only, verb)
+    }
+
     #[expect(clippy::type_complexity)]
+    #[expect(clippy::too_many_lines)]
     fn declaration_to_name_and_value(
         declaration: &brush_core::CommandArg,
     ) -> Result<
@@ -451,22 +746,21 @@ impl DeclareCommand {
         let assigned_index;
         let initial_value;
         let name_is_array;
-        let append;
+        let mut append = false;
 
         match declaration {
             brush_core::CommandArg::String(s) => {
-                // We need to handle the case of someone invoking `declare array[index]`.
-                // In such case, we ignore the index and treat it as a declaration of
-                // the array.
                 #[allow(
                     clippy::unwrap_in_result,
                     clippy::unwrap_used,
                     reason = "regex is valid and should not fail"
                 )]
-                static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
-                    LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
+                static NAME_INDEX_AND_VALUE_RE: LazyLock<fancy_regex::Regex> =
+                    LazyLock::new(|| {
+                        fancy_regex::Regex::new(r"^(.*?)\[([^\]]*)\](\+)?=(.*)$").unwrap()
+                    });
 
-                if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
+                if let Some(captures) = NAME_INDEX_AND_VALUE_RE.captures(s)? {
                     name = captures
                         .get(1)
                         .ok_or_else(|| {
@@ -476,16 +770,56 @@ impl DeclareCommand {
                         .to_owned();
 
                     assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
+                    append = captures.get(3).is_some();
+                    initial_value = captures
+                        .get(4)
+                        .map(|m| ShellValueLiteral::Scalar(m.as_str().to_owned()));
                     name_is_array = true;
-                } else {
-                    name = s.clone();
+                } else if let Some((n, v)) = s.split_once('=') {
+                    // `name+=value` appends (runtime split of an expanded word).
+                    let n = match n.strip_suffix('+') {
+                        Some(stripped) => {
+                            append = true;
+                            stripped
+                        }
+                        None => n,
+                    };
+                    name = n.to_owned();
                     assigned_index = None;
+                    initial_value = Some(ShellValueLiteral::Scalar(v.to_owned()));
                     name_is_array = false;
+                } else {
+                    #[allow(
+                        clippy::unwrap_in_result,
+                        clippy::unwrap_used,
+                        reason = "regex is valid and should not fail"
+                    )]
+                    static ARRAY_AND_INDEX_RE: LazyLock<fancy_regex::Regex> =
+                        LazyLock::new(|| fancy_regex::Regex::new(r"^(.*?)\[(.*?)\]$").unwrap());
+
+                    if let Some(captures) = ARRAY_AND_INDEX_RE.captures(s)? {
+                        name = captures
+                            .get(1)
+                            .ok_or_else(|| {
+                                brush_core::ErrorKind::InternalError(
+                                    "declaration parse error".into(),
+                                )
+                            })?
+                            .as_str()
+                            .to_owned();
+
+                        assigned_index = captures.get(2).map(|m| m.as_str().to_owned());
+                        name_is_array = true;
+                    } else {
+                        name = s.clone();
+                        assigned_index = None;
+                        name_is_array = false;
+                    }
+                    initial_value = None;
                 }
-                initial_value = None;
-                append = false;
             }
             brush_core::CommandArg::Assignment(assignment) => {
+                append = assignment.append;
                 match &assignment.name {
                     ast::AssignmentName::VariableName(var_name) => {
                         name = var_name.to_owned();
@@ -500,8 +834,6 @@ impl DeclareCommand {
                         assigned_index = Some(index.to_owned());
                     }
                 }
-
-                append = assignment.append;
 
                 match &assignment.value {
                     ast::AssignmentValue::Scalar(s) => {
@@ -532,22 +864,153 @@ impl DeclareCommand {
         Ok((name, assigned_index, initial_value, name_is_array, append))
     }
 
+    /// Validates a nameref target string: must be a legal variable name (optionally
+    /// with a `[subscript]` suffix) and must not be a self-reference.
+    /// Returns `Some(error_message)` on failure, `None` if valid.
+    fn validate_nameref_creation_target(var_name: &str, target: &str) -> Option<String> {
+        if target.is_empty() {
+            return None;
+        }
+        if target == var_name {
+            return Some(format!(
+                "{var_name}: nameref variable self references not allowed"
+            ));
+        }
+        if !env::valid_nameref_target_name(target) {
+            return Some(format!(
+                "`{target}': invalid variable name for name reference"
+            ));
+        }
+        None
+    }
+
+    /// If `var` is a nameref with a non-empty target, validates the target name.
+    ///
+    /// Unlike [`validate_nameref_creation_target`], this does NOT reject self-references.
+    /// Bash allows implicit self-references (e.g., `x=x; declare -n x`) — only
+    /// explicit ones at creation time (`declare -n x=x`) are rejected.
+    fn validate_existing_nameref_value(var: &ShellVariable) -> Option<String> {
+        if !var.is_treated_as_nameref() {
+            return None;
+        }
+        if let ShellValue::String(target) = var.value() {
+            if target.is_empty() {
+                return None;
+            }
+            // Only validate the name format, not self-reference.
+            if !env::valid_nameref_target_name(target) {
+                return Some(format!(
+                    "`{target}': invalid variable name for name reference"
+                ));
+            }
+        }
+        None
+    }
+
+    /// Determines whether this declaration will effectively create a nameref,
+    /// accounting for flag conflicts (`-na`, `-nA`) that suppress `-n`.
+    ///
+    /// The `-ni` combination does NOT suppress `-n` — bash applies both
+    /// attributes when no initial value is provided. (With an initial value,
+    /// the declaration is rejected early in `process_declaration`.)
+    fn will_be_nameref(&self) -> bool {
+        matches!(change(&self.make_nameref), Some(true))
+            && !(change(&self.make_indexed_array).is_some()
+                || change(&self.make_associative_array).is_some())
+    }
+
+    /// Resolves namerefs for attribute-changing declarations.
+    ///
+    /// In bash, when an attribute-changing `declare`/`readonly` command targets an
+    /// existing nameref without explicitly setting/unsetting the `-n` flag, the
+    /// operation resolves through the nameref and applies to the target variable.
+    ///
+    /// # Examples of when resolution applies
+    ///
+    /// ```bash
+    /// declare -n ref=target
+    /// declare -a ref       # applies -a to "target", not to "ref"
+    /// readonly ref          # makes "target" readonly, not "ref"
+    /// ```
+    ///
+    /// # When resolution does NOT apply
+    ///
+    /// ```bash
+    /// f() { declare -n ref=target; }  # creates new local "ref", doesn't resolve
+    /// declare -n ref=x                # explicitly setting -n: defines "ref" itself
+    /// declare +n ref                  # explicitly unsetting -n: modifies "ref" itself
+    /// ```
+    ///
+    /// The condition: resolve when `-n` is neither being set nor unset (`.is_none()`)
+    /// AND the variable already exists in the lookup scope (not creating a new local).
+    fn resolve_nameref_for_declaration(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: String,
+        lookup: EnvironmentLookup,
+        create_var_local: bool,
+    ) -> Result<(String, EnvironmentLookup), brush_core::Error> {
+        // When `-n` is explicitly being set or unset, we're operating on the
+        // nameref variable itself — don't resolve through it.
+        let explicitly_modifying_nameref_attr = change(&self.make_nameref).is_some();
+
+        // When `declare`/`local` would create a brand-new local variable
+        // (rather than modifying an existing one), we don't resolve either —
+        // e.g., `f() { declare -n ref=target; }` defines `ref`, not `target`.
+        //
+        // The existence check below does a scope-stack walk filtered by `lookup`
+        // policy. This is short-circuited when `create_var_local` is false (the
+        // common case at the global scope), so the walk only runs inside function
+        // bodies where each declare/local is a single statement, not a hot loop.
+        // The scope stack is small (typically 1-3 entries per nested function),
+        // so the per-call cost is negligible.
+        let creating_new_local = create_var_local
+            && context
+                .shell
+                .env()
+                .lookup(name.as_str().direct())
+                .in_scope(lookup)
+                .get_direct()
+                .is_none();
+
+        let should_resolve = !explicitly_modifying_nameref_attr && !creating_new_local;
+        if should_resolve {
+            let resolved = context.shell.env().resolve_nameref(name.as_str())?;
+            if resolved.name() != name.as_str() {
+                // For subscripted targets (e.g., ref→arr[2]), resolve to the
+                // base variable name. `declare -x ref` applies the export to
+                // the base array `arr`, not to element `arr[2]`. (The
+                // standalone `export`/`readonly` commands handle subscripted
+                // nameref rejection themselves.)
+                return Ok((resolved.into_name(), EnvironmentLookup::Anywhere));
+            }
+        }
+        Ok((name, lookup))
+    }
+
+    /// Validates the initial value (if any) as a nameref target.
+    /// Returns `Some(error_message)` if the target is invalid.
+    fn validate_initial_nameref_target(
+        var_name: &str,
+        initial_value: Option<&ShellValueLiteral>,
+    ) -> Option<String> {
+        if let Some(ShellValueLiteral::Scalar(target)) = initial_value {
+            Self::validate_nameref_creation_target(var_name, target.as_str())
+        } else {
+            None
+        }
+    }
+
     fn display_matching_env_declarations(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         verb: DeclareVerb,
         output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
-        //
-        // Dump all declarations. Use attribute flags to filter which variables are dumped.
-        //
-
-        // We start by excluding all variables that are not enumerable.
         #[expect(clippy::type_complexity)]
         let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool>> =
             vec![Box::new(|(_, v)| v.is_enumerable())];
 
-        // Add filters depending on verb.
         if matches!(verb, DeclareVerb::Readonly) {
             filters.push(Box::new(|(_, v)| v.is_readonly()));
         }
@@ -673,6 +1136,19 @@ impl DeclareCommand {
         &self,
         var: &mut ShellVariable,
     ) -> Result<(), brush_core::Error> {
+        // In bash, -n (nameref) conflicts with certain value-type attributes
+        // when an initial value is provided. That case is rejected early in
+        // process_declaration. When both flags are set without a value (e.g.,
+        // `declare -ni var`), bash applies both attributes. For arrays:
+        //   -na: -n dropped, -a kept (creates indexed array, not a nameref)
+        //   -nA: -n dropped, -A kept (creates assoc array, not a nameref)
+        // The -l, -u, -c flags do NOT conflict with -n.
+        let requesting_nameref = matches!(change(&self.make_nameref), Some(true));
+        let nameref_array_conflict = requesting_nameref
+            && (change(&self.make_indexed_array).is_some()
+                || change(&self.make_associative_array).is_some());
+        let suppress_nameref = nameref_array_conflict;
+
         if let Some(value) = change(&self.make_integer) {
             if value {
                 var.treat_as_integer();
@@ -700,11 +1176,13 @@ impl DeclareCommand {
                 var.set_update_transform(ShellVariableUpdateTransform::None);
             }
         }
-        if let Some(value) = change(&self.make_nameref) {
-            if value {
-                var.treat_as_nameref();
-            } else {
-                var.unset_treat_as_nameref();
+        if !suppress_nameref {
+            if let Some(value) = change(&self.make_nameref) {
+                if value {
+                    var.treat_as_nameref();
+                } else {
+                    var.unset_treat_as_nameref();
+                }
             }
         }
         if let Some(value) = change(&self.make_traced) {

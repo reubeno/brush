@@ -5,6 +5,7 @@ use std::io::Write;
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
+    error,
     parser::ast,
     variables,
 };
@@ -68,6 +69,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
 }
 
 impl ExportCommand {
+    #[expect(clippy::too_many_lines)]
     fn process_decl(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -106,12 +108,34 @@ impl ExportCommand {
                     return Self::invalid_identifier(context, s);
                 }
                 // Try to find the variable already present; if we find it, then mark it
-                // exported.
-                else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
-                    if self.unexport {
-                        variable.unexport();
-                    } else {
-                        variable.export();
+                // exported. For subscripted namerefs (e.g., ref→arr[1]), bash rejects the
+                // target as "not a valid identifier" — export/unexport only applies to
+                // whole variables. For circular namerefs, bash emits a warning and skips.
+                else {
+                    // Check for circular namerefs upfront so we can emit a warning
+                    // (env_mut().get_mut() silently swallows the resolution error).
+                    if let Err(err) = context.shell.env().resolve_nameref(s)
+                        && matches!(err.kind(), error::ErrorKind::CircularNameReference(_))
+                    {
+                        writeln!(context.stderr(), "{}: warning: {err}", context.command_name)?;
+                    } else if let Some(mut resolved) = context.shell.env_mut().get_mut(s) {
+                        if resolved.has_subscript() {
+                            // Resolve the nameref to get the full target string for the error.
+                            let target = context
+                                .shell
+                                .env()
+                                .resolve_nameref_to_name(s)
+                                .unwrap_or_else(|_| s.to_owned());
+                            writeln!(
+                                context.stderr(),
+                                "{}: `{target}': not a valid identifier",
+                                context.command_name
+                            )?;
+                        } else if self.unexport {
+                            resolved.base_var_mut().unexport();
+                        } else {
+                            resolved.base_var_mut().export();
+                        }
                     }
                 }
             }
@@ -169,12 +193,12 @@ impl ExportCommand {
         // bare `name+=value`. update_or_add always replaces, so when the
         // variable already exists honor the append here. A missing variable
         // falls through: appending to nothing is a plain assignment.
-        if append && let Some((_, variable)) = context.shell.env_mut().get_mut(name) {
-            variable.assign(value, true)?;
+        if append && let Some(mut resolved) = context.shell.env_mut().get_mut(name) {
+            resolved.base_var_mut().assign(value, true)?;
             if self.unexport {
-                variable.unexport();
+                resolved.base_var_mut().unexport();
             } else {
-                variable.export();
+                resolved.base_var_mut().export();
             }
             return Ok(());
         }

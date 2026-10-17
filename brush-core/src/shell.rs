@@ -8,9 +8,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-    ExecutionControlFlow, ExecutionResult, builtins, env::ShellEnvironment, error, extensions,
-    functions, interfaces, jobs, keywords, openfiles, options::RuntimeOptions, pathcache,
-    wellknownvars,
+    ExecutionControlFlow, ExecutionResult, builtins, env::ShellEnvironment, env::VarNameExt, error,
+    extensions, functions, interfaces, jobs, keywords, openfiles, options::RuntimeOptions,
+    pathcache, wellknownvars,
 };
 
 /// Type for storing a key bindings helper.
@@ -308,8 +308,9 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // diagnostics are harmless.
         if self
             .env
-            .get_using_policy("_", crate::env::EnvironmentLookup::Anywhere)
-            .is_some_and(|v| v.is_readonly())
+            .lookup("_".direct())
+            .get_direct()
+            .is_some_and(|(_, v)| v.is_readonly())
         {
             return;
         }
