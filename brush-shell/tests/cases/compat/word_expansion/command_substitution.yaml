@@ -301,16 +301,56 @@ cases:
       echo "rc=$? x=$x"
 
   - name: "Case statement with unparenthesized pattern in command substitution"
-    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
     stdin: |
       echo "$(case x in x) echo matched;; esac)"
 
   - name: "Case statement with unparenthesized pattern in command substitution in here doc"
-    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
     stdin: |
       cat <<EOF
       $(case x in x) echo matched;; esac)
       EOF
+
+  - name: "Case statements of several clauses in command substitution"
+    stdin: |
+      shopt -s extglob
+      echo "$(case b in (a) echo a;; b|c) echo b;; esac)"
+      echo "$(case y in @(x|y)) echo ext;; esac)"
+      echo "$(case a in a) case b in b) echo nested;; esac;; esac) after"
+
+  - name: "Case keywords as plain words in command substitution"
+    stdin: |
+      echo "$(echo case in)"
+      echo "$(echo esac)"
+      echo "$(for case in a; do echo "$case"; done)"
+      case=1; in=2
+      echo "$(echo $((case + in + (3))))"
+      echo "$(cat <<END
+      case
+      END
+      echo in)"
+
+  - name: "Case statement in a subshell in command substitution"
+    stdin: |
+      echo "$( (case x in x) echo bare;; esac) )"
+      echo "$( (case x in (x) echo paren;; esac) )"
+      echo "$(echo a; (echo b; case y in y) echo c;; esac) | cat)"
+
+  - name: "Case statement with extra blanks in command substitution"
+    stdin: |
+      echo "$(  case x  in  x)  echo ok;;  esac)"
+      echo "[$(case x in  esac)]"
+      echo "$(case x in x) echo comment;; # c
+      esac)"
+
+  - name: "Case statement after function and time -p in command substitution"
+    stdin: |
+      echo "$(function f { case x in x) echo fn;; esac; }; f)"
+      echo "$({ time -p case x in x) echo timed;; esac; } 2>/dev/null)"
+
+  - name: "Array assignment of case keywords in command substitution"
+    stdin: |
+      echo "$(a=(case x in); echo "${a[@]}")"
+      echo "$(declare -a b=(esac in); echo "${b[1]}")"
 
   - name: "Command substitution with embedded extglob"
     stdin: |
