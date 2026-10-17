@@ -61,17 +61,23 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for WaitCommand {
                         result = ExecutionExitCode::GeneralError.into();
                     }
                 } else {
-                    // It's a process ID.
                     return error::unimp("wait with process IDs");
                 }
             }
         } else {
-            // Wait for all jobs.
             let jobs = context.shell.jobs_mut().wait_all().await?;
 
             if context.shell.options().enable_job_control {
+                let mut output = Vec::new();
                 for job in jobs {
-                    writeln!(context.stdout(), "{job}")?;
+                    writeln!(output, "{job}")?;
+                }
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
                 }
             }
         }
