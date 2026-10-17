@@ -59,7 +59,7 @@ pub enum ErrorKind {
     CannotAssignToSpecialParameter,
 
     /// Checked expansion error.
-    #[error("expansion error: {0}")]
+    #[error("{0}")]
     CheckedExpansionError(String),
 
     /// A reference was made to an unknown shell function.

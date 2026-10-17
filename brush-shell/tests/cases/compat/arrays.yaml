@@ -4,13 +4,11 @@ common_test_files:
   - path: "helpers.sh"
     contents: |
       stable_print_assoc_array() {
-          # TODO(nameref): enable use of nameref when implemented; for now
-          # we assume the name of the array is assoc_array
-          # local -n assoc_array=$1
+          local -n _arr=$1
           local key
 
-          for key in $(printf "%s\n" "${!assoc_array[@]}" | sort -n); do
-              echo "\"${key}\" => ${assoc_array[${key}]}"
+          for key in $(printf "%s\n" "${!_arr[@]}" | sort -n); do
+              echo "\"${key}\" => ${_arr[${key}]}"
           done
       }
 cases:

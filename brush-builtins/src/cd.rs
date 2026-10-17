@@ -39,14 +39,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // TODO(cd): implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");
         }
 
         let mut should_print = false;
         let mut target_dir = if let Some(target_dir) = &self.target_dir {
-            // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
                 should_print = true;
                 if let Some(oldpwd) = context.shell.env_str("OLDPWD") {
@@ -56,10 +54,8 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
                     return Ok(ExecutionResult::general_error());
                 }
             } else {
-                // TODO(cd): remove clone, and use temporary lifetime extension after rust 1.75
                 target_dir.clone()
             }
-        // `cd' without arguments is equivalent to `cd $HOME'
         } else {
             if let Some(home_var) = context.shell.env_str("HOME") {
                 PathBuf::from(home_var.to_string())
@@ -75,7 +71,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
                 .options()
                 .do_not_resolve_symlinks_when_changing_dir
         {
-            // -e is only relevant in physical mode.
             if self.exit_on_failed_cwd_resolution {
                 return error::unimp("cd -e");
             }
