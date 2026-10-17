@@ -77,10 +77,7 @@ impl ExportCommand {
     ) -> Result<ExecutionResult, brush_core::Error> {
         match decl {
             brush_core::CommandArg::String(s) => {
-                // See if this is supposed to be a function name.
                 if self.names_are_functions {
-                    // Try to find the function already present; if we find it, then mark it
-                    // exported.
                     if let Some(func) = context.shell.func_mut(s) {
                         if self.unexport {
                             func.unexport();
