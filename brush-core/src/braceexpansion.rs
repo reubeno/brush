@@ -27,7 +27,6 @@ fn expand_brace_expr_or_text(
     }
 }
 
-#[expect(clippy::cast_possible_truncation)]
 fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterator<Item = String>> {
     match bem {
         word::BraceExpressionMember::NumberSequence {
@@ -36,10 +35,7 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             increment,
             zero_padded_width,
         } => {
-            let mut increment = increment.unsigned_abs() as usize;
-            if increment == 0 {
-                increment = 1;
-            }
+            let increment = increment.unsigned_abs().max(1);
 
             // A bound written with a leading zero asks for every member to be padded
             // out to the width of the longer bound, so `{01..10}` counts `01 02 ...`
@@ -50,15 +46,24 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             };
 
             if start <= end {
-                Box::new((start..=end).step_by(increment).map(format))
-            } else {
-                // Iterate from start down to end by decrementing.
-                #[allow(clippy::cast_possible_wrap)]
-                let increment = increment as i64;
+                // Iterate from start up to end by incrementing, stopping rather than
+                // overflowing when the next member would pass `i64::MAX`. Stepping in
+                // `i64` also keeps an increment wider than `usize` from truncating on
+                // 32-bit targets.
                 Box::new(
                     std::iter::successors(Some(start), move |&n| {
-                        let next = n - increment;
-                        (next >= end).then_some(next)
+                        n.checked_add_unsigned(increment)
+                            .filter(|&next| next <= end)
+                    })
+                    .map(format),
+                )
+            } else {
+                // Iterate from start down to end by decrementing, stopping rather than
+                // overflowing when the next member would fall below `i64::MIN`.
+                Box::new(
+                    std::iter::successors(Some(start), move |&n| {
+                        n.checked_sub_unsigned(increment)
+                            .filter(|&next| next >= end)
                     })
                     .map(format),
                 )
@@ -70,19 +75,21 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             end,
             increment,
         } => {
-            let mut increment = increment.unsigned_abs() as usize;
-            if increment == 0 {
-                increment = 1;
-            }
+            let increment = increment.unsigned_abs().max(1);
 
             if start <= end {
+                // An increment too large for a `usize` (on 32-bit targets) steps past
+                // every character, so it saturates instead of truncating to zero.
+                let increment = usize::try_from(increment).unwrap_or(usize::MAX);
                 Box::new((start..=end).step_by(increment).map(|c| c.to_string()))
             } else {
-                // Iterate from start down to end by decrementing.
-                let increment = increment as u32;
+                // Iterate from start down to end by decrementing. An increment too
+                // large for a `u32` steps past every character, so it ends the sequence
+                // after its first member instead of being truncated.
+                let increment = u32::try_from(increment).unwrap_or(u32::MAX);
                 Box::new(
                     std::iter::successors(Some(start), move |&c| {
-                        let next = char::from_u32(c as u32 - increment)?;
+                        let next = char::from_u32((c as u32).checked_sub(increment)?)?;
                         (next >= end).then_some(next)
                     })
                     .map(|c| c.to_string()),
