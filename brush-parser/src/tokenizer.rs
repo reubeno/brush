@@ -335,9 +335,214 @@ struct ExpansionFrame {
     /// arithmetic expansion's contents, `<<` is always a shift; see
     /// [`NestedExpansion::is_arithmetic`].)
     arithmetic_command_parens: usize,
+    /// The `case` commands open in a command substitution's contents, whose patterns' `)`
+    /// is case syntax, not a closing char.
+    cases: CaseTracker,
+}
+
+/// Follows the `case` commands in a command substitution's contents, from their tokens.
+#[derive(Clone, Debug, Default)]
+struct CaseTracker {
+    /// Whether a word read now would start a command, where `case` and `esac` are reserved
+    /// words.
+    at_command_start: bool,
+    /// The open `case` commands, innermost last.
+    open: Vec<OpenCase>,
+    /// Whether the last word was an assignment's name and `=` (`a=`, `a+=`, `a[1]=`), which
+    /// a `(` right after makes an array assignment.
+    after_assignment: bool,
+    /// Whether the tokens read are an array assignment's elements, which are words, not
+    /// commands.
+    in_array: bool,
+    /// The last word, where it changes what the next one starts.
+    after_word: AfterWord,
+}
+
+/// A word that changes what the word after it starts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AfterWord {
+    /// Any other word.
+    #[default]
+    Nothing,
+    /// `time` at a command start: `-p` after it keeps the command start.
+    Time,
+    /// `function` at a command start: the word after it is the name, and the body follows.
+    Function,
+}
+
+/// A `case` command whose `esac` is not read yet.
+#[derive(Clone, Copy, Debug)]
+struct OpenCase {
+    /// Where its tokens are.
+    state: CaseState,
+    /// The frame's `closers_needed` where its patterns are: a `)` read with that many closers
+    /// needed ends a pattern.
+    pattern_depth: usize,
+}
+
+/// Where a `case` command's tokens are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CaseState {
+    /// After `case`, before the word it matches.
+    AfterCase,
+    /// After that word, before `in`.
+    AfterSubject,
+    /// Where a pattern or `esac` may start: after `in`, or after `;;`, `;&` or `;;&`.
+    PatternStart,
+    /// In a pattern, before its `)`.
+    InPattern,
+    /// In the commands of a clause.
+    InBody,
+}
+
+impl CaseTracker {
+    /// Moves the innermost open `case` to `state`.
+    fn set_state(&mut self, state: CaseState) {
+        if let Some(case) = self.open.last_mut() {
+            case.state = state;
+        }
+    }
+
+    /// Whether a `)` read with `closers_needed` closers needed ends a `case` pattern.
+    fn ends_pattern(&self, closers_needed: usize) -> bool {
+        self.open.last().is_some_and(|case| {
+            matches!(case.state, CaseState::PatternStart | CaseState::InPattern)
+                && case.pattern_depth == closers_needed
+        })
+    }
+
+    /// Follows one token of the contents; `closers_needed` is the frame's count after it.
+    /// Returns whether the token was a `(` opening a pattern, which needs no closing char.
+    fn note_token(&mut self, token: &Token, closers_needed: usize) -> bool {
+        let state = self.open.last().map(|case| case.state);
+        let mut opens_pattern = false;
+        match token {
+            Token::Word(word, _) => {
+                // A token of an expansion's contents keeps the blanks around it, and may be
+                // blanks only, which are no word at all.
+                let word = word.trim();
+                if word.is_empty() || self.in_array {
+                    return false;
+                }
+                self.after_assignment = word.ends_with('=')
+                    && word.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_');
+                match state {
+                    Some(CaseState::AfterCase) => self.set_state(CaseState::AfterSubject),
+                    Some(CaseState::AfterSubject) if word == "in" => {
+                        self.set_state(CaseState::PatternStart);
+                    }
+                    Some(CaseState::PatternStart) if word == "esac" => {
+                        self.open.pop();
+                    }
+                    Some(CaseState::PatternStart) => self.set_state(CaseState::InPattern),
+                    Some(CaseState::InBody) | None if self.at_command_start && word == "case" => {
+                        self.open.push(OpenCase {
+                            state: CaseState::AfterCase,
+                            pattern_depth: closers_needed,
+                        });
+                    }
+                    Some(CaseState::InBody) if self.at_command_start && word == "esac" => {
+                        self.open.pop();
+                    }
+                    _ => (),
+                }
+                // A word starts a command only after a reserved word that precedes one, after
+                // `time -p`, and after `function NAME`, whose body comes next.
+                let was_at_command_start = self.at_command_start;
+                let after = std::mem::take(&mut self.after_word);
+                self.at_command_start = match (after, word) {
+                    (AfterWord::Time, "-p") | (AfterWord::Function, _) => true,
+                    _ => {
+                        was_at_command_start
+                            && matches!(
+                                word,
+                                "then"
+                                    | "do"
+                                    | "else"
+                                    | "elif"
+                                    | "if"
+                                    | "while"
+                                    | "until"
+                                    | "!"
+                                    | "{"
+                                    | "time"
+                                    | "coproc"
+                            )
+                    }
+                };
+                if was_at_command_start {
+                    self.after_word = match word {
+                        "time" => AfterWord::Time,
+                        "function" => AfterWord::Function,
+                        _ => AfterWord::Nothing,
+                    };
+                }
+            }
+            Token::Operator(op, _) => {
+                let op = op.trim_matches(is_blank);
+                let after_assignment = std::mem::take(&mut self.after_assignment);
+                self.after_word = AfterWord::Nothing;
+                if self.in_array || (after_assignment && op == "(") {
+                    // An array's `(` and `)` pair as any parens do; its elements start no
+                    // command, and neither does what follows it.
+                    self.in_array = op != ")" && (self.in_array || op == "(");
+                    self.at_command_start = false;
+                    return false;
+                }
+                match (state, op) {
+                    // A pattern may open with `(`, which isn't an opener needing a closer.
+                    // A word after it is a pattern, even `esac`.
+                    (Some(CaseState::PatternStart), "(") => {
+                        opens_pattern = true;
+                        self.set_state(CaseState::InPattern);
+                    }
+                    (Some(CaseState::InPattern), ")") => self.set_state(CaseState::InBody),
+                    (Some(CaseState::InBody), ";;" | ";&" | ";;&") => {
+                        self.set_state(CaseState::PatternStart);
+                    }
+                    _ => (),
+                }
+                // A word after a control operator starts a command; one after a redirection
+                // operator is its target.
+                self.at_command_start = matches!(
+                    op,
+                    "\n" | ";" | "&" | "&&" | "||" | "|" | "|&" | "(" | ")" | ";;" | ";&" | ";;&"
+                );
+            }
+        }
+        opens_pattern
+    }
 }
 
 impl ExpansionFrame {
+    /// Follows the `case` commands in a command substitution's contents, given a token read
+    /// from them. Arithmetic, parameter expansions and here-document bodies hold no commands.
+    fn note_case_token(&mut self, result: &TokenizeResult) {
+        let Some(token) = &result.token else {
+            return;
+        };
+        if self.expansion != Some(NestedExpansion::CommandSubstitution)
+            || self.arithmetic_command_parens > 0
+            || matches!(
+                result.reason,
+                TokenEndReason::HereDocumentBodyStart
+                    | TokenEndReason::HereDocumentBodyEnd
+                    | TokenEndReason::HereDocumentEndTag
+            )
+        {
+            return;
+        }
+        if self.cases.note_token(token, self.closers_needed) {
+            // `note_unquoted_char` counted the pattern's `(` as an opener.
+            self.closers_needed = self.closers_needed.saturating_sub(1);
+        }
+    }
+
+    /// Whether `c` read now would be the `)` ending a `case` pattern.
+    fn ends_case_pattern(&self, c: char) -> bool {
+        c == ')' && self.cases.ends_pattern(self.closers_needed)
+    }
+
     /// Notes that `c` was read unquoted from the frame's own contents (not from anything
     /// nested in them), keeping count of the closing chars the expansion needs: an opener
     /// needs one more, and a closing char that doesn't end the expansion closes an opener.
@@ -345,6 +550,9 @@ impl ExpansionFrame {
         let Some(expansion) = self.expansion else {
             return;
         };
+        if self.ends_case_pattern(c) {
+            return;
+        }
         if expansion.opening_char() == Some(c) {
             self.closers_needed += 1;
         } else if expansion.closing_char() == c {
@@ -920,6 +1128,11 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             expansion: Some(expansion),
             depth,
             closers_needed: expansion.closers_after_opening(),
+            // The contents start with a command.
+            cases: CaseTracker {
+                at_command_start: true,
+                ..CaseTracker::default()
+            },
             ..ExpansionFrame::default()
         };
 
@@ -945,6 +1158,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
         loop {
             let result = self.next_token()?;
+            self.cross_state.frame.note_case_token(&result);
 
             match result.reason {
                 // The bodies set aside go after the rest of the line holding their tags.
@@ -1313,6 +1527,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 && !state.in_operator()
                 && closing_char == Some(c)
                 && self.cross_state.frame.closers_needed == 1
+                && !self.cross_state.frame.ends_case_pattern(c)
             {
                 let reason = if state.started_token() {
                     TokenEndReason::Other
@@ -2343,6 +2558,61 @@ HERE2
             tokenize_str("$("),
             Err(TokenizerError::UnterminatedExpansion)
         );
+    }
+
+    #[test]
+    fn command_substitution_body_skips_case_patterns() -> Result<()> {
+        let options = TokenizerOptions {
+            enable_extended_globbing: true,
+            ..TokenizerOptions::default()
+        };
+        // A pattern's `)` is case syntax, whether or not the pattern opens with `(`.
+        for body in [
+            "case a in a) echo ok ;; esac",
+            "case a in (a) echo ok;; b|c) echo no;; esac",
+            "case x in @(x|y)) echo ext;; esac",
+            "case a in a) case b in b) echo nested;; esac;; esac",
+            " (case x in x) echo ok;; esac) ",
+            " (case x in (x) echo ok;; esac) ",
+            "echo a; (echo b; case y in y) echo c;; esac) | cat",
+            "  case x  in  x)  echo ok;;  esac",
+            "case x in  esac",
+            "case esac in (esac) echo pattern;; esac",
+            "case x in x) echo hi;; # c\nesac",
+            "function f { case x in x) echo fn;; esac; }; f",
+            "time -p case x in x) echo timed;; esac",
+            "coproc case x in x) echo co;; esac",
+        ] {
+            assert_eq!(
+                command_substitution_body(&format!("{body}) rest"), &options)?,
+                body
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn command_substitution_body_takes_case_keywords_as_words_outside_a_command_start() -> Result<()>
+    {
+        let options = TokenizerOptions::default();
+        // `case`, `in` and `esac` as arguments, in arithmetic and in a here-document body
+        // start no `case` command, so the `)` after them still closes the substitution.
+        for body in [
+            "echo case in",
+            "echo esac",
+            "for case in a; do echo $case; done",
+            "echo $((case + in + (3)))",
+            "cat <<END\ncase\nEND\necho in",
+            "((case + (1)))",
+            "a=(case x in); echo ok",
+            "declare -a a+=(case x in) b[1]=(esac)",
+        ] {
+            assert_eq!(
+                command_substitution_body(&format!("{body}) rest"), &options)?,
+                body
+            );
+        }
+        Ok(())
     }
 
     #[test]
