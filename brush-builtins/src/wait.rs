@@ -47,7 +47,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for WaitCommand {
         if !self.ids.is_empty() {
             for id in &self.ids {
                 if id.starts_with('%') {
-                    // It's a job spec.
                     if let Some(job) = context.shell.jobs_mut().resolve_job_spec(id) {
                         job.wait().await?;
                     } else {

@@ -40,7 +40,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
         // Default signal is SIGKILL.
         let mut trap_signal = TrapSignal::Signal(nix::sys::signal::Signal::SIGKILL);
 
-        // Try parsing the signal name (if specified).
         if let Some(signal_name) = &self.signal_name {
             if let Ok(parsed_trap_signal) = TrapSignal::try_from(signal_name.as_str()) {
                 trap_signal = parsed_trap_signal;
@@ -55,7 +54,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
             }
         }
 
-        // Try parsing the signal number (if specified).
         if let Some(signal_number) = &self.signal_number {
             if *signal_number == 0 {
                 signal_zero = true;
@@ -76,7 +74,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
             }
         }
 
-        // Look through the remaining args for a pid/job spec or a -sigspec style option.
         let mut pid_or_job_spec = None;
         for arg in &self.args {
             // See if this is -sigspec syntax. The sigspec may be a signal name
@@ -117,7 +114,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
             };
 
             if pid_or_job_spec.starts_with('%') {
-                // It's a job spec.
                 if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
                     if signal_zero {
                         job.check_signalable()?;

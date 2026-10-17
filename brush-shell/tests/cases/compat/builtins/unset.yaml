@@ -204,7 +204,6 @@ cases:
       echo "after calls: var=${var}"
 
   - name: "Unset with nameref"
-    known_failure: true
     stdin: |
       declare -n ref=var
       var="value"
@@ -220,7 +219,6 @@ cases:
       echo "var: ${var}"
 
   - name: "Unset -n removes nameref itself"
-    known_failure: true
     stdin: |
       target="value"
       declare -n ref=target
@@ -231,7 +229,6 @@ cases:
       declare -p target 2>/dev/null && echo "target still declared"
 
   - name: "Unset array element through nameref"
-    known_failure: true
     stdin: |
       target=(a b c d e)
       declare -n ref=target

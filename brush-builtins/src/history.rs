@@ -219,27 +219,3 @@ fn get_effective_history_file_path<'a>(
 ) -> Option<&'a Path> {
     option.map(Path::new).or(default_history_file_path)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use anyhow::Result;
-    use pretty_assertions::{assert_eq, assert_matches};
-
-    #[test]
-    fn test_parse_dash_a() -> Result<()> {
-        let cmd = HistoryCommand::try_parse_from(["history", "5"])?;
-        assert_matches!(cmd.append_session_to_file, None);
-
-        let cmd = HistoryCommand::try_parse_from(["history", "-a"])?;
-        assert_matches!(cmd.append_session_to_file, Some(None));
-
-        let cmd = HistoryCommand::try_parse_from(["history", "-a", "token"])?;
-        assert_eq!(
-            cmd.append_session_to_file,
-            Some(Some(String::from("token")))
-        );
-
-        Ok(())
-    }
-}

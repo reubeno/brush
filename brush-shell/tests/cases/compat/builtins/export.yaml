@@ -37,7 +37,6 @@ cases:
       declare -p result
 
   - name: "Export generated assignment does not expand its value again"
-    known_failure: true # TODO: export improvements required
     stdin: |
       assignment='result=$(printf expanded)'
       export "$assignment"
@@ -65,7 +64,6 @@ cases:
       env | grep MY_TEST_VAR
 
   - name: "Export with assignment through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=MY_EXPORT_VAR
       export ref="exported_value"
@@ -151,14 +149,12 @@ cases:
       unset -f export
 
   - name: "Export rejects an array element target"
-    known_failure: true # TODO: export improvements required
     ignore_stderr: true
     stdin: |
       export 'ea[0]=1'
       echo "status: $?"
 
   - name: "Export recognizes an assignment produced through command"
-    known_failure: true # TODO: export improvements required
     stdin: |
       value=world
       command export wrapped=$value
@@ -191,7 +187,6 @@ cases:
     stdin: |
       export --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(export --help 2>/dev/null) ]] && echo "help on stdout"
-
 
   - name: "export --help is fatal in POSIX mode"
     known_failure: true # TODO(posix): a special builtin's --help doesn't end a non-interactive POSIX shell
