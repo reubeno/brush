@@ -2254,9 +2254,6 @@ cases:
       echo "should not print"
 
   - name: "Export through subscripted nameref is rejected by bash"
-    # In bash, `export ref` where ref→arr[1] passes the literal "arr[1]" to
-    # export, which rejects it as an invalid identifier. Brush instead resolves
-    # the nameref to the base variable and exports it.
     ignore_stderr: true
     stdin: |
       arr=(a b c)
@@ -2266,10 +2263,6 @@ cases:
       declare -p arr | grep -o 'x' | head -1 || echo "no export"
 
   - name: "Readonly through subscripted nameref makes base readonly"
-    # In bash, `readonly ref` where ref→arr[1] does NOT make the base array
-    # readonly. Brush currently resolves the nameref to the base variable and
-    # applies readonly there. The fix would be to have resolve_nameref_for_declaration
-    # in declare.rs handle subscripted nameref targets specially.
     ignore_stderr: true
     stdin: |
       arr=(a b c)
@@ -2280,9 +2273,118 @@ cases:
       echo "exit: $?"
 
   - name: "Declare -p on subscripted nameref shows nameref itself"
-    known_failure: true
     stdin: |
       arr=(a b c)
       declare -n ref='arr[1]'
       declare -p ref
       echo "ref value: $ref"
+
+  - name: "Circular nameref - unset treats as not found"
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      unset a
+      echo "exit: $?"
+      declare -p a 2>/dev/null && echo "a still exists" || echo "a gone"
+      declare -p b 2>/dev/null && echo "b still exists" || echo "b gone"
+
+  - name: "Circular nameref - unset -n removes the nameref itself"
+    ignore_stderr: true
+    stdin: |
+      declare -n a=b
+      declare -n b=a
+      unset -n a
+      echo "exit: $?"
+      declare -p a 2>/dev/null && echo "a exists" || echo "a gone"
+      declare -p b 2>/dev/null && echo "b exists" || echo "b gone"
+
+  - name: "Nameref combined -ni conflict"
+    ignore_stderr: true
+    stdin: |
+      declare -ni ref=target
+      echo "exit: $?"
+      declare -p ref 2>/dev/null
+
+  - name: "Nameref combined -nu does not conflict"
+    stdin: |
+      target="hello"
+      declare -nu ref=target
+      ref="world"
+      echo "target: $target"
+      declare -p ref
+
+  - name: "Nameref combined -nl does not conflict"
+    stdin: |
+      target="HELLO"
+      declare -nl ref=target
+      ref="WORLD"
+      echo "target: $target"
+      declare -p ref
+
+  - name: "Subscripted nameref with explicit subscript assignment"
+    ignore_stderr: true
+    stdin: |
+      arr=(a b c d e)
+      declare -n ref='arr[2]'
+      ref[4]=x
+      echo "arr[2]: ${arr[2]}"
+      echo "arr[4]: ${arr[4]}"
+      declare -p arr
+
+  #
+  # Subscripted nameref edge cases — length and arithmetic
+  #
+
+  - name: "Subscripted nameref - length of element vs array"
+    stdin: |
+      arr=(a b c d e)
+      declare -n ref='arr[2]'
+      echo "element len: ${#ref}"
+      echo "array len: ${#ref[@]}"
+      echo "star len: ${#ref[*]}"
+
+  - name: "Subscripted nameref in arithmetic - explicit subscript"
+    # In bash, $((ref[0])) where ref→arr[2] treats the explicit subscript on a
+    # subscripted nameref as unset (returns 0). Brush currently resolves the
+    # nameref to the base array and applies the explicit subscript, yielding
+    # arr[0]=10 instead of 0. The fix belongs in arithmetic.rs deref_lvalue.
+    known_failure: true
+    stdin: |
+      arr=(10 20 30 40 50)
+      declare -n ref='arr[2]'
+      echo "ref value: $((ref))"
+      echo "ref[0]: $((ref[0]))"
+      echo "ref[3]: $((ref[3]))"
+
+  #
+  # For-in vs arithmetic-for nameref asymmetry
+  # These two forms have INTENTIONALLY DIFFERENT nameref behavior in bash:
+  # - for-in writes to the nameref variable itself (retargets it)
+  # - arithmetic for writes through the nameref (resolves it)
+  #
+
+  - name: "Nameref asymmetry: for-in retargets, arithmetic for resolves"
+    stdin: |
+      target=0
+      declare -n ref=target
+      # for-in writes to ref itself, changing what it points to
+      for ref in x y z; do :; done
+      echo "ref value after for-in: $ref"
+      echo "target unchanged: $target"
+      # reset ref to point to target again
+      declare -n ref=target
+      # arithmetic for writes THROUGH the nameref to target
+      for ((ref=1; ref<4; ref++)); do :; done
+      echo "target after arith-for: $target"
+
+  - name: "Readonly nameref in for-in loop fails"
+    ignore_stderr: true
+    stdin: |
+      declare -n ref=var1
+      readonly ref
+      for ref in a b c; do
+          echo "iter: $ref"
+      done
+      echo "exit: $?"
+      echo "done"

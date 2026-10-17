@@ -282,3 +282,11 @@ cases:
       rm errors.txt
       unset 1x
       echo "unset: $?"
+
+  - name: "Unset with dynamically-expanded name"
+    stdin: |
+      TARGET=1
+      v=TARGET
+      unset ${v}
+      echo "TARGET=[${TARGET-unset}]"
+

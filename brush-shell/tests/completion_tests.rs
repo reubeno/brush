@@ -139,10 +139,13 @@ impl TestShell {
     }
 
     fn get_var(&self, name: &str) -> Option<String> {
-        self.shell
-            .env()
-            .get(name)
-            .map(|(_, v)| v.value().to_cow_str(&self.shell).into_owned())
+        self.shell.env().get(name).map(|resolved| {
+            resolved
+                .base_var()
+                .value()
+                .to_cow_str(&self.shell)
+                .into_owned()
+        })
     }
 
     fn set_var(&mut self, name: &str, value: &str) -> Result<()> {
@@ -515,11 +518,11 @@ complete -F _test_comp mycmd
     let comp_key = shell
         .env()
         .get("CAPTURED_COMP_KEY")
-        .map(|(_, v)| v.value().to_cow_str(&shell).to_string());
+        .map(|resolved| resolved.base_var().value().to_cow_str(&shell).to_string());
     let comp_type = shell
         .env()
         .get("CAPTURED_COMP_TYPE")
-        .map(|(_, v)| v.value().to_cow_str(&shell).to_string());
+        .map(|resolved| resolved.base_var().value().to_cow_str(&shell).to_string());
 
     assert_eq!(comp_key.as_deref(), Some("9"), "COMP_KEY should be 9 (TAB)");
     assert_eq!(
