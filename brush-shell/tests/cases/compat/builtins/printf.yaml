@@ -461,3 +461,10 @@ cases:
       [[ -n $(printf --help 2>/dev/null) ]] && echo "help on stdout"
       printf -v x --help >/dev/null 2>&1; echo "after -v: rc=$?"
       printf -- --help; echo " after --: rc=$?"
+
+  - name: "printf -v with dynamically-expanded variable name"
+    stdin: |
+      v=DEST
+      printf -v ${v} '%s-%s' a b
+      echo "DEST=[$DEST]"
+

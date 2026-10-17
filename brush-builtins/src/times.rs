@@ -21,9 +21,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
+        let mut output = Vec::new();
+
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;
         writeln!(
-            context.stdout(),
+            output,
             "{} {}",
             timing::format_duration_non_posixly(&self_user),
             timing::format_duration_non_posixly(&self_system),
@@ -32,11 +34,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
         let (children_user, children_system) =
             brush_core::sys::resource::get_children_user_and_system_time()?;
         writeln!(
-            context.stdout(),
+            output,
             "{} {}",
             timing::format_duration_non_posixly(&children_user),
             timing::format_duration_non_posixly(&children_system),
         )?;
+
+        if let Some(mut stdout) = context.stdout_async() {
+            stdout.write_all(&output).await?;
+            stdout.flush().await?;
+        } else {
+            context.stdout().write_all(&output)?;
+            context.stdout().flush()?;
+        }
 
         Ok(ExecutionResult::success())
     }

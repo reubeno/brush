@@ -46,6 +46,8 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
         if self.shared_object_path.is_some() {
             return error::unimp("enable -f");
@@ -59,7 +61,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
                 if let Some(builtin) = context.shell.builtins_mut().get_mut(name) {
                     builtin.set_enabled(!self.disable);
                 } else {
-                    writeln!(context.stderr(), "{name}: not a shell builtin")?;
+                    writeln!(stderr_output, "{name}: not a shell builtin")?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -81,8 +83,23 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
 
                 let prefix = if !builtin.is_enabled() { "-n " } else { "" };
 
-                writeln!(context.stdout(), "enable {prefix}{builtin_name}")?;
+                writeln!(output, "enable {prefix}{builtin_name}")?;
             }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
         }
 
         Ok(result)

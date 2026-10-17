@@ -125,15 +125,26 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
         };
 
         if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
-            writeln!(context.stderr(), "can only be used in a function")?;
+            let mut stderr_output = Vec::new();
+            writeln!(stderr_output, "can only be used in a function")?;
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
             return Ok(ExecutionResult::general_error());
         }
 
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
         let mut result = ExecutionResult::success();
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
-                    if !self.try_display_declaration(&context, declaration, verb)? {
+                    if !self.try_display_declaration(
+                        &context,
+                        declaration,
+                        verb,
+                        &mut output,
+                        &mut stderr_output,
+                    )? {
                         result = ExecutionResult::general_error();
                     }
                 } else {
@@ -143,17 +154,30 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
                 }
             }
         } else {
-            // Display matching declarations from the variable environment.
             if !self.function_names_only && !self.function_names_or_defs_only {
-                self.display_matching_env_declarations(&context, verb)?;
+                self.display_matching_env_declarations(&context, verb, &mut output)?;
             }
 
-            // Do the same for functions.
             if !matches!(verb, DeclareVerb::Local | DeclareVerb::Readonly)
                 && (!self.print || self.function_names_only || self.function_names_or_defs_only)
             {
-                self.display_matching_functions(&context)?;
+                self.display_matching_functions(&context, &mut output)?;
             }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
         }
 
         Ok(result)
@@ -166,11 +190,13 @@ impl DeclareCommand {
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
+        output: &mut Vec<u8>,
+        stderr_output: &mut Vec<u8>,
     ) -> Result<bool, brush_core::Error> {
         let name = match declaration {
             brush_core::CommandArg::String(s) => s,
             brush_core::CommandArg::Assignment(_) => {
-                writeln!(context.stderr(), "declare: {declaration}: not found")?;
+                writeln!(stderr_output, "declare: {declaration}: not found")?;
                 return Ok(false);
             }
         };
@@ -185,12 +211,12 @@ impl DeclareCommand {
             if let Some(func_registration) = context.shell.funcs().get(name) {
                 if self.function_names_only {
                     if self.print {
-                        writeln!(context.stdout(), "declare -f {name}")?;
+                        writeln!(output, "declare -f {name}")?;
                     } else {
-                        writeln!(context.stdout(), "{name}")?;
+                        writeln!(output, "{name}")?;
                     }
                 } else {
-                    writeln!(context.stdout(), "{}", func_registration.definition())?;
+                    writeln!(output, "{}", func_registration.definition())?;
                 }
                 Ok(true)
             } else {
@@ -211,14 +237,14 @@ impl DeclareCommand {
             };
 
             writeln!(
-                context.stdout(),
+                output,
                 "declare -{cs} {name}{separator_str}{}",
                 resolved_value.format(variables::FormatStyle::DeclarePrint, context.shell)?
             )?;
 
             Ok(true)
         } else {
-            writeln!(context.stderr(), "declare: {name}: not found")?;
+            writeln!(stderr_output, "declare: {name}: not found")?;
             Ok(false)
         }
     }
@@ -250,6 +276,7 @@ impl DeclareCommand {
         true
     }
 
+    #[expect(clippy::too_many_lines)]
     fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -268,22 +295,35 @@ impl DeclareCommand {
         }
 
         if self.function_names_or_defs_only || self.function_names_only {
-            return self.try_display_declaration(context, declaration, verb);
+            let mut output = Vec::new();
+            let mut stderr_output = Vec::new();
+            let result = self.try_display_declaration(
+                context,
+                declaration,
+                verb,
+                &mut output,
+                &mut stderr_output,
+            )?;
+            if !output.is_empty() {
+                let _ = context.stdout().write_all(&output);
+                let _ = context.stdout().flush();
+            }
+            if !stderr_output.is_empty() {
+                let _ = context.stderr().write_all(&stderr_output);
+                let _ = context.stderr().flush();
+            }
+            return Ok(result);
         }
 
         // Extract the variable name and the initial value being assigned (if any).
         let (name, assigned_index, initial_value, name_is_array, append) =
             Self::declaration_to_name_and_value(declaration)?;
 
-        // Special-case: `local -`
         if name == "-" && matches!(verb, DeclareVerb::Local) {
-            // TODO(local): `local -` allows shadowing the current `set` options (i.e., $-), with
-            // subsequent updates getting discarded when the current local scope is popped.
             tracing::warn!("not yet implemented: local -");
             return Ok(true);
         }
 
-        // Make sure it's a valid name.
         if !env::valid_variable_name(name.as_str()) {
             writeln!(
                 context.stderr(),
@@ -496,6 +536,7 @@ impl DeclareCommand {
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         verb: DeclareVerb,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         //
         // Dump all declarations. Use attribute flags to filter which variables are dumped.
@@ -591,7 +632,7 @@ impl DeclareCommand {
                 };
 
                 writeln!(
-                    context.stdout(),
+                    output,
                     "declare -{cs} {name}{separator_str}{}",
                     variable
                         .value()
@@ -599,7 +640,7 @@ impl DeclareCommand {
                 )?;
             } else {
                 writeln!(
-                    context.stdout(),
+                    output,
                     "{name}={}",
                     variable
                         .value()
@@ -614,12 +655,13 @@ impl DeclareCommand {
     fn display_matching_functions(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         for (name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {
-                writeln!(context.stdout(), "declare -f {name}")?;
+                writeln!(output, "declare -f {name}")?;
             } else {
-                writeln!(context.stdout(), "{}", registration.definition())?;
+                writeln!(output, "{}", registration.definition())?;
             }
         }
 

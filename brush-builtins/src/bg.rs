@@ -20,6 +20,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BgCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
+        let mut stderr_output = Vec::new();
 
         if !self.job_specs.is_empty() {
             for job_spec in &self.job_specs {
@@ -29,10 +30,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BgCommand {
                     warn_if_running(&context, running)?;
                 } else {
                     writeln!(
-                        context.stderr(),
+                        stderr_output,
                         "{}: {}: no such job",
-                        context.command_name,
-                        job_spec
+                        context.command_name, job_spec
                     )?;
                     exit_code = ExecutionResult::general_error();
                 }
@@ -43,9 +43,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BgCommand {
                 job.move_to_background()?;
                 warn_if_running(&context, running)?;
             } else {
-                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
+                writeln!(stderr_output, "{}: no current job", context.command_name)?;
                 exit_code = ExecutionResult::general_error();
             }
+        }
+
+        if !stderr_output.is_empty() {
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
         }
 
         Ok(exit_code)
