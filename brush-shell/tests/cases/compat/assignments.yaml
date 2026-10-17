@@ -83,3 +83,10 @@ cases:
     stdin: |
       echo a=(1 2)
       echo "after: $?"
+
+  - name: "Reserved words as variable names"
+    stdin: |
+      case=1; in=2; if=3; done=4
+      echo "$case $in $if $done"
+      esac[0]=z; then+=x
+      echo "${esac[0]} $then"

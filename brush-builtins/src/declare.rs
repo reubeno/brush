@@ -383,7 +383,10 @@ impl DeclareCommand {
                 // examined, so the expression's side effects must not run either.
                 let target_is_readonly = existing_is_integer_or_readonly.is_some_and(|(_, ro)| ro);
                 if integer_now && !target_is_readonly {
-                    let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
+                    let parsed = brush_parser::arithmetic::parse_with(
+                        expr.as_str(),
+                        context.shell.parser_options().parser_impl,
+                    )?;
                     let result = brush_core::arithmetic::Evaluatable::eval(&parsed, context.shell)?;
                     Some(ShellValueLiteral::Scalar(result.to_string()))
                 } else {

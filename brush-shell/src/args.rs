@@ -222,13 +222,10 @@ pub struct CommandLineArgs {
     #[arg(long = "enable-highlighting", help_heading = "User interface options")]
     pub enable_highlighting: bool,
 
-    /// Enable experimental parser (not ready for use).
+    /// Use legacy PEG parser instead of the default winnow parser.
     #[cfg(feature = "experimental-parser")]
-    #[arg(
-        long = "experimental-parser",
-        help_heading = "*Experimental* options (unstable)"
-    )]
-    pub experimental_parser: bool,
+    #[arg(long = "peg-parser", help_heading = "*Experimental* options (unstable)")]
+    pub peg_parser: bool,
 
     /// Enable terminal integration (**experimental**).
     #[arg(
