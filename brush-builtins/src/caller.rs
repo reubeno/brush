@@ -22,11 +22,8 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CallerCommand {
     ) -> Result<ExecutionResult, Self::Error> {
         let stack = context.shell.call_stack();
 
-        // See how far back we need to look. Frame N represents the Nth caller
-        // (e.g., 0 = immediate caller, 1 = caller's caller, etc.).
         let expr = self.expr.unwrap_or(0);
 
-        // Get all frames into a vector we can easily index into.
         let frames: Vec<_> = stack
             .iter()
             .filter(|frame| frame.frame_type.is_function() || frame.frame_type.is_script())

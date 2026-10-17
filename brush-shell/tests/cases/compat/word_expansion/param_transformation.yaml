@@ -116,7 +116,6 @@ cases:
       echo "\${!ref@a}: ${!ref@a}"
 
   - name: "Parameter transformation @a through nameref"
-    known_failure: true
     stdin: |
       declare -i target=42
       declare -n ref=target
@@ -124,14 +123,12 @@ cases:
       echo "target @a: ${target@a}"
 
   - name: "Parameter transformation @Q through nameref"
-    known_failure: true
     stdin: |
       target="hello world"
       declare -n ref=target
       echo "ref @Q: ${ref@Q}"
 
   - name: "Parameter transformation @A through nameref"
-    known_failure: true
     stdin: |
       target="hello"
       declare -n ref=target

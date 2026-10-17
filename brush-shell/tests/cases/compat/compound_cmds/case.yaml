@@ -190,3 +190,7 @@ cases:
       (case x in esac)
       (echo a; case x in y) echo no;; esac)
       case x in (esac) echo pattern;; x) echo x;; esac
+
+  - name: "Case inside command substitution"
+    stdin: |
+      echo $(case a in a) echo ok ;; esac)

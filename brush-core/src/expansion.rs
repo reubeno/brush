@@ -184,6 +184,16 @@ impl WordContext {
             ..self
         }
     }
+
+    /// The same context for a pattern: an unquoted backslash is kept, with what it
+    /// escapes, for the matcher, so `${v#[\!\^]}` removes a literal `!` or `^`, not
+    /// anything but `^`, and `${v#\*}` a literal `*`.
+    const fn as_pattern(self) -> Self {
+        Self {
+            unquoted_backslashes: UnquotedBackslashHandling::Preserve,
+            ..self
+        }
+    }
 }
 
 /// Describes what a parameter's expansion is a list of. Operators whose behavior depends
@@ -921,7 +931,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         word: &str,
         context: WordContext,
     ) -> Result<patterns::Pattern, error::Error> {
-        let expansion = self.basic_expand(word, context).await?;
+        let expansion = self.basic_expand(word, context.as_pattern()).await?;
         Ok(Self::expansion_to_pattern(expansion))
     }
 
