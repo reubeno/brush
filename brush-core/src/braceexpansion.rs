@@ -27,7 +27,6 @@ fn expand_brace_expr_or_text(
     }
 }
 
-#[expect(clippy::cast_possible_truncation)]
 fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterator<Item = String>> {
     match bem {
         word::BraceExpressionMember::NumberSequence {
@@ -47,7 +46,17 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             };
 
             if start <= end {
-                Box::new((start..=end).step_by(increment as usize).map(format))
+                // Iterate from start up to end by incrementing, stopping rather than
+                // overflowing when the next member would pass `i64::MAX`. Stepping in
+                // `i64` also keeps an increment wider than `usize` from truncating on
+                // 32-bit targets.
+                Box::new(
+                    std::iter::successors(Some(start), move |&n| {
+                        n.checked_add_unsigned(increment)
+                            .filter(|&next| next <= end)
+                    })
+                    .map(format),
+                )
             } else {
                 // Iterate from start down to end by decrementing, stopping rather than
                 // overflowing when the next member would fall below `i64::MIN`.
@@ -69,11 +78,10 @@ fn expand_brace_expr_member(bem: word::BraceExpressionMember) -> Box<dyn Iterato
             let increment = increment.unsigned_abs().max(1);
 
             if start <= end {
-                Box::new(
-                    (start..=end)
-                        .step_by(increment as usize)
-                        .map(|c| c.to_string()),
-                )
+                // An increment too large for a `usize` (on 32-bit targets) steps past
+                // every character, so it saturates instead of truncating to zero.
+                let increment = usize::try_from(increment).unwrap_or(usize::MAX);
+                Box::new((start..=end).step_by(increment).map(|c| c.to_string()))
             } else {
                 // Iterate from start down to end by decrementing. An increment too
                 // large for a `u32` steps past every character, so it ends the sequence

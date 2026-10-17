@@ -215,6 +215,15 @@ cases:
       echo {z..a..4294967297}
       echo {Z..A..30}
 
+  - name: "Expansion with curly braces: increasing sequence stepping past the end of the range"
+    stdin: |
+      echo {9223372036854775800..9223372036854775807..5}
+      echo {9223372036854775806..9223372036854775807..2}
+      echo {1..5..4294967296}
+      echo {1..5..4294967297}
+      echo {a..e..4294967296}
+      echo {a..z..200}
+
   - name: "Expansion with curly braces: numeric bounds at the edge of the range"
     stdin: |
       echo {-9223372036854775808..-9223372036854775806}
