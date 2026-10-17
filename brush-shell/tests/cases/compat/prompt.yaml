@@ -402,7 +402,6 @@ cases:
       done
 
   - name: "Case command with unparenthesized pattern in prompt command substitution"
-    known_failure: true # brush ends the substitution at the pattern's ')'
     stdin: |
       prompt='$(case a in a) echo matched;; esac)'
       echo "Prompt: [${prompt@P}]"
