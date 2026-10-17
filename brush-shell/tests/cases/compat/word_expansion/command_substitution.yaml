@@ -301,16 +301,21 @@ cases:
       echo "rc=$? x=$x"
 
   - name: "Case statement with unparenthesized pattern in command substitution"
-    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
     stdin: |
       echo "$(case x in x) echo matched;; esac)"
 
   - name: "Case statement with unparenthesized pattern in command substitution in here doc"
-    known_failure: true # TODO(tokenizer): #1052: the ')' ending a case pattern is taken as closing the '$('
     stdin: |
       cat <<EOF
       $(case x in x) echo matched;; esac)
       EOF
+
+  - name: "Case statements of several clauses in command substitution"
+    stdin: |
+      shopt -s extglob
+      echo "$(case b in (a) echo a;; b|c) echo b;; esac)"
+      echo "$(case y in @(x|y)) echo ext;; esac)"
+      echo "$(case a in a) case b in b) echo nested;; esac;; esac) after"
 
   - name: "Command substitution with embedded extglob"
     stdin: |

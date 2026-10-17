@@ -334,9 +334,71 @@ struct ExpansionFrame {
     /// arithmetic expansion's contents, `<<` is always a shift; see
     /// [`NestedExpansion::is_arithmetic`].)
     arithmetic_command_parens: usize,
+    /// Where the frame's contents are in a `case` command, if in one: a pattern's `)` is
+    /// case syntax, not a closing char.
+    case_state: CaseState,
+    /// How many `case` commands of the frame's contents are open.
+    case_depth: usize,
+}
+
+/// Where an expansion's contents are in a `case` command.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CaseState {
+    /// Not in one.
+    #[default]
+    NotInCase,
+    /// After `case`, before `in`.
+    AfterCase,
+    /// In a pattern, before its `)`.
+    InPattern,
+    /// In the commands of a clause.
+    InBody,
 }
 
 impl ExpansionFrame {
+    /// Follows the `case` commands in the frame's contents, given each token read from them.
+    fn note_case_token(&mut self, token: Option<&Token>) {
+        match token {
+            Some(Token::Word(word, _)) => match word.trim() {
+                "case" if matches!(self.case_state, CaseState::NotInCase | CaseState::InBody) => {
+                    self.case_depth += 1;
+                    self.case_state = CaseState::AfterCase;
+                }
+                "in" if self.case_state == CaseState::AfterCase => {
+                    self.case_state = CaseState::InPattern;
+                }
+                "esac" if self.case_depth > 0 => {
+                    self.case_depth -= 1;
+                    self.case_state = if self.case_depth == 0 {
+                        CaseState::NotInCase
+                    } else {
+                        CaseState::InBody
+                    };
+                }
+                _ => (),
+            },
+            Some(Token::Operator(op, _)) => match op.trim() {
+                ";;" | ";&" | ";;&" if self.case_state == CaseState::InBody => {
+                    self.case_state = CaseState::InPattern;
+                }
+                // A pattern may open with `(`, which `note_unquoted_char` counted as an opener.
+                "(" if self.case_state == CaseState::InPattern => {
+                    self.closers_needed = self.closers_needed.saturating_sub(1).max(1);
+                }
+                ")" if self.case_state == CaseState::InPattern => {
+                    self.case_state = CaseState::InBody;
+                }
+                _ => (),
+            },
+            None => (),
+        }
+    }
+
+    /// Whether `c` read now would be the `)` ending a `case` pattern.
+    fn ends_case_pattern(&self, c: char) -> bool {
+        c == ')' && self.case_state == CaseState::InPattern && self.closers_needed == 1
+    }
+
     /// Notes that `c` was read unquoted from the frame's own contents (not from anything
     /// nested in them), keeping count of the closing chars the expansion needs: an opener
     /// needs one more, and a closing char that doesn't end the expansion closes an opener.
@@ -344,6 +406,9 @@ impl ExpansionFrame {
         let Some(expansion) = self.expansion else {
             return;
         };
+        if self.ends_case_pattern(c) {
+            return;
+        }
         if expansion.opening_char() == Some(c) {
             self.closers_needed += 1;
         } else if expansion.closing_char() == c {
@@ -952,6 +1017,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
 
         loop {
             let result = self.next_token()?;
+            self.cross_state
+                .frame
+                .note_case_token(result.token.as_ref());
 
             match result.reason {
                 // The bodies set aside go after the rest of the line holding their tags.
@@ -1320,6 +1388,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 && !state.in_operator()
                 && closing_char == Some(c)
                 && self.cross_state.frame.closers_needed == 1
+                && !self.cross_state.frame.ends_case_pattern(c)
             {
                 let reason = if state.started_token() {
                     TokenEndReason::Other
@@ -2350,6 +2419,27 @@ HERE2
             tokenize_str("$("),
             Err(TokenizerError::UnterminatedExpansion)
         );
+    }
+
+    #[test]
+    fn command_substitution_body_skips_case_patterns() -> Result<()> {
+        let options = TokenizerOptions {
+            enable_extended_globbing: true,
+            ..TokenizerOptions::default()
+        };
+        // A pattern's `)` is case syntax, whether or not the pattern opens with `(`.
+        for body in [
+            "case a in a) echo ok ;; esac",
+            "case a in (a) echo ok;; b|c) echo no;; esac",
+            "case x in @(x|y)) echo ext;; esac",
+            "case a in a) case b in b) echo nested;; esac;; esac",
+        ] {
+            assert_eq!(
+                command_substitution_body(&format!("{body}) rest"), &options)?,
+                body
+            );
+        }
+        Ok(())
     }
 
     #[test]
