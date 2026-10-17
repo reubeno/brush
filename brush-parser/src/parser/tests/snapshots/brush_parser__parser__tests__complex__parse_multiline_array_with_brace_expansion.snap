@@ -1,0 +1,44 @@
+---
+source: brush-parser/src/parser/tests/complex.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "_PYTHON_ALL_IMPLS=(\n\tpypy3_11\n\tpython3_{13..14}t\n\tpython3_{11..14}\n)\n",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("_PYTHON_ALL_IMPLS"),
+                    value: Array([
+                      (None, Word(
+                        value: "pypy3_11",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "python3_{13..14}t",
+                        loc: "[location]",
+                      )),
+                      (None, Word(
+                        value: "python3_{11..14}",
+                        loc: "[location]",
+                      )),
+                    ]),
+                    loc: "[location]",
+                  ), Word(
+                    value: "_PYTHON_ALL_IMPLS=(pypy3_11 python3_{13..14}t python3_{11..14})",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

@@ -951,6 +951,28 @@ pub(crate) fn legacy_arithmetic_expansion_body<'a>(
     expansion_body(input, options, NestedExpansion::LegacyArithmeticExpansion)
 }
 
+/// The length in bytes of the word at the start of `input`, as the tokenizer delimits it: an
+/// extglob's quotes, backquotes and expansions are read as in a full script. The winnow parser
+/// asks it where a word holding an extglob ends.
+///
+/// # Errors
+///
+/// Returns an error if tokenizing the word fails, e.g. on an unterminated construct in it.
+pub(crate) fn first_word_len(
+    input: &str,
+    options: &TokenizerOptions,
+) -> Result<usize, TokenizerError> {
+    let mut reader = input.as_bytes();
+    let mut tokenizer = Tokenizer::new(&mut reader, options);
+    tokenizer.read_bodies_left_pending = false;
+    match tokenizer.next_token()?.token {
+        Some(Token::Word(_, span)) => {
+            Ok(input.chars().take(span.end.index).map(char::len_utf8).sum())
+        }
+        _ => Ok(0),
+    }
+}
+
 fn expansion_body<'a>(
     input: &'a str,
     options: &TokenizerOptions,

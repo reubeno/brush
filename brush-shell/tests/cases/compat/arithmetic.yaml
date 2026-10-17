@@ -423,7 +423,7 @@ cases:
       echo $[ ${a[1]} + 1 ] $[ ${#a[@]} ] $[ $[1] + 1 ] $[ a[$[1]] ]
 
   - name: "Blanks inside array subscripts in arithmetic"
-    known_failure: true # TODO(arithmetic): the arithmetic parser rejects blanks inside a subscript's brackets
+    known_failure_platforms: ["peg-parser"] # TODO(arithmetic): the PEG arithmetic parser rejects blanks inside a subscript's brackets
     stdin: |
       a=(1 2)
       echo $(( a[ 1 ] )) $(( a[ a[0] ] ))

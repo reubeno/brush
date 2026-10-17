@@ -1,0 +1,83 @@
+---
+source: brush-parser/src/parser/tests/winnow_issues.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "printf \"%f\\n\" 3.14159\nprintf \"%.2f\\n\" 3.14159\nprintf \"%6.2f\\n\" 3.14159",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "printf",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "\"%f\\n\"",
+                    loc: "[location]",
+                  )),
+                  Word(Word(
+                    value: "3.14159",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "printf",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "\"%.2f\\n\"",
+                    loc: "[location]",
+                  )),
+                  Word(Word(
+                    value: "3.14159",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "printf",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "\"%6.2f\\n\"",
+                    loc: "[location]",
+                  )),
+                  Word(Word(
+                    value: "3.14159",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
