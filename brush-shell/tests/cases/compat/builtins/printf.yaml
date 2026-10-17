@@ -98,10 +98,10 @@ cases:
       echo "[3]"
       printf "~%q" '"'; echo
 
-  # =================================================================
+  # ==========================================================
   # STANDARD C PRINTF FORMAT SPECIFIERS
   # These should work with external printf and bash builtin printf
-  # =================================================================
+  # ==========================================================
 
   # Integer formatting tests
   - name: "printf %d with integers"
@@ -239,10 +239,10 @@ cases:
       printf "%d\n" "+42"
       printf "%d\n" "-17"
 
-  # =================================================================
+  # ==========================================================
   # ADDITIONAL STANDARD FORMAT SPECIFIERS
   # More comprehensive coverage of printf(3) man page features
-  # =================================================================
+  # ==========================================================
 
   # Additional format specifiers from man page
   - name: "printf %i (signed integer)"
@@ -441,6 +441,13 @@ cases:
     stdin: |
       printf '<%#q>\n' 'foo'
       printf '<%#12q>\n' 'foo bar'
+
+  - name: "printf -v followed by --"
+    stdin: |
+      printf -v x -- '%s' ho
+      echo "x=$x"
+      printf -vy -- '%s-' -- a
+      echo "y=$y"
 
   - name: "printf %q escapes commas"
     stdin: |

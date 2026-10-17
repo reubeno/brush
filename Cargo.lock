@@ -403,13 +403,11 @@ name = "brush-builtins"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "brush-clap-adapter",
  "brush-core",
  "brush-parser",
  "brush-winnow-args-adapter",
  "cfg-if",
  "chrono",
- "clap",
  "fancy-regex",
  "itertools 0.15.0",
  "nix 0.31.3",

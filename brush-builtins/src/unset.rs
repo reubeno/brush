@@ -1,22 +1,22 @@
 use std::borrow::Cow;
 use std::io::Write;
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, Shell, builtins, env::VarNameExt};
 
 /// Unset a variable.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct UnsetCommand {
-    #[clap(flatten)]
+    #[arg(flatten)]
     name_interpretation: UnsetNameInterpretation,
 
     /// Names of variables to unset.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
 // Only `-f` with `-v` is rejected, and at execution time: `-n` combines with either.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
 pub(crate) struct UnsetNameInterpretation {
     /// Treat each name as a shell function.
     #[arg(short = 'f')]
@@ -37,7 +37,7 @@ impl UnsetNameInterpretation {
     }
 }
 
-brush_clap_adapter::impl_parse_args!(UnsetCommand);
+brush_winnow_args_adapter::impl_parse_args!(UnsetCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnsetCommand {
     type Error = brush_core::Error;

@@ -1,21 +1,41 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
-#[derive(Parser)]
 pub(crate) struct BuiltinCommand {
-    #[clap(skip)]
     args: Vec<brush_core::CommandArg>,
 }
 
-brush_clap_adapter::impl_parse_args!(
-    BuiltinCommand,
-    parse = |invocation: builtins::Invocation<'_>| Ok(Self {
-        args: invocation.into_args()
-    }),
-    declaration_utility
-);
+impl builtins::ParseArgs for BuiltinCommand {
+    const DECLARATION_ROLE: builtins::DeclarationRole = builtins::DeclarationRole::Utility;
+
+    fn content(
+        name: &str,
+        content_type: builtins::ContentType,
+        _options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        match content_type {
+            builtins::ContentType::DetailedHelp => Ok(
+                "Execute SHELL-BUILTIN with arguments ARGs without performing command lookup.\n"
+                    .into(),
+            ),
+            builtins::ContentType::ShortUsage => {
+                Ok(format!("{name}: {name} [shell-builtin [arg ...]]\n"))
+            }
+            builtins::ContentType::ShortDescription => {
+                Ok(format!("{name} - Execute shell builtins\n"))
+            }
+            builtins::ContentType::ManPage => {
+                brush_core::error::unimp("man page not yet implemented")
+            }
+        }
+    }
+
+    fn parse(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
+        Ok(Self {
+            args: invocation.into_args(),
+        })
+    }
+}
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BuiltinCommand {
     type Error = brush_core::Error;
