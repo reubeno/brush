@@ -190,3 +190,11 @@ cases:
       readonly -a ra
       echo "status: $?"
       declare -p s r v ra
+
+
+  - name: "Readonly with dynamically-expanded assignment word"
+    stdin: |
+      v=ROVAR
+      readonly ${v}="fixed"
+      echo "ROVAR=[$ROVAR]"
+      (ROVAR=changed) 2>/dev/null || echo "reassign-blocked"

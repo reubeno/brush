@@ -336,3 +336,11 @@ cases:
       trap 'echo "e=${zz_e-unset}"' EXIT
       unset zz_r zz_e
       echo "not reached"
+
+  - name: "Unset with dynamically-expanded name"
+    stdin: |
+      TARGET=1
+      v=TARGET
+      unset ${v}
+      echo "TARGET=[${TARGET-unset}]"
+
