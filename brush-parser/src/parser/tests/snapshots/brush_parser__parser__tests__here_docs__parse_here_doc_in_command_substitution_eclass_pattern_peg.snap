@@ -1,0 +1,34 @@
+---
+source: brush-parser/src/parser/tests/here_docs.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "PYTHON_STDLIB=$(\n    \"${PYTHON}\" - \"${EPREFIX}/usr\" <<-EOF || die\n\t\timport sys, sysconfig\n\t\tprint(sysconfig.get_path(\"stdlib\", vars={\"installed_base\": sys.argv[1]}))\n\tEOF\n)\n",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("PYTHON_STDLIB"),
+                    value: Scalar(Word(
+                      value: "$(\n    \"${PYTHON}\" - \"${EPREFIX}/usr\" <<-EOF || die\nimport sys, sysconfig\nprint(sysconfig.get_path(\"stdlib\", vars={\"installed_base\": sys.argv[1]}))\nEOF\n)",
+                      loc: "[location]",
+                    )),
+                    loc: "[location]",
+                  ), Word(
+                    value: "PYTHON_STDLIB=$(\n    \"${PYTHON}\" - \"${EPREFIX}/usr\" <<-EOF || die\nimport sys, sysconfig\nprint(sysconfig.get_path(\"stdlib\", vars={\"installed_base\": sys.argv[1]}))\nEOF\n)",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

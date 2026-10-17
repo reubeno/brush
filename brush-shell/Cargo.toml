@@ -67,7 +67,7 @@ harness = false
 [features]
 # Input backends. Each can be enabled for any target, and is offered where it
 # works (see `build.rs`), so the defaults suit every target.
-default = ["basic", "reedline", "minimal", "vt"]
+default = ["basic", "reedline", "minimal", "vt", "experimental-parser"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
@@ -89,6 +89,7 @@ experimental-parser = [
     "brush-parser/winnow-parser",
 ]
 schema = ["dep:schemars"]
+debug-tracing = ["brush-parser/debug-tracing"]
 
 [lints]
 workspace = true

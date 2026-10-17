@@ -10,8 +10,8 @@ use super::{ParserOptions, Tokens};
 peg::parser! {
     pub grammar token_parser<'a>(parser_options: &ParserOptions) for Tokens<'a> {
         pub(crate) rule program() -> ast::Program =
-            linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c } } /
-            linebreak() { ast::Program { complete_commands: vec![] } }
+            linebreak() c:complete_commands() linebreak() { ast::Program { complete_commands: c, comments: vec![] } } /
+            linebreak() { ast::Program { complete_commands: vec![], comments: vec![] } }
 
         rule complete_commands() -> Vec<ast::CompleteCommand> =
             c:complete_command() ++ newline_list()

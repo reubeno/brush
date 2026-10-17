@@ -1,0 +1,97 @@
+---
+source: brush-parser/src/parser/tests/winnow_issues.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "single_quoted=\'\\n\'\necho \"Single quoted len: ${#single_quoted}\"\nansi_c_quoted=$\'\\n\'\necho \"ANSI-C quoted len: ${#ansi_c_quoted}\"",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("single_quoted"),
+                    value: Scalar(Word(
+                      value: "\'\\n\'",
+                      loc: "[location]",
+                    )),
+                    loc: "[location]",
+                  ), Word(
+                    value: "single_quoted=\'\\n\'",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "echo",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "\"Single quoted len: ${#single_quoted}\"",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                prefix: Some(CommandPrefix([
+                  AssignmentWord(Assignment(
+                    name: VariableName("ansi_c_quoted"),
+                    value: Scalar(Word(
+                      value: "$\'\\n\'",
+                      loc: "[location]",
+                    )),
+                    loc: "[location]",
+                  ), Word(
+                    value: "ansi_c_quoted=$\'\\n\'",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "echo",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "\"ANSI-C quoted len: ${#ansi_c_quoted}\"",
+                    loc: "[location]",
+                  )),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
