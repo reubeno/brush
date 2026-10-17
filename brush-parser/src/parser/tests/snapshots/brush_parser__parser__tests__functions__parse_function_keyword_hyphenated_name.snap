@@ -1,0 +1,42 @@
+---
+source: brush-parser/src/parser/tests/functions.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "function debug-print-function { :; }",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Function(FunctionDefinition(
+                fname: Word(
+                  value: "debug-print-function",
+                  loc: "[location]",
+                ),
+                body: FunctionBody(BraceGroup(BraceGroupCommand(
+                  list: CompoundList([
+                    CompoundListItem(AndOrList(
+                      first: Pipeline(
+                        seq: [
+                          Simple(SimpleCommand(
+                            word_or_name: Some(Word(
+                              value: ":",
+                              loc: "[location]",
+                            )),
+                          )),
+                        ],
+                      ),
+                    ), Sequence),
+                  ]),
+                  loc: "[location]",
+                )), None),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

@@ -1,0 +1,87 @@
+---
+source: brush-parser/src/parser/tests/functions.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "EXPORT_FUNCTIONS() {\n    local __phase\n    for __phase in \"$@\"; do\n        eval \"${__phase}() { ${ECLASS}_${__phase} \\\"\\$@\\\"; }\"\n    done\n}",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Function(FunctionDefinition(
+                fname: Word(
+                  value: "EXPORT_FUNCTIONS",
+                  loc: "[location]",
+                ),
+                body: FunctionBody(BraceGroup(BraceGroupCommand(
+                  list: CompoundList([
+                    CompoundListItem(AndOrList(
+                      first: Pipeline(
+                        seq: [
+                          Simple(SimpleCommand(
+                            word_or_name: Some(Word(
+                              value: "local",
+                              loc: "[location]",
+                            )),
+                            suffix: Some(CommandSuffix([
+                              Word(Word(
+                                value: "__phase",
+                                loc: "[location]",
+                              )),
+                            ])),
+                          )),
+                        ],
+                      ),
+                    ), Sequence),
+                    CompoundListItem(AndOrList(
+                      first: Pipeline(
+                        seq: [
+                          Compound(ForClause(ForClauseCommand(
+                            variable_name: "__phase",
+                            values: Some([
+                              Word(
+                                value: "\"$@\"",
+                                loc: "[location]",
+                              ),
+                            ]),
+                            body: DoGroupCommand(
+                              list: CompoundList([
+                                CompoundListItem(AndOrList(
+                                  first: Pipeline(
+                                    seq: [
+                                      Simple(SimpleCommand(
+                                        word_or_name: Some(Word(
+                                          value: "eval",
+                                          loc: "[location]",
+                                        )),
+                                        suffix: Some(CommandSuffix([
+                                          Word(Word(
+                                            value: "\"${__phase}() { ${ECLASS}_${__phase} \\\"\\$@\\\"; }\"",
+                                            loc: "[location]",
+                                          )),
+                                        ])),
+                                      )),
+                                    ],
+                                  ),
+                                ), Sequence),
+                              ]),
+                              loc: "[location]",
+                            ),
+                            loc: "[location]",
+                          )), None),
+                        ],
+                      ),
+                    ), Sequence),
+                  ]),
+                  loc: "[location]",
+                )), None),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
