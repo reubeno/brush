@@ -30,17 +30,32 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HelpCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.topic_patterns.is_empty() {
-            Self::display_general_help(&context)?;
-            return Ok(ExecutionResult::success());
-        }
+        // Buffer output for async write
+        let mut output = Vec::new();
 
-        // Match bash: succeed if at least one requested topic pattern matched
-        // something; return a non-zero exit code only when none of them matched.
-        let mut any_matched = false;
-        for topic_pattern in &self.topic_patterns {
-            if self.display_help_for_topic_pattern(&context, topic_pattern)? {
-                any_matched = true;
+        let any_matched = if self.topic_patterns.is_empty() {
+            Self::display_general_help(&context, &mut output)?;
+            true
+        } else {
+            // Match bash: succeed if at least one requested topic pattern matched
+            // something; return a non-zero exit code only when none of them matched.
+            let mut any_matched = false;
+            for topic_pattern in &self.topic_patterns {
+                if self.display_help_for_topic_pattern(&context, topic_pattern, &mut output)? {
+                    any_matched = true;
+                }
+            }
+            any_matched
+        };
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
             }
         }
 
@@ -55,15 +70,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HelpCommand {
 impl HelpCommand {
     fn display_general_help(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         const COLUMN_COUNT: usize = 3;
 
         if let Some(display_str) = context.shell.product_display_str() {
-            writeln!(context.stdout(), "{display_str}\n")?;
+            writeln!(output, "{display_str}\n")?;
         }
 
         writeln!(
-            context.stdout(),
+            output,
             "The following commands are implemented as shell built-ins:"
         )?;
 
@@ -73,12 +89,11 @@ impl HelpCommand {
         for i in 0..items_per_column {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
-                    let prefix = if !builtin.is_enabled() { "*" } else { " " };
-                    write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
-                    // column width
+                    let prefix = if builtin.is_enabled() { " " } else { "*" };
+                    write!(output, "  {prefix}{name:<20}")?;
                 }
             }
-            writeln!(context.stdout())?;
+            writeln!(output)?;
         }
 
         Ok(())
@@ -90,6 +105,7 @@ impl HelpCommand {
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         topic_pattern: &str,
+        output: &mut Vec<u8>,
     ) -> Result<bool, brush_core::Error> {
         let pattern = brush_core::patterns::Pattern::from(topic_pattern)
             .set_extended_globbing(context.shell.options().extended_globbing)
@@ -98,7 +114,7 @@ impl HelpCommand {
         let mut matched = false;
         for (builtin_name, builtin_registration) in context.shell.builtins().iter() {
             if pattern.exactly_matches(builtin_name)? {
-                self.display_help_for_builtin(context, builtin_name, builtin_registration)?;
+                self.display_help_for_builtin(context, builtin_name, builtin_registration, output)?;
                 matched = true;
             }
         }
@@ -115,6 +131,7 @@ impl HelpCommand {
         context: &brush_core::ExecutionContext<'_, SE>,
         name: &str,
         registration: &builtins::Registration<SE>,
+        output: &mut Vec<u8>,
     ) -> Result<(), brush_core::Error> {
         let content_type = if self.short_description {
             builtins::ContentType::ShortDescription
@@ -126,20 +143,17 @@ impl HelpCommand {
             builtins::ContentType::DetailedHelp
         };
 
-        let Some(mut stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
-            // If there's no stdout, nothing to do.
+        let Some(stdout) = context.try_fd(brush_core::openfiles::OpenFiles::STDOUT_FD) else {
             return Ok(());
         };
 
-        // For now, we assume colorized output if stdout is a terminal.
         let options = builtins::ContentOptions {
             colorized: stdout.is_terminal(),
         };
 
         let content = registration.content(name, content_type, &options)?;
 
-        write!(stdout, "{content}")?;
-        stdout.flush()?;
+        write!(output, "{content}")?;
 
         Ok(())
     }

@@ -42,7 +42,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.declarations.is_empty() {
-            display_all_exported_vars(&context)?;
+            let output = display_all_exported_vars(&context)?;
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
+                }
+            }
             return Ok(ExecutionResult::success());
         }
 
@@ -190,18 +199,19 @@ impl ExportCommand {
 
 fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-) -> Result<(), brush_core::Error> {
-    // Enumerate variables, sorted by key.
+) -> Result<Vec<u8>, brush_core::Error> {
+    let mut output = Vec::new();
+
     for (name, variable) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if variable.is_exported() {
             let value = variable.value().try_get_cow_str(context.shell);
             if let Some(value) = value {
-                writeln!(context.stdout(), "declare -x {name}=\"{value}\"")?;
+                writeln!(output, "declare -x {name}=\"{value}\"")?;
             } else {
-                writeln!(context.stdout(), "declare -x {name}")?;
+                writeln!(output, "declare -x {name}")?;
             }
         }
     }
 
-    Ok(())
+    Ok(output)
 }

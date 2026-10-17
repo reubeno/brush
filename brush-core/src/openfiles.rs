@@ -444,3 +444,466 @@ where
         Self { files }
     }
 }
+
+/// Async file abstractions for non-blocking I/O operations.
+pub mod async_file {
+    use std::io::{self, IsTerminal, Read as _, Write as _};
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::task::{Context, Poll};
+
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+    use crate::error;
+    use crate::sys::stdio::{Stderr, Stdin, Stdout, stderr, stdin, stdout};
+
+    /// Wraps a shared file handle so async I/O is performed synchronously through
+    /// the `Arc`-backed descriptor.
+    ///
+    /// [`OpenFile`](super::OpenFile) holds file and pipe handles behind an `Arc` so
+    /// subshells, command substitutions and background jobs share one descriptor;
+    /// duplicating it for every async access would bring back the fd exhaustion that
+    /// sharing prevents. Each async op therefore completes synchronously on the shared handle.
+    pub struct SharedFile(Arc<std::fs::File>);
+
+    impl AsyncRead for SharedFile {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let n = self.get_mut().0.as_ref().read(buf.initialize_unfilled())?;
+            buf.advance(n);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for SharedFile {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(self.get_mut().0.as_ref().write(buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(self.get_mut().0.as_ref().flush())
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+
+    /// Wraps a shared pipe reader (read end) for synchronous-through-`Arc` async reads.
+    pub struct SharedPipeReader(Arc<std::io::PipeReader>);
+
+    impl AsyncRead for SharedPipeReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let n = self.get_mut().0.as_ref().read(buf.initialize_unfilled())?;
+            buf.advance(n);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    /// Wraps a shared pipe writer (write end) for synchronous-through-`Arc` async writes.
+    pub struct SharedPipeWriter(Arc<std::io::PipeWriter>);
+
+    impl AsyncWrite for SharedPipeWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(self.get_mut().0.as_ref().write(buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(self.get_mut().0.as_ref().flush())
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+
+    /// Wraps a custom [`Stream`](super::Stream) so async I/O is performed synchronously on it.
+    pub struct SyncStream(Box<dyn super::Stream>);
+
+    impl AsyncRead for SyncStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let n = self.get_mut().0.read(buf.initialize_unfilled())?;
+            buf.advance(n);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for SyncStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(self.get_mut().0.write(buf))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(self.get_mut().0.flush())
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+
+    /// Represents an async file open in a shell context.
+    pub enum AsyncOpenFile {
+        /// The original standard input.
+        Stdin(Stdin),
+        /// The original standard output.
+        Stdout(Stdout),
+        /// The original standard error.
+        Stderr(Stderr),
+        /// A file open for reading or writing.
+        File(SharedFile),
+        /// The read end of a pipe.
+        PipeReader(SharedPipeReader),
+        /// The write end of a pipe.
+        PipeWriter(SharedPipeWriter),
+        /// A custom stream.
+        Stream(SyncStream),
+    }
+
+    impl AsyncRead for AsyncOpenFile {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                Self::Stdin(f) => Pin::new(f).poll_read(cx, buf),
+                Self::Stdout(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("stdout"),
+                ))),
+                Self::Stderr(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("stderr"),
+                ))),
+                Self::File(f) => Pin::new(f).poll_read(cx, buf),
+                Self::PipeReader(r) => Pin::new(r).poll_read(cx, buf),
+                Self::PipeWriter(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("pipe writer"),
+                ))),
+                Self::Stream(s) => Pin::new(s).poll_read(cx, buf),
+            }
+        }
+    }
+
+    impl AsyncWrite for AsyncOpenFile {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            match self.get_mut() {
+                Self::Stdin(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("stdin"),
+                ))),
+                Self::Stdout(f) => Pin::new(f).poll_write(cx, buf),
+                Self::Stderr(f) => Pin::new(f).poll_write(cx, buf),
+                Self::File(f) => Pin::new(f).poll_write(cx, buf),
+                Self::PipeReader(_) => Poll::Ready(Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("pipe reader"),
+                ))),
+                Self::PipeWriter(w) => Pin::new(w).poll_write(cx, buf),
+                Self::Stream(s) => Pin::new(s).poll_write(cx, buf),
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                Self::Stdin(_) | Self::PipeReader(_) => Poll::Ready(Ok(())),
+                Self::Stdout(f) => Pin::new(f).poll_flush(cx),
+                Self::Stderr(f) => Pin::new(f).poll_flush(cx),
+                Self::File(f) => Pin::new(f).poll_flush(cx),
+                Self::PipeWriter(w) => Pin::new(w).poll_flush(cx),
+                Self::Stream(s) => Pin::new(s).poll_flush(cx),
+            }
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            match self.get_mut() {
+                Self::Stdin(_) | Self::PipeReader(_) => Poll::Ready(Ok(())),
+                Self::Stdout(f) => Pin::new(f).poll_shutdown(cx),
+                Self::Stderr(f) => Pin::new(f).poll_shutdown(cx),
+                Self::File(f) => Pin::new(f).poll_shutdown(cx),
+                Self::PipeWriter(w) => Pin::new(w).poll_shutdown(cx),
+                Self::Stream(s) => Pin::new(s).poll_shutdown(cx),
+            }
+        }
+    }
+
+    impl AsyncOpenFile {
+        /// Reads bytes asynchronously into the provided buffer.
+        ///
+        /// Returns the number of bytes read, or 0 on EOF.
+        /// Reads bytes into the provided buffer.
+        pub async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            use tokio::io::AsyncReadExt;
+            match self {
+                Self::Stdin(f) => f.read(buf).await,
+                Self::Stdout(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                    "stdout",
+                ))),
+                Self::Stderr(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                    "stderr",
+                ))),
+                Self::File(f) => f.read(buf).await,
+                Self::PipeReader(r) => r.read(buf).await,
+                Self::PipeWriter(_) => Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotReadable("pipe writer"),
+                )),
+                Self::Stream(s) => Pin::new(s).read(buf).await,
+            }
+        }
+
+        /// Reads all bytes until EOF into a new String.
+        pub async fn read_to_string(&mut self) -> io::Result<String> {
+            use tokio::io::AsyncReadExt;
+            let mut s = String::new();
+            match self {
+                Self::Stdin(f) => f.read_to_string(&mut s).await?,
+                Self::Stdout(_) => {
+                    return Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                        "stdout",
+                    )));
+                }
+                Self::Stderr(_) => {
+                    return Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                        "stderr",
+                    )));
+                }
+                Self::File(f) => f.read_to_string(&mut s).await?,
+                Self::PipeReader(r) => r.read_to_string(&mut s).await?,
+                Self::PipeWriter(_) => {
+                    return Err(io::Error::other(error::ErrorKind::OpenFileNotReadable(
+                        "pipe writer",
+                    )));
+                }
+                Self::Stream(s_) => Pin::new(s_).read_to_string(&mut s).await?,
+            };
+            Ok(s)
+        }
+
+        /// Writes bytes from the provided buffer.
+        pub async fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            use tokio::io::AsyncWriteExt;
+            match self {
+                Self::Stdin(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotWritable(
+                    "stdin",
+                ))),
+                Self::Stdout(f) => f.write(buf).await,
+                Self::Stderr(f) => f.write(buf).await,
+                Self::File(f) => f.write(buf).await,
+                Self::PipeReader(_) => Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("pipe reader"),
+                )),
+                Self::PipeWriter(w) => w.write(buf).await,
+                Self::Stream(s) => Pin::new(s).write(buf).await,
+            }
+        }
+
+        /// Writes all bytes from the provided buffer.
+        pub async fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+            use tokio::io::AsyncWriteExt;
+            match self {
+                Self::Stdin(_) => Err(io::Error::other(error::ErrorKind::OpenFileNotWritable(
+                    "stdin",
+                ))),
+                Self::Stdout(f) => f.write_all(buf).await,
+                Self::Stderr(f) => f.write_all(buf).await,
+                Self::File(f) => f.write_all(buf).await,
+                Self::PipeReader(_) => Err(io::Error::other(
+                    error::ErrorKind::OpenFileNotWritable("pipe reader"),
+                )),
+                Self::PipeWriter(w) => w.write_all(buf).await,
+                Self::Stream(s) => Pin::new(s).write_all(buf).await,
+            }
+        }
+
+        /// Flushes the output stream.
+        pub async fn flush(&mut self) -> io::Result<()> {
+            use tokio::io::AsyncWriteExt;
+            match self {
+                Self::Stdin(_) => Ok(()),
+                Self::Stdout(f) => f.flush().await,
+                Self::Stderr(f) => f.flush().await,
+                Self::File(f) => f.flush().await,
+                Self::PipeReader(_) => Ok(()),
+                Self::PipeWriter(w) => w.flush().await,
+                Self::Stream(s) => Pin::new(s).flush().await,
+            }
+        }
+
+        /// Checks if this file represents a terminal.
+        pub fn is_terminal(&self) -> bool {
+            match self {
+                Self::Stdin(_) => std::io::stdin().is_terminal(),
+                Self::Stdout(_) => std::io::stdout().is_terminal(),
+                Self::Stderr(_) => std::io::stderr().is_terminal(),
+                Self::File(_) | Self::PipeReader(_) | Self::PipeWriter(_) | Self::Stream(_) => {
+                    false
+                }
+            }
+        }
+    }
+
+    impl From<super::OpenFile> for AsyncOpenFile {
+        fn from(file: super::OpenFile) -> Self {
+            // Move the `Arc` rather than duplicating the descriptor; see `SharedFile`.
+            match file {
+                super::OpenFile::Stdin(_) => Self::Stdin(stdin()),
+                super::OpenFile::Stdout(_) => Self::Stdout(stdout()),
+                super::OpenFile::Stderr(_) => Self::Stderr(stderr()),
+                super::OpenFile::File(f) => Self::File(SharedFile(f)),
+                super::OpenFile::PipeReader(r) => Self::PipeReader(SharedPipeReader(r)),
+                super::OpenFile::PipeWriter(w) => Self::PipeWriter(SharedPipeWriter(w)),
+                super::OpenFile::Stream(s) => Self::Stream(SyncStream(s)),
+            }
+        }
+    }
+
+    use std::collections::HashMap;
+
+    use crate::ShellFd;
+
+    /// Tristate representing an `AsyncOpenFile` entry in an `AsyncOpenFiles` structure.
+    pub enum AsyncOpenFileEntry<'a> {
+        /// File descriptor is present and has a valid associated `AsyncOpenFile`.
+        Open(&'a AsyncOpenFile),
+        /// File descriptor is explicitly marked as not being mapped to any `AsyncOpenFile`.
+        NotPresent,
+        /// File descriptor is not specified in any way; it may be provided by a
+        /// parent context of some kind.
+        NotSpecified,
+    }
+
+    /// Represents the open files in an async shell context.
+    #[derive(Default)]
+    pub struct AsyncOpenFiles {
+        /// Maps shell file descriptors to async open files.
+        files: HashMap<ShellFd, Option<AsyncOpenFile>>,
+    }
+
+    impl AsyncOpenFiles {
+        /// File descriptor used for standard input.
+        pub const STDIN_FD: ShellFd = 0;
+        /// File descriptor used for standard output.
+        pub const STDOUT_FD: ShellFd = 1;
+        /// File descriptor used for standard error.
+        pub const STDERR_FD: ShellFd = 2;
+
+        /// First file descriptor available for non-stdio files.
+        const FIRST_NON_STDIO_FD: ShellFd = 3;
+        /// Maximum file descriptor number allowed.
+        const MAX_FD: ShellFd = 1024;
+
+        /// Creates a new `AsyncOpenFiles` instance populated with stdin, stdout, and stderr
+        /// from the host environment.
+        pub fn new() -> Self {
+            Self {
+                files: HashMap::from([
+                    (Self::STDIN_FD, Some(AsyncOpenFile::Stdin(stdin()))),
+                    (Self::STDOUT_FD, Some(AsyncOpenFile::Stdout(stdout()))),
+                    (Self::STDERR_FD, Some(AsyncOpenFile::Stderr(stderr()))),
+                ]),
+            }
+        }
+
+        /// Retrieves the file backing standard input in this context.
+        pub fn try_stdin(&self) -> Option<&AsyncOpenFile> {
+            self.files.get(&Self::STDIN_FD).and_then(|f| f.as_ref())
+        }
+
+        /// Retrieves the file backing standard output in this context.
+        pub fn try_stdout(&self) -> Option<&AsyncOpenFile> {
+            self.files.get(&Self::STDOUT_FD).and_then(|f| f.as_ref())
+        }
+
+        /// Retrieves the file backing standard error in this context.
+        pub fn try_stderr(&self) -> Option<&AsyncOpenFile> {
+            self.files.get(&Self::STDERR_FD).and_then(|f| f.as_ref())
+        }
+
+        /// Tries to remove an async open file by its file descriptor.
+        pub fn remove_fd(&mut self, fd: ShellFd) -> Option<AsyncOpenFile> {
+            self.files.insert(fd, None).and_then(|f| f)
+        }
+
+        /// Tries to lookup the `AsyncOpenFile` associated with a file descriptor.
+        pub fn try_fd(&self, fd: ShellFd) -> Option<&AsyncOpenFile> {
+            self.files.get(&fd).and_then(|f| f.as_ref())
+        }
+
+        /// Tries to lookup the `AsyncOpenFile` associated with a file descriptor.
+        pub fn fd_entry(&self, fd: ShellFd) -> AsyncOpenFileEntry<'_> {
+            self.files.get(&fd).map_or(
+                AsyncOpenFileEntry::NotSpecified,
+                |opt_file| match opt_file {
+                    Some(f) => AsyncOpenFileEntry::Open(f),
+                    None => AsyncOpenFileEntry::NotPresent,
+                },
+            )
+        }
+
+        /// Checks if the given file descriptor is in use.
+        pub fn contains_fd(&self, fd: ShellFd) -> bool {
+            self.files.contains_key(&fd)
+        }
+
+        /// Associates the given file descriptor with the provided file.
+        pub fn set_fd(&mut self, fd: ShellFd, file: AsyncOpenFile) -> Option<AsyncOpenFile> {
+            self.files.insert(fd, Some(file)).and_then(|f| f)
+        }
+
+        /// Adds a new async open file, returning the assigned file descriptor.
+        pub fn add(&mut self, file: AsyncOpenFile) -> Result<ShellFd, error::Error> {
+            let mut fd = Self::FIRST_NON_STDIO_FD;
+            while self.files.contains_key(&fd) {
+                if fd >= Self::MAX_FD {
+                    return Err(error::ErrorKind::TooManyOpenFiles.into());
+                }
+                fd += 1;
+            }
+            self.files.insert(fd, Some(file));
+            Ok(fd)
+        }
+
+        /// Iterates over all file descriptors.
+        pub fn iter_fds(&self) -> impl Iterator<Item = (ShellFd, &AsyncOpenFile)> {
+            self.files
+                .iter()
+                .filter_map(|(fd, file)| file.as_ref().map(|f| (*fd, f)))
+        }
+    }
+
+    impl From<super::OpenFiles> for AsyncOpenFiles {
+        fn from(open_files: super::OpenFiles) -> Self {
+            Self {
+                files: open_files
+                    .files
+                    .into_iter()
+                    .map(|(fd, opt_file)| (fd, opt_file.map(AsyncOpenFile::from)))
+                    .collect(),
+            }
+        }
+    }
+}

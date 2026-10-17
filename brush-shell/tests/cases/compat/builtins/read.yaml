@@ -449,6 +449,12 @@ cases:
       read -t abc x <<< "hello"
       echo "read: $?"
 
+  - name: "read into dynamically-expanded variable name"
+    stdin: |
+      v=RVAR
+      read ${v} <<< "line-content"
+      echo "RVAR=[$RVAR]"
+
   - name: "read takes control characters from a pipe as data"
     known_failure: true # TODO(signals): control characters are dropped from any input
     stdin: |

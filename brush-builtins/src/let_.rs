@@ -23,7 +23,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for LetCommand {
         let mut result = ExecutionExitCode::InvalidUsage.into();
 
         if self.exprs.is_empty() {
-            writeln!(context.stderr(), "missing expression")?;
+            let mut stderr_output = Vec::new();
+            writeln!(stderr_output, "missing expression")?;
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
             return Ok(result);
         }
 

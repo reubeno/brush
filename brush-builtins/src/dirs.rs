@@ -73,13 +73,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
 
             let one_per_line = self.print_one_per_line || self.print_one_per_line_with_index;
 
+            let mut output = Vec::new();
+
             for (i, dir) in dirs.iter().enumerate() {
                 if !one_per_line && i > 0 {
-                    write!(context.stdout(), " ")?;
+                    write!(output, " ")?;
                 }
 
                 if self.print_one_per_line_with_index {
-                    write!(context.stdout(), "{i:2}  ")?;
+                    write!(output, "{i:2}  ")?;
                 }
 
                 let mut dir_str = dir.to_string_lossy().to_string();
@@ -88,10 +90,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
                     dir_str = context.shell.tilde_shorten(dir_str);
                 }
 
-                write!(context.stdout(), "{dir_str}")?;
+                write!(output, "{dir_str}")?;
 
                 if one_per_line || i == dirs.len() - 1 {
-                    writeln!(context.stdout())?;
+                    writeln!(output)?;
+                }
+            }
+
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
                 }
             }
 
