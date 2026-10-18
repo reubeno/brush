@@ -589,3 +589,36 @@ cases:
       kill -s BOGUS $$ 2>&1 | strip
       type nosuch 2>&1 | strip
       unalias nosuch 2>&1 | strip
+
+  - name: "An assignment error drops the rest of the line"
+    known_failure: true # TODO(errors): runs the rest of the line
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      r=2; echo "same line: $?"
+      echo "next line: $?"
+      f() { r=3; }; f; echo "same line after f: $?"
+      echo "next line after f: $?"
+
+  - name: "A syntax error in a sourced file fails the source and goes on"
+    known_failure: true # TODO(errors): the syntax error ends the shell
+    ignore_stderr: true
+    test_files:
+      - path: "bad.sh"
+        contents: |
+          echo )
+    stdin: |
+      . ./bad.sh
+      echo "after: $?"
+
+  - name: "A syntax error in a sourced file ends a POSIX shell"
+    ignore_stderr: true
+    test_files:
+      - path: "bad.sh"
+        contents: |
+          echo )
+    stdin: |
+      set -o posix
+      . ./bad.sh
+      echo "after: $?"
+

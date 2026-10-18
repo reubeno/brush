@@ -273,3 +273,13 @@ cases:
       echo "$((SECONDS >= 100))"
       f() { echo "$((SECONDS >= 200))"; }
       SECONDS+=100 f
+
+  - name: "BASH_SOURCE, BASH_LINENO, and BASH_ARGV can't be unset"
+    known_failure: true # TODO(variables): unset removes them with status 0
+    ignore_stderr: true
+    stdin: |
+      unset BASH_SOURCE; echo "BASH_SOURCE: $?"
+      unset BASH_LINENO; echo "BASH_LINENO: $?"
+      unset BASH_ARGV; echo "BASH_ARGV: $?"
+      unset FUNCNAME; echo "FUNCNAME: $?"
+
