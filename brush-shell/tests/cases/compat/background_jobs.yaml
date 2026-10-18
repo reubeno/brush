@@ -167,3 +167,18 @@ cases:
       kill "$(cat pidfile)"
       sleep 0.2
       rm pidfile
+
+  - name: "An error or exit in a background job ends only that job"
+    ignore_stderr: true
+    stdin: |
+      { echo ${y?b}; } &
+      wait
+      echo "after error: $?"
+      eval 'echo ${y?b}' &
+      wait
+      echo "after eval: $?"
+      f() { exit 5; }
+      f &
+      wait
+      echo "after exit: $?"
+
