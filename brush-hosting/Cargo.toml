@@ -1,0 +1,39 @@
+[package]
+name = "brush-hosting"
+description = "What a program that owns its process does to host brush shells"
+version = "0.1.0"
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+bench = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["runtime", "terminal"]
+runtime = ["dep:tokio"]
+terminal = ["dep:nix"]
+
+[dependencies]
+brush-core = { version = "^0.5.0", path = "../brush-core" }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31.2", features = ["fs", "process"], optional = true }
+
+[target.'cfg(any(unix, windows))'.dependencies]
+tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread"], optional = true }
+
+[target.'cfg(not(any(unix, windows)))'.dependencies]
+tokio = { version = "1.52.3", features = ["rt"], optional = true }
+
+[[test]]
+name = "terminal"
+path = "tests/terminal.rs"
+required-features = ["terminal"]

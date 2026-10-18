@@ -20,7 +20,11 @@ use tokio::sync::Mutex;
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
     LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
 
-type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<error_formatter::Formatter>;
+type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<
+    error_formatter::Formatter,
+    brush_core::extensions::DefaultProcessLauncher,
+    brush_hosting::terminal::ControllingTerminal,
+>;
 type BrushShell = brush_core::Shell<BrushShellExtensions>;
 
 // WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
@@ -119,12 +123,7 @@ pub fn run() {
     //
     // Run.
     //
-    #[cfg(any(unix, windows))]
-    let mut builder = tokio::runtime::Builder::new_multi_thread();
-    #[cfg(not(any(unix, windows)))]
-    let mut builder = tokio::runtime::Builder::new_current_thread();
-
-    let Ok(runtime) = builder.enable_all().build() else {
+    let Ok(runtime) = brush_hosting::runtime::builder().build() else {
         tracing::error!("error: failed to create Tokio runtime");
         std::process::exit(1);
     };
@@ -316,6 +315,9 @@ async fn run_in_shell(
     // Otherwise read commands interactively: -s was given (positional args become parameters;
     // a script named among them is *not* run), or nothing to run was specified.
     } else if read_commands_from_stdin {
+        // The binary owns the process: it takes the terminal (if stdin is one) for as long as
+        // the front end runs.
+        let _terminal = brush_hosting::terminal::ControllingTerminal::acquire()?;
         brush_interactive::InteractiveShell::new(shell_ref, input_backend, &interactive_options)?
             .run_interactively()
             .await?;

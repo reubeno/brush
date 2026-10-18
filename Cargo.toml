@@ -10,6 +10,7 @@ members = [
     "brush-coreutils-builtins",
     "brush-experimental-builtins",
     "brush-interactive",
+    "brush-hosting",
     "brush-test-harness",
     "fuzz",
     "xtask",

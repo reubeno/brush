@@ -35,6 +35,7 @@ When reviewing PRs, verify:
 brush/
 ├── brush-shell/        # CLI application & main entry point
 ├── brush-interactive/  # Interactive shell (readline, completion)
+├── brush-hosting/         # What the brush process does to host shells (runtime, terminal)
 ├── brush-core/         # Core shell runtime & builtins
 ├── brush-builtins/     # Shell builtin implementations
 ├── brush-parser/       # AST generation & parsing
@@ -44,6 +45,7 @@ brush/
 
 **Dependency flow:** brush-shell → brush-interactive → brush-core → brush-parser
                                   ↘ brush-builtins ↗
+                                  ↘ brush-hosting ↗
 
 ## Build & Validation Commands
 

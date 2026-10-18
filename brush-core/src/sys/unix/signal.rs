@@ -100,11 +100,6 @@ const fn signal_error(errno: nix::errno::Errno) -> error::ErrorKind {
     }
 }
 
-pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
-    nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))?;
-    Ok(())
-}
-
 pub(crate) fn tstp_signal_listener() -> Result<tokio::signal::unix::Signal, error::Error> {
     let signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::from_raw(
         nix::libc::SIGTSTP,
@@ -118,24 +113,6 @@ pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, erro
 }
 
 pub use tokio::signal::ctrl_c as await_ctrl_c;
-
-pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
-    let ignore = nix::sys::signal::SigAction::new(
-        nix::sys::signal::SigHandler::SigIgn,
-        nix::sys::signal::SaFlags::empty(),
-        nix::sys::signal::SigSet::empty(),
-    );
-
-    // SAFETY:
-    // Setting the signal action should be safe here. The unsafe concerns
-    // for calling `sigaction` are primarily around ensuring that any provided
-    // signal handler functions are only performing operations that are
-    // safe to do in a signal handler context. Here we are not providing
-    // a custom handler, just asking the OS to ignore the signal.
-    unsafe { nix::sys::signal::sigaction(nix::sys::signal::Signal::SIGTTOU, &ignore) }?;
-
-    Ok(())
-}
 
 /// Returns whether the given child process has stopped, consuming its stop status, and leaving
 /// other children's stops to whoever waits on them. On NetBSD and OpenBSD, where one child

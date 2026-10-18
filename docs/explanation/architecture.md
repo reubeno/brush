@@ -15,6 +15,7 @@ the answer should follow from here. If it doesn't, this document needs updating.
 | `brush-experimental-builtins` | yes | Builtins not ready to be standard. |
 | `brush-coreutils-builtins` | yes | Optional builtins wrapping [uutils/coreutils](https://github.com/uutils/coreutils); doesn't depend on the other crates. |
 | `brush-interactive` | yes | The interactive front end: reads input, edits the line (with reedline or a basic line reader), and presents prompts, completions, suggestions, and highlighting. |
+| `brush-hosting` | yes | What a program that owns its process does to host shells, through `brush-core`'s public API, a feature for each: the async runtime shells run on (`runtime`), and the terminal and process group an interactive shell's job control needs (`terminal`: `ControllingTerminal`, which `acquire` takes them for, and which is the shell's `Terminal` on them). Not shell semantics, nor presentation. |
 | `brush-shell` | yes | The `brush` binary: its command line, and the wiring of the crates above into a shell. |
 | `brush` | yes | A thin wrapper binary around `brush-shell`. |
 | `brush-test-harness` | no | Runs the YAML test cases that compare brush with bash. |
@@ -26,10 +27,11 @@ on the others (not counting dev-dependencies) are:
 ```text
 brush                        → brush-shell
 brush-shell                  → brush-interactive, brush-builtins, brush-clap-adapter,
-                               brush-core,
+                               brush-core, brush-hosting,
                                brush-experimental-builtins (optional),
                                brush-coreutils-builtins (optional)
 brush-interactive            → brush-core, brush-parser
+brush-hosting                → brush-core
 brush-builtins               → brush-clap-adapter, brush-core, brush-parser
 brush-experimental-builtins  → brush-clap-adapter, brush-core
 brush-clap-adapter           → brush-core
@@ -83,3 +85,24 @@ These decide where a behavior belongs when more than one crate could plausibly o
    `Shell` only through public APIs, and keep its own state. Until `Shell` can hold state
    owned by other crates, such features live in `brush-core`; don't add new coupling
    between them and the rest of core.
+
+3. **The host owns the process.** A shell runs in a process it doesn't own: whoever hosts
+   it may run several shells, or have uses of its own for the process. So what the shell
+   must keep asking of the process is a contract the host implements, named in the shell's
+   `ShellExtensions`: starting programs (`ProcessLauncher`), and moving the terminal's
+   foreground for job control (`Terminal`). The test for a contract: would two legitimate
+   hosts of the same code -- a terminal emulator embedding a shell, a test harness running
+   fifty shells in one process, a sandbox -- want different answers? If so, it's a contract;
+   if not, it's platform code under `sys`, called directly. What the host gives once, such
+   as the standard streams or the environment, is a value on the shell's builder, not a
+   contract.
+
+   Each contract has a stock implementation that does nothing (`NoProcessLauncher`,
+   `NoTerminal`). A stock implementation that changes nothing process-wide lives in core
+   and is the default (the native launcher); one that takes over something the whole
+   process shares -- the process group, the terminal, the runtime -- lives in `brush-hosting`,
+   a layer above core using only its public API, and the `brush` binary opts in by naming
+   it; a library such as `brush-interactive` never takes the process over. Core works
+   within what it's given: it hands the terminal it's given to each foreground job and
+   takes it back, and never arranges the process itself. (Core's signal listeners are the
+   exception, for now.)

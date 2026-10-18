@@ -34,6 +34,12 @@ impl<SE: extensions::ShellExtensions, S: shell_builder::IsComplete> ShellBuilder
 }
 
 impl<SE: extensions::ShellExtensions, S: shell_builder::State> ShellBuilder<SE, S> {
+    /// Sets the terminal the shell's job control uses.
+    pub fn terminal(mut self, terminal: SE::Terminal) -> Self {
+        self.terminal = terminal;
+        self
+    }
+
     /// Add a disabled option
     pub fn disable_option(mut self, option: impl Into<String>) -> Self {
         self.disabled_options.push(option.into());
@@ -149,6 +155,9 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// are assigned *after* inherited or well-known variables are set (when applicable).
     #[builder(field)]
     pub vars: HashMap<String, ShellVariable>,
+    /// The terminal the shell's job control uses.
+    #[builder(field)]
+    pub terminal: SE::Terminal,
     /// Error behavior implementation.
     #[builder(default)]
     pub error_formatter: SE::ErrorFormatter,
@@ -250,6 +259,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             error_formatter: SE::ErrorFormatter::default(),
             process_launcher: SE::ProcessLauncher::default(),
             builtin_states: builtins::BuiltinStates::default(),
+            terminal: SE::Terminal::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: PathBuf::default(),

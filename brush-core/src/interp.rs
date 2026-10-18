@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
+use crate::extensions::Terminal as _;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -622,7 +623,7 @@ async fn wait_for_pipeline_processes_and_update_status(
     }
 
     if shell.options().interactive {
-        sys::terminal::move_self_to_foreground()?;
+        shell.terminal().take_foreground()?;
     }
 
     // If there were stopped jobs, then encapsulate the pipeline as a managed job and hand it

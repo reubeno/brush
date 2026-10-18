@@ -69,6 +69,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default))]
     builtin_states: builtins::BuiltinStates,
 
+    /// Injected terminal, for job control.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_terminal"))]
+    terminal: SE::Terminal,
+
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
 
@@ -161,6 +165,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             error_formatter: self.error_formatter.clone(),
             process_launcher: self.process_launcher.clone(),
             builtin_states: self.builtin_states.clone(),
+            terminal: self.terminal.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -229,6 +234,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             error_formatter: options.error_formatter,
             process_launcher: options.process_launcher,
             builtin_states: builtins::BuiltinStates::default(),
+            terminal: options.terminal,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -377,6 +383,11 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Returns the launcher that starts the processes the shell runs.
     pub const fn process_launcher(&self) -> &SE::ProcessLauncher {
         &self.process_launcher
+    }
+
+    /// Returns the terminal the shell's job control uses.
+    pub const fn terminal(&self) -> &SE::Terminal {
+        &self.terminal
     }
 
     /// Checks if the given string is a keyword reserved in this shell.
@@ -609,6 +620,11 @@ fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
 #[cfg(feature = "serde")]
 fn default_process_launcher<PL: extensions::ProcessLauncher>() -> PL {
     PL::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_terminal<T: extensions::Terminal>() -> T {
+    T::default()
 }
 
 #[cfg(test)]

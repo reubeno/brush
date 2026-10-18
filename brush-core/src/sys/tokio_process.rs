@@ -11,7 +11,8 @@ use crate::{
     sys::commands::{self, CommandExt, CommandFdInjectionExt, CommandFgControlExt},
 };
 
-pub(crate) type ProcessId = i32;
+/// A process ID, as the platform has them.
+pub type ProcessId = i32;
 
 /// Starts a native child process.
 ///

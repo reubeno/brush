@@ -112,6 +112,65 @@ fn login_shell_as_grandchild_starts_promptly() -> anyhow::Result<()> {
     expect_responsive_shell(session, /* expect_prompt */ true)
 }
 
+/// An interactive shell started in the background of a job-control shell: it takes the
+/// terminal from that shell's group, ignoring SIGTTOU (which the kernel would send it for
+/// doing so from the background) rather than being stopped by it, and then sets the terminal's
+/// modes for its line editor.
+#[test]
+fn interactive_shell_started_in_background_starts_promptly() -> anyhow::Result<()> {
+    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
+
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args([
+        "-c",
+        "set -m; PS1='brush> ' \"$BRUSH_BIN\" -i --norc --noprofile --no-config \
+         --disable-bracketed-paste --disable-color & wait $!",
+    ]);
+    cmd.env("BRUSH_BIN", shell_path);
+    cmd.env("TERM", "linux");
+
+    let session = spawn_shell(cmd)?;
+    expect_responsive_shell(session, /* expect_prompt */ true)
+}
+
+/// An interactive shell run as a job of a job-control shell, so that its process group isn't
+/// orphaned: writing to the terminal from it while a foreground program holds the terminal,
+/// with `tostop` set, is a write from the background, which the kernel answers with SIGTTOU.
+/// The shell runs a background compound command in its own process, so the signal reaches
+/// the shell itself, which must ignore it to go on (a shell that's the pty's session leader,
+/// as the other tests start, gets an error instead, and never sees the signal).
+#[test]
+fn nested_interactive_shell_survives_a_background_write_with_tostop() -> anyhow::Result<()> {
+    let shell_path = assert_cmd::cargo::cargo_bin!("brush");
+    let dir = tempfile::tempdir()?;
+
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args([
+        "-c",
+        "set -m; PS1='brush> ' \"$BRUSH_BIN\" -i --norc --noprofile --no-config \
+         --disable-bracketed-paste --disable-color; exit $?",
+    ]);
+    cmd.env("BRUSH_BIN", shell_path);
+    cmd.env("TERM", "linux");
+    cmd.current_dir(dir.path());
+
+    let mut session = spawn_shell(cmd)?;
+    expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
+
+    // The foreground program holds the terminal until the background command has written.
+    session.send_line(
+        "stty tostop; { echo bg-wrote; touch wrote; } & \
+         sh -c 'until [ -e wrote ]; do sleep 0.05; done; sleep 0.2'; echo fg-done",
+    )?;
+    expect_answering_queries(&mut session, "fg-done")
+        .context("The shell did not go on after a background write to the terminal")?;
+
+    session.send_line("exit")?;
+    session.expect(expectrl::Eof)?;
+
+    Ok(())
+}
+
 //
 // Helpers
 //

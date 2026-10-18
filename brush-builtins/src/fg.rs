@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, jobs, sys};
+use brush_core::{ExecutionResult, builtins, extensions::Terminal as _, jobs};
 
 /// Move a specified job to the foreground.
 #[derive(Parser)]
@@ -21,17 +21,18 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut stderr = context.stdout();
 
-        // Read interactive option before taking mutable borrow on jobs
+        // Read interactive option and the terminal before taking mutable borrow on jobs
         let is_interactive = context.shell.options().interactive;
+        let terminal = context.shell.terminal().clone();
 
         if let Some(job_spec) = &self.job_spec {
             if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
-                job.move_to_foreground()?;
+                job.move_to_foreground(&terminal)?;
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
                 if is_interactive {
-                    sys::terminal::move_self_to_foreground()?;
+                    terminal.take_foreground()?;
                 }
 
                 if matches!(job.state, jobs::JobState::Stopped) {
@@ -51,12 +52,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
             }
         } else {
             if let Some(job) = context.shell.jobs_mut().current_job_mut() {
-                job.move_to_foreground()?;
+                job.move_to_foreground(&terminal)?;
                 writeln!(stderr, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
                 if is_interactive {
-                    sys::terminal::move_self_to_foreground()?;
+                    terminal.take_foreground()?;
                 }
 
                 if matches!(job.state, jobs::JobState::Stopped) {

@@ -8,6 +8,8 @@ use std::{
 
 use brush_parser::ast;
 
+use crate::extensions::Terminal as _;
+
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
@@ -738,7 +740,7 @@ pub(crate) fn execute_external_command(
         Ok(child) => Ok(ExecutionSpawnResult::StartedProcess(child)),
         Err(spawn_err) => {
             if context.shell.options().interactive {
-                sys::terminal::move_self_to_foreground()?;
+                context.shell.terminal().take_foreground()?;
             }
 
             Err(spawn_error(context, spawn_err))
