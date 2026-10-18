@@ -89,6 +89,10 @@ cases:
       { trap 'echo "[stage exit]"' EXIT; exec echo stage; } | cat
       (trap 'echo "[missing exit]"' EXIT; exec /nonexistent-command) 2>/dev/null
       echo "status: $?"
+      (trap 'echo "[missing path exit]"' EXIT; exec ./no-such-dir/program) 2>/dev/null
+      echo "status: $?"
+      (exec true; trap 'echo "[late exit]"' EXIT; echo "after exec")
+      echo "status: $?"
 
   - name: "exec in a subshell runs the program, not a builtin"
     known_failure: true # TODO(exec): exec in a subshell runs a builtin of the same name instead
