@@ -52,22 +52,28 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
         // delegate to the `command` builtin to perform the execution, with an expectation
         // of returning.
         if context.shell.is_subshell() {
-            // Real `exec` replaces the process, so the subshell's own EXIT trap never runs;
-            // this delegation returns instead, so drop that trap before it does.
-            context
+            let program = &self.args[0];
+            let found = context
                 .shell
-                .traps_mut()
-                .remove_handlers(brush_core::traps::TrapSignal::Exit);
+                .resolve_external_command(program)
+                .is_some_and(|path| context.shell.absolute_path(path).exists());
+
+            // Real `exec` replaces the process, so the subshell's own EXIT trap never runs;
+            // this delegation returns instead, so drop that trap before it does. bash keeps it
+            // only for a name it couldn't find in PATH, where it exits before resetting traps.
+            if found || brush_core::sys::fs::contains_path_separator(program) {
+                context
+                    .shell
+                    .traps_mut()
+                    .remove_handlers(brush_core::traps::TrapSignal::Exit);
+            }
 
             if self.empty_environment || self.exec_as_login || self.name_for_argv0.is_some() {
                 return brush_core::error::unimp("exec with options in subshell not yet supported");
             }
 
             // Real `exec` of a program that can't be found ends the shell with 127.
-            let program = &self.args[0];
-            let missing_path =
-                program.contains('/') && !context.shell.working_dir().join(program).exists();
-            if missing_path || context.shell.resolve_external_command(program).is_none() {
+            if !found {
                 let _ = writeln!(context.stderr(), "exec: {program}: not found");
                 let mut result = ExecutionResult::from(ExecutionExitCode::NotFound);
                 result.next_control_flow = brush_core::ExecutionControlFlow::ExitShell;
