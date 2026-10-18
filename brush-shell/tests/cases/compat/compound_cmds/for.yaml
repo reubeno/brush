@@ -265,3 +265,14 @@ cases:
       for i in 1 2; do break " 1 "; echo "not reached"; done
       echo "after blanks: $?"
       for i in 1; do break --help >/dev/null; echo "help: $?"; done
+
+  - name: "break and continue clamp their count to the loop depth"
+    known_failure: true # TODO(loops): the shell doesn't track its loop depth, so a count past it leaves every loop, the function, and the script
+    stdin: |
+      for i in 1 2; do
+        for j in 1 2; do break 99; echo "inner $i$j"; done
+        echo "outer $i"
+      done
+      echo "after: $?"
+      f() { for k in 1 2; do continue 99; echo "in f $k"; done; echo "f end"; }
+      for i in 1 2; do f; echo "loop $i"; done

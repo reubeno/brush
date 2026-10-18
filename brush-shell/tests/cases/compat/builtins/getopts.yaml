@@ -486,3 +486,9 @@ cases:
     stdin: |
       getopts --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(getopts --help 2>/dev/null) ]] && echo "help on stdout"
+
+  - name: "getopts rejects a name that isn't an identifier"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      getopts a 1x -a 2>err.txt; echo "getopts: $?"; strip <err.txt
+      rm err.txt

@@ -268,3 +268,18 @@ cases:
       alias
       alias -p
       alias q1 q3
+
+  - name: "alias lists a definition without the alias prefix in POSIX mode"
+    known_failure: true # TODO(alias): brush prints `alias x=...` in POSIX mode, where bash prints `x=...`
+    stdin: |
+      set -o posix
+      alias x=y
+      alias x
+      alias -p
+
+  - name: "alias rejects a compound value"
+    known_failure: true # TODO(alias): brush defines the alias from the compound value; bash reports the name as not found
+    ignore_stderr: true
+    stdin: |
+      alias a=(1 2); echo "rc=$?"
+      alias a 2>/dev/null; echo "rc=$?"

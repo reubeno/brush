@@ -266,6 +266,31 @@ cases:
       value_guard=2
       echo "after readonly assignment"
 
+  - name: "A special builtin named by an expansion keeps its redirection error fatal in POSIX mode"
+    known_failure: true # TODO(posix): a special builtin's failed redirection doesn't end the shell when an expansion names the command
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      cmd=:
+      $cmd > /nonexistent-dir/file
+      echo "not reached"
+
+  - name: "local of a readonly variable fails"
+    known_failure: true # TODO(local): local shadows a readonly variable rather than failing with status 1
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      f() { local r=2; echo "in f: $r"; }
+      f
+      echo "f: $?"
+
+  - name: "A special builtin's misuse in the EXIT trap sets the shell's status in POSIX mode"
+    known_failure: true # TODO(posix): the EXIT trap's misuse leaves the shell's status as it was
+    ignore_stderr: true
+    stdin: |
+      (set -o posix; trap "set -o bogus" EXIT; echo "in subshell")
+      echo "after subshell: $?"
+
   - name: "Variable assignment error (interactive)"
     args: ["-i"]
     ignore_stderr: true
@@ -375,6 +400,15 @@ cases:
       . ./non-existent-file
       echo "after builtin call (status $?)"
 
+  - name: "A special builtin's misuse doesn't end a POSIX shell when its status is tested, and an assignment error does"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (set -o bogus || echo "ran ||"; echo "survived set -o bogus ||")
+      (if shift x; then :; fi; echo "survived if shift x")
+      (readonly r=1; readonly r=2 || echo "ran ||"; echo "survived readonly r=2 ||")
+      (. /nonexistent-file || echo "ran ||"; echo "survived . ||")
+
   - name: "Prefix assignment to a readonly variable (POSIX mode, non-interactive)"
     known_failure: true # in POSIX mode, bash doesn't run the command; brush does
     ignore_stderr: true
@@ -447,6 +481,25 @@ cases:
       set -o posix
       export 1x=2
       echo "after export: $?"
+
+  - name: "Unsetting a readonly variable is fatal in POSIX mode"
+    min_oracle_version: "5.3" # bash 5.2 reports the error and goes on
+    ignore_stderr: true
+    stdin: |
+      (set -o posix; readonly rx=1; unset rx; echo "after unset: $?"); echo "unset: $?"
+      readonly ry=1
+      unset ry
+      echo "outside POSIX mode: $?"
+
+  - name: "unset -v's invalid name is fatal in POSIX mode, and plain unset's isn't"
+    known_failure: true # TODO(unset): an invalid name is accepted silently, so it can't end the shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (unset -v 1x; echo "survived: $?"); echo "unset -v 1x: $?"
+      (unset -v 'a[1'; echo "survived: $?"); echo "unset -v 'a[1': $?"
+      (unset 1x; echo "survived: $?"); echo "unset 1x: $?"
+      (unset -f 1x; echo "survived: $?"); echo "unset -f 1x: $?"
 
   - name: "Builtin errors in a pipeline are reported on the command's stderr"
     known_failure: true # TODO(pipeline): a builtin's error in a stage escapes the stage's stderr

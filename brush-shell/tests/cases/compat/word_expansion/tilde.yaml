@@ -162,3 +162,12 @@ cases:
       - path: "file.txt.bak"
     stdin: |
       echo ~/{file.txt,file.txt.bak}
+
+  - name: "Tilde expansion: after the = of an assignment-shaped argument"
+    known_failure: true # TODO(expansion): ~ after the = of an assignment-shaped argument to an ordinary command isn't expanded
+    home_dir: .
+    stdin: |
+      test_root=~
+      echo y=~/z | sed "s|${test_root}|ROOT|"
+      builtin export by=~/z; echo "${by//${test_root}/ROOT}"
+      command export cz=~/z; echo "${cz//${test_root}/ROOT}"

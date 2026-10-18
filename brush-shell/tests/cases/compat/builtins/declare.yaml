@@ -1265,3 +1265,10 @@ cases:
       e=
       $e declare x=$v
       declare -p x
+
+  - name: "A function shadowing declare receives a compound assignment's name"
+    known_failure: true # TODO(declare): bash's parser hands the function `a` for `a=(1 2)`; brush hands it the whole word
+    stdin: |
+      declare() { echo "shadow declare: [$*]"; }
+      declare a=(1 2)
+      unset -f declare
