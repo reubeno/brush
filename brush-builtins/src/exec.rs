@@ -55,6 +55,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
                 return brush_core::error::unimp("exec with options in subshell not yet supported");
             }
 
+            // Real `exec` replaces the process, so the subshell's own EXIT trap never runs;
+            // this delegation returns instead, so drop that trap before it does.
+            context
+                .shell
+                .traps_mut()
+                .remove_handlers(brush_core::traps::TrapSignal::Exit);
+
             let cmd_cmd = crate::command::CommandCommand {
                 command_and_args: self.args.clone(),
                 ..Default::default()

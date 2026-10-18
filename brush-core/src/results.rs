@@ -316,3 +316,38 @@ pub enum ExecutionWaitResult {
     /// Indicates that the execution was stopped.
     Stopped(processes::ChildProcess),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_flow(next_control_flow: ExecutionControlFlow) -> ExecutionResult {
+        ExecutionResult {
+            next_control_flow,
+            exit_code: ExecutionExitCode::GeneralError,
+        }
+    }
+
+    #[test]
+    fn a_fatal_error_exit_ends_the_shell_like_exit_does() {
+        let fatal = with_flow(ExecutionControlFlow::ExitShellOnFatalError);
+        assert!(fatal.is_exit());
+        assert!(fatal.is_return_or_exit());
+        assert!(!fatal.is_normal_flow());
+
+        let exit = with_flow(ExecutionControlFlow::ExitShell);
+        assert!(exit.is_exit());
+        assert!(exit.is_return_or_exit());
+    }
+
+    #[test]
+    fn a_fatal_error_exit_is_not_a_loop_or_return_transition() {
+        let fatal = with_flow(ExecutionControlFlow::ExitShellOnFatalError);
+        assert!(!fatal.is_break());
+        assert!(!fatal.is_continue());
+        assert!(matches!(
+            fatal.next_control_flow.try_decrement_loop_levels(),
+            ExecutionControlFlow::ExitShellOnFatalError
+        ));
+    }
+}
