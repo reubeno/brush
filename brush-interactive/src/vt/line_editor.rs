@@ -186,6 +186,25 @@ impl<'a> LineEditor<'a> {
         self.search.is_some()
     }
 
+    /// Refreshes semantic highlighting for the current buffer and cursor.
+    pub fn highlight(
+        &mut self,
+        shell: &brush_core::Shell<impl brush_core::ShellExtensions>,
+        program: &str,
+    ) {
+        let line = if program.is_empty() {
+            std::borrow::Cow::Borrowed(self.buffer.text())
+        } else {
+            std::borrow::Cow::Owned(format!("{program}{}", self.buffer.text()))
+        };
+        let highlighted = crate::highlighting::highlight_command(
+            shell,
+            &line,
+            program.len() + self.buffer.cursor(),
+        );
+        self.renderer.set_highlighting(&highlighted, program.len());
+    }
+
     /// Draws the line, replacing what was drawn before.
     pub fn draw(&mut self, out: &mut impl Write, columns: usize) -> std::io::Result<()> {
         let prompt = self.search_prompt();

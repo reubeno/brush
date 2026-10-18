@@ -32,6 +32,7 @@ const MAX_MACRO_EXPANSIONS: usize = 100;
 #[derive(Default)]
 pub(crate) struct LineReader {
     pub style: Style,
+    pub highlighting: bool,
     pub bindings: Arc<Mutex<VtKeyBindings>>,
     /// The line being edited when a bound key was pressed, while its command runs.
     pub bound_line: Option<(String, usize)>,
@@ -81,7 +82,7 @@ impl LineReader {
 
         loop {
             match self
-                .read_one_line(shell, prompt_text, terminal, out)
+                .read_one_line(shell, &program, prompt_text, terminal, out)
                 .await?
             {
                 LineResult::Line(line) => {
@@ -107,6 +108,7 @@ impl LineReader {
     async fn read_one_line(
         &mut self,
         shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        program: &str,
         prompt: &str,
         terminal: &mut impl Terminal,
         out: &mut (impl Write + Send),
@@ -132,6 +134,7 @@ impl LineReader {
         if let Some((text, cursor)) = self.next_line.take() {
             editor.buffer.set(text, cursor);
         }
+        self.highlight(shell, program, &mut editor).await;
         editor.draw(out, columns)?;
 
         loop {
@@ -191,6 +194,7 @@ impl LineReader {
                         )?;
                         drop(locked);
                         if let Some(line) = accepted {
+                            self.highlight(shell, program, &mut editor).await;
                             editor.finish(out, columns)?;
                             return Ok(LineResult::Line(line));
                         }
@@ -204,7 +208,21 @@ impl LineReader {
                 !taken_by_search && matches!(&action, Action::Function(f) if is_kill(f));
             editor.completed_last =
                 !taken_by_search && action == Action::Function(InputFunction::Complete);
+            self.highlight(shell, program, &mut editor).await;
             editor.draw(out, columns)?;
+        }
+    }
+
+    /// Highlight outside the renderer, where the shell can be locked asynchronously.
+    async fn highlight(
+        &self,
+        shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        program: &str,
+        editor: &mut LineEditor<'_>,
+    ) {
+        if self.highlighting && self.style == Style::Vt {
+            let shell = shell.lock().await;
+            editor.highlight(&shell, program);
         }
     }
 
@@ -491,6 +509,66 @@ mod tests {
             rows.pop();
         }
         (rows, screen.cursor_position())
+    }
+
+    #[tokio::test]
+    async fn highlights_input_and_leaves_terminal_styles_reset() {
+        let shell = shell().await;
+        let mut reader = LineReader {
+            highlighting: true,
+            ..reader()
+        };
+        let (result, output) = read(&mut reader, &shell, "cmd '界' $HOME\r").await;
+        assert_eq!(result, input("cmd '界' $HOME\n"));
+        assert_eq!(
+            shown(&output),
+            (vec!["$ cmd '界' $HOME".to_owned()], (1, 0))
+        );
+
+        let mut terminal = vt100::Parser::new(24, 80, 0);
+        terminal.process(output.replace('\n', "\r\n").as_bytes());
+        // Quoted text and parameters use the same palette as Reedline.
+        assert_eq!(
+            terminal.screen().cell(0, 6).unwrap().fgcolor(),
+            vt100::Color::Idx(3)
+        );
+        assert_eq!(
+            terminal.screen().cell(0, 11).unwrap().fgcolor(),
+            vt100::Color::Idx(13)
+        );
+        terminal.process(b"next");
+        let next = terminal.screen().cell(1, 0).unwrap();
+        assert_eq!(next.fgcolor(), vt100::Color::Default);
+        assert!(!next.bold());
+    }
+
+    #[tokio::test]
+    async fn highlights_continuations_in_the_context_of_the_program() {
+        let shell = shell().await;
+        let mut reader = LineReader {
+            highlighting: true,
+            ..reader()
+        };
+        let (result, output) = read(&mut reader, &shell, "cmd 'first\r界'\r").await;
+        assert_eq!(result, input("cmd 'first\n界'\n"));
+        let mut terminal = vt100::Parser::new(24, 80, 0);
+        terminal.process(output.replace('\n', "\r\n").as_bytes());
+        assert_eq!(
+            terminal.screen().cell(1, 2).unwrap().fgcolor(),
+            vt100::Color::Idx(3)
+        );
+    }
+
+    #[tokio::test]
+    async fn basic_style_stays_plain_when_highlighting_is_enabled() {
+        let shell = shell().await;
+        let mut reader = LineReader {
+            highlighting: true,
+            ..basic_reader()
+        };
+        let (result, output) = read(&mut reader, &shell, "cmd '$HOME'\r").await;
+        assert_eq!(result, input("cmd '$HOME'\n"));
+        assert!(!output.contains('\x1b'));
     }
 
     fn ctrl(c: char) -> KeyStroke {
