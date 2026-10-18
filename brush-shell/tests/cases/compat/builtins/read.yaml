@@ -448,3 +448,8 @@ cases:
     stdin: |
       read -t abc x <<< "hello"
       echo "read: $?"
+
+  - name: "read takes control characters from a pipe as data"
+    known_failure: true # TODO(signals): control characters are dropped from any input
+    stdin: |
+      printf 'a\003b\004c\n' | { read -r x; echo "rc=$? len=${#x}"; }

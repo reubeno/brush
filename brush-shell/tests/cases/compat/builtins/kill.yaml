@@ -125,3 +125,21 @@ cases:
       while [ ! -s pidfile ]; do sleep 0.05; done
       kill "$(cat pidfile)"
       wait
+      # The process ID differs from run to run.
+      rm pidfile
+
+  - name: "kill takes -- before a process group, and -s 0"
+    known_failure: true # TODO(signals): kill's default signal and option parsing
+    ignore_stderr: true
+    stdin: |
+      kill -0 -- $$; echo "a=$?"
+      kill -s 0 $$; echo "b=$?"
+      kill -0 -- -$(ps -o pgid= -p $$ | tr -d ' '); echo "c=$?"
+      kill -- -999999; echo "d=$?"
+      kill -s TERM -- -999999; echo "e=$?"
+
+  - name: "kill takes -N after a signal as a process group"
+    ignore_stderr: true
+    stdin: |
+      kill -TERM -999999; echo "a=$?"
+      kill -999999; echo "b=$?"

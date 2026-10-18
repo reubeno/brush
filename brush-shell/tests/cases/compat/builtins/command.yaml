@@ -432,3 +432,14 @@ cases:
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       { command export -Z; } 2>&1 | head -n 1 | strip
+
+  - name: "command's program that stops becomes a job"
+    known_failure: true # TODO(signals): a program that stops isn't noticed, nor made a job
+    ignore_stderr: true
+    stdin: |
+      set -m
+      command sh -c 'kill -STOP $$; echo resumed'
+      echo "command: $?"
+      jobs >jobs.txt; echo "named: $(grep -c 'command sh -c' jobs.txt)"
+      fg >/dev/null; echo "fg: $?"
+      rm jobs.txt
