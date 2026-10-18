@@ -280,7 +280,7 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
     params: &ExecutionParameters,
 ) -> &'a jobs::Job {
     // Clone the inputs.
-    let mut cloned_shell = shell.clone();
+    let mut cloned_shell = shell.clone_for_subshell();
     let mut cloned_params = params.clone();
     let cloned_ao_list = ao_list.clone();
 
@@ -297,7 +297,9 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
         let result = cloned_ao_list
             .execute(&mut cloned_shell, &cloned_params)
             .await;
-        Ok(cloned_shell.end_subshell(result, || cloned_params.try_stderr(&cloned_shell)))
+
+        // Ends the job: runs the EXIT trap it set itself, if any.
+        Ok(cloned_shell.end_child_context(&cloned_params, result).await)
     });
 
     shell.jobs_mut().add_as_current(jobs::Job::new(
@@ -529,7 +531,7 @@ async fn spawn_pipeline_processes(
 
             PipelineExecutionContext {
                 shell: commands::ShellForCommand::OwnedShell {
-                    target: Box::new(shell.clone()),
+                    target: Box::new(shell.clone_for_subshell()),
                     parent: shell,
                 },
                 process_group_id,
@@ -675,7 +677,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                         Ok(ExecutionSpawnResult::StartedTask(
                             sys::tasks::spawn_blocking(async move {
                                 let result = compound.execute(&mut shell, &params).await;
-                                Ok(shell.end_subshell(result, || params.try_stderr(&shell)))
+
+                                // Ends the stage: runs the EXIT trap it set itself, if any.
+                                Ok(shell.end_child_context(&params, result).await)
                             })
                             .await,
                         ))
@@ -712,12 +716,13 @@ impl Execute for ast::CompoundCommand {
             Self::Subshell(ast::SubshellCommand { list, .. }) => {
                 // Clone off a new subshell, and run the body of the subshell there.
                 // TODO(source-info): Do we need to reset the line number?
-                let mut subshell = shell.clone();
+                let mut subshell = shell.clone_for_subshell();
 
-                // Handle errors within the subshell context to prevent fatal errors
-                // from propagating to the parent shell.
+                // The subshell ends here however its body ended; only its exit code reaches the
+                // parent, never a request to exit the shell, break out of loops, etc., and a
+                // fatal error in it does not end the parent.
                 let result = list.execute(&mut subshell, params).await;
-                Ok(shell.end_subshell(result, || Some(params.stderr(shell))))
+                Ok(subshell.end_child_context(params, result).await)
             }
             Self::ForClause(f) => f.execute(shell, params).await,
             Self::CaseClause(c) => c.execute(shell, params).await,
@@ -775,7 +780,7 @@ impl Execute for ast::CoprocessCommand {
         let stdin_fd = shell.open_files_mut().add(stdin_writer.into())?;
 
         // Crete a subshell that the coprocess will own and run in.
-        let mut child_shell = shell.clone();
+        let mut child_shell = shell.clone_for_subshell();
         child_shell.options_mut().interactive = false;
 
         // Setup redirection for the coprocess's shell's stdin/stdout.
@@ -788,18 +793,25 @@ impl Execute for ast::CoprocessCommand {
             .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
 
         let body = self.body.clone();
+        let exit_params = child_params.clone();
         let join_handle = sys::tasks::spawn(async move {
-            let pipeline_context = PipelineExecutionContext {
-                shell: commands::ShellForCommand::ParentShell(&mut child_shell),
-                process_group_id: None,
-            };
-            let spawn_result = body
-                .execute_in_pipeline(pipeline_context, child_params)
-                .await?;
-            match spawn_result.wait().await? {
-                ExecutionWaitResult::Completed(result) => Ok(result),
-                ExecutionWaitResult::Stopped(_) => Ok(ExecutionResult::stopped()),
+            let result = async {
+                let pipeline_context = PipelineExecutionContext {
+                    shell: commands::ShellForCommand::ParentShell(&mut child_shell),
+                    process_group_id: None,
+                };
+                let spawn_result = body
+                    .execute_in_pipeline(pipeline_context, child_params)
+                    .await?;
+                match spawn_result.wait().await? {
+                    ExecutionWaitResult::Completed(result) => Ok(result),
+                    ExecutionWaitResult::Stopped(_) => Ok(ExecutionResult::stopped()),
+                }
             }
+            .await;
+
+            // Ends the coprocess: runs the EXIT trap it set itself, if any.
+            Ok(child_shell.end_child_context(&exit_params, result).await)
         });
 
         let job = shell.jobs_mut().add_as_current(jobs::Job::new(
@@ -2028,7 +2040,7 @@ fn setup_process_substitution(
 ) -> Result<(ShellFd, OpenFile), error::Error> {
     // TODO(execute): Don't execute synchronously!
     // Execute in a subshell.
-    let mut subshell = shell.clone();
+    let mut subshell = shell.clone_for_subshell();
 
     // Set up execution parameters for the child execution.
     let mut child_params = params.clone();
@@ -2053,11 +2065,14 @@ fn setup_process_substitution(
     // completion.
     let subshell_cmd = subshell_cmd.to_owned();
     sys::tasks::spawn(async move {
-        // Intentionally ignore the result of the subshell command.
-        let _ = subshell_cmd
+        let result = subshell_cmd
             .list
             .execute(&mut subshell, &child_params)
             .await;
+
+        // Ends the substitution: runs the EXIT trap it set itself, if any. The result of the
+        // subshell command is intentionally ignored.
+        let _ = subshell.end_child_context(&child_params, result).await;
     });
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
