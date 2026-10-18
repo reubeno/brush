@@ -62,6 +62,30 @@ async fn cancelled_command_drops_its_assignments() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn cancelled_eval_restores_its_frames_lines() -> Result<()> {
+    let mut shell = new_shell().await?;
+    shell.start_command_string_mode();
+
+    // Run text as eval does: text that starts partway into the frame's source
+    // (here, on line 3), which the frame maps the lines of while it runs.
+    let source_info = brush_core::SourceInfo {
+        source: String::from("script"),
+        start: Some(std::sync::Arc::new(brush_core::SourcePosition {
+            index: 0,
+            line: 3,
+            column: 1,
+        })),
+    };
+    let params = shell.default_exec_params();
+    cancel(shell.run_string(BLOCK, &source_info, &params)).await;
+
+    let frame = shell.call_stack().current_frame();
+    assert_eq!(frame.map(|frame| frame.current_line_offset), Some(0));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn cancelled_sourced_script_is_left() -> Result<()> {
     let mut shell = new_shell().await?;
     let script = tempfile::NamedTempFile::new()?;

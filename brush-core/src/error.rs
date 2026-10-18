@@ -4,18 +4,47 @@ use std::path::PathBuf;
 
 use crate::{Shell, ShellFd, extensions, results, sys};
 
-/// Unified error type for this crate. Contains just a kind for now,
-/// but will be extended later with additional context.
-#[derive(thiserror::Error, Debug)]
-#[error("{kind}")]
+/// Unified error type for this crate: its kind, and where it arose.
+#[derive(Debug)]
 pub struct Error {
-    /// The kind of error.
-    #[source]
-    kind: Box<ErrorKind>,
+    /// The kind of error, and where it arose; boxed to keep results small.
+    inner: Box<ErrorInner>,
 
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+}
+
+#[derive(Debug)]
+struct ErrorInner {
+    /// The kind of error.
+    kind: ErrorKind,
+    /// Where the error arose, once recorded.
+    location: Option<ErrorLocation>,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner.kind)
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.inner.kind)
+    }
+}
+
+/// Where in the shell's input an error arose.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ErrorLocation {
+    /// The file the shell was running commands from: a script, a sourced file,
+    /// or the file that defined the running function (`BASH_SOURCE[0]`). Empty
+    /// for commands that weren't read from a file, such as those given with
+    /// `-c` or read from standard input.
+    pub source: String,
+    /// The line being run, if known.
+    pub line: Option<usize>,
 }
 
 /// Monolithic error type for the shell
@@ -389,7 +418,7 @@ impl From<&std::io::Error> for results::ExecutionExitCode {
 
 impl From<&Error> for results::ExecutionExitCode {
     fn from(error: &Error) -> Self {
-        Self::from(&*error.kind)
+        Self::from(&error.inner.kind)
     }
 }
 
@@ -399,7 +428,10 @@ where
 {
     fn from(convertible_to_kind: T) -> Self {
         Self {
-            kind: Box::new(convertible_to_kind.into()),
+            inner: Box::new(ErrorInner {
+                kind: convertible_to_kind.into(),
+                location: None,
+            }),
             fatal: false,
         }
     }
@@ -420,12 +452,28 @@ impl Error {
 
     /// Returns a reference to the error kind.
     pub fn kind(&self) -> &ErrorKind {
-        &self.kind
+        &self.inner.kind
+    }
+
+    /// Returns where the error arose, if it was recorded: for an error that
+    /// left the function it arose in, whose location the shell no longer
+    /// shows by the time the error is reported.
+    pub fn location(&self) -> Option<&ErrorLocation> {
+        self.inner.location.as_ref()
+    }
+
+    /// Records where the error arose, unless that's recorded already.
+    #[must_use]
+    pub(crate) fn located_at(mut self, location: impl FnOnce() -> ErrorLocation) -> Self {
+        if self.inner.location.is_none() {
+            self.inner.location = Some(location());
+        }
+        self
     }
 
     /// Try to extract a reference to the underlying `std::io::Error`, if any.
     pub fn as_io_error(&self) -> Option<&std::io::Error> {
-        match &*self.kind {
+        match &self.inner.kind {
             ErrorKind::IoError(io_err) => Some(io_err),
             ErrorKind::BuiltinError(inner, _) => inner.as_io_error(),
             _ => None,

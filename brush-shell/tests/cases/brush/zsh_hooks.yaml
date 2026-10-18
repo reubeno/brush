@@ -170,35 +170,40 @@ cases:
 
   # Hook errors are reported but do not abort the shell, overwrite the previous status, or
   # prevent later hooks from running.
+  # The errors are collected in a file and shown without the shell's prefix
+  # (`$0: `, where `$0` is the path the harness ran brush as), stripped in the
+  # shell, not with sed, which Windows lacks.
   - name: "zsh precmd failures are non-fatal and preserve status"
     args: ["--enable-zsh-hooks", "-i", "-s"]
     stdin: |
+      exec 2>err.txt
       precmd() { local -r ro=1; ro=2; }; later() { echo LATER-RAN; }; precmd_functions=(precmd later)
       (exit 6)
       echo "AFTER[$?]"
+      while IFS= read -r line; do echo "${line#*: }"; done <err.txt
     expected_exit_code: 0
     expected_stdout: |
       LATER-RAN
       LATER-RAN
       AFTER[6]
       LATER-RAN
-    expected_stderr: |
-      error: cannot mutate readonly variable
-      error: cannot mutate readonly variable
-      error: cannot mutate readonly variable
-      exit
+      cannot mutate readonly variable
+      cannot mutate readonly variable
+      cannot mutate readonly variable
+      LATER-RAN
 
   - name: "zsh preexec failures are non-fatal"
     args: ["--enable-zsh-hooks", "-i", "-s"]
     stdin: |
+      exec 2>err.txt
       preexec() { local -r ro=1; ro=2; }
       echo STILL-RAN
+      while IFS= read -r line; do echo "${line#*: }"; done <err.txt
     expected_exit_code: 0
     expected_stdout: |
       STILL-RAN
-    expected_stderr: |
-      error: cannot mutate readonly variable
-      exit
+      cannot mutate readonly variable
+      cannot mutate readonly variable
 
   # A name that resolves to nothing is quiet, so a hook may be registered before it is
   # defined -- matching bash-preexec, which guards each entry with `type -t`.
@@ -439,16 +444,17 @@ cases:
   - name: "zsh preexec skips a syntax error"
     args: ["--enable-zsh-hooks", "-i", "-s"]
     stdin: |
-      preexec() { echo "PREEXEC[$1]"; }
+      exec 2>err.txt
+      preexec() { echo "PREEXEC[$1]"; }; show() { while IFS= read -r line; do echo "${line#*: }"; done <err.txt; }
       echo )
       echo REAL
+      show
     expected_exit_code: 0
     expected_stdout: |
       PREEXEC[echo REAL]
       REAL
-    expected_stderr: |
-      error: main: syntax error at line 1 col 6
-      exit
+      PREEXEC[show]
+      syntax error at line 1 col 6
 
   # A line that only defines a function runs no command: bash's `DEBUG` trap does not fire
   # for `other() { ...; }`, so a `preexec` already registered must not dispatch for it either.

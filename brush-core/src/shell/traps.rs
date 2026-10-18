@@ -60,12 +60,24 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             return Ok(ExecutionResult::success());
         }
 
-        let Some(handler) = self.traps.get_handler(signal).cloned() else {
+        let Some(mut handler) = self.traps.get_handler(signal).cloned() else {
             return Ok(ExecutionResult::success());
         };
 
         let mut params = params.clone();
         params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
+
+        // A handler for a trap that runs around a command (ERR, DEBUG, RETURN) is numbered
+        // from that command's line, as `eval`'s text is; any other handler, from its own
+        // first line. (Kept in the handler's clone, so this future holds no more.)
+        handler.source_info = match signal {
+            TrapSignal::Err | TrapSignal::Debug | TrapSignal::Return => {
+                self.call_stack().current_pos_as_source_info()
+            }
+            TrapSignal::Exit | TrapSignal::Signal(_) => {
+                crate::SourceInfo::from(handler.source_info.source.as_str())
+            }
+        };
 
         // The guard leaves the handler, restoring `$?`, once this finishes -- or is cancelled.
         self.enter_trap_handler(signal, Some(&handler))

@@ -224,7 +224,49 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Ok(result)
     }
 
+    /// Returns where a parse error arose: the file being run, as for any other
+    /// error, and the line of the error in it, which the current frame maps.
+    fn parse_error_location(&self, parse_err: &brush_parser::ParseError) -> error::ErrorLocation {
+        let position = match parse_err {
+            brush_parser::ParseError::ParsingNear(position) => Some(position),
+            brush_parser::ParseError::Tokenizing { position, .. } => position.as_ref(),
+            brush_parser::ParseError::ParsingAtEndOfInput => None,
+        };
+        let line = position.and_then(|position| {
+            self.call_stack()
+                .current_frame()
+                .map(|frame| frame.line_at(position.line))
+        });
+        error::ErrorLocation {
+            line,
+            ..self.current_location()
+        }
+    }
+
     pub(crate) async fn run_parsed_result(
+        &mut self,
+        parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
+        source_info: &crate::SourceInfo,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        // Text that starts partway into the current frame's source (as `eval`'s
+        // and a command substitution's do) is numbered from its own first line,
+        // so the frame maps its lines onto the source's while it runs.
+        match &source_info.start {
+            Some(start) => {
+                self.map_lines_from(start.line)
+                    .report_parsed_result(parse_result, source_info, params)
+                    .await
+            }
+            None => {
+                self.report_parsed_result(parse_result, source_info, params)
+                    .await
+            }
+        }
+    }
+
+    /// Runs a parsed program, or reports the error that parsing it failed with.
+    async fn report_parsed_result(
         &mut self,
         parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
         source_info: &crate::SourceInfo,
@@ -233,11 +275,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
         let result = match parse_result {
             Ok(prog) => self.run_program(prog, params).await,
-            Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
-                parse_err,
-                source_info.clone(),
-            ))
-            .into_fatal()),
+            Err(parse_err) => {
+                let location = self.parse_error_location(&parse_err);
+                Err(error::Error::from(error::ErrorKind::ParseError(
+                    parse_err,
+                    source_info.clone(),
+                ))
+                .located_at(|| location)
+                .into_fatal())
+            }
         };
 
         // Report any errors.
