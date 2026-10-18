@@ -47,6 +47,16 @@ impl<T: Terminal> VtInputBackend<T> {
             terminal,
             reader: LineReader::default(),
         }
+        .with_ui_options(&crate::UIOptions::default())
+    }
+
+    /// Applies the shared UI settings for syntax highlighting and color.
+    /// Highlighting is enabled unless either setting disables it. The basic
+    /// drawing style always uses plain text.
+    #[must_use]
+    pub const fn with_ui_options(mut self, options: &crate::UIOptions) -> Self {
+        self.reader.highlighting = !options.disable_highlighting && !options.disable_color;
+        self
     }
 
     /// Has this backend draw and respond to Tab in a way that's simple for
@@ -206,6 +216,24 @@ mod tests {
         let backend = VtInputBackend::default();
         assert_eq!(backend.reader.style, Style::Vt);
         assert_eq!(backend.with_basic_style().reader.style, Style::Basic);
+    }
+
+    #[test]
+    fn respects_highlighting_and_color_options() {
+        for disable_highlighting in [false, true] {
+            for disable_color in [false, true] {
+                let options = crate::UIOptions {
+                    disable_color,
+                    disable_highlighting,
+                    ..Default::default()
+                };
+                let backend = VtInputBackend::default().with_ui_options(&options);
+                assert_eq!(
+                    backend.reader.highlighting,
+                    !disable_highlighting && !disable_color
+                );
+            }
+        }
     }
 
     #[test]

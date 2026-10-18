@@ -25,6 +25,12 @@ mod trace_categories;
 
 #[cfg(feature = "highlighting")]
 pub mod highlighting;
+#[cfg(feature = "highlighting")]
+#[allow(
+    dead_code,
+    reason = "highlighting can be enabled without an input backend"
+)]
+mod styles;
 
 #[cfg(feature = "completion")]
 mod completion;

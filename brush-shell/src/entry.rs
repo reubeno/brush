@@ -248,7 +248,8 @@ async fn run_async(
 
         #[cfg(vt_backend)]
         InputBackendType::Vt => {
-            let mut input_backend = brush_interactive::VtInputBackend::default();
+            let mut input_backend =
+                brush_interactive::VtInputBackend::default().with_ui_options(&ui_options);
             let mut locked_shell = shell.lock().await;
             input_backend.install_key_bindings(&mut locked_shell);
             drop(locked_shell);

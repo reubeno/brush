@@ -62,6 +62,9 @@ User interface settings.
 > `false` otherwise. CLI flags take precedence over the configuration
 > file.
 
+Syntax highlighting is supported by the `reedline` and `vt` input backends.
+The `--disable-color` flag also disables syntax highlighting.
+
 ### `[experimental]` Section
 
 Experimental features that may change or be removed in future versions.

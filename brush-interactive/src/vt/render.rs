@@ -22,6 +22,37 @@ impl Renderer {
         }
     }
 
+    /// Updates the styled text used by VT redraws. Basic redraws stay plain.
+    pub fn set_highlighting(
+        &mut self,
+        highlighted: &crate::highlighting::Highlighted<'_>,
+        start: usize,
+    ) {
+        if let Self::Vt(renderer) = self {
+            let mut styled = String::new();
+            for span in highlighted
+                .spans()
+                .iter()
+                .filter(|span| span.range.end > start)
+            {
+                let text = highlighted
+                    .line()
+                    .get(span.range.start.max(start)..span.range.end)
+                    .unwrap_or_default();
+                // Escape controls before adding our own terminal sequences.
+                let (shown, _) = shown_text(text, text.len());
+                let _ = write!(
+                    styled,
+                    "{}",
+                    crate::styles::kind_to_style(span.kind).paint(shown)
+                );
+            }
+            let line = highlighted.line().get(start..).unwrap_or_default();
+            let (shown, _) = shown_text(line, line.len());
+            renderer.highlighted = Some((shown.into_owned(), styled));
+        }
+    }
+
     /// Draws `prompt` followed by `text`, and puts the cursor at byte offset `cursor`
     /// of `text`. Replaces what was drawn last time, if anything.
     ///
@@ -97,6 +128,9 @@ impl Renderer {
 pub(crate) struct VtRenderer {
     /// How many rows the cursor is below the row the prompt starts on.
     cursor_row: usize,
+    /// Plain display text paired with its styled form. Only reuse styling while
+    /// the text matches, including during completion lists and final redraws.
+    highlighted: Option<(String, String)>,
 }
 
 impl VtRenderer {
@@ -127,7 +161,12 @@ impl VtRenderer {
         seq.push_str("\r\x1b[J");
 
         seq.push_str(&printable(prompt));
-        seq.push_str(text);
+        seq.push_str(
+            self.highlighted
+                .as_ref()
+                .filter(|(plain, _)| plain == text)
+                .map_or(text, |(_, styled)| styled.as_str()),
+        );
 
         let shown_prompt = visible_text(prompt);
         let (end_row, end_column) =
@@ -826,6 +865,46 @@ mod tests {
                 (vec!["$ ab^Jcd".to_owned()], (0, 7)),
                 "{style:?}"
             );
+        }
+        Ok(())
+    }
+
+    /// Styling must not change wrapping, cursor placement, or the safe display
+    /// of control characters, even when escape bytes appear in quoted input.
+    #[tokio::test]
+    async fn highlighted_text_preserves_layout_and_escapes_controls() -> std::io::Result<()> {
+        let shell = brush_core::Shell::builder()
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
+            .build()
+            .await
+            .unwrap();
+        for text in ["cmd '界e\u{301}' $HOME", "cmd '\x1b[31m\t\n'"] {
+            for columns in [5, 8, 80] {
+                for cursor in text.char_indices().map(|(i, _)| i).chain([text.len()]) {
+                    let highlighted = crate::highlighting::highlight_command(&shell, text, cursor);
+                    let mut plain = Renderer::new(Style::Vt);
+                    let mut colored = Renderer::new(Style::Vt);
+                    colored.set_highlighting(&highlighted, 0);
+                    let mut plain_out = vec![];
+                    let mut colored_out = vec![];
+                    plain.draw(&mut plain_out, "$ ", text, cursor, columns)?;
+                    colored.draw(&mut colored_out, "$ ", text, cursor, columns)?;
+                    let mut plain_terminal = terminal(columns);
+                    let mut colored_terminal = terminal(columns);
+                    play(&mut plain_terminal, &plain_out);
+                    play(&mut colored_terminal, &colored_out);
+                    assert_eq!(shown(&colored_terminal), shown(&plain_terminal));
+                    // Finishing reuses the styling and places the cursor correctly.
+                    plain.finish(&mut plain_out, "$ ", text, columns)?;
+                    colored.finish(&mut colored_out, "$ ", text, columns)?;
+                    let mut plain_terminal = terminal(columns);
+                    let mut colored_terminal = terminal(columns);
+                    play(&mut plain_terminal, &plain_out);
+                    play(&mut colored_terminal, &colored_out);
+                    assert_eq!(shown(&colored_terminal), shown(&plain_terminal));
+                }
+            }
         }
         Ok(())
     }
