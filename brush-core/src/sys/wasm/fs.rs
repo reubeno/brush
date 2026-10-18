@@ -11,8 +11,9 @@ impl crate::sys::fs::PathExt for std::path::Path {
         true
     }
 
+    // WASI has no execute permission to check, but the path must at least exist.
     fn executable(&self) -> bool {
-        true
+        self.exists()
     }
 
     fn exists_and_is_block_device(&self) -> bool {

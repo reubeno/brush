@@ -339,6 +339,18 @@ cases:
       echo
     expected_stderr: ""
 
+  - name: "type and command -v of a missing command"
+    stdin: |
+      type -t no-such-command; echo "type: $?"
+      command -v no-such-command; echo "command -v: $?"
+      [ -x /no/such/file ]; echo "test -x: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      type: 1
+      command -v: 1
+      test -x: 1
+    expected_stderr: ""
+
   - name: "$$ expands to the shell's process ID"
     known_failure_platforms: ["wasi"] # TODO(wasm): wasm has no process IDs, and expanding $$ panics
     stdin: |
@@ -351,7 +363,6 @@ cases:
       numeric: 1
 
   - name: "An unknown command exits with 127"
-    known_failure_platforms: ["wasi"] # TODO(wasm): an unknown command fails as "not supported on this platform" rather than "command not found"
     stdin: |
       no_such_command_xyz 2> err.txt
       echo "status: $?"
