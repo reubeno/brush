@@ -67,8 +67,8 @@ impl ExecutionParameters {
 
     /// Returns the standard output file; usable with `write!` et al. In the event that
     /// no such file is available, returns a valid implementation of `std::io::Write`
-    /// that fails all I/O requests.
-    ///
+    /// that fails all I/O requests. An error from it says that a write failed
+    /// (`write error: No space left on device`).
     ///
     /// # Arguments
     ///
@@ -77,9 +77,9 @@ impl ExecutionParameters {
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> impl std::io::Write + 'static {
-        self.try_stdout(shell).unwrap_or_else(|| {
+        ioutils::WriteErrorTagging::new(self.try_stdout(shell).unwrap_or_else(|| {
             ioutils::FailingReaderWriter::new("standard output not available").into()
-        })
+        }))
     }
 
     /// Tries to retrieve the standard output file. Returns `None` if not set.
@@ -93,7 +93,8 @@ impl ExecutionParameters {
 
     /// Returns the standard error file; usable with `write!` et al. In the event that
     /// no such file is available, returns a valid implementation of `std::io::Write`
-    /// that fails all I/O requests.
+    /// that fails all I/O requests. An error from it says what failed
+    /// (`write error: …`), as from [`stdout`](Self::stdout).
     ///
     /// # Arguments
     ///
@@ -102,9 +103,9 @@ impl ExecutionParameters {
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> impl std::io::Write + 'static {
-        self.try_stderr(shell).unwrap_or_else(|| {
+        ioutils::WriteErrorTagging::new(self.try_stderr(shell).unwrap_or_else(|| {
             ioutils::FailingReaderWriter::new("standard error not available").into()
-        })
+        }))
     }
 
     /// Tries to retrieve the standard error file. Returns `None` if not set.
@@ -1827,7 +1828,7 @@ pub(crate) async fn setup_redirect(
                         .map_err(|err| {
                             error::ErrorKind::RedirectionFailure(
                                 expanded_file_path.to_string_lossy().to_string(),
-                                err.to_string(),
+                                error::io_error_message(&err),
                             )
                         })?;
 
@@ -1996,7 +1997,7 @@ fn setup_redirect_output_and_error_to(
         .map_err(|err| {
             error::ErrorKind::RedirectionFailure(
                 abs_file_path.to_string_lossy().to_string(),
-                err.to_string(),
+                error::io_error_message(&err),
             )
         })?;
 
