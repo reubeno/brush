@@ -184,7 +184,7 @@ cases:
       echo {-9223372036854775809..-9223372036854775807}
 
   - name: "Expansion with curly braces: increment too large for the sequence"
-    known_failure: true # brush-parser's `number()` rule unwraps the increment, so the parser panics
+    known_failure_platforms: ["peg-parser"] # brush-parser's PEG `number()` rule unwraps the increment, so the parser panics
     stdin: |
       echo {1..5..99999999999999999999}
       echo {1..5..-99999999999999999999}
