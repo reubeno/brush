@@ -5,7 +5,12 @@ use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
 #[derive(Parser)]
-pub(crate) struct TimesCommand {}
+pub(crate) struct TimesCommand {
+    /// Operands, which are ignored. Options before the first operand are
+    /// still misuse; everything after it is an operand.
+    #[arg(hide = true, trailing_var_arg = true)]
+    _operands: Vec<String>,
+}
 
 impl builtins::Command for TimesCommand {
     type Error = brush_core::Error;
