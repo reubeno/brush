@@ -103,7 +103,7 @@ fn compose_std_command(command: LaunchRequest) -> std::io::Result<std::process::
 /// to have as that stream: the null device if it's closed.
 fn take_stdio(open_files: &mut OpenFiles, fd: ShellFd) -> std::io::Result<Stdio> {
     match open_files.remove_fd(fd) {
-        Some(file) => Stdio::try_from(file).map_err(std::io::Error::other),
+        Some(file) => commands::stdio_for(file),
         None => Ok(Stdio::null()),
     }
 }
