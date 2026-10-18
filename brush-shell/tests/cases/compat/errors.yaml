@@ -409,6 +409,53 @@ cases:
       (readonly r=1; readonly r=2 || echo "ran ||"; echo "survived readonly r=2 ||")
       (. /nonexistent-file || echo "ran ||"; echo "survived . ||")
 
+  - name: "A fatal error ends a subshell of an interactive shell, but a syntax or . error doesn't"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      (
+      set -o posix; readonly r=1; readonly r=2
+      echo "survived a readonly assignment"
+      )
+      echo "after: $?"
+      (
+      set -o posix; . /nonexistent-file
+      echo "survived ."
+      )
+      echo "after: $?"
+      (
+      eval 'if'
+      echo "survived a syntax error"
+      )
+      echo "after: $?"
+      (
+      set -o posix; readonly r=1; eval 'true | readonly r=2'
+      echo "survived an error in an eval'd pipeline stage"
+      )
+      echo "after: $?"
+
+  - name: "A special builtin's misuse ends a subshell of an interactive shell, and its other failures don't"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      (
+      set -o posix; trap x BOGUS
+      echo "survived trap's unknown signal"
+      )
+      echo "after: $?"
+      (
+      set -o posix; export -Q
+      echo "survived export -Q"
+      )
+      echo "after: $?"
+      (
+      set -o posix; set -o bogus || echo "tested: $?"
+      echo "survived a tested set -o bogus"
+      )
+      echo "after: $?"
+      set -o posix; export -Q
+      echo "the interactive shell survived export -Q: $?"
+
   - name: "Prefix assignment to a readonly variable (POSIX mode, non-interactive)"
     known_failure: true # in POSIX mode, bash doesn't run the command; brush does
     ignore_stderr: true
