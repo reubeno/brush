@@ -7,3 +7,13 @@ cases:
       set -- a
       shift 2
       echo "shift: $?"
+
+  - name: "A non-numeric shift count is misuse, in bash's words"
+    known_failure: true # TODO(shift): the error is clap's, not bash's `x: numeric argument required`
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      set -- a b
+      shift x 2>err.txt
+      echo "shift x: $?"
+      strip <err.txt
+      rm err.txt

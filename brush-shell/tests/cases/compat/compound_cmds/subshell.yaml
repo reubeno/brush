@@ -43,3 +43,13 @@ cases:
       ( (echo hi) )
       x=$( ( (echo hi) ) )
       echo "x=$x"
+
+  - name: "A subshell starts outside any loop"
+    known_failure: true # TODO(subshell): a `break` in a subshell inside a loop breaks the parent's loop, not just the subshell's
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do
+        (break; echo "survived $i: $?")
+        (continue 2; echo "continued $i: $?")
+      done
+      echo done

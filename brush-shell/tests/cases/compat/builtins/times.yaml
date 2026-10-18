@@ -11,3 +11,9 @@ cases:
     stdin: |
       times x >/dev/null
       echo "times: $?"
+
+  - name: "times rejects an option"
+    ignore_stderr: true
+    stdin: |
+      times -x >/dev/null
+      echo "times: $?"

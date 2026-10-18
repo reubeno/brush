@@ -218,3 +218,11 @@ cases:
       echo "readonly: $? r=$r z=$z"
       unset r w
       echo "unset: $? r=$r"
+
+  - name: "export rejects a name that isn't an identifier"
+    known_failure: true # TODO(export): names that aren't identifiers are accepted with status 0
+    ignore_stderr: true
+    stdin: |
+      export "a b=1"; echo "a b=1: $?"
+      export 1x=2; echo "1x=2: $?"
+      export "a-b"; echo "a-b: $?"

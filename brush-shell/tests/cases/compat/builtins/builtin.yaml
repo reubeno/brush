@@ -117,3 +117,12 @@ cases:
       set -o posix
       builtin export --bogus
       echo "still running: $?"
+
+  - name: "builtin expands a ~ after the = of a declaration it passes on"
+    home_dir: .
+    stdin: |
+      test_root=~
+      builtin export y=~/z
+      echo "${y//${test_root}/ROOT}"
+      builtin declare d=~/w
+      echo "${d//${test_root}/ROOT}"
