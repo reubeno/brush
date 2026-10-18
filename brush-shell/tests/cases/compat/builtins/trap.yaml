@@ -445,6 +445,15 @@ cases:
       (trap ': ${undefined_variable?unset}; echo "not reached"' EXIT; exit 4)
       echo "status: $?"
 
+  - name: "fatal error in a function or eval run by a subshell EXIT trap keeps the subshell status"
+    ignore_stderr: true
+    stdin: |
+      g() { : ${undefined_variable?unset}; echo "not reached"; }
+      (trap g EXIT; exit 4)
+      echo "function: $?"
+      (trap 'eval ": \${undefined_variable?unset}"' EXIT; exit 5)
+      echo "eval: $?"
+
   - name: "pipeline EXIT trap behavior"
     stdin: |
       trap 'echo "[exit]"' EXIT

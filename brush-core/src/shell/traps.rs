@@ -1,8 +1,8 @@
 //! Trap handling for the shell.
 
 use crate::{
-    ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
-    ProcessGroupPolicy, error, traps::TrapSignal,
+    ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error,
+    traps::TrapSignal,
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
@@ -43,7 +43,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// writes where the context's own commands write, and sees the status the context ended with
     /// in `$?`. An `EXIT` trap inherited from the parent shell does not run; the parent runs it
     /// when the parent ends. As in bash, a trap that itself calls `exit` replaces the context's
-    /// status; a fatal error in the trap does not.
+    /// status.
     ///
     /// Only the context's exit code reaches the parent: its own `exit`, `return`, `break` or
     /// `continue` ends just that context, and a fatal error in it is displayed and becomes its
@@ -60,10 +60,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         self.set_last_exit_status(result.exit_code.into());
 
-        match self
-            .invoke_trap_handler_inner(TrapSignal::Exit, params, true)
-            .await
-        {
+        match self.invoke_trap_handler(TrapSignal::Exit, params).await {
             Ok(trap_result)
                 if matches!(
                     trap_result.next_control_flow,
@@ -74,48 +71,6 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             }
             _ => result,
         }
-    }
-
-    /// Runs a trap handler's command like `run_string`, except that a fatal error in it is
-    /// displayed and ends just the handler instead of becoming an `exit`.
-    async fn run_trap_program(
-        &mut self,
-        handler: &crate::traps::TrapHandler,
-        params: &ExecutionParameters,
-    ) -> Result<ExecutionResult, error::Error> {
-        let program = match self.parse_string(handler.command.clone()) {
-            Ok(program) => program,
-            Err(parse_error) => {
-                let error = error::Error::from(error::ErrorKind::ParseError(
-                    parse_error,
-                    handler.source_info.clone(),
-                ));
-                let _ = self.display_error(&mut params.stderr(self), &error);
-                return Ok(ExecutionResult::from(ExecutionExitCode::from(&error)));
-            }
-        };
-
-        let mut result = ExecutionResult::success();
-        for command in &program.complete_commands {
-            result = match crate::interp::Execute::execute(command, self, params).await {
-                Ok(result) => result,
-                Err(error) => {
-                    let _ = self.display_error(&mut params.stderr(self), &error);
-                    let error_result = error.into_result(self);
-                    if !error_result.is_normal_flow() {
-                        return Ok(ExecutionResult::from(error_result.exit_code));
-                    }
-                    error_result
-                }
-            };
-            self.set_last_exit_status(result.exit_code.into());
-
-            if !result.is_normal_flow() {
-                break;
-            }
-        }
-
-        Ok(result)
     }
 
     /// Invokes the handler registered for `signal`, if any.
@@ -141,18 +96,6 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         &mut self,
         signal: TrapSignal,
         params: &ExecutionParameters,
-    ) -> Result<ExecutionResult, error::Error> {
-        self.invoke_trap_handler_inner(signal, params, false).await
-    }
-
-    /// Runs the handler like [`Shell::invoke_trap_handler`]. With `only_explicit_exit`, a fatal
-    /// error in the handler is displayed and ends just the handler, so the result reports
-    /// `ExitShell` only when the handler itself called `exit`.
-    async fn invoke_trap_handler_inner(
-        &mut self,
-        signal: TrapSignal,
-        params: &ExecutionParameters,
-        only_explicit_exit: bool,
     ) -> Result<ExecutionResult, error::Error> {
         // Per-signal self-recursion guard: don't re-enter a trap that is
         // already being handled. Different traps *can* fire from each
@@ -183,14 +126,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
         // The guard leaves the handler, restoring `$?`, once this finishes -- or is cancelled.
-        let mut guard = self.enter_trap_handler(signal, Some(&handler));
-        if only_explicit_exit {
-            guard.run_trap_program(&handler, &params).await
-        } else {
-            guard
-                .run_string(&handler.command, &handler.source_info, &params)
-                .await
-        }
+        self.enter_trap_handler(signal, Some(&handler))
+            .run_string(&handler.command, &handler.source_info, &params)
+            .await
     }
 
     /// Returns whether the given trap signal is inherited in the current

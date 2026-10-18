@@ -86,13 +86,18 @@ impl ExecutionResult {
     pub const fn is_return_or_exit(&self) -> bool {
         matches!(
             self.next_control_flow,
-            ExecutionControlFlow::ReturnFromFunctionOrScript | ExecutionControlFlow::ExitShell
+            ExecutionControlFlow::ReturnFromFunctionOrScript
+                | ExecutionControlFlow::ExitShell
+                | ExecutionControlFlow::ExitShellOnFatalError
         )
     }
 
     /// Returns whether the execution result indicates an exit from the shell.
     pub const fn is_exit(&self) -> bool {
-        matches!(self.next_control_flow, ExecutionControlFlow::ExitShell)
+        matches!(
+            self.next_control_flow,
+            ExecutionControlFlow::ExitShell | ExecutionControlFlow::ExitShellOnFatalError
+        )
     }
 }
 
@@ -224,6 +229,8 @@ pub enum ExecutionControlFlow {
     ReturnFromFunctionOrScript,
     /// Exit the shell.
     ExitShell,
+    /// Exit the shell because a fatal error ended it, rather than `exit` or errexit.
+    ExitShellOnFatalError,
 }
 
 impl ExecutionControlFlow {
