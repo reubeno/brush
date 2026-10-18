@@ -200,3 +200,15 @@ cases:
       declare -n ref=target
       mapfile -t -O 2 ref < <(echo -e "a\nb")
       declare -p target
+
+  # Sent by another program, so that it reaches the shell through the kernel; nothing is ever
+  # written to the FIFO, so the read ends only if the signal ends it.
+  - name: "A signal that ends the shell ends a mapfile waiting for input"
+    known_failure: true # TODO(signals): signals aren't delivered to the shell
+    timeout_in_seconds: 5
+    stdin: |
+      mkfifo p; exec 3<>p
+      trap 'echo exit-trap' EXIT
+      ( sleep 0.2; /bin/kill -TERM $$ ) &
+      mapfile -t -n 1 a <&3
+      echo "not reached"

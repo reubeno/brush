@@ -802,17 +802,20 @@ cases:
     args: ["./test.sh"]
 
   #
-  # Tests requiring wait with job specs (known failures)
+  # Waiting for a coprocess by its PID. The PID is taken as soon as the coprocess starts, and the
+  # coprocess ends only once told to (by a file): bash drops its variables once it has reaped it.
   #
   - name: "Wait for specific coproc PID"
     known_failure: true # TODO(wait): wait with job specs not implemented
     test_files:
       - path: "test.sh"
         contents: |
-          coproc { echo "done"; }
-          fd=${COPROC[0]}
-          cat <&$fd
-          wait $COPROC_PID
+          coproc { echo "done"; until [ -e go ]; do :; done; }
+          pid=$COPROC_PID
+          read -r line <&${COPROC[0]}
+          echo "$line"
+          touch go
+          wait "$pid"
           echo "wait status: $?"
     args: ["./test.sh"]
 
@@ -821,8 +824,10 @@ cases:
     test_files:
       - path: "test.sh"
         contents: |
-          coproc { exit 42; }
-          wait $COPROC_PID
+          coproc { until [ -e go ]; do :; done; exit 42; }
+          pid=$COPROC_PID
+          touch go
+          wait "$pid"
           echo "exit status: $?"
     args: ["./test.sh"]
 
@@ -831,9 +836,30 @@ cases:
     test_files:
       - path: "test.sh"
         contents: |
-          coproc MYPROC { echo "done"; }
-          fd=${MYPROC[0]}
-          cat <&$fd
-          wait $MYPROC_PID
+          coproc MYPROC { echo "done"; until [ -e go ]; do :; done; }
+          pid=$MYPROC_PID
+          read -r line <&${MYPROC[0]}
+          echo "$line"
+          touch go
+          wait "$pid"
           echo "status: $?"
     args: ["./test.sh"]
+
+  # The PID is taken first: bash drops COPROC_PID once it has reaped the coprocess, which the
+  # kill may bring about before `wait` expands it.
+  - name: "COPROC_PID names the coprocess for kill and wait"
+    skip: true # TODO(signals): hangs: a wait for a job's program never returns
+    stdin: |
+      coproc cat
+      pid=$COPROC_PID
+      kill $pid
+      wait $pid
+      echo "status: $?"
+
+  - name: "A coprocess's variables are unset once it's waited for"
+    known_failure: true # TODO(jobs): brush never unsets a finished coprocess's variables; bash does when it reaps it (so `wait $COPROC_PID` after it ends races in bash)
+    stdin: |
+      coproc MY { :; }
+      pid=$MY_PID
+      wait $pid
+      echo "status: $? pid: [${MY_PID-unset}] fds: [${MY[@]-unset}]"

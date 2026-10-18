@@ -154,6 +154,14 @@ cases:
       false
       echo "total: $count"
 
+  - name: "A trap leaves PIPESTATUS as it found it"
+    known_failure: true # TODO(signals): PIPESTATUS isn't kept across a trap
+    stdin: |
+      trap 'true | false | true' USR1
+      true | false | false; kill -USR1 $$; echo "signal: ${PIPESTATUS[*]}"
+      trap 'true | true | true' ERR
+      true | false; echo "err: ${PIPESTATUS[*]}"
+
   - name: "trap ERR - has access to exit status"
     stdin: |
       trap 'echo "ERR with status: $?"' ERR
@@ -342,11 +350,13 @@ cases:
       trap -p INT &
       wait
 
+  # The job writes before it signals the shell: the trapped signal interrupts bash's `wait`,
+  # so anything the job wrote after it would race the shell's own output.
   - name: "background job does not fire inherited signal trap"
     known_failure: true # TODO(signals): background job signal handling
     stdin: |
       trap 'echo "[int]" >&2' INT
-      { kill -INT $$; echo "after kill"; } &
+      { echo "before kill"; kill -INT $$; } &
       wait
       echo "main done"
 
@@ -757,3 +767,14 @@ cases:
       f() { exit 3; }
       (f)
       echo "after: $?"
+
+  - name: "trap -p lists traps in bash's order"
+    skip: true # TODO(trap): traps are listed in hash order, which now and then happens to be bash's
+    stdin: |
+      trap 'echo r' RETURN
+      trap 'echo u' USR1
+      trap 'echo t' TERM
+      trap 'echo i' INT
+      trap 'echo x' EXIT
+      trap -p
+      trap - EXIT
