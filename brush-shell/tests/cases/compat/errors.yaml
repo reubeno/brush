@@ -524,7 +524,7 @@ cases:
       (unset -f 1x; echo "survived: $?"); echo "unset -f 1x: $?"
 
   - name: "Builtin errors in a pipeline are reported on the command's stderr"
-    known_failure: true # TODO(pipeline): a builtin's error in a stage escapes the stage's stderr
+    known_failure: true # TODO(errors): shopt reports its usage error without the "shopt:" prefix and with status 2 where bash gives 1
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       shopt -s -u extglob 2>&1 | strip

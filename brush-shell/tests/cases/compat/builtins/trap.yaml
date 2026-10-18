@@ -439,6 +439,12 @@ cases:
       { trap 'echo "[in trap: $?]"' EXIT; : ${unset_var?unset}; } 2>/dev/null | cat
       echo "after"
 
+  - name: "fatal error in a subshell EXIT trap keeps the subshell status"
+    ignore_stderr: true
+    stdin: |
+      (trap ': ${undefined_variable?unset}; echo "not reached"' EXIT; exit 4)
+      echo "status: $?"
+
   - name: "pipeline EXIT trap behavior"
     stdin: |
       trap 'echo "[exit]"' EXIT
