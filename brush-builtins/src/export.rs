@@ -109,7 +109,7 @@ impl ExportCommand {
                         variables::ShellValueLiteral::Scalar(s.flatten())
                     }
                     ast::AssignmentValue::Array(a) => {
-                        variables::ShellValueLiteral::Array(variables::ArrayLiteral(
+                        variables::ShellValueLiteral::Array(variables::ArrayLiteral::new(
                             a.iter()
                                 .map(|(k, v)| (k.as_ref().map(|k| k.flatten()), v.flatten()))
                                 .collect(),

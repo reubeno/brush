@@ -72,7 +72,7 @@ impl HelpCommand {
         for i in 0..items_per_column {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
-                    let prefix = if builtin.disabled { "*" } else { " " };
+                    let prefix = if !builtin.is_enabled() { "*" } else { " " };
                     write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
                     // column width
                 }
@@ -139,7 +139,7 @@ impl HelpCommand {
             colorized: stdout.is_terminal(),
         };
 
-        let content = (registration.content_func)(name, content_type, &options)?;
+        let content = registration.content(name, content_type, &options)?;
 
         write!(stdout, "{content}")?;
         stdout.flush()?;

@@ -38,6 +38,28 @@ pub struct ExecutionContext<'a, SE: ShellExtensions = extensions::DefaultShellEx
     pub params: ExecutionParameters,
 }
 
+impl<'a, SE: ShellExtensions> ExecutionContext<'a, SE> {
+    /// Returns a context for running `command_name` in `shell` with `params`;
+    /// e.g., to run a builtin directly, outside of a script.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell to run the command in.
+    /// * `command_name` - The name the command is invoked under.
+    /// * `params` - The parameters to run it with.
+    pub const fn new(
+        shell: &'a mut Shell<SE>,
+        command_name: String,
+        params: ExecutionParameters,
+    ) -> Self {
+        Self {
+            shell,
+            command_name,
+            params,
+        }
+    }
+}
+
 impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
@@ -371,7 +393,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         if self.shell.options().posix_mode
             && builtin
                 .as_ref()
-                .is_some_and(|r| !r.disabled && r.special_builtin)
+                .is_some_and(|r| r.is_enabled() && r.is_special())
         {
             #[allow(clippy::unwrap_used, reason = "we just checked that builtin is Some")]
             let builtin = builtin.unwrap();
@@ -391,7 +413,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // If we haven't yet resolved the command name and found a builtin that's not disabled,
         // then invoke it.
         if let Some(builtin) = builtin {
-            if !builtin.disabled {
+            if builtin.is_enabled() {
                 return self.execute_via_builtin(builtin).await;
             }
         }
@@ -458,11 +480,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Builtins may block (e.g., reading input), so keep them from holding up the
         // rest of the pipeline.
         let task = sys::tasks::spawn_blocking(async move {
-            let cmd_context = ExecutionContext {
-                shell: &mut shell,
-                command_name,
-                params,
-            };
+            let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let result = execute_builtin_command(&builtin, cmd_context, args).await;
 
@@ -482,11 +500,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         let result = execute_builtin_command(&builtin, cmd_context, self.args).await;
 
@@ -544,11 +558,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
         let task = sys::tasks::spawn_blocking(async move {
-            let cmd_context = ExecutionContext {
-                shell: &mut shell,
-                command_name,
-                params,
-            };
+            let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let spawn_result =
                 invoke_shell_function(func_registration, cmd_context, &args[1..]).await;
@@ -577,11 +587,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         // Strip the function name off args.
         let result = invoke_shell_function(func_registration, cmd_context, &self.args[1..]).await;
@@ -599,11 +605,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let mut shell = self.shell;
         let last_arg = Self::take_last_arg(&self.args);
 
-        let cmd_context = ExecutionContext {
-            shell: &mut shell,
-            command_name: self.command_name,
-            params: self.params,
-        };
+        let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
         let result = execute_external_command(
             cmd_context,
@@ -720,9 +722,9 @@ async fn execute_builtin_command<SE: extensions::ShellExtensions>(
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
     // In POSIX mode, special builtins that return errors are to be treated as fatal.
-    let mark_errors_fatal = builtin.special_builtin && context.shell.options().posix_mode;
+    let mark_errors_fatal = builtin.is_special() && context.shell.options().posix_mode;
 
-    match (builtin.execute_func)(context, args).await {
+    match builtin.execute(context, args).await {
         Ok(result) => Ok(result),
         Err(e) => {
             // Broken pipe errors should silently return the appropriate exit code

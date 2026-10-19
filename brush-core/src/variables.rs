@@ -637,6 +637,7 @@ pub enum ShellValueUnsetType {
 
 /// A shell value literal; used for assignment.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum ShellValueLiteral {
     /// A scalar value.
     Scalar(String),
@@ -698,9 +699,28 @@ impl From<Vec<&str>> for ShellValueLiteral {
     }
 }
 
+impl From<Vec<String>> for ShellValueLiteral {
+    fn from(value: Vec<String>) -> Self {
+        Self::Array(ArrayLiteral(value.into_iter().map(|s| (None, s)).collect()))
+    }
+}
+
 /// An array literal.
 #[derive(Clone, Debug)]
-pub struct ArrayLiteral(pub Vec<(Option<String>, String)>);
+pub struct ArrayLiteral(pub(crate) Vec<(Option<String>, String)>);
+
+impl ArrayLiteral {
+    /// Returns an array literal with the given elements, in order. An element
+    /// with a key is assigned at that key (`[key]=value`); one without is
+    /// assigned at the next index.
+    ///
+    /// # Arguments
+    ///
+    /// * `elements` - The elements, each an optional key and a value.
+    pub const fn new(elements: Vec<(Option<String>, String)>) -> Self {
+        Self(elements)
+    }
+}
 
 /// Style for formatting a shell variable's value.
 #[derive(Copy, Clone, Debug)]

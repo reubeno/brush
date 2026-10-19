@@ -170,7 +170,7 @@ fn assign_input_to_variables(
         let literal_fields = build_array_fields(input_line, ifs, skip_ifs_splitting);
         shell.env_mut().update_or_add(
             array_variable,
-            variables::ShellValueLiteral::Array(variables::ArrayLiteral(literal_fields)),
+            variables::ShellValueLiteral::Array(variables::ArrayLiteral::new(literal_fields)),
             |_| Ok(()),
             env::EnvironmentLookup::Anywhere,
             env::EnvironmentScope::Global,

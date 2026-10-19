@@ -156,22 +156,44 @@ pub struct ContentOptions {
 #[derive(Clone)]
 pub struct Registration<SE: extensions::ShellExtensions> {
     /// Function to execute the builtin.
-    pub execute_func: CommandExecuteFunc<SE>,
+    execute_func: CommandExecuteFunc<SE>,
 
     /// Function to retrieve the builtin's content/help text.
-    pub content_func: CommandContentFunc,
+    content_func: CommandContentFunc,
 
-    /// Has this registration been disabled?
-    pub disabled: bool,
+    /// Whether the builtin is enabled; see [`Registration::is_enabled`].
+    enabled: bool,
 
     /// Is the builtin classified as "special" by specification?
-    pub special_builtin: bool,
+    special_builtin: bool,
 
     /// Is this builtin one that takes specially handled declarations?
-    pub declaration_builtin: bool,
+    declaration_builtin: bool,
 }
 
 impl<SE: extensions::ShellExtensions> Registration<SE> {
+    /// Returns an enabled registration for a builtin that runs `execute_func`
+    /// and whose help text comes from `content_func`. The [`builtin`],
+    /// [`simple_builtin`], [`decl_builtin`], and [`raw_arg_builtin`] functions
+    /// return one for an implementation of the respective trait.
+    ///
+    /// # Arguments
+    ///
+    /// * `execute_func` - Function to execute the builtin.
+    /// * `content_func` - Function to retrieve the builtin's help text.
+    pub const fn new(
+        execute_func: CommandExecuteFunc<SE>,
+        content_func: CommandContentFunc,
+    ) -> Self {
+        Self {
+            execute_func,
+            content_func,
+            enabled: true,
+            special_builtin: false,
+            declaration_builtin: false,
+        }
+    }
+
     /// Updates the given registration to mark it for a special builtin.
     #[must_use]
     pub const fn special(self) -> Self {
@@ -179,6 +201,68 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
             special_builtin: true,
             ..self
         }
+    }
+
+    /// Marks the registration for a builtin that takes declarations.
+    const fn declaration(self) -> Self {
+        Self {
+            declaration_builtin: true,
+            ..self
+        }
+    }
+
+    /// Runs the builtin.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The context in which the builtin runs.
+    /// * `args` - The arguments to the builtin, starting with its name.
+    pub fn execute<'a>(
+        &self,
+        context: commands::ExecutionContext<'a, SE>,
+        args: Vec<commands::CommandArg>,
+    ) -> BoxFuture<'a, Result<results::ExecutionResult, error::Error>> {
+        (self.execute_func)(context, args)
+    }
+
+    /// Returns the builtin's help content of the given type.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name the builtin is registered under.
+    /// * `content_type` - The type of content to retrieve.
+    /// * `options` - Additional options for content retrieval.
+    pub fn content(
+        &self,
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, error::Error> {
+        (self.content_func)(name, content_type, options)
+    }
+
+    /// Returns whether the builtin is enabled; `enable -n` disables one.
+    pub const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Enables or disables the builtin.
+    ///
+    /// # Arguments
+    ///
+    /// * `enabled` - Whether the builtin is to be enabled.
+    pub const fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    /// Returns whether the builtin is classified as "special" by POSIX.
+    pub const fn is_special(&self) -> bool {
+        self.special_builtin
+    }
+
+    /// Returns whether the builtin takes specially handled declarations.
+    pub(crate) const fn is_declaration(&self) -> bool {
+        self.declaration_builtin
     }
 }
 
@@ -381,25 +465,13 @@ pub trait SimpleCommand {
 /// `SimpleCommand` trait.
 pub fn simple_builtin<B: SimpleCommand + Send + Sync, SE: extensions::ShellExtensions>()
 -> Registration<SE> {
-    Registration {
-        execute_func: exec_simple_builtin::<B, SE>,
-        content_func: B::get_content,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: false,
-    }
+    Registration::new(exec_simple_builtin::<B, SE>, B::get_content)
 }
 
 /// Returns a built-in command registration, given an implementation of the
 /// `Command` trait.
 pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> Registration<SE> {
-    Registration {
-        execute_func: exec_builtin::<B, SE>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: false,
-    }
+    Registration::new(exec_builtin::<B, SE>, get_builtin_content::<B>)
 }
 
 /// Returns a built-in command registration, given an implementation of the
@@ -407,13 +479,7 @@ pub fn builtin<B: Command + Send + Sync, SE: extensions::ShellExtensions>() -> R
 /// declarations as arguments.
 pub fn decl_builtin<B: DeclarationCommand + Send + Sync, SE: extensions::ShellExtensions>()
 -> Registration<SE> {
-    Registration {
-        execute_func: exec_declaration_builtin::<B, SE>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: true,
-    }
+    Registration::new(exec_declaration_builtin::<B, SE>, get_builtin_content::<B>).declaration()
 }
 
 #[allow(clippy::too_long_first_doc_paragraph)]
@@ -427,13 +493,7 @@ pub fn raw_arg_builtin<
     B: DeclarationCommand + Default + Send + Sync,
     SE: extensions::ShellExtensions,
 >() -> Registration<SE> {
-    Registration {
-        execute_func: exec_raw_arg_builtin::<B, SE>,
-        content_func: get_builtin_content::<B>,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: true,
-    }
+    Registration::new(exec_raw_arg_builtin::<B, SE>, get_builtin_content::<B>).declaration()
 }
 
 fn get_builtin_content<T: Command + Send + Sync>(

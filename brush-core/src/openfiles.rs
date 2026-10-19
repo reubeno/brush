@@ -38,6 +38,7 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 /// exhausting that table. A descriptor is duplicated for real only when an independently owned
 /// copy is needed to hand to an external child process (see `OpenFile::try_clone_to_owned`, which
 /// the native launcher uses for a process's standard streams and other descriptors alike).
+#[non_exhaustive]
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin(std::io::Stdin),

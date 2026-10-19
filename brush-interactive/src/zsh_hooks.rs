@@ -15,7 +15,7 @@
 
 use std::ops::ControlFlow;
 
-use brush_core::variables::{ArrayLiteral, ShellValueLiteral};
+use brush_core::variables::ShellValueLiteral;
 
 use crate::InteractiveOptions;
 use crate::ShellError;
@@ -69,7 +69,7 @@ pub fn init<SE: brush_core::ShellExtensions>(
     // Seeded with the bare hook names, as bash-preexec seeds them -- but by assignment, not
     // `+=`, because this runs before rc files rather than after them.
     for (array_name, hook_name) in [(PRECMD_FUNCTIONS, "precmd"), (PREEXEC_FUNCTIONS, "preexec")] {
-        let value = ShellValueLiteral::Array(ArrayLiteral(vec![(None, hook_name.into())]));
+        let value = ShellValueLiteral::from(vec![hook_name]);
         assign_global(shell, array_name, value)?;
     }
 

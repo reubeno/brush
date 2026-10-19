@@ -475,10 +475,9 @@ impl DeclareCommand {
                 match &assignment.value {
                     ast::AssignmentValue::Scalar(s) => {
                         if let Some(index) = &assigned_index {
-                            initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(vec![(
-                                Some(index.to_owned()),
-                                s.value.clone(),
-                            )])));
+                            initial_value = Some(ShellValueLiteral::Array(ArrayLiteral::new(
+                                vec![(Some(index.to_owned()), s.value.clone())],
+                            )));
                             name_is_array = true;
                         } else {
                             initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
@@ -486,7 +485,7 @@ impl DeclareCommand {
                         }
                     }
                     ast::AssignmentValue::Array(a) => {
-                        initial_value = Some(ShellValueLiteral::Array(ArrayLiteral(
+                        initial_value = Some(ShellValueLiteral::Array(ArrayLiteral::new(
                             a.iter()
                                 .map(|(i, v)| {
                                     (i.as_ref().map(|w| w.value.clone()), v.value.clone())
