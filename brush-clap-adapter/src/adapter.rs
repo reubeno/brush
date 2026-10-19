@@ -61,9 +61,11 @@ pub fn parse_with_double_dash<T: clap::Parser>(
     try_parse_before_double_dash::<T>(argv(invocation)).map_err(|e| to_usage_error(&e))
 }
 
-/// Parses a declaration utility's arguments: its options (each word that
-/// starts with `-` or `+`, and isn't only that) with clap, and the rest as
-/// declarations, which it returns as they arrived.
+/// Parses a declaration utility's arguments: its options with clap, and the
+/// rest as declarations, which it returns as they arrived.
+///
+/// The options are the words that start with `-` or `+`, and aren't only
+/// that, up to the first word that doesn't or to `--`, which is dropped.
 ///
 /// # Arguments
 ///
@@ -81,14 +83,20 @@ pub fn parse_declarations<T: clap::Parser>(
     let mut options = vec![invocation.name().to_owned()];
     let mut declarations = vec![];
 
-    for arg in invocation.into_args() {
+    let mut args = invocation.into_args().into_iter();
+    for arg in args.by_ref() {
         match arg {
+            CommandArg::String(s) if s == "--" => break,
             CommandArg::String(s) if s.len() > 1 && (s.starts_with('-') || s.starts_with('+')) => {
                 options.push(s);
             }
-            _ => declarations.push(arg),
+            _ => {
+                declarations.push(arg);
+                break;
+            }
         }
     }
+    declarations.extend(args);
 
     let options = if plus_options {
         rewrite_plus_options(options)
@@ -332,10 +340,28 @@ mod tests {
     #[test]
     fn declaration_utilities_get_their_options_parsed_and_the_rest_as_given() {
         let (flags, declarations): (Flags, _) =
-            parse_declarations(Invocation::new("f", ["-x", "a=1", "-", "+x"]), true).unwrap();
+            parse_declarations(Invocation::new("f", ["-x", "+x", "a=1", "-"]), true).unwrap();
         assert!(flags.x && flags.plus_x);
         let declarations: Vec<_> = declarations.into_iter().map(String::from).collect();
         assert_eq!(declarations, ["a=1", "-"]);
+    }
+
+    #[test]
+    fn options_end_at_the_first_declaration() {
+        let (flags, declarations): (Flags, _) =
+            parse_declarations(Invocation::new("f", ["a=1", "-x", "+x"]), true).unwrap();
+        assert!(!flags.x && !flags.plus_x);
+        let declarations: Vec<_> = declarations.into_iter().map(String::from).collect();
+        assert_eq!(declarations, ["a=1", "-x", "+x"]);
+    }
+
+    #[test]
+    fn options_end_at_a_double_dash_which_is_dropped() {
+        let (flags, declarations): (Flags, _) =
+            parse_declarations(Invocation::new("f", ["-x", "--", "-x", "--"]), true).unwrap();
+        assert!(flags.x && !flags.plus_x);
+        let declarations: Vec<_> = declarations.into_iter().map(String::from).collect();
+        assert_eq!(declarations, ["-x", "--"]);
     }
 
     #[derive(Parser, Debug)]
@@ -425,6 +451,6 @@ mod tests {
         .unwrap();
         assert!(flags.x && flags.plus_x);
         let declarations: Vec<_> = declarations.into_iter().map(String::from).collect();
-        assert_eq!(declarations, ["a", "-", "+", "b"]);
+        assert_eq!(declarations, ["a", "-", "+", "--", "b"]);
     }
 }
