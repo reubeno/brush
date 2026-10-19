@@ -454,3 +454,15 @@ cases:
       echo "after source: $?"
       command trap "echo" BOGUS
       echo "after trap: $?"
+
+  - name: "command passes --help on to the builtin it runs"
+    stdin: |
+      command cd --help >/dev/null 2>&1; echo "rc=$?"
+      [[ "$(command cd --help; echo .)" == "$(help cd; echo .)" ]] && echo "same as help cd"
+
+  - name: "command rejects -h and an unknown option with status 2"
+    known_failure: true # TODO(command): an unknown option is taken as an operand
+    ignore_stderr: true
+    stdin: |
+      (command -h); echo "rc=$?"
+      (command -z); echo "rc=$?"

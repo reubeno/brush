@@ -322,6 +322,32 @@ fn run_pipeline_interactively() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// On a terminal, `cd --help` is in color, exactly as `help cd` is, and so is
+/// a subcommand's help.
+#[test]
+fn help_asked_for_with_help_is_in_color_on_a_terminal() -> anyhow::Result<()> {
+    let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin!("brush"));
+    cmd.args(["--norc", "--noprofile", "--no-config", "-c"]);
+    cmd.arg("cd --help; echo @@; help cd; echo @@; brushctl complete line --help");
+    let mut session = Session::spawn(cmd)?;
+    session.set_expect_timeout(Some(std::time::Duration::from_secs(10)));
+
+    // Eof matches everything the shell wrote.
+    let output = session.expect(expectrl::Eof)?;
+    let output = String::from_utf8_lossy(output.as_bytes());
+    let parts: Vec<_> = output.split("@@\r\n").collect();
+    let [with_help, help_cd, subcommand] = parts.as_slice() else {
+        anyhow::bail!("unexpected output: {output:?}");
+    };
+
+    assert!(with_help.contains('\x1b'), "{with_help:?}");
+    assert_eq!(with_help, help_cd);
+    assert!(subcommand.contains('\x1b'), "{subcommand:?}");
+    assert!(subcommand.contains("line"), "{subcommand:?}");
+
+    Ok(())
+}
+
 #[test]
 fn login_shell_via_argv0_shows_prompt() -> anyhow::Result<()> {
     let mut session = start_shell_session_with(|cmd| {

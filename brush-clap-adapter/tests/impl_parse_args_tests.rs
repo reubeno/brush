@@ -93,6 +93,38 @@ fn plain_form_rejects_what_clap_rejects() {
 }
 
 #[test]
+fn plain_form_turns_help_but_not_h_into_a_help_request() {
+    let err = parse::<Plain>("plain", words(["-v", "--help"])).unwrap_err();
+    assert!(err.is_help());
+    for flag in ["-h", "-z"] {
+        let err = parse::<Plain>("plain", words([flag])).unwrap_err();
+        assert!(!err.is_help(), "{flag}");
+        assert!(err.to_string().contains(&format!("'{flag}'")), "{err}");
+    }
+}
+
+#[test]
+fn every_form_turns_clap_s_help_flag_into_a_help_request() {
+    assert!(
+        parse::<PlusOptions>("p", words(["--help"]))
+            .unwrap_err()
+            .is_help()
+    );
+    assert!(
+        parse::<KeepDoubleDash>("k", words(["--help", "--"]))
+            .unwrap_err()
+            .is_help()
+    );
+    assert!(
+        parse::<DeclarationUtility>("d", words(["--help"]))
+            .unwrap_err()
+            .is_help()
+    );
+    // After a double dash, `--help` is an operand.
+    assert!(parse::<KeepDoubleDash>("k", words(["--", "--help"])).is_ok());
+}
+
+#[test]
 fn plain_form_takes_a_double_dash_as_clap_does() {
     let plain: Plain = parse("plain", words(["--", "-v"])).unwrap();
     assert!(!plain.verbose);
@@ -351,7 +383,8 @@ fn parse_form_hands_the_whole_invocation_to_the_parser() {
 #[test]
 fn parse_form_returns_the_parser_s_error() {
     let err = parse::<Custom>("custom", words(["ok", "bad"])).unwrap_err();
-    assert_eq!(err, UsageError::new("custom: bad argument"));
+    assert!(!err.is_help());
+    assert_eq!(err.to_string(), "custom: bad argument");
 }
 
 #[test]

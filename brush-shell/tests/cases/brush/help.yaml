@@ -34,3 +34,18 @@ cases:
       CLICOLOR_FORCE=1
       help -s cd
     expected_stdout: "cd: cd [-LPe@] [target_dir]\n"
+
+  - name: "A builtin's subcommand help describes the subcommand on stdout"
+    stdin: |
+      out=$(brushctl complete line --help); echo "rc=$?"
+      [[ $out == *"Usage: brushctl complete line"* ]] && echo "subcommand help on stdout"
+    expected_stdout: |
+      rc=2
+      subcommand help on stdout
+    expected_stderr: ""
+
+  - name: "A builtin with subcommands prints what help prints for it"
+    stdin: |
+      [[ "$(brushctl --help; echo .)" == "$(help brushctl; echo .)" ]] && echo "same"
+    expected_stdout: |
+      same

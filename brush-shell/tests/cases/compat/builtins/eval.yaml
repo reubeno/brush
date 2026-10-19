@@ -86,3 +86,10 @@ cases:
       set -u
       builtin eval 'echo $nope'; echo "rc=$?"
       echo next
+
+  - name: "eval rejects -h and an unknown option with status 2"
+    known_failure: true # TODO(eval): an unknown option is taken as an operand
+    ignore_stderr: true
+    stdin: |
+      (eval -h); echo "rc=$?"
+      (eval -z); echo "rc=$?"

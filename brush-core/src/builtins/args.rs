@@ -13,6 +13,7 @@
 
 use crate::builtins::{ContentOptions, ContentType, DeclarationRole};
 use crate::{CommandArg, error};
+use std::sync::Arc;
 
 /// One invocation of a builtin, as handed to its parser.
 ///
@@ -61,16 +62,25 @@ impl<'a> Invocation<'a> {
     }
 }
 
-/// Misuse of a builtin: a problem with how it was invoked.
+/// Misuse of a builtin: a problem with how it was invoked, or a request for
+/// help.
 ///
-/// A parser returns one from [`ParseArgs::parse`]. The shell writes its
-/// message to the builtin's standard error, as it is, and the command fails
-/// with the invalid-usage status (2).
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("{message}")]
-pub struct UsageError {
-    message: String,
+/// A parser returns one from [`ParseArgs::parse`], and the command fails with
+/// the invalid-usage status (2). The shell writes misuse's message to the
+/// builtin's standard error, as it is. For a [help request](Self::help), it
+/// renders the help, in color if standard output is a terminal, and writes it
+/// to standard output instead.
+#[derive(Clone)]
+pub struct UsageError(Kind);
+
+#[derive(Clone)]
+enum Kind {
+    Misuse(String),
+    Help(Arc<RenderHelp>),
 }
+
+/// Renders the help that a help request answers with.
+type RenderHelp = dyn Fn(&ContentOptions) -> Result<String, error::Error> + Send + Sync;
 
 impl UsageError {
     /// Misuse, described by `message`.
@@ -79,11 +89,66 @@ impl UsageError {
     ///
     /// * `message` - What was wrong, as the shell is to print it.
     pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
+        Self(Kind::Misuse(message.into()))
+    }
+
+    /// A request for help (e.g. `--help`), answered with what `render`
+    /// returns. The shell calls it once, with the options it should render
+    /// with; a builtin's own help is usually [`ParseArgs::content`]'s
+    /// [`ContentType::DetailedHelp`].
+    ///
+    /// # Arguments
+    ///
+    /// * `render` - Renders the help with the given options.
+    pub fn help(
+        render: impl Fn(&ContentOptions) -> Result<String, error::Error> + Send + Sync + 'static,
+    ) -> Self {
+        Self(Kind::Help(Arc::new(render)))
+    }
+
+    /// Returns whether this is a request for help, rather than misuse.
+    pub const fn is_help(&self) -> bool {
+        matches!(self.0, Kind::Help(_))
+    }
+
+    /// Renders the help a help request answers with, or returns `None` for
+    /// misuse.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The options to render with.
+    pub fn render_help(&self, options: &ContentOptions) -> Option<Result<String, error::Error>> {
+        match &self.0 {
+            Kind::Misuse(_) => None,
+            Kind::Help(render) => Some(render(options)),
         }
     }
 }
+
+/// Displays misuse's message, or a help request's help rendered without
+/// color (or why it couldn't be).
+impl std::fmt::Display for UsageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Kind::Misuse(message) => f.write_str(message),
+            Kind::Help(render) => match render(&ContentOptions::default()) {
+                Ok(help) => f.write_str(&help),
+                Err(e) => write!(f, "{e}"),
+            },
+        }
+    }
+}
+
+impl std::fmt::Debug for UsageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Kind::Misuse(message) => f.debug_tuple("UsageError").field(message).finish(),
+            Kind::Help(_) => f.write_str("UsageError(help)"),
+        }
+    }
+}
+
+impl std::error::Error for UsageError {}
 
 /// The parsing half of a builtin: how its arguments are read, and its help.
 ///
@@ -224,8 +289,31 @@ mod tests {
             err.to_string(),
             "cmd: -z: invalid option\ncmd: usage: cmd [-a]"
         );
-        assert_eq!(UsageError::new(String::from("x")), UsageError::new("x"));
-        assert_ne!(UsageError::new("x"), UsageError::new("y"));
+        assert!(!err.is_help());
+        assert!(err.render_help(&ContentOptions::default()).is_none());
+    }
+
+    #[test]
+    fn a_help_request_renders_its_help_with_the_options_it_is_given() {
+        let help = UsageError::help(|options| Ok(format!("colorized={}\n", options.colorized)));
+        assert!(help.is_help());
+        let colorized = help
+            .render_help(&ContentOptions { colorized: true })
+            .map(Result::unwrap);
+        assert_eq!(colorized.as_deref(), Some("colorized=true\n"));
+        assert_eq!(help.to_string(), "colorized=false\n");
+        assert_eq!(format!("{help:?}"), "UsageError(help)");
+    }
+
+    #[test]
+    fn a_help_request_whose_help_fails_displays_why() {
+        let help = UsageError::help(|_| error::unimp("help for cmd"));
+        assert!(
+            help.render_help(&ContentOptions::default())
+                .unwrap()
+                .is_err()
+        );
+        assert!(help.to_string().contains("help for cmd"), "{help}");
     }
 
     #[test]
