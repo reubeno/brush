@@ -122,6 +122,26 @@ cases:
       compopt -o nospace -- +cmd -cmd; echo "rc=$?"
       complete -p -- +cmd -cmd
 
+  - name: "compopt takes a lone + as a command name"
+    known_failure: true # TODO(compopt): the `+` option rewrite drops a lone `+`
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      complete -W x ls
+      compopt -o nospace + ls 2>err; echo "rc=$?"; strip <err
+      complete -p ls
+      rm err
+
+  - name: "compopt with no options prints each spec's options"
+    known_failure: true # TODO(compopt): prints nothing
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      complete -o nospace -W x ls
+      complete -W y cat
+      complete -D -W z
+      compopt ls cat; echo "rc=$?"
+      compopt -D; echo "rc=$?"
+
   - name: "complete -r"
     stdin: |
       echo "[Removing non-existent]"
