@@ -65,6 +65,33 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         .await
     }
 
+    /// Source an already parsed program, as [`Self::source_script`] sources a file: in a
+    /// script's call frame, with `args` as its positional parameters. A script sourced many
+    /// times (as an eclass is) then needs parsing only once.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The parsed program to run.
+    /// * `source_info` - Where the program came from, for its call frame and errors.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `params` - Execution parameters.
+    pub async fn source_program<S: Into<String>, I: Iterator<Item = S>>(
+        &mut self,
+        program: &brush_parser::ast::Program,
+        source_info: &crate::SourceInfo,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        self.run_in_script_frame(
+            callstack::ScriptCallType::Source,
+            source_info,
+            args,
+            Ok::<_, brush_parser::ParseError>(program),
+            params,
+        )
+        .await
+    }
+
     /// Parse and execute the given file as a shell script, returning the execution result.
     ///
     /// # Arguments
@@ -104,21 +131,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let source_info = crate::SourceInfo::from(path.to_owned());
 
-        let mut result = self
-            .source_file(opened_file, &source_info, args, params, call_type)
-            .await?;
-
-        // Handle control flow at script execution boundary. If execution completed
-        // with a `return`, we need to clear it since it's already been "used". All
-        // other control flow types are preserved.
-        if matches!(
-            result.next_control_flow,
-            ExecutionControlFlow::ReturnFromFunctionOrScript
-        ) {
-            result.next_control_flow = ExecutionControlFlow::Normal;
-        }
-
-        Ok(result)
+        self.source_file(opened_file, &source_info, args, params, call_type)
+            .await
     }
 
     /// Source the given file as a shell script, returning the execution result.
@@ -144,11 +158,49 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
         let parse_result = parser.parse_program();
 
-        let script_positional_args = args.map(Into::into);
-
-        self.enter_script(call_type, source_info, script_positional_args)
-            .run_parsed_result(parse_result, source_info, params)
+        self.run_in_script_frame(call_type, source_info, args, parse_result, params)
             .await
+    }
+
+    /// Runs a script's program in a new call frame for the script, as every way of running
+    /// a script file or a parsed program as a script does: enters the frame, runs the
+    /// program (or reports why it failed to parse), reports any error, and ends the
+    /// script's `return` at the script's boundary.
+    ///
+    /// # Arguments
+    ///
+    /// * `call_type` - The type of script call being made.
+    /// * `source_info` - Where the script came from, for its call frame and errors.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `parse_result` - The script's parsed program, or the error parsing it failed with.
+    /// * `params` - Execution parameters.
+    async fn run_in_script_frame<
+        S: Into<String>,
+        I: Iterator<Item = S>,
+        P: std::borrow::Borrow<brush_parser::ast::Program>,
+    >(
+        &mut self,
+        call_type: callstack::ScriptCallType,
+        source_info: &crate::SourceInfo,
+        args: I,
+        parse_result: Result<P, brush_parser::ParseError>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut result = self
+            .enter_script(call_type, source_info, args.map(Into::into))
+            .run_parsed_result(parse_result, source_info, params)
+            .await?;
+
+        // A `return` that ended the script has been used up at the script's boundary. All
+        // other control flow is preserved.
+        if matches!(
+            result.next_control_flow,
+            ExecutionControlFlow::ReturnFromFunctionOrScript
+        ) {
+            result.next_control_flow = ExecutionControlFlow::Normal;
+        }
+
+        Ok(result)
     }
 
     /// Executes the given string as a shell program, returning the resulting exit status.
@@ -235,15 +287,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Ok(result)
     }
 
-    pub(crate) async fn run_parsed_result(
+    pub(crate) async fn run_parsed_result<P: std::borrow::Borrow<brush_parser::ast::Program>>(
         &mut self,
-        parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
+        parse_result: Result<P, brush_parser::ParseError>,
         source_info: &crate::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
         let result = match parse_result {
-            Ok(prog) => self.run_program(prog, params).await,
+            Ok(prog) => self.execute_program(prog.borrow(), params).await,
             Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
                 parse_err,
                 source_info.clone(),
@@ -274,6 +326,16 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub async fn run_program(
         &mut self,
         program: brush_parser::ast::Program,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        self.execute_program(&program, params).await
+    }
+
+    /// Executes the given parsed shell program: the one place every way of running a
+    /// program runs it. Errors are returned, not reported.
+    async fn execute_program(
+        &mut self,
+        program: &brush_parser::ast::Program,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         program.execute(self, params).await
