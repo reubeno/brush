@@ -269,3 +269,26 @@ cases:
     stdin: |
       complete -f -X '!*.txt' mycmd
       complete -p mycmd
+
+  - name: "compopt and complete -p take words after the first name as names"
+    known_failure: true # TODO(complete): options after a name are still parsed as options
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      complete -W x ls
+      compopt ls -o nospace 2>err; echo "rc=$?"; strip <err
+      complete -p ls
+      complete -W x -- -foo
+      complete -p ls -foo 2>err; echo "rc=$?"; strip <err
+      rm err
+
+  - name: "compopt -D, -E, or -I ignores names given alongside"
+    known_failure: true # TODO(complete): brush refuses names given with -D, -E, or -I
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      complete -D -W x
+      complete -W y cat
+      compopt -o nospace -D cat 2>err; echo "rc=$?"; strip <err
+      complete -p -D
+      complete -p cat
+      rm err
