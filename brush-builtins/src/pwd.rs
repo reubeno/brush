@@ -14,11 +14,13 @@ pub(crate) struct PwdCommand {
     allow_symlinks: bool,
 }
 
-impl builtins::Command for PwdCommand {
+brush_clap_adapter::impl_parse_args!(PwdCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PwdCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut cwd: Cow<'_, Path> = context.shell.working_dir().into();

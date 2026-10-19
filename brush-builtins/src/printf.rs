@@ -22,11 +22,13 @@ pub(crate) struct PrintfCommand {
     format_and_args: Vec<String>,
 }
 
-impl builtins::Command for PrintfCommand {
+brush_clap_adapter::impl_parse_args!(PrintfCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if let Some(variable_name) = &self.output_variable {

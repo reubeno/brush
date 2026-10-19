@@ -137,6 +137,24 @@ impl From<&String> for CommandArg {
     }
 }
 
+impl From<&str> for CommandArg {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_owned())
+    }
+}
+
+impl From<CommandArg> for String {
+    /// Converts the argument to a string; an assignment renders as it was
+    /// written. Like [`ToString::to_string`], but takes ownership instead of
+    /// copying.
+    fn from(value: CommandArg) -> Self {
+        match value {
+            CommandArg::String(s) => s,
+            CommandArg::Assignment(a) => a.to_string(),
+        }
+    }
+}
+
 impl CommandArg {
     const fn to_string_len_hint(&self) -> usize {
         match self {
@@ -921,5 +939,48 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
             ast::IoFileRedirectTarget::Filename(..),
         ) if fd.is_none_or(|fd| fd == openfiles::OpenFiles::STDIN_FD) => Some(redir),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assignment(name: ast::AssignmentName, value: &str, append: bool) -> CommandArg {
+        CommandArg::Assignment(ast::Assignment {
+            name,
+            value: ast::AssignmentValue::Scalar(ast::Word::new(value)),
+            append,
+            loc: crate::SourceSpan::default(),
+        })
+    }
+
+    #[test]
+    fn a_word_converts_to_itself() {
+        assert_eq!(String::from(CommandArg::from("a b")), "a b");
+        assert_eq!(String::from(CommandArg::from(&String::from("x"))), "x");
+        assert_eq!(String::from(CommandArg::from(String::new())), "");
+    }
+
+    #[test]
+    fn an_assignment_converts_to_its_text() {
+        let name = || ast::AssignmentName::VariableName("x".to_owned());
+        assert_eq!(String::from(assignment(name(), "1 2", false)), "x=1 2");
+        assert_eq!(String::from(assignment(name(), "1", true)), "x+=1");
+        assert_eq!(String::from(assignment(name(), "", false)), "x=");
+
+        let element = ast::AssignmentName::ArrayElementName("a".to_owned(), "1".to_owned());
+        assert_eq!(String::from(assignment(element, "v", false)), "a[1]=v");
+    }
+
+    #[test]
+    fn conversion_matches_display() {
+        let args = [
+            CommandArg::from("w"),
+            assignment(ast::AssignmentName::VariableName("x".to_owned()), "1", true),
+        ];
+        for arg in args {
+            assert_eq!(arg.to_string(), String::from(arg));
+        }
     }
 }

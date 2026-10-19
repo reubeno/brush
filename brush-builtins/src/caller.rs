@@ -9,11 +9,13 @@ pub(crate) struct CallerCommand {
     expr: Option<usize>,
 }
 
-impl builtins::Command for CallerCommand {
+brush_clap_adapter::impl_parse_args!(CallerCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CallerCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let stack = context.shell.call_stack();

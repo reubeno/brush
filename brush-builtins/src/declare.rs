@@ -98,7 +98,7 @@ pub(crate) struct DeclareCommand {
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
+    // N.B. These are skipped by clap, but filled in by `impl_parse_args!`.
     #[clap(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
@@ -110,21 +110,13 @@ enum DeclareVerb {
     Readonly,
 }
 
-impl builtins::DeclarationCommand for DeclareCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
-}
+brush_clap_adapter::impl_parse_args!(DeclareCommand, declarations = declarations, plus_options);
 
-impl builtins::Command for DeclareCommand {
-    fn takes_plus_options() -> bool {
-        true
-    }
-
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let verb = match context.command_name.as_str() {

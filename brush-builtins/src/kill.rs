@@ -26,11 +26,13 @@ pub(crate) struct KillCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for KillCommand {
+brush_clap_adapter::impl_parse_args!(KillCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut signal_zero = false;

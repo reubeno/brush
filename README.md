@@ -92,7 +92,7 @@ let result = shell
 assert!(result.is_success());
 ```
 
-For more, see the examples: [register a builtin written in Rust](brush-core/examples/custom-builtin.rs) alongside the standard ones, [call a shell function from Rust](brush-core/examples/call-func.rs) with control over its I/O, or [parse a script and serialize its syntax tree](brush-parser/examples/serde.rs). The [examples guide](docs/reference/examples.md) describes each one and when it's useful.
+For more, see the examples: [register a builtin written in Rust](brush-clap-adapter/examples/custom-builtin.rs) alongside the standard ones, [call a shell function from Rust](brush-core/examples/call-func.rs) with control over its I/O, or [parse a script and serialize its syntax tree](brush-parser/examples/serde.rs). The [examples guide](docs/reference/examples.md) describes each one and when it's useful.
 
 | Crate | API docs | What it provides |
 |---|---|---|

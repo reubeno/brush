@@ -132,11 +132,13 @@ impl CommandCommand {
     }
 }
 
-impl builtins::Command for CommandCommand {
+brush_clap_adapter::impl_parse_args!(CommandCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CommandCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.print_description || self.print_verbose_description {

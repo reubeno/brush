@@ -3,8 +3,8 @@ use brush_core::{ExecutionResult, builtins, error};
 /// Return exit code 1.
 pub(crate) struct FalseCommand {}
 
-impl builtins::SimpleCommand for FalseCommand {
-    fn get_content(
+impl builtins::ParseArgs for FalseCommand {
+    fn content(
         _name: &str,
         content_type: builtins::ContentType,
         _options: &builtins::ContentOptions,
@@ -17,10 +17,18 @@ impl builtins::SimpleCommand for FalseCommand {
         }
     }
 
-    fn execute<SE: brush_core::ShellExtensions, I: Iterator<Item = S>, S: AsRef<str>>(
+    fn parse(_invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
+        Ok(Self {})
+    }
+}
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FalseCommand {
+    type Error = brush_core::Error;
+
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
-        _args: I,
-    ) -> Result<ExecutionResult, brush_core::Error> {
+    ) -> Result<ExecutionResult, Self::Error> {
         Ok(ExecutionResult::general_error())
     }
 }

@@ -37,11 +37,13 @@ pub(crate) struct EnableCommand {
     names: Vec<String>,
 }
 
-impl builtins::Command for EnableCommand {
+brush_clap_adapter::impl_parse_args!(EnableCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();

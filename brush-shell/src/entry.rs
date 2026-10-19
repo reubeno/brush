@@ -30,22 +30,21 @@ impl CommandLineArgs {
     pub(crate) fn try_parse_from(
         itr: impl IntoIterator<Item = String>,
     ) -> Result<Self, clap::Error> {
-        let (mut this, script_args) = brush_core::builtins::try_parse_known::<Self>(itr)?;
+        let (mut this, script_args) =
+            brush_clap_adapter::try_parse_before_double_dash::<Self>(itr)?;
 
-        // Collect any args from after `--` (handled by try_parse_known) into
+        // Collect any args from after `--` (handled by try_parse_before_double_dash) into
         // script_args, which become positional parameters ($0, $1, ...).
-        if let Some(args) = script_args {
-            let mut args = args.peekable();
+        let mut script_args = script_args.into_iter().peekable();
 
-            // Bash stops option parsing at the first non-option word: a script path
-            // or the `-c` command string. A `--` seen before either is the option
-            // terminator and is dropped (`bash -s -- a`, `bash -- script.sh`); one
-            // seen after is an ordinary positional (`bash script.sh -- a`).
-            if this.script_args.is_empty() {
-                args.next_if(|a| a == "--");
-            }
-            this.script_args.extend(args);
+        // Bash stops option parsing at the first non-option word: a script path
+        // or the `-c` command string. A `--` seen before either is the option
+        // terminator and is dropped (`bash -s -- a`, `bash -- script.sh`); one
+        // seen after is an ordinary positional (`bash script.sh -- a`).
+        if this.script_args.is_empty() {
+            script_args.next_if(|a| a == "--");
         }
+        this.script_args.extend(script_args);
 
         // With `-c`, bash takes the command string from the first operand; the
         // operands after it keep their usual meaning, so the next one sets `$0`
@@ -887,7 +886,7 @@ mod tests {
         // Unlike -c, bash's -o consumes -- as its literal value (invalid option
         // name), not as an option terminator.
         let result = CommandLineArgs::try_parse_from(args(&["brush", "-o", "--"]));
-        // try_parse_known splits at --, so -o ends up
+        // try_parse_before_double_dash splits at --, so -o ends up
         // without a value and parsing correctly fails. The key assertion is
         // that we MUST NOT reinterpret -- as an option terminator for -o and
         // then take any later argument as its value.
@@ -938,7 +937,7 @@ mod tests {
     #[test]
     fn parse_c_with_double_dash_and_later_double_dash() -> Result<()> {
         // After removing the first --, -c gets "echo". The second -- is
-        // handled by try_parse_known and appears in script_args.
+        // handled by try_parse_before_double_dash and appears in script_args.
         let parsed_args =
             CommandLineArgs::try_parse_from(args(&["brush", "-c", "--", "echo", "--", "more"]))?;
         assert_eq!(parsed_args.command, Some("echo".to_string()));

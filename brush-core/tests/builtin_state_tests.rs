@@ -5,11 +5,9 @@
 
 use anyhow::Result;
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 
 /// Adds the step its name gives (`by<step>`) to a running total, and returns
 /// the total as its status.
-#[derive(Parser)]
 struct Counter {}
 
 /// The total the counters share: their state.
@@ -20,15 +18,29 @@ struct Total(u8);
 #[derive(Clone, Default)]
 struct UnusedState;
 
-impl builtins::Command for Counter {
+impl builtins::ParseArgs for Counter {
+    fn content(
+        name: &str,
+        _content_type: builtins::ContentType,
+        _options: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!("{name} - add to a running total\n"))
+    }
+
+    fn parse(_invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
+        Ok(Self {})
+    }
+}
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for Counter {
     type Error = brush_core::Error;
 
     #[allow(
         clippy::unused_async_trait_impl,
         reason = "the trait's method is async; this one has nothing to wait for"
     )]
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let step: u8 = context
@@ -44,8 +56,8 @@ impl builtins::Command for Counter {
 
 async fn new_shell() -> Result<brush_core::Shell> {
     Ok(brush_core::Shell::builder()
-        .builtin("by1", builtins::builtin::<Counter, _>())
-        .builtin("by10", builtins::builtin::<Counter, _>())
+        .builtin("by1", builtins::Registration::of::<Counter>())
+        .builtin("by10", builtins::Registration::of::<Counter>())
         .build()
         .await?)
 }

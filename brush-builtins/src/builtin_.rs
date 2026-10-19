@@ -3,30 +3,28 @@ use clap::Parser;
 use brush_core::{ExecutionResult, builtins};
 
 /// Directly invokes a built-in, without going through typical search order.
-#[derive(Default, Parser)]
+#[derive(Parser)]
 pub(crate) struct BuiltinCommand {
     #[clap(skip)]
     args: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for BuiltinCommand {
-    fn set_declarations(&mut self, args: Vec<brush_core::CommandArg>) {
-        self.args = args;
-    }
-}
+brush_clap_adapter::impl_parse_args!(
+    BuiltinCommand,
+    parse = |invocation: builtins::Invocation<'_>| Ok(Self {
+        args: invocation.into_args()
+    }),
+    declaration_utility
+);
 
-impl builtins::Command for BuiltinCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BuiltinCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.args.is_empty() {
-            return Ok(ExecutionResult::success());
-        }
-
-        let args: Vec<_> = self.args.iter().skip(1).cloned().collect();
+        let args = self.args;
         if args.is_empty() {
             return Ok(ExecutionResult::success());
         }

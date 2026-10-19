@@ -188,11 +188,13 @@ const fn special_spec_flag(special: SpecialSpec) -> &'static str {
     }
 }
 
-impl builtins::Command for CompleteCommand {
+brush_clap_adapter::impl_parse_args!(CompleteCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Like bash, -D, -E, or -I name a special spec in place of any names given; they
@@ -377,11 +379,13 @@ pub(crate) struct CompGenCommand {
     word: Option<String>,
 }
 
-impl builtins::Command for CompGenCommand {
+brush_clap_adapter::impl_parse_args!(CompGenCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompGenCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let spec = self.common_args.create_spec();
@@ -427,15 +431,13 @@ pub(crate) struct CompOptCommand {
     names: Vec<String>,
 }
 
-impl builtins::Command for CompOptCommand {
+brush_clap_adapter::impl_parse_args!(CompOptCommand, plus_options);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
     type Error = brush_core::Error;
 
-    fn takes_plus_options() -> bool {
-        true
-    }
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Like bash, an option given with both `-o` and `+o` is disabled, whatever their

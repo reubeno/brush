@@ -5,6 +5,7 @@ members = [
     "brush-shell",
     "brush-parser",
     "brush-core",
+    "brush-clap-adapter",
     "brush-builtins",
     "brush-coreutils-builtins",
     "brush-experimental-builtins",

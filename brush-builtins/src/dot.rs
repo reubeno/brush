@@ -14,11 +14,13 @@ pub(crate) struct DotCommand {
     script_args: Vec<String>,
 }
 
-impl builtins::Command for DotCommand {
+brush_clap_adapter::impl_parse_args!(DotCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DotCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // TODO(dot): Handle trap inheritance.
