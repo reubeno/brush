@@ -350,10 +350,6 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
     /// `None`, the default search logic will be used.
     pub path_dirs: Option<Vec<PathBuf>>,
 
-    /// The process group ID to use for externally executed commands. This may be
-    /// `None`, in which case the default behavior will be used.
-    pub process_group_id: Option<i32>,
-
     /// Optional override for the `argv[0]` value presented to an externally
     /// spawned process. When `None`, `command_name` is used.
     pub argv0: Option<String>,
@@ -384,7 +380,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             args: args.into_iter().collect(),
             use_functions: true,
             path_dirs: None,
-            process_group_id: None,
             argv0: None,
         }
     }
@@ -621,13 +616,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
         let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
-        let result = execute_external_command(
-            cmd_context,
-            path,
-            self.process_group_id,
-            self.argv0.as_deref(),
-            &self.args[1..],
-        );
+        let result =
+            execute_external_command(cmd_context, path, self.argv0.as_deref(), &self.args[1..]);
 
         // Update $_ after command execution.
         shell.update_last_arg_variable(last_arg);
@@ -639,7 +629,6 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     executable_path: &Path,
-    process_group_id: Option<i32>,
     argv0_override: Option<&str>,
     args: &[CommandArg],
 ) -> Result<ExecutionSpawnResult, error::Error> {
@@ -687,7 +676,7 @@ pub(crate) fn execute_external_command(
                 take_foreground: child_stdin_is_terminal,
             }
         }
-    } else if let Some(pgid) = process_group_id {
+    } else if let Some(pgid) = context.params.process_group_id {
         // We need to join an established process group.
         processes::ProcessGroup::Join(pgid)
     } else {

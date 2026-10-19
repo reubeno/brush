@@ -24,8 +24,6 @@ use crate::{
 struct PipelineExecutionContext<'a, SE: extensions::ShellExtensions> {
     /// The shell in which the command should be executed.
     shell: commands::ShellForCommand<'a, SE>,
-    /// Process group ID for spawned processes.
-    process_group_id: Option<i32>,
 }
 
 /// Parameters for execution.
@@ -35,6 +33,10 @@ pub struct ExecutionParameters {
     open_files: openfiles::OpenFiles,
     /// Policy for how to manage spawned external processes.
     pub process_group_policy: ProcessGroupPolicy,
+    /// The process group of the pipeline being executed, once a stage of it has
+    /// started a process; later stages join it, under
+    /// [`ProcessGroupPolicy::SameProcessGroup`].
+    pub(crate) process_group_id: Option<sys::process::ProcessId>,
     /// Whether `errexit` (exit on error) behavior should be
     /// suppressed in this execution context. Defaults to `false`.
     pub suppress_errexit: bool,
@@ -452,7 +454,7 @@ async fn spawn_pipeline_processes(
     let mut pipe_readers = vec![];
     let mut pipe_writers = vec![];
     let mut spawn_results = VecDeque::new();
-    let mut process_group_id: Option<i32> = None;
+    let mut process_group_id: Option<sys::process::ProcessId> = None;
 
     // Create pipes to use between commands, but only bother doing so if there's more than one
     // command.
@@ -495,6 +497,9 @@ async fn spawn_pipeline_processes(
             cmd_params.open_files.set_fd(OpenFiles::STDOUT_FD, writer);
         }
 
+        // The process group the pipeline's first process made, for the rest to join.
+        cmd_params.process_group_id = process_group_id;
+
         let pipeline_context = if !run_in_current_shell {
             // Make sure that all commands in the pipeline are in the same process group.
             if current_pipeline_index > 0 {
@@ -506,12 +511,10 @@ async fn spawn_pipeline_processes(
                     target: Box::new(shell.clone()),
                     parent: shell,
                 },
-                process_group_id,
             }
         } else {
             PipelineExecutionContext {
                 shell: commands::ShellForCommand::ParentShell(shell),
-                process_group_id,
             }
         };
 
@@ -766,7 +769,6 @@ impl Execute for ast::CoprocessCommand {
         let join_handle = sys::tasks::spawn(async move {
             let pipeline_context = PipelineExecutionContext {
                 shell: commands::ShellForCommand::ParentShell(&mut child_shell),
-                process_group_id: None,
             };
             let spawn_result = body
                 .execute_in_pipeline(pipeline_context, child_params)
@@ -1295,10 +1297,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 commands::ShellForCommand::ParentShell(parent_shell)
             };
 
-            let context = PipelineExecutionContext {
-                shell,
-                process_group_id: context.process_group_id,
-            };
+            let context = PipelineExecutionContext { shell };
 
             match execute_command(context, params, cmd_name, &assignments, args).await {
                 Ok(result) => Ok(result),
@@ -1392,7 +1391,6 @@ async fn execute_command(
 
     // Construct the command struct.
     let mut cmd = commands::SimpleCommand::new(shell, params, cmd_name, args);
-    cmd.process_group_id = context.process_group_id;
 
     // Run through any pre-execution hooks as best effort.
     let _ = commands::on_preexecute(&mut cmd).await;
@@ -2093,7 +2091,6 @@ mod tests {
         let mut sizes = vec![];
         let context = PipelineExecutionContext {
             shell: commands::ShellForCommand::ParentShell(&mut shell),
-            process_group_id: None,
         };
         let future = simple.execute_in_pipeline(context, params.clone());
         sizes.push((
@@ -2105,7 +2102,6 @@ mod tests {
 
         let context = PipelineExecutionContext {
             shell: commands::ShellForCommand::ParentShell(&mut shell),
-            process_group_id: None,
         };
         let future = command.execute_in_pipeline(context, params.clone());
         sizes.push(("Command::execute_in_pipeline", size_of_val(&*future), 768));
