@@ -492,3 +492,24 @@ cases:
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       getopts a 1x -a 2>err.txt; echo "getopts: $?"; strip <err.txt
       rm err.txt
+
+  - name: "getopts keeps its place in bundled options out of shell variables"
+    stdin: |
+      set -- -ab
+      getopts ab opt; echo "opt=$opt OPTIND=$OPTIND"
+      for name in $(compgen -v); do
+        [[ $name == *GETOPTS* ]] && echo "variable: $name=${!name}"
+      done
+      echo "prefixed: [${!__GETOPTS@}]"
+      getopts ab opt; echo "opt=$opt OPTIND=$OPTIND"
+
+  - name: "getopts' place in bundled options follows subshell rules"
+    stdin: |
+      set -- -ab -c
+      getopts abc opt; echo "1: opt=$opt OPTIND=$OPTIND"
+      (getopts abc opt; echo "subshell: opt=$opt OPTIND=$OPTIND")
+      echo "substitution: $(getopts abc opt; echo "opt=$opt OPTIND=$OPTIND")"
+      getopts abc opt; echo "2: opt=$opt OPTIND=$OPTIND"
+      getopts abc opt; echo "3: opt=$opt OPTIND=$OPTIND"
+      OPTIND=1
+      getopts abc opt; echo "after reset: opt=$opt OPTIND=$OPTIND"

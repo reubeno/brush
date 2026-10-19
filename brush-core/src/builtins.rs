@@ -6,6 +6,10 @@ use std::io::Write;
 
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
 
+mod state;
+
+pub(crate) use state::BuiltinStates;
+
 /// Type of a function implementing a built-in command.
 ///
 /// # Arguments

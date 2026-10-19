@@ -48,4 +48,14 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     pub const fn builtins(&self) -> &HashMap<String, builtins::Registration<SE>> {
         &self.builtins
     }
+
+    /// Returns the builtin state of type `S` (see
+    /// [`crate::ExecutionContext::state_mut`]), if a builtin has used it.
+    pub fn builtin_state<S: 'static>(&self) -> Option<&S> {
+        self.builtin_states.get()
+    }
+
+    pub(crate) const fn builtin_states_mut(&mut self) -> &mut builtins::BuiltinStates {
+        &mut self.builtin_states
+    }
 }
