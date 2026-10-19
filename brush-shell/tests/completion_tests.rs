@@ -128,7 +128,10 @@ impl TestShell {
 
     async fn run(&mut self, script: &str) -> Result<()> {
         let exec_params = self.shell.default_exec_params();
-        self.shell
+        // Setup scripts may end in a failure on purpose (e.g. to set `$?`); their effects
+        // are what the tests check.
+        let _ = self
+            .shell
             .run_string(
                 script.to_owned(),
                 &brush_core::SourceInfo::default(),
@@ -492,7 +495,7 @@ async fn interactive_completion_sets_comp_key_and_comp_type() -> Result<()> {
     // Register a completion function that captures COMP_KEY and COMP_TYPE.
     let exec_params = shell.default_exec_params();
     let source_info = brush_core::SourceInfo::default();
-    shell
+    let result = shell
         .run_string(
             r"
 _test_comp() {
@@ -507,6 +510,7 @@ complete -F _test_comp mycmd
             &exec_params,
         )
         .await?;
+    anyhow::ensure!(result.is_success());
 
     // Trigger interactive completion.
     let _completions = shell.complete("mycmd ", 6).await?;
@@ -1198,7 +1202,7 @@ async fn completion_filter_is_interpreted_when_completing() -> Result<()> {
     let mut test_shell = TestShell::new().await?;
 
     let exec_params = test_shell.shell.default_exec_params();
-    test_shell
+    let result = test_shell
         .shell
         .run_string(
             "shopt -u extglob; complete -W 'foo bar fab' -X '!(f*)' mycmd; shopt -s extglob"
@@ -1207,6 +1211,7 @@ async fn completion_filter_is_interpreted_when_completing() -> Result<()> {
             &exec_params,
         )
         .await?;
+    anyhow::ensure!(result.is_success());
 
     // `!(f*)` matches what doesn't start with `f`, so those are removed.
     let completions = test_shell.complete_end_of_line_full("mycmd ").await?;

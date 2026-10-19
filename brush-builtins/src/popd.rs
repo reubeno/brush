@@ -28,7 +28,8 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PopdCommand {
 
             // Display dirs.
             let dirs_cmd = crate::dirs::DirsCommand::default();
-            dirs_cmd.execute(context).await?;
+            // The change to the stack decides the status, not the listing.
+            let _ = dirs_cmd.execute(context).await?;
 
             Ok(ExecutionResult::success())
         } else {

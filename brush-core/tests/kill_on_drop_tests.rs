@@ -80,9 +80,10 @@ fn spawn_child_then_tear_down(kill_on_drop: bool) -> Result<u32> {
             .await?;
 
         let params = shell.default_exec_params();
-        shell
+        let result = shell
             .run_string(script.as_str(), &brush_core::SourceInfo::default(), &params)
             .await?;
+        anyhow::ensure!(result.is_success(), "starting the background job failed");
 
         // Wait for the child to report its own pid.
         let mut pid = None;

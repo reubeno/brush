@@ -169,10 +169,104 @@ cases:
       echo "after"
 
   - name: "trap ERR - exit in the handler ends the shell"
-    known_failure: true # TODO(traps): the ERR trap handler's control flow is dropped
     stdin: |
       trap 'echo "in ERR"; exit 3' ERR
       false
+      echo "after"
+
+  - name: "trap ERR - exit in the handler sets the status under errexit"
+    stdin: |
+      set -e
+      trap 'echo "in ERR"; exit 3' ERR
+      false
+      echo "after"
+
+  - name: "trap ERR - exit in the handler ends the shell from a function"
+    stdin: |
+      set -E
+      trap 'echo "in ERR"; exit 3' ERR
+      f() { false; echo "in f"; }
+      f
+      echo "after"
+
+  - name: "trap ERR - exit with no status in the handler exits with the failed status"
+    stdin: |
+      trap 'exit' ERR
+      (exit 4)
+      echo "after"
+
+  - name: "trap ERR - return in the handler returns from the function"
+    stdin: |
+      set -E
+      trap 'return 7 2>/dev/null' ERR
+      f() { false; echo "in f"; }
+      f
+      echo "f: $?"
+      g() { (exit 5); echo "in g"; }
+      trap 'return 2>/dev/null' ERR
+      g
+      echo "g: $?"
+
+  - name: "trap ERR - break in the handler ends the loop"
+    known_failure: true # TODO(traps): a break or continue in the ERR trap handler is dropped
+    stdin: |
+      for i in 1 2; do
+        trap 'break' ERR
+        false
+        echo "i: $i"
+      done
+      echo "after: $?"
+
+  - name: "trap ERR - not run for exit"
+    stdin: |
+      trap 'echo "in ERR"' ERR
+      exit 3
+
+  - name: "trap ERR - with errtrace, runs once for a function that returns a failure"
+    stdin: |
+      set -E
+      trap 'echo "in ERR: $?"' ERR
+      f() { return 3; }
+      f
+      echo "f: $?"
+
+  - name: "trap ERR - runs for a pipeline whose last stage exits"
+    stdin: |
+      trap 'echo "in ERR: $?"' ERR
+      : | exit 3
+      : | { exit 4; }
+      f() { exit 5; }
+      : | f
+      echo "after: $?"
+
+  - name: "trap ERR - exit in the handler sets the status for a failed pipeline stage under errexit"
+    stdin: |
+      set -e
+      trap 'echo "in ERR"; exit 7' ERR
+      : | { false; }
+      echo "after"
+
+  - name: "trap ERR - exit in a pipeline stage's handler ends only the stage"
+    stdin: |
+      set -E
+      true | { trap 'exit 3' ERR; false; echo "not reached"; }
+      echo "after: $?"
+
+  - name: "trap ERR - return in a pipeline stage's handler ends only the stage"
+    stdin: |
+      set -E
+      f() {
+        true | { trap 'return 3' ERR; false; echo "not reached"; }
+        echo "in f: $?"
+      }
+      f
+      echo "f: $?"
+
+  - name: "trap ERR - exit in the last stage's handler ends the shell with lastpipe"
+    stdin: |
+      shopt -s lastpipe
+      set -E
+      true | { trap 'echo "in ERR"; exit 3' ERR; false; }
       echo "after"
 
   - name: "trap ERR - has access to BASH_COMMAND"
@@ -676,10 +770,31 @@ cases:
       echo "not reached"
 
   - name: "EXIT trap - can modify exit status"
-    known_failure: true # TODO(traps): EXIT trap exit doesn't modify status
     stdin: |
       trap 'exit 0' EXIT
       exit 99
+
+  - name: "EXIT trap - exit in the handler sets the status of a shell that ends normally"
+    stdin: |
+      trap 'echo "in EXIT"; exit 7' EXIT
+      echo "body"
+
+  - name: "EXIT trap - exit in the handler sets the status of a -c command"
+    args: ["-c", "trap 'echo \"in EXIT\"; exit 7' EXIT; exit 1"]
+
+  - name: "EXIT trap - exit in the handler sets the status of a script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          trap 'echo "in EXIT"; exit 7' EXIT
+          echo "body"
+    args: ["script.sh"]
+
+  - name: "EXIT trap - set by the ERR trap, its exit wins over the ERR trap's"
+    stdin: |
+      trap 'trap "echo in EXIT; exit 9" EXIT; exit 2' ERR
+      false
+      echo "after"
 
   - name: "EXIT trap - multiple assignments last one wins"
     stdin: |
@@ -760,7 +875,6 @@ cases:
       trap - DEBUG
 
   - name: "ERR trap with errtrace runs once for a subshell that exits"
-    known_failure: true # TODO(trap): the ERR trap runs again for each level the subshell's exit leaves, not once
     stdin: |
       set -E
       trap 'echo "ERR $?"' ERR

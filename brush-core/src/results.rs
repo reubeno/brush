@@ -7,6 +7,7 @@ use crate::{error, processes, tasks};
 
 /// Represents the result of executing a command or similar item.
 #[derive(Default)]
+#[must_use]
 pub struct ExecutionResult {
     /// The control flow transition to apply after execution.
     pub next_control_flow: ExecutionControlFlow,

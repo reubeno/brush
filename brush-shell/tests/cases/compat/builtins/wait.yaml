@@ -52,13 +52,23 @@ cases:
       echo "status: $?"
 
   - name: "wait %job returns the job's status"
-    known_failure: true # TODO(wait): wait %1 returns 0, not the job's status
     ignore_stderr: true # brush also prints "[1]+Done" for the job; see the next case
     stdin: |
       set -m
       { sleep 0.2; exit 3; } &
       wait %1
       echo "status: $?"
+
+  - name: "wait for several jobs returns the last one's status"
+    stdin: |
+      { sleep 0.2; exit 3; } &
+      { sleep 0.3; exit 4; } &
+      wait %1 %2
+      echo "status: $?"
+      { sleep 0.1; exit 5; } &
+      wait %1
+      echo "status: $?"
+      echo "still here"
 
   - name: "wait %job for a job that already finished"
     known_failure: true # TODO(jobs): brush prints "[1]+Done" for a finished job and drops it before wait sees it

@@ -162,7 +162,9 @@ impl JobManager {
     /// Waits for all managed jobs to complete.
     pub async fn wait_all(&mut self) -> Result<Vec<Job>, error::Error> {
         for job in &mut self.jobs {
-            job.wait().await?;
+            // The caller wants the jobs, not their statuses: `wait` with no operands returns 0
+            // whatever they were.
+            let _ = job.wait().await?;
         }
 
         Ok(self.sweep_completed_jobs())
