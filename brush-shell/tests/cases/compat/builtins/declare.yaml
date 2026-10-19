@@ -1272,3 +1272,15 @@ cases:
       declare() { echo "shadow declare: [$*]"; }
       declare a=(1 2)
       unset -f declare
+
+  - name: "Declaration builtins take dash-prefixed operands after -- as names"
+    known_failure: true # TODO(declare): words after `--` that start with `-` are still parsed as options
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { declare -- -x; echo "declare -- -x: $?"; } 2>&1 | strip
+      { typeset -- -x; echo "typeset -- -x: $?"; } 2>&1 | strip
+      { readonly -- -x; echo "readonly -- -x: $?"; } 2>&1 | strip
+      f() { { local -- -x; echo "local -- -x: $?"; } 2>&1 | strip; }
+      f
+      declare -- y=-z
+      declare -p y
