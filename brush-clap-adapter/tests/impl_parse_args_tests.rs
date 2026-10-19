@@ -257,10 +257,17 @@ fn declarations_form_keeps_each_declaration_as_it_arrived() {
 }
 
 #[test]
-fn declarations_form_takes_options_anywhere_among_the_declarations() {
+fn declarations_form_takes_options_only_before_the_first_declaration() {
     let parsed: DeclarationUtility = parse("d", words(["a", "-i", "b"])).unwrap();
+    assert!(!parsed.integer);
+    assert_eq!(describe(&parsed.declarations), ["a", "-i", "b"]);
+}
+
+#[test]
+fn declarations_form_takes_what_follows_a_double_dash_as_declarations() {
+    let parsed: DeclarationUtility = parse("d", words(["-i", "--", "-i"])).unwrap();
     assert!(parsed.integer);
-    assert_eq!(describe(&parsed.declarations), ["a", "b"]);
+    assert_eq!(describe(&parsed.declarations), ["-i"]);
 }
 
 #[test]

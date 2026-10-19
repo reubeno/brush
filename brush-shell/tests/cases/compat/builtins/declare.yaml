@@ -1274,7 +1274,7 @@ cases:
       unset -f declare
 
   - name: "Declaration builtins take dash-prefixed operands after -- as names"
-    known_failure: true # TODO(declare): words after `--` that start with `-` are still parsed as options
+    known_failure: true # TODO(declare): the operand is rejected, but as "not a valid variable name", not bash's quoted "not a valid identifier"
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
       { declare -- -x; echo "declare -- -x: $?"; } 2>&1 | strip
@@ -1284,3 +1284,14 @@ cases:
       f
       declare -- y=-z
       declare -p y
+
+  - name: "Declaration builtins take dash-prefixed words after the first operand as names"
+    stdin: |
+      declare a=1 -x 2>/dev/null; echo "declare: $?"
+      declare -p a
+      typeset t=1 -r 2>/dev/null; echo "typeset: $?"
+      declare -p t
+      readonly c=1 +x 2>/dev/null; echo "readonly: $?"
+      declare -p c
+      f() { local x=1 -r 2>/dev/null; echo "local: $?"; x=2; declare -p x; }
+      f
