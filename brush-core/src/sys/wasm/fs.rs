@@ -2,16 +2,16 @@
 
 pub use crate::sys::stubs::fs::*;
 
+// WASI has no permissions to check, but a path must at least exist.
 impl crate::sys::fs::PathExt for std::path::Path {
     fn readable(&self) -> bool {
-        true
+        self.exists()
     }
 
     fn writable(&self) -> bool {
-        true
+        self.exists()
     }
 
-    // WASI has no execute permission to check, but the path must at least exist.
     fn executable(&self) -> bool {
         self.exists()
     }
