@@ -57,6 +57,11 @@ impl BuiltinStates {
         (**state).as_any().downcast_ref()
     }
 
+    /// Sets the state of type `S`, replacing any there was.
+    pub(crate) fn set<S: Clone + Send + Sync + 'static>(&mut self, state: S) {
+        self.states.insert(TypeId::of::<S>(), Box::new(state));
+    }
+
     /// Returns the state of type `S`, seeding it with `S::default()` on first
     /// use.
     #[allow(
