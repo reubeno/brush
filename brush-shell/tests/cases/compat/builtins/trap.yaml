@@ -778,3 +778,35 @@ cases:
       trap 'echo x' EXIT
       trap -p
       trap - EXIT
+
+  - name: "ERR trap runs once for a failing brace group"
+    known_failure: true # TODO(trap): the ERR trap runs for the group and again for its last command
+    stdin: |
+      trap 'echo err' ERR
+      { false; }
+      if true; then false; fi
+      echo done
+
+  - name: "ERR trap set inside a function runs there"
+    known_failure: true # TODO(trap): an ERR trap set in a function body doesn't fire in it
+    stdin: |
+      f() { trap 'echo err' ERR; false; echo in-f; }
+      f
+
+  - name: "ERR trap set inside a subshell runs there"
+    known_failure: true # TODO(trap): an ERR trap set in a subshell doesn't fire in it
+    stdin: |
+      (trap 'echo err' ERR; false; echo in-sub)
+      echo after
+
+  - name: "EXIT trap - exit in the handler sets a subshell's status"
+    known_failure: true # TODO(trap): a subshell ignores its EXIT trap's exit status
+    stdin: |
+      (trap 'exit 5' EXIT; true)
+      echo "rc=$?"
+
+  - name: "DEBUG trap - exit in the handler ends the shell"
+    known_failure: true # TODO(trap): an exit in the DEBUG trap is ignored
+    stdin: |
+      trap 'exit 4' DEBUG
+      echo not-reached
