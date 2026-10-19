@@ -26,6 +26,21 @@ cases:
     stdin: |
       compgen -A builtin cd | sort
 
+  - name: "compgen lists builtins sorted by name"
+    stdin: |
+      compgen -b c
+      echo ---
+      compgen -A builtin e
+
+  - name: "compgen lists enabled and disabled builtins sorted by name"
+    stdin: |
+      enable -n echo cd command
+      compgen -A disabled
+      echo ---
+      compgen -A enabled c
+      echo ---
+      compgen -A enabled e
+
   - name: "compgen -A directory"
     stdin: |
       touch somefile

@@ -54,6 +54,11 @@ without its front end. Keep that in mind when deciding what to export.
   parses an invocation's words (`ParseArgs`), supplies its help, and runs
   (`Builtin`), and is registered by type (`Registration::of`). Builtins that parse
   with clap implement `ParseArgs` through `brush-clap-adapter`.
+- A shell keeps its builtins' registrations, by name, in a `builtins::Registry`
+  (`Shell::builtins`, `Shell::builtins_mut`), which is the one way to look them up,
+  register them, or enable and disable them. How it stores them is private, so
+  that can change (to share them between a shell and its subshells, say) without
+  changing the API.
 - State a builtin keeps between invocations (as `getopts`'s place in its arguments)
   lives in the shell, kept by its type (`ExecutionContext::state_mut`), and is cloned
   with the shell, so it follows subshell rules as a variable does. A program embedding

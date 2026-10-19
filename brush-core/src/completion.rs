@@ -749,7 +749,7 @@ impl Spec {
                 ),
                 // For now, we only have help topics for built-in commands.
                 CompleteAction::Builtin | CompleteAction::HelpTopic => {
-                    extend_matching(c, shell.builtins().keys(), prefix);
+                    extend_matching(c, shell.builtins().iter().map(|(name, _)| name), prefix);
                 }
                 CompleteAction::Command => c.extend(command_completions(shell, prefix)),
                 CompleteAction::Directory => {
@@ -1366,8 +1366,8 @@ fn command_completions(
 ) -> Vec<String> {
     let mut names = Vec::new();
 
-    // Aliases, functions, and builtins are stored unordered; bash enumerates each sorted by
-    // name.
+    // Aliases and functions are stored unordered; bash enumerates each sorted by name. The
+    // shell's builtins are already listed in order of name.
     extend_matching(&mut names, shell.aliases().keys().sorted(), prefix);
     extend_matching(&mut names, shell.get_keywords(), prefix);
     extend_matching(
@@ -1381,8 +1381,7 @@ fn command_completions(
             .builtins()
             .iter()
             .filter(|(_, registration)| registration.is_enabled())
-            .map(|(name, _)| name)
-            .sorted(),
+            .map(|(name, _)| name),
         prefix,
     );
     names.extend(

@@ -44,9 +44,11 @@ async fn a_builtin_runs_in_a_context_made_by_hand() -> Result<()> {
 #[tokio::test]
 async fn a_registration_reports_what_enable_changes() -> Result<()> {
     let mut shell = new_shell().await?;
-    assert!(shell.builtins()["echo"].is_enabled());
-    assert!(!shell.builtins()["echo"].is_special());
-    assert!(shell.builtins()["export"].is_special());
+    let echo = shell.builtins().get("echo").context("no echo")?;
+    assert!(echo.is_enabled());
+    assert!(!echo.is_special());
+    let export = shell.builtins().get("export").context("no export")?;
+    assert!(export.is_special());
 
     let params = shell.default_exec_params();
     shell
@@ -56,11 +58,13 @@ async fn a_registration_reports_what_enable_changes() -> Result<()> {
             &params,
         )
         .await?;
-    assert!(!shell.builtins()["echo"].is_enabled());
+    let echo = shell.builtins().get("echo").context("no echo")?;
+    assert!(!echo.is_enabled());
 
     // Enabling it through the registration shows in what `enable` lists.
     shell
-        .builtin_mut("echo")
+        .builtins_mut()
+        .get_mut("echo")
         .context("no echo")?
         .set_enabled(true);
     shell

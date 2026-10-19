@@ -414,13 +414,13 @@ fn instantiate_shell_from_file(
     let builtins = brush_builtins::default_builtins(builtin_set);
 
     for (builtin_name, builtin) in builtins {
-        shell.register_builtin(&builtin_name, builtin);
+        shell.builtins_mut().register(builtin_name, builtin);
     }
 
     // Add experimental builtins (if enabled).
     #[cfg(feature = "experimental-builtins")]
     for (builtin_name, builtin) in brush_experimental_builtins::experimental_builtins() {
-        shell.register_builtin(&builtin_name, builtin);
+        shell.builtins_mut().register(builtin_name, builtin);
     }
 
     Ok(shell)
