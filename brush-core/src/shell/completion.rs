@@ -22,6 +22,12 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         completion::complete(self, input, cursor).await
     }
 
+    /// Returns the programmable completion in progress, if any (e.g. while its completion
+    /// function runs), whose options the `compopt` builtin shows.
+    pub const fn in_progress_completion(&self) -> Option<&completion::InProgressCompletion> {
+        self.completion.in_progress.as_ref()
+    }
+
     /// Returns the options of the programmable completion in progress, if any (e.g.
     /// while its completion function runs), which the `compopt` builtin changes.
     pub fn in_progress_completion_options_mut(

@@ -1,4 +1,5 @@
 use clap::{Parser, builder::TypedValueParser as _};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
@@ -188,6 +189,18 @@ const fn special_spec_flag(special: SpecialSpec) -> &'static str {
     }
 }
 
+/// Returns the operand that names the spec `name` in a `complete` or `compopt` command that
+/// `complete -p` or `compopt` prints: a special spec's flag, or the command's name, quoted
+/// if needed.
+fn spec_name_operand(name: SpecName<'_>) -> Cow<'_, str> {
+    match name {
+        SpecName::Special(special) => special_spec_flag(special).into(),
+        SpecName::Command(command) => {
+            escape::quote_if_needed(command, escape::QuoteMode::SingleQuote)
+        }
+    }
+}
+
 brush_clap_adapter::impl_parse_args!(CompleteCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand {
@@ -225,7 +238,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand 
                 let mut specs: Vec<_> = context.shell.completion_config().iter().collect();
                 specs.sort_by_key(|(name, _)| *name);
                 for (name, spec) in specs {
-                    Self::display_named_spec(&context, name, spec)?;
+                    Self::display_spec(&context, name, spec)?;
                 }
             }
             return Ok(ExecutionResult::success());
@@ -243,27 +256,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand 
 }
 
 impl CompleteCommand {
-    /// Displays `spec`, registered under `name`; a special spec is shown by the flag that
-    /// selects it.
-    fn display_named_spec(
-        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        name: SpecName<'_>,
-        spec: &Spec,
-    ) -> Result<(), brush_core::Error> {
-        match name {
-            SpecName::Special(special) => {
-                Self::display_spec(context, Some(special_spec_flag(special)), None, spec)
-            }
-            SpecName::Command(command) => Self::display_spec(context, None, Some(command), spec),
-        }
-    }
-
     fn try_display_spec_for_command(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: SpecName<'_>,
     ) -> Result<bool, brush_core::Error> {
         if let Some(spec) = context.shell.completion_config().get(name) {
-            Self::display_named_spec(context, name, spec)?;
+            Self::display_spec(context, name, spec)?;
             Ok(true)
         } else {
             writeln!(
@@ -275,11 +273,11 @@ impl CompleteCommand {
         }
     }
 
-    /// Displays `spec` as the `complete` command that recreates it, formatted as bash does.
+    /// Displays `spec`, registered under `name`, as the `complete` command that recreates
+    /// it, formatted as bash does.
     fn display_spec(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        special_name: Option<&str>,
-        command_name: Option<&str>,
+        name: SpecName<'_>,
         spec: &Spec,
     ) -> Result<(), brush_core::Error> {
         let mut s = String::from("complete");
@@ -322,18 +320,8 @@ impl CompleteCommand {
             write!(s, " -F {function_name}")?;
         }
 
-        // Like bash, the spec's name comes last: a special spec's flag, or the command's
-        // name, quoted if needed.
-        let name = special_name.map_or_else(
-            || {
-                escape::quote_if_needed(
-                    command_name.unwrap_or_default(),
-                    escape::QuoteMode::SingleQuote,
-                )
-            },
-            Into::into,
-        );
-        writeln!(context.stdout(), "{s} {name}")?;
+        // Like bash, the spec's name comes last.
+        writeln!(context.stdout(), "{s} {}", spec_name_operand(name))?;
 
         Ok(())
     }
@@ -481,11 +469,24 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
 
         if !names.is_empty() {
             // Like bash, a spec that doesn't exist is an error, rather than being created.
+            // With no options to set, each spec's options are shown instead.
             let mut result = ExecutionResult::success();
             for name in names {
-                if let Some(spec) = context.shell.completion_config_mut().get_mut(name) {
+                let found = if options.is_empty() {
+                    match context.shell.completion_config().get(name) {
+                        Some(spec) => {
+                            Self::display_options(&context, name, &spec.options)?;
+                            true
+                        }
+                        None => false,
+                    }
+                } else if let Some(spec) = context.shell.completion_config_mut().get_mut(name) {
                     Self::set_options_for_spec(spec, &options);
+                    true
                 } else {
+                    false
+                };
+                if !found {
                     writeln!(
                         context.stderr(),
                         "compopt: {}: no completion specification",
@@ -497,21 +498,45 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
             return Ok(result);
         }
 
-        // With no names, apply to the completion in progress, if there is one.
-        let Some(in_progress_options) = context.shell.in_progress_completion_options_mut() else {
-            writeln!(
-                context.stderr(),
-                "compopt: not currently executing completion function"
-            )?;
-            return Ok(ExecutionResult::general_error());
-        };
-        Self::set_options(in_progress_options, &options);
+        // With no names, apply to the completion in progress, if there is one, or with no
+        // options to set, show its options.
+        if options.is_empty() {
+            if let Some(in_progress) = context.shell.in_progress_completion() {
+                Self::display_options(&context, in_progress.spec_name(), in_progress.options())?;
+                return Ok(ExecutionResult::success());
+            }
+        } else if let Some(in_progress_options) = context.shell.in_progress_completion_options_mut()
+        {
+            Self::set_options(in_progress_options, &options);
+            return Ok(ExecutionResult::success());
+        }
 
-        Ok(ExecutionResult::success())
+        writeln!(
+            context.stderr(),
+            "compopt: not currently executing completion function"
+        )?;
+        Ok(ExecutionResult::general_error())
     }
 }
 
 impl CompOptCommand {
+    /// Displays `options`, those of the spec `name`, as the `compopt` command that sets
+    /// them: each option enabled (`-o`) or disabled (`+o`), formatted as bash does.
+    fn display_options(
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: SpecName<'_>,
+        options: &completion::GenerationOptions,
+    ) -> Result<(), brush_core::Error> {
+        let mut s = String::from("compopt");
+        for option in CompleteOption::iter() {
+            let sign = if options.get(option) { '-' } else { '+' };
+            write!(s, " {sign}o {}", <&str>::from(option))?;
+        }
+        writeln!(context.stdout(), "{s} {}", spec_name_operand(name))?;
+
+        Ok(())
+    }
+
     fn set_options_for_spec<'a, I>(spec: &mut Spec, options: I)
     where
         I: IntoIterator<Item = (&'a CompleteOption, &'a bool)>,
