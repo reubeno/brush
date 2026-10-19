@@ -72,3 +72,12 @@ cases:
       echo "pushd: $?"
       dirs +9
       echo "dirs: $?"
+
+  - name: "pushd and popd succeed when the stack listing can't be written"
+    known_failure: true # TODO(dirs): a failed write of the listing fails pushd and popd
+    incompatible_platforms: ["macos"] # no /dev/full
+    ignore_stderr: true # the write error's wording is tracked separately
+    stdin: |
+      cd /
+      pushd /tmp >/dev/full; echo "pushd rc=$?"
+      popd >/dev/full; echo "popd rc=$?"
