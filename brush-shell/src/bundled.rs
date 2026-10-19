@@ -265,13 +265,7 @@ fn shim_execute<SE: ShellExtensions>(
 /// registration value can be reused for every bundled name; per-name
 /// dispatch happens via `context.command_name` at execution time.
 fn shim_registration<SE: ShellExtensions>() -> Registration<SE> {
-    Registration {
-        execute_func: shim_execute::<SE>,
-        content_func: shim_content,
-        disabled: false,
-        special_builtin: false,
-        declaration_builtin: false,
-    }
+    Registration::new(shim_execute::<SE>, shim_content)
 }
 
 /// Registers a shim builtin for every name in the installed bundled-command

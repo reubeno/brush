@@ -83,11 +83,11 @@ impl builtins::Command for MapFileCommand {
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
         // Read!
-        let results = self.read_entries(input_file)?;
+        let lines = self.read_lines(input_file)?;
 
         if let Some(origin) = self.origin {
             // -O: preserve existing array, assign at offset.
-            for (elem_idx, (_key, value)) in results.0.into_iter().enumerate() {
+            for (elem_idx, value) in lines.into_iter().enumerate() {
                 // If the user is getting to wraparounds in *bash*, they got bigger problems.
                 #[allow(clippy::cast_possible_wrap)]
                 let elem_idx = elem_idx as i64;
@@ -104,7 +104,7 @@ impl builtins::Command for MapFileCommand {
             // No -O: replace the entire variable (clears existing).
             context.shell.env_mut().update_or_add(
                 &self.array_var_name,
-                variables::ShellValueLiteral::Array(results),
+                variables::ShellValueLiteral::from(lines),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
@@ -116,10 +116,10 @@ impl builtins::Command for MapFileCommand {
 }
 
 impl MapFileCommand {
-    fn read_entries(
+    fn read_lines(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
-    ) -> Result<variables::ArrayLiteral, brush_core::Error> {
+    ) -> Result<Vec<String>, brush_core::Error> {
         let _term_mode = setup_terminal_settings(&input_file)?;
 
         let mut entries = vec![];
@@ -170,10 +170,10 @@ impl MapFileCommand {
 
             let line_str = String::from_utf8_lossy(&line).to_string();
 
-            entries.push((None, line_str));
+            entries.push(line_str);
         }
 
-        Ok(variables::ArrayLiteral(entries))
+        Ok(entries)
     }
 }
 

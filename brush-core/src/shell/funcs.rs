@@ -106,11 +106,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             .ok_or_else(|| error::ErrorKind::FunctionNotFound(name.to_owned()))?
             .to_owned();
 
-        let context = commands::ExecutionContext {
-            shell: self,
-            command_name,
-            params,
-        };
+        let context = commands::ExecutionContext::new(self, command_name, params);
 
         let command_args = args
             .into_iter()

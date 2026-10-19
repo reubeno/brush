@@ -33,11 +33,15 @@ impl builtins::Command for BuiltinCommand {
 
         let builtin_name = args[0].to_string();
 
-        if let Some(builtin) = context.shell.builtins().get(&builtin_name)
-            && !builtin.disabled
+        if let Some(builtin) = context
+            .shell
+            .builtins()
+            .get(&builtin_name)
+            .filter(|builtin| builtin.is_enabled())
+            .cloned()
         {
             context.command_name = builtin_name;
-            (builtin.execute_func)(context, args).await
+            builtin.execute(context, args).await
         } else {
             Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
         }
