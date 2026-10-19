@@ -351,6 +351,16 @@ cases:
       test -x: 1
     expected_stderr: ""
 
+  - name: "test -r and -w of a missing file"
+    stdin: |
+      [ -r /no/such/file ]; echo "test -r: $?"
+      [ -w /no/such/file ]; echo "test -w: $?"
+    expected_exit_code: 0
+    expected_stdout: |
+      test -r: 1
+      test -w: 1
+    expected_stderr: ""
+
   - name: "$$ expands to the shell's process ID"
     known_failure_platforms: ["wasi"] # TODO(wasm): wasm has no process IDs, and expanding $$ panics
     stdin: |
