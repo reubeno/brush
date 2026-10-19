@@ -374,7 +374,7 @@ impl<'a, SE: brush_core::ShellExtensions> Highlighter<'a, SE> {
             return CommandType::Alias;
         } else if self.shell.funcs().get(name).is_some() {
             return CommandType::Function;
-        } else if self.shell.builtins().contains_key(name) {
+        } else if self.shell.builtins().get(name).is_some() {
             return CommandType::Builtin;
         }
 

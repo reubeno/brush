@@ -1,6 +1,5 @@
 use brush_core::{ExecutionResult, builtins};
 use clap::Parser;
-use itertools::Itertools;
 use std::io::Write;
 
 /// Display command help.
@@ -68,7 +67,7 @@ impl HelpCommand {
             "The following commands are implemented as shell built-ins:"
         )?;
 
-        let builtins = get_builtins_sorted_by_name(context);
+        let builtins: Vec<_> = context.shell.builtins().iter().collect();
         let items_per_column = builtins.len().div_ceil(COLUMN_COUNT);
 
         for i in 0..items_per_column {
@@ -97,13 +96,9 @@ impl HelpCommand {
             .set_case_insensitive(context.shell.options().case_insensitive_pathname_expansion);
 
         let mut matched = false;
-        for (builtin_name, builtin_registration) in get_builtins_sorted_by_name(context) {
-            if pattern.exactly_matches(builtin_name.as_str())? {
-                self.display_help_for_builtin(
-                    context,
-                    builtin_name.as_str(),
-                    builtin_registration,
-                )?;
+        for (builtin_name, builtin_registration) in context.shell.builtins().iter() {
+            if pattern.exactly_matches(builtin_name)? {
+                self.display_help_for_builtin(context, builtin_name, builtin_registration)?;
                 matched = true;
             }
         }
@@ -148,15 +143,4 @@ impl HelpCommand {
 
         Ok(())
     }
-}
-
-fn get_builtins_sorted_by_name<'a, SE: brush_core::ShellExtensions>(
-    context: &'a brush_core::ExecutionContext<'_, SE>,
-) -> Vec<(&'a String, &'a builtins::Registration<SE>)> {
-    context
-        .shell
-        .builtins()
-        .iter()
-        .sorted_by_key(|(name, _)| *name)
-        .collect()
 }

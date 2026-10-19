@@ -16,9 +16,11 @@ use std::io::Write;
 use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
 
 mod args;
+mod registry;
 mod state;
 
 pub use args::{Invocation, ParseArgs, UsageError};
+pub use registry::Registry;
 pub(crate) use state::BuiltinStates;
 
 /// Type of help content, typically associated with a built-in command.

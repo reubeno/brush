@@ -86,18 +86,22 @@ impl<SE: extensions::ShellExtensions, S: shell_builder::State> ShellBuilder<SE, 
         self
     }
 
-    /// Add a single builtin registration
+    /// Registers a builtin under `name`, replacing any registered under it
+    /// (see [`builtins::Registry::register`]).
     pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration<SE>) -> Self {
-        self.builtins.insert(name.into(), reg);
+        self.builtins.register(name, reg);
         self
     }
 
-    /// Add many builtin registrations
+    /// Registers each builtin under its name, in turn, replacing any registered
+    /// under it (see [`builtins::Registry::register`]).
     pub fn builtins(
         mut self,
         builtins: impl IntoIterator<Item = (String, builtins::Registration<SE>)>,
     ) -> Self {
-        self.builtins.extend(builtins);
+        for (name, reg) in builtins {
+            self.builtins.register(name, reg);
+        }
         self
     }
 
@@ -137,9 +141,10 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Enabled shopt options.
     #[builder(field)]
     pub enabled_shopt_options: Vec<String>,
-    /// Registered builtins.
+    /// The builtins the shell starts with; it keeps them as its own
+    /// ([`Shell::builtins`]).
     #[builder(field)]
-    pub builtins: HashMap<String, builtins::Registration<SE>>,
+    pub builtins: builtins::Registry<SE>,
     /// Provides a set of variables to be initialized in the shell. If present, they
     /// are assigned *after* inherited or well-known variables are set (when applicable).
     #[builder(field)]
@@ -264,7 +269,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             call_stack: callstack::CallStack::new(),
             directory_stack: vec![],
             completion: completion::State::default(),
-            builtins: HashMap::default(),
+            builtins: builtins::Registry::default(),
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,

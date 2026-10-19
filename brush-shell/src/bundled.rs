@@ -17,8 +17,8 @@
 //! ## Shell integration
 //!
 //! For every entry in the registry, [`register_shims`] installs a brush
-//! builtin (using `register_builtin_if_unset`, so brush's own builtins always
-//! win on conflict). The builtin's execution path uses brush-core's existing
+//! builtin (using `builtins::Registry::register_if_absent`, so brush's own
+//! builtins always win on conflict). The builtin's execution path uses brush-core's existing
 //! external-command machinery to spawn `current_exe() <DISPATCH_FLAG> <name>
 //! <args...>`, inheriting the shell's redirection state for free.
 //!
@@ -275,13 +275,15 @@ impl<SE: ShellExtensions> Builtin<SE> for BundledCommand {
 /// Registers a shim builtin for every name in the installed bundled-command
 /// registry.
 ///
-/// Uses `register_builtin_if_unset` so brush's own builtins (echo, printf,
+/// Uses `builtins::Registry::register_if_absent` so brush's own builtins (echo, printf,
 /// true, false, etc.) win on conflict.
 pub fn register_shims<SE: ShellExtensions>(shell: &mut brush_core::Shell<SE>) {
     let Some(registry) = REGISTRY.get() else {
         return;
     };
     for name in registry.keys() {
-        shell.register_builtin_if_unset(name.clone(), Registration::of::<BundledCommand>());
+        shell
+            .builtins_mut()
+            .register_if_absent(name.clone(), Registration::of::<BundledCommand>());
     }
 }

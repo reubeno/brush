@@ -1,6 +1,5 @@
 use brush_core::ExecutionResult;
 use clap::Parser;
-use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::builtins;
@@ -57,7 +56,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
 
         if !self.names.is_empty() {
             for name in &self.names {
-                if let Some(builtin) = context.shell.builtin_mut(name) {
+                if let Some(builtin) = context.shell.builtins_mut().get_mut(name) {
                     builtin.set_enabled(!self.disable);
                 } else {
                     writeln!(context.stderr(), "{name}: not a shell builtin")?;
@@ -65,14 +64,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
                 }
             }
         } else {
-            let builtins: Vec<_> = context
-                .shell
-                .builtins()
-                .iter()
-                .sorted_by_key(|(name, _reg)| *name)
-                .collect();
-
-            for (builtin_name, builtin) in builtins {
+            for (builtin_name, builtin) in context.shell.builtins().iter() {
                 if self.disable {
                     if builtin.is_enabled() {
                         continue;

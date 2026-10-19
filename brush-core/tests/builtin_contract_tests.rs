@@ -6,7 +6,7 @@
 
 use std::io::{Read, Seek, Write};
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use brush_core::builtins::{
     Builtin, ContentOptions, ContentType, DeclarationRole, Invocation, ParseArgs, Registration,
     UsageError,
@@ -278,7 +278,7 @@ async fn a_builtin_s_result_is_the_command_s_status() -> Result<()> {
 #[tokio::test]
 async fn a_registration_runs_its_builtin_given_the_name_first() -> Result<()> {
     let mut shell = new_shell().await?;
-    let registration = shell.builtins()["show"].clone();
+    let registration = shell.builtins().get("show").context("no show")?.clone();
     let mut stdout = tempfile::tempfile()?;
     let mut params = shell.default_exec_params();
     params.set_fd(OpenFiles::STDOUT_FD, stdout.try_clone()?.into());
@@ -303,7 +303,7 @@ async fn a_registration_runs_its_builtin_given_the_name_first() -> Result<()> {
 #[tokio::test]
 async fn a_registration_s_content_comes_from_its_builtin() -> Result<()> {
     let shell = new_shell().await?;
-    let registration = &shell.builtins()["show"];
+    let registration = shell.builtins().get("show").context("no show")?;
     assert_eq!(
         registration.content(
             "alias",
@@ -327,8 +327,9 @@ async fn a_registration_s_content_comes_from_its_builtin() -> Result<()> {
 async fn a_disabled_builtin_is_not_found() -> Result<()> {
     let mut shell = new_shell().await?;
     shell
-        .builtin_mut("show")
-        .ok_or_else(|| anyhow::anyhow!("show isn't registered"))?
+        .builtins_mut()
+        .get_mut("show")
+        .context("show isn't registered")?
         .set_enabled(false);
     let output = run(&mut shell, "show a").await?;
     assert_eq!(output.status, 127);
@@ -353,8 +354,9 @@ async fn only_an_enabled_declaration_utility_takes_assignments_unsplit() -> Resu
     );
 
     shell
-        .builtin_mut("decl")
-        .ok_or_else(|| anyhow::anyhow!("decl isn't registered"))?
+        .builtins_mut()
+        .get_mut("decl")
+        .context("decl isn't registered")?
         .set_enabled(false);
     assert_eq!(
         run(&mut shell, script).await?,

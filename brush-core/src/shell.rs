@@ -132,7 +132,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
-    builtins: HashMap<String, builtins::Registration<SE>>,
+    builtins: builtins::Registry<SE>,
 
     /// Shell program location cache.
     program_location_cache: pathcache::PathCache,
