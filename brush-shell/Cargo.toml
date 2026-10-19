@@ -95,6 +95,7 @@ schema = ["dep:schemars"]
 workspace = true
 
 [dependencies]
+brush-clap-adapter = { version = "^0.1.0", path = "../brush-clap-adapter" }
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
 brush-interactive = { version = "^0.4.0", path = "../brush-interactive" }

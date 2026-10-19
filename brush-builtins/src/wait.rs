@@ -23,11 +23,13 @@ pub(crate) struct WaitCommand {
     ids: Vec<String>,
 }
 
-impl builtins::Command for WaitCommand {
+brush_clap_adapter::impl_parse_args!(WaitCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for WaitCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.wait_for_terminate {

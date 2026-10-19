@@ -8,11 +8,13 @@ use std::io::Write;
 #[derive(Parser)]
 pub(crate) struct SaveCommand {}
 
-impl builtins::Command for SaveCommand {
+brush_clap_adapter::impl_parse_args!(SaveCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SaveCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let serialized_str = serde_json::to_string(&context.shell).map_err(|e| {

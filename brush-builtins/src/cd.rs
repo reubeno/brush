@@ -30,11 +30,13 @@ pub(crate) struct CdCommand {
     target_dir: Option<PathBuf>,
 }
 
-impl builtins::Command for CdCommand {
+brush_clap_adapter::impl_parse_args!(CdCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // TODO(cd): implement 'cd -@'

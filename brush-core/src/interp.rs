@@ -17,7 +17,8 @@ use crate::variables::{
     ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
 };
 use crate::{
-    ShellFd, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys, timing,
+    ShellFd, builtins, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys,
+    timing,
 };
 
 /// Encapsulates the context of execution in a command pipeline.
@@ -1263,7 +1264,11 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                                     .shell
                                     .builtins()
                                     .get(first_arg.as_str())
-                                    .is_some_and(|r| r.is_enabled() && r.is_declaration())
+                                    .is_some_and(|r| {
+                                        r.is_enabled()
+                                            && r.declaration_role()
+                                                == builtins::DeclarationRole::Utility
+                                    })
                             {
                                 command_takes_assignments = true;
                             }

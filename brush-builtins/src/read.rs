@@ -77,11 +77,13 @@ pub(crate) struct ReadCommand {
     variable_names: Vec<String>,
 }
 
-impl builtins::Command for ReadCommand {
+brush_clap_adapter::impl_parse_args!(ReadCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.use_readline {

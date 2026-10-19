@@ -24,25 +24,13 @@ pub(crate) struct EchoCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for EchoCommand {
+brush_clap_adapter::impl_parse_args!(EchoCommand, keep_double_dash = args);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EchoCommand {
     type Error = brush_core::Error;
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(echo): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(args)?;
-        if let Some(args) = rest_args {
-            this.args.extend(args);
-        }
-        Ok(this)
-    }
-
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut trailing_newline = !self.no_trailing_newline;

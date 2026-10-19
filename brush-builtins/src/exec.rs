@@ -26,11 +26,13 @@ pub(crate) struct ExecCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for ExecCommand {
+brush_clap_adapter::impl_parse_args!(ExecCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.args.is_empty() {

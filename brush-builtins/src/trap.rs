@@ -18,11 +18,13 @@ pub(crate) struct TrapCommand {
     args: Vec<String>,
 }
 
-impl builtins::Command for TrapCommand {
+brush_clap_adapter::impl_parse_args!(TrapCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TrapCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.list_signals {

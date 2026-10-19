@@ -31,11 +31,13 @@ pub(crate) struct JobsCommand {
     job_specs: Vec<String>,
 }
 
-impl builtins::Command for JobsCommand {
+brush_clap_adapter::impl_parse_args!(JobsCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for JobsCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.also_show_pids {

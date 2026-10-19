@@ -12,11 +12,13 @@ pub(crate) struct TimesCommand {
     _operands: Vec<String>,
 }
 
-impl builtins::Command for TimesCommand {
+brush_clap_adapter::impl_parse_args!(TimesCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;

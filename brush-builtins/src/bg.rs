@@ -10,11 +10,13 @@ pub(crate) struct BgCommand {
     job_specs: Vec<String>,
 }
 
-impl builtins::Command for BgCommand {
+brush_clap_adapter::impl_parse_args!(BgCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BgCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();

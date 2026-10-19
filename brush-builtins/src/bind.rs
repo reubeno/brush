@@ -119,11 +119,13 @@ impl From<&BindError> for brush_core::ExecutionExitCode {
     }
 }
 
-impl builtins::Command for BindCommand {
+brush_clap_adapter::impl_parse_args!(BindCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BindCommand {
     type Error = BindError;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(key_bindings) = context.shell.key_bindings() {

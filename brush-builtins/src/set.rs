@@ -133,29 +133,28 @@ pub(crate) struct SetCommand {
     positional_args: Vec<String>,
 }
 
-impl builtins::Command for SetCommand {
-    fn takes_plus_options() -> bool {
-        true
-    }
+brush_clap_adapter::impl_parse_args!(SetCommand, parse = SetCommand::parse_args);
 
-    /// Override the default [`builtins::Command::new`] function to handle clap's limitation related
-    /// to `--`. See [`builtins::parse_known`] for more information
-    /// TODO(set): we can safely remove this after the issue is resolved
-    fn new<I>(args: I) -> Result<Self, clap::Error>
-    where
-        I: IntoIterator<Item = String>,
-    {
+impl SetCommand {
+    /// Parses `set`'s arguments: its options may start with `+` as well as
+    /// `-`, and the first `--` and every word after it are positional
+    /// arguments. See [`brush_clap_adapter::try_parse_before_double_dash`].
+    /// TODO(set): we can safely remove this after the clap issue is resolved
+    fn parse_args(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
+        let args = std::iter::once(invocation.name().to_owned())
+            .chain(invocation.into_args().into_iter().map(String::from));
+
         //
         // TODO(set): This is getting pretty messy; we need to see how to avoid this -- handling
         // from leaking into too many commands' custom parsing.
         //
 
-        // Apply the same workaround from the default implementation of Command::new to handle '+'
+        // Apply the same workaround as brush_clap_adapter's `plus_options` parsing to handle '+'
         // args.
         let mut updated_args = vec![];
         let mut now_parsing_positional_args = false;
         let mut next_arg_is_option_value = false;
-        for (i, arg) in args.into_iter().enumerate() {
+        for (i, arg) in args.enumerate() {
             if now_parsing_positional_args || next_arg_is_option_value {
                 updated_args.push(arg);
 
@@ -178,19 +177,21 @@ impl builtins::Command for SetCommand {
             }
         }
 
-        let (mut this, rest_args) = brush_core::builtins::try_parse_known::<Self>(updated_args)?;
-        if let Some(args) = rest_args {
-            this.positional_args.extend(args);
-        }
+        let (mut this, rest_args) =
+            brush_clap_adapter::try_parse_before_double_dash::<Self>(updated_args)
+                .map_err(|e| brush_clap_adapter::to_usage_error(&e))?;
+        this.positional_args.extend(rest_args);
         Ok(this)
     }
+}
 
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
     type Error = brush_core::Error;
 
     #[expect(clippy::too_many_lines)]
     #[allow(clippy::useless_let_if_seq)]
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();

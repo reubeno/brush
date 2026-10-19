@@ -27,22 +27,18 @@ pub(crate) struct ExportCommand {
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by the BuiltinDeclarationCommand trait.
+    // N.B. These are skipped by clap, but filled in by `impl_parse_args!`.
     #[clap(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
-impl builtins::DeclarationCommand for ExportCommand {
-    fn set_declarations(&mut self, declarations: Vec<brush_core::CommandArg>) {
-        self.declarations = declarations;
-    }
-}
+brush_clap_adapter::impl_parse_args!(ExportCommand, declarations = declarations);
 
-impl builtins::Command for ExportCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.declarations.is_empty() {

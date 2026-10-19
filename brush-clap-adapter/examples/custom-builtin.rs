@@ -1,15 +1,15 @@
 //! Example of implementing a custom builtin command for a brush-core based shell.
 //!
 //! This example demonstrates best practices for:
-//! - Creating a custom builtin command using the `Command` trait
+//! - Creating a custom builtin command using the `ParseArgs` and `Builtin` traits
 //! - Defining custom error types with `thiserror`
-//! - Parsing command-line arguments with `clap`
+//! - Parsing command-line arguments with `clap`, through `brush-clap-adapter`
 //! - Implementing proper error handling and exit code conversion
 //! - Using the execution context to interact with shell state and I/O streams
 //!
 //! Run this example with:
 //! ```bash
-//! cargo run --package brush-core --example custom-builtin
+//! cargo run --package brush-clap-adapter --example custom-builtin
 //! ```
 
 use anyhow::Result;
@@ -59,11 +59,12 @@ impl From<&GreetError> for brush_core::ExecutionExitCode {
 }
 
 //
-// Step 2 (recommended): Define your builtin command arguments
+// Step 2: Define your builtin command's arguments
 // ==============================================
-// We recommend using the `clap` crate and the derive-able `clap::Parser` to define
-// command-line arguments and options. This will simplify the work you need to do
-// to provide helpful usage information and auto-generated argument validation.
+// A builtin is a type that is its own parsed arguments. We recommend deriving
+// `clap::Parser` and letting `brush_clap_adapter::impl_parse_args!` implement
+// `brush_core::builtins::ParseArgs` from it: clap parses the arguments, validates
+// them, and supplies the usage and help text.
 //
 
 /// Greet the user with a friendly message.
@@ -74,19 +75,21 @@ struct GreetCommand {
     repeat_count: usize,
 }
 
+brush_clap_adapter::impl_parse_args!(GreetCommand);
+
 //
-// Step 3: Implement the Command trait
+// Step 3: Implement the Builtin trait
 // ==============================================
-// The `Command` trait requires implementing the `execute` method.
+// The `Builtin` trait requires implementing the `execute` method.
 //
 
-impl builtins::Command for GreetCommand {
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for GreetCommand {
     // Specify the error type you will use; this will either be your custom type or
     // the default-provided `brush_core::Error` type.
     type Error = GreetError;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // Additional validation.
@@ -118,12 +121,10 @@ impl builtins::Command for GreetCommand {
 // This example shows how to register and use your custom builtin.
 //
 
-type SE = brush_core::extensions::DefaultShellExtensions;
-
 async fn run_example() -> Result<()> {
     // Create a shell instance with custom builtin registered.
     let mut shell = brush_core::Shell::builder()
-        .builtin("greet", brush_core::builtins::builtin::<GreetCommand, SE>())
+        .builtin("greet", builtins::Registration::of::<GreetCommand>())
         .build()
         .await?;
 

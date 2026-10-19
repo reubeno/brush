@@ -31,12 +31,14 @@ pub(crate) struct ShoptCommand {
     options: Vec<String>,
 }
 
-impl builtins::Command for ShoptCommand {
+brush_clap_adapter::impl_parse_args!(ShoptCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
     type Error = brush_core::Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.set && self.unset {

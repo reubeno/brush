@@ -10,6 +10,7 @@ the answer should follow from here. If it doesn't, this document needs updating.
 |---|---|---|
 | `brush-parser` | yes | Tokenizes and parses shell syntax. Knows nothing about a running shell. |
 | `brush-core` | yes | The shell itself: the `Shell` type, expansion, execution, jobs, variables, traps, and programmable completion. Has no line editor or UI of its own. |
+| `brush-clap-adapter` | yes | Implements `brush-core`'s engine-neutral builtin contract for builtins whose arguments are parsed with clap. |
 | `brush-builtins` | yes | The standard builtins, registered on a `Shell` through `brush-core`'s public API. |
 | `brush-experimental-builtins` | yes | Builtins not ready to be standard. |
 | `brush-coreutils-builtins` | yes | Optional builtins wrapping [uutils/coreutils](https://github.com/uutils/coreutils); doesn't depend on the other crates. |
@@ -24,12 +25,14 @@ on the others (not counting dev-dependencies) are:
 
 ```text
 brush                        → brush-shell
-brush-shell                  → brush-interactive, brush-builtins, brush-core,
+brush-shell                  → brush-interactive, brush-builtins, brush-clap-adapter,
+                               brush-core,
                                brush-experimental-builtins (optional),
                                brush-coreutils-builtins (optional)
 brush-interactive            → brush-core, brush-parser
-brush-builtins               → brush-core, brush-parser
-brush-experimental-builtins  → brush-core
+brush-builtins               → brush-clap-adapter, brush-core, brush-parser
+brush-experimental-builtins  → brush-clap-adapter, brush-core
+brush-clap-adapter           → brush-core
 brush-core                   → brush-parser
 brush-parser                 (none)
 brush-coreutils-builtins     (none)
@@ -46,6 +49,11 @@ without its front end. Keep that in mind when deciding what to export.
   time.
 - Platform-specific code lives under the `sys` module, so the rest of the crate stays
   platform-neutral.
+- Builtins meet the shell at one contract, `brush_core::builtins`, which names no
+  argument-parsing engine. A builtin is a type that is its own parsed arguments: it
+  parses an invocation's words (`ParseArgs`), supplies its help, and runs
+  (`Builtin`), and is registered by type (`Registration::of`). Builtins that parse
+  with clap implement `ParseArgs` through `brush-clap-adapter`.
 - State a builtin keeps between invocations (as `getopts`'s place in its arguments)
   lives in the shell, kept by its type (`ExecutionContext::state_mut`), and is cloned
   with the shell, so it follows subshell rules as a variable does. A program embedding

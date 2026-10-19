@@ -10,11 +10,13 @@ pub(crate) struct ContinueCommand {
     which_loop: i8,
 }
 
-impl builtins::Command for ContinueCommand {
+brush_clap_adapter::impl_parse_args!(ContinueCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ContinueCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         _context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // If specified, which_loop needs to be positive.
