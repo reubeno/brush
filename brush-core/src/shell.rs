@@ -65,6 +65,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default = "default_process_launcher"))]
     process_launcher: SE::ProcessLauncher,
 
+    /// The builtins' state; see [`crate::ExecutionContext::state_mut`].
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    builtin_states: builtins::BuiltinStates,
+
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
 
@@ -156,6 +160,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
         Self {
             error_formatter: self.error_formatter.clone(),
             process_launcher: self.process_launcher.clone(),
+            builtin_states: self.builtin_states.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -223,6 +228,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         let mut shell = Self {
             error_formatter: options.error_formatter,
             process_launcher: options.process_launcher,
+            builtin_states: builtins::BuiltinStates::default(),
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,

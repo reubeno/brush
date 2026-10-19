@@ -18,10 +18,15 @@ pub(crate) struct GetOptsCommand {
     args: Vec<String>,
 }
 
-// We track cross-call state in special variables. They are hidden from enumeration
-// (e.g. `set`, `declare`) so they don't leak into scripts' environments.
-const VAR_GETOPTS_NEXT_CHAR_INDEX: &str = "__GETOPTS_NEXT_CHAR";
-const VAR_GETOPTS_LAST_OPTIND: &str = "__GETOPTS_LAST_OPTIND";
+/// Where `getopts` is in the arguments, between invocations; kept in the
+/// shell, so it follows subshell rules as `OPTIND` does.
+#[derive(Clone, Debug, Default)]
+struct GetOptsState {
+    /// How far into the current argument's bundled options it is, if partway.
+    next_char_index: Option<usize>,
+    /// The `OPTIND` it last set, to notice the script resetting it.
+    last_optind: Option<i32>,
+}
 const DEFAULT_NEXT_CHAR_INDEX: usize = 1;
 
 /// The result of processing one option from the argument list.
@@ -124,12 +129,9 @@ impl builtins::Command for GetOptsCommand {
         // Detect external OPTIND modifications (e.g., `OPTIND=1` to restart
         // parsing). If the current OPTIND differs from what we last set, clear
         // the internal char index so we don't resume mid-arg.
-        let last_optind = context
-            .shell
-            .env_str(VAR_GETOPTS_LAST_OPTIND)
-            .and_then(|s| s.parse::<i32>().ok());
-        if last_optind != Some(next_index_signed) {
-            context.shell.env_mut().unset(VAR_GETOPTS_NEXT_CHAR_INDEX)?;
+        let state = context.state_mut::<GetOptsState>();
+        if state.last_optind != Some(next_index_signed) {
+            state.next_char_index = None;
         }
 
         #[allow(clippy::cast_sign_loss)] // .max(1) guarantees positive
@@ -157,7 +159,7 @@ impl builtins::Command for GetOptsCommand {
 /// `next_index`. Handles combined flags (e.g., `-abc`), option arguments (both
 /// `-pVALUE` and `-p VALUE` forms), and error reporting for unknown options or
 /// missing arguments. Tracks position within combined flags via the
-/// `__GETOPTS_NEXT_CHAR` shell variable.
+/// builtin's state.
 fn parse_next_option<SE: brush_core::ShellExtensions>(
     context: &mut brush_core::ExecutionContext<'_, SE>,
     spec: &OptionSpec,
@@ -194,11 +196,9 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
 
     // Figure out how far into this option we are.
     let mut next_char_index = context
-        .shell
-        .env_str(VAR_GETOPTS_NEXT_CHAR_INDEX)
-        .map_or(DEFAULT_NEXT_CHAR_INDEX, |s| {
-            s.parse().unwrap_or(DEFAULT_NEXT_CHAR_INDEX)
-        });
+        .state_mut::<GetOptsState>()
+        .next_char_index
+        .unwrap_or(DEFAULT_NEXT_CHAR_INDEX);
 
     // Find the char. If the index is stale (exceeds this arg's length),
     // reset to the default index, mirroring bash behavior.
@@ -246,23 +246,14 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
     }
 
     let optind = if is_last_char_in_option {
-        // We're done with this argument, so unset the internal char index variable
-        // and request an update to OPTIND.
-        context.shell.env_mut().unset(VAR_GETOPTS_NEXT_CHAR_INDEX)?;
+        // We're done with this argument: forget our place in it, and move
+        // OPTIND on.
+        context.state_mut::<GetOptsState>().next_char_index = None;
         next_index + 1
     } else {
-        // We have more to go in this argument, so update the internal char index
-        // and request that OPTIND not be updated.
-        context.shell.env_mut().update_or_add(
-            VAR_GETOPTS_NEXT_CHAR_INDEX,
-            variables::ShellValueLiteral::Scalar((next_char_index + 1).to_string()),
-            |v| {
-                v.hide_from_enumeration();
-                Ok(())
-            },
-            brush_core::env::EnvironmentLookup::Anywhere,
-            brush_core::env::EnvironmentScope::Global,
-        )?;
+        // We have more to go in this argument: remember our place, and leave
+        // OPTIND where it is.
+        context.state_mut::<GetOptsState>().next_char_index = Some(next_char_index + 1);
         next_index
     };
 
@@ -338,8 +329,8 @@ fn report_unknown_option<SE: brush_core::ShellExtensions>(
     Ok((String::from("?"), optarg))
 }
 
-/// Writes the parsing result back into shell variables: the target variable,
-/// OPTARG, OPTIND, and the internal `__GETOPTS_LAST_OPTIND` tracker.
+/// Writes the parsing result back into shell variables (the target variable,
+/// OPTARG, OPTIND) and remembers the OPTIND set.
 fn update_variables<SE: brush_core::ShellExtensions>(
     context: &mut brush_core::ExecutionContext<'_, SE>,
     variable_name: &str,
@@ -371,21 +362,12 @@ fn update_variables<SE: brush_core::ShellExtensions>(
     let optind_str = result.optind.to_string();
     context.shell.env_mut().update_or_add(
         "OPTIND",
-        variables::ShellValueLiteral::Scalar(optind_str.clone()),
+        variables::ShellValueLiteral::Scalar(optind_str),
         |_| Ok(()),
         brush_core::env::EnvironmentLookup::Anywhere,
         brush_core::env::EnvironmentScope::Global,
     )?;
-    context.shell.env_mut().update_or_add(
-        VAR_GETOPTS_LAST_OPTIND,
-        variables::ShellValueLiteral::Scalar(optind_str),
-        |v| {
-            v.hide_from_enumeration();
-            Ok(())
-        },
-        brush_core::env::EnvironmentLookup::Anywhere,
-        brush_core::env::EnvironmentScope::Global,
-    )?;
+    context.state_mut::<GetOptsState>().last_optind = i32::try_from(result.optind).ok();
 
     Ok(result.exit_code)
 }

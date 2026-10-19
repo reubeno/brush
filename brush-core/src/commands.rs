@@ -61,6 +61,20 @@ impl<'a, SE: ShellExtensions> ExecutionContext<'a, SE> {
 }
 
 impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
+    /// Returns the builtin's state of type `S`, seeded with `S::default()` the
+    /// first time it's asked for. The state is kept in the shell, keyed by its
+    /// type alone, and cloned with the shell: a change made in a subshell
+    /// stays there, as a change to a variable does.
+    ///
+    /// The type is the state's identity, so give each state a type of its own
+    /// (a newtype, not a bare `usize`): a builtin registered under several
+    /// names keeps one state, and builtins that share a state type share the
+    /// state. Builtin state is kept out of a serialized shell (with the `serde`
+    /// feature), so a shell restored from one starts each state afresh.
+    pub fn state_mut<S: Clone + Default + Send + Sync + 'static>(&mut self) -> &mut S {
+        self.shell.builtin_states_mut().get_mut_or_default()
+    }
+
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
         self.params.stdin(self.shell)

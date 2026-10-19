@@ -1,0 +1,82 @@
+//! Tests of the state builtins keep in the shell between invocations.
+
+#![cfg(test)]
+#![allow(clippy::panic_in_result_fn)]
+
+use anyhow::Result;
+use brush_core::{ExecutionResult, builtins};
+use clap::Parser;
+
+/// Adds the step its name gives (`by<step>`) to a running total, and returns
+/// the total as its status.
+#[derive(Parser)]
+struct Counter {}
+
+/// The total the counters share: their state.
+#[derive(Clone, Default)]
+struct Total(u8);
+
+/// A state no builtin uses.
+#[derive(Clone, Default)]
+struct UnusedState;
+
+impl builtins::Command for Counter {
+    type Error = brush_core::Error;
+
+    #[allow(
+        clippy::unused_async_trait_impl,
+        reason = "the trait's method is async; this one has nothing to wait for"
+    )]
+    async fn execute<SE: brush_core::ShellExtensions>(
+        &self,
+        mut context: brush_core::ExecutionContext<'_, SE>,
+    ) -> Result<ExecutionResult, Self::Error> {
+        let step: u8 = context
+            .command_name
+            .strip_prefix("by")
+            .and_then(|step| step.parse().ok())
+            .unwrap_or_default();
+        let total = context.state_mut::<Total>();
+        total.0 += step;
+        Ok(ExecutionResult::new(total.0))
+    }
+}
+
+async fn new_shell() -> Result<brush_core::Shell> {
+    Ok(brush_core::Shell::builder()
+        .builtin("by1", builtins::builtin::<Counter, _>())
+        .builtin("by10", builtins::builtin::<Counter, _>())
+        .build()
+        .await?)
+}
+
+async fn run(shell: &mut brush_core::Shell, command: &str) -> Result<u8> {
+    let params = shell.default_exec_params();
+    let result = shell
+        .run_string(command, &brush_core::SourceInfo::default(), &params)
+        .await?;
+    Ok(u8::from(result.exit_code))
+}
+
+#[tokio::test]
+async fn a_builtin_s_state_follows_subshell_rules() -> Result<()> {
+    let mut shell = new_shell().await?;
+    // A subshell starts from the shell's state and keeps its own changes.
+    for (command, expected) in [("by1", 1), ("(by1; by1)", 3), ("by1", 2)] {
+        assert_eq!(run(&mut shell, command).await?, expected, "{command}");
+    }
+    // The state is readable from outside, by its type; one that no builtin
+    // has used isn't there.
+    assert_eq!(shell.builtin_state::<Total>().map(|t| t.0), Some(2));
+    assert!(shell.builtin_state::<UnusedState>().is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_state_is_kept_by_its_type_whatever_the_builtin_s_name() -> Result<()> {
+    let mut shell = new_shell().await?;
+    assert_eq!(run(&mut shell, "by1").await?, 1);
+    assert_eq!(run(&mut shell, "by10").await?, 11);
+    assert_eq!(run(&mut shell, "by1").await?, 12);
+    Ok(())
+}

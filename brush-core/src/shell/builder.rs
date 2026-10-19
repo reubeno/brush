@@ -244,6 +244,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
         Self {
             error_formatter: SE::ErrorFormatter::default(),
             process_launcher: SE::ProcessLauncher::default(),
+            builtin_states: builtins::BuiltinStates::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: PathBuf::default(),
