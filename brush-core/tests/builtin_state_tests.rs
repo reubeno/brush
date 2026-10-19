@@ -80,3 +80,16 @@ async fn a_state_is_kept_by_its_type_whatever_the_builtin_s_name() -> Result<()>
     assert_eq!(run(&mut shell, "by1").await?, 12);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_state_set_from_outside_is_where_builtins_start() -> Result<()> {
+    let mut shell = new_shell().await?;
+    // A builtin starts from the state set, not from its default.
+    shell.set_builtin_state(Total(40));
+    assert_eq!(run(&mut shell, "by1").await?, 41);
+    // Setting it again replaces the state a builtin changed.
+    shell.set_builtin_state(Total(5));
+    assert_eq!(run(&mut shell, "by10").await?, 15);
+    assert_eq!(shell.builtin_state::<Total>().map(|t| t.0), Some(15));
+    Ok(())
+}

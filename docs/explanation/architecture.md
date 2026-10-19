@@ -48,7 +48,8 @@ without its front end. Keep that in mind when deciding what to export.
   platform-neutral.
 - State a builtin keeps between invocations (as `getopts`'s place in its arguments)
   lives in the shell, kept by its type (`ExecutionContext::state_mut`), and is cloned
-  with the shell, so it follows subshell rules as a variable does.
+  with the shell, so it follows subshell rules as a variable does. A program embedding
+  the shell can set it beforehand (`Shell::set_builtin_state`).
 
 ## Layering principles
 
