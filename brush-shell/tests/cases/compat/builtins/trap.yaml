@@ -787,11 +787,30 @@ cases:
       if true; then false; fi
       echo done
 
+  - name: "ERR trap runs twice for a failing subshell that ends a pipeline"
+    known_failure: true # TODO(trap): the ERR trap runs once, not twice, when a pipeline's last stage is a failing subshell
+    stdin: |
+      trap 'echo "err $?"' ERR
+      : | ( exit 3 )
+      echo "status: $?"
+      set -E
+      : | ( exit 4 )
+      echo "status: $?"
+
   - name: "ERR trap set inside a function runs there"
     known_failure: true # TODO(trap): an ERR trap set in a function body doesn't fire in it
     stdin: |
       f() { trap 'echo err' ERR; false; echo in-f; }
       f
+
+  - name: "ERR trap doesn't run for the call that set it"
+    known_failure: true # TODO(trap): the ERR trap runs for the failing call of the function that set it
+    stdin: |
+      f() { trap 'echo err' ERR; return 3; }
+      f
+      echo "first call: $?"
+      f
+      echo "second call: $?"
 
   - name: "ERR trap set inside a subshell runs there"
     known_failure: true # TODO(trap): an ERR trap set in a subshell doesn't fire in it
@@ -810,3 +829,11 @@ cases:
     stdin: |
       trap 'exit 4' DEBUG
       echo not-reached
+
+  - name: "trap rejects -- after the action as a signal"
+    known_failure: true # TODO(trap): a -- among the signals is skipped
+    stdin: |
+      trap 'echo x' -- INT 2>/dev/null; echo "rc=$?"
+      trap -p INT
+      trap -- 'echo y' INT; echo "rc=$?"
+      trap -p INT

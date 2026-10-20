@@ -474,6 +474,28 @@ cases:
     stdin: |
       cd /nonexistent-dir
 
+  # The leading "file: line N:" a shell prefixes is stripped.
+  - name: "Parameter expansion errors name the parameter"
+    known_failure: true # TODO(errors): brush reports "expansion error: <message>" or "expanding unset variable: ${name}"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      unset y zz arr
+      (echo ${y:?}) 2>&1 | strip
+      (echo ${y?}) 2>&1 | strip
+      (echo ${y:?custom message}) 2>&1 | strip
+      (set -u; echo $zz) 2>&1 | strip
+      (set -u; echo ${arr[1]}) 2>&1 | strip
+
+  - name: "Arithmetic errors name the expression and the token at fault"
+    known_failure: true # TODO(errors): brush reports "arithmetic evaluation error: <message>" without the expression
+    min_oracle_version: "5.3" # bash 5.2 says "syntax error", not "arithmetic syntax error"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      (echo $((1/0))) 2>&1 | strip
+      (echo $((5%0))) 2>&1 | strip
+      (echo $((1+))) 2>&1 | strip
+      ((1/0)) 2>&1 | strip
+
   - name: "Special builtin runtime error is fatal in POSIX mode"
     known_failure: true # TODO(posix): this special builtin error doesn't end a non-interactive POSIX shell
     ignore_stderr: true
