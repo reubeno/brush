@@ -77,20 +77,17 @@ cases:
       echo "Last: $?, PIPESTATUS: ${PIPESTATUS[*]}"
 
   - name: "Builtin that fails in a pipeline stage"
-    known_failure: true # TODO(pipeline): the builtin's error escapes its stage: it's shown on the shell's stderr despite the stage's redirects, and the pipeline's status is 1 rather than its last stage's
     stdin: |
       cd /nonexistent 2>/dev/null | true
       echo "status: $?"
       cd /nonexistent 2>&1 | { read -r line; echo "got an error message: ${line:+yes}"; }
 
   - name: "Exit in a pipeline's last stage"
-    known_failure: true # TODO(pipeline): with lastpipe off the last stage runs in a subshell, but its exit ends the shell itself
     stdin: |
       echo hi | exit 3
       echo "status: $?"
 
   - name: "Break and return in a pipeline's last stage"
-    known_failure: true # TODO(pipeline): with lastpipe off the last stage runs in a subshell, but its break and return leave the enclosing loop and function
     stdin: |
       for i in 1 2; do
         echo "$i" | break
@@ -126,7 +123,6 @@ cases:
       while [ $i -lt 4096 ]; do printf '%s\n' 0123456789012345678901234567890; i=$((i+1)); done | wc -l
 
   - name: "Control flow in a pipeline stage stays in its subshell"
-    known_failure: true # TODO(pipeline): exit, return, or break in a stage run in a subshell reaches the shell running the pipeline
     stdin: |
       echo x | exit 3
       echo "after exit: $?"
@@ -147,6 +143,48 @@ cases:
       echo "after usage error: $?"
       true | exit 1 2
       echo "after exit: $?"
+
+  - name: "An expansion error in a pipeline stage ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      echo ${x?boom} | cat
+      echo "after \${x?}: ${PIPESTATUS[*]}"
+      f() { echo ${y?b}; }
+      f | cat
+      echo "after f: ${PIPESTATUS[*]}"
+      { echo ${y?b}; echo same-stage; } | cat
+      echo "after group: ${PIPESTATUS[*]}"
+      echo hi | { read v; echo ${y?b}; }
+      echo "last stage: ${PIPESTATUS[*]}"
+      set -u
+      echo $zz | cat
+      echo "after set -u: ${PIPESTATUS[*]}"
+
+  - name: "An expansion error in a pipeline stage's prefix assignment ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      true | X=${x?b} true
+      echo "last: ${PIPESTATUS[*]}"
+      X=${x?b} true | cat
+      echo "first: ${PIPESTATUS[*]}"
+      true | X=${x?b}
+      echo "assignment only: ${PIPESTATUS[*]}"
+      f() { :; }
+      true | X=${x?b} f
+      echo "function: ${PIPESTATUS[*]}"
+
+  - name: "An error turned into a result in a pipeline stage ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      true | eval 'echo ${x?boom}'
+      echo "eval: ${PIPESTATUS[*]}"
+      f() { X=${x?boom} true; }
+      true | f
+      echo "function: ${PIPESTATUS[*]}"
+      true | { X=${x?boom} true; }
+      echo "group: ${PIPESTATUS[*]}"
+      true | eval 'exit 8'
+      echo "eval exit: ${PIPESTATUS[*]}"
 
   - name: "Control flow in the last stage applies with lastpipe"
     stdin: |

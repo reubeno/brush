@@ -512,14 +512,19 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         // Builtins may block (e.g., reading input), so keep them from holding up the
         // rest of the pipeline.
         let task = sys::tasks::spawn_blocking(async move {
+            // The stage runs in a shell of its own, as a subshell does, so an
+            // error ends the stage alone: it's reported on the stage's
+            // standard error and becomes the stage's status.
+            let stderr = params.try_stderr(&shell);
             let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let result = execute_builtin_command(&builtin, cmd_context, args).await;
+            let result = shell.end_subshell(result, || stderr);
 
             // Update $_ after command execution.
             shell.update_last_arg_variable(last_arg);
 
-            result
+            Ok(result)
         });
 
         async move { ExecutionSpawnResult::StartedTask(task.await) }
@@ -590,6 +595,9 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
         let task = sys::tasks::spawn_blocking(async move {
+            // The stage runs in a shell of its own, as a subshell does, so an
+            // error ends the stage alone.
+            let stderr = params.try_stderr(&shell);
             let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let spawn_result =
@@ -598,15 +606,21 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             // Update $_ after command execution.
             shell.update_last_arg_variable(last_arg);
 
-            match spawn_result? {
-                ExecutionSpawnResult::Completed(result) => Ok(result),
-                ExecutionSpawnResult::StartedProcess(_) | ExecutionSpawnResult::StartedTask(_) => {
+            let result = match spawn_result {
+                Ok(ExecutionSpawnResult::Completed(result)) => Ok(result),
+                Err(error) => Err(error),
+                Ok(
+                    ExecutionSpawnResult::StartedProcess(_) | ExecutionSpawnResult::StartedTask(_),
+                ) => {
                     // invoke_shell_function() only ever returns Completed
                     // today; this guards against a silent behavior change
                     // rather than dropping already-started work.
-                    error::unimp("invoke_shell_function returned an unexpected spawn result")
+                    return error::unimp(
+                        "invoke_shell_function returned an unexpected spawn result",
+                    );
                 }
-            }
+            };
+            Ok(shell.end_subshell(result, || stderr))
         });
 
         async move { ExecutionSpawnResult::StartedTask(task.await) }

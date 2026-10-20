@@ -86,4 +86,27 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
 
         Ok(())
     }
+
+    /// Ends a subshell (a `( … )` command, or a pipeline stage that runs in a
+    /// shell of its own) with its body's result, returning what leaves it:
+    /// its exit status, and nothing else. An error is reported on the
+    /// standard error `stderr` returns, if it's open, and its exit code is the
+    /// status. Whatever else the result would do to a shell (exit it, return
+    /// from a function, break a loop) ends the subshell alone.
+    pub(crate) fn end_subshell<W: std::io::Write>(
+        &self,
+        result: Result<crate::ExecutionResult, error::Error>,
+        stderr: impl FnOnce() -> Option<W>,
+    ) -> crate::ExecutionResult {
+        let exit_code = match result {
+            Ok(result) => result.exit_code,
+            Err(error) => {
+                if let Some(mut stderr) = stderr() {
+                    let _ = self.display_error(&mut stderr, &error);
+                }
+                crate::ExecutionExitCode::from(&error)
+            }
+        };
+        crate::ExecutionResult::from(exit_code)
+    }
 }

@@ -292,10 +292,12 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
         cloned_params.set_fd(openfiles::OpenFiles::STDIN_FD, null);
     }
 
+    // The job runs in a shell of its own, so only its status leaves it.
     let join_handle = sys::tasks::spawn(async move {
-        cloned_ao_list
+        let result = cloned_ao_list
             .execute(&mut cloned_shell, &cloned_params)
-            .await
+            .await;
+        Ok(cloned_shell.end_subshell(result, || cloned_params.try_stderr(&cloned_shell)))
     });
 
     shell.jobs_mut().add_as_current(jobs::Job::new(
@@ -496,6 +498,14 @@ async fn spawn_pipeline_processes(
             cmd_params.open_files.set_fd(OpenFiles::STDOUT_FD, writer);
         }
 
+        // A stage in a shell of its own is a subshell: an error ends the stage
+        // alone, reported on the stage's standard error.
+        let stage_stderr = if run_in_current_shell {
+            None
+        } else {
+            cmd_params.try_stderr(shell)
+        };
+
         let pipeline_context = if !run_in_current_shell {
             // Make sure that all commands in the pipeline are in the same process group.
             if current_pipeline_index > 0 {
@@ -516,9 +526,20 @@ async fn spawn_pipeline_processes(
             }
         };
 
-        let spawn_result = command
+        let spawn_result = match command
             .execute_in_pipeline(pipeline_context, cmd_params)
-            .await?;
+            .await
+        {
+            // A stage in a shell of its own that's done already ends here.
+            Ok(ExecutionSpawnResult::Completed(result)) if !run_in_current_shell => {
+                shell.end_subshell(Ok(result), || stage_stderr).into()
+            }
+            Ok(spawn_result) => spawn_result,
+            Err(error) if !run_in_current_shell => {
+                shell.end_subshell(Err(error), || stage_stderr).into()
+            }
+            Err(error) => return Err(error),
+        };
 
         // Update the process group ID if something was spawned.
         if let ExecutionSpawnResult::StartedProcess(child) = &spawn_result {
@@ -638,7 +659,8 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                         let (mut shell, compound) = (*target, compound.clone());
                         Ok(ExecutionSpawnResult::StartedTask(
                             sys::tasks::spawn_blocking(async move {
-                                compound.execute(&mut shell, &params).await
+                                let result = compound.execute(&mut shell, &params).await;
+                                Ok(shell.end_subshell(result, || params.try_stderr(&shell)))
                             })
                             .await,
                         ))
@@ -679,21 +701,8 @@ impl Execute for ast::CompoundCommand {
 
                 // Handle errors within the subshell context to prevent fatal errors
                 // from propagating to the parent shell.
-                let subshell_result = match list.execute(&mut subshell, params).await {
-                    Ok(result) => result,
-                    Err(error) => {
-                        // Display the error to stderr, but prevent fatal error propagation
-                        let mut stderr = params.stderr(shell);
-                        let _ = shell.display_error(&mut stderr, &error);
-
-                        // Convert error to result in subshell context
-                        error.into_result(&subshell)
-                    }
-                };
-
-                // Preserve the subshell's exit code, but don't honor any of its requests to exit
-                // the shell, break out of loops, etc.
-                Ok(ExecutionResult::from(subshell_result.exit_code))
+                let result = list.execute(&mut subshell, params).await;
+                Ok(shell.end_subshell(result, || Some(params.stderr(shell))))
             }
             Self::ForClause(f) => f.execute(shell, params).await,
             Self::CaseClause(c) => c.execute(shell, params).await,
@@ -1290,6 +1299,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 commands::ShellForCommand::ParentShell(shell) => (None, shell),
                 commands::ShellForCommand::OwnedShell { target, parent } => (Some(target), parent),
             };
+            let in_owned_shell = owned_shell.is_some();
 
             let shell = if let Some(owned_shell) = owned_shell {
                 commands::ShellForCommand::OwnedShell {
@@ -1307,6 +1317,11 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
 
             match execute_command(context, params, cmd_name, &assignments, args).await {
                 Ok(result) => Ok(result),
+                // In a shell of its own, as an expansion error in a prefix
+                // assignment is, an error ends the stage alone.
+                Err(err) if in_owned_shell => {
+                    Ok(parent_shell.end_subshell(Err(err), || Some(stderr)).into())
+                }
                 Err(err) => {
                     let _ = parent_shell.display_error(&mut stderr, &err);
 
