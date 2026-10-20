@@ -161,9 +161,10 @@ fn nested_interactive_shell_survives_a_background_write_with_tostop() -> anyhow:
     // does by the time it runs), and that program holds it until the write is done.
     session.send_line(
         "stty tostop; { until [ -e fg-ready ]; do sleep 0.05; done; echo bg-wrote; touch wrote; } & \
-         sh -c 'touch fg-ready; until [ -e wrote ]; do sleep 0.05; done; sleep 0.2'; echo fg-done",
+         sh -c 'touch fg-ready; until [ -e wrote ]; do sleep 0.05; done; sleep 0.2'; echo \"fg-$((1 + 1))\"",
     )?;
-    expect_answering_queries(&mut session, "fg-done")
+    // Computed, so that the echoed command line doesn't match.
+    expect_answering_queries(&mut session, "fg-2")
         .context("The shell did not go on after a background write to the terminal")?;
 
     session.send_line("exit")?;

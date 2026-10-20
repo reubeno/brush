@@ -94,10 +94,10 @@ These decide where a behavior belongs when more than one crate could plausibly o
    test harness running fifty shells in one process, a sandbox -- want different answers? If
    so, it's a contract; if not, it's shell behavior, with platform code under `sys` called
    directly. Handing the terminal's foreground to each job under job control is the latter:
-   a job in a process group of its own on a terminal must have the foreground, so a host
-   that wants the terminal left alone turns job control off rather than providing a
-   different answer. What the host gives once, such as the standard streams or the
-   environment, is a value on the shell's builder, not a contract.
+   a job in a process group of its own on a terminal must have the foreground, and the
+   shell must take it back to read its next command, whoever hosts it. What the host gives
+   once, such as the standard streams or the environment, is a value on the shell's
+   builder, not a contract.
 
    What takes over something the whole process shares -- the process group, the terminal,
    the runtime -- lives in `brush-hosting`, a layer above core using only its public API,
