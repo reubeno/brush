@@ -1875,7 +1875,6 @@ cases:
   #
 
   - name: "Integer variable evaluates arithmetic on assignment"
-    known_failure: true
     stdin: |
       declare -i x
       x=20+5
@@ -1888,7 +1887,6 @@ cases:
       echo "x: $x"
 
   - name: "Integer variable with variable references in expression"
-    known_failure: true
     stdin: |
       declare -i x
       y=10
@@ -1898,7 +1896,6 @@ cases:
       echo "x: $x"
 
   - name: "Integer variable += with arithmetic"
-    known_failure: true
     stdin: |
       declare -i x=10
       x+=5
