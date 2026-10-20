@@ -390,19 +390,12 @@ impl Job {
     }
 
     /// Moves the job to execute in the foreground.
-    ///
-    /// # Arguments
-    ///
-    /// * `terminal` - The terminal to give the job the foreground of.
-    pub fn move_to_foreground(
-        &mut self,
-        terminal: &impl crate::extensions::TerminalController,
-    ) -> Result<(), error::Error> {
+    pub fn move_to_foreground(&mut self) -> Result<(), error::Error> {
         // The job gets the terminal before it's continued, so that it doesn't find itself in the
         // background and stop again on reading from the terminal. (Without a terminal, as in a
         // script that enables job control, there's none to give it, and it's continued anyway.)
         if let Some(pgid) = self.own_process_group()
-            && let Err(err) = terminal.give_foreground(pgid)
+            && let Err(err) = sys::terminal::move_to_foreground(pgid)
         {
             tracing::debug!(target: trace_categories::JOBS, "not giving job {} the terminal: {err}", self.id);
         }

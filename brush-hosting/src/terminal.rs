@@ -4,40 +4,33 @@
 //! gives the terminal to the one in the foreground. For that, the shell's process leads a
 //! process group of its own, and has the terminal while it reads commands.
 //! [`ProcessTerminal::acquire`] takes both, and gives the terminal back once what it
-//! returns is dropped. Named as a shell's [`TerminalController`](brush_core::extensions::TerminalController),
-//! [`ProcessTerminal`] lets the shell move the foreground between itself and its jobs.
+//! returns is dropped.
 
 mod sys;
 
 use std::io::IsTerminal as _;
-use std::sync::Arc;
 
 use brush_core::sys::{process::ProcessId, terminal};
 
 /// The terminal on the process's standard input, taken over by the process for its shells'
-/// job control (see the module).
-///
-/// Any value moves that terminal's foreground, for the shell it's the terminal controller of;
-/// the one [`Self::acquire`] returns also holds what was taken, and gives it back when it, and every
-/// copy of it, is dropped.
-#[derive(Clone, Debug, Default)]
+/// job control (see the module). Dropping it gives the terminal back to the process group
+/// that had it.
+#[derive(Debug)]
 pub struct ProcessTerminal {
-    /// Held for its drop.
-    _taken: Option<Arc<Taken>>,
+    prev_fg_pid: Option<ProcessId>,
 }
 
 impl ProcessTerminal {
     /// Takes the terminal for the process, if its standard input is one: has the process ignore
     /// SIGTTOU, moves it into a process group of its own, and makes that group the terminal's
-    /// foreground. Dropping the result, and every copy of it, gives the terminal back to the
-    /// group that had it. Without a terminal, there's nothing to take, and this changes nothing.
+    /// foreground. Without a terminal, there's nothing to take, and this changes nothing.
     ///
     /// # Errors
     ///
     /// Fails if the process can't ignore SIGTTOU, or can't take the terminal's foreground.
     pub fn acquire() -> std::io::Result<Self> {
         if !std::io::stdin().is_terminal() {
-            return Ok(Self::default());
+            return Ok(Self { prev_fg_pid: None });
         }
 
         // First: leading a group of its own, the process takes the foreground from the
@@ -52,29 +45,11 @@ impl ProcessTerminal {
 
         terminal::move_self_to_foreground()?;
 
-        Ok(Self {
-            _taken: Some(Arc::new(Taken { prev_fg_pid })),
-        })
+        Ok(Self { prev_fg_pid })
     }
 }
 
-impl brush_core::extensions::TerminalController for ProcessTerminal {
-    fn give_foreground(&self, group: ProcessId) -> std::io::Result<()> {
-        terminal::move_to_foreground(group)
-    }
-
-    fn take_foreground(&self) -> std::io::Result<()> {
-        terminal::move_self_to_foreground()
-    }
-}
-
-/// The terminal's foreground, taken from the process group that had it, which gets it back on drop.
-#[derive(Debug)]
-struct Taken {
-    prev_fg_pid: Option<ProcessId>,
-}
-
-impl Drop for Taken {
+impl Drop for ProcessTerminal {
     fn drop(&mut self) {
         if let Some(pid) = self.prev_fg_pid {
             let _ = terminal::move_to_foreground(pid);

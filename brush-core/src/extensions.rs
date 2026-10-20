@@ -1,19 +1,4 @@
-//! The behaviors a shell is built with, as types its host names.
-//!
-//! [`ShellExtensions`] bundles them. They come in two families:
-//!
-//! * What the host provides. The process a shell runs in belongs to whoever hosts it, which
-//!   may run several shells, or have uses of its own for the process; so what the shell must
-//!   keep asking of that process is a contract the host implements: [`ProcessLauncher`]
-//!   starts the programs the shell runs, and [`TerminalController`] moves the terminal's foreground
-//!   for job control. Each has a stock implementation that does nothing, for a host that
-//!   hasn't got the thing, or won't share it: [`NoProcessLauncher`] and [`NoTerminal`]. A
-//!   stock implementation that changes nothing process-wide lives here and is the default
-//!   ([`DefaultProcessLauncher`] starts native processes); one that takes over something
-//!   the whole process shares, such as its terminal, lives in the `brush-hosting` crate, and
-//!   the default here is the one that does nothing.
-//! * How the shell speaks. [`ErrorFormatter`] renders errors. Nothing about owning the
-//!   process changes it; it's presentation, open to the host all the same.
+//! Definition of shell behavior traits and defaults.
 
 use crate::{
     Shell, error, extensions,
@@ -28,8 +13,6 @@ pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
     type ErrorFormatter: ErrorFormatter;
     /// Type of the process launcher implementation.
     type ProcessLauncher: ProcessLauncher;
-    /// Type of the terminal the shell's job control uses.
-    type TerminalController: TerminalController;
 }
 
 /// Shell extensions implementation constructed from component types.
@@ -37,17 +20,13 @@ pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
 pub struct ShellExtensionsImpl<
     EF: ErrorFormatter = DefaultErrorFormatter,
     PL: ProcessLauncher = DefaultProcessLauncher,
-    T: TerminalController = NoTerminal,
 > {
-    _marker: std::marker::PhantomData<(EF, PL, T)>,
+    _marker: std::marker::PhantomData<(EF, PL)>,
 }
 
-impl<EF: ErrorFormatter, PL: ProcessLauncher, T: TerminalController> ShellExtensions
-    for ShellExtensionsImpl<EF, PL, T>
-{
+impl<EF: ErrorFormatter, PL: ProcessLauncher> ShellExtensions for ShellExtensionsImpl<EF, PL> {
     type ErrorFormatter = EF;
     type ProcessLauncher = PL;
-    type TerminalController = T;
 }
 
 /// Default shell extensions implementation.
@@ -146,57 +125,6 @@ impl ProcessLauncher for DefaultProcessLauncher {
 
     fn exec(&self, request: LaunchRequest) -> std::io::Error {
         sys::process::exec(request)
-    }
-}
-
-/// A launcher that starts nothing, for a host that wants a shell of builtins and functions alone.
-///
-/// Every launch fails as unsupported, so that a command that resolves to a program reports
-/// that it could not be executed (status 126).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct NoProcessLauncher;
-
-impl ProcessLauncher for NoProcessLauncher {
-    fn spawn(&self, _request: LaunchRequest) -> Result<ChildProcess, std::io::Error> {
-        Err(std::io::ErrorKind::Unsupported.into())
-    }
-}
-
-/// Trait for controlling the terminal that a shell and its jobs share: not its data, which
-/// the shell reads and writes as files, but who has it.
-///
-/// Under job control, the shell gives the terminal's foreground to each job it runs in the
-/// foreground, and takes it back when the job ends or stops. Which terminal that is, and
-/// whether there is one at all, is the host's: a program that owns its process and the
-/// terminal on its standard input provides one (as the `brush-hosting` crate does); an embedder without
-/// one, or that shares its terminal with something else, provides [`NoTerminal`].
-///
-/// A clone is another handle to the same terminal, not a second terminal: the shell and every
-/// copy of it (e.g., for a subshell) share one.
-pub trait TerminalController: Clone + Default + Send + Sync + 'static {
-    /// Gives the terminal's foreground to a process group, for the job it runs.
-    ///
-    /// # Arguments
-    ///
-    /// * `group` - The process group to give the foreground to.
-    fn give_foreground(&self, group: sys::process::ProcessId) -> Result<(), std::io::Error>;
-
-    /// Takes the terminal's foreground back, for the shell's own process group.
-    fn take_foreground(&self) -> Result<(), std::io::Error>;
-}
-
-/// No terminal to control: the foreground is never moved. The default, for a shell whose host hasn't
-/// given it a terminal.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct NoTerminal;
-
-impl TerminalController for NoTerminal {
-    fn give_foreground(&self, _group: sys::process::ProcessId) -> Result<(), std::io::Error> {
-        Ok(())
-    }
-
-    fn take_foreground(&self) -> Result<(), std::io::Error> {
-        Ok(())
     }
 }
 

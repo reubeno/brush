@@ -60,7 +60,7 @@ pub fn get_foreground_pid() -> Option<sys::process::ProcessId> {
 /// Move the specified process to the foreground of the attached terminal.
 ///
 /// This is a stub implementation that takes no action.
-pub fn move_to_foreground(_pid: sys::process::ProcessId) -> Result<(), std::io::Error> {
+pub fn move_to_foreground(_pid: sys::process::ProcessId) -> Result<(), error::Error> {
     Ok(())
 }
 

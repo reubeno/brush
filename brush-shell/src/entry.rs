@@ -20,11 +20,7 @@ use tokio::sync::Mutex;
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
     LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
 
-type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<
-    error_formatter::Formatter,
-    brush_core::extensions::DefaultProcessLauncher,
-    brush_hosting::terminal::ProcessTerminal,
->;
+type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<error_formatter::Formatter>;
 type BrushShell = brush_core::Shell<BrushShellExtensions>;
 
 // WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
