@@ -537,53 +537,133 @@ cases:
       echo "last stage: ${PIPESTATUS[*]}"
 
   - name: "A special builtin's usage and assignment errors are fatal in POSIX mode"
-    known_failure: true # TODO(posix): a special builtin's usage and assignment errors don't end a non-interactive POSIX shell
     ignore_stderr: true
     stdin: |
       set -o posix
       (set -o bogus; echo "survived: $?")
       echo "status $?: set -o bogus"
-      (set --bogus; echo "survived: $?")
-      echo "status $?: set --bogus"
       (trap -Z; echo "survived: $?")
       echo "status $?: trap -Z"
-      (shift abc; echo "survived: $?")
-      echo "status $?: shift abc"
-      (readonly 1x; echo "survived: $?")
-      echo "status $?: readonly 1x"
-      (export 1x=2 y=3; echo "survived: $?")
-      echo "status $?: export 1x=2 y=3"
       (readonly r=1; readonly r=2; echo "survived: $?")
       echo "status $?: readonly r=1; readonly r=2"
-      (readonly r=1; unset r; echo "survived: $?")
-      echo "status $?: readonly r=1; unset r"
       (readonly r=1; export r=2; echo "survived: $?")
       echo "status $?: readonly r=1; export r=2"
       (. /nonexistent-file; echo "survived: $?")
       echo "status $?: . /nonexistent-file"
-      (f() { return abc; }; f; echo "survived: $?")
-      echo "status $?: f() { return abc; }; f"
       (return 3; echo "survived: $?")
       echo "status $?: return 3"
-      (exec -Z; echo "survived: $?")
-      echo "status $?: exec -Z"
       (export --help >/dev/null; echo "survived: $?")
       echo "status $?: export --help >/dev/null"
-      (for i in 1; do break abc; done; echo "survived: $?")
-      echo "status $?: for i in 1; do break abc; done"
 
-  - name: "A special builtin's ordinary failures are not fatal in POSIX mode"
-    known_failure: true # TODO(posix): any error a special builtin returns ends a non-interactive POSIX shell
+  - name: "A special builtin's misuse ends a POSIX shell from a function, eval, or a sourced file"
     ignore_stderr: true
     stdin: |
       set -o posix
-      for cmd in 'trap x BOGUS' 'set -- a; shift 3' 'export -f nofunc' 'unset -f -v x' \
-          'unset 1x' 'for i in 1; do break 0; done' 'break' 'continue 2'; do
+      (f() { export -Q; }; f; echo "survived: $?")
+      echo "function: $?"
+      (eval 'set -o bogus'; echo "survived: $?")
+      echo "eval: $?"
+      echo 'trap -Z' > ./misuse.sh
+      (. ./misuse.sh; echo "survived: $?")
+      echo "sourced file: $?"
+      x=$(trap -Z; echo "survived")
+      echo "command substitution: $? [$x]"
+
+  - name: "A special builtin's misuse doesn't end a POSIX shell where errexit is ignored"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      { set -o bogus; } || echo "group ||: $?"
+      f() { set -o bogus; }; f || echo "function ||: $?"
+      ! trap -Z; echo "!: $?"
+      while shift abc; do :; done; echo "while: $?"
+      set -o bogus && echo "not reached"
+      echo "after &&: $?"
+      true && set -o bogus
+      echo "not reached either"
+
+  - name: "A misuse in a tested eval doesn't end a POSIX shell"
+    min_oracle_version: "5.3" # bash 5.2 ends the shell
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      eval 'set -o bogus' || echo "eval ||: $?"
+      if eval 'trap -Z'; then :; else echo "if eval: $?"; fi
+      echo "after"
+
+  - name: "A non-numeric operand to shift, return, or break is a misuse"
+    min_oracle_version: "5.3" # bash 5.2 takes shift's and return's as ordinary failures, and break's ends the shell with 128
+    ignore_stderr: true
+    stdin: |
+      set -- a
+      shift abc; echo "shift abc: $?"
+      set -o posix
+      (shift abc; echo "survived: $?")
+      echo "status $?: shift abc"
+      (f() { return abc; }; f; echo "survived: $?")
+      echo "status $?: f() { return abc; }; f"
+      (for i in 1; do break abc; done; echo "survived: $?")
+      echo "status $?: for i in 1; do break abc; done"
+      (for i in 1; do continue 99999999999999999999; done; echo "survived: $?")
+      echo "status $?: continue past 64 bits"
+      x=$(shift abc; echo "survived")
+      echo "command substitution: $? [$x]"
+      shift abc || echo "shift abc ||: $?"
+
+  - name: "command and builtin keep a special builtin's errors from ending a POSIX shell"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      command export -Q; echo "command export -Q: $?"
+      builtin export -Q; echo "builtin export -Q: $?"
+      command set -o bogus; echo "command set -o bogus: $?"
+      readonly r=1
+      command unset r; echo "command unset r: $?"
+
+  - name: "A special builtin's misuse sets its status outside POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      set -o bogus; echo "set -o bogus: $?"
+      set +o bogus; echo "set +o bogus: $?"
+      export -Q; echo "export -Q: $?"
+      return; echo "return: $?"
+      f() { return abc; }; f; echo "return abc: $?"
+
+  - name: "set -o leaves the positional parameters alone when an option name is unknown"
+    ignore_stderr: true
+    stdin: |
+      set -- x
+      set -o bogus a b
+      echo "status $?: $*"
+      set -o bogus -o errexit
+      echo "status $?: errexit ${-//[^e]/}"
+
+  - name: "A special builtin's unknown option or invalid name is fatal in POSIX mode"
+    known_failure: true # TODO(builtins): set and exec accept unknown options, and readonly and export report an invalid name as an ordinary failure
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      (set --bogus; echo "survived: $?")
+      echo "status $?: set --bogus"
+      (exec -Z; echo "survived: $?")
+      echo "status $?: exec -Z"
+      (readonly 1x; echo "survived: $?")
+      echo "status $?: readonly 1x"
+      (export 1x=2 y=3; echo "survived: $?")
+      echo "status $?: export 1x=2 y=3"
+
+  # `break` and `continue` outside a loop are covered by compound_cmds/for.yaml.
+  - name: "A special builtin's ordinary failures are not fatal in POSIX mode"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      for cmd in 'trap x BOGUS' 'trap - BOGUS' 'set -- a; shift 3' 'shift -1' 'export -f nofunc' \
+          'unset -f -v x' 'unset 1x' 'for i in 1; do break 0; done' \
+          'for i in 1; do continue -1; done' 'f() { return -1; }; f' 'export -p >&-'; do
         (eval "$cmd"; echo "survived $?: $cmd")
       done
 
   - name: "A failed exec ends a non-interactive shell unless execfail is set"
-    known_failure: true # TODO(exec): a failed exec doesn't end a non-interactive shell
     ignore_stderr: true
     stdin: |
       (exec /nonexistent-command; echo "survived")
@@ -591,6 +671,105 @@ cases:
       (exec /etc/passwd; echo "survived")
       echo "not executable: $?"
       (shopt -s execfail; exec /nonexistent-command; echo "survived execfail: $?")
+
+  - name: "A failed exec ends the shell even when tested or run by command"
+    ignore_stderr: true
+    stdin: |
+      (exec /nonexistent-command || echo "tested"; echo "survived")
+      echo "tested: $?"
+      (command exec /nonexistent-command; echo "survived")
+      echo "command exec: $?"
+      x=$(exec /nonexistent-command; echo "survived")
+      echo "command substitution: $? [$x]"
+      (set -o posix; exec /etc/passwd || echo "tested"; echo "survived")
+      echo "POSIX mode, not executable: $?"
+
+  - name: "execfail keeps a shell going after a failed exec, but not a subshell"
+    ignore_stderr: true
+    stdin: |
+      shopt -s execfail
+      exec /nonexistent-command; echo "after exec: $?"
+      exec /etc/passwd; echo "after exec of a non-executable: $?"
+      (exec /nonexistent-command; echo "survived")
+      echo "subshell: $?"
+
+  - name: "Numeric operands take blanks, a sign, and any 64-bit value"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      for i in 1 2; do for j in a b; do break ' 2'; done; done; echo "break ' 2': $? $i$j"
+      for i in 1 2; do for j in a b; do continue '2 '; echo "not reached"; done; done
+      echo "continue '2 ': $? $i$j"
+      f() { return 99999999999; }; f; echo "return 99999999999: $?"
+      f() { return ' 3'; }; f; echo "return ' 3': $?"
+      f() { return -1; }; f; echo "return -1: $?"
+      set -- a b c; shift 99999999999; echo "shift 99999999999: $? $*"
+      shift ' 1'; echo "shift ' 1': $? $*"
+      shift +1; echo "shift +1: $? $*"
+      (exit ' 3'); echo "exit ' 3': $?"
+      (exit -1); echo "exit -1: $?"
+
+  - name: "Too many operands don't end a POSIX shell"
+    min_oracle_version: "5.3" # bash 5.2 fails with 1
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      set -- a b c
+      shift 1 2
+      echo "shift 1 2: $? $*"
+      f() { return 1 2; }
+      f
+      echo "return 1 2: $?"
+      exit 1 2
+      echo "exit 1 2: $?"
+
+  - name: "Too many operands abandon the rest of the line"
+    known_failure: true # TODO(builtins): too many operands only fail the builtin, where bash abandons the line
+    min_oracle_version: "5.3" # bash 5.2 fails with 1
+    ignore_stderr: true
+    stdin: |
+      set -- a b c
+      shift 1 2; echo "same line"
+      echo "shift 1 2: $? $*"
+      f() { return 1 2; echo "in f"; }
+      f; echo "same line"
+      echo "return 1 2: $?"
+
+  - name: "Unsetting a readonly variable doesn't end a POSIX shell when its status is tested"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      readonly r=1
+      unset r || echo "unset ||: $?"
+      if unset r; then :; else echo "if unset: $?"; fi
+      f() { unset r; }; f || echo "function ||: $?"
+      echo "after"
+
+  - name: "A special builtin's misuse with an ERR trap set doesn't end a POSIX shell"
+    known_failure: true # TODO(posix): a misuse ends the shell even when an ERR trap is set
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      trap 'echo ERR' ERR
+      set -o bogus
+      echo "after: $?"
+
+  - name: "Negation doesn't change the status that a fatal error ends the shell with"
+    known_failure: true # TODO(errors): ! inverts the status of an exit or a fatal error
+    ignore_stderr: true
+    stdin: |
+      (! exit 3)
+      echo "! exit 3: $?"
+      (set -o posix; readonly r=1; ! export r=2; echo "survived")
+      echo "! export r=2: $?"
+      (set -o posix; ! eval 'if'; echo "survived")
+      echo "! eval 'if': $?"
+
+  - name: "A shell invoked as sh starts in POSIX mode"
+    known_failure: true # TODO(posix): the shell doesn't check the name it was invoked by
+    stdin: |
+      ln -s "$BASH" sh
+      ./sh -c '[[ -o posix ]] && echo "POSIX mode" || echo "not POSIX mode"'
 
   - name: "A special builtin's redirection error is fatal in POSIX mode"
     known_failure: true # TODO(posix): the shell reports a redirection error before it knows the command

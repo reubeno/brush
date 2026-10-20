@@ -1,7 +1,6 @@
 name: "Builtins: shift"
 cases:
   - name: "shift past the end fails with status 1"
-    known_failure: true # TODO(shift): fails with status 2, where bash fails with 1
     ignore_stderr: true
     stdin: |
       set -- a
@@ -9,7 +8,7 @@ cases:
       echo "shift: $?"
 
   - name: "A non-numeric shift count is misuse, in bash's words"
-    known_failure: true # TODO(shift): the error is clap's, not bash's `x: numeric argument required`
+    min_oracle_version: "5.3" # bash 5.2 fails with 1
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       set -- a b

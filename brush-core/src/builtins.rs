@@ -109,7 +109,16 @@ pub trait Builtin<SE: extensions::ShellExtensions>: ParseArgs + 'static {
 type ExecuteFn<SE> = for<'a> fn(
     commands::ExecutionContext<'a, SE>,
     Vec<CommandArg>,
-) -> BoxFuture<'a, Result<results::ExecutionResult, error::Error>>;
+) -> BoxFuture<'a, Result<Outcome, error::Error>>;
+
+/// What running a builtin came to, when it didn't fail with an error.
+pub(crate) enum Outcome {
+    /// It ran, with this result.
+    Ran(results::ExecutionResult),
+    /// It didn't run: its arguments were a misuse of it, which has been
+    /// reported on its standard error.
+    Misused(UsageError),
+}
 
 /// How a [`Registration`] gets its builtin's help; see [`ParseArgs::content`].
 type ContentFn = fn(&str, ContentType, &ContentOptions) -> Result<String, error::Error>;
@@ -118,7 +127,7 @@ type ContentFn = fn(&str, ContentType, &ContentOptions) -> Result<String, error:
 fn execute_boxed<SE: extensions::ShellExtensions, B: Builtin<SE>>(
     context: commands::ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
-) -> BoxFuture<'_, Result<results::ExecutionResult, error::Error>> {
+) -> BoxFuture<'_, Result<Outcome, error::Error>> {
     Box::pin(invoke::<SE, B>(context, args))
 }
 
@@ -127,7 +136,7 @@ fn execute_boxed<SE: extensions::ShellExtensions, B: Builtin<SE>>(
 async fn invoke<SE: extensions::ShellExtensions, B: Builtin<SE>>(
     context: commands::ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
-) -> Result<results::ExecutionResult, error::Error> {
+) -> Result<Outcome, error::Error> {
     let mut args = args.into_iter();
     let name = args
         .next()
@@ -137,14 +146,23 @@ async fn invoke<SE: extensions::ShellExtensions, B: Builtin<SE>>(
         Ok(builtin) => builtin,
         Err(usage) => {
             let _ = writeln!(context.stderr(), "{usage}");
-            return Ok(results::ExecutionExitCode::InvalidUsage.into());
+            return Ok(Outcome::Misused(usage));
         }
     };
 
     builtin
         .execute(context)
         .await
-        .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e), name).into())
+        .map(Outcome::Ran)
+        .map_err(|e| {
+            // A fatal error (e.g., `exec` failing to run its program) stays
+            // fatal once it's named for the builtin.
+            let fatal = (&e as &(dyn std::error::Error + 'static))
+                .downcast_ref::<error::Error>()
+                .is_some_and(error::Error::is_fatal);
+            let error: error::Error = error::ErrorKind::BuiltinError(Box::new(e), name).into();
+            if fatal { error.into_fatal() } else { error }
+        })
 }
 
 /// Encapsulates a registration for a built-in command.
@@ -189,7 +207,10 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
         }
     }
 
-    /// Runs the builtin.
+    /// Runs the builtin. A misuse found as its arguments are parsed is reported
+    /// on its standard error, and it fails with the invalid-usage status (2); a
+    /// misuse found once it runs comes back as an error, as its other failures
+    /// do.
     ///
     /// # Arguments
     ///
@@ -200,6 +221,26 @@ impl<SE: extensions::ShellExtensions> Registration<SE> {
         context: commands::ExecutionContext<'a, SE>,
         args: Vec<commands::CommandArg>,
     ) -> BoxFuture<'a, Result<results::ExecutionResult, error::Error>> {
+        let run = self.run(context, args);
+        Box::pin(async move {
+            Ok(match run.await? {
+                Outcome::Ran(result) => result,
+                Outcome::Misused(_) => results::ExecutionExitCode::InvalidUsage.into(),
+            })
+        })
+    }
+
+    /// Runs the builtin, telling a misuse of it apart from its other failures.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The context in which the builtin runs.
+    /// * `args` - The arguments to the builtin, starting with its name.
+    pub(crate) fn run<'a>(
+        &self,
+        context: commands::ExecutionContext<'a, SE>,
+        args: Vec<commands::CommandArg>,
+    ) -> BoxFuture<'a, Result<Outcome, error::Error>> {
         (self.execute)(context, args)
     }
 

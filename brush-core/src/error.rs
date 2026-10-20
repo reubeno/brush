@@ -164,6 +164,10 @@ pub enum ErrorKind {
     #[error("cannot mutate readonly variable")]
     ReadonlyVariable,
 
+    /// An attempt was made to unset the named readonly variable.
+    #[error("{0}: cannot unset: readonly variable")]
+    CannotUnsetReadonlyVariable(String),
+
     /// The indicated pattern is invalid.
     #[error("invalid pattern: '{0}'")]
     InvalidPattern(String),
@@ -272,6 +276,11 @@ pub enum ErrorKind {
     #[error("{1}: {0}")]
     BuiltinError(Box<dyn BuiltinError>, String),
 
+    /// A builtin was misused: a problem with how it was invoked, found once it
+    /// ran (e.g., `set -o` given an unknown option name).
+    #[error("{0}")]
+    Usage(#[from] crate::builtins::UsageError),
+
     /// Operation not supported on this platform.
     #[error("operation not supported on this platform: {0}")]
     NotSupportedOnThisPlatform(&'static str),
@@ -372,6 +381,7 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
             ErrorKind::IoError(io_err) => io_err.into(),
             ErrorKind::BuiltinError(inner, ..) => inner.as_exit_code(),
+            ErrorKind::Usage(..) => Self::InvalidUsage,
             _ => Self::GeneralError,
         }
     }
@@ -416,6 +426,31 @@ impl Error {
     /// Returns whether or not this error is fatal.
     pub const fn is_fatal(&self) -> bool {
         self.fatal
+    }
+
+    /// Returns whether this error, from a special builtin, ends a
+    /// non-interactive shell in POSIX mode. A failed variable assignment, a
+    /// file `.` couldn't read, and a syntax error do. So do a misuse of the
+    /// builtin and an attempt to unset a readonly variable, unless
+    /// `status_tested` says its status is tested (where `errexit` is ignored,
+    /// e.g. in an `if` condition or before `||`). A
+    /// special builtin's other failures (e.g., `trap` given an unknown signal)
+    /// only set its status.
+    pub(crate) fn is_fatal_from_special_builtin(&self, status_tested: bool) -> bool {
+        match &*self.kind {
+            ErrorKind::Usage(..) | ErrorKind::CannotUnsetReadonlyVariable(..) => !status_tested,
+            ErrorKind::ReadonlyVariable
+            | ErrorKind::CannotAssignToSpecialParameter
+            | ErrorKind::FailedSourcingFile(..)
+            | ErrorKind::ParseError(..) => true,
+            ErrorKind::BuiltinError(inner, _) => {
+                let inner: &(dyn std::error::Error + 'static) = inner.as_ref();
+                inner
+                    .downcast_ref::<Self>()
+                    .is_some_and(|inner| inner.is_fatal_from_special_builtin(status_tested))
+            }
+            _ => false,
+        }
     }
 
     /// Returns a reference to the error kind.

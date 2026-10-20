@@ -231,6 +231,22 @@ cases:
       f() { break -Z; echo "after break -Z: $?"; continue -Z; echo "after continue -Z: $?"; }
       f
 
+  - name: "break and continue check for a loop before their operand"
+    known_failure: true # TODO(loops): the shell doesn't track its loop depth, so a bad operand outside a loop is a misuse
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      break abc; echo "break abc: $?"
+      continue abc; echo "continue abc: $?"
+
+  - name: "A non-numeric loop count ends the shell"
+    known_failure: true # TODO(loops): a non-numeric loop count fails break or continue, where bash ends the shell
+    min_oracle_version: "5.3" # bash 5.2 ends it with 128
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do break abc; done
+      echo "not reached: $?"
+
   - name: "break and continue act only on the loops of the current function"
     known_failure: true # TODO(loops): a function's body doesn't start outside its caller's loops
     ignore_stderr: true
@@ -257,7 +273,6 @@ cases:
       echo "after continue: $?"
 
   - name: "break and continue read their operand as bash does"
-    known_failure: true # TODO(loops): break and continue don't read their operand as bash does
     ignore_stderr: true
     stdin: |
       for i in 1 2; do break -- 1; echo "not reached"; done

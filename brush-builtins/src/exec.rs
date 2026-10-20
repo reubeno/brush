@@ -2,8 +2,7 @@ use clap::Parser;
 use std::borrow::Cow;
 
 use brush_core::{
-    ErrorKind, ExecutionExitCode, ExecutionResult, builtins, commands,
-    extensions::ProcessLauncher as _,
+    ErrorKind, ExecutionResult, builtins, commands, extensions::ProcessLauncher as _,
 };
 
 /// Exec the provided command.
@@ -60,7 +59,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
                 ..Default::default()
             };
 
-            return cmd_cmd.execute(context).await;
+            let shell_exits = exec_failure_ends_shell(context.shell);
+            return cmd_cmd.execute(context).await.map_err(|error| {
+                if shell_exits
+                    && matches!(
+                        error.kind(),
+                        ErrorKind::CommandNotFound(..) | ErrorKind::FailedToExecuteCommand(..)
+                    )
+                {
+                    error.into_fatal()
+                } else {
+                    error
+                }
+            });
         }
 
         let mut argv0 = Cow::Borrowed(self.name_for_argv0.as_ref().unwrap_or(&self.args[0]));
@@ -69,9 +80,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
             argv0 = Cow::Owned(std::format!("-{argv0}"));
         }
 
+        let shell_exits = exec_failure_ends_shell(context.shell);
+        let failed = |kind: ErrorKind| {
+            let error = brush_core::Error::from(kind);
+            Err(if shell_exits {
+                error.into_fatal()
+            } else {
+                error
+            })
+        };
+
         // Resolve the program as running it as a command would.
         let Some(program) = context.shell.resolve_external_command(&self.args[0]) else {
-            return Ok(ExecutionExitCode::NotFound.into());
+            return failed(ErrorKind::CommandNotFound(self.args[0].clone()));
         };
 
         let request = commands::compose_launch_request(
@@ -89,9 +110,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
         let exec_error = context.shell.process_launcher().exec(request);
 
         if exec_error.kind() == std::io::ErrorKind::NotFound {
-            Ok(ExecutionExitCode::NotFound.into())
+            failed(ErrorKind::CommandNotFound(self.args[0].clone()))
         } else {
-            Err(ErrorKind::from(exec_error).into())
+            failed(ErrorKind::FailedToExecuteCommand(
+                self.args[0].clone(),
+                exec_error,
+            ))
         }
     }
+}
+
+/// Whether a failure to run the program ends the shell: it ends a
+/// non-interactive shell unless `execfail` is set, and a subshell either way.
+fn exec_failure_ends_shell(shell: &brush_core::Shell<impl brush_core::ShellExtensions>) -> bool {
+    let options = shell.options();
+    shell.is_subshell() || !(options.interactive || options.exit_on_exec_fail)
 }

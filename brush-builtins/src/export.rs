@@ -77,8 +77,8 @@ impl ExportCommand {
                             func.export();
                         }
                     } else {
-                        writeln!(context.stderr(), "{s}: not a function")?;
-                        return Ok(ExecutionExitCode::InvalidUsage.into());
+                        writeln!(context.stderr(), "export: {s}: not a function")?;
+                        return Ok(ExecutionExitCode::GeneralError.into());
                     }
                 }
                 // Try to find the variable already present; if we find it, then mark it

@@ -1,8 +1,9 @@
 use std::borrow::Cow;
+use std::io::Write;
 
 use clap::Parser;
 
-use brush_core::{ExecutionResult, Shell, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, Shell, builtins};
 
 /// Unset a variable.
 #[derive(Parser)]
@@ -15,18 +16,17 @@ pub(crate) struct UnsetCommand {
 }
 
 #[derive(Parser)]
-#[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
 pub(crate) struct UnsetNameInterpretation {
     /// Treat each name as a shell function.
-    #[arg(short = 'f', group = "name-interpretation")]
+    #[arg(short = 'f')]
     shell_functions: bool,
 
     /// Treat each name as a shell variable.
-    #[arg(short = 'v', group = "name-interpretation")]
+    #[arg(short = 'v')]
     shell_variables: bool,
 
     /// Treat each name as a name reference.
-    #[arg(short = 'n', group = "name-interpretation")]
+    #[arg(short = 'n')]
     name_references: bool,
 }
 
@@ -45,6 +45,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnsetCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        if self.name_interpretation.shell_functions && self.name_interpretation.shell_variables {
+            writeln!(
+                context.stderr(),
+                "unset: cannot simultaneously unset a function and a variable"
+            )?;
+            return Ok(ExecutionExitCode::GeneralError.into());
+        }
+
         //
         // TODO(nameref): implement nameref
         //

@@ -65,7 +65,11 @@ impl<'a> Invocation<'a> {
 ///
 /// A parser returns one from [`ParseArgs::parse`]. The shell writes its
 /// message to the builtin's standard error, as it is, and the command fails
-/// with the invalid-usage status (2).
+/// with the invalid-usage status (2). A builtin can also fail with one once
+/// it runs (it converts into a [`crate::Error`]), and the shell reports it as
+/// it does the builtin's other errors. Either way, in POSIX mode, a special
+/// builtin's misuse ends a non-interactive shell, unless the builtin's status
+/// is tested (e.g., in an `if` condition).
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
 pub struct UsageError {
