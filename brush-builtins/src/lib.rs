@@ -120,6 +120,8 @@ mod builder;
 mod factory;
 #[cfg(any(feature = "builtin.command", feature = "builtin.type"))]
 mod lookup;
+#[cfg(any(feature = "builtin.break", feature = "builtin.continue"))]
+mod loops;
 mod unimp;
 
 pub use builder::ShellBuilderExt;
