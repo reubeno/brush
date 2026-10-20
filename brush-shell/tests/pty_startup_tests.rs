@@ -157,10 +157,11 @@ fn nested_interactive_shell_survives_a_background_write_with_tostop() -> anyhow:
     let mut session = spawn_shell(cmd)?;
     expect_answering_queries(&mut session, DEFAULT_PROMPT)?;
 
-    // The foreground program holds the terminal until the background command has written.
+    // The background command writes only once the foreground program has the terminal (it
+    // does by the time it runs), and that program holds it until the write is done.
     session.send_line(
-        "stty tostop; { echo bg-wrote; touch wrote; } & \
-         sh -c 'until [ -e wrote ]; do sleep 0.05; done; sleep 0.2'; echo fg-done",
+        "stty tostop; { until [ -e fg-ready ]; do sleep 0.05; done; echo bg-wrote; touch wrote; } & \
+         sh -c 'touch fg-ready; until [ -e wrote ]; do sleep 0.05; done; sleep 0.2'; echo fg-done",
     )?;
     expect_answering_queries(&mut session, "fg-done")
         .context("The shell did not go on after a background write to the terminal")?;
