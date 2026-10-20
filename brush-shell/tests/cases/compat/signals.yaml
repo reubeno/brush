@@ -215,12 +215,15 @@ cases:
       x=$(kill -INT $$; echo inner)
       echo "x=$x"
 
-  # The subshell signals the shell only once it has surely begun to wait for it, waiting with
-  # builtins alone: a program would make the shell catch SIGINT for the program's sake.
+  # The shell traps the signal, so the outcome doesn't depend on whether the signal arrives
+  # before the shell begins to wait for the subshell or while it waits: either way the trap
+  # runs once the subshell is done. (Untrapped, a non-interactive shell dies of a SIGINT
+  # that arrives before it begins to wait.)
   - name: "signal sent to the shell isn't the subshell's"
     known_failure: true # TODO(signals): a subshell shares its parent's signals
     stdin: |
-      ( trap 'echo sub-int' INT; i=0; while [ $i -lt 30000 ]; do i=$((i + 1)); done; kill -INT $$; echo sub-after )
+      trap 'echo T' INT
+      ( trap 'echo sub-int' INT; kill -INT $$; echo sub-after )
       echo "after=$?"
 
   - name: "a subshell resets the signal traps it inherits"
