@@ -497,6 +497,7 @@ cases:
       ((1/0)) 2>&1 | strip
 
   - name: "Special builtin runtime error is fatal in POSIX mode"
+    min_oracle_version: "5.3" # bash 5.2 reports the error and goes on
     known_failure: true # TODO(posix): this special builtin error doesn't end a non-interactive POSIX shell
     ignore_stderr: true
     stdin: |
