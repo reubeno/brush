@@ -232,7 +232,6 @@ cases:
       #send:Ctrl+D
 
   - name: "A fatal error in a builtin ends an interactive shell's subshell"
-    known_failure: true # TODO(interactive): the subshell carries on
     pty: true
     ignore_stdout: true # Prompts don't line up
     stdin: |

@@ -477,10 +477,35 @@ impl Error {
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> results::ExecutionControlFlow {
-        if self.is_fatal() && !shell.options().interactive {
+        let interactive = shell.options().interactive;
+        // bash has two notions of interactive: a shell that started interactive,
+        // which its subshells are too, and one that reads commands interactively,
+        // which they aren't. It goes on after a syntax error, or a file `.` can't
+        // read, in either; after other fatal errors, only in the latter.
+        let interactive = if self.is_syntax_or_source_error() {
+            interactive
+        } else {
+            interactive && !shell.is_subshell()
+        };
+        if self.is_fatal() && !interactive {
             results::ExecutionControlFlow::ExitShell
         } else {
             results::ExecutionControlFlow::Normal
+        }
+    }
+
+    /// Returns whether this is a syntax error, or a file `.` couldn't read,
+    /// including one a builtin returned.
+    fn is_syntax_or_source_error(&self) -> bool {
+        match &*self.kind {
+            ErrorKind::ParseError(..) | ErrorKind::FailedSourcingFile(..) => true,
+            ErrorKind::BuiltinError(inner, _) => {
+                let inner: &(dyn std::error::Error + 'static) = inner.as_ref();
+                inner
+                    .downcast_ref::<Self>()
+                    .is_some_and(Self::is_syntax_or_source_error)
+            }
+            _ => false,
         }
     }
 
