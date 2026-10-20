@@ -39,3 +39,29 @@ cases:
       #expect:<unset>
       #expect-prompt
       #send:Ctrl+D
+
+  # `compopt` with no names or options shows the options of the completion in progress,
+  # as `compopt` in the completion function left them, named by the spec in use: the one
+  # found by the command's file name, or the default spec.
+  - name: "compopt with no options in a completion function prints the completion's options"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    pty: true
+    ignore_stdout: true
+    stdin: |
+      #expect-prompt
+      _f() { { compopt; compopt -o nospace +o filenames; compopt; compopt zz; } >>out 2>&1; COMPREPLY=(xy); }; complete -o filenames -F _f zz; complete -D -F _f; zz() { :; }; yy() { :; }
+      #send:Enter
+      #expect-prompt
+      zz x
+      #send:Tab
+      #send:Enter
+      #expect-prompt
+      yy x
+      #send:Tab
+      #send:Enter
+      #expect-prompt
+      ./zz x
+      #send:Tab
+      #send:Enter
+      #expect-prompt
+      #send:Ctrl+D

@@ -133,7 +133,6 @@ cases:
       rm err
 
   - name: "compopt with no options prints each spec's options"
-    known_failure: true # TODO(compopt): prints nothing
     min_oracle_version: "5.3" # the fullquote option was added in 5.3
     stdin: |
       complete -o nospace -W x ls
@@ -141,6 +140,58 @@ cases:
       complete -D -W z
       compopt ls cat; echo "rc=$?"
       compopt -D; echo "rc=$?"
+
+  - name: "compopt with no options reports names that have no completion spec"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      complete -o nospace -W x ls
+      complete -W y cat
+      compopt nope 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      compopt ls nope cat 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+
+  - name: "compopt -E or -I with no options prints the spec's options"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      strip() { sed -E 's/^.*compopt:/compopt:/'; }
+
+      for flag in -D -E -I; do
+        compopt $flag 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      done
+
+      complete -E -o filenames -W x
+      complete -I -o fullquote -W y
+      compopt -E; echo "rc=$?"
+      compopt -I; echo "rc=$?"
+      compopt _EmptycmD_ _InitialWorD_; echo "rc=$?"
+
+  - name: "compopt with no options quotes names as complete -p does"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      complete -W x -- 'a b' "x'y" -foo '*'
+      compopt -- 'a b' "x'y" -foo '*'; echo "rc=$?"
+
+  - name: "compopt with options and names prints nothing"
+    stdin: |
+      complete -W x ls
+      compopt -o nospace ls; echo "rc=$?"
+      compopt +o nospace ls; echo "rc=$?"
+      compopt -o nospace +o nospace ls; echo "rc=$?"
+      complete -D -W y
+      compopt -D -o nospace; echo "rc=$?"
+      complete -p
+
+  - name: "complete and compopt take the fullquote option"
+    min_oracle_version: "5.3" # the fullquote option was added in 5.3
+    stdin: |
+      complete -o fullquote -W x ls; echo "rc=$?"
+      complete -p ls
+      compopt +o fullquote ls; echo "rc=$?"
+      complete -p ls
+      compopt -o fullquote ls; echo "rc=$?"
+      complete -p ls
+      compgen -o fullquote -W 'a b'; echo "rc=$?"
 
   - name: "complete -r"
     stdin: |

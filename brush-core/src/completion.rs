@@ -180,6 +180,9 @@ pub enum CompleteOption {
     DirNames,
     /// Treat completions as filenames.
     FileNames,
+    /// Quote completions even if they aren't file names. Not yet implemented: it's
+    /// accepted and shown, but has no effect.
+    FullQuote,
     /// Suppress default auto-quotation of completions.
     NoQuote,
     /// Do not sort completions.
@@ -306,12 +309,28 @@ pub(crate) struct State {
 /// A programmable completion whose spec is generating candidates.
 ///
 /// That includes while its completion function runs. Like bash, the `compopt` builtin
-/// changes its options.
+/// shows and changes its options.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct InProgressCompletion {
+pub struct InProgressCompletion {
+    /// Bash's name for the spec (see [`SpecName::as_str`]).
+    spec_name: String,
     /// The options in effect, which start as the spec's.
     pub(crate) options: GenerationOptions,
+}
+
+impl InProgressCompletion {
+    /// Returns the name of the spec being completed with: the one it's registered under,
+    /// which may not be the name of the command being completed (e.g. for a command
+    /// completed by its file name, or with the default spec).
+    pub fn spec_name(&self) -> SpecName<'_> {
+        SpecName::parse(&self.spec_name)
+    }
+
+    /// Returns the options in effect.
+    pub const fn options(&self) -> &GenerationOptions {
+        &self.options
+    }
 }
 
 /// Keeps a completion in progress on a shell until dropped, then restores the one (if any)
@@ -509,16 +528,19 @@ impl Spec {
 
     /// Completes the word being completed in `context`'s line, with a completion in
     /// progress for it (see [`InProgressCompletion`]) while its candidates are generated, so
-    /// the `compopt` builtin can change the options applied to them. Returns the candidates,
-    /// sorted unless `nosort`, and how to process them.
+    /// the `compopt` builtin can change the options applied to them. `spec_name` is bash's
+    /// name for this spec. Returns the candidates, sorted unless `nosort`, and how to
+    /// process them.
     async fn complete(
         &self,
         shell: &mut Shell<impl extensions::ShellExtensions>,
         context: &Context<'_>,
+        spec_name: String,
     ) -> Result<Generated<(Vec<String>, ProcessingOptions)>, crate::error::Error> {
         let mut scope = InProgressScope::start(
             shell,
             InProgressCompletion {
+                spec_name,
                 options: self.options.clone(),
             },
         );
@@ -693,6 +715,10 @@ impl Spec {
             // testing, this doesn't seem to include basic file and directory name
             // completion.
             tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -o bashdefault");
+        }
+
+        if options.get(CompleteOption::FullQuote) {
+            tracing::debug!(target: trace_categories::COMPLETION, "unimplemented: complete -o fullquote");
         }
 
         // If we still have no candidates, and default completions were requested, then generate
@@ -1131,17 +1157,24 @@ impl Config {
         }
     }
 
-    /// Returns the completion spec to use for completing `line`, and the name of the command
-    /// it completes for (a completion function's `$1`): the empty-line spec (`complete -E`)
-    /// if there's nothing before the cursor and it isn't at the start of a word, else the
-    /// spec for the initial word (`complete -I`) if completing that, else its command's spec
-    /// (by name, or by file name if the command is a path), else the default spec
-    /// (`complete -D`). Like bash, the empty-line and initial-word specs complete for
-    /// commands named after them.
-    fn find_spec<'l>(&self, line: &LineContext<'l>) -> Option<(&Spec, Option<&'l str>)> {
+    /// Returns the completion spec to use for completing `line`, the name it's registered
+    /// under, and the name of the command it completes for (a completion function's `$1`):
+    /// the empty-line spec (`complete -E`) if there's nothing before the cursor and it isn't
+    /// at the start of a word, else the spec for the initial word (`complete -I`) if
+    /// completing that, else its command's spec (by name, or by file name if the command is
+    /// a path), else the default spec (`complete -D`). Like bash, the empty-line and
+    /// initial-word specs complete for commands named after them.
+    fn find_spec<'l>(
+        &self,
+        line: &LineContext<'l>,
+    ) -> Option<(&Spec, SpecName<'_>, Option<&'l str>)> {
         let special = |special: SpecialSpec| {
             let spec = self.specials.get(&special)?;
-            Some((spec, Some(special.command_name())))
+            Some((
+                spec,
+                SpecName::Special(special),
+                Some(special.command_name()),
+            ))
         };
 
         // Like bash, it's the empty line only if the cursor is at its very start, and not at
@@ -1156,15 +1189,20 @@ impl Config {
         }
 
         let command_name = line.command_name?;
-        let spec = self
+        let (spec, name) = self
             .commands
-            .get(command_name)
+            .get_key_value(command_name)
             .or_else(|| {
                 let file_name = Path::new(command_name).file_name()?;
-                self.commands.get(file_name.to_string_lossy().as_ref())
+                self.commands
+                    .get_key_value(file_name.to_string_lossy().as_ref())
             })
-            .or_else(|| self.specials.get(&SpecialSpec::Default))?;
-        Some((spec, Some(command_name)))
+            .map(|(name, spec)| (spec, SpecName::Command(name)))
+            .or_else(|| {
+                let spec = self.specials.get(&SpecialSpec::Default)?;
+                Some((spec, SpecName::Special(SpecialSpec::Default)))
+            })?;
+        Some((spec, name, Some(command_name)))
     }
 }
 
@@ -1230,16 +1268,20 @@ async fn complete_word(
 ) -> Generated<(Vec<String>, ProcessingOptions)> {
     // Look the spec up afresh each time: a completion function that asks for completion to
     // restart may have registered a new one.
-    let Some((spec, command_name)) = shell.completion_config().find_spec(&context.line) else {
+    let Some((spec, spec_name, command_name)) = shell.completion_config().find_spec(&context.line)
+    else {
         return Generated::Candidates(get_completions_using_basic_lookup(shell, &context).await);
     };
     let spec = spec.clone();
+    let spec_name = spec_name.as_str().to_owned();
     context.line.command_name = command_name;
 
-    spec.complete(shell, &context).await.unwrap_or_else(|err| {
-        tracing::debug!(target: trace_categories::COMPLETION, "completion spec failed: {err}");
-        Generated::Candidates((Vec::new(), ProcessingOptions::default()))
-    })
+    spec.complete(shell, &context, spec_name)
+        .await
+        .unwrap_or_else(|err| {
+            tracing::debug!(target: trace_categories::COMPLETION, "completion spec failed: {err}");
+            Generated::Candidates((Vec::new(), ProcessingOptions::default()))
+        })
 }
 
 async fn get_file_completions(
