@@ -194,3 +194,12 @@ cases:
       echo "f returned $?"
       echo x | exit 5
       echo "not reached"
+
+  # The subshell prints the report itself, so the report goes to the subshell's stderr.
+  - name: "time reports a subshell's timing on the subshell's stderr"
+    known_failure: true # TODO(pipeline): time reports on the shell's stderr, ignoring the subshell's redirection
+    stdin: |
+      time (exit 3) 2>/dev/null
+      echo "status: $?"
+      time (exec 2>/dev/null; true)
+      echo "status: $?"

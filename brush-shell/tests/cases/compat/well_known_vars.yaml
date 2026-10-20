@@ -162,6 +162,14 @@ cases:
 
       echo $(echo "Command substitution BASH_SUBSHELL: $BASH_SUBSHELL")
 
+  - name: "BASH_SUBSHELL counts a subshell in a pipeline stage once"
+    known_failure: true # TODO(pipeline): a subshell that is a pipeline stage counts as two levels
+    stdin: |
+      : | ( echo "last stage: $BASH_SUBSHELL" )
+      ( echo "first stage: $BASH_SUBSHELL" ) | cat
+      : | { echo "group stage: $BASH_SUBSHELL"; }
+      echo "substitution: $(: | ( echo $BASH_SUBSHELL ))"
+
   - name: "BASH_VERSINFO"
     stdin: |
       shopt -s extglob
