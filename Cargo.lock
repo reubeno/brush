@@ -400,6 +400,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "brush-bundled-tests"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "brush-shell",
+ "tempfile",
+]
+
+[[package]]
 name = "brush-clap-adapter"
 version = "0.1.0"
 dependencies = [

@@ -18,6 +18,7 @@ the answer should follow from here. If it doesn't, this document needs updating.
 | `brush-shell` | yes | The `brush` binary: its command line, and the wiring of the crates above into a shell. |
 | `brush` | yes | A thin wrapper binary around `brush-shell`. |
 | `brush-test-harness` | no | Runs the YAML test cases that compare brush with bash. |
+| `brush-bundled-tests` | no | Tests the bundled-command shim end to end, against a brush with fake bundled commands. |
 | `xtask`, `fuzz` | no | Development tooling. |
 
 Their dependencies run one way, from front end to parser. Each crate's direct dependencies

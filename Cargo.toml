@@ -11,6 +11,7 @@ members = [
     "brush-experimental-builtins",
     "brush-interactive",
     "brush-test-harness",
+    "brush-bundled-tests",
     "fuzz",
     "xtask",
 ]
