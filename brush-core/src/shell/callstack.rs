@@ -332,9 +332,10 @@ mod tests {
             .build()
             .await?;
         let params = shell.default_exec_params();
-        shell
+        let result = shell
             .run_string("f() { :; }", &crate::SourceInfo::default(), &params)
             .await?;
+        assert!(result.is_success());
         let f = shell
             .funcs()
             .get("f")

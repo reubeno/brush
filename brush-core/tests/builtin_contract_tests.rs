@@ -291,7 +291,8 @@ async fn a_registration_runs_its_builtin_given_the_name_first() -> Result<()> {
 
     // With no name among the arguments, the builtin goes by the context's.
     let context = ExecutionContext::new(&mut shell, "context-name".to_owned(), params);
-    registration.execute(context, vec![]).await?;
+    let result = registration.execute(context, vec![]).await?;
+    assert!(result.is_success());
 
     assert_eq!(
         read_back(&mut stdout)?,

@@ -29,7 +29,12 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<bool, error::Error> {
         let path = path.as_ref();
         if path.exists() {
-            self.source_script(path, std::iter::empty::<String>(), params)
+            // TODO(startup): an `exit` in a startup file should end the shell, but
+            // `load_config` has no way to tell its caller to stop; until it does, the
+            // file's result is dropped. Tracked by the compat case "exit in an rc file
+            // ends the shell".
+            let _ = self
+                .source_script(path, std::iter::empty::<String>(), params)
                 .await?;
             Ok(true)
         } else {
@@ -183,12 +188,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // Execute the command string.
         let params = self.default_exec_params();
         let source_info = SourceInfo::from("-c");
-        let result = self.run_string(command, &source_info, &params).await?;
+        let mut result = self.run_string(command, &source_info, &params).await?;
 
         self.end_command_string_mode()?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Give the shell a chance to run on-exit tasks. An `exit` there sets the shell's
+        // status; a failure there doesn't change the command's outcome.
+        if let Ok(Some(status)) = self.run_exit_trap().await {
+            result.exit_code = status.into();
+        }
 
         Ok(result)
     }
@@ -209,7 +217,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
-        let result = self
+        let mut result = self
             .parse_and_execute_script_file(
                 script_path.as_ref(),
                 args,
@@ -218,8 +226,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             )
             .await?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Give the shell a chance to run on-exit tasks. An `exit` there sets the shell's
+        // status; a failure there doesn't change the script's outcome.
+        if let Ok(Some(status)) = self.run_exit_trap().await {
+            result.exit_code = status.into();
+        }
 
         Ok(result)
     }

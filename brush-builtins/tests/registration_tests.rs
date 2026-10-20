@@ -51,13 +51,14 @@ async fn a_registration_reports_what_enable_changes() -> Result<()> {
     assert!(export.is_special());
 
     let params = shell.default_exec_params();
-    shell
+    let result = shell
         .run_string(
             "enable -n echo",
             &brush_core::SourceInfo::default(),
             &params,
         )
         .await?;
+    assert!(result.is_success());
     let echo = shell.builtins().get("echo").context("no echo")?;
     assert!(!echo.is_enabled());
 
@@ -67,13 +68,14 @@ async fn a_registration_reports_what_enable_changes() -> Result<()> {
         .get_mut("echo")
         .context("no echo")?
         .set_enabled(true);
-    shell
+    let result = shell
         .run_string(
             "listed=$(enable)",
             &brush_core::SourceInfo::default(),
             &params,
         )
         .await?;
+    assert!(result.is_success());
     let listed = shell.env_str("listed").context("listed is unset")?;
     assert!(listed.lines().any(|line| line == "enable echo"));
 

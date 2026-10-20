@@ -404,12 +404,27 @@ impl Execute for ast::Pipeline {
         // Fire the ERR trap if the pipeline failed in a non-conditional context.
         // We reuse `suppress_errexit` here because bash suppresses the ERR trap in
         // exactly the same contexts it suppresses errexit (conditionals, `!`-prefixed
-        // pipelines, etc.).
-        if !result.is_success() && !params.suppress_errexit && !self.bang {
+        // pipelines, etc.). A pipeline that leaves this shell through `exit` or `return`
+        // hasn't failed; its status is the one it leaves with. Only a stage run in this
+        // shell can leave it: a stage in a shell of its own ended as a subshell, so
+        // `: | exit 3` comes back here as a plain failed status.
+        if !result.is_success() && result.is_normal_flow() && !params.suppress_errexit && !self.bang
+        {
             if shell.traps().handles(crate::traps::TrapSignal::Err) {
-                shell
+                let trap_result = shell
                     .invoke_trap_handler(crate::traps::TrapSignal::Err, &params)
                     .await?;
+
+                // An `exit` or `return` in the handler takes effect here, with its own status.
+                //
+                // TODO(traps): so should a `break` or `continue`, keeping the failed pipeline's
+                // status, but the ERR trap also fires for the compound command around the
+                // pipeline, where it would break again. Tracked by the compat case "trap ERR -
+                // break in the handler ends the loop".
+                if trap_result.is_return_or_exit() {
+                    result = trap_result;
+                    shell.set_last_exit_status(result.exit_code.into());
+                }
             }
         }
 

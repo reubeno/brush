@@ -308,9 +308,10 @@ async fn run_in_shell(
     // Load profile and rc files as appropriate.
     initialize_shell(shell_ref, &args).await?;
 
-    // If a command was specified via -c, then run that command and then exit.
+    // If a command was specified via -c, then run that command and then exit. Its result
+    // is also the shell's last exit status, which is what's returned below for every mode.
     if let Some(command) = args.command {
-        shell_ref.lock().await.run_dash_c_command(command).await?;
+        let _ = shell_ref.lock().await.run_dash_c_command(command).await?;
 
     // Otherwise read commands interactively: -s was given (positional args become parameters;
     // a script named among them is *not* run), or nothing to run was specified.
@@ -319,9 +320,9 @@ async fn run_in_shell(
             .run_interactively()
             .await?;
 
-    // Otherwise a script path was given; run it.
+    // Otherwise a script path was given; run it. As with -c, its status is returned below.
     } else {
-        shell_ref
+        let _ = shell_ref
             .lock()
             .await
             .run_script(

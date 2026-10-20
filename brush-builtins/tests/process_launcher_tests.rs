@@ -145,7 +145,8 @@ async fn run(launcher: &RecordingLauncher, script: &str) -> Result<brush_core::S
         .await?;
 
     let params = shell.default_exec_params();
-    shell
+    // The launches are under test; the recorded processes' statuses aren't.
+    let _ = shell
         .run_string(script, &brush_core::SourceInfo::default(), &params)
         .await?;
 
@@ -206,7 +207,8 @@ async fn a_standard_stream_the_shell_lacks_is_launched_closed() -> Result<()> {
     *shell.open_files_mut() = OpenFiles::default();
 
     let params = shell.default_exec_params();
-    shell
+    // The launches are under test; the recorded processes' statuses aren't.
+    let _ = shell
         .run_string(
             "./prog\n./prog >&-",
             &brush_core::SourceInfo::default(),
@@ -245,7 +247,8 @@ async fn an_exported_underscore_is_launched_once() -> Result<()> {
     let mut shell = shell_with_inherited_underscore(&launcher).await?;
 
     let params = shell.default_exec_params();
-    shell
+    // The launches are under test; the recorded processes' statuses aren't.
+    let _ = shell
         .run_string("./prog", &brush_core::SourceInfo::default(), &params)
         .await?;
 
@@ -279,7 +282,8 @@ async fn exec_leaves_underscore_as_the_shell_exports_it() -> Result<()> {
     };
     let mut shell = shell_with_inherited_underscore(&launcher).await?;
     let params = shell.default_exec_params();
-    shell
+    // The launches are under test; the recorded processes' statuses aren't.
+    let _ = shell
         .run_string("exec ./prog", &brush_core::SourceInfo::default(), &params)
         .await?;
 
@@ -406,7 +410,8 @@ async fn with_job_control_a_command_gets_a_group_of_its_own() -> Result<()> {
     shell.options_mut().enable_job_control = true;
 
     let params = shell.default_exec_params();
-    shell
+    // The launches are under test; the recorded processes' statuses aren't.
+    let _ = shell
         .run_string("./prog", &brush_core::SourceInfo::default(), &params)
         .await?;
 

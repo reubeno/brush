@@ -99,3 +99,17 @@ cases:
       echo "logout: $?"
       logout -Z
       echo "logout -Z: $?"
+
+  - name: "exit in an rc file ends the shell"
+    known_failure: true # TODO(startup): an exit in a startup file doesn't end the shell
+    removed_default_args: ["--norc"]
+    ignore_stderr: true # an interactive shell prompts on stderr
+    args: ["--rcfile", "exitrc", "-i"]
+    test_files:
+      - path: "exitrc"
+        contents: |
+          echo "in rc"
+          exit 3
+          echo "after exit"
+    stdin: |
+      echo "not run"

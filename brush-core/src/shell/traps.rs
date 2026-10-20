@@ -5,14 +5,31 @@ use crate::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error, tra
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Runs any exit steps for the shell.
     ///
-    /// This currently includes invoking the `EXIT` trap handler, if any.
+    /// This currently includes invoking the `EXIT` trap handler, if any. If the handler
+    /// exits the shell, its exit status becomes the shell's last exit status.
     pub async fn on_exit(&mut self) -> Result<(), error::Error> {
-        if self.traps.handles(TrapSignal::Exit) {
-            self.invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
-                .await?;
+        self.run_exit_trap().await?;
+        Ok(())
+    }
+
+    /// Invokes the `EXIT` trap handler, if any. If the handler exits the shell, returns
+    /// the status it exits with, having made it the shell's last exit status.
+    pub(crate) async fn run_exit_trap(&mut self) -> Result<Option<u8>, error::Error> {
+        if !self.traps.handles(TrapSignal::Exit) {
+            return Ok(None);
         }
 
-        Ok(())
+        let result = self
+            .invoke_trap_handler(TrapSignal::Exit, &self.default_exec_params())
+            .await?;
+
+        if result.is_exit() {
+            let status = result.exit_code.into();
+            self.set_last_exit_status(status);
+            Ok(Some(status))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Invokes the handler registered for `signal`, if any.
