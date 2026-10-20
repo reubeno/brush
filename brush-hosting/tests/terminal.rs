@@ -11,7 +11,7 @@ fn without_a_terminal_nothing_is_taken() {
     nix::unistd::dup2_stdin(&null).unwrap();
     let group = nix::unistd::getpgrp();
 
-    let _terminal = brush_hosting::terminal::ControllingTerminal::acquire().unwrap();
+    let _terminal = brush_hosting::terminal::ProcessTerminal::acquire().unwrap();
 
     assert_eq!(nix::unistd::getpgrp(), group);
 }

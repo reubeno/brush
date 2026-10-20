@@ -7,7 +7,7 @@
 //!
 //! * `runtime`: the async runtime the shells run on.
 //! * `terminal`: the terminal, and the process group that has it, for an interactive shell's
-//!   job control; `ControllingTerminal` is it as a shell's `Terminal`.
+//!   job control; `ProcessTerminal` is it as a shell's `TerminalController`.
 
 #[cfg(feature = "runtime")]
 pub mod runtime;

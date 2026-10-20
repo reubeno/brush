@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins, extensions::Terminal as _, jobs};
+use brush_core::{ExecutionResult, builtins, extensions::TerminalController as _, jobs};
 
 /// Move a specified job to the foreground.
 #[derive(Parser)]
@@ -23,7 +23,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
 
         // Read interactive option and the terminal before taking mutable borrow on jobs
         let is_interactive = context.shell.options().interactive;
-        let terminal = context.shell.terminal().clone();
+        let terminal = context.shell.terminal_controller().clone();
 
         if let Some(job_spec) = &self.job_spec {
             if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {

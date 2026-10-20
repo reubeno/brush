@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use brush_core::extensions::{
-    DefaultErrorFormatter, DefaultProcessLauncher, ShellExtensionsImpl, Terminal,
+    DefaultErrorFormatter, DefaultProcessLauncher, ShellExtensionsImpl, TerminalController,
 };
 
 /// A terminal that counts what the shell asks of it.
@@ -19,7 +19,7 @@ struct Counting {
     takes: Arc<AtomicUsize>,
 }
 
-impl Terminal for Counting {
+impl TerminalController for Counting {
     fn give_foreground(&self, _group: brush_core::sys::process::ProcessId) -> std::io::Result<()> {
         self.gives.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -42,7 +42,7 @@ async fn an_interactive_shell_takes_the_foreground_back_after_a_program() -> Res
         .profile(brush_core::ProfileLoadBehavior::Skip)
         .rc(brush_core::RcLoadBehavior::Skip)
         .interactive(true)
-        .terminal(terminal.clone())
+        .terminal_controller(terminal.clone())
         .build()
         .await?;
 

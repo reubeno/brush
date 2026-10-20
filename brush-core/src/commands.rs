@@ -8,7 +8,7 @@ use std::{
 
 use brush_parser::ast;
 
-use crate::extensions::Terminal as _;
+use crate::extensions::TerminalController as _;
 
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
@@ -740,7 +740,7 @@ pub(crate) fn execute_external_command(
         Ok(child) => Ok(ExecutionSpawnResult::StartedProcess(child)),
         Err(spawn_err) => {
             if context.shell.options().interactive {
-                context.shell.terminal().take_foreground()?;
+                context.shell.terminal_controller().take_foreground()?;
             }
 
             Err(spawn_error(context, spawn_err))

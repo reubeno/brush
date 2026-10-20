@@ -70,8 +70,11 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     builtin_states: builtins::BuiltinStates,
 
     /// Injected terminal, for job control.
-    #[cfg_attr(feature = "serde", serde(skip, default = "default_terminal"))]
-    terminal: SE::Terminal,
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip, default = "default_terminal_controller")
+    )]
+    terminal_controller: SE::TerminalController,
 
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
@@ -165,7 +168,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             error_formatter: self.error_formatter.clone(),
             process_launcher: self.process_launcher.clone(),
             builtin_states: self.builtin_states.clone(),
-            terminal: self.terminal.clone(),
+            terminal_controller: self.terminal_controller.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
@@ -234,7 +237,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             error_formatter: options.error_formatter,
             process_launcher: options.process_launcher,
             builtin_states: builtins::BuiltinStates::default(),
-            terminal: options.terminal,
+            terminal_controller: options.terminal_controller,
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
@@ -386,8 +389,8 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     }
 
     /// Returns the terminal the shell's job control uses.
-    pub const fn terminal(&self) -> &SE::Terminal {
-        &self.terminal
+    pub const fn terminal_controller(&self) -> &SE::TerminalController {
+        &self.terminal_controller
     }
 
     /// Checks if the given string is a keyword reserved in this shell.
@@ -623,7 +626,7 @@ fn default_process_launcher<PL: extensions::ProcessLauncher>() -> PL {
 }
 
 #[cfg(feature = "serde")]
-fn default_terminal<T: extensions::Terminal>() -> T {
+fn default_terminal_controller<T: extensions::TerminalController>() -> T {
     T::default()
 }
 

@@ -396,7 +396,7 @@ impl Job {
     /// * `terminal` - The terminal to give the job the foreground of.
     pub fn move_to_foreground(
         &mut self,
-        terminal: &impl crate::extensions::Terminal,
+        terminal: &impl crate::extensions::TerminalController,
     ) -> Result<(), error::Error> {
         // The job gets the terminal before it's continued, so that it doesn't find itself in the
         // background and stop again on reading from the terminal. (Without a terminal, as in a

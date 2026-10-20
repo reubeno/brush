@@ -15,7 +15,7 @@ the answer should follow from here. If it doesn't, this document needs updating.
 | `brush-experimental-builtins` | yes | Builtins not ready to be standard. |
 | `brush-coreutils-builtins` | yes | Optional builtins wrapping [uutils/coreutils](https://github.com/uutils/coreutils); doesn't depend on the other crates. |
 | `brush-interactive` | yes | The interactive front end: reads input, edits the line (with reedline or a basic line reader), and presents prompts, completions, suggestions, and highlighting. |
-| `brush-hosting` | yes | What a program that owns its process does to host shells, through `brush-core`'s public API, a feature for each: the async runtime shells run on (`runtime`), and the terminal and process group an interactive shell's job control needs (`terminal`: `ControllingTerminal`, which `acquire` takes them for, and which is the shell's `Terminal` on them). Not shell semantics, nor presentation. |
+| `brush-hosting` | yes | What a program that owns its process does to host shells, through `brush-core`'s public API, a feature for each: the async runtime shells run on (`runtime`), and the terminal and process group an interactive shell's job control needs (`terminal`: `ProcessTerminal`, which `acquire` takes them for, and which is the shell's `TerminalController` on them). Not shell semantics, nor presentation. |
 | `brush-shell` | yes | The `brush` binary: its command line, and the wiring of the crates above into a shell. |
 | `brush` | yes | A thin wrapper binary around `brush-shell`. |
 | `brush-test-harness` | no | Runs the YAML test cases that compare brush with bash. |
@@ -90,7 +90,7 @@ These decide where a behavior belongs when more than one crate could plausibly o
    it may run several shells, or have uses of its own for the process. So what the shell
    must keep asking of the process is a contract the host implements, named in the shell's
    `ShellExtensions`: starting programs (`ProcessLauncher`), and moving the terminal's
-   foreground for job control (`Terminal`). The test for a contract: would two legitimate
+   foreground for job control (`TerminalController`). The test for a contract: would two legitimate
    hosts of the same code -- a terminal emulator embedding a shell, a test harness running
    fifty shells in one process, a sandbox -- want different answers? If so, it's a contract;
    if not, it's platform code under `sys`, called directly. What the host gives once, such

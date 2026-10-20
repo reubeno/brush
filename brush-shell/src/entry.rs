@@ -23,7 +23,7 @@ static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceE
 type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<
     error_formatter::Formatter,
     brush_core::extensions::DefaultProcessLauncher,
-    brush_hosting::terminal::ControllingTerminal,
+    brush_hosting::terminal::ProcessTerminal,
 >;
 type BrushShell = brush_core::Shell<BrushShellExtensions>;
 
@@ -317,7 +317,7 @@ async fn run_in_shell(
     } else if read_commands_from_stdin {
         // The binary owns the process: it takes the terminal (if stdin is one) for as long as
         // the front end runs.
-        let _terminal = brush_hosting::terminal::ControllingTerminal::acquire()?;
+        let _terminal = brush_hosting::terminal::ProcessTerminal::acquire()?;
         brush_interactive::InteractiveShell::new(shell_ref, input_backend, &interactive_options)?
             .run_interactively()
             .await?;

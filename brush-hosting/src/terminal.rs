@@ -3,9 +3,9 @@
 //! Under job control, an interactive shell runs each job in a process group of its own, and
 //! gives the terminal to the one in the foreground. For that, the shell's process leads a
 //! process group of its own, and has the terminal while it reads commands.
-//! [`ControllingTerminal::acquire`] takes both, and gives the terminal back once what it
-//! returns is dropped. Named as a shell's [`Terminal`](brush_core::extensions::Terminal),
-//! [`ControllingTerminal`] lets the shell move the foreground between itself and its jobs.
+//! [`ProcessTerminal::acquire`] takes both, and gives the terminal back once what it
+//! returns is dropped. Named as a shell's [`TerminalController`](brush_core::extensions::TerminalController),
+//! [`ProcessTerminal`] lets the shell move the foreground between itself and its jobs.
 
 mod sys;
 
@@ -14,18 +14,19 @@ use std::sync::Arc;
 
 use brush_core::sys::{process::ProcessId, terminal};
 
-/// The process's controlling terminal, for a shell's job control (see the module).
+/// The terminal on the process's standard input, taken over by the process for its shells'
+/// job control (see the module).
 ///
-/// Any value moves the foreground, for the shell that names this as its `Terminal`; the one
-/// [`Self::acquire`] returns also holds what was taken, and gives it back when it, and every
+/// Any value moves that terminal's foreground, for the shell it's the terminal controller of;
+/// the one [`Self::acquire`] returns also holds what was taken, and gives it back when it, and every
 /// copy of it, is dropped.
 #[derive(Clone, Debug, Default)]
-pub struct ControllingTerminal {
+pub struct ProcessTerminal {
     /// Held for its drop.
     _taken: Option<Arc<Taken>>,
 }
 
-impl ControllingTerminal {
+impl ProcessTerminal {
     /// Takes the terminal for the process, if its standard input is one: has the process ignore
     /// SIGTTOU, moves it into a process group of its own, and makes that group the terminal's
     /// foreground. Dropping the result, and every copy of it, gives the terminal back to the
@@ -57,7 +58,7 @@ impl ControllingTerminal {
     }
 }
 
-impl brush_core::extensions::Terminal for ControllingTerminal {
+impl brush_core::extensions::TerminalController for ProcessTerminal {
     fn give_foreground(&self, group: ProcessId) -> std::io::Result<()> {
         terminal::move_to_foreground(group)
     }
