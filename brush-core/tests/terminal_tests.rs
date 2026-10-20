@@ -47,7 +47,7 @@ async fn an_interactive_shell_takes_the_foreground_back_after_a_program() -> Res
         .await?;
 
     let params = shell.default_exec_params();
-    shell
+    let result = shell
         .run_string(
             "sh -c 'exit 0'",
             &brush_core::SourceInfo::default(),
@@ -55,6 +55,7 @@ async fn an_interactive_shell_takes_the_foreground_back_after_a_program() -> Res
         )
         .await?;
 
+    assert!(result.is_success());
     assert_eq!(terminal.takes.load(Ordering::SeqCst), 1);
     assert_eq!(terminal.gives.load(Ordering::SeqCst), 0);
     Ok(())
