@@ -169,6 +169,9 @@ impl ProcessLauncher for NoProcessLauncher {
 /// whether there is one at all, is the host's: a program that owns its process and has a
 /// controlling terminal provides one (as the `brush-hosting` crate does); an embedder without
 /// one, or that shares its terminal with something else, provides [`NoTerminal`].
+///
+/// A clone is another handle to the same terminal, not a second terminal: the shell and every
+/// copy of it (e.g., for a subshell) share one.
 pub trait Terminal: Clone + Default + Send + Sync + 'static {
     /// Gives the terminal's foreground to a process group, for the job it runs.
     ///
