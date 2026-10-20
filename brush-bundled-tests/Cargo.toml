@@ -1,0 +1,30 @@
+[package]
+name = "brush-bundled-tests"
+description = "End-to-end tests for brush's bundled-command shim"
+version = "0.1.0"
+authors.workspace = true
+categories.workspace = true
+edition.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+# Depends on brush-shell, so shares its MSRV; see docs/reference/msrv-policy.md.
+rust-version = "1.95.0"
+publish = false
+
+# A brush with fake bundled commands, for the tests to run.
+[[bin]]
+name = "brush-with-fakes"
+path = "src/main.rs"
+test = false
+bench = false
+
+[lints]
+workspace = true
+
+[dependencies]
+brush-shell = { path = "../brush-shell" }
+
+[dev-dependencies]
+assert_cmd = "2.2.0"
+tempfile = "3.27.0"
