@@ -191,6 +191,27 @@ cases:
       rest: one two
     expected_stderr: ""
 
+  - name: "printf"
+    stdin: |
+      type -t printf
+      printf '%s=%d|%5.2f|%x\n' answer 42 3.14159 255
+      printf -v greeting 'hi, %s' world
+      echo "$greeting"
+      set_in_caller() { printf -v "$1" %s "$2"; }
+      f() { local out; set_in_caller out 'from callee'; echo "$out"; }
+      f
+      declare -a arr=()
+      printf -v 'arr[1]' %s second
+      echo "${arr[1]}"
+    expected_exit_code: 0
+    expected_stdout: |
+      builtin
+      answer=42| 3.14|ff
+      hi, world
+      from callee
+      second
+    expected_stderr: ""
+
   - name: "set -e stops at the first failure"
     stdin: |
       set -e

@@ -77,7 +77,7 @@ mod let_;
 mod mapfile;
 #[cfg(feature = "builtin.popd")]
 mod popd;
-#[cfg(all(feature = "builtin.printf", any(unix, windows)))]
+#[cfg(all(feature = "builtin.printf", any(unix, windows, target_os = "wasi")))]
 mod printf;
 #[cfg(feature = "builtin.pushd")]
 mod pushd;
