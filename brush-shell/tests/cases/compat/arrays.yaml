@@ -422,3 +422,14 @@ cases:
       i=1
       declare -a b=([i+1]=y [i*5]=z)
       declare -p b
+
+  - name: "Negative index into sparse indexed array"
+    stdin: |
+      b=(a b c d)
+      b[5]=q
+      echo "<${b[-2]}> <${b[-1]}>"
+      b[-2]=Z
+      b[-1]+=r
+      declare -p b
+      unset 'b[-3]'
+      declare -p b
