@@ -245,7 +245,7 @@ pub fn default_builtins<SE: brush_core::ShellExtensions>(
             "readarray".into(),
             builtins::Registration::of::<mapfile::MapFileCommand>(),
         );
-        #[cfg(all(feature = "builtin.printf", any(unix, windows)))]
+        #[cfg(all(feature = "builtin.printf", any(unix, windows, target_os = "wasi")))]
         m.insert(
             "printf".into(),
             builtins::Registration::of::<printf::PrintfCommand>(),
