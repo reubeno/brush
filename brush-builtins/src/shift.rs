@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
@@ -6,7 +7,8 @@ use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 #[derive(Parser)]
 pub(crate) struct ShiftCommand {
     /// Number of positions to shift the arguments by (defaults to 1).
-    n: Option<i32>,
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    n: Vec<String>,
 }
 
 brush_clap_adapter::impl_parse_args!(ShiftCommand);
@@ -18,20 +20,22 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShiftCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let n = self.n.unwrap_or(1);
+        let n = match self.n.as_slice() {
+            [] => 1,
+            [operand] => crate::operand::number(operand)?,
+            _ => return crate::operand::too_many("shift", context.stderr()),
+        };
 
         if n < 0 {
-            return Ok(ExecutionExitCode::InvalidUsage.into());
+            writeln!(context.stderr(), "shift: {n}: shift count out of range")?;
+            return Ok(ExecutionExitCode::GeneralError.into());
         }
-
-        #[expect(clippy::cast_sign_loss)]
-        let n = n as usize;
 
         let args = context.shell.current_shell_args_mut();
 
-        if n > args.len() {
-            return Ok(ExecutionExitCode::InvalidUsage.into());
-        }
+        let Some(n) = usize::try_from(n).ok().filter(|n| *n <= args.len()) else {
+            return Ok(ExecutionExitCode::GeneralError.into());
+        };
 
         args.drain(0..n);
 

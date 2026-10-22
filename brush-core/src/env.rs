@@ -308,7 +308,9 @@ impl ShellEnvironment {
         name: &str,
     ) -> Result<Option<ShellVariable>, error::Error> {
         match map.get(name).map(|v| v.is_readonly()) {
-            Some(true) => Err(error::ErrorKind::ReadonlyVariable.into()),
+            Some(true) => {
+                Err(error::ErrorKind::CannotUnsetReadonlyVariable(name.to_owned()).into())
+            }
             Some(false) => Ok(map.unset(name)),
             None => Ok(None),
         }

@@ -375,6 +375,10 @@ pub struct SimpleCommand<'a, SE: extensions::ShellExtensions> {
     /// Optional override for the `argv[0]` value presented to an externally
     /// spawned process. When `None`, `command_name` is used.
     pub argv0: Option<String>,
+
+    /// Whether to run a special builtin without its special properties, as
+    /// `command` does: then, in POSIX mode, none of its errors end the shell.
+    pub suppress_special_builtin_properties: bool,
 }
 
 impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
@@ -404,6 +408,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             path_dirs: None,
             process_group_id: None,
             argv0: None,
+            suppress_special_builtin_properties: false,
         }
     }
 
@@ -488,6 +493,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
                     *target,
                     self.params,
                     builtin,
+                    self.suppress_special_builtin_properties,
                     self.command_name,
                     self.args,
                 )
@@ -505,6 +511,7 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         mut shell: Shell<SE>,
         params: ExecutionParameters,
         builtin: builtins::Registration<SE>,
+        suppress_special: bool,
         command_name: String,
         args: Vec<CommandArg>,
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
@@ -518,7 +525,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
             let stderr = params.try_stderr(&shell);
             let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
-            let result = execute_builtin_command(&builtin, cmd_context, args).await;
+            let result =
+                execute_builtin_command(&builtin, suppress_special, cmd_context, args).await;
             let result = shell.end_subshell(result, || stderr);
 
             // Update $_ after command execution.
@@ -539,7 +547,13 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
 
         let cmd_context = ExecutionContext::new(&mut shell, self.command_name, self.params);
 
-        let result = execute_builtin_command(&builtin, cmd_context, self.args).await;
+        let result = execute_builtin_command(
+            &builtin,
+            self.suppress_special_builtin_properties,
+            cmd_context,
+            self.args,
+        )
+        .await;
 
         // Update $_ after command execution.
         shell.update_last_arg_variable(last_arg);
@@ -762,16 +776,43 @@ fn spawn_error(
     }
 }
 
+/// Runs `builtin`, deciding which of its errors end the shell: in POSIX mode,
+/// some of a special builtin's errors do (see
+/// `Error::is_fatal_from_special_builtin`), unless `suppress_special` asks to
+/// run it without its special properties.
 async fn execute_builtin_command<SE: extensions::ShellExtensions>(
     builtin: &builtins::Registration<SE>,
+    suppress_special: bool,
     context: ExecutionContext<'_, SE>,
     args: Vec<CommandArg>,
 ) -> Result<ExecutionResult, error::Error> {
-    // In POSIX mode, special builtins that return errors are to be treated as fatal.
-    let mark_errors_fatal = builtin.is_special() && context.shell.options().posix_mode;
+    let posix_special =
+        builtin.is_special() && !suppress_special && context.shell.options().posix_mode;
+    let status_tested = context.params.suppress_errexit;
+    let mark_fatal = |error: error::Error| {
+        if posix_special && error.is_fatal_from_special_builtin(status_tested) {
+            error.into_fatal()
+        } else {
+            error
+        }
+    };
 
-    match builtin.execute(context, args).await {
-        Ok(result) => Ok(result),
+    // Keep hold of the shell, to make a result of a misuse once the builtin
+    // has run.
+    let ExecutionContext {
+        shell,
+        command_name,
+        params,
+    } = context;
+    let context = ExecutionContext::new(&mut *shell, command_name, params);
+
+    match builtin.run(context, args).await {
+        Ok(builtins::Outcome::Ran(result)) => Ok(result),
+        Ok(builtins::Outcome::Misused(usage)) => {
+            // The misuse has been reported, so it's made a result here rather
+            // than returned as an error, which would report it again.
+            Ok(mark_fatal(usage.into()).into_result(shell))
+        }
         Err(e) => {
             // Broken pipe errors should silently return the appropriate exit code
             if let Some(io_err) = e.as_io_error() {
@@ -780,7 +821,7 @@ async fn execute_builtin_command<SE: extensions::ShellExtensions>(
                 }
             }
 
-            Err(if mark_errors_fatal { e.into_fatal() } else { e })
+            Err(mark_fatal(e))
         }
     }
 }

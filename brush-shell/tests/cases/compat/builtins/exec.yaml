@@ -63,7 +63,6 @@ cases:
       echo "not reached"
 
   - name: "exec of a missing command exits the shell"
-    known_failure: true # TODO(exec): a failed exec doesn't end a non-interactive shell
     ignore_stderr: true
     stdin: |
       (exec nonexistent-command; echo "subshell still running: $?")
@@ -90,7 +89,6 @@ cases:
       (exec printf -v out hi)
 
   - name: "exec of a missing program reports it"
-    known_failure: true # TODO(exec): exec of a program that can't be found reports nothing at the top level
     stdin: |
       "$0" -c 'exec ./no-such-program' 2> err.txt
       echo "status: $?"

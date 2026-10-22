@@ -173,7 +173,6 @@ cases:
       { export w=1 +r; echo "export w=1 +r: $?"; } 2>&1 | strip
 
   - name: "Usage error in a special builtin is fatal in POSIX mode"
-    known_failure: true # TODO(posix): a special builtin's usage error doesn't end a non-interactive POSIX shell
     ignore_stderr: true
     stdin: |
       set -o posix
@@ -201,7 +200,6 @@ cases:
       echo "still running: $?"
 
   - name: "export -f of a missing function"
-    known_failure: true # TODO(export): fails with status 2, without attribution, where bash fails with 1
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       export -f nofunc 2>&1 | strip

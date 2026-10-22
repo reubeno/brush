@@ -123,6 +123,7 @@ impl CommandCommand {
             command_and_args,
         );
         cmd.use_functions = false;
+        cmd.suppress_special_builtin_properties = true;
         cmd.path_dirs = self.path_dirs();
 
         let spawn_result = cmd.execute().await?;

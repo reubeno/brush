@@ -4,7 +4,8 @@ use std::io::Write;
 use clap::Parser;
 use itertools::Itertools;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
+use brush_core::builtins::UsageError;
+use brush_core::{ExecutionResult, builtins, variables};
 
 crate::minus_or_plus_flag_arg!(
     ExportVariablesOnModification,
@@ -131,6 +132,11 @@ pub(crate) struct SetCommand {
 
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     positional_args: Vec<String>,
+
+    /// The first `-o`/`+o` name that isn't an option's. The options before it
+    /// still apply; it and everything after it are dropped.
+    #[clap(skip)]
+    invalid_option_name: Option<String>,
 }
 
 brush_clap_adapter::impl_parse_args!(SetCommand, parse = SetCommand::parse_args);
@@ -151,10 +157,29 @@ impl SetCommand {
 
         // Apply the same workaround as brush_clap_adapter's `plus_options` parsing to handle '+'
         // args.
-        let mut updated_args = vec![];
+        let set_o_options =
+            brush_core::namedoptions::options(brush_core::namedoptions::ShellOptionKind::SetO);
+        let mut updated_args: Vec<String> = vec![];
+        let mut invalid_option_name = None;
         let mut now_parsing_positional_args = false;
         let mut next_arg_is_option_value = false;
         for (i, arg) in args.enumerate() {
+            if next_arg_is_option_value
+                && !arg.starts_with(['-', '+'])
+                && set_o_options.get(arg.as_str()).is_none()
+            {
+                // Options apply in order up to an invalid name: drop the `o`
+                // that takes it, along with it and every word after it.
+                if let Some(last) = updated_args.pop() {
+                    let flags = last.strip_suffix('o').unwrap_or_default();
+                    if flags.len() > 1 && flags != "--+" {
+                        updated_args.push(flags.to_owned());
+                    }
+                }
+                invalid_option_name = Some(arg);
+                break;
+            }
+
             if now_parsing_positional_args || next_arg_is_option_value {
                 updated_args.push(arg);
 
@@ -181,6 +206,7 @@ impl SetCommand {
             brush_clap_adapter::try_parse_before_double_dash::<Self>(updated_args)
                 .map_err(|e| brush_clap_adapter::to_usage_error(&e))?;
         this.positional_args.extend(rest_args);
+        this.invalid_option_name = invalid_option_name;
         Ok(this)
     }
 }
@@ -194,8 +220,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        let mut result = ExecutionResult::success();
-
         let mut saw_option = false;
 
         if let Some(value) = self.print_commands_and_arguments.to_bool() {
@@ -362,15 +386,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             }
         }
 
+        let set_o_options =
+            brush_core::namedoptions::options(brush_core::namedoptions::ShellOptionKind::SetO);
         for (option_name, value) in named_options {
-            if let Some(option_def) =
-                brush_core::namedoptions::options(brush_core::namedoptions::ShellOptionKind::SetO)
-                    .get(option_name.as_str())
-            {
+            if let Some(option_def) = set_o_options.get(option_name.as_str()) {
                 option_def.set(context.shell.options_mut(), value);
-            } else {
-                result = ExecutionExitCode::InvalidUsage.into();
             }
+        }
+
+        if let Some(name) = self.invalid_option_name {
+            return Err(UsageError::new(format!("{name}: invalid option name")).into());
         }
 
         let args = context.shell.current_shell_args_mut();
@@ -405,7 +430,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             display_all(&context)?;
         }
 
-        Ok(result)
+        Ok(ExecutionResult::success())
     }
 }
 

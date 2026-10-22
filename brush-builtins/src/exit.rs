@@ -6,8 +6,8 @@ use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 #[derive(Parser)]
 pub(crate) struct ExitCommand {
     /// The exit code to return.
-    #[arg(allow_hyphen_values = true)]
-    code: Option<i64>,
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    code: Vec<String>,
 }
 
 brush_clap_adapter::impl_parse_args!(ExitCommand);
@@ -19,11 +19,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExitCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        #[expect(clippy::cast_sign_loss)]
-        let code_8bit = if let Some(code_32bit) = &self.code {
-            (code_32bit & 0xFF) as u8
-        } else {
-            context.shell.last_exit_status()
+        let code_8bit = match self.code.as_slice() {
+            [] => context.shell.last_exit_status(),
+            #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            [operand] => crate::operand::number(operand)? as u8,
+            _ => return crate::operand::too_many("exit", context.stderr()),
         };
 
         let mut result = ExecutionResult::new(code_8bit);

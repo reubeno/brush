@@ -1,13 +1,14 @@
 use clap::Parser;
-use std::io::Write;
 
-use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::builtins::UsageError;
+use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Return from the current function.
 #[derive(Parser)]
 pub(crate) struct ReturnCommand {
     /// The exit code to return.
-    code: Option<i32>,
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    code: Vec<String>,
 }
 
 brush_clap_adapter::impl_parse_args!(ReturnCommand);
@@ -19,11 +20,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReturnCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        #[expect(clippy::cast_sign_loss)]
-        let code_8bit = if let Some(code_32bit) = &self.code {
-            (code_32bit & 0xFF) as u8
-        } else {
-            context.shell.last_exit_status()
+        let code_8bit = match self.code.as_slice() {
+            [] => context.shell.last_exit_status(),
+            #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            [operand] => crate::operand::number(operand)? as u8,
+            _ => return crate::operand::too_many("return", context.stderr()),
         };
 
         if context.shell.in_function() || context.shell.in_sourced_script() {
@@ -32,11 +33,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReturnCommand {
 
             Ok(result)
         } else {
-            let _ = writeln!(
-                context.stderr(),
-                "return: can only be used in a function or sourced script"
-            );
-            Ok(ExecutionExitCode::InvalidUsage.into())
+            Err(UsageError::new("can only `return' from a function or sourced script").into())
         }
     }
 }
