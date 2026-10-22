@@ -1059,10 +1059,15 @@ fn get_key_for_indexed_array(
 ) -> Result<u64, error::Error> {
     let mut index_value = index_str.parse::<i64>().unwrap_or(0);
 
-    // Handle negative indices, but check for out-of-range values.
+    // Handle negative indices, but check for out-of-range values. A negative index is
+    // relative to one greater than the maximum index (not the element count, which
+    // differs for sparse arrays).
     #[expect(clippy::cast_possible_wrap)]
     if index_value < 0 {
-        index_value += values.len() as i64;
+        let end = values
+            .last_key_value()
+            .map_or(0, |(k, _)| (*k as i64).saturating_add(1));
+        index_value += end;
         if index_value < 0 {
             return Err(error::ErrorKind::ArrayIndexOutOfRange(index_str.to_owned()).into());
         }
