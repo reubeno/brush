@@ -32,7 +32,6 @@ cases:
       rm err.txt
 
   - name: "fg without a current job reports on stderr"
-    known_failure: true # TODO(fg): "no current job" is reported on stdout
     ignore_stderr: true
     stdin: |
       fg

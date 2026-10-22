@@ -1,32 +1,33 @@
 use std::borrow::Cow;
+use std::io::Write;
 
-use clap::Parser;
-
-use brush_core::{ExecutionResult, Shell, builtins};
+use brush_core::{ExecutionResult, Shell, builtins, env::VarNameExt};
 
 /// Unset a variable.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct UnsetCommand {
-    #[clap(flatten)]
+    #[arg(flatten)]
     name_interpretation: UnsetNameInterpretation,
 
     /// Names of variables to unset.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-#[derive(Parser)]
-#[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
+// Only `-f` with `-v` is rejected, and at execution time: `-n` combines with either.
+#[derive(winnow_args::Args)]
 pub(crate) struct UnsetNameInterpretation {
     /// Treat each name as a shell function.
-    #[arg(short = 'f', group = "name-interpretation")]
+    #[arg(short = 'f')]
     shell_functions: bool,
 
     /// Treat each name as a shell variable.
-    #[arg(short = 'v', group = "name-interpretation")]
+    #[arg(short = 'v')]
     shell_variables: bool,
 
     /// Treat each name as a name reference.
-    #[arg(short = 'n', group = "name-interpretation")]
+    #[arg(short = 'n')]
     name_references: bool,
 }
 
@@ -36,7 +37,7 @@ impl UnsetNameInterpretation {
     }
 }
 
-brush_clap_adapter::impl_parse_args!(UnsetCommand);
+brush_winnow_args_adapter::impl_parse_args!(UnsetCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnsetCommand {
     type Error = brush_core::Error;
@@ -45,17 +46,37 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnsetCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        //
-        // TODO(nameref): implement nameref
-        //
-        if self.name_interpretation.name_references {
-            return brush_core::error::unimp("unset: name references are not yet implemented");
+        if self.name_interpretation.shell_functions && self.name_interpretation.shell_variables {
+            writeln!(
+                context.stderr(),
+                "{}: cannot simultaneously unset a function and a variable",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::general_error());
         }
 
         let unspecified = self.name_interpretation.unspecified();
 
         #[expect(clippy::needless_continue)]
         for name in &self.names {
+            if self.name_interpretation.name_references {
+                // `unset -n`: removes the nameref variable itself, not its target.
+                // Per bash semantics, `unset -n` on a non-nameref variable is a
+                // silent no-op — the variable is left untouched.
+                let is_nameref = context
+                    .shell
+                    .env()
+                    .lookup(name.direct())
+                    .get_direct()
+                    .is_some_and(|(_, v)| v.is_treated_as_nameref());
+                if is_nameref {
+                    context.shell.env_mut().unset(name.direct())?;
+                }
+                // `unset -n` never touches functions or array elements — it
+                // operates only on nameref variables. Skip the rest of the loop.
+                continue;
+            }
+
             if unspecified || self.name_interpretation.shell_variables {
                 // Try to parse the name as a parameter. If we can't, don't bail; it may not be a
                 // valid variable name/parameter but could still be a function name.
@@ -100,10 +121,17 @@ fn unset_array_index(
     name: &str,
     index: &str,
 ) -> Result<bool, brush_core::Error> {
-    // First check to see if it's an associative array.
+    // Resolve the nameref once upfront to avoid double resolution.
+    // Circular namerefs silently fall back to the identity name (bash doesn't
+    // warn in the unset-array-element path).
+    let resolved = shell.env().resolve_nameref_or_default(name);
+
+    // Check if the resolved target is an associative array (use lookup with the
+    // already-resolved name to avoid redundant nameref resolution).
     let is_assoc_array = shell
         .env()
-        .get(name)
+        .lookup(&resolved)
+        .get_direct()
         .is_some_and(|(_, var)| var.value().is_associative_array());
 
     // Compute which index we should actually use. For indexed arrays, we need to evaluate
@@ -112,11 +140,16 @@ fn unset_array_index(
         index.into()
     } else {
         // First evaluate the index expression.
-        let index_as_expr = brush_parser::arithmetic::parse(index)?;
+        let index_as_expr =
+            brush_parser::arithmetic::parse_with(index, shell.parser_options().parser_impl)?;
         let evaluated_index = shell.eval_arithmetic(&index_as_expr)?;
         evaluated_index.to_string().into()
     };
 
-    // Now we can try to unset, and return the result.
-    shell.env_mut().unset_index(name, index_to_use.as_ref())
+    // Use lookup_mut with the already-resolved name to avoid redundant nameref resolution.
+    if let Some((_, var)) = shell.env_mut().lookup_mut(&resolved).get_direct() {
+        var.unset_index(index_to_use.as_ref())
+    } else {
+        Ok(false)
+    }
 }

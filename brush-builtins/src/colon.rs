@@ -5,7 +5,7 @@ pub(crate) struct ColonCommand {}
 
 impl builtins::ParseArgs for ColonCommand {
     fn content(
-        _name: &str,
+        name: &str,
         content_type: builtins::ContentType,
         _options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::Error> {
@@ -13,8 +13,8 @@ impl builtins::ParseArgs for ColonCommand {
             builtins::ContentType::DetailedHelp => {
                 Ok("Null command; always returns success.".into())
             }
-            builtins::ContentType::ShortUsage => Ok(":: :".into()),
-            builtins::ContentType::ShortDescription => Ok(": - Null command".into()),
+            builtins::ContentType::ShortUsage => Ok(format!("{name}: {name}\n")),
+            builtins::ContentType::ShortDescription => Ok(format!("{name} - Null command\n")),
             builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
         }
     }

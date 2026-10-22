@@ -1,15 +1,14 @@
-use clap::Parser;
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_flag, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
-    #[arg(short = 'v')]
+    #[arg(short = 'v', allow_hyphen_values)]
     output_variable: Option<String>,
 
     /// Format string + arguments to the format string.
@@ -18,11 +17,66 @@ pub(crate) struct PrintfCommand {
     /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
     /// a positional argument. With it disabled, a format string that genuinely needs to
     /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(trailing_var_arg = true, required = true)]
+    #[arg(positional, double_dash = "automatic", required)]
     format_and_args: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(PrintfCommand);
+brush_winnow_args_adapter::impl_parse_args!(PrintfCommand, parse = PrintfCommand::parse_args);
+
+impl PrintfCommand {
+    // Parsed by hand: only leading `-v` options come before the format, at most
+    // one `--` ends them, and every later word is data. That is the whole
+    // grammar, and a loop over the words is the cheapest way to read it; the
+    // derive above still provides the help.
+    fn parse_args(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
+        let name = invocation.name();
+        let error = |error: winnow_args::Error| {
+            brush_winnow_args_adapter::to_usage_error::<Self>(name, &error)
+        };
+        let mut words: Vec<String> = invocation
+            .into_args()
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let mut output_variable = None;
+        let mut index = 0;
+
+        while let Some(word) = words.get(index) {
+            if word == "--" {
+                index += 1;
+                break;
+            } else if word == "-v" {
+                let Some(value) = words.get_mut(index + 1) else {
+                    return Err(error(winnow_args::Error::missing_value(index, "-v")));
+                };
+                output_variable = Some(std::mem::take(value));
+                index += 2;
+            } else if let Some(value) = word.strip_prefix("-v") {
+                output_variable = Some(value.to_owned());
+                index += 1;
+            } else if word.len() > 1 && word.starts_with('-') {
+                return Err(error(winnow_args::Error::unknown_flag(
+                    index,
+                    word.as_str(),
+                )));
+            } else {
+                break;
+            }
+        }
+
+        if index >= words.len() {
+            return Err(error(winnow_args::Error::missing_argument(
+                index,
+                "<format_and_args>",
+            )));
+        }
+        words.drain(..index);
+        Ok(Self {
+            output_variable,
+            format_and_args: words,
+        })
+    }
+}
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
     type Error = brush_core::Error;
@@ -31,17 +85,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        if let Some(variable_name) = &self.output_variable {
-            // Format to a u8 vector.
-            let mut result: Vec<u8> = vec![];
-            format(self.format_and_args.as_slice(), &mut result)?;
+        let mut result: Vec<u8> = vec![];
+        format(self.format_and_args.as_slice(), &mut result)?;
 
-            // Convert to a string.
+        if let Some(variable_name) = &self.output_variable {
             let result_str = String::from_utf8(result).map_err(|_| {
                 brush_core::ErrorKind::PrintfInvalidUsage("invalid UTF-8 output".into())
             })?;
 
-            // Assign to the selected variable.
             expansion::assign_to_named_parameter(
                 context.shell,
                 &context.params,
@@ -50,8 +101,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
             )
             .await?;
         } else {
-            format(self.format_and_args.as_slice(), context.stdout())?;
-            context.stdout().flush()?;
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&result).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&result)?;
+                context.stdout().flush()?;
+            }
         }
 
         Ok(ExecutionResult::success())
@@ -62,8 +118,8 @@ fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_co
     match format_and_args {
         // Handle format string with arguments using uucore
         [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
-        // Handle case with no format string (we shouldn't be able to get here since clap will
-        // fail parsing when the format string is missing)
+        // Handle case with no format string (we shouldn't be able to get here since parsing
+        // fails when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }

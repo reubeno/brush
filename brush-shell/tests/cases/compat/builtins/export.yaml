@@ -37,7 +37,6 @@ cases:
       declare -p result
 
   - name: "Export generated assignment does not expand its value again"
-    known_failure: true # TODO: export improvements required
     stdin: |
       assignment='result=$(printf expanded)'
       export "$assignment"
@@ -65,7 +64,6 @@ cases:
       env | grep MY_TEST_VAR
 
   - name: "Export with assignment through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=MY_EXPORT_VAR
       export ref="exported_value"
@@ -151,21 +149,18 @@ cases:
       unset -f export
 
   - name: "Export rejects an array element target"
-    known_failure: true # TODO: export improvements required
     ignore_stderr: true
     stdin: |
       export 'ea[0]=1'
       echo "status: $?"
 
   - name: "Export recognizes an assignment produced through command"
-    known_failure: true # TODO: export improvements required
     stdin: |
       value=world
       command export wrapped=$value
       declare -p wrapped
 
   - name: "export rejects dash-prefixed operands after a name"
-    known_failure: true # TODO(export): a -x after a name is taken as an option, not rejected as an invalid identifier
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
       { export v -x; echo "export v -x: $?"; } 2>&1 | strip
@@ -191,7 +186,6 @@ cases:
     stdin: |
       export --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(export --help 2>/dev/null) ]] && echo "help on stdout"
-
 
   - name: "export --help is fatal in POSIX mode"
     known_failure: true # TODO(posix): a special builtin's --help doesn't end a non-interactive POSIX shell
@@ -220,9 +214,46 @@ cases:
       echo "unset: $? r=$r"
 
   - name: "export rejects a name that isn't an identifier"
-    known_failure: true # TODO(export): names that aren't identifiers are accepted with status 0
     ignore_stderr: true
     stdin: |
       export "a b=1"; echo "a b=1: $?"
       export 1x=2; echo "1x=2: $?"
       export "a-b"; echo "a-b: $?"
+
+  - name: "Export with dynamically-expanded name"
+    stdin: |
+      var=CC
+      export ${var}="dynamic-value"
+      echo "CC: $CC"
+      env | grep '^CC='
+
+  - name: "Export append with dynamically-expanded name"
+    stdin: |
+      var=ACC
+      ACC="a"
+      export ${var}+=":b"
+      echo "ACC: $ACC"
+
+  - name: "Export append to existing variable"
+    stdin: |
+      CFLAGS="-O3 -pipe"
+      export CFLAGS+=" -Wno-foo"
+      echo "CFLAGS: $CFLAGS"
+
+  - name: "Export append to already-exported variable"
+    stdin: |
+      export Z="-O3 -pipe"
+      export Z+=" -Wno-baz"
+      echo "Z: $Z"
+
+  - name: "Export append to unset variable"
+    stdin: |
+      export NEWVAR+="first"
+      echo "NEWVAR: $NEWVAR"
+
+  - name: "Export of invalid identifier via expansion"
+    stdin: |
+      var="1BAD"
+      export ${var}=x 2>/dev/null
+      echo "rc=$?"
+

@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
@@ -26,7 +25,8 @@ impl From<&DirError> for brush_core::ExecutionExitCode {
 impl brush_core::BuiltinError for DirError {}
 
 /// Manage the current directory stack.
-#[derive(Default, Parser)]
+#[derive(Default, winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct DirsCommand {
     /// Clear the directory stack.
     #[arg(short = 'c')]
@@ -43,11 +43,10 @@ pub(crate) struct DirsCommand {
     /// Print one directory per line with its index.
     #[arg(short = 'v')]
     print_one_per_line_with_index: bool,
-    //
     // TODO(dirs): implement +N and -N
 }
 
-brush_clap_adapter::impl_parse_args!(DirsCommand);
+brush_winnow_args_adapter::impl_parse_args!(DirsCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
     type Error = brush_core::Error;
@@ -73,13 +72,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
 
             let one_per_line = self.print_one_per_line || self.print_one_per_line_with_index;
 
+            let mut output = Vec::new();
+
             for (i, dir) in dirs.iter().enumerate() {
                 if !one_per_line && i > 0 {
-                    write!(context.stdout(), " ")?;
+                    write!(output, " ")?;
                 }
 
                 if self.print_one_per_line_with_index {
-                    write!(context.stdout(), "{i:2}  ")?;
+                    write!(output, "{i:2}  ")?;
                 }
 
                 let mut dir_str = dir.to_string_lossy().to_string();
@@ -88,10 +89,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
                     dir_str = context.shell.tilde_shorten(dir_str);
                 }
 
-                write!(context.stdout(), "{dir_str}")?;
+                write!(output, "{dir_str}")?;
 
                 if one_per_line || i == dirs.len() - 1 {
-                    writeln!(context.stdout())?;
+                    writeln!(output)?;
+                }
+            }
+
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
                 }
             }
 

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
-use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
+use crate::env::{EnvironmentLookup, EnvironmentScope, VarNameExt, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -171,6 +171,58 @@ impl ExecutionParameters {
             .collect();
 
         all_fds.into_iter()
+    }
+
+    /// Tries to retrieve an async version of the file descriptor.
+    /// Returns `None` if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+        fd: ShellFd,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd(shell, fd)
+            .map(openfiles::async_file::AsyncOpenFile::from)
+    }
+
+    /// Tries to retrieve the standard input as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdin_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDIN_FD)
+    }
+
+    /// Tries to retrieve the standard output as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stdout_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDOUT_FD)
+    }
+
+    /// Tries to retrieve the standard error as an async file.
+    ///
+    /// # Arguments
+    ///
+    /// * `shell` - The shell context.
+    pub fn try_stderr_async(
+        &self,
+        shell: &Shell<impl extensions::ShellExtensions>,
+    ) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd_async(shell, openfiles::OpenFiles::STDERR_FD)
     }
 }
 
@@ -693,6 +745,47 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
     }
 }
 
+#[async_trait::async_trait]
+impl Execute for ast::Command {
+    async fn execute(
+        &self,
+        shell: &mut Shell<impl extensions::ShellExtensions>,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        match self {
+            Self::Simple(simple) => {
+                let context = PipelineExecutionContext {
+                    shell: commands::ShellForCommand::ParentShell(shell),
+                    process_group_id: None,
+                };
+                match simple.execute_in_pipeline(context, params.clone()).await? {
+                    ExecutionSpawnResult::Completed(result) => Ok(result),
+                    ExecutionSpawnResult::StartedProcess(mut child) => {
+                        let wait_result = child.wait().await?;
+                        match wait_result {
+                            crate::processes::ProcessWaitResult::Completed(output) => Ok(output),
+                            crate::processes::ProcessWaitResult::Stopped => {
+                                Ok(ExecutionResult::stopped())
+                            }
+                        }
+                    }
+                    ExecutionSpawnResult::StartedTask(handle) => handle.await?,
+                }
+            }
+            Self::Compound(compound, redirects) => {
+                let mut params = params.clone();
+                if let Some(redirects) = redirects {
+                    for redirect in &redirects.0 {
+                        setup_redirect(shell, &mut params, redirect).await?;
+                    }
+                }
+                compound.execute(shell, &params).await
+            }
+            Self::Function(func) => func.execute(shell, params).await,
+        }
+    }
+}
+
 enum WhileOrUntil {
     While,
     Until,
@@ -863,9 +956,20 @@ impl Execute for ast::ForClauseCommand {
                 }
             }
 
-            // Update the variable.
+            // Update the variable without resolving namerefs. In bash, the `for-in`
+            // loop control variable is written directly: if it's a nameref, its own
+            // value (i.e., what it points to) is updated, not the target variable.
+            //
+            // Note: this is asymmetric with C-style `for ((ref=...; ...; ...))` which
+            // goes through the arithmetic evaluator and *does* resolve namerefs. Both
+            // behaviors match bash.
+            //
+            // N.B. Assignments in the loop *body* (e.g., `ref=$((ref * 10))`) go
+            // through `apply_assignment` which DOES resolve namerefs. So the loop
+            // variable update retargets the nameref, while body assignments write
+            // through it — both are correct and intentional.
             shell.env_mut().update_or_add(
-                &self.variable_name,
+                self.variable_name.as_str().direct(),
                 ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 EnvironmentLookup::Anywhere,
@@ -1206,12 +1310,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
-                    let (installed_fd_num, substitution_file) = setup_process_substitution(
-                        &context.shell,
-                        &params,
-                        kind,
-                        subshell_command,
-                    )?;
+                    let (installed_fd_num, substitution_file) =
+                        setup_process_substitution(&context.shell, &params, kind, subshell_command)
+                            .await?;
 
                     params
                         .open_files
@@ -1574,6 +1675,36 @@ async fn apply_assignment(
         }
     };
 
+    // Resolve namerefs so assignments through a nameref go to the target variable.
+    let resolved = shell.env().resolve_nameref(variable_name)?;
+
+    // If the nameref target includes an array subscript (e.g., arr[2]),
+    // extract the base name and treat the subscript as the array index.
+    // When the assignment already has an explicit subscript (e.g., `ref[5]=val`
+    // where ref→arr[2]), the explicit subscript takes precedence and the
+    // nameref subscript is ignored — this matches bash behavior where the
+    // explicit index overrides the nameref's embedded index.
+    if let Some(idx) = resolved.subscript() {
+        // Compound (array) assignment or explicit subscript through a
+        // subscripted nameref is an error in bash: the resolved target
+        // "arr[2]" is not a valid identifier for compound or subscripted
+        // assignment.
+        if matches!(assignment.value, ast::AssignmentValue::Array(_)) || array_index.is_some() {
+            writeln!(
+                shell.stderr(),
+                "`{}[{}]': not a valid identifier",
+                resolved.name(),
+                idx,
+            )?;
+            return Err(
+                error::ErrorKind::BadSubstitution(format!("{}[{}]", resolved.name(), idx)).into(),
+            );
+        }
+        array_index = Some(idx.to_owned());
+    }
+    // Strip the subscript — we've already extracted it into array_index above.
+    let resolved_name = resolved.without_subscript();
+
     // Expand the values.
     let new_value = match &assignment.value {
         ast::AssignmentValue::Scalar(unexpanded_value) => {
@@ -1619,13 +1750,15 @@ async fn apply_assignment(
     }
 
     // See if we need to eval an array index.
+    // N.B. The name is already resolved through the nameref chain above,
+    // so use lookup with the already-resolved name to avoid redundant resolution.
     if let Some(idx) = &array_index {
         // An array subscript is arithmetically evaluated unless the target is an
         // associative array (in which case the subscript is used as a literal key).
         // A scalar or unset/untyped variable becomes an indexed array, so its
         // subscript still needs to be evaluated.
         let will_be_indexed_array =
-            if let Some((_, existing_value)) = shell.env().get(variable_name) {
+            if let Some((_, existing_value)) = shell.env().lookup(&resolved_name).get_direct() {
                 !matches!(
                     existing_value.value(),
                     ShellValue::AssociativeArray(_)
@@ -1644,15 +1777,35 @@ async fn apply_assignment(
         }
     }
 
+    // If the target variable has the integer attribute, evaluate scalar values
+    // as arithmetic expressions. In bash, `declare -i x; x=20+5` sets x to 25.
+    let new_value = if let Some((_, target_var)) = shell.env().lookup(&resolved_name).get_direct() {
+        if target_var.is_treated_as_integer() {
+            match new_value {
+                ShellValueLiteral::Scalar(s) => {
+                    let result = arithmetic::expand_and_eval(shell, params, &s, false).await?;
+                    ShellValueLiteral::Scalar(result.to_string())
+                }
+                ShellValueLiteral::Array(a) => ShellValueLiteral::Array(a),
+            }
+        } else {
+            new_value
+        }
+    } else {
+        new_value
+    };
+
     // Read option before taking mutable borrow on env.
     let export_variables_on_modification = shell.options().export_variables_on_modification;
 
     // Like bash, a variable for one command can't override a readonly one: report that and
-    // skip this assignment. The command still runs.
+    // skip this assignment. The command still runs. N.B. The name is already resolved
+    // through the nameref chain above.
     if required_scope.is_some()
         && shell
             .env()
-            .get(variable_name.as_str())
+            .lookup(&resolved_name)
+            .get_direct()
             .is_some_and(|(_, var)| var.is_readonly())
     {
         let err = error::Error::from(error::ErrorKind::ReadonlyVariable);
@@ -1669,8 +1822,10 @@ async fn apply_assignment(
     );
     let existing_value = shell
         .env_mut()
-        .get_mut_using_policy(variable_name.as_str(), lookup);
-    if let Some(existing_value) = existing_value {
+        .lookup_mut(&resolved_name)
+        .in_scope(lookup)
+        .get_direct();
+    if let Some((_, existing_value)) = existing_value {
         if let Some(array_index) = array_index {
             match new_value {
                 ShellValueLiteral::Scalar(s) => {
@@ -1717,7 +1872,7 @@ async fn apply_assignment(
                 // A new variable for a command (e.g. `FOO+=x cmd`) appends to the value the
                 // variable has where it's visible, as that variable would (e.g. adding, for
                 // an integer); the result is a plain string.
-                let s = match shell.env().get(variable_name.as_str()) {
+                let s = match shell.env().lookup(&resolved_name).get_direct() {
                     Some((_, visible)) if assignment.append => {
                         let mut appended = visible.clone();
                         appended.assign(ShellValueLiteral::Scalar(s), true)?;
@@ -1737,7 +1892,9 @@ async fn apply_assignment(
         new_var.export();
     }
 
-    shell.env_mut().add(variable_name, new_var, creation_scope)
+    shell
+        .env_mut()
+        .add(resolved_name.into_name(), new_var, creation_scope)
 }
 
 #[expect(clippy::too_many_lines)]
@@ -1886,7 +2043,8 @@ pub(crate) async fn setup_redirect(
                             .parse::<ShellFd>()
                             .map_err(|_| error::ErrorKind::InvalidRedirection)?;
 
-                        // Reference the same open file as the source fd (shared handle; no OS-level duplication).
+                        // Reference the same open file as the source fd (shared handle; no OS-level
+                        // duplication).
                         let Some(target_file) = params.try_fd(shell, source_fd_num) else {
                             return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
                         };
@@ -1920,7 +2078,8 @@ pub(crate) async fn setup_redirect(
                                 params,
                                 substitution_kind,
                                 subshell_cmd,
-                            )?;
+                            )
+                            .await?;
 
                             let target_file = substitution_file.clone();
                             params.open_files.set_fd(substitution_fd, substitution_file);
@@ -2020,7 +2179,7 @@ const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> She
     }
 }
 
-fn setup_process_substitution(
+async fn setup_process_substitution(
     shell: &Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
@@ -2059,6 +2218,15 @@ fn setup_process_substitution(
             .execute(&mut subshell, &child_params)
             .await;
     });
+
+    // When called from inside another spawned task (e.g. a command substitution
+    // body), the fresh task lands in this worker's LIFO slot, which other workers
+    // cannot steal. If the caller then blocks the thread on the substitution pipe
+    // (shared pipe I/O is synchronous) before returning to the scheduler, the body
+    // is stranded and the shell deadlocks. Yielding forces one trip through the
+    // scheduler loop, which polls the LIFO slot first and re-queues this task at
+    // the stealable end of the run queue.
+    tokio::task::yield_now().await;
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
     // available fd.

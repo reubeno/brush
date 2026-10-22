@@ -1,189 +1,93 @@
 use std::collections::HashMap;
 use std::io::Write;
 
-use clap::Parser;
 use itertools::Itertools;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 
-crate::minus_or_plus_flag_arg!(
-    ExportVariablesOnModification,
-    'a',
-    "Export variables on modification"
-);
-crate::minus_or_plus_flag_arg!(
-    NotifyJobTerminationImmediately,
-    'b',
-    "Notify job termination immediately"
-);
-crate::minus_or_plus_flag_arg!(
-    ExitOnNonzeroCommandExit,
-    'e',
-    "Exit on nonzero command exit"
-);
-crate::minus_or_plus_flag_arg!(DisableFilenameGlobbing, 'f', "Disable filename globbing");
-crate::minus_or_plus_flag_arg!(RememberCommandLocations, 'h', "Remember command locations");
-crate::minus_or_plus_flag_arg!(
-    PlaceAllAssignmentArgsInCommandEnv,
-    'k',
-    "Place all assignment args in command environment"
-);
-crate::minus_or_plus_flag_arg!(EnableJobControl, 'm', "Enable job control");
-crate::minus_or_plus_flag_arg!(DoNotExecuteCommands, 'n', "Do not execute commands");
-crate::minus_or_plus_flag_arg!(RealEffectiveUidMismatch, 'p', "Real effective UID mismatch");
-crate::minus_or_plus_flag_arg!(ExitAfterOneCommand, 't', "Exit after one command");
-crate::minus_or_plus_flag_arg!(
-    TreatUnsetVariablesAsError,
-    'u',
-    "Treat unset variables as error"
-);
-crate::minus_or_plus_flag_arg!(PrintShellInputLines, 'v', "Print shell input lines");
-crate::minus_or_plus_flag_arg!(
-    PrintCommandsAndArguments,
-    'x',
-    "Print commands and arguments"
-);
-crate::minus_or_plus_flag_arg!(PerformBraceExpansion, 'B', "Perform brace expansion");
-crate::minus_or_plus_flag_arg!(
-    DisallowOverwritingRegularFilesViaOutputRedirection,
-    'C',
-    "Disallow overwriting regular files via output redirection"
-);
-crate::minus_or_plus_flag_arg!(
-    ShellFunctionsInheritErrTrap,
-    'E',
-    "Shell functions inherit ERR trap"
-);
-crate::minus_or_plus_flag_arg!(
-    EnableBangStyleHistorySubstitution,
-    'H',
-    "Enable bang style history substitution"
-);
-crate::minus_or_plus_flag_arg!(
-    DoNotResolveSymlinksWhenChangingDir,
-    'P',
-    "Do not resolve symlinks when changing dir"
-);
-crate::minus_or_plus_flag_arg!(
-    ShellFunctionsInheritDebugAndReturnTraps,
-    'T',
-    "Shell functions inherit DEBUG and RETURN traps"
-);
-
-#[derive(clap::Parser)]
-pub(crate) struct SetOption {
-    #[arg(short = 'o', name = "setopt_enable", num_args=0..=1, value_name = "OPT")]
-    enable: Option<Vec<String>>,
-    #[arg(long = concat!("+o"), name = "setopt_disable", hide = true, num_args=0..=1)]
-    disable: Option<Vec<String>>,
-}
+/// Sentinel bound to a bare `-o`/`+o` (a list-all request). `default_missing` injects
+/// it for an occurrence without a value; it is not a real option name.
+const BARE_OPTION: &str = "\u{0}";
 
 /// Manage set-based shell options.
-#[derive(Parser)]
-#[clap(disable_help_flag = true)]
+#[derive(winnow_args::Args)]
+#[arg(
+    plus_options,
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct SetCommand {
-    /// Display help for this command.
-    #[clap(long, action = clap::ArgAction::HelpLong)]
-    help: Option<bool>,
+    #[arg(short = 'a', plus = 'a')]
+    export_variables_on_modification: Option<bool>,
 
-    #[clap(flatten)]
-    export_variables_on_modification: ExportVariablesOnModification,
-    #[clap(flatten)]
-    notify_job_termination_immediately: NotifyJobTerminationImmediately,
-    #[clap(flatten)]
-    exit_on_nonzero_command_exit: ExitOnNonzeroCommandExit,
-    #[clap(flatten)]
-    disable_filename_globbing: DisableFilenameGlobbing,
-    #[clap(flatten)]
-    remember_command_locations: RememberCommandLocations,
-    #[clap(flatten)]
-    place_all_assignment_args_in_command_env: PlaceAllAssignmentArgsInCommandEnv,
-    #[clap(flatten)]
-    enable_job_control: EnableJobControl,
-    #[clap(flatten)]
-    do_not_execute_commands: DoNotExecuteCommands,
-    #[clap(flatten)]
-    real_effective_uid_mismatch: RealEffectiveUidMismatch,
-    #[clap(flatten)]
-    exit_after_one_command: ExitAfterOneCommand,
-    #[clap(flatten)]
-    treat_unset_variables_as_error: TreatUnsetVariablesAsError,
-    #[clap(flatten)]
-    print_shell_input_lines: PrintShellInputLines,
-    #[clap(flatten)]
-    print_commands_and_arguments: PrintCommandsAndArguments,
-    #[clap(flatten)]
-    perform_brace_expansion: PerformBraceExpansion,
-    #[clap(flatten)]
-    disallow_overwriting_regular_files_via_output_redirection:
-        DisallowOverwritingRegularFilesViaOutputRedirection,
-    #[clap(flatten)]
-    shell_functions_inherit_err_trap: ShellFunctionsInheritErrTrap,
-    #[clap(flatten)]
-    enable_bang_style_history_substitution: EnableBangStyleHistorySubstitution,
-    #[clap(flatten)]
-    do_not_resolve_symlinks_when_changing_dir: DoNotResolveSymlinksWhenChangingDir,
-    #[clap(flatten)]
-    shell_functions_inherit_debug_and_return_traps: ShellFunctionsInheritDebugAndReturnTraps,
+    #[arg(short = 'b', plus = 'b')]
+    notify_job_termination_immediately: Option<bool>,
 
-    #[clap(flatten)]
-    set_option: SetOption,
+    #[arg(short = 'e', plus = 'e')]
+    exit_on_nonzero_command_exit: Option<bool>,
 
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(short = 'f', plus = 'f')]
+    disable_filename_globbing: Option<bool>,
+
+    #[arg(short = 'h', plus = 'h')]
+    remember_command_locations: Option<bool>,
+
+    #[arg(short = 'k', plus = 'k')]
+    place_all_assignment_args_in_command_env: Option<bool>,
+
+    #[arg(short = 'm', plus = 'm')]
+    enable_job_control: Option<bool>,
+
+    #[arg(short = 'n', plus = 'n')]
+    do_not_execute_commands: Option<bool>,
+
+    #[arg(short = 'p', plus = 'p')]
+    real_effective_uid_mismatch: Option<bool>,
+
+    #[arg(short = 't', plus = 't')]
+    exit_after_one_command: Option<bool>,
+
+    #[arg(short = 'u', plus = 'u')]
+    treat_unset_variables_as_error: Option<bool>,
+
+    #[arg(short = 'v', plus = 'v')]
+    print_shell_input_lines: Option<bool>,
+
+    #[arg(short = 'x', plus = 'x')]
+    print_commands_and_arguments: Option<bool>,
+
+    #[arg(short = 'B', plus = 'B')]
+    perform_brace_expansion: Option<bool>,
+
+    #[arg(short = 'C', plus = 'C')]
+    disallow_overwriting_regular_files_via_output_redirection: Option<bool>,
+
+    #[arg(short = 'E', plus = 'E')]
+    shell_functions_inherit_err_trap: Option<bool>,
+
+    #[arg(short = 'H', plus = 'H')]
+    enable_bang_style_history_substitution: Option<bool>,
+
+    #[arg(short = 'P', plus = 'P')]
+    do_not_resolve_symlinks_when_changing_dir: Option<bool>,
+
+    #[arg(short = 'T', plus = 'T')]
+    shell_functions_inherit_debug_and_return_traps: Option<bool>,
+
+    /// Set the named option (`-o NAME`); alone, list the options.
+    #[arg(short = 'o', value_name = "OPT", default_missing = "\u{0}")]
+    enable: Vec<String>,
+
+    /// Unset the named option (`+o NAME`); alone, list them as commands.
+    #[arg(plus = 'o', value_name = "OPT", default_missing = "\u{0}")]
+    disable: Vec<String>,
+
+    #[arg(positional, double_dash = "preserve", stop_flags)]
     positional_args: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(SetCommand, parse = SetCommand::parse_args);
-
-impl SetCommand {
-    /// Parses `set`'s arguments: its options may start with `+` as well as
-    /// `-`, and the first `--` and every word after it are positional
-    /// arguments. See [`brush_clap_adapter::try_parse_before_double_dash`].
-    /// TODO(set): we can safely remove this after the clap issue is resolved
-    fn parse_args(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
-        let args = std::iter::once(invocation.name().to_owned())
-            .chain(invocation.into_args().into_iter().map(String::from));
-
-        //
-        // TODO(set): This is getting pretty messy; we need to see how to avoid this -- handling
-        // from leaking into too many commands' custom parsing.
-        //
-
-        // Apply the same workaround as brush_clap_adapter's `plus_options` parsing to handle '+'
-        // args.
-        let mut updated_args = vec![];
-        let mut now_parsing_positional_args = false;
-        let mut next_arg_is_option_value = false;
-        for (i, arg) in args.enumerate() {
-            if now_parsing_positional_args || next_arg_is_option_value {
-                updated_args.push(arg);
-
-                next_arg_is_option_value = false;
-                continue;
-            }
-
-            if arg == "-" || arg == "--" || (i > 0 && !arg.starts_with(['-', '+'])) {
-                now_parsing_positional_args = true;
-            }
-
-            if let Some(plus_options) = arg.strip_prefix("+") {
-                next_arg_is_option_value = plus_options.ends_with('o');
-                for c in plus_options.chars() {
-                    updated_args.push(format!("--+{c}"));
-                }
-            } else {
-                next_arg_is_option_value = arg.starts_with('-') && arg.ends_with('o');
-                updated_args.push(arg);
-            }
-        }
-
-        let (mut this, rest_args) =
-            brush_clap_adapter::try_parse_before_double_dash::<Self>(updated_args)
-                .map_err(|e| brush_clap_adapter::to_usage_error(&e))?;
-        this.positional_args.extend(rest_args);
-        Ok(this)
-    }
-}
+brush_winnow_args_adapter::impl_parse_args!(SetCommand, keep_double_dash = positional_args);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
     type Error = brush_core::Error;
@@ -198,17 +102,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
 
         let mut saw_option = false;
 
-        if let Some(value) = self.print_commands_and_arguments.to_bool() {
+        if let Some(value) = self.print_commands_and_arguments {
             context.shell.options_mut().print_commands_and_arguments = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.export_variables_on_modification.to_bool() {
+        if let Some(value) = self.export_variables_on_modification {
             context.shell.options_mut().export_variables_on_modification = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.notify_job_termination_immediately.to_bool() {
+        if let Some(value) = self.notify_job_termination_immediately {
             context
                 .shell
                 .options_mut()
@@ -216,22 +120,22 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             saw_option = true;
         }
 
-        if let Some(value) = self.exit_on_nonzero_command_exit.to_bool() {
+        if let Some(value) = self.exit_on_nonzero_command_exit {
             context.shell.options_mut().exit_on_nonzero_command_exit = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.disable_filename_globbing.to_bool() {
+        if let Some(value) = self.disable_filename_globbing {
             context.shell.options_mut().disable_filename_globbing = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.remember_command_locations.to_bool() {
+        if let Some(value) = self.remember_command_locations {
             context.shell.options_mut().remember_command_locations = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.place_all_assignment_args_in_command_env.to_bool() {
+        if let Some(value) = self.place_all_assignment_args_in_command_env {
             context
                 .shell
                 .options_mut()
@@ -239,50 +143,47 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             saw_option = true;
         }
 
-        if let Some(value) = self.enable_job_control.to_bool() {
+        if let Some(value) = self.enable_job_control {
             context.shell.options_mut().enable_job_control = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.do_not_execute_commands.to_bool() {
+        if let Some(value) = self.do_not_execute_commands {
             context.shell.options_mut().do_not_execute_commands = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.real_effective_uid_mismatch.to_bool() {
+        if let Some(value) = self.real_effective_uid_mismatch {
             context.shell.options_mut().real_effective_uid_mismatch = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.exit_after_one_command.to_bool() {
+        if let Some(value) = self.exit_after_one_command {
             context.shell.options_mut().exit_after_one_command = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.treat_unset_variables_as_error.to_bool() {
+        if let Some(value) = self.treat_unset_variables_as_error {
             context.shell.options_mut().treat_unset_variables_as_error = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.print_shell_input_lines.to_bool() {
+        if let Some(value) = self.print_shell_input_lines {
             context.shell.options_mut().print_shell_input_lines = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.print_commands_and_arguments.to_bool() {
+        if let Some(value) = self.print_commands_and_arguments {
             context.shell.options_mut().print_commands_and_arguments = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.perform_brace_expansion.to_bool() {
+        if let Some(value) = self.perform_brace_expansion {
             context.shell.options_mut().perform_brace_expansion = value;
             saw_option = true;
         }
 
-        if let Some(value) = self
-            .disallow_overwriting_regular_files_via_output_redirection
-            .to_bool()
-        {
+        if let Some(value) = self.disallow_overwriting_regular_files_via_output_redirection {
             context
                 .shell
                 .options_mut()
@@ -290,12 +191,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             saw_option = true;
         }
 
-        if let Some(value) = self.shell_functions_inherit_err_trap.to_bool() {
+        if let Some(value) = self.shell_functions_inherit_err_trap {
             context.shell.options_mut().shell_functions_inherit_err_trap = value;
             saw_option = true;
         }
 
-        if let Some(value) = self.enable_bang_style_history_substitution.to_bool() {
+        if let Some(value) = self.enable_bang_style_history_substitution {
             context
                 .shell
                 .options_mut()
@@ -303,7 +204,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             saw_option = true;
         }
 
-        if let Some(value) = self.do_not_resolve_symlinks_when_changing_dir.to_bool() {
+        if let Some(value) = self.do_not_resolve_symlinks_when_changing_dir {
             context
                 .shell
                 .options_mut()
@@ -311,10 +212,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             saw_option = true;
         }
 
-        if let Some(value) = self
-            .shell_functions_inherit_debug_and_return_traps
-            .to_bool()
-        {
+        if let Some(value) = self.shell_functions_inherit_debug_and_return_traps {
             context
                 .shell
                 .options_mut()
@@ -323,9 +221,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
         }
 
         let mut named_options: HashMap<String, bool> = HashMap::new();
-        if let Some(option_names) = &self.set_option.disable {
+        let mut output = Vec::new();
+
+        if !self.disable.is_empty() {
+            let option_names = &self.disable;
             saw_option = true;
-            if option_names.is_empty() {
+            if option_names.iter().all(|name| name == BARE_OPTION) {
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
                 )
@@ -334,7 +235,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                 {
                     let option_value = option.definition.get(context.shell.options());
                     let option_value_str = if option_value { "-o" } else { "+o" };
-                    writeln!(context.stdout(), "set {option_value_str} {}", option.name)?;
+                    writeln!(output, "set {option_value_str} {}", option.name)?;
                 }
             } else {
                 for option_name in option_names {
@@ -342,9 +243,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                 }
             }
         }
-        if let Some(option_names) = &self.set_option.enable {
+        if !self.enable.is_empty() {
+            let option_names = &self.enable;
             saw_option = true;
-            if option_names.is_empty() {
+            if option_names.iter().all(|name| name == BARE_OPTION) {
                 for option in brush_core::namedoptions::options(
                     brush_core::namedoptions::ShellOptionKind::SetO,
                 )
@@ -353,7 +255,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                 {
                     let option_value = option.definition.get(context.shell.options());
                     let option_value_str = if option_value { "on" } else { "off" };
-                    writeln!(context.stdout(), "{:15}\t{option_value_str}", option.name)?;
+                    writeln!(output, "{:15}\t{option_value_str}", option.name)?;
                 }
             } else {
                 for option_name in option_names {
@@ -399,10 +301,21 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
 
         saw_option = saw_option || !self.positional_args.is_empty();
 
-        // If we *still* haven't seen any options, then we need to display all variables and
-        // functions.
         if !saw_option {
-            display_all(&context)?;
+            let all_output = display_all(&context)?;
+            if !all_output.is_empty() {
+                output.extend(all_output);
+            }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
         }
 
         Ok(result)
@@ -411,40 +324,35 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
 
 fn display_all(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-) -> Result<(), brush_core::Error> {
-    // Display variables.
+) -> Result<Vec<u8>, brush_core::Error> {
+    let mut output = Vec::new();
+
     for (name, var) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if !var.is_enumerable() {
             continue;
         }
 
-        // TODO(set): For now, skip all dynamic variables. The current behavior
-        // of bash is not quite clear. We've empirically found that some
-        // special variables don't get displayed until they're observed
-        // at least once.
         if matches!(var.value(), variables::ShellValue::Dynamic { .. }) {
             continue;
         }
 
-        // Skip variables that have been declared but are unset.
         if !var.value().is_set() {
             continue;
         }
 
         writeln!(
-            context.stdout(),
+            output,
             "{name}={}",
             var.value()
                 .format(variables::FormatStyle::Basic, context.shell)?,
         )?;
     }
 
-    // Display functions... unless we're in posix compliance mode.
     if !context.shell.options().posix_mode {
         for (_name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
-            writeln!(context.stdout(), "{}", registration.definition())?;
+            writeln!(output, "{}", registration.definition())?;
         }
     }
 
-    Ok(())
+    Ok(output)
 }

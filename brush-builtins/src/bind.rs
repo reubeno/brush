@@ -1,4 +1,3 @@
-use clap::{Parser, ValueEnum};
 use itertools::Itertools as _;
 use std::{collections::HashMap, io::Write, str::FromStr as _, sync::Arc};
 use strum::IntoEnumIterator;
@@ -9,21 +8,6 @@ use brush_core::{
     interfaces::{self, InputFunction, KeyAction, KeySequence},
     sys, trace_categories,
 };
-
-/// Identifier for a keymap
-#[derive(Clone, ValueEnum)]
-enum BindKeyMap {
-    #[clap(name = "emacs-standard", alias = "emacs")]
-    EmacsStandard,
-    #[clap(name = "emacs-meta")]
-    EmacsMeta,
-    #[clap(name = "emacs-ctlx")]
-    EmacsCtlx,
-    #[clap(name = "vi-command", aliases = &["vi", "vi-move"])]
-    ViCommand,
-    #[clap(name = "vi-insert")]
-    ViInsert,
-}
 
 impl BindKeyMap {
     const fn is_vi(&self) -> bool {
@@ -40,7 +24,8 @@ impl BindKeyMap {
 }
 
 /// Inspect and modify key bindings and other input configuration.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct BindCommand {
     /// Name of key map to use.
     #[arg(short = 'm')]
@@ -85,8 +70,26 @@ pub(crate) struct BindCommand {
     #[arg(short = 'X')]
     list_key_seq_bindings: bool,
     /// Key sequence binding to readline function or command.
+    #[arg(positional)]
     key_sequence: Option<String>,
 }
+
+/// Identifier for a keymap
+#[derive(Clone, winnow_args::ValueEnum)]
+pub(crate) enum BindKeyMap {
+    #[arg(name = "emacs-standard", alias = "emacs")]
+    EmacsStandard,
+    #[arg(name = "emacs-meta")]
+    EmacsMeta,
+    #[arg(name = "emacs-ctlx")]
+    EmacsCtlx,
+    #[arg(name = "vi-command", alias("vi", "vi-move"))]
+    ViCommand,
+    #[arg(name = "vi-insert")]
+    ViInsert,
+}
+
+brush_winnow_args_adapter::impl_parse_args!(BindCommand);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BindError {
@@ -119,8 +122,6 @@ impl From<&BindError> for brush_core::ExecutionExitCode {
     }
 }
 
-brush_clap_adapter::impl_parse_args!(BindCommand);
-
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BindCommand {
     type Error = BindError;
 
@@ -150,40 +151,41 @@ impl BindCommand {
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, BindError> {
         let mut bindings = bindings.lock().await;
+        let parser_impl = context.shell.parser_options().parser_impl;
+        let mut output = Vec::new();
 
         if self.list_funcs {
             for func in interfaces::InputFunction::iter() {
-                writeln!(context.stdout(), "{func}")?;
+                writeln!(output, "{func}")?;
             }
         }
 
         if self.list_funcs_and_bindings {
-            display_funcs_and_bindings(&*bindings, context, false /* reusable? */)?;
+            display_funcs_and_bindings(&*bindings, &mut output, false)?;
         }
 
         if self.list_funcs_and_bindings_reusable {
-            display_funcs_and_bindings(&*bindings, context, true /* reusable? */)?;
+            display_funcs_and_bindings(&*bindings, &mut output, true)?;
         }
 
         if self.list_key_seqs_that_invoke_macros {
-            display_macros(&*bindings, context, false /* reusable? */)?;
+            display_macros(&*bindings, &mut output, false)?;
         }
 
         if self.list_key_seqs_that_invoke_macros_reusable {
-            display_macros(&*bindings, context, true /* reusable? */)?;
+            display_macros(&*bindings, &mut output, true)?;
         }
 
         if self.list_vars {
             let options = &context.shell.completion_config().fallback_options;
 
-            // For now we'll just display a few items and show defaults.
             writeln!(
-                context.stdout(),
+                output,
                 "mark-directories is set to `{}'",
                 to_onoff(options.mark_directories)
             )?;
             writeln!(
-                context.stdout(),
+                output,
                 "mark-symlinked-directories is set to `{}'",
                 to_onoff(options.mark_symlinked_directories)
             )?;
@@ -192,14 +194,13 @@ impl BindCommand {
         if self.list_vars_reusable {
             let options = &context.shell.completion_config().fallback_options;
 
-            // For now we'll just display a few items and show defaults.
             writeln!(
-                context.stdout(),
+                output,
                 "set mark-directories {}",
                 to_onoff(options.mark_directories)
             )?;
             writeln!(
-                context.stdout(),
+                output,
                 "set mark-symlinked-directories {}",
                 to_onoff(options.mark_symlinked_directories)
             )?;
@@ -210,12 +211,22 @@ impl BindCommand {
 
             if !seqs.is_empty() {
                 writeln!(
-                    context.stdout(),
+                    output,
                     "{func_str} can be invoked via {}.",
                     seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
                 )?;
             } else {
-                writeln!(context.stdout(), "{func_str} is not bound to any keys.")?;
+                writeln!(output, "{func_str} is not bound to any keys.")?;
+                drop(bindings);
+                if !output.is_empty() {
+                    if let Some(mut stdout) = context.stdout_async() {
+                        stdout.write_all(&output).await?;
+                        stdout.flush().await?;
+                    } else {
+                        context.stdout().write_all(&output)?;
+                        context.stdout().flush()?;
+                    }
+                }
                 return Ok(ExecutionResult::general_error());
             }
         }
@@ -229,7 +240,7 @@ impl BindCommand {
         }
 
         if let Some(key_seq_str) = &self.remove_key_seq_binding {
-            let key_seq = parse_key_sequence(key_seq_str)?;
+            let key_seq = parse_key_sequence(key_seq_str, parser_impl)?;
             let _ = bindings.try_unbind(key_seq);
         }
 
@@ -243,43 +254,56 @@ impl BindCommand {
                     continue;
                 };
 
-                writeln!(context.stdout(), "\"{seq}\" \"{cmd}\"")?;
+                writeln!(output, "\"{seq}\" \"{cmd}\"")?;
             }
         }
 
         if !self.key_seq_bindings.is_empty() {
             if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
-                // NOTE(vi): Quietly ignore since we don't support vi mode.
                 return Ok(ExecutionResult::success());
             }
 
             for key_seq_and_command in &self.key_seq_bindings {
-                let (key_seq, command) = parse_key_sequence_and_shell_command(key_seq_and_command)?;
+                let (key_seq, command) =
+                    parse_key_sequence_and_shell_command(key_seq_and_command, parser_impl)?;
                 bind_key_sequence_to_shell_cmd(&mut *bindings, key_seq, command)?;
             }
         }
 
         if let Some(key_sequence) = &self.key_sequence {
             if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
-                // NOTE(vi): Quietly ignore since we don't support vi mode.
                 return Ok(ExecutionResult::success());
             }
 
-            let (key_seq, target) = parse_key_sequence_and_readline_target(key_sequence.as_str())?;
+            let (key_seq, target) =
+                parse_key_sequence_and_readline_target(key_sequence.as_str(), parser_impl)?;
             bind_key_sequence_to_readline_target(&mut *bindings, key_seq, target)?;
         }
 
         drop(bindings);
 
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
         Ok(ExecutionResult::success())
     }
 }
 
-fn parse_key_sequence(input: &str) -> Result<interfaces::KeySequence, BindError> {
+fn parse_key_sequence(
+    input: &str,
+    parser_impl: brush_parser::ParserImpl,
+) -> Result<interfaces::KeySequence, BindError> {
     // First trim any whitespace.
     let input = input.trim();
 
-    let parsed = brush_parser::readline_binding::parse_key_sequence(input)?;
+    let parsed = brush_parser::readline_binding::parse_key_sequence_with(input, parser_impl)?;
     let abstract_seq = key_sequence_to_abstract_strokes(&parsed)?;
 
     Ok(abstract_seq)
@@ -287,6 +311,7 @@ fn parse_key_sequence(input: &str) -> Result<interfaces::KeySequence, BindError>
 
 fn parse_key_sequence_and_shell_command(
     input: &str,
+    parser_impl: brush_parser::ParserImpl,
 ) -> Result<(interfaces::KeySequence, String), BindError> {
     tracing::debug!(target: trace_categories::INPUT,
         "parsing key binding entry: '{input}'"
@@ -297,7 +322,10 @@ fn parse_key_sequence_and_shell_command(
 
     // This should be something of the form:
     //     "KEY-SEQUENCE": SHELL-COMMAND
-    let binding = brush_parser::readline_binding::parse_key_sequence_shell_cmd_binding(input)?;
+    let binding = brush_parser::readline_binding::parse_key_sequence_shell_cmd_binding_with(
+        input,
+        parser_impl,
+    )?;
     let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
     Ok((abstract_seq, binding.shell_cmd))
@@ -312,6 +340,7 @@ enum BindableReadlineTarget {
 
 fn parse_key_sequence_and_readline_target(
     input: &str,
+    parser_impl: brush_parser::ParserImpl,
 ) -> Result<(interfaces::KeySequence, BindableReadlineTarget), BindError> {
     tracing::debug!(target: trace_categories::INPUT,
         "parsing key binding entry: '{input}'"
@@ -323,7 +352,10 @@ fn parse_key_sequence_and_readline_target(
     // This should be of one of these forms:
     //     "KEY-SEQUENCE":function-name
     //     "KEY-SEQUENCE":readline-command
-    let binding = brush_parser::readline_binding::parse_key_sequence_readline_binding(input)?;
+    let binding = brush_parser::readline_binding::parse_key_sequence_readline_binding_with(
+        input,
+        parser_impl,
+    )?;
     let abstract_seq = key_sequence_to_abstract_strokes(&binding.seq)?;
 
     match binding.target {
@@ -332,8 +364,10 @@ fn parse_key_sequence_and_readline_target(
             Ok((abstract_seq, BindableReadlineTarget::Function(func)))
         }
         brush_parser::readline_binding::ReadlineTarget::Macro(target_seq_str) => {
-            let parsed_target =
-                brush_parser::readline_binding::parse_key_sequence(&target_seq_str)?;
+            let parsed_target = brush_parser::readline_binding::parse_key_sequence_with(
+                &target_seq_str,
+                parser_impl,
+            )?;
             let abstract_target = key_sequence_to_abstract_strokes(&parsed_target)?;
             Ok((abstract_seq, BindableReadlineTarget::Macro(abstract_target)))
         }
@@ -445,7 +479,7 @@ const fn to_onoff(value: bool) -> &'static str {
 
 fn display_funcs_and_bindings(
     bindings: &dyn interfaces::KeyBindings,
-    context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    output: &mut Vec<u8>,
     reusable: bool,
 ) -> Result<(), BindError> {
     let mut sequences_by_func: HashMap<InputFunction, Vec<KeySequence>> = HashMap::new();
@@ -466,21 +500,21 @@ fn display_funcs_and_bindings(
         match sequences_by_func.get(&func) {
             Some(seqs) if reusable => {
                 for seq in seqs {
-                    writeln!(context.stdout(), "\"{seq}\": {func}")?;
+                    writeln!(output, "\"{seq}\": {func}")?;
                 }
             }
             Some(seqs) => {
                 writeln!(
-                    context.stdout(),
+                    output,
                     "{func} can be found on {}.",
                     seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
                 )?;
             }
             None if reusable => {
-                writeln!(context.stdout(), "# {func} (not bound)")?;
+                writeln!(output, "# {func} (not bound)")?;
             }
             None => {
-                writeln!(context.stdout(), "{func} is not bound to any keys")?;
+                writeln!(output, "{func} is not bound to any keys")?;
             }
         }
     }
@@ -490,14 +524,14 @@ fn display_funcs_and_bindings(
 
 fn display_macros(
     bindings: &dyn interfaces::KeyBindings,
-    context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    output: &mut Vec<u8>,
     reusable: bool,
 ) -> Result<(), BindError> {
     for (left, right) in bindings.get_macros() {
         if reusable {
-            writeln!(context.stdout(), "\"{left}\": \"{right}\"")?;
+            writeln!(output, "\"{left}\": \"{right}\"")?;
         } else {
-            writeln!(context.stdout(), "{left} outputs {right}")?;
+            writeln!(output, "{left} outputs {right}")?;
         }
     }
 
@@ -532,8 +566,11 @@ mod tests {
 
     #[test]
     fn parse_example_key_sequence_and_readline_func() {
-        let (key_seq, target) =
-            parse_key_sequence_and_readline_target(r#""\C-a":beginning-of-line"#).unwrap();
+        let (key_seq, target) = parse_key_sequence_and_readline_target(
+            r#""\C-a":beginning-of-line"#,
+            brush_parser::ParserImpl::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             key_seq,
@@ -553,8 +590,11 @@ mod tests {
 
     #[test]
     fn parse_escape_char_key_binding() {
-        let (key_seq, target) =
-            parse_key_sequence_and_readline_target(r#""\er":transpose-chars"#).unwrap();
+        let (key_seq, target) = parse_key_sequence_and_readline_target(
+            r#""\er":transpose-chars"#,
+            brush_parser::ParserImpl::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             key_seq,

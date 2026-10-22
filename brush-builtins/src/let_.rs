@@ -1,17 +1,22 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct LetCommand {
     /// Arithmetic expressions to evaluate.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "automatic", allow_negative_numbers)]
     exprs: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(LetCommand);
+brush_winnow_args_adapter::impl_parse_args!(LetCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for LetCommand {
     type Error = brush_core::Error;
@@ -23,12 +28,18 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for LetCommand {
         let mut result = ExecutionExitCode::InvalidUsage.into();
 
         if self.exprs.is_empty() {
-            writeln!(context.stderr(), "missing expression")?;
+            let mut stderr_output = Vec::new();
+            writeln!(stderr_output, "missing expression")?;
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
             return Ok(result);
         }
 
         for expr in &self.exprs {
-            let parsed = brush_parser::arithmetic::parse(expr.as_str())?;
+            let parsed = brush_parser::arithmetic::parse_with(
+                expr.as_str(),
+                context.shell.parser_options().parser_impl,
+            )?;
             let evaluated = parsed.eval(context.shell)?;
 
             if evaluated == 0 {
