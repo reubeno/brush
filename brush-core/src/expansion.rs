@@ -1172,7 +1172,11 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Ok(self.shell.working_dir().to_string_lossy())
             }
             brush_parser::word::TildeExpr::OldWorkingDir => {
-                if let Some(old_pwd) = self.shell.env_str("OLDPWD") {
+                // OLDPWD may be declared without a value (e.g. at startup); only
+                // expand `~-` when it actually has one.
+                if self.shell.env().is_set("OLDPWD")
+                    && let Some(old_pwd) = self.shell.env_str("OLDPWD")
+                {
                     Ok(old_pwd)
                 } else {
                     Ok(Cow::Borrowed("~-"))
