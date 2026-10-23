@@ -49,6 +49,67 @@ mod unix {
         let _ = shell.eval_arithmetic(&parsed_expr).unwrap();
     }
 
+    /// A realistic script exercising a mixed set of shell constructs.
+    const MIXED_SCRIPT: &str = r#"
+declare x=10
+x=$((x * 2 + 5))
+y=${x:-0}
+name="brush"
+echo "$name-$y" > /dev/null
+printf '%s\n' "$y" > /dev/null
+acc=0
+for i in 1 2 3 4 5; do
+    acc=$((acc + i))
+done
+n=0
+while [ "$n" -lt 10 ]; do
+    n=$((n + 1))
+done
+if [ "$y" -gt 20 ]; then
+    result="large"
+elif [ "$y" -gt 10 ]; then
+    result="medium"
+else
+    result="small"
+fi
+case "$result" in
+    large) echo big ;;
+    small) echo little ;;
+    *) echo mid ;;
+esac > /dev/null
+greet() {
+    echo "hello $1"
+}
+greet world > /dev/null
+out=$(echo nested)
+arr=(one two three)
+echo "${arr[1]}" > /dev/null
+set -- alpha beta gamma
+[ $# -eq 3 ]
+[ -n "$y" ] && echo nonempty > /dev/null
+[ -z "" ] || echo fallback > /dev/null
+command -v echo > /dev/null
+read -r line < /dev/null
+echo done
+"#;
+
+    /// A pool of distinct commands, sized so that it exceeds the 64-entry parse
+    /// cache and the cache cannot serve every command.
+    fn mixed_command_pool() -> Vec<String> {
+        let mut pool = Vec::with_capacity(128);
+        for i in 0..128 {
+            match i % 6 {
+                0 => pool.push(format!("echo cmd_{i} > /dev/null")),
+                1 => pool.push(format!("n_{i}=$(({i} * 2))")),
+                2 => pool.push(format!("echo ${{n_{i}:-{i}}} > /dev/null")),
+                3 => pool.push(format!("[ {i} -gt 0 ]")),
+                4 => pool.push(format!("printf '%s\\n' {i} > /dev/null")),
+                _ => pool.push(format!("x_{i}={i}")),
+            }
+        }
+        pool
+    }
+
     /// This function defines core shell benchmarks.
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
         // Construct a runtime for us to run async code on.
@@ -152,6 +213,34 @@ mod unix {
                 || shell.clone(),
                 |s| {
                     rt.block_on(run_one_command(s, "for ((i = 0; i < 10; i++)); do :; done"));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        // Benchmark: running a realistic script with a mixed set of commands.
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("run_mixed_script", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(s, MIXED_SCRIPT));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        // Benchmark: running a mixed set of distinct commands one at a time.
+        // The pool exceeds the 64-entry parse cache, so most commands miss.
+        let shell = rt.block_on(instantiate_shell());
+        let mixed_commands = mixed_command_pool();
+        c.bench_function("run_mixed_commands", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    for command in &mixed_commands {
+                        rt.block_on(run_one_command(s, command));
+                    }
                 },
                 criterion::BatchSize::SmallInput,
             );
