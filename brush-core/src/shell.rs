@@ -109,6 +109,9 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Clone depth from the original ancestor shell.
     depth: usize,
 
+    /// How many loops enclose the running command; see [`Shell::loop_depth`].
+    loop_depth: usize,
+
     /// Shell name
     name: Option<String>,
 
@@ -197,6 +200,10 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            // A subshell starts in its parent's loops: `break` in a command substitution or
+            // a simple command's pipeline stage acts on them. A subshell that runs a compound
+            // command starts outside them instead; see `Shell::start_outside_loops`.
+            loop_depth: self.loop_depth,
         }
     }
 }

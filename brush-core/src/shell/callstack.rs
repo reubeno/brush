@@ -13,6 +13,32 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         self.call_stack.in_function()
     }
 
+    /// Returns how many loops enclose the command the shell is running: the loops that
+    /// `break` and `continue` can leave.
+    ///
+    /// A function's body starts outside its caller's loops, as does a compound command
+    /// that runs in a subshell of its own (`( ... )`, a pipeline stage, or an
+    /// asynchronous list). A sourced script, `eval`, a trap handler, a command or process
+    /// substitution, and a simple command run in a subshell share the loops they're run
+    /// in.
+    pub const fn loop_depth(&self) -> usize {
+        self.loop_depth
+    }
+
+    /// Enters a loop -- its condition and its body -- on the shell, until the returned
+    /// guard is dropped.
+    pub(crate) const fn enter_loop(&mut self) -> ShellGuard<'_, SE> {
+        let loop_depth = self.loop_depth;
+        self.loop_depth += 1;
+        ShellGuard::new(self, Leave::Loop { loop_depth })
+    }
+
+    /// Starts this shell, a subshell of its own running a compound command, outside the
+    /// loops it was created in.
+    pub(crate) const fn start_outside_loops(&mut self) {
+        self.loop_depth = 0;
+    }
+
     /// Updates the shell's internal tracking state to reflect that a new interactive
     /// session is being started.
     pub fn start_interactive_session(&mut self) -> Result<(), error::Error> {
@@ -120,7 +146,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let leave = Leave::Function {
             frames: self.call_stack.depth(),
             scopes: self.env.scope_depth(),
+            loop_depth: self.loop_depth,
         };
+
+        // The function's body starts outside its caller's loops.
+        self.loop_depth = 0;
 
         Ok(ShellGuard::new(self, leave))
     }
@@ -185,7 +215,7 @@ fn repeated_char_str(c: char, count: usize) -> String {
 }
 
 /// Guards something entered on a shell -- a function call, a script, a trap handler, a
-/// variable scope, or a block on trap delivery -- and leaves it when dropped: when
+/// loop, a variable scope, or a block on trap delivery -- and leaves it when dropped: when
 /// whatever runs in it returns, fails, or is cancelled (its future dropped, as when the
 /// user hits Ctrl-C during completion).
 ///
@@ -196,12 +226,17 @@ pub(crate) struct ShellGuard<'a, SE: crate::extensions::ShellExtensions> {
 }
 
 /// What a [`ShellGuard`] leaves when it's dropped, with how deep the call stack (`frames`)
-/// and variable scopes (`scopes`) were once it was entered.
+/// and variable scopes (`scopes`) were once it was entered, and how many loops enclosed
+/// what entered it (`loop_depth`).
 #[derive(Clone, Copy, Debug)]
 enum Leave {
     Function {
         frames: usize,
         scopes: usize,
+        loop_depth: usize,
+    },
+    Loop {
+        loop_depth: usize,
     },
     Script {
         frames: usize,
@@ -265,10 +300,11 @@ impl<SE: crate::extensions::ShellExtensions> ShellGuard<'_, SE> {
     /// Reports that what ran in this guard didn't leave everything it entered.
     fn report_imbalance(&self) {
         tracing::error!(
-            "shell state out of balance when leaving {:?}: call stack {} deep, {} variable scopes",
+            "shell state out of balance when leaving {:?}: call stack {} deep, {} variable scopes, {} loops",
             self.leave,
             self.shell.call_stack.depth(),
-            self.shell.env.scope_depth()
+            self.shell.env.scope_depth(),
+            self.shell.loop_depth
         );
     }
 }
@@ -280,7 +316,13 @@ impl<SE: crate::extensions::ShellExtensions> Drop for ShellGuard<'_, SE> {
         // entered is on top. If it isn't, report that and pop nothing, rather than risk
         // popping something else.
         let left = match self.leave {
-            Leave::Function { frames, scopes } => {
+            Leave::Function {
+                frames,
+                scopes,
+                loop_depth,
+            } => {
+                self.shell.loop_depth = loop_depth;
+
                 // Pop the frame and its scope together, or neither.
                 let left = self.frame_on_top(frames, callstack::FrameType::is_function)
                     && self.pop_scope(scopes, env::EnvironmentScope::Local);
@@ -293,6 +335,11 @@ impl<SE: crate::extensions::ShellExtensions> Drop for ShellGuard<'_, SE> {
                     let prefix = repeated_char_str(' ', depth);
                     tracing::debug!(target: trace_categories::FUNCTIONS, "Exiting func  [depth={depth}]: {prefix}{}", call.function_name);
                 }
+                left
+            }
+            Leave::Loop { loop_depth } => {
+                let left = self.shell.loop_depth == loop_depth + 1;
+                self.shell.loop_depth = loop_depth;
                 left
             }
             Leave::Script { frames } => self.pop_frame(frames, callstack::FrameType::is_script),
@@ -361,6 +408,41 @@ mod tests {
         script.start_command_string_mode();
         drop(script);
         assert_eq!(shell.call_stack.depth(), frames + 2);
+
+        Ok(())
+    }
+
+    /// Loops and function calls leave the loop depth as they found it, however they end.
+    #[tokio::test]
+    async fn loop_depth_is_restored_however_a_loop_or_function_ends() -> Result<(), error::Error> {
+        let mut shell = crate::Shell::builder()
+            .profile(crate::ProfileLoadBehavior::Skip)
+            .rc(crate::RcLoadBehavior::Skip)
+            .build()
+            .await?;
+        let params = shell.default_exec_params();
+
+        // The shell has no builtins here, so the scripts use none.
+        for script in [
+            "for i in 1 2; do x=$i; done",
+            "until x=1; do x=2; done",
+            "for i in 1; do x=$((1 / 0)); done",
+            "while x=$((1 / 0)); do x=1; done",
+            "f() { for i in 1; do x=$((1 / 0)); done; }; for i in 1; do f; done",
+        ] {
+            let _ = shell
+                .run_string(script, &crate::SourceInfo::default(), &params)
+                .await;
+            assert_eq!(shell.loop_depth(), 0, "{script}");
+        }
+
+        let mut outer = shell.enter_loop();
+        let inner = outer.enter_loop();
+        assert_eq!(inner.loop_depth(), 2);
+        drop(inner);
+        assert_eq!(outer.loop_depth(), 1);
+        drop(outer);
+        assert_eq!(shell.loop_depth(), 0);
 
         Ok(())
     }
