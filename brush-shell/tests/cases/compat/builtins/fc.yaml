@@ -320,3 +320,10 @@ cases:
       : b
       fc -l
       fc -l
+
+  - name: "fc rejects -h and an unknown option with status 2"
+    known_failure: true # TODO(fc): an unknown option is taken as an operand
+    ignore_stderr: true
+    stdin: |
+      (fc -h); echo "rc=$?"
+      (fc -z); echo "rc=$?"

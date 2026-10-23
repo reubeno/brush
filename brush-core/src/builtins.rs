@@ -13,7 +13,7 @@
 pub use futures::future::BoxFuture;
 use std::io::Write;
 
-use crate::{BuiltinError, CommandArg, commands, error, extensions, results};
+use crate::{BuiltinError, CommandArg, commands, error, extensions, openfiles, results};
 
 mod args;
 mod registry;
@@ -136,7 +136,11 @@ async fn invoke<SE: extensions::ShellExtensions, B: Builtin<SE>>(
     let builtin = match B::parse(Invocation::new(&name, args)) {
         Ok(builtin) => builtin,
         Err(usage) => {
-            let _ = writeln!(context.stderr(), "{usage}");
+            if usage.is_help() {
+                write_help(&context, &usage)?;
+            } else {
+                let _ = writeln!(context.stderr(), "{usage}");
+            }
             return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };
@@ -145,6 +149,29 @@ async fn invoke<SE: extensions::ShellExtensions, B: Builtin<SE>>(
         .execute(context)
         .await
         .map_err(|e| error::ErrorKind::BuiltinError(Box::new(e), name).into())
+}
+
+/// Writes the help a help request answers with to standard output, in color
+/// if it's a terminal, as the `help` builtin does. A failure to write it is
+/// ignored, as a failure to write a usage error is; the command fails with the
+/// invalid-usage status either way.
+#[cold]
+fn write_help<SE: extensions::ShellExtensions>(
+    context: &commands::ExecutionContext<'_, SE>,
+    usage: &UsageError,
+) -> Result<(), error::Error> {
+    let Some(mut stdout) = context.try_fd(openfiles::OpenFiles::STDOUT_FD) else {
+        return Ok(());
+    };
+
+    let options = ContentOptions {
+        colorized: stdout.is_terminal(),
+    };
+    if let Some(help) = usage.render_help(&options) {
+        let _ = write!(stdout, "{}", help?).and_then(|()| stdout.flush());
+    }
+
+    Ok(())
 }
 
 /// Encapsulates a registration for a built-in command.

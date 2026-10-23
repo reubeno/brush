@@ -7,8 +7,17 @@ use clap::builder::styling;
 
 /// Converts a clap failure into a usage error, whose message is clap's
 /// rendering of it.
+///
+/// A request for help becomes a [help request](UsageError::help), answered
+/// with the help clap rendered: the command's, or the subcommand's that was
+/// asked about.
 pub fn to_usage_error(err: &clap::Error) -> UsageError {
-    UsageError::new(err.to_string())
+    if err.kind() == clap::error::ErrorKind::DisplayHelp {
+        let help = err.render();
+        UsageError::help(move |options| Ok(render(&help, options)))
+    } else {
+        UsageError::new(err.to_string())
+    }
 }
 
 /// Parses a builtin's arguments with clap.
@@ -20,9 +29,9 @@ pub fn to_usage_error(err: &clap::Error) -> UsageError {
 /// # Errors
 ///
 /// Returns a [`UsageError`] if clap rejects the arguments, or they ask for
-/// help.
+/// help (a [help request](UsageError::help)).
 pub fn parse<T: clap::Parser>(invocation: Invocation<'_>) -> Result<T, UsageError> {
-    T::try_parse_from(argv(invocation)).map_err(|e| to_usage_error(&e))
+    try_parse_from::<T>(argv(invocation)).map_err(|e| to_usage_error(&e))
 }
 
 /// Like [`parse`], for a builtin that takes options with a leading `+` as
@@ -39,7 +48,7 @@ pub fn parse<T: clap::Parser>(invocation: Invocation<'_>) -> Result<T, UsageErro
 pub fn parse_with_plus_options<T: clap::Parser>(
     invocation: Invocation<'_>,
 ) -> Result<T, UsageError> {
-    T::try_parse_from(rewrite_plus_options(argv(invocation))).map_err(|e| to_usage_error(&e))
+    try_parse_from::<T>(rewrite_plus_options(argv(invocation))).map_err(|e| to_usage_error(&e))
 }
 
 /// Like [`parse`], but leaves the first `--`, and every word after it,
@@ -104,8 +113,45 @@ pub fn parse_declarations<T: clap::Parser>(
         options
     };
 
-    let this = T::try_parse_from(options).map_err(|e| to_usage_error(&e))?;
+    let this = try_parse_from::<T>(options).map_err(|e| to_usage_error(&e))?;
     Ok((this, declarations))
+}
+
+/// Returns `T`'s clap command, with clap's `-h, --help` flag replaced by a
+/// `--help` flag: `-h` isn't a request for help, but an option the builtin
+/// doesn't take. A command that disables clap's flag is left alone.
+///
+/// The command renders its help as [`content`] does, so a help request's help
+/// is the same as the help `help NAME` shows.
+fn command<T: clap::CommandFactory>() -> clap::Command {
+    let command = T::command()
+        .styles(brush_help_styles())
+        .next_line_help(false);
+    if command.is_disable_help_flag_set() {
+        return command;
+    }
+    command.disable_help_flag(true).arg(
+        clap::Arg::new("help")
+            .long("help")
+            .action(clap::ArgAction::HelpShort)
+            .global(true)
+            .help("Print help"),
+    )
+}
+
+/// Parses `args` (starting with the bin name) as `T`, with [`command`]'s
+/// help flag.
+fn try_parse_from<T: clap::Parser>(
+    args: impl IntoIterator<Item = String>,
+) -> Result<T, clap::Error> {
+    let mut command = command::<T>();
+    let mut args = args.into_iter().peekable();
+    // Clap takes a bin name from a path's file name, and `.` has none.
+    if let Some(name) = args.peek() {
+        command.set_bin_name(name);
+    }
+    let mut matches = command.try_get_matches_from_mut(args)?;
+    T::from_arg_matches_mut(&mut matches).map_err(|e| e.format(&mut command))
 }
 
 /// Returns the invocation's name, followed by its arguments as strings: what
@@ -155,7 +201,7 @@ pub fn try_parse_before_double_dash<T: clap::Parser>(
 ) -> Result<(T, Vec<String>), clap::Error> {
     let mut args = args.into_iter();
     let mut found_double_dash = false;
-    let parsed = T::try_parse_from(args.by_ref().take_while(|a| {
+    let parsed = try_parse_from::<T>(args.by_ref().take_while(|a| {
         found_double_dash = a == "--";
         !found_double_dash
     }))?;
@@ -184,20 +230,11 @@ pub fn content<T: clap::Parser>(
     content_type: ContentType,
     options: &ContentOptions,
 ) -> Result<String, brush_core::Error> {
-    let mut clap_command = T::command()
-        .styles(brush_help_styles())
-        .next_line_help(false);
+    let mut clap_command = command::<T>();
     clap_command.set_bin_name(name);
 
     let s = match content_type {
-        ContentType::DetailedHelp => {
-            let rendered = clap_command.render_help();
-            if options.colorized {
-                rendered.ansi().to_string()
-            } else {
-                rendered.to_string()
-            }
-        }
+        ContentType::DetailedHelp => render(&clap_command.render_help(), options),
         ContentType::ShortUsage => get_builtin_short_usage(name, &clap_command),
         ContentType::ShortDescription => get_builtin_short_description(name, &clap_command),
         ContentType::ManPage => {
@@ -206,6 +243,15 @@ pub fn content<T: clap::Parser>(
     };
 
     Ok(s)
+}
+
+/// Renders clap's styled help, in color if `options` asks for it.
+fn render(help: &clap::builder::StyledStr, options: &ContentOptions) -> String {
+    if options.colorized {
+        help.ansi().to_string()
+    } else {
+        help.to_string()
+    }
 }
 
 fn get_builtin_short_description(name: &str, command: &clap::Command) -> String {
@@ -452,5 +498,90 @@ mod tests {
         assert!(flags.x && flags.plus_x);
         let declarations: Vec<_> = declarations.into_iter().map(String::from).collect();
         assert_eq!(declarations, ["a", "-", "+", "--", "b"]);
+    }
+
+    #[derive(Parser, Debug)]
+    struct WithSubcommands {
+        #[command(subcommand)]
+        command: Sub,
+    }
+
+    #[derive(clap::Subcommand, Debug)]
+    enum Sub {
+        /// Lists things.
+        List {
+            /// How many.
+            #[arg(long)]
+            count: Option<u32>,
+        },
+    }
+
+    #[test]
+    fn a_subcommand_s_help_is_clap_s_rendering_of_it() {
+        let message = help::<WithSubcommands>(&["list", "--help"], false);
+        assert!(message.contains("Usage: f list"), "{message}");
+        assert!(message.contains("--count"), "{message}");
+    }
+
+    #[test]
+    fn a_subcommand_takes_help_but_not_h() {
+        let err = parse::<WithSubcommands>(Invocation::new("f", ["list", "-h"])).unwrap_err();
+        assert!(!err.is_help());
+        assert!(err.to_string().contains("'-h'"), "{err}");
+    }
+
+    /// Does a thing.
+    ///
+    /// At length, which only the long help shows.
+    #[derive(Parser, Debug)]
+    struct Documented {
+        /// Be loud.
+        ///
+        /// Louder than that, which only the long help shows.
+        #[arg(short = 'l')]
+        loud: bool,
+    }
+
+    /// Renders the help that `args` ask `T` for.
+    fn help<T: clap::Parser + std::fmt::Debug>(args: &[&str], colorized: bool) -> String {
+        let err = parse::<T>(Invocation::new("f", args.iter().copied())).unwrap_err();
+        assert!(err.is_help(), "{err}");
+        err.render_help(&ContentOptions { colorized })
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_help_request_s_help_is_the_detailed_help_in_color_or_not() {
+        for colorized in [false, true] {
+            let options = ContentOptions { colorized };
+            let detailed = content::<Documented>("f", ContentType::DetailedHelp, &options).unwrap();
+            assert_eq!(help::<Documented>(&["--help"], colorized), detailed);
+            assert_eq!(help::<Documented>(&["-l", "--help"], colorized), detailed);
+            assert_eq!(detailed.contains('\x1b'), colorized, "{detailed}");
+        }
+        assert!(!help::<Documented>(&["--help"], false).contains("only the long help"));
+    }
+
+    #[test]
+    fn help_and_misuse_name_the_invoked_name_even_if_it_is_a_dot() {
+        let err = parse::<Strict>(Invocation::new(".", ["-z"])).unwrap_err();
+        assert!(err.to_string().contains("Usage: . "), "{err}");
+        let err = parse::<Strict>(Invocation::new(".", ["--help"])).unwrap_err();
+        assert!(err.to_string().contains("Usage: . "), "{err}");
+    }
+
+    #[test]
+    fn a_subcommand_s_help_is_in_color_when_asked() {
+        assert!(help::<WithSubcommands>(&["list", "--help"], true).contains('\x1b'));
+        assert!(!help::<WithSubcommands>(&["list", "--help"], false).contains('\x1b'));
+    }
+
+    #[test]
+    fn a_command_with_subcommands_has_its_own_detailed_help() {
+        let detailed =
+            content::<WithSubcommands>("f", ContentType::DetailedHelp, &ContentOptions::default())
+                .unwrap();
+        assert_eq!(help::<WithSubcommands>(&["--help"], false), detailed);
     }
 }

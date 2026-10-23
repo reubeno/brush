@@ -453,3 +453,12 @@ cases:
     known_failure: true # TODO(signals): control characters are dropped from any input
     stdin: |
       printf 'a\003b\004c\n' | { read -r x; echo "rc=$? len=${#x}"; }
+
+  - name: "read -h is an invalid option and prints nothing on stdout"
+    stdin: |
+      x=$(read -h 2>/dev/null); echo "rc=$? len=${#x}"
+
+  - name: "read --help after a name is a name"
+    known_failure: true # TODO(read): clap takes --help anywhere as a request for help
+    stdin: |
+      x=$(read x --help 2>/dev/null </dev/null); echo "rc=$? len=${#x}"

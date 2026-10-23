@@ -110,3 +110,10 @@ cases:
       cd sub
       started_by=$("$0" -c 'exec ./prog')
       [[ ${started_by} == "${PWD}/prog" ]] && echo "full path" || echo "other: ${started_by}"
+
+  - name: "exec rejects -h and an unknown option with status 2"
+    known_failure: true # TODO(exec): an unknown option is taken as an operand
+    ignore_stderr: true
+    stdin: |
+      (exec -h); echo "rc=$?"
+      (exec -z); echo "rc=$?"

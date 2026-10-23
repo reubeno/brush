@@ -160,3 +160,7 @@ cases:
       set -u
       . ./script.sh; echo "rc=$?"
       echo next
+
+  - name: ". --help prints what help . prints"
+    stdin: |
+      [[ "$(. --help; echo .)" == "$(help .; echo .)" ]] && echo "same"

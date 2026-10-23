@@ -179,3 +179,41 @@ cases:
       rmdir "${start}/gone"
       cd ..; echo "status: $?"
       [[ $PWD == "${start}" ]] && echo "back at the start" || echo "somewhere else"
+
+  - name: "cd --help prints help on stdout"
+    stdin: |
+      start=$PWD
+      cd --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(cd --help 2>/dev/null) ]] && echo "help on stdout"
+      [[ -z $(cd --help 2>&1 >/dev/null) ]] && echo "nothing on stderr"
+      [[ $PWD == "${start}" ]] && echo "directory unchanged"
+
+  - name: "cd --help prints what help cd prints"
+    stdin: |
+      [[ "$(cd --help; echo .)" == "$(help cd; echo .)" ]] && echo "same"
+
+  - name: "cd -h is an invalid option and prints nothing on stdout"
+    stdin: |
+      x=$(cd -h 2>/dev/null); echo "rc=$? len=${#x}"
+      [[ -n $(cd -h 2>&1 >/dev/null) ]] && echo "error on stderr"
+
+  - name: "cd --help after an operand is an operand"
+    known_failure: true # TODO(cd): clap takes --help anywhere as a request for help
+    stdin: |
+      cd /tmp --help; echo "rc=$?"
+
+  - name: "cd --help with stdout closed or read-only fails quietly"
+    stdin: |
+      { cd --help >&-; echo "rc=$?"; } 2>&1
+      { cd --help 1</dev/null; echo "rc=$?"; } 2>&1
+
+  - name: "cd --help with stdout full fails quietly"
+    incompatible_platforms: ["macos"] # no /dev/full
+    stdin: |
+      { cd --help >/dev/full; echo "rc=$?"; } 2>&1
+
+  - name: "cd --help fails an errexit shell and fires the ERR trap"
+    stdin: |
+      trap 'echo "ERR rc=$?"' ERR
+      cd --help >/dev/null; echo "after"
+      (set -e; cd --help >/dev/null; echo "not reached"); echo "subshell rc=$?"
