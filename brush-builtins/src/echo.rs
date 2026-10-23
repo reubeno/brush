@@ -24,7 +24,55 @@ pub(crate) struct EchoCommand {
     args: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(EchoCommand, keep_double_dash = args);
+brush_clap_adapter::impl_parse_args!(
+    EchoCommand,
+    parse = |invocation: builtins::Invocation<'_>| Ok(Self::parse_args(invocation))
+);
+
+impl EchoCommand {
+    /// Parses `echo`'s arguments the way bash does. Leading words made up of
+    /// `-` and only the letters `n`, `e` and `E` are options. They can repeat,
+    /// and when both `-e` and `-E` are given the last one wins. The first word
+    /// that is not such an option, and every word after it, is echoed as is.
+    fn parse_args(invocation: builtins::Invocation<'_>) -> Self {
+        let mut this = Self {
+            no_trailing_newline: false,
+            interpret_backslash_escapes: false,
+            no_interpret_backslash_escapes: false,
+            args: vec![],
+        };
+
+        let mut args = invocation.into_args().into_iter().map(String::from);
+        for arg in args.by_ref() {
+            let is_option = arg
+                .strip_prefix('-')
+                .is_some_and(|flags| !flags.is_empty() && flags.chars().all(|c| "neE".contains(c)));
+
+            if !is_option {
+                this.args.push(arg);
+                break;
+            }
+
+            for c in arg.chars().skip(1) {
+                match c {
+                    'n' => this.no_trailing_newline = true,
+                    'e' => {
+                        this.interpret_backslash_escapes = true;
+                        this.no_interpret_backslash_escapes = false;
+                    }
+                    'E' => {
+                        this.interpret_backslash_escapes = false;
+                        this.no_interpret_backslash_escapes = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        this.args.extend(args);
+
+        this
+    }
+}
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EchoCommand {
     type Error = brush_core::Error;
