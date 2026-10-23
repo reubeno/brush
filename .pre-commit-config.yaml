@@ -97,7 +97,7 @@ repos:
   # Spelling. Configured by Cargo.toml [workspace.metadata.typos].
   # ---------------------------------------------------------------------------
   - repo: https://github.com/crate-ci/typos
-    rev: 7f9d0819ca1c008ade73f4b41fa9d258d48f605b # frozen: v1.51.1
+    rev: b859c0df7f391deba73030f79b957e62b4d81dc6 # frozen: varcon-core-v5.0.7
     hooks:
       - id: typos
         alias: spelling
@@ -116,7 +116,7 @@ repos:
   # .github/workflows/workflow-checks.yaml and is not redundant with it.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: fa412071e4f5d44d44f9e365f4676f9df92456a2 # frozen: v1.30.1
+    rev: d25b2b1dc80689fb633f21f6978bba69871181d3 # frozen: v1.31.0
     hooks:
       - id: zizmor
         alias: workflows
@@ -163,7 +163,7 @@ repos:
   # hook would avoid it, but Dependabot skips those.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/boidolr/ast-grep-pre-commit
-    rev: 7bae9c67e1a003cd5ef629c64f0466dc46556b3b # frozen: 0.45.3
+    rev: 13126a89e67880b0dac82cf40350abd2cfedd458 # frozen: 0.51.0
     hooks:
       - id: ast-grep
         alias: structure
