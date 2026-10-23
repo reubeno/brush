@@ -6,9 +6,14 @@ use brush_core::builtins::{ContentOptions, ContentType, Invocation, UsageError};
 use clap::builder::styling;
 
 /// Converts a clap failure into a usage error, whose message is clap's
-/// rendering of it.
+/// rendering of it. A request for help (`--help`) becomes
+/// [`UsageError::help`].
 pub fn to_usage_error(err: &clap::Error) -> UsageError {
-    UsageError::new(err.to_string())
+    if err.kind() == clap::error::ErrorKind::DisplayHelp {
+        UsageError::help(err.to_string())
+    } else {
+        UsageError::new(err.to_string())
+    }
 }
 
 /// Parses a builtin's arguments with clap.
@@ -381,6 +386,15 @@ mod tests {
     fn a_usage_error_names_the_invoked_name() {
         let err = parse::<Strict>(Invocation::new("alias", ["-z"])).unwrap_err();
         assert!(err.to_string().contains("Usage: alias"), "{err}");
+    }
+
+    #[test]
+    fn help_is_a_request_for_help_and_misuse_is_not() {
+        let help = parse::<Strict>(Invocation::new("f", ["--help"])).unwrap_err();
+        assert!(help.is_help(), "{help}");
+        assert!(help.to_string().contains("Usage: f"), "{help}");
+        let misuse = parse::<Strict>(Invocation::new("f", ["-z"])).unwrap_err();
+        assert!(!misuse.is_help(), "{misuse}");
     }
 
     /// Splits `args` with [`try_parse_before_double_dash`], into what clap

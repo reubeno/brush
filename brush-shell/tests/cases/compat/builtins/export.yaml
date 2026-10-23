@@ -187,7 +187,6 @@ cases:
       echo "still running: $?"
 
   - name: "export --help prints help on stdout"
-    known_failure: true # TODO(export): --help prints on stderr
     stdin: |
       export --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(export --help 2>/dev/null) ]] && echo "help on stdout"

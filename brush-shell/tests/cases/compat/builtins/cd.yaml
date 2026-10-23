@@ -179,3 +179,9 @@ cases:
       rmdir "${start}/gone"
       cd ..; echo "status: $?"
       [[ $PWD == "${start}" ]] && echo "back at the start" || echo "somewhere else"
+
+  - name: "cd --help prints help on stdout"
+    stdin: |
+      cd --help >/dev/null 2>&1; echo "rc=$?"
+      [[ -n $(cd --help 2>/dev/null) ]] && echo "help on stdout"
+      [[ -z $(cd --help 2>&1 >/dev/null) ]] && echo "nothing on stderr"

@@ -136,7 +136,11 @@ async fn invoke<SE: extensions::ShellExtensions, B: Builtin<SE>>(
     let builtin = match B::parse(Invocation::new(&name, args)) {
         Ok(builtin) => builtin,
         Err(usage) => {
-            let _ = writeln!(context.stderr(), "{usage}");
+            let _ = if usage.is_help() {
+                writeln!(context.stdout(), "{usage}")
+            } else {
+                writeln!(context.stderr(), "{usage}")
+            };
             return Ok(results::ExecutionExitCode::InvalidUsage.into());
         }
     };

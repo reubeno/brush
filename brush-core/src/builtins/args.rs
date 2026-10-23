@@ -65,11 +65,13 @@ impl<'a> Invocation<'a> {
 ///
 /// A parser returns one from [`ParseArgs::parse`]. The shell writes its
 /// message to the builtin's standard error, as it is, and the command fails
-/// with the invalid-usage status (2).
+/// with the invalid-usage status (2). A request for help ([`UsageError::help`])
+/// goes to standard output instead, with the same status, as in bash.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
 pub struct UsageError {
     message: String,
+    help: bool,
 }
 
 impl UsageError {
@@ -81,7 +83,25 @@ impl UsageError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            help: false,
         }
+    }
+
+    /// A request for help (`--help`), answered with `text`.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The help, as the shell is to print it.
+    pub fn help(text: impl Into<String>) -> Self {
+        Self {
+            message: text.into(),
+            help: true,
+        }
+    }
+
+    /// Returns whether this is a request for help rather than misuse.
+    pub const fn is_help(&self) -> bool {
+        self.help
     }
 }
 
@@ -226,6 +246,15 @@ mod tests {
         );
         assert_eq!(UsageError::new(String::from("x")), UsageError::new("x"));
         assert_ne!(UsageError::new("x"), UsageError::new("y"));
+    }
+
+    #[test]
+    fn a_help_request_is_told_apart_from_misuse() {
+        let help = UsageError::help("cmd: cmd [-a]");
+        assert!(help.is_help());
+        assert_eq!(help.to_string(), "cmd: cmd [-a]");
+        assert!(!UsageError::new("cmd: bad").is_help());
+        assert_ne!(help, UsageError::new("cmd: cmd [-a]"));
     }
 
     #[test]
