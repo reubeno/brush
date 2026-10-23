@@ -1293,3 +1293,23 @@ cases:
       declare -p c
       f() { local x=1 -r 2>/dev/null; echo "local: $?"; x=2; declare -p x; }
       f
+
+  - name: "Declaration builtins evaluate an integer variable's value"
+    stdin: |
+      declare -i n=1+1; declare -p n
+      typeset -i k=3*4; echo "k=$k"
+      declare -ai a=(1+1 2*3); a[2]=4*4; a+=(1+0); echo "a=${a[*]}"
+      declare -Ai h; h[k]=2+3; echo "h[k]=${h[k]}"
+      f() { local -i l=2**3; echo "l=$l"; local -I n=n*2; echo "n=$n"; }; f
+      declare +i n=1+1; declare -p n
+      declare -i m; m=1+1 env | grep '^m='
+      declare -ri r=1; x=0; declare r=x++ 2>/dev/null; echo "rc=$? x=$x"
+
+  - name: "An integer variable's value is evaluated where the variable is"
+    stdin: |
+      n=10; f() { local -i n=n+1; echo "local n=$n"; local -i m='n=7'; }; f; echo "n=$n"
+      a=(1); x=0; declare -Ai a=x++ 2>/dev/null; echo "rc=$? x=$x"
+      counter=0; declare -Ai m=('counter++' 7); echo "counter=$counter ${!m[*]} ${m[*]}"
+      declare -ai b=(7 'b[0]+1'); echo "b=${b[*]}"
+      b=(5 'b[1]+1'); echo "b=${b[*]}"
+      b+=([0]=2 'b[0]*3'); declare -p b
