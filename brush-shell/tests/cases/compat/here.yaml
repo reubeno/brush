@@ -128,6 +128,18 @@ cases:
       ${unset_var:-"default value"}
       EOF
 
+  - name: "Here doc expands parameter words as if double-quoted"
+    stdin: |
+      blanks=("" "")
+      cat <<EOF
+      ${unset_var:-'single'} ${unset_var:-a\ b} ${unset_var:-\"d\"}
+      ${blanks[*]:+ALT} ${blanks[@]:+ALT}
+      EOF
+      IFS=
+      cat <<EOF
+      [${blanks[*]:+ALT}] [${blanks[@]:+ALT}]
+      EOF
+
   - name: "Here doc preserves literal double quotes"
     stdin: |
       cat <<EOF

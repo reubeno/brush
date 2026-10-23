@@ -200,11 +200,22 @@ impl From<ExpansionPiece> for Expansion {
 }
 
 impl Expansion {
-    fn classify(&self) -> ParameterState {
+    /// Decides whether an expanded parameter counts as unset, empty, or non-empty, which
+    /// is what the `-`, `=`, `?` and `+` operators (and their `:` forms) test.
+    fn classify<SE: extensions::ShellExtensions>(
+        &self,
+        shell: &Shell<SE>,
+        in_double_quotes: bool,
+    ) -> ParameterState {
+        // bash tests the elements joined into one string. Two or more elements join
+        // with a separator, so they're non-empty even if each element is "" -- except
+        // a double-quoted `[*]`/`$*` with an empty IFS, whose separator is empty.
         let non_empty = self
             .fields
             .iter()
-            .any(|field| field.0.iter().any(|piece| !piece.as_str().is_empty()));
+            .any(|field| field.0.iter().any(|piece| !piece.as_str().is_empty()))
+            || (self.fields.len() > 1
+                && !(self.concatenate && in_double_quotes && shell.ifs().is_empty()));
 
         if self.undefined {
             ParameterState::Undefined
@@ -549,6 +560,8 @@ pub(crate) async fn basic_expand_heredoc_word(
 ) -> Result<String, error::Error> {
     let mut expander = WordExpander::new(shell, params);
     expander.heredoc_mode = true;
+    // bash expands a heredoc body as if it were double-quoted.
+    expander.in_double_quotes = true;
     expander.disable_brace_expansion = true;
     expander.basic_expand_to_str(word_str.as_ref()).await
 }
@@ -1293,7 +1306,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .await?;
                 let default_value = default_value.as_ref().map_or("", |v| v.as_str());
 
-                match (test_type, expanded_parameter.classify()) {
+                match (
+                    test_type,
+                    expanded_parameter.classify(self.shell, self.in_double_quotes),
+                ) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         brush_parser::word::ParameterTestType::Unset,
@@ -1313,7 +1329,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .await?;
                 let default_value = default_value.as_ref().map_or("", |v| v.as_str());
 
-                match (test_type, expanded_parameter.classify()) {
+                match (
+                    test_type,
+                    expanded_parameter.classify(self.shell, self.in_double_quotes),
+                ) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         brush_parser::word::ParameterTestType::Unset,
@@ -1339,7 +1358,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .await?;
                 let error_message = error_message.as_ref().map_or("", |v| v.as_str());
 
-                match (test_type, expanded_parameter.classify()) {
+                match (
+                    test_type,
+                    expanded_parameter.classify(self.shell, self.in_double_quotes),
+                ) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         brush_parser::word::ParameterTestType::Unset,
@@ -1366,7 +1388,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     .await?;
                 let alternative_value = alternative_value.as_ref().map_or("", |v| v.as_str());
 
-                match (test_type, expanded_parameter.classify()) {
+                match (
+                    test_type,
+                    expanded_parameter.classify(self.shell, self.in_double_quotes),
+                ) {
                     (_, ParameterState::NonZeroLength)
                     | (
                         brush_parser::word::ParameterTestType::Unset,
@@ -1490,7 +1515,10 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 // bash has nothing to slice when the parameter is unset, or when it
                 // expanded to no fields at all -- an empty array, say -- and yields an
                 // empty slice without validating the offset or the length.
-                if matches!(expanded_parameter.classify(), ParameterState::Undefined) {
+                if matches!(
+                    expanded_parameter.classify(self.shell, self.in_double_quotes),
+                    ParameterState::Undefined
+                ) {
                     return Ok(expanded_parameter.polymorphic_subslice(0, 0));
                 }
 
