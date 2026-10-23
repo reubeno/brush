@@ -785,6 +785,17 @@ async fn execute_builtin_command<SE: extensions::ShellExtensions>(
     }
 }
 
+/// Returns where a function was defined: its file, and the line of its definition.
+fn definition_location(function: &functions::Registration) -> error::ErrorLocation {
+    let source_info = function.source();
+    let start_line = source_info.start.as_ref().map_or(1, |start| start.line);
+    error::ErrorLocation {
+        source: source_info.source.clone(),
+        line: brush_parser::ast::SourceLocation::location(function.definition())
+            .map(|span| start_line.saturating_sub(1) + span.start.line),
+    }
+}
+
 pub(crate) async fn invoke_shell_function(
     function: functions::Registration,
     mut context: ExecutionContext<'_, impl extensions::ShellExtensions>,
@@ -792,10 +803,13 @@ pub(crate) async fn invoke_shell_function(
 ) -> Result<ExecutionSpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function.definition().body;
 
-    // Apply any redirects specified at function definition-time.
+    // Apply any redirects specified at function definition-time. One that fails is
+    // reported at the definition.
     if let Some(redirects) = redirects {
         for redirect in &redirects.0 {
-            interp::setup_redirect(context.shell, &mut context.params, redirect).await?;
+            interp::setup_redirect(context.shell, &mut context.params, redirect)
+                .await
+                .map_err(|error| error.located_at(|| definition_location(&function)))?;
         }
     }
 
@@ -812,6 +826,10 @@ pub(crate) async fn invoke_shell_function(
     // direct mutation of the caller's `ExecutionParameters` open-file table, though the function
     // may still change the shell's persistent open files via builtins (e.g. `exec`).
     let result = body.execute(&mut shell, &context.params).await;
+
+    // An error is reported after the function is left, so record where in the
+    // function it arose while that's still known.
+    let result = result.map_err(|error| error.located_at(|| shell.current_location()));
 
     // Leave the function: pop its frame and its local variables.
     drop(shell);
@@ -894,8 +912,8 @@ async fn run_substitution_command(
         }
     }
 
-    // TODO(source-info): review this
-    let source_info = crate::SourceInfo::from("main");
+    // The substitution's text starts where the command it's in does.
+    let source_info = shell.call_stack().current_pos_as_source_info();
 
     // Handle the parse result using default shell behavior.
     shell
