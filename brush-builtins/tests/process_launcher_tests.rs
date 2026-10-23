@@ -274,6 +274,41 @@ async fn shell_with_inherited_underscore(
         .await?)
 }
 
+/// Creates an executable named `prog` in `dir` (on Windows, `prog.exe`, as a PATH
+/// search finds it with an extension).
+fn write_program(dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
+
+    #[cfg(windows)]
+    std::fs::write(dir.join("prog.exe"), "")?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let path = dir.join("prog");
+        std::fs::write(&path, "")?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn hashing_a_command_thats_gone_forgets_it() -> Result<()> {
+    let scratch = tempfile::tempdir()?;
+    let dir = scratch.path().join("bin");
+    write_program(&dir)?;
+    let path = std::env::join_paths([&dir])?;
+    let script = std::format!("PATH='{}'\nhash prog", path.to_string_lossy());
+    let mut shell = run(&RecordingLauncher::default(), &script).await?;
+
+    std::fs::remove_dir_all(&dir)?;
+    assert!(!shell.hash_command("prog"));
+    assert_eq!(shell.resolve_external_command("prog"), None);
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn exec_leaves_underscore_as_the_shell_exports_it() -> Result<()> {
     let launcher = RecordingLauncher {

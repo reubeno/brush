@@ -60,7 +60,9 @@ pub(crate) fn exec(command: LaunchRequest) -> std::io::Error {
 
 /// Composes the `std::process::Command` that starts a process.
 fn compose_std_command(command: LaunchRequest) -> std::io::Result<std::process::Command> {
-    let mut cmd = std::process::Command::new(command.program);
+    // A relative program is relative to the working directory.
+    let program = commands::program_to_start(command.program, &command.working_dir);
+    let mut cmd = std::process::Command::new(program);
 
     // Override argv[0].
     // NOTE: Not supported on all platforms.
@@ -105,5 +107,55 @@ fn take_stdio(open_files: &mut OpenFiles, fd: ShellFd) -> std::io::Result<Stdio>
     match open_files.remove_fd(fd) {
         Some(file) => commands::stdio_for(file),
         None => Ok(Stdio::null()),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    fn program_started_for(program: &Path, working_dir: &Path) -> std::io::Result<PathBuf> {
+        let request = LaunchRequest {
+            program: program.to_owned(),
+            argv0: String::from("prog"),
+            args: vec![],
+            env: vec![],
+            working_dir: working_dir.to_owned(),
+            open_files: OpenFiles::default(),
+            process_group: ProcessGroup::Inherit,
+            kill_on_drop: false,
+        };
+
+        Ok(PathBuf::from(compose_std_command(request)?.get_program()))
+    }
+
+    /// A relative program is started from the request's working directory, which
+    /// needn't be the shell process's (and may itself be relative). On Unix, where a
+    /// relative program is looked for after the change of directory, it keeps the
+    /// path it's given, which a script sees as its `$0`; elsewhere, it's put under the
+    /// working directory. A bare name and an absolute path are left as they are.
+    #[test]
+    fn relative_program_is_relative_to_the_working_dir() -> std::io::Result<()> {
+        let relative = Path::new("bin").join("prog");
+        for working_dir in [std::env::temp_dir(), PathBuf::from("sub")] {
+            let expected = if cfg!(unix) {
+                relative.clone()
+            } else {
+                working_dir.join(&relative)
+            };
+            assert_eq!(program_started_for(&relative, &working_dir)?, expected);
+
+            let absolute = std::env::temp_dir().join("elsewhere").join("prog");
+            assert_eq!(program_started_for(&absolute, &working_dir)?, absolute);
+            assert_eq!(
+                program_started_for(Path::new("prog"), &working_dir)?,
+                Path::new("prog")
+            );
+        }
+
+        Ok(())
     }
 }

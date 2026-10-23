@@ -9,6 +9,16 @@ use crate::ShellFd;
 use crate::error;
 use crate::openfiles;
 
+/// Returns the path to start `program` by, for a process started in `working_dir`.
+/// Here, a relative path is looked for after the change of directory, so `program`
+/// is used as it is (and a script sees it as its `$0`, as in other shells).
+pub(crate) const fn program_to_start(
+    program: std::path::PathBuf,
+    _working_dir: &std::path::Path,
+) -> std::path::PathBuf {
+    program
+}
+
 /// Replaces the current process with `command`. Returns only if that fails, with
 /// the reason why.
 pub(crate) fn exec(mut command: std::process::Command) -> std::io::Error {

@@ -1,14 +1,9 @@
 //! Shared command-name resolution, used by the `type` and `command` builtins.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use brush_core::{
-    Shell, ShellExtensions,
-    parser::ast,
-    pathsearch,
-    sys::{self, fs::PathExt},
-};
+use brush_core::{Shell, ShellExtensions, parser::ast, pathsearch, sys};
 
 /// A way in which a name resolved, in the shell's lookup order.
 pub(crate) enum Resolved<'a> {
@@ -101,19 +96,23 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
         hashed: false,
     };
 
-    // A name with a separator in it is used as-is; it's never searched for.
-    if sys::fs::contains_path_separator(name) {
-        // A directory is never a command, even though it carries the execute bit.
-        let candidate = shell.absolute_path(Path::new(name));
-        if !candidate.is_dir() && candidate.executable() {
-            resolved.push(to_file(PathBuf::from(name)));
-        }
+    // The one location the name resolves to in the shell's own `PATH` is the shell's
+    // lookup; so is a path, which is never searched for, whatever the options.
+    if (options.path_dirs.is_none() && !options.all_locations)
+        || sys::fs::contains_path_separator(name)
+    {
+        resolved.extend(
+            shell
+                .lookup_external_command(name)
+                .map(|(path, hashed)| Resolved::File { path, hashed }),
+        );
         return;
     }
 
     // Reporting every location is a strict search for executables; reporting just the one the
     // name resolves to matches what the shell would actually try to run, which can be a
-    // non-executable file if the search turns up nothing better.
+    // non-executable file if the search turns up nothing better. Either way, the hash
+    // table comes first, as it does for the shell.
     if let Some(path) = shell.program_location_cache().get(name) {
         resolved.push(Resolved::File { path, hashed: true });
         if !options.all_locations {
@@ -121,15 +120,14 @@ fn resolve_in_filesystem<SE: ShellExtensions>(
         }
     }
 
-    match (&options.path_dirs, options.all_locations) {
-        (Some(dirs), true) => {
-            resolved.extend(pathsearch::search_for_executable(dirs.iter(), name).map(to_file));
-        }
-        (Some(dirs), false) => {
-            resolved.extend(pathsearch::resolve_command(dirs.iter(), name).map(to_file));
-        }
-        (None, true) => resolved.extend(shell.find_executables_in_path(name).map(to_file)),
-        (None, false) => resolved.extend(shell.resolve_command_in_path(name).map(to_file)),
+    let search_path = match &options.path_dirs {
+        Some(dirs) => pathsearch::SearchPath::new(dirs, shell.working_dir()),
+        None => shell.command_search_path(),
+    };
+    if options.all_locations {
+        resolved.extend(search_path.executables(name).map(to_file));
+    } else {
+        resolved.extend(search_path.resolve(name).map(to_file));
     }
 }
 
