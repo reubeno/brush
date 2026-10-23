@@ -188,13 +188,13 @@ impl<'a, SE: brush_core::ShellExtensions> Highlighter<'a, SE> {
             for token in tokens {
                 match token {
                     brush_parser::Token::Operator(_op, token_location) => {
-                        let start = global_offset + byte_offset(token_location.start.index);
-                        let end = global_offset + byte_offset(token_location.end.index);
+                        let start = global_offset + byte_offset(token_location.start.offset);
+                        let end = global_offset + byte_offset(token_location.end.offset);
                         self.append_span(HighlightKind::Operator, start..end);
                     }
                     brush_parser::Token::Word(w, token_location) => {
-                        let start_byte = byte_offset(token_location.start.index);
-                        let end_byte = byte_offset(token_location.end.index);
+                        let start_byte = byte_offset(token_location.start.offset);
+                        let end_byte = byte_offset(token_location.end.offset);
 
                         // Parse the raw slice from `line`, not `w.as_str()`: the tokenizer may
                         // drop chars from `w` (e.g. `\<newline>` continuations), so offsets into

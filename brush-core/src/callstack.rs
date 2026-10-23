@@ -191,7 +191,7 @@ impl Frame {
         let mut new_start = if let Some(existing_start) = &self.source_info.start {
             if let Some(current) = pos {
                 Some(Arc::new(crate::SourcePosition {
-                    index: existing_start.index + current.index,
+                    offset: existing_start.offset + current.offset,
                     line: existing_start.line + (current.line - 1),
                     column: if current.line <= 1 {
                         existing_start.column + (current.column - 1)
@@ -214,7 +214,7 @@ impl Frame {
                 Some(Arc::new(pos))
             } else {
                 Some(Arc::new(crate::SourcePosition {
-                    index: 0,
+                    offset: 0,
                     line: self.current_line_offset + 1,
                     column: 1,
                 }))
