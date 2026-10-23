@@ -175,6 +175,23 @@ cases:
       echo "single[@]+     : [${single[@]+ALT}]"
       echo "single[@]-     : [${single[@]-DEF}]"
 
+  - name: "Parameter expression: quoted [@]/@ alternative with no elements"
+    stdin: |
+      # When the alternative is not used, these expand to zero words,
+      # just as "${empty[@]}" and "$@" do.
+      empty=()
+      unset unset_arr
+      printf '<%s>' "${empty[@]+ALT}" x; echo
+      printf '<%s>' "${empty[@]:+ALT}" x; echo
+      printf '<%s>' "${unset_arr[@]+ALT}" x; echo
+      set --
+      printf '<%s>' "${@+ALT}" x; echo
+      printf '<%s>' "${@:+ALT}" x; echo
+
+      # Unchanged: [*] still yields one empty word; inside a word nothing is added.
+      printf '<%s>' "${empty[*]+ALT}" x; echo
+      printf '<%s>' a"${empty[@]+ALT}"b; echo
+
   - name: "Parameter expression: index-listing combined with conditional operator"
     # brush currently fails to parse the ${!arr[@]} index-listing form when it is
     # combined with a conditional operator (+/-/:+/:-). bash accepts it; for an

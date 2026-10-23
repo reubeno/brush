@@ -1372,6 +1372,13 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         brush_parser::word::ParameterTestType::Unset,
                         ParameterState::DefinedEmptyString,
                     ) => Ok(self.expand_parameter_word(alternative_value).await?),
+                    // "${arr[@]+word}" or "${@+word}" with no elements expands to nothing
+                    // (zero words), just as "${arr[@]}" and "$@" do.
+                    _ if !expanded_parameter.concatenate
+                        && expanded_parameter.fields.is_empty() =>
+                    {
+                        Ok(expanded_parameter)
+                    }
                     _ => Ok(Expansion::from(String::new())),
                 }
             }
