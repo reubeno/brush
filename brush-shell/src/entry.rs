@@ -119,12 +119,7 @@ pub fn run() {
     //
     // Run.
     //
-    #[cfg(any(unix, windows))]
-    let mut builder = tokio::runtime::Builder::new_multi_thread();
-    #[cfg(not(any(unix, windows)))]
-    let mut builder = tokio::runtime::Builder::new_current_thread();
-
-    let Ok(runtime) = builder.enable_all().build() else {
+    let Ok(runtime) = brush_hosting::runtime::builder().build() else {
         tracing::error!("error: failed to create Tokio runtime");
         std::process::exit(1);
     };
@@ -316,6 +311,9 @@ async fn run_in_shell(
     // Otherwise read commands interactively: -s was given (positional args become parameters;
     // a script named among them is *not* run), or nothing to run was specified.
     } else if read_commands_from_stdin {
+        // The binary owns the process: it takes the terminal (if stdin is one) for as long as
+        // the front end runs.
+        let _terminal = brush_hosting::terminal::ProcessTerminal::acquire()?;
         brush_interactive::InteractiveShell::new(shell_ref, input_backend, &interactive_options)?
             .run_interactively()
             .await?;

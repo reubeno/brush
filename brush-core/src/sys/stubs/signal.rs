@@ -74,10 +74,6 @@ pub(crate) const fn continue_stopped_on(_signal: traps::TrapSignal) -> bool {
     false
 }
 
-pub(crate) fn lead_new_process_group() -> Result<(), error::Error> {
-    Ok(())
-}
-
 pub(crate) struct FakeSignal {}
 
 impl FakeSignal {
@@ -101,10 +97,6 @@ pub(crate) fn chld_signal_listener() -> Result<FakeSignal, error::Error> {
 /// Waits for Ctrl-C; on this platform, it never arrives.
 pub async fn await_ctrl_c() -> std::io::Result<()> {
     FakeSignal::new().recv().await;
-    Ok(())
-}
-
-pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     Ok(())
 }
 

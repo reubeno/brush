@@ -2,7 +2,8 @@
 
 use crate::processes::{ChildProcess, LaunchRequest};
 
-pub(crate) type ProcessId = i32;
+/// A process ID, as the platform has them.
+pub type ProcessId = i32;
 
 /// Starts a process; not supported on this platform.
 ///

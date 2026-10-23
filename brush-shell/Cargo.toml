@@ -99,6 +99,7 @@ brush-clap-adapter = { version = "^0.1.0", path = "../brush-clap-adapter" }
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
 brush-interactive = { version = "^0.4.0", path = "../brush-interactive" }
+brush-hosting = { version = "^0.1.0", path = "../brush-hosting" }
 brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
 brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
 clap = { version = "4.6.0", features = ["derive", "env"] }
@@ -120,7 +121,7 @@ tokio = { version = "1.52.3", features = ["rt", "sync"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 crossterm = "0.29.0"
-tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread", "sync"] }
+tokio = { version = "1.52.3", features = ["rt", "sync"] }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
