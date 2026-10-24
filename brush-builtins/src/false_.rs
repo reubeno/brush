@@ -5,14 +5,14 @@ pub(crate) struct FalseCommand {}
 
 impl builtins::ParseArgs for FalseCommand {
     fn content(
-        _name: &str,
+        name: &str,
         content_type: builtins::ContentType,
         _options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::Error> {
         match content_type {
             builtins::ContentType::DetailedHelp => Ok("Returns a failure exit status.".into()),
-            builtins::ContentType::ShortUsage => Ok("false".into()),
-            builtins::ContentType::ShortDescription => Ok("false - fail".into()),
+            builtins::ContentType::ShortUsage => Ok(format!("{name}: {name}\n")),
+            builtins::ContentType::ShortDescription => Ok(format!("{name} - fail\n")),
             builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
         }
     }

@@ -1,30 +1,34 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, escape};
 
 /// Echo text to standard output.
-#[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[derive(winnow_args::Args)]
+#[arg(
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    unknown_flags = "value"
+)]
 pub(crate) struct EchoCommand {
     /// Suppress the trailing newline from the output.
     #[arg(short = 'n')]
     no_trailing_newline: bool,
 
     /// Interpret backslash escapes in the provided text.
-    #[arg(short = 'e')]
+    #[arg(short = 'e', overrides = "-E")]
     interpret_backslash_escapes: bool,
 
     /// Do not interpret backslash escapes in the provided text.
-    #[arg(short = 'E')]
+    #[arg(short = 'E', overrides = "-e")]
     no_interpret_backslash_escapes: bool,
 
     /// Tokens to echo to standard output.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "preserve", stop_flags)]
     args: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(EchoCommand, keep_double_dash = args);
+brush_winnow_args_adapter::impl_parse_args!(EchoCommand, keep_double_dash = args);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EchoCommand {
     type Error = brush_core::Error;
