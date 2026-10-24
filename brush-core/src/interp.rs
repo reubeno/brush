@@ -681,7 +681,16 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                         ))
                     }
                     commands::ShellForCommand::ParentShell(shell) => {
-                        Ok(compound.execute(shell, &params).await?.into())
+                        match compound.execute(shell, &params).await {
+                            Ok(result) => Ok(result.into()),
+                            // Report the error here, where the compound command's own
+                            // redirections are still in effect.
+                            Err(err) if redirects.is_some() => {
+                                let _ = shell.display_error(&mut params.stderr(shell), &err);
+                                Ok(err.into_result(shell).into())
+                            }
+                            Err(err) => Err(err),
+                        }
                     }
                 }
             }
