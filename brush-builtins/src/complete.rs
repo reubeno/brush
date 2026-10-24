@@ -1,135 +1,202 @@
-use clap::{Parser, builder::TypedValueParser as _};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
-use strum::{EnumMessage, IntoEnumIterator};
+use strum::IntoEnumIterator;
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecName, SpecialSpec};
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, escape};
 
-#[derive(Parser)]
+/// A completion option or action name (`-o nospace`, `-A arrayvar`), parsed by
+/// its strum name. `CompleteAction` and `CompleteOption` live in brush-core,
+/// which does not depend on winnow-args, so they cannot implement `FromArg`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Choice<T>(T);
+
+impl<T> winnow_args::FromArg for Choice<T>
+where
+    T: std::str::FromStr + strum::VariantNames + strum::EnumMessage,
+{
+    const CHOICES: &'static [&'static str] = T::VARIANTS;
+    const DESCRIBES_CHOICES: bool = true;
+
+    /// The text written in `choices(…)`, which the pages show too, else the
+    /// variant's doc comment in brush-core, without its final period.
+    fn choice_help(index: usize, default: &'static str) -> &'static str {
+        if !default.is_empty() {
+            return default;
+        }
+        let variant = T::VARIANTS
+            .get(index)
+            .and_then(|name| name.parse::<T>().ok());
+        let doc = variant.and_then(|variant| variant.get_documentation());
+        doc.map_or("", |doc| doc.trim_end().trim_end_matches('.'))
+    }
+
+    fn from_arg(value: &winnow_args::BStr) -> Result<Self, winnow_args::error::BoxError> {
+        std::str::from_utf8(value)
+            .ok()
+            .and_then(|name| name.parse().ok())
+            .map(Choice)
+            .ok_or_else(|| {
+                Box::new(winnow_args::ChoiceError {
+                    choices: T::VARIANTS,
+                }) as winnow_args::error::BoxError
+            })
+    }
+}
+
+#[derive(winnow_args::Args)]
 struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
-    #[arg(short = 'o', value_parser = name_parser::<CompleteOption>())]
-    options: Vec<CompleteOption>,
+    // The values are stated for the generated documentation, which cannot
+    // read them from the type; the tests check them against it.
+    #[arg(
+        short = 'o',
+        choices(
+            "bashdefault" = "Perform rest of default completions if no completions are generated",
+            "default" = "Use default filename completion if no completions are generated",
+            "dirnames" = "Treat completions as directory names",
+            "filenames" = "Treat completions as filenames",
+            "fullquote" = "Quote completions even if they aren't file names. Not yet implemented: it's accepted and shown, but has no effect",
+            "noquote" = "Suppress default auto-quotation of completions",
+            "nosort" = "Do not sort completions",
+            "nospace" = "Do not append a trailing space to completions at the end of the input line",
+            "plusdirs" = "Also generate directory completions"
+        )
+    )]
+    options: Vec<Choice<CompleteOption>>,
 
     /// Actions to apply to generate completions.
-    #[arg(short = 'A', value_parser = name_parser::<CompleteAction>())]
-    actions: Vec<CompleteAction>,
+    #[arg(
+        short = 'A',
+        choices(
+            "alias" = "Complete with valid aliases",
+            "arrayvar" = "Complete with names of array shell variables",
+            "binding" = "Complete with names of key bindings",
+            "builtin" = "Complete with names of shell builtins",
+            "command" = "Complete with names of executable commands",
+            "directory" = "Complete with directory names",
+            "disabled" = "Complete with names of disabled shell builtins",
+            "enabled" = "Complete with names of enabled shell builtins",
+            "export" = "Complete with names of exported shell variables",
+            "file" = "Complete with filenames",
+            "function" = "Complete with names of shell functions",
+            "group" = "Complete with valid user groups",
+            "helptopic" = "Complete with names of valid shell help topics",
+            "hostname" = "Complete with the system's hostname(s)",
+            "job" = "Complete with the command names of shell-managed jobs",
+            "keyword" = "Complete with valid shell keywords",
+            "running" = "Complete with the command names of running shell-managed jobs",
+            "service" = "Complete with names of system services",
+            "setopt" = "Complete with the names of options settable via set -o",
+            "shopt" = "Complete with the names of options settable via shopt",
+            "signal" = "Complete with the names of trappable signals",
+            "stopped" = "Complete with the command names of stopped shell-managed jobs",
+            "user" = "Complete with valid usernames",
+            "variable" = "Complete with names of shell variables"
+        )
+    )]
+    actions: Vec<Choice<CompleteAction>>,
 
     /// File glob pattern to be expanded to generate completions.
-    #[arg(short = 'G', allow_hyphen_values = true, value_name = "GLOB")]
+    #[arg(short = 'G', allow_hyphen_values, value_name = "GLOB")]
     glob_pattern: Option<String>,
 
     /// List of words that will be considered as completions.
-    #[arg(short = 'W', allow_hyphen_values = true)]
+    #[arg(short = 'W', allow_hyphen_values)]
     word_list: Option<String>,
 
     /// Name of a shell function to invoke to generate completions.
-    #[arg(short = 'F', allow_hyphen_values = true, value_name = "FUNC_NAME")]
+    #[arg(short = 'F', allow_hyphen_values, value_name = "FUNC_NAME")]
     function_name: Option<String>,
 
     /// Command to execute to generate completions.
-    #[arg(short = 'C', allow_hyphen_values = true)]
+    #[arg(short = 'C', allow_hyphen_values)]
     command: Option<String>,
 
     /// Pattern used as filter for completions.
-    #[arg(short = 'X', allow_hyphen_values = true, value_name = "PATTERN")]
+    #[arg(short = 'X', allow_hyphen_values, value_name = "PATTERN")]
     filter_pattern: Option<String>,
 
     /// Prefix pattern used as filter for completions.
-    #[arg(short = 'P', allow_hyphen_values = true)]
+    #[arg(short = 'P', allow_hyphen_values)]
     prefix: Option<String>,
 
     /// Suffix pattern used as filter for completions.
-    #[arg(short = 'S', allow_hyphen_values = true)]
+    #[arg(short = 'S', allow_hyphen_values)]
     suffix: Option<String>,
 
-    /// Actions selected with their own flags (e.g. `-a`).
-    #[clap(flatten)]
-    action_flags: ActionFlags,
-}
+    /// Complete with valid aliases.
+    #[arg(short = 'a')]
+    action_alias: bool,
 
-/// Returns a parser for the name of one of `E`'s variants (e.g. `alias` for
-/// [`CompleteAction::Alias`]), which lists the names, and describes each with its docs.
-fn name_parser<E>() -> impl clap::builder::TypedValueParser<Value = E>
-where
-    E: IntoEnumIterator + EnumMessage + std::str::FromStr + Clone + Send + Sync + 'static,
-    &'static str: From<E>,
-    E::Err: std::error::Error + Send + Sync + 'static,
-{
-    let names = E::iter().map(|variant| {
-        let help = help_for(&variant);
-        clap::builder::PossibleValue::new(<&'static str>::from(variant)).help(help)
-    });
-    clap::builder::PossibleValuesParser::new(names).try_map(|name| name.parse::<E>())
-}
+    /// Complete with names of shell builtins.
+    #[arg(short = 'b')]
+    action_builtin: bool,
 
-/// Returns the help for `variant`: its docs, without a trailing period, as clap shows help.
-fn help_for(variant: &impl EnumMessage) -> &'static str {
-    let docs = variant.get_documentation().unwrap_or_default();
-    docs.strip_suffix('.').unwrap_or(docs)
+    /// Complete with names of executable commands.
+    #[arg(short = 'c')]
+    action_command: bool,
+
+    /// Complete with directory names.
+    #[arg(short = 'd')]
+    action_directory: bool,
+
+    /// Complete with names of exported shell variables.
+    #[arg(short = 'e')]
+    action_exported: bool,
+
+    /// Complete with filenames.
+    #[arg(short = 'f')]
+    action_file: bool,
+
+    /// Complete with valid user groups.
+    #[arg(short = 'g')]
+    action_group: bool,
+
+    /// Complete with the command names of shell-managed jobs.
+    #[arg(short = 'j')]
+    action_job: bool,
+
+    /// Complete with valid shell keywords.
+    #[arg(short = 'k')]
+    action_keyword: bool,
+
+    /// Complete with names of system services.
+    #[arg(short = 's')]
+    action_service: bool,
+
+    /// Complete with valid usernames.
+    #[arg(short = 'u')]
+    action_user: bool,
+
+    /// Complete with names of shell variables.
+    #[arg(short = 'v')]
+    action_variable: bool,
 }
 
 /// The actions with flags of their own in `complete` and `compgen`, and those flags (e.g.
-/// `a`, for `-a`, which is short for `-A alias`), in the order bash shows them. Each flag
-/// is also its argument's clap ID.
-const ACTION_FLAGS: [(&str, CompleteAction); 12] = [
-    ("a", CompleteAction::Alias),
-    ("b", CompleteAction::Builtin),
-    ("c", CompleteAction::Command),
-    ("d", CompleteAction::Directory),
-    ("e", CompleteAction::Export),
-    ("f", CompleteAction::File),
-    ("g", CompleteAction::Group),
-    ("j", CompleteAction::Job),
-    ("k", CompleteAction::Keyword),
-    ("s", CompleteAction::Service),
-    ("u", CompleteAction::User),
-    ("v", CompleteAction::Variable),
+/// `a`, for `-a`, which is short for `-A alias`), in the order bash shows them.
+const ACTION_FLAGS: [(char, CompleteAction); 12] = [
+    ('a', CompleteAction::Alias),
+    ('b', CompleteAction::Builtin),
+    ('c', CompleteAction::Command),
+    ('d', CompleteAction::Directory),
+    ('e', CompleteAction::Export),
+    ('f', CompleteAction::File),
+    ('g', CompleteAction::Group),
+    ('j', CompleteAction::Job),
+    ('k', CompleteAction::Keyword),
+    ('s', CompleteAction::Service),
+    ('u', CompleteAction::User),
+    ('v', CompleteAction::Variable),
 ];
-
-/// The actions selected with their own flags (see [`ACTION_FLAGS`]), which this parses.
-struct ActionFlags(Vec<CompleteAction>);
-
-impl clap::FromArgMatches for ActionFlags {
-    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
-        let actions = ACTION_FLAGS
-            .iter()
-            .filter(|(flag, _)| matches.get_flag(flag))
-            .map(|(_, action)| *action)
-            .collect();
-        Ok(Self(actions))
-    }
-
-    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
-        *self = Self::from_arg_matches(matches)?;
-        Ok(())
-    }
-}
-
-impl clap::Args for ActionFlags {
-    fn augment_args(cmd: clap::Command) -> clap::Command {
-        ACTION_FLAGS.iter().fold(cmd, |cmd, (flag, action)| {
-            cmd.arg(
-                clap::Arg::new(*flag)
-                    .short(flag.chars().next())
-                    .action(clap::ArgAction::SetTrue)
-                    .help(help_for(action)),
-            )
-        })
-    }
-
-    fn augment_args_for_update(cmd: clap::Command) -> clap::Command {
-        Self::augment_args(cmd)
-    }
-}
 
 impl CommonCompleteCommandArgs {
     fn create_spec(&self) -> completion::Spec {
         completion::Spec {
-            options: self.options.iter().copied().collect(),
+            options: self.options.iter().map(|o| o.0).collect(),
             actions: self.resolve_actions(),
             glob_pattern: self.glob_pattern.clone(),
             word_list: self.word_list.clone(),
@@ -144,15 +211,41 @@ impl CommonCompleteCommandArgs {
     /// Returns the actions selected, like bash, each once, in the fixed order bash runs them
     /// in (that of [`CompleteAction`]'s variants), however they were given.
     fn resolve_actions(&self) -> Vec<CompleteAction> {
-        let selected: Vec<_> = self.actions.iter().chain(&self.action_flags.0).collect();
+        // In the order of `ACTION_FLAGS`.
+        let flags = [
+            self.action_alias,
+            self.action_builtin,
+            self.action_command,
+            self.action_directory,
+            self.action_exported,
+            self.action_file,
+            self.action_group,
+            self.action_job,
+            self.action_keyword,
+            self.action_service,
+            self.action_user,
+            self.action_variable,
+        ];
+        let selected: Vec<CompleteAction> = self
+            .actions
+            .iter()
+            .map(|a| a.0)
+            .chain(
+                ACTION_FLAGS
+                    .iter()
+                    .zip(flags)
+                    .filter_map(|((_, action), given)| given.then_some(*action)),
+            )
+            .collect();
         CompleteAction::iter()
-            .filter(|action| selected.contains(&action))
+            .filter(|action| selected.contains(action))
             .collect()
     }
 }
 
 /// Configure programmable command completion.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct CompleteCommand {
     /// Display registered completion settings.
     #[arg(short = 'p')]
@@ -174,11 +267,14 @@ pub(crate) struct CompleteCommand {
     #[arg(short = 'I')]
     use_for_initial_word: bool,
 
-    #[clap(flatten)]
+    #[arg(flatten)]
     common_args: CommonCompleteCommandArgs,
 
+    #[arg(positional)]
     names: Vec<String>,
 }
+
+brush_winnow_args_adapter::impl_parse_args!(CompleteCommand);
 
 /// Returns the flag that selects a special completion spec in `complete` and `compopt`.
 const fn special_spec_flag(special: SpecialSpec) -> &'static str {
@@ -200,8 +296,6 @@ fn spec_name_operand(name: SpecName<'_>) -> Cow<'_, str> {
         }
     }
 }
-
-brush_clap_adapter::impl_parse_args!(CompleteCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand {
     type Error = brush_core::Error;
@@ -358,16 +452,18 @@ impl CompleteCommand {
 }
 
 /// Generate command completions.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct CompGenCommand {
-    #[clap(flatten)]
+    #[arg(flatten)]
     common_args: CommonCompleteCommandArgs,
 
     // N.B. The word can only start with a hyphen if it's after a --.
+    #[arg(positional)]
     word: Option<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(CompGenCommand);
+brush_winnow_args_adapter::impl_parse_args!(CompGenCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompGenCommand {
     type Error = brush_core::Error;
@@ -395,7 +491,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompGenCommand {
 }
 
 /// Set programmable command completion options.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    plus_options,
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct CompOptCommand {
     /// Update the default completion settings.
     #[arg(short = 'D')]
@@ -410,16 +512,47 @@ pub(crate) struct CompOptCommand {
     update_initial_word: bool,
 
     /// Enable the specified option for selected completion scenarios.
-    #[arg(short = 'o', value_name = "OPT", value_parser = name_parser::<CompleteOption>())]
-    enabled_options: Vec<CompleteOption>,
-    #[arg(long = "+o", hide = true, value_parser = name_parser::<CompleteOption>())]
-    disabled_options: Vec<CompleteOption>,
+    #[arg(
+        short = 'o',
+        value_name = "OPT",
+        choices(
+            "bashdefault" = "Perform rest of default completions if no completions are generated",
+            "default" = "Use default filename completion if no completions are generated",
+            "dirnames" = "Treat completions as directory names",
+            "filenames" = "Treat completions as filenames",
+            "fullquote" = "Quote completions even if they aren't file names. Not yet implemented: it's accepted and shown, but has no effect",
+            "noquote" = "Suppress default auto-quotation of completions",
+            "nosort" = "Do not sort completions",
+            "nospace" = "Do not append a trailing space to completions at the end of the input line",
+            "plusdirs" = "Also generate directory completions"
+        )
+    )]
+    enabled_options: Vec<Choice<CompleteOption>>,
+
+    /// Disable the specified option for selected completion scenarios.
+    #[arg(
+        plus = 'o',
+        value_name = "OPT",
+        choices(
+            "bashdefault" = "Perform rest of default completions if no completions are generated",
+            "default" = "Use default filename completion if no completions are generated",
+            "dirnames" = "Treat completions as directory names",
+            "filenames" = "Treat completions as filenames",
+            "fullquote" = "Quote completions even if they aren't file names. Not yet implemented: it's accepted and shown, but has no effect",
+            "noquote" = "Suppress default auto-quotation of completions",
+            "nosort" = "Do not sort completions",
+            "nospace" = "Do not append a trailing space to completions at the end of the input line",
+            "plusdirs" = "Also generate directory completions"
+        )
+    )]
+    disabled_options: Vec<Choice<CompleteOption>>,
 
     /// If specified, scopes updates to completions of the named commands.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(CompOptCommand, plus_options);
+brush_winnow_args_adapter::impl_parse_args!(CompOptCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
     type Error = brush_core::Error;
@@ -433,10 +566,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
         let mut options =
             HashMap::with_capacity(self.disabled_options.len() + self.enabled_options.len());
         for option in &self.enabled_options {
-            options.insert(*option, true);
+            options.insert(option.0, true);
         }
         for option in &self.disabled_options {
-            options.insert(*option, false);
+            options.insert(option.0, false);
         }
 
         if !self.names.is_empty()
@@ -551,5 +684,97 @@ impl CompOptCommand {
         for (option, value) in options {
             target_options.set(*option, *value);
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use brush_core::builtins::{Invocation, ParseArgs, UsageError};
+    use strum::VariantNames;
+
+    fn parse<T: ParseArgs>(name: &str, words: [&str; 2]) -> Result<T, UsageError> {
+        T::parse(Invocation::new(name, words))
+    }
+
+    #[test]
+    fn every_action_name_parses_to_its_action() -> Result<()> {
+        for name in CompleteAction::VARIANTS {
+            let args = parse::<CompleteCommand>("complete", ["-A", name])?;
+            let parsed: Vec<_> = args
+                .common_args
+                .actions
+                .iter()
+                .map(|a| <&str>::from(a.0))
+                .collect();
+            assert_eq!(parsed, [*name]);
+        }
+        Ok(())
+    }
+
+    /// What `choices(…)` says each value means, which the pages show, is
+    /// what brush-core's doc comment says, which help would show without it.
+    #[test]
+    fn each_choice_says_what_its_docs_say() {
+        use winnow_args::FromArg;
+        let items = <CompleteCommand as winnow_args::Args>::HELP.items.iter();
+        let items = items.chain(<CompOptCommand as winnow_args::Args>::HELP.items);
+        let mut checked = 0;
+        for item in items.filter(|item| !item.choices.is_empty()) {
+            // Without a function, each says nothing, and the docs disagree.
+            let help = item.choice_help.unwrap_or(|_| "");
+            for (index, choice) in item.choices.iter().enumerate() {
+                let from_docs = if item.choices[0] == "alias" {
+                    Choice::<CompleteAction>::choice_help(index, "")
+                } else {
+                    Choice::<CompleteOption>::choice_help(index, "")
+                };
+                let from_docs = from_docs.split_whitespace().collect::<Vec<_>>().join(" ");
+                assert_eq!(help(index), from_docs, "{choice}");
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 4);
+    }
+
+    #[test]
+    fn every_option_name_parses_to_its_option() -> Result<()> {
+        for name in CompleteOption::VARIANTS {
+            let option: CompleteOption = name.parse()?;
+            let args = parse::<CompleteCommand>("complete", ["-o", name])?;
+            assert_eq!(args.common_args.options, [Choice(option)]);
+
+            let args = parse::<CompOptCommand>("compopt", ["+o", name])?;
+            assert_eq!(args.disabled_options, [Choice(option)]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_names_list_the_accepted_ones() {
+        let Err(err) = parse::<CompleteCommand>("complete", ["-A", "bogus"]) else {
+            unreachable!("`bogus` is not an action name");
+        };
+        let message = err.to_string();
+        assert!(
+            message.contains("bogus") && message.contains("arrayvar"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn help_lists_accepted_names() {
+        let help = <CompleteCommand as ParseArgs>::content(
+            "complete",
+            builtins::ContentType::DetailedHelp,
+            &builtins::ContentOptions::default(),
+        )
+        .unwrap_or_default();
+        assert!(
+            help.contains("arrayvar") && help.contains("nospace"),
+            "{help}"
+        );
     }
 }

@@ -638,7 +638,6 @@ cases:
       history
 
   - name: "history rejects an unknown option with status 2"
-    known_failure: true # TODO(history): `-z` is taken as an operand, and the missing history is reported instead, with status 1
     ignore_stderr: true
     stdin: |
       history -z

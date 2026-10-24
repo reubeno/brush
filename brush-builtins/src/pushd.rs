@@ -1,21 +1,20 @@
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 /// Push a path onto the current directory stack.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct PushdCommand {
     /// Push the path without changing the current working directory.
-    #[clap(short = 'n')]
+    #[arg(short = 'n')]
     no_directory_change: bool,
 
     /// Directory to push on the directory stack.
+    #[arg(positional)]
     dir: String,
-    //
     // TODO(pushd): implement +N and -N
 }
 
-brush_clap_adapter::impl_parse_args!(PushdCommand);
+brush_winnow_args_adapter::impl_parse_args!(PushdCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PushdCommand {
     type Error = brush_core::Error;
