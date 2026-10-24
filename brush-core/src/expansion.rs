@@ -1172,11 +1172,15 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 Ok(self.shell.working_dir().to_string_lossy())
             }
             brush_parser::word::TildeExpr::OldWorkingDir => {
-                if let Some(old_pwd) = self.shell.env_str("OLDPWD") {
-                    Ok(old_pwd)
-                } else {
-                    Ok(Cow::Borrowed("~-"))
-                }
+                // OLDPWD may be declared without a value (e.g. at startup); only
+                // expand `~-` when it actually has one.
+                Ok(self
+                    .shell
+                    .env_var("OLDPWD")
+                    .filter(|var| var.value().is_set())
+                    .map_or(Cow::Borrowed("~-"), |var| {
+                        var.value().to_cow_str(self.shell)
+                    }))
             }
             brush_parser::word::TildeExpr::NthDirFromBottomOfDirStack { n } => {
                 let dir_stack_count = self.shell.directory_stack().len();

@@ -140,6 +140,21 @@ cases:
       echo "Assign colon-tilde: ${myvar3:=~:~/bin}"
       echo "myvar3 after := ${myvar3}"
 
+  - name: "Tilde expansion: OLDPWD declared without a value"
+    stdin: |
+      printf "<%s>\n" ~- ~-/x
+
+      unset OLDPWD
+      declare OLDPWD
+      printf "<%s>\n" ~-
+
+      unset OLDPWD
+      export OLDPWD
+      printf "<%s>\n" ~-
+
+      OLDPWD=
+      printf "<%s>\n" ~-
+
   - name: "Tilde expansion: out-of-range dir stack index"
     stdin: |
       # A run of digits too large to fit the dir-stack index type isn't a valid
