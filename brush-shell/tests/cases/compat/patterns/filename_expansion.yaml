@@ -224,6 +224,21 @@ cases:
       echo ".*  : " .*
       echo "./.*: " ./.*
 
+  - name: "Pathname expansion: dot files after empty quotes (no dotglob)"
+    min_oracle_version: 5.2
+    stdin: |
+      touch .file
+      mkdir sub
+      touch sub/.hidden
+      e=
+
+      shopt -u dotglob
+      echo "\"\".* : " "".*
+      echo "''.* : " ''.*
+      echo "\$e\"\".*: " $e"".*
+      echo "sub/\"\".*: " sub/"".*
+      echo "\"\"*  : " ""*
+
   - name: "Glob results are sorted"
     test_files:
       - path: "cherry.txt"
