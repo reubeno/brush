@@ -67,7 +67,7 @@ impl PrintfCommand {
         if index >= words.len() {
             return Err(error(winnow_args::Error::missing_argument(
                 index,
-                "<format_and_args>",
+                "FORMAT_AND_ARGS",
             )));
         }
         words.drain(..index);
