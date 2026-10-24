@@ -286,9 +286,12 @@ impl Pattern {
                     .set_extended_globbing(self.enable_extended_globbing)
                     .set_case_insensitive(self.case_insensitive);
 
+                // Skip empty pieces (e.g. from `"".*`) so that a dot right after
+                // them still counts as the leading dot.
                 let subpattern_starts_with_dot = subpattern
                     .pieces
-                    .first()
+                    .iter()
+                    .find(|piece| !piece.as_str().is_empty())
                     .is_some_and(|piece| piece.as_str().starts_with('.'));
 
                 let allow_dot_files = !options.require_dot_in_pattern_to_match_dot_files
