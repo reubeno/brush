@@ -4,7 +4,12 @@ use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, e
 
 /// Read lines from standard input into an indexed array variable.
 #[derive(winnow_args::Args)]
-#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
+#[arg(
+    validate = MapFileCommand::check_counts,
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
     #[arg(short = 'd')]
@@ -41,6 +46,23 @@ pub(crate) struct MapFileCommand {
     /// Name of array to read into.
     #[arg(positional, default = "MAPFILE")]
     array_var_name: String,
+}
+
+impl MapFileCommand {
+    /// `-s` counts from 0, and `-c` from 1.
+    fn check_counts(&self) -> Result<(), winnow_args::Error> {
+        let out_of_range = |flag: &str, value: i64| {
+            let value = value.to_string();
+            winnow_args::Error::invalid_value(0, flag, value.as_bytes(), "out of range")
+        };
+        if self.skip_count < 0 {
+            return Err(out_of_range("-s", self.skip_count));
+        }
+        if self.callback_group_size < 1 {
+            return Err(out_of_range("-c", self.callback_group_size));
+        }
+        Ok(())
+    }
 }
 
 brush_winnow_args_adapter::impl_parse_args!(MapFileCommand);

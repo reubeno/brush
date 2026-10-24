@@ -14,6 +14,7 @@ use brush_core::{
 /// Display or update variables and their attributes.
 #[derive(Default, winnow_args::Args)]
 #[arg(
+    usage = "declare [OPTIONS] [DECLARATIONS]...",
     plus_options,
     disable_help_short,
     disable_version_flag,
@@ -41,35 +42,45 @@ pub(crate) struct DeclareCommand {
     #[arg(short = 'p')]
     print: bool,
 
+    /// Make the variable an indexed array.
     #[arg(short = 'a', plus = 'a')]
     make_indexed_array: Option<bool>,
 
+    /// Make the variable an associative array.
     #[arg(short = 'A', plus = 'A')]
     make_associative_array: Option<bool>,
 
+    /// Enable capitalize-on-assignment for the variable.
     #[arg(short = 'c', plus = 'c')]
     capitalize_value_on_assignment: Option<bool>,
 
-    #[arg(short = 'l', plus = 'l')]
-    lowercase_value_on_assignment: Option<bool>,
-
-    #[arg(short = 'x', plus = 'x')]
-    make_exported: Option<bool>,
-
+    /// Mark the variable as integer-typed.
     #[arg(short = 'i', plus = 'i')]
     make_integer: Option<bool>,
 
+    /// Enable lowercase-on-assignment for the variable.
+    #[arg(short = 'l', plus = 'l')]
+    lowercase_value_on_assignment: Option<bool>,
+
+    /// Mark the variable as a name reference.
     #[arg(short = 'n', plus = 'n')]
     make_nameref: Option<bool>,
 
+    /// Mark the variable as read-only.
     #[arg(short = 'r', plus = 'r')]
     make_readonly: Option<bool>,
 
+    /// Enable tracing for the variable.
     #[arg(short = 't', plus = 't')]
     make_traced: Option<bool>,
 
+    /// Enable uppercase-on-assignment for the variable.
     #[arg(short = 'u', plus = 'u')]
     uppercase_value_on_assignment: Option<bool>,
+
+    /// Mark the variable for export.
+    #[arg(short = 'x', plus = 'x')]
+    make_exported: Option<bool>,
 
     //
     // Declarations

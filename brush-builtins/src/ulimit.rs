@@ -92,9 +92,9 @@ impl Resource {
 #[derive(Clone, Copy)]
 struct ResourceDescription {
     resource: Resource,
-    // Static wording only. Clap appended "(supported)" or "(unsupported)" at
-    // runtime; a usage help string cannot.
-    #[allow(dead_code, reason = "wording now lives on the usage help attributes")]
+    // The flag's help: `limit_help!` repeats it on the field, with whether
+    // the platform supports the resource.
+    #[allow(dead_code, reason = "the help is written on each field")]
     help: &'static str,
     description: &'static str,
     short: char,
@@ -326,6 +326,18 @@ impl winnow_args::FromArg for LimitValue {
     }
 }
 
+/// A flag's help, and whether this platform has the resource: `ulimit --help`
+/// says "(supported)" or "(unsupported)" after it.
+macro_rules! limit_help {
+    ($resource:ident, $help:literal) => {
+        if ResourceDescription::$resource.resource.is_supported() {
+            concat!($help, " (supported)")
+        } else {
+            concat!($help, " (unsupported)")
+        }
+    };
+}
+
 /// Modify shell resource limits.
 ///
 /// Provides control over the resources available to the shell and processes
@@ -343,134 +355,134 @@ pub(crate) struct ULimitCommand {
     #[arg(short = 'a')]
     all: bool,
     /// the maximum socket buffer size
-    #[arg(short = 'b', default_missing = "", help = "the socket buffer size")]
+    #[arg(short = 'b', default_missing = "", help = limit_help!(SBSIZE, "the socket buffer size"))]
     sbsize: Option<LimitValue>,
     /// the maximum size of core files created
     #[arg(
         short = 'c',
         default_missing = "",
-        help = "the maximum size of core files created"
+        help = limit_help!(CORE, "the maximum size of core files created")
     )]
     core: Option<LimitValue>,
     /// the maximum size of a process's data segment
     #[arg(
         short = 'd',
         default_missing = "",
-        help = "the maximum size of a process's data segment"
+        help = limit_help!(DATA, "the maximum size of a process's data segment")
     )]
     data: Option<LimitValue>,
     /// the maximum scheduling priority (`nice`)
     #[arg(
         short = 'e',
         default_missing = "",
-        help = "the maximum scheduling priority (`nice`)"
+        help = limit_help!(NICE, "the maximum scheduling priority (`nice`)")
     )]
     nice: Option<LimitValue>,
     /// the maximum size of files written by the shell and its children
     #[arg(
         short = 'f',
         default_missing = "",
-        help = "the maximum size of files written by the shell and its children"
+        help = limit_help!(FSIZE, "the maximum size of files written by the shell and its children")
     )]
     file_size: Option<LimitValue>,
     /// the maximum number of pending signals
     #[arg(
         short = 'i',
         default_missing = "",
-        help = "the maximum number of pending signals"
+        help = limit_help!(SIGPENDING, "the maximum number of pending signals")
     )]
     sigpending: Option<LimitValue>,
     /// the maximum size a process may lock into memory
     #[arg(
         short = 'l',
         default_missing = "",
-        help = "the maximum size a process may lock into memory"
+        help = limit_help!(MEMLOCK, "the maximum size a process may lock into memory")
     )]
     memlock: Option<LimitValue>,
     /// the maximum number of kqueues allocated for this process
     #[arg(
         short = 'k',
         default_missing = "",
-        help = "the maximum number of kqueues allocated for this process"
+        help = limit_help!(KQUEUES, "the maximum number of kqueues allocated for this process")
     )]
     kqueues: Option<LimitValue>,
     /// the maximum resident set size
     #[arg(
         short = 'm',
         default_missing = "",
-        help = "the maximum resident set size"
+        help = limit_help!(RSS, "the maximum resident set size")
     )]
     rss: Option<LimitValue>,
     /// the maximum number of open file descriptors
     #[arg(
         short = 'n',
         default_missing = "",
-        help = "the maximum number of open file descriptors"
+        help = limit_help!(NOFILE, "the maximum number of open file descriptors")
     )]
     file_open: Option<LimitValue>,
     /// the pipe buffer size
-    #[arg(short = 'p', default_missing = "", help = "the pipe buffer size")]
+    #[arg(short = 'p', default_missing = "", help = limit_help!(PIPE, "the pipe buffer size"))]
     pipe: Option<LimitValue>,
     /// the maximum number of bytes in POSIX message queues
     #[arg(
         short = 'q',
         default_missing = "",
-        help = "the maximum number of bytes in POSIX message queues"
+        help = limit_help!(MSGQUEUE, "the maximum number of bytes in POSIX message queues")
     )]
     msgqueue: Option<LimitValue>,
     /// the maximum real-time scheduling priority
     #[arg(
         short = 'r',
         default_missing = "",
-        help = "the maximum real-time scheduling priority"
+        help = limit_help!(RTPRIO, "the maximum real-time scheduling priority")
     )]
     rtprio: Option<LimitValue>,
     /// the maximum stack size
-    #[arg(short = 's', default_missing = "", help = "the maximum stack size")]
+    #[arg(short = 's', default_missing = "", help = limit_help!(STACK, "the maximum stack size"))]
     stack: Option<LimitValue>,
     /// the maximum amount of cpu time in seconds
     #[arg(
         short = 't',
         default_missing = "",
-        help = "the maximum amount of cpu time in seconds"
+        help = limit_help!(CPU, "the maximum amount of cpu time in seconds")
     )]
     cpu: Option<LimitValue>,
     /// the size of virtual memory
     #[arg(
         short = 'u',
         default_missing = "",
-        help = "the maximum number of user processes"
+        help = limit_help!(NPROC, "the maximum number of user processes")
     )]
     nproc: Option<LimitValue>,
     /// the size of virtual memory
-    #[arg(short = 'v', default_missing = "", help = "the size of virtual memory")]
+    #[arg(short = 'v', default_missing = "", help = limit_help!(VMEM, "the size of virtual memory"))]
     vmem: Option<LimitValue>,
     /// the maximum number of file locks
     #[arg(
         short = 'x',
         default_missing = "",
-        help = "the maximum number of file locks"
+        help = limit_help!(LOCKS, "the maximum number of file locks")
     )]
     file_lock: Option<LimitValue>,
     /// the maximum number of pseudoterminals
     #[arg(
         short = 'P',
         default_missing = "",
-        help = "the maximum number of pseudoterminals"
+        help = limit_help!(NPTS, "the maximum number of pseudoterminals")
     )]
     npts: Option<LimitValue>,
     /// real-time non-blocking time
     #[arg(
         short = 'R',
         default_missing = "",
-        help = "the maximum real-time scheduling priority"
+        help = limit_help!(RTTIME, "the maximum real-time scheduling priority")
     )]
     rttime: Option<LimitValue>,
     /// the maximum number of threads
     #[arg(
         short = 'T',
         default_missing = "",
-        help = "the maximum number of threads"
+        help = limit_help!(THREADS, "the maximum number of threads")
     )]
     threads: Option<LimitValue>,
 

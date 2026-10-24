@@ -11,7 +11,12 @@ const NO_FILE: &str = "\u{0}";
 
 /// Query or manipulate the shell's command history.
 #[derive(winnow_args::Args)]
-#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
+#[arg(
+    group("anrw", message = "cannot use more than one of -anrw"),
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct HistoryCommand {
     /// Clears all history.
     #[arg(short = 'c')]
@@ -23,19 +28,39 @@ pub(crate) struct HistoryCommand {
     delete_offset: Option<i64>,
 
     /// Appends the history from the current session to the history file.
-    #[arg(short = 'a', value_name = "HIST_FILE", default_missing = "\u{0}")]
+    #[arg(
+        short = 'a',
+        group = "anrw",
+        value_name = "HIST_FILE",
+        default_missing = "\u{0}"
+    )]
     append_session_to_file: Option<String>,
 
     /// Appends any remaining history from the history file to the current session.
-    #[arg(short = 'n', value_name = "HIST_FILE", default_missing = "\u{0}")]
+    #[arg(
+        short = 'n',
+        group = "anrw",
+        value_name = "HIST_FILE",
+        default_missing = "\u{0}"
+    )]
     append_rest_of_file_to_session: Option<String>,
 
     /// Appends the history from the history file to the current session.
-    #[arg(short = 'r', value_name = "HIST_FILE", default_missing = "\u{0}")]
+    #[arg(
+        short = 'r',
+        group = "anrw",
+        value_name = "HIST_FILE",
+        default_missing = "\u{0}"
+    )]
     append_file_to_session: Option<String>,
 
     /// Replaces the history file with the current session history.
-    #[arg(short = 'w', value_name = "HIST_FILE", default_missing = "\u{0}")]
+    #[arg(
+        short = 'w',
+        group = "anrw",
+        value_name = "HIST_FILE",
+        default_missing = "\u{0}"
+    )]
     write_session_to_file: Option<String>,
 
     /// History-expands positional arguments and displays them.

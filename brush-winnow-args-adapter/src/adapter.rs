@@ -101,7 +101,8 @@ fn parse_words<T: Args>(name: &str, words: &[String]) -> Result<T, UsageError> {
 pub fn to_usage_error<T: Args>(name: &str, error: &Error) -> UsageError {
     match error.kind() {
         ErrorKind::HelpRequested | ErrorKind::VersionRequested => UsageError::new(
-            help::render_styled(T::HELP, &[name], false, help::width(), help::Style::PLAIN)
+            // `--help` is the long form, as clap's is.
+            help::render_styled(T::HELP, &[name], true, help::width(), help::Style::PLAIN)
                 .trim_end(),
         ),
         _ => UsageError::new(format!(

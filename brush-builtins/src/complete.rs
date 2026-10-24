@@ -13,8 +13,25 @@ use brush_core::{ExecutionExitCode, ExecutionResult, builtins, escape};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Choice<T>(T);
 
-impl<T: std::str::FromStr + strum::VariantNames> winnow_args::FromArg for Choice<T> {
+impl<T> winnow_args::FromArg for Choice<T>
+where
+    T: std::str::FromStr + strum::VariantNames + strum::EnumMessage,
+{
     const CHOICES: &'static [&'static str] = T::VARIANTS;
+    const DESCRIBES_CHOICES: bool = true;
+
+    /// The text written in `choices(…)`, which the pages show too, else the
+    /// variant's doc comment in brush-core, without its final period.
+    fn choice_help(index: usize, default: &'static str) -> &'static str {
+        if !default.is_empty() {
+            return default;
+        }
+        let variant = T::VARIANTS
+            .get(index)
+            .and_then(|name| name.parse::<T>().ok());
+        let doc = variant.and_then(|variant| variant.get_documentation());
+        doc.map_or("", |doc| doc.trim_end().trim_end_matches('.'))
+    }
 
     fn from_arg(value: &winnow_args::BStr) -> Result<Self, winnow_args::error::BoxError> {
         std::str::from_utf8(value)
@@ -33,19 +50,19 @@ impl<T: std::str::FromStr + strum::VariantNames> winnow_args::FromArg for Choice
 struct CommonCompleteCommandArgs {
     /// Options governing the behavior of completions.
     // The values are stated for the generated documentation, which cannot
-    // read them from the type; a documentation build checks them against it.
+    // read them from the type; the tests check them against it.
     #[arg(
         short = 'o',
         choices(
-            "bashdefault",
-            "default",
-            "dirnames",
-            "filenames",
-            "fullquote",
-            "noquote",
-            "nosort",
-            "nospace",
-            "plusdirs"
+            "bashdefault" = "Perform rest of default completions if no completions are generated",
+            "default" = "Use default filename completion if no completions are generated",
+            "dirnames" = "Treat completions as directory names",
+            "filenames" = "Treat completions as filenames",
+            "fullquote" = "Quote completions even if they aren't file names. Not yet implemented: it's accepted and shown, but has no effect",
+            "noquote" = "Suppress default auto-quotation of completions",
+            "nosort" = "Do not sort completions",
+            "nospace" = "Do not append a trailing space to completions at the end of the input line",
+            "plusdirs" = "Also generate directory completions"
         )
     )]
     options: Vec<Choice<CompleteOption>>,
@@ -54,30 +71,30 @@ struct CommonCompleteCommandArgs {
     #[arg(
         short = 'A',
         choices(
-            "alias",
-            "arrayvar",
-            "binding",
-            "builtin",
-            "command",
-            "directory",
-            "disabled",
-            "enabled",
-            "export",
-            "file",
-            "function",
-            "group",
-            "helptopic",
-            "hostname",
-            "job",
-            "keyword",
-            "running",
-            "service",
-            "setopt",
-            "shopt",
-            "signal",
-            "stopped",
-            "user",
-            "variable"
+            "alias" = "Complete with valid aliases",
+            "arrayvar" = "Complete with names of array shell variables",
+            "binding" = "Complete with names of key bindings",
+            "builtin" = "Complete with names of shell builtins",
+            "command" = "Complete with names of executable commands",
+            "directory" = "Complete with directory names",
+            "disabled" = "Complete with names of disabled shell builtins",
+            "enabled" = "Complete with names of enabled shell builtins",
+            "export" = "Complete with names of exported shell variables",
+            "file" = "Complete with filenames",
+            "function" = "Complete with names of shell functions",
+            "group" = "Complete with valid user groups",
+            "helptopic" = "Complete with names of valid shell help topics",
+            "hostname" = "Complete with the system's hostname(s)",
+            "job" = "Complete with the command names of shell-managed jobs",
+            "keyword" = "Complete with valid shell keywords",
+            "running" = "Complete with the command names of running shell-managed jobs",
+            "service" = "Complete with names of system services",
+            "setopt" = "Complete with the names of options settable via set -o",
+            "shopt" = "Complete with the names of options settable via shopt",
+            "signal" = "Complete with the names of trappable signals",
+            "stopped" = "Complete with the command names of stopped shell-managed jobs",
+            "user" = "Complete with valid usernames",
+            "variable" = "Complete with names of shell variables"
         )
     )]
     actions: Vec<Choice<CompleteAction>>,
@@ -138,11 +155,11 @@ struct CommonCompleteCommandArgs {
     #[arg(short = 'g')]
     action_group: bool,
 
-    /// Complete with job specs.
+    /// Complete with the command names of shell-managed jobs.
     #[arg(short = 'j')]
     action_job: bool,
 
-    /// Complete with keywords.
+    /// Complete with valid shell keywords.
     #[arg(short = 'k')]
     action_keyword: bool,
 
@@ -499,32 +516,33 @@ pub(crate) struct CompOptCommand {
         short = 'o',
         value_name = "OPT",
         choices(
-            "bashdefault",
-            "default",
-            "dirnames",
-            "filenames",
-            "fullquote",
-            "noquote",
-            "nosort",
-            "nospace",
-            "plusdirs"
+            "bashdefault" = "Perform rest of default completions if no completions are generated",
+            "default" = "Use default filename completion if no completions are generated",
+            "dirnames" = "Treat completions as directory names",
+            "filenames" = "Treat completions as filenames",
+            "fullquote" = "Quote completions even if they aren't file names. Not yet implemented: it's accepted and shown, but has no effect",
+            "noquote" = "Suppress default auto-quotation of completions",
+            "nosort" = "Do not sort completions",
+            "nospace" = "Do not append a trailing space to completions at the end of the input line",
+            "plusdirs" = "Also generate directory completions"
         )
     )]
     enabled_options: Vec<Choice<CompleteOption>>,
 
+    /// Disable the specified option for selected completion scenarios.
     #[arg(
         plus = 'o',
         value_name = "OPT",
         choices(
-            "bashdefault",
-            "default",
-            "dirnames",
-            "filenames",
-            "fullquote",
-            "noquote",
-            "nosort",
-            "nospace",
-            "plusdirs"
+            "bashdefault" = "Perform rest of default completions if no completions are generated",
+            "default" = "Use default filename completion if no completions are generated",
+            "dirnames" = "Treat completions as directory names",
+            "filenames" = "Treat completions as filenames",
+            "fullquote" = "Quote completions even if they aren't file names. Not yet implemented: it's accepted and shown, but has no effect",
+            "noquote" = "Suppress default auto-quotation of completions",
+            "nosort" = "Do not sort completions",
+            "nospace" = "Do not append a trailing space to completions at the end of the input line",
+            "plusdirs" = "Also generate directory completions"
         )
     )]
     disabled_options: Vec<Choice<CompleteOption>>,
@@ -694,6 +712,31 @@ mod tests {
             assert_eq!(parsed, [*name]);
         }
         Ok(())
+    }
+
+    /// What `choices(…)` says each value means, which the pages show, is
+    /// what brush-core's doc comment says, which help would show without it.
+    #[test]
+    fn each_choice_says_what_its_docs_say() {
+        use winnow_args::FromArg;
+        let items = <CompleteCommand as winnow_args::Args>::HELP.items.iter();
+        let items = items.chain(<CompOptCommand as winnow_args::Args>::HELP.items);
+        let mut checked = 0;
+        for item in items.filter(|item| !item.choices.is_empty()) {
+            // Without a function, each says nothing, and the docs disagree.
+            let help = item.choice_help.unwrap_or(|_| "");
+            for (index, choice) in item.choices.iter().enumerate() {
+                let from_docs = if item.choices[0] == "alias" {
+                    Choice::<CompleteAction>::choice_help(index, "")
+                } else {
+                    Choice::<CompleteOption>::choice_help(index, "")
+                };
+                let from_docs = from_docs.split_whitespace().collect::<Vec<_>>().join(" ");
+                assert_eq!(help(index), from_docs, "{choice}");
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 4);
     }
 
     #[test]

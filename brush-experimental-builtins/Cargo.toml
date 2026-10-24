@@ -23,5 +23,5 @@ workspace = true
 [dependencies]
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-winnow-args-adapter = { version = "^0.1.0", path = "../brush-winnow-args-adapter" }
-winnow-args = { version = "0.3.3", default-features = false, features = ["derive", "help-text"] }
+winnow-args = { version = "0.5.0", default-features = false, features = ["derive", "help-text"] }
 serde_json = { version = "1.0.149", optional = true }

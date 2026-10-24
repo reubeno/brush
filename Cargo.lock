@@ -6314,9 +6314,9 @@ dependencies = [
 
 [[package]]
 name = "winnow-args"
-version = "0.3.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca464c53e346e37f23b18708b9abde10ff6bcdd341077e204358f326cdd1f1cb"
+checksum = "b0473d4caf0ca65af578058f6d4aa6012859896a87b7a7f82abfabf29f4bc094"
 dependencies = [
  "winnow",
  "winnow-args-derive",
@@ -6324,9 +6324,9 @@ dependencies = [
 
 [[package]]
 name = "winnow-args-derive"
-version = "0.3.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b28323cd767cc8053581e7fa7a2512f1196bb01f85bcb653e30155cd8ed21ab5"
+checksum = "4f315d877bc77125f35befe0456d28d2b9c35fa1c2e79b3e06e868f18e24af7d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6335,9 +6335,9 @@ dependencies = [
 
 [[package]]
 name = "winnow-args-man"
-version = "0.3.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9293a4909759739dfdb1e0ebdca2d37b9de2e07ce18434263e92bc105388adfc"
+checksum = "13d21eb35c6e845eff9f106d3f1bfd946a8680deb371fd843a10f7bb1b0b884c"
 dependencies = [
  "roff",
  "winnow-args-spec",
@@ -6345,18 +6345,18 @@ dependencies = [
 
 [[package]]
 name = "winnow-args-markdown"
-version = "0.3.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16e143452b80938ac394f46efc8fdcafc9e5403c01dadd065da77965265564dd"
+checksum = "f15b487ec23093fb4d53ee70f0b96191ad00aa25a6a4d2d808e55a096f119406"
 dependencies = [
  "winnow-args-spec",
 ]
 
 [[package]]
 name = "winnow-args-spec"
-version = "0.3.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30beec25ee49ec2705a0fd744131691f2d7170be1056877d70d96a36dce4a709"
+checksum = "29d1b77483233e0b3a323096e42e254bcfb16eff37989b21d6a36672c389c971"
 dependencies = [
  "toml",
 ]

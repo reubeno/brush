@@ -65,8 +65,11 @@ impl std::str::FromStr for InputBackendType {
 brush is distributed under the terms of the MIT license. If you encounter any issues or discrepancies in behavior from bash, please report them at https://github.com/reubeno/brush.
 
 For more information, visit https://brush.sh.",
+    usage = "brush [OPTIONS]... [SCRIPT_PATH [SCRIPT_ARGS]...]
+brush [OPTIONS]... -c COMMAND_STRING [NAME [ARGS]...]",
     plus_options,
     disable_help_short,
+    brief_help,
     disable_version_flag,
     disable_help_subcommand
 )]
@@ -92,9 +95,8 @@ pub struct CommandLineArgs {
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
 
     /// Execute the command given as the first operand and then exit.
-    ///
-    /// Only an input to parsing: `parse_shell_args` moves the command string into
-    /// `command`, which is what everything else consults.
+    // Only an input to parsing: `parse_shell_args` moves the command string into
+    // `command`, which is what everything else consults.
     #[arg(short = 'c', help_heading = "Standard shell options")]
     pub(crate) command_string_mode: bool,
 
@@ -299,12 +301,13 @@ pub struct CommandLineArgs {
         long = "disable-event",
         alias = "log-disable",
         value_name = "EVENT",
+        hide_choices,
         help_heading = "User interface options"
     )]
     pub disabled_events: Vec<events::TraceEvent>,
 
     /// Path and arguments for script to execute (optional).
-    #[arg(positional, stop_flags, value_name = "SCRIPT_PATH")]
+    #[arg(positional, stop_flags, value_name = "SCRIPT_PATH [SCRIPT_ARGS]...")]
     pub script_args: Vec<String>,
 }
 
