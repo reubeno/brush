@@ -5,14 +5,14 @@ pub(crate) struct TrueCommand {}
 
 impl builtins::ParseArgs for TrueCommand {
     fn content(
-        _name: &str,
+        name: &str,
         content_type: builtins::ContentType,
         _options: &builtins::ContentOptions,
     ) -> Result<String, brush_core::Error> {
         match content_type {
             builtins::ContentType::DetailedHelp => Ok("Returns a successful exit status.".into()),
-            builtins::ContentType::ShortUsage => Ok("true".into()),
-            builtins::ContentType::ShortDescription => Ok("true - success".into()),
+            builtins::ContentType::ShortUsage => Ok(format!("{name}: {name}\n")),
+            builtins::ContentType::ShortDescription => Ok(format!("{name} - success\n")),
             builtins::ContentType::ManPage => error::unimp("man page not yet implemented"),
         }
     }

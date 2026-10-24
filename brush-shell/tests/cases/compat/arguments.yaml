@@ -473,9 +473,8 @@ cases:
     ignore_stderr: true
     args: ["-c", 'echo "0=[$0] 1=[$1]"', "-i"]
 
-  # Repeating a boolean option is harmless in bash; brush's parser rejects it.
+  # Repeating a boolean option is harmless in bash.
   - name: "repeated -s"
-    known_failure: true
     ignore_stderr: true
     args: ["-s", "-s"]
     stdin: |
