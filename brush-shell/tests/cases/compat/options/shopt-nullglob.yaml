@@ -77,3 +77,14 @@ cases:
     stdin: |
       shopt -s nullglob
       echo "result:" nonexistent_dir/*/
+
+  - name: "nullglob keeps a bracket split by a slash"
+    stdin: |
+      shopt -s nullglob
+      echo "1:" [a/b]
+      echo "2:" x/[a/b]
+      echo "3:" [/]
+      echo "4:" [a/b]*
+      mkdir '[a'
+      touch '[a/b]x'
+      echo "5:" [a/b]*

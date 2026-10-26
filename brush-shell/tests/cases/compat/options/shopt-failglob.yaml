@@ -77,3 +77,9 @@ cases:
       x='*.nomatch_xyz'
       echo $x 2>/dev/null
       echo "exit=$?"
+
+  - name: "failglob ignores a bracket split by a slash"
+    stdin: |
+      shopt -s failglob
+      echo [a/b]
+      echo "exit=$?"
