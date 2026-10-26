@@ -102,6 +102,22 @@ cases:
       echo "\${undeclared:=}         : ${undeclared:=}"
       declare -p undeclared
 
+  - name: "Parameter expression: assign default value to variable with attributes"
+    stdin: |
+      declare -u upper
+      echo "\${upper:=abc}        : ${upper:=abc} ${upper}"
+      declare -l lower
+      echo "\${lower=ABC}         : ${lower=ABC} ${lower}"
+      declare -c cap
+      echo "\${cap:=hello world}  : ${cap:=hello world}"
+      declare -u -a arr
+      echo "\${arr[1]:=q}         : ${arr[1]:=q} ${arr[1]}"
+      declare -l -A assoc
+      echo "\${assoc[k]:=XY}      : ${assoc[k]:=XY} ${assoc[k]}"
+      i=0
+      echo "\${arr[i++]:=z}       : ${arr[i++]:=z} ${i}"
+      declare -p arr
+
   - name: "Parameter expression: alternative value"
     stdin: |
       value="value"
