@@ -398,3 +398,16 @@ cases:
       touch x
       u=x
       echo @($u) @(a|$u) @(a|${u:-y}) @(a|${v:-x})
+
+  - name: "Backslash from a variable in a path component without glob characters"
+    stdin: |
+      mkdir sub 'a*b' x
+      touch sub/file 'a*b/f' x/f
+      v='s\ub'
+      echo $v/*
+      echo $v*/*
+      v='a\*b'
+      echo $v/*
+      v='\x'
+      echo $v/*
+      echo "$v/"*
