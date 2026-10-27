@@ -88,3 +88,12 @@ cases:
       mkdir '[a'
       touch '[a/b]x'
       echo "5:" [a/b]*
+
+  - name: "nullglob still drops an extglob split by a slash"
+    stdin: |
+      shopt -s extglob nullglob
+      echo "1:" @(a/b)
+      echo "2:" [a/b]
+      mkdir a
+      touch a/b
+      echo "3:" @(a/b)

@@ -83,3 +83,12 @@ cases:
       shopt -s failglob
       echo [a/b]
       echo "exit=$?"
+
+  - name: "failglob reports an extglob split by a slash"
+    ignore_stderr: true
+    stdin: |
+      shopt -s extglob failglob
+      echo @(a/b)
+      echo "exit=$?"
+      echo [a/b]
+      echo "exit=$?"

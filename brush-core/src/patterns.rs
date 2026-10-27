@@ -209,11 +209,20 @@ impl Pattern {
             }
         }
 
+        // An extglob group like `@(a/b)` is still a pattern even though the `/` splits it
+        // across components, so look for those in the unsplit pieces.
+        let has_extglob_group = self.enable_extended_globbing
+            && self.pieces.iter().any(|piece| {
+                matches!(piece, PatternPiece::Pattern(_))
+                    && requires_expansion(piece.as_str(), true)
+                    && !requires_expansion(piece.as_str(), false)
+            });
+
         // Similarly, if we're *confident* the pattern doesn't require expansion, then we
         // know there's a single expansion (before filtering). We check each path component
         // on its own, since a bracket expression can't span a `/` (e.g., `[a/b]` isn't a
         // pattern at all).
-        if !components.iter().any(component_requires_expansion) {
+        if !has_extglob_group && !components.iter().any(component_requires_expansion) {
             let concatenated: String = self.pieces.iter().map(|piece| piece.as_str()).collect();
 
             if let Some(filter) = path_filter
