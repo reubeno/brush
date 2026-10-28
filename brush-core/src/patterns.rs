@@ -1,7 +1,7 @@
 //! Shell patterns
 
 use crate::{error, regex, sys, trace_categories};
-use std::{collections::VecDeque, path::Path};
+use std::{borrow::Cow, collections::VecDeque, path::Path};
 
 /// Represents a piece of a shell pattern.
 #[derive(Clone, Debug)]
@@ -17,6 +17,15 @@ impl PatternPiece {
         match self {
             Self::Pattern(s) => s,
             Self::Literal(s) => s,
+        }
+    }
+
+    /// Returns the text this piece matches when it holds no glob characters. A backslash in
+    /// a pattern piece escapes the next character and is discarded when matching.
+    fn to_unescaped_str(&self) -> Cow<'_, str> {
+        match self {
+            Self::Pattern(s) if s.contains('\\') => Cow::Owned(remove_pattern_escapes(s)),
+            Self::Pattern(s) | Self::Literal(s) => Cow::Borrowed(s),
         }
     }
 }
@@ -263,7 +272,7 @@ impl Pattern {
             }) {
                 let flattened = component
                     .iter()
-                    .map(|piece| piece.as_str())
+                    .map(PatternPiece::to_unescaped_str)
                     .collect::<String>();
                 paths_so_far.retain_mut(|p| {
                     sys::fs::push_path_for_pattern(p, &flattened);
@@ -435,6 +444,21 @@ impl Pattern {
         let re = self.to_regex(true, true)?;
         Ok(re.is_match(value)?)
     }
+}
+
+/// Removes the backslashes that escape characters in a shell pattern.
+fn remove_pattern_escapes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // A trailing backslash has nothing to escape; keep it.
+            result.push(chars.next().unwrap_or('\\'));
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// Checks whether a string contains glob metacharacters that would trigger
@@ -930,6 +954,15 @@ mod tests {
         assert!(!make_extglob("+(x+(ab)y)").exactly_matches("xyxy")?);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_remove_pattern_escapes() {
+        assert_eq!(remove_pattern_escapes("abc"), "abc");
+        assert_eq!(remove_pattern_escapes(r"s\ub"), "sub");
+        assert_eq!(remove_pattern_escapes(r"a\\b"), r"a\b");
+        assert_eq!(remove_pattern_escapes(r"\*x"), "*x");
+        assert_eq!(remove_pattern_escapes("ab\\"), "ab\\");
     }
 
     #[test]
