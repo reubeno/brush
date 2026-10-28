@@ -400,8 +400,13 @@ cases:
       EOF
 
   - name: "Nested subshell starting with double parentheses"
-    known_failure: true # TODO(parser): '((' is always taken as an arithmetic command; bash runs nested subshells when it isn't closed by '))'
     ignore_stderr: true
     stdin: |
       ((echo a) )
       echo "rc=$?"
+
+  - name: "Arithmetic command with line continuations between opening parentheses"
+    stdin: |
+      (\
+      (\
+      10+3)) && echo "arithmetic"

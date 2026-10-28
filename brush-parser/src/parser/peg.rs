@@ -109,12 +109,21 @@ peg::parser! {
             expected!("compound command")
 
         pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
-            start:specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") end:specific_operator(")") {
+            start:specific_operator("(") open:specific_operator("(") expr:arithmetic_expression() close:specific_operator(")") end:specific_operator(")") {?
+                // As in bash, `((` and `))` only form an arithmetic command when each pair of
+                // parentheses touch. Otherwise (e.g., `( (cmd) )`) we decline, and the text is
+                // read as nested subshells instead.
+                if !locations_are_contiguous(start.location(), open.location())
+                    || !locations_are_contiguous(close.location(), end.location())
+                {
+                    return Err("arithmetic command");
+                }
+
                 let loc = SourceSpan::within(
                     start.location(),
                     end.location()
                 );
-                ast::ArithmeticCommand { expr, loc }
+                Ok(ast::ArithmeticCommand { expr, loc })
             }
 
         pub(crate) rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
