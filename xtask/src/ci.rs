@@ -7,9 +7,10 @@
 //! Fast inner-loop checks (~7s warm cache) for rapid iteration, using nothing
 //! but the Rust toolchain:
 //! 1. **Format check** - Fast, catches formatting issues early
-//! 2. **Build check** - Ensures code compiles with all features
-//! 3. **Lint check** - Clippy warnings that should be addressed
-//! 4. **Unit tests** - Fast tests excluding integration test binaries
+//! 2. **Crate structure check** - Published crates carry required files (e.g. LICENSE)
+//! 3. **Build check** - Ensures code compiles with all features
+//! 4. **Lint check** - Clippy warnings that should be addressed
+//! 5. **Unit tests** - Fast tests excluding integration test binaries
 //!
 //! ## Full workflow (`cargo xtask ci full`)
 //!
@@ -119,6 +120,10 @@ fn quick_steps(verbose: bool) -> Vec<Step<'static>> {
         (
             "Format check",
             Box::new(move || check::run(&CheckCommand::Fmt, verbose)),
+        ),
+        (
+            "Crate structure check",
+            Box::new(move || check::run(&CheckCommand::Crates, verbose)),
         ),
         (
             "Build check",

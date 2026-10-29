@@ -483,6 +483,9 @@ jobs:
       - name: Check
         run: cargo xtask check build ${{ matrix.build_check_args }}
 
+      - name: Crate structure check
+        run: cargo xtask check crates
+
       - name: Clippy check
         if: matrix.rust-version == 'stable'
         run: cargo xtask check lint

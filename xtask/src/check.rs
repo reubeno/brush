@@ -26,11 +26,16 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use xshell::{Shell, cmd};
 
+mod crates;
+
 /// Run code quality checks.
 #[derive(Parser)]
 pub enum CheckCommand {
     /// Check that the code compiles.
     Build(BuildArgs),
+    /// Check that every published crate follows the workspace's structural
+    /// rules (e.g. carries a LICENSE symlink).
+    Crates,
     /// Check code formatting.
     Fmt,
     /// Run the hooks defined in `.pre-commit-config.yaml`: file hygiene,
@@ -72,6 +77,7 @@ pub fn run(cmd: &CheckCommand, verbose: bool) -> Result<()> {
         CheckCommand::Lint => check_lint(&sh, verbose),
         CheckCommand::UnusedDeps => check_unused_deps(&sh, verbose),
         CheckCommand::Build(args) => check_build(&sh, args, verbose),
+        CheckCommand::Crates => check_crates(&sh),
         CheckCommand::Schemas => check_schemas(&sh, verbose),
         CheckCommand::Hooks(args) => check_hooks(&sh, args, verbose),
     }
@@ -277,6 +283,13 @@ fn check_schemas(sh: &Shell, verbose: bool) -> Result<()> {
     }
 
     eprintln!("Schema check passed.");
+    Ok(())
+}
+
+fn check_crates(sh: &Shell) -> Result<()> {
+    eprintln!("Checking crate structure...");
+    crates::check(sh).context("Crate structure check failed")?;
+    eprintln!("Crate structure check passed.");
     Ok(())
 }
 

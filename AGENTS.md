@@ -232,6 +232,7 @@ cargo xtask ci full
 cargo xtask check fmt      # Format check
 cargo xtask check lint     # Clippy
 cargo xtask check build    # Compilation check
+cargo xtask check crates   # Crate structure (e.g. LICENSE symlinks)
 cargo xtask check schemas  # Schema drift check
 cargo xtask check hooks  # prek hooks: file hygiene, typos, zizmor, lychee, cargo-deny, ast-grep
 cargo xtask check hooks deps  # One hook, by id or alias
