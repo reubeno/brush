@@ -703,6 +703,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "brush-winnow-args-adapter"
+version = "0.1.0"
+dependencies = [
+ "brush-core",
+ "winnow-args",
+]
+
+[[package]]
 name = "bstr"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6313,6 +6321,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winnow-args"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0473d4caf0ca65af578058f6d4aa6012859896a87b7a7f82abfabf29f4bc094"
+dependencies = [
+ "winnow",
+ "winnow-args-derive",
+]
+
+[[package]]
+name = "winnow-args-derive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f315d877bc77125f35befe0456d28d2b9c35fa1c2e79b3e06e868f18e24af7d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
