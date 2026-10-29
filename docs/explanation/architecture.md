@@ -32,7 +32,7 @@ brush-shell                  → brush-interactive, brush-builtins, brush-core,
                                brush-experimental-builtins (optional),
                                brush-coreutils-builtins (optional)
 brush-interactive            → brush-core, brush-parser
-brush-builtins               → brush-clap-adapter, brush-core, brush-parser
+brush-builtins               → brush-core, brush-parser, brush-winnow-args-adapter
 brush-experimental-builtins  → brush-core, brush-winnow-args-adapter
 brush-clap-adapter           → brush-core
 brush-winnow-args-adapter    → brush-core
