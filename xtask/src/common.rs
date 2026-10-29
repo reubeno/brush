@@ -54,6 +54,13 @@ pub fn find_workspace_root() -> Result<PathBuf> {
 #[derive(serde::Deserialize)]
 struct Metadata {
     target_directory: PathBuf,
+    packages: Vec<Package>,
+}
+
+#[derive(serde::Deserialize)]
+struct Package {
+    name: String,
+    version: String,
 }
 
 fn cargo_metadata() -> Result<Metadata> {
@@ -70,6 +77,16 @@ fn cargo_metadata() -> Result<Metadata> {
 /// `build.target-dir` or the default puts it.
 pub fn find_target_dir() -> Result<PathBuf> {
     Ok(cargo_metadata()?.target_directory)
+}
+
+/// Find the version of the workspace's package `name`.
+pub fn find_package_version(name: &str) -> Result<String> {
+    cargo_metadata()?
+        .packages
+        .into_iter()
+        .find(|package| package.name == name)
+        .map(|package| package.version)
+        .with_context(|| format!("No package named {name} in the workspace"))
 }
 
 /// Find the brush binary path for the given build profile.
@@ -137,5 +154,14 @@ mod tests {
         // running executable's path has its symlinks resolved.)
         let exe = std::env::current_exe().unwrap().canonicalize().unwrap();
         assert!(exe.starts_with(find_target_dir().unwrap().canonicalize().unwrap()));
+    }
+
+    #[test]
+    fn test_find_package_version() {
+        assert_eq!(
+            find_package_version("xtask").unwrap(),
+            env!("CARGO_PKG_VERSION")
+        );
+        assert!(find_package_version("no-such-package").is_err());
     }
 }
