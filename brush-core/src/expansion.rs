@@ -1498,12 +1498,23 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                         let expanded_default =
                             self.expand_inheriting_word(default_value, context).await?;
                         let expanded_default_value = self.fields_to_string(expanded_default);
+                        let (var, index) = self
+                            .assign_to_parameter(
+                                &parameter,
+                                expanded_default_value.as_str(),
+                                context,
+                            )
+                            .await?;
+
                         // The result is the parameter's new value, which can differ from the
                         // assigned word (e.g., with case-changing or integer attributes).
-                        let new_value = self
-                            .assign_to_parameter(&parameter, expanded_default_value, context)
-                            .await?;
-                        Ok(Expansion::from(new_value))
+                        let new_value = match &index {
+                            Some(index) => var.value().get_at_without_dynamic_support(index)?,
+                            None => var.value().try_get_cow_str_without_dynamic_support(),
+                        }
+                        .map(|v| v.into_owned());
+
+                        Ok(Expansion::from(new_value.unwrap_or(expanded_default_value)))
                     }
                 }
             }
@@ -2000,13 +2011,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         }
     }
 
-    /// Assigns the given value to the parameter, returning the parameter's resulting value.
+    /// Assigns the given value to the parameter. Returns the assigned variable along with
+    /// the expanded array index, if one was used.
     async fn assign_to_parameter<T: Into<String>>(
         &mut self,
         parameter: &brush_parser::word::Parameter,
         value: T,
         context: WordContext,
-    ) -> Result<String, error::Error> {
+    ) -> Result<(&variables::ShellVariable, Option<String>), error::Error> {
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
@@ -2037,44 +2049,26 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
 
         let value = value.into();
 
-        if let Some(index) = &index {
+        let var = if let Some(index) = &index {
             self.shell.env_mut().update_or_add_array_element(
                 variable_name,
                 index.clone(),
-                value.clone(),
+                value,
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
-            )?;
+            )?
         } else {
             self.shell.env_mut().update_or_add(
                 variable_name,
-                variables::ShellValueLiteral::Scalar(value.clone()),
+                variables::ShellValueLiteral::Scalar(value),
                 |_| Ok(()),
                 env::EnvironmentLookup::Anywhere,
                 env::EnvironmentScope::Global,
-            )?;
-        }
+            )?
+        };
 
-        // Read back what was stored, since the variable's attributes may have transformed it.
-        let new_value = self
-            .shell
-            .env()
-            .get(variable_name)
-            .and_then(|(_, var)| match &index {
-                Some(index) => var
-                    .value()
-                    .get_at(index, &*self.shell)
-                    .ok()
-                    .flatten()
-                    .map(|v| v.into_owned()),
-                None => var
-                    .value()
-                    .try_get_cow_str(&*self.shell)
-                    .map(|v| v.into_owned()),
-            });
-
-        Ok(new_value.unwrap_or(value))
+        Ok((var, index))
     }
 
     async fn try_resolve_parameter_to_variable(
@@ -2201,7 +2195,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                     if matches!(var.value(), ShellValue::Unset(_)) {
                         self.undefined_expansion(parameter, allow_unset_vars)
                     } else {
-                        let value = var.value().try_get_cow_str(&*self.shell);
+                        let value = var.value().try_get_cow_str(self.shell);
                         if let Some(value) = value {
                             Ok(Expansion::from(value.to_string()))
                         } else {
