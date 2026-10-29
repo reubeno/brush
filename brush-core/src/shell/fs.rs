@@ -8,9 +8,17 @@ use crate::{
     ExecutionParameters, ShellFd,
     env::{EnvironmentLookup, EnvironmentScope},
     error, openfiles, pathsearch,
-    sys::users,
+    sys::{fs::PathExt as _, users},
     variables,
 };
+
+/// Where the name of a command (one without a path separator) leads.
+enum Located {
+    /// The shell's hash table has a path for it.
+    Hashed(PathBuf),
+    /// A search of `PATH` found it.
+    Found(PathBuf),
+}
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Sets the shell's current working directory to the given path.
@@ -81,134 +89,112 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
     }
 
-    /// Finds executables with the given name in the shell's current PATH, yielding each match
-    /// in search order.
-    ///
-    /// # Arguments
-    ///
-    /// * `filename` - The name of the executable to look for.
-    pub fn find_executables_in_path<'a>(
-        &'a self,
-        filename: &'a str,
-    ) -> impl Iterator<Item = PathBuf> + 'a {
+    /// Returns the shell's command search path: its current `PATH`, with relative
+    /// directories relative to its working directory. Searching it doesn't consult or
+    /// change the shell's hash table; see [`Self::resolve_external_command`] and
+    /// [`Self::hash_command`] for that.
+    pub fn command_search_path(&self) -> pathsearch::SearchPath {
         let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = crate::sys::fs::split_paths(path_var.as_ref());
-
-        pathsearch::search_for_executable(paths, filename)
+        pathsearch::SearchPath::new(
+            crate::sys::fs::split_paths(path_var.as_ref()),
+            self.working_dir(),
+        )
     }
 
-    /// Finds executables in the shell's current default PATH, with filenames matching the
-    /// given prefix.
+    /// Looks up where the name of a command leads, if not to a path: the shell's hash
+    /// table, or else a search of `PATH` (see [`pathsearch::SearchPath::resolve`]).
+    fn locate_command(&self, name: &str) -> Option<Located> {
+        if let Some(path) = self.program_location_cache.get(name) {
+            return Some(Located::Hashed(path));
+        }
+
+        self.command_search_path().resolve(name).map(Located::Found)
+    }
+
+    /// Looks up the program an external command's name refers to, as running the
+    /// command would find it, but without hashing it (as `type` and `command -v` do).
+    ///
+    /// A name with a path separator is a path, relative to the working directory, which
+    /// is a command only if it's executable and not a directory. Any other is looked up
+    /// in the shell's hash table, or else searched for in `PATH` (see
+    /// [`pathsearch::SearchPath::resolve`]).
+    ///
+    /// Returns the program's path (relative to the working directory, if it's
+    /// relative), and whether it came from the hash table.
     ///
     /// # Arguments
     ///
-    /// * `filename_prefix` - The prefix to match against executable filenames.
-    pub fn find_executables_in_path_with_prefix(
-        &self,
-        filename_prefix: &str,
-        case_insensitive: bool,
-    ) -> impl Iterator<Item = PathBuf> {
-        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = crate::sys::fs::split_paths(path_var.as_ref());
+    /// * `name` - The name of the command.
+    pub fn lookup_external_command(&self, name: &str) -> Option<(PathBuf, bool)> {
+        if crate::sys::fs::contains_path_separator(name) {
+            // A directory is never a command, even though it carries the execute bit.
+            let candidate = self.absolute_path(Path::new(name));
+            return (!candidate.is_dir() && candidate.executable())
+                .then(|| (PathBuf::from(name), false));
+        }
 
-        pathsearch::search_for_executable_with_prefix(paths, filename_prefix, case_insensitive)
-    }
-
-    /// Determines whether the given filename is the name of an executable in one of the
-    /// directories in the shell's current PATH. If found, returns the path.
-    ///
-    /// # Arguments
-    ///
-    /// * `candidate_name` - The name of the file to look for.
-    pub fn find_first_executable_in_path<S: AsRef<str>>(
-        &self,
-        candidate_name: S,
-    ) -> Option<PathBuf> {
-        self.find_executables_in_path(candidate_name.as_ref())
-            .next()
-    }
-
-    /// Uses the shell's hash-based path cache to check whether the given filename is the name
-    /// of an executable in one of the directories in the shell's current PATH. If found,
-    /// ensures the path is in the cache and returns it.
-    ///
-    /// # Arguments
-    ///
-    /// * `candidate_name` - The name of the file to look for.
-    pub fn find_first_executable_in_path_using_cache<S: AsRef<str>>(
-        &mut self,
-        candidate_name: S,
-    ) -> Option<PathBuf>
-    where
-        String: From<S>,
-    {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
-            Some(cached_path)
-        } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
-            self.program_location_cache
-                .set(candidate_name, found_path.clone());
-            Some(found_path)
-        } else {
-            None
+        match self.locate_command(name)? {
+            Located::Hashed(path) => Some((path, true)),
+            Located::Found(path) => Some((path, false)),
         }
     }
 
-    /// Resolves a command name by searching the shell's current PATH.
+    /// Resolves the name of an external command to the program to run, as running the
+    /// command would.
     ///
-    /// Unlike [`Self::find_first_executable_in_path`], a non-executable entry in the PATH
-    /// resolves as the command; the shell reports it as the command and then fails to run it.
-    /// See [`pathsearch::resolve_command`].
+    /// A name with a path separator is a path, relative to the working directory. Any
+    /// other is looked up in the shell's hash table, or else searched for in `PATH`
+    /// (see [`pathsearch::SearchPath::resolve`]), and what the search finds is hashed.
     ///
-    /// # Arguments
-    ///
-    /// * `candidate_name` - The name of the command to resolve.
-    pub fn resolve_command_in_path<S: AsRef<str>>(&self, candidate_name: S) -> Option<PathBuf> {
-        let path_var = self.env.get_str("PATH", self).unwrap_or_default();
-        let paths = crate::sys::fs::split_paths(path_var.as_ref());
-        pathsearch::resolve_command(paths, candidate_name.as_ref())
-    }
-
-    /// Like [`Self::resolve_command_in_path`], but consults the shell's hash-based path cache
-    /// first and caches whatever a search turns up.
-    ///
-    /// # Arguments
-    ///
-    /// * `candidate_name` - The name of the command to resolve.
-    pub fn resolve_command_in_path_using_cache<S: AsRef<str>>(
-        &mut self,
-        candidate_name: S,
-    ) -> Option<PathBuf>
-    where
-        String: From<S>,
-    {
-        if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
-            return Some(cached_path);
-        }
-
-        let found_path = self.resolve_command_in_path(candidate_name.as_ref())?;
-        self.program_location_cache
-            .set(candidate_name, found_path.clone());
-
-        Some(found_path)
-    }
-
-    /// Resolves the name of an external command to the program to run, as running
-    /// the command would: a name with a path separator is a path, relative to the
-    /// working directory; any other is looked up in `PATH`, as
-    /// [`Self::resolve_command_in_path_using_cache`] does.
+    /// Returns the program's path, relative to the working directory if it's relative.
     ///
     /// # Arguments
     ///
     /// * `name` - The name of the command.
     pub fn resolve_external_command(&mut self, name: &str) -> Option<PathBuf> {
         if crate::sys::fs::contains_path_separator(name) {
-            Some(crate::sys::fs::resolve_executable_path(
+            return Some(crate::sys::fs::resolve_executable_path(
                 PathBuf::from(name),
                 self.working_dir(),
-            ))
-        } else {
-            self.resolve_command_in_path_using_cache(name)
+            ));
         }
+
+        match self.locate_command(name)? {
+            Located::Hashed(path) => Some(path),
+            Located::Found(path) => {
+                self.program_location_cache.set(name, path.clone());
+                Some(path)
+            }
+        }
+    }
+
+    /// Hashes the command with the given name, as `hash name` does. Whatever the shell's
+    /// hash table had for the name is forgotten. If the name is a path, or a function's
+    /// or a builtin's, nothing takes its place; otherwise `PATH` is searched for an
+    /// executable of the name (see [`pathsearch::SearchPath::find`]), which is hashed.
+    ///
+    /// Returns whether the name is a command: only a name that's searched for and not
+    /// found isn't.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the command.
+    pub fn hash_command(&mut self, name: &str) -> bool {
+        // Whatever was there goes, even if nothing's found to take its place.
+        self.program_location_cache.unset(name);
+
+        if crate::sys::fs::contains_path_separator(name)
+            || self.funcs().get(name).is_some()
+            || self.builtins().get(name).is_some_and(|b| !b.disabled)
+        {
+            return true;
+        }
+
+        let Some(path) = self.command_search_path().find(name) else {
+            return false;
+        };
+        self.program_location_cache.set(name, path);
+        true
     }
 
     /// Gets the absolute form of the given path.
