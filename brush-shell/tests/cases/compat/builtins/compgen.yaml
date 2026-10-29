@@ -570,3 +570,13 @@ cases:
     stdin: |
       ( set -u; compgen -W '$nope'; echo in-sub ); echo "rc=$?"
       echo next
+
+  - name: "compgen -A shopt lists names in order"
+    known_failure: true # TODO(compgen): shopt names come out in a different order on each run
+    stdin: |
+      compgen -A shopt | grep -E '^(ext|exp|exe|cdable|cdspell|checkhash|checkwinsize|cmdhist)'
+
+  - name: "compgen -A setopt lists names in order"
+    known_failure: true # TODO(compgen): set -o names come out in a different order on each run
+    stdin: |
+      compgen -A setopt | grep -E '^(allexport|braceexpand|emacs|errexit|errtrace|functrace|hashall|histexpand|history|ignoreeof)$'
