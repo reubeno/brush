@@ -56,6 +56,14 @@ cases:
       - 2
       - 3
 
+  - name: "-o enables an option disabled with +o"
+    known_failure: true # TODO(args): every +o is applied after every -o, so the last one doesn't win
+    args: ["+o", "errexit", "-o", "errexit", "-c", 'echo "$-"']
+
+  - name: "+O disables a shopt option enabled with -O"
+    known_failure: true # TODO(args): every -O is applied after every +O, so the last one doesn't win
+    args: ["-O", "extglob", "+O", "extglob", "-c", "shopt extglob"]
+
   - name: "-c mode -- torture"
     args:
       - "-c"

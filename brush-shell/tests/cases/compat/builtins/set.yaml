@@ -146,6 +146,12 @@ cases:
       set +o bogus 2>&1 | strip
       echo "set +o: ${PIPESTATUS[0]}"
 
+  - name: "set takes the letters after -o as more options"
+    known_failure: true # TODO(set): `-oe` is taken as `-o e`, where bash lists the options and then sets -e
+    stdin: |
+      set -oe | tail -1
+      set -oe >/dev/null; echo "$-"
+
   - name: "set rejects an option it doesn't have"
     known_failure: true # TODO(set): set -Z and set +Z succeed with status 0
     ignore_stderr: true
