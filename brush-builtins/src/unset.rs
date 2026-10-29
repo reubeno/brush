@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::io::Write;
 
 use clap::Parser;
 
@@ -14,19 +15,19 @@ pub(crate) struct UnsetCommand {
     names: Vec<String>,
 }
 
+// Only `-f` with `-v` is rejected, and at execution time: `-n` combines with either.
 #[derive(Parser)]
-#[clap(group = clap::ArgGroup::new("name-interpretation").multiple(false).required(false))]
 pub(crate) struct UnsetNameInterpretation {
     /// Treat each name as a shell function.
-    #[arg(short = 'f', group = "name-interpretation")]
+    #[arg(short = 'f')]
     shell_functions: bool,
 
     /// Treat each name as a shell variable.
-    #[arg(short = 'v', group = "name-interpretation")]
+    #[arg(short = 'v')]
     shell_variables: bool,
 
     /// Treat each name as a name reference.
-    #[arg(short = 'n', group = "name-interpretation")]
+    #[arg(short = 'n')]
     name_references: bool,
 }
 
@@ -45,6 +46,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnsetCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
+        if self.name_interpretation.shell_functions && self.name_interpretation.shell_variables {
+            writeln!(
+                context.stderr(),
+                "{}: cannot simultaneously unset a function and a variable",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::general_error());
+        }
+
         //
         // TODO(nameref): implement nameref
         //
