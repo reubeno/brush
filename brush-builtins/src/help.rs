@@ -1,27 +1,25 @@
 use brush_core::{ExecutionResult, builtins};
-use clap::Parser;
 use std::io::Write;
 
 /// Display command help.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct HelpCommand {
     /// Display a short description for the commands.
     #[arg(short = 'd')]
     short_description: bool,
-
     /// Display a man-style page of documentation for the commands.
     #[arg(short = 'm')]
     man_page_style: bool,
-
     /// Display a short usage summary for the commands.
     #[arg(short = 's')]
     short_usage: bool,
-
     /// Patterns of topics to display help for.
+    #[arg(positional)]
     topic_patterns: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(HelpCommand);
+brush_winnow_args_adapter::impl_parse_args!(HelpCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HelpCommand {
     type Error = brush_core::Error;
