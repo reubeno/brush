@@ -63,14 +63,14 @@ impl Config {
     /// 2. Config file values
     /// 3. Default values
     ///
-    /// CLI defaults are automatically inferred from clap's parsed defaults.
+    /// CLI defaults are inferred by parsing an empty command line.
     ///
     /// # Arguments
     ///
     /// * `args` - The parsed command-line arguments
     #[must_use]
     pub fn to_ui_options(&self, args: &CommandLineArgs) -> UIOptions {
-        // Get clap's defaults by parsing an empty argument list.
+        // Get the defaults by parsing an empty argument list.
         // This lets us detect which CLI values were explicitly set vs. defaulted.
         let defaults = CommandLineArgs::default_values();
 

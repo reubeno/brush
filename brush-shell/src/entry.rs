@@ -11,11 +11,12 @@ use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
 #[cfg(feature = "experimental-builtins")]
 use brush_experimental_builtins::ShellBuilderExt as _;
-use clap::CommandFactory;
 use std::io::IsTerminal;
+use std::io::Write;
 use std::sync::LazyLock;
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
+use winnow_args::Args as _;
 
 static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceEventConfig>>>> =
     LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(None)));
@@ -23,36 +24,123 @@ static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceE
 type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<error_formatter::Formatter>;
 type BrushShell = brush_core::Shell<BrushShellExtensions>;
 
+/// A command-line failure, already rendered. Help and version requests use
+/// exit code 0; every other failure uses 2.
+#[derive(Debug)]
+pub(crate) struct ParseError {
+    pub(crate) message: String,
+    pub(crate) exit_code: u8,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+/// Parses `args`, splitting off `--` and everything after it first.
+///
+/// Returns the parsed value plus the `--` separator and the words that followed
+/// it, or `None` if no separator was present. The first word is the program name
+/// and is not an argument.
+fn try_parse_known(
+    args: impl IntoIterator<Item = String>,
+) -> Result<(CommandLineArgs, Option<Vec<String>>), ParseError> {
+    let args: Vec<String> = args.into_iter().collect();
+    let words = args.split_first().map_or(&[][..], |(_, rest)| rest);
+
+    let mut before = Vec::new();
+    let mut hyphen = None;
+    let mut after = Vec::new();
+    for word in words {
+        if hyphen.is_none() && word == "--" {
+            hyphen = Some(word.clone());
+            continue;
+        }
+        if hyphen.is_some() {
+            after.push(word.clone());
+        } else {
+            before.push(word.clone());
+        }
+    }
+
+    let parsed = parse_words(&before)?;
+    let raw = hyphen.map(|marker| {
+        let mut tail = vec![marker];
+        tail.extend(after);
+        tail
+    });
+    Ok((parsed, raw))
+}
+
+fn parse_words(words: &[String]) -> Result<CommandLineArgs, ParseError> {
+    CommandLineArgs::parse_words(&winnow_args::words(words)).map_err(|err| render_parse_error(&err))
+}
+
+fn render_parse_error(err: &winnow_args::Error) -> ParseError {
+    // Help goes to stdout with status 0; every other failure to stderr with 2.
+    // Colored when the stream each goes to is a terminal that shows color.
+    use std::io::IsTerminal as _;
+    use winnow_args::{color::Theme, help::Style};
+    const THEME: Theme = Theme::uniform(brush_winnow_args_adapter::HELP_PALETTE);
+    match err.render_help_styled(
+        "brush",
+        Style::themed(&THEME, std::io::stdout().is_terminal()),
+    ) {
+        Some(message) => ParseError {
+            message,
+            exit_code: 0,
+        },
+        None => ParseError {
+            message: err.render(Style::themed(&THEME, std::io::stderr().is_terminal())),
+            exit_code: 2,
+        },
+    }
+}
+
 impl CommandLineArgs {
     /// Parses the shell command line, including brush's `--` handling.
     pub(crate) fn parse_shell_args(
         itr: impl IntoIterator<Item = String>,
-    ) -> Result<Self, clap::Error> {
-        let (mut this, script_args) =
-            brush_clap_adapter::try_parse_before_double_dash::<Self>(itr)?;
+    ) -> Result<Self, ParseError> {
+        let (mut this, script_args) = try_parse_known(itr)?;
 
-        // Collect any args from after `--` (handled by try_parse_before_double_dash) into
-        // script_args, which become positional parameters ($0, $1, ...).
-        let mut script_args = script_args.into_iter().peekable();
-
-        // Bash stops option parsing at the first non-option word: a script path
-        // or the `-c` command string. A `--` seen before either is the option
-        // terminator and is dropped (`bash -s -- a`, `bash -- script.sh`); one
-        // seen after is an ordinary positional (`bash script.sh -- a`).
-        if this.script_args.is_empty() {
-            script_args.next_if(|a| a == "--");
+        if this.version {
+            return Err(ParseError {
+                message: format!("{} {}", productinfo::PRODUCT_NAME, crate::args::VERSION),
+                exit_code: 0,
+            });
         }
-        this.script_args.extend(script_args);
+
+        // Highlighting is always on in experimental builds.
+        this.enable_highlighting |= DEFAULT_ENABLE_HIGHLIGHTING;
+
+        // Collect any args from after `--` (handled by try_parse_known) into
+        // script_args, which become positional parameters ($0, $1, ...).
+        if let Some(args) = script_args {
+            let mut args = args.into_iter().peekable();
+
+            // Bash stops option parsing at the first non-option word: a script path
+            // or the `-c` command string. A `--` seen before either is the option
+            // terminator and is dropped (`bash -s -- a`, `bash -- script.sh`); one
+            // seen after is an ordinary positional (`bash script.sh -- a`).
+            if this.script_args.is_empty() {
+                args.next_if(|a| a == "--");
+            }
+            this.script_args.extend(args);
+        }
 
         // With `-c`, bash takes the command string from the first operand; the
         // operands after it keep their usual meaning, so the next one sets `$0`
         // and the rest become positional parameters.
         if this.command_string_mode {
             if this.script_args.is_empty() {
-                return Err(Self::command().error(
-                    clap::error::ErrorKind::MissingRequiredArgument,
-                    "-c: option requires an argument",
-                ));
+                return Err(ParseError {
+                    message: "brush: -c: option requires an argument".to_owned(),
+                    exit_code: 2,
+                });
             }
             this.command = Some(this.script_args.remove(0));
         }
@@ -86,31 +174,31 @@ pub fn run() {
     install_panic_handlers();
 
     //
+    // Answer a request from a generated completion script (`brush __complete_word__ ...`)
+    // before parsing: it isn't part of the shell's command line.
+    //
+    let completion_args: Vec<_> = std::env::args_os().skip(1).collect();
+    if let Some(answer) = CommandLineArgs::completion_request(&completion_args) {
+        let _ = write!(std::io::stdout(), "{answer}");
+        std::process::exit(0);
+    }
+
+    //
     // Parse args.
     //
-    let mut args: Vec<_> = std::env::args().collect();
-
-    // Work around clap's limitations handling +O options.
-    for arg in &mut args {
-        if arg.starts_with("+O") {
-            arg.insert_str(0, "--");
-        }
-    }
+    let args: Vec<_> = std::env::args().collect();
 
     let parsed_args = match CommandLineArgs::parse_shell_args(args.iter().cloned()) {
         Ok(parsed_args) => parsed_args,
-        Err(e) => {
-            let _ = e.print();
-
-            // Check for whether this is something we'd truly consider fatal. clap returns
-            // errors for `--help`, `--version`, etc.
-            let exit_code = match e.kind() {
-                clap::error::ErrorKind::DisplayVersion => 0,
-                clap::error::ErrorKind::DisplayHelp => 0,
-                _ => 2,
+        Err(error) => {
+            // Help and version requests succeed, so they go to stdout like any
+            // other requested output; real failures go to stderr.
+            let _ = if error.exit_code == 0 {
+                writeln!(std::io::stdout(), "{}", error.message)
+            } else {
+                writeln!(std::io::stderr(), "{}", error.message)
             };
-
-            std::process::exit(exit_code);
+            std::process::exit(i32::from(error.exit_code));
         }
     };
 
@@ -656,6 +744,24 @@ mod tests {
     }
 
     #[test]
+    fn plus_options_are_options_only_before_operands() -> Result<()> {
+        let parsed = CommandLineArgs::parse_shell_args(args(&[
+            "brush", "+o", "errexit", "-o", "nounset", "+O", "extglob", "script", "+o", "+Oz",
+        ]))?;
+        assert_eq!(parsed.disabled_options, ["errexit"]);
+        assert_eq!(parsed.enabled_options, ["nounset"]);
+        assert_eq!(parsed.disabled_shopt_options, ["extglob"]);
+        assert_eq!(parsed.script_args, ["script", "+o", "+Oz"]);
+
+        let parsed = CommandLineArgs::parse_shell_args(args(&[
+            "brush", "-xc", "echo", "arg0", "+o", "--", "+o",
+        ]))?;
+        assert_eq!(parsed.command.as_deref(), Some("echo"));
+        assert_eq!(parsed.script_args, ["arg0", "+o", "--", "+o"]);
+        Ok(())
+    }
+
+    #[test]
     fn parse_empty_args() -> Result<()> {
         let parsed_args = CommandLineArgs::parse_shell_args(args(&["brush"]))?;
         assert_matches!(parsed_args.script_args.as_slice(), []);
@@ -890,7 +996,7 @@ mod tests {
         // Unlike -c, bash's -o consumes -- as its literal value (invalid option
         // name), not as an option terminator.
         let result = CommandLineArgs::parse_shell_args(args(&["brush", "-o", "--"]));
-        // try_parse_before_double_dash splits at --, so -o ends up
+        // try_parse_known splits at --, so -o ends up
         // without a value and parsing correctly fails. The key assertion is
         // that we MUST NOT reinterpret -- as an option terminator for -o and
         // then take any later argument as its value.
@@ -942,7 +1048,7 @@ mod tests {
     #[test]
     fn parse_c_with_double_dash_and_later_double_dash() -> Result<()> {
         // After removing the first --, -c gets "echo". The second -- is
-        // handled by try_parse_before_double_dash and appears in script_args.
+        // handled by try_parse_known and appears in script_args.
         let parsed_args =
             CommandLineArgs::parse_shell_args(args(&["brush", "-c", "--", "echo", "--", "more"]))?;
         assert_eq!(parsed_args.command, Some("echo".to_string()));

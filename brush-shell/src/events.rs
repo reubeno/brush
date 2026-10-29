@@ -8,7 +8,7 @@ use tracing_subscriber::{
 };
 
 /// Type of event to trace.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum, winnow_args::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, winnow_args::ValueEnum)]
 pub enum TraceEvent {
     /// Traces parsing and evaluation of arithmetic expressions.
     Arithmetic,
@@ -31,8 +31,7 @@ pub enum TraceEvent {
     /// Traces the process of tokenizing input text.
     Tokenize,
     /// Traces usage of unimplemented functionality.
-    #[value(alias = "unimp")]
-    #[winnow_args(alias = "unimp")]
+    #[arg(alias = "unimp")]
     Unimplemented,
 }
 

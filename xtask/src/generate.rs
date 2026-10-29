@@ -8,8 +8,7 @@
 //!
 //! Man pages and markdown are rendered from the fragments winnow-args' derives
 //! write while `brush-shell` is checked with `WINNOW_ARGS_SPEC` set: one TOML
-//! file per command-line type. While the command line still parses with clap,
-//! it writes no fragment, and the `gen` example renders its pages instead.
+//! file per command-line type.
 //!
 //! Completion scripts and the config schema are produced by the `gen` example
 //! in `brush-shell`, which this module shells out to. Either way xtask stays
@@ -143,7 +142,7 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
             DocsCommand::Dist(args) => gen_docs_dist(&sh, args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
-            // These names are the ones understood by clap_complete's `Shell`.
+            // These names are the ones the `gen` example takes.
             let shell = match completion_cmd {
                 CompletionCommand::Bash => "bash",
                 CompletionCommand::Elvish => "elvish",
@@ -165,14 +164,12 @@ fn gen_man(sh: &Shell, args: &GenerateManArgs, verbose: bool) -> Result<()> {
     }
 
     let spec = write_fragments(sh)?;
-    write_man(sh, spec.path(), &args.output_dir)
+    write_man(spec.path(), &args.output_dir)
 }
 
 /// Write the command line's man pages from the fragments in `spec`.
-fn write_man(sh: &Shell, spec: &Path, output_dir: &Path) -> Result<()> {
-    let Some(command) = shell_command(spec)? else {
-        return run_gen_example(sh, &[OsStr::new("man"), output_dir.as_os_str()]);
-    };
+fn write_man(spec: &Path, output_dir: &Path) -> Result<()> {
+    let command = shell_command(spec)?;
     write_pages(
         output_dir,
         &manual()?.render_pages(&command, &command.name)?,
@@ -198,14 +195,12 @@ fn gen_markdown_docs(sh: &Shell, args: &GenerateMarkdownArgs, verbose: bool) -> 
     }
 
     let spec = write_fragments(sh)?;
-    write_markdown(sh, spec.path(), &args.output_path)
+    write_markdown(spec.path(), &args.output_path)
 }
 
 /// Write the command line's markdown page from the fragments in `spec`.
-fn write_markdown(sh: &Shell, spec: &Path, output_path: &Path) -> Result<()> {
-    let Some(command) = shell_command(spec)? else {
-        return run_gen_example(sh, &[OsStr::new("markdown"), output_path.as_os_str()]);
-    };
+fn write_markdown(spec: &Path, output_path: &Path) -> Result<()> {
+    let command = shell_command(spec)?;
     // `brush` has no subcommands, so its one page is the whole of it.
     let (_, page) = winnow_args_markdown::render_pages(&command, &command.name)?
         .into_iter()
@@ -216,19 +211,8 @@ fn write_markdown(sh: &Shell, spec: &Path, output_path: &Path) -> Result<()> {
 }
 
 /// The command line, stitched from the fragments in `spec`.
-///
-/// Throwaway: `None` while the command line still parses with clap and so
-/// writes no fragment.
-fn shell_command(spec: &Path) -> Result<Option<winnow_args_spec::Command>> {
-    let dir = spec.join(SHELL_CRATE);
-    if !dir.exists() {
-        return Ok(None);
-    }
-    let catalog = Catalog::load(&dir)?;
-    if !catalog.roots().iter().any(|ty| ty == SHELL_COMMAND) {
-        return Ok(None);
-    }
-    Ok(Some(catalog.stitch(SHELL_COMMAND)?))
+fn shell_command(spec: &Path) -> Result<winnow_args_spec::Command> {
+    Ok(Catalog::load(&spec.join(SHELL_CRATE))?.stitch(SHELL_COMMAND)?)
 }
 
 /// Check `brush-shell` with `WINNOW_ARGS_SPEC` set, and return the directory
@@ -294,8 +278,8 @@ fn gen_docs_dist(sh: &Shell, args: &GenerateDistArgs, verbose: bool) -> Result<(
 
     // One check writes the fragments the markdown and man pages are rendered from.
     let spec = write_fragments(sh)?;
-    write_markdown(sh, spec.path(), &md_dir.join("brush.md"))?;
-    write_man(sh, spec.path(), &man_dir)?;
+    write_markdown(spec.path(), &md_dir.join("brush.md"))?;
+    write_man(spec.path(), &man_dir)?;
 
     // Get absolute path for output
     let output_path = if args.output_path.is_absolute() {
