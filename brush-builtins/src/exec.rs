@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::borrow::Cow;
 
 use brush_core::{
@@ -7,12 +6,9 @@ use brush_core::{
 };
 
 /// Exec the provided command.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExecCommand {
-    /// Pass given name as zeroth argument to command.
-    #[arg(short = 'a', value_name = "NAME")]
-    name_for_argv0: Option<String>,
-
     /// Exec command with an empty environment.
     #[arg(short = 'c')]
     empty_environment: bool,
@@ -21,12 +17,16 @@ pub(crate) struct ExecCommand {
     #[arg(short = 'l')]
     exec_as_login: bool,
 
+    /// Pass given name as zeroth argument to command.
+    #[arg(short = 'a', value_name = "NAME")]
+    name_for_argv0: Option<String>,
+
     /// Command and args.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "automatic")]
     args: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(ExecCommand);
+brush_winnow_args_adapter::impl_parse_args!(ExecCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExecCommand {
     type Error = brush_core::Error;

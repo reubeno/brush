@@ -1,62 +1,65 @@
-//! Generates artifacts derived from the `brush` command-line interface: man
-//! pages, markdown help, shell completion scripts, and the config file's JSON
-//! schema.
+//! Generates the artifacts that need `brush-shell` linked: shell completion
+//! scripts and the config file's JSON schema.
+//!
+//! Completion scripts call back into `brush` itself for their answers, so they
+//! need no other tool installed. Man pages and markdown need nothing linked;
+//! `cargo xtask gen docs` writes those.
 //!
 //! This lives here, rather than in `xtask`, so that the build tooling doesn't
 //! need to depend on the shell it builds. It's driven by `cargo xtask gen`.
 
 use std::path::PathBuf;
 
-use anyhow::Result;
-use clap::{CommandFactory, Parser};
+use anyhow::{Context, Result};
+use winnow_args::Args;
+use winnow_args::complete::Shell;
 
 /// Generate artifacts derived from the brush command-line interface.
-#[derive(Parser)]
+#[derive(Args)]
+#[arg(name = "gen")]
+struct GenCli {
+    #[arg(subcommand)]
+    command: GenCommand,
+}
+
+#[derive(winnow_args::Subcommand)]
 enum GenCommand {
-    /// Generate man content into the given directory.
-    Man {
-        /// Output directory.
-        output_dir: PathBuf,
-    },
-    /// Generate help content in markdown format.
-    Markdown {
-        /// Output file path.
-        output_path: PathBuf,
-    },
     /// Generate a completion script, written to standard output.
-    Completion {
-        /// Shell to generate a completion script for.
-        shell: clap_complete::Shell,
-    },
+    Completion(ShellName),
     /// Generate the JSON schema for the configuration file.
-    Schema {
-        /// Output file path.
-        output_path: PathBuf,
-    },
+    Schema(OutputPath),
+}
+
+#[derive(Args)]
+struct OutputPath {
+    /// Output file path.
+    #[arg(positional)]
+    output_path: PathBuf,
+}
+
+#[derive(Args)]
+struct ShellName {
+    /// Shell to generate a completion script for: bash, fish, or zsh.
+    #[arg(positional)]
+    shell: String,
 }
 
 fn main() -> Result<()> {
-    match GenCommand::parse() {
-        GenCommand::Man { output_dir } => {
-            std::fs::create_dir_all(&output_dir)?;
-            clap_mangen::generate_to(brush_shell::args::CommandLineArgs::command(), &output_dir)?;
+    let GenCli { command } = GenCli::parse();
+
+    match command {
+        GenCommand::Completion(ShellName { shell }) => {
+            let shell = Shell::from_name(&shell)
+                .with_context(|| format!("no completion script for shell `{shell}`"))?;
+            print!(
+                "{}",
+                brush_shell::args::CommandLineArgs::completion_script(shell)
+            );
         }
-        GenCommand::Markdown { output_path } => {
-            let options = clap_markdown::MarkdownOptions::new()
-                .show_footer(false)
-                .show_table_of_contents(true);
-            let markdown =
-                clap_markdown::help_markdown_custom::<brush_shell::args::CommandLineArgs>(&options);
-            std::fs::write(&output_path, markdown)?;
-        }
-        GenCommand::Completion { shell } => {
-            let mut cmd = brush_shell::args::CommandLineArgs::command();
-            clap_complete::generate(shell, &mut cmd, "brush", &mut std::io::stdout());
-        }
-        GenCommand::Schema { output_path } => {
+        GenCommand::Schema(OutputPath { output_path }) => {
             let schema = schemars::schema_for!(brush_shell::config::Config);
             let json = serde_json::to_string_pretty(&schema)?;
-            std::fs::write(&output_path, format!("{json}\n"))?;
+            std::fs::write(output_path, format!("{json}\n"))?;
         }
     }
 
