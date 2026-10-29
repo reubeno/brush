@@ -23,11 +23,9 @@ static TRACE_EVENT_CONFIG: LazyLock<Arc<tokio::sync::Mutex<Option<events::TraceE
 type BrushShellExtensions = brush_core::extensions::ShellExtensionsImpl<error_formatter::Formatter>;
 type BrushShell = brush_core::Shell<BrushShellExtensions>;
 
-// WARN: this implementation shadows `clap::Parser::parse_from` one so it must be defined
-// after the `use clap::Parser`
 impl CommandLineArgs {
-    // This function takes precedence over [`clap::Parser::parse_from`]
-    pub(crate) fn try_parse_from(
+    /// Parses the shell command line, including brush's `--` handling.
+    pub(crate) fn parse_shell_args(
         itr: impl IntoIterator<Item = String>,
     ) -> Result<Self, clap::Error> {
         let (mut this, script_args) =
@@ -99,7 +97,7 @@ pub fn run() {
         }
     }
 
-    let parsed_args = match CommandLineArgs::try_parse_from(args.iter().cloned()) {
+    let parsed_args = match CommandLineArgs::parse_shell_args(args.iter().cloned()) {
         Ok(parsed_args) => parsed_args,
         Err(e) => {
             let _ = e.print();
@@ -659,14 +657,14 @@ mod tests {
 
     #[test]
     fn parse_empty_args() -> Result<()> {
-        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush"]))?;
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&["brush"]))?;
         assert_matches!(parsed_args.script_args.as_slice(), []);
         Ok(())
     }
 
     #[test]
     fn parse_script_and_args() -> Result<()> {
-        let parsed_args = CommandLineArgs::try_parse_from(args(&[
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&[
             "brush",
             "some-script",
             "-x",
@@ -682,21 +680,21 @@ mod tests {
 
     #[test]
     fn parse_script_and_args_with_double_dash_in_script_args() -> Result<()> {
-        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "some-script", "--"]))?;
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&["brush", "some-script", "--"]))?;
         assert_eq!(parsed_args.script_args, ["some-script", "--"]);
         Ok(())
     }
 
     #[test]
     fn parse_unknown_args() {
-        let result = CommandLineArgs::try_parse_from(args(&["brush", "--unknown-option"]));
+        let result = CommandLineArgs::parse_shell_args(args(&["brush", "--unknown-option"]));
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_c_with_double_dash_separator() -> Result<()> {
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "--", "echo hello", "arg0"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "--", "echo hello", "arg0"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert_eq!(parsed_args.script_args, ["arg0"]);
         Ok(())
@@ -704,13 +702,13 @@ mod tests {
 
     #[test]
     fn parse_c_with_double_dash_no_command() {
-        assert!(CommandLineArgs::try_parse_from(args(&["brush", "-c", "--"])).is_err());
+        assert!(CommandLineArgs::parse_shell_args(args(&["brush", "-c", "--"])).is_err());
     }
 
     #[test]
     fn parse_c_with_double_dash_command_is_double_dash() -> Result<()> {
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "--", "--", "echo", "hi"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "--", "--", "echo", "hi"]))?;
         assert_eq!(parsed_args.command, Some("--".to_string()));
         assert_eq!(parsed_args.script_args, ["echo", "hi"]);
         Ok(())
@@ -719,7 +717,7 @@ mod tests {
     #[test]
     fn parse_ec_with_double_dash_separator() -> Result<()> {
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-ec", "--", "echo hello", "arg0"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-ec", "--", "echo hello", "arg0"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert!(parsed_args.exit_on_nonzero_command_exit);
         assert_eq!(parsed_args.script_args, ["arg0"]);
@@ -729,7 +727,7 @@ mod tests {
     #[test]
     fn parse_c_with_value_before_double_dash_unchanged() -> Result<()> {
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "echo hi", "--", "arg0"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "echo hi", "--", "arg0"]))?;
         assert_eq!(parsed_args.command, Some("echo hi".to_string()));
         assert_eq!(parsed_args.script_args, ["--", "arg0"]);
         Ok(())
@@ -740,7 +738,7 @@ mod tests {
         // bash takes -c's command string from the first operand, so options may
         // sit between the two: `bash -c -l 'echo hello' arg0`.
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "-l", "echo hello", "arg0"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "-l", "echo hello", "arg0"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert!(parsed_args.login);
         assert_eq!(parsed_args.script_args, ["arg0"]);
@@ -750,8 +748,13 @@ mod tests {
     #[test]
     fn parse_c_with_value_taking_option_before_command() -> Result<()> {
         // -o consumes its own value, so the first operand is still the command.
-        let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "-o", "errexit", "echo hello"]))?;
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&[
+            "brush",
+            "-c",
+            "-o",
+            "errexit",
+            "echo hello",
+        ]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert_eq!(parsed_args.enabled_options, ["errexit"]);
         assert_eq!(parsed_args.script_args, Vec::<String>::new());
@@ -762,7 +765,7 @@ mod tests {
     fn parse_ec_with_option_before_command() -> Result<()> {
         // Only the `c` leaves the combined group; -e still applies.
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-ec", "-l", "echo hello"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-ec", "-l", "echo hello"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert!(parsed_args.exit_on_nonzero_command_exit);
         assert!(parsed_args.login);
@@ -772,7 +775,7 @@ mod tests {
     #[test]
     fn parse_c_with_several_options_before_command() -> Result<()> {
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "-l", "-x", "echo hello"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "-l", "-x", "echo hello"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert!(parsed_args.login);
         assert!(parsed_args.print_commands_and_arguments);
@@ -784,7 +787,7 @@ mod tests {
     fn parse_c_after_value_taking_option() -> Result<()> {
         // "errexit" is -o's value rather than an operand, so option parsing
         // continues and the command is still the first operand.
-        let parsed_args = CommandLineArgs::try_parse_from(args(&[
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&[
             "brush",
             "-o",
             "errexit",
@@ -803,7 +806,7 @@ mod tests {
         // Option parsing stops at the first operand, so these reach the script:
         // `bash announce.sh -c -l` passes "-c" and "-l" as $1 and $2.
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "announce.sh", "-c", "-l"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "announce.sh", "-c", "-l"]))?;
         assert!(parsed_args.command.is_none());
         assert!(!parsed_args.login);
         assert_eq!(parsed_args.script_args, ["announce.sh", "-c", "-l"]);
@@ -815,7 +818,7 @@ mod tests {
         // After `--`, the next token is the command even when it looks like an
         // option: `bash -c -- -l 'echo zero'` runs `-l` with $0 of "echo zero".
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "--", "-l", "echo zero"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "--", "-l", "echo zero"]))?;
         assert_eq!(parsed_args.command, Some("-l".to_string()));
         assert!(!parsed_args.login);
         assert_eq!(parsed_args.script_args, ["echo zero"]);
@@ -825,13 +828,13 @@ mod tests {
     #[test]
     fn parse_c_with_option_and_no_command() {
         // bash: "-c: option requires an argument", exit 2.
-        assert!(CommandLineArgs::try_parse_from(args(&["brush", "-c", "-l"])).is_err());
+        assert!(CommandLineArgs::parse_shell_args(args(&["brush", "-c", "-l"])).is_err());
     }
 
     #[test]
     fn parse_c_with_option_then_double_dash() -> Result<()> {
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "-l", "--", "echo hello"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "-l", "--", "echo hello"]))?;
         assert_eq!(parsed_args.command, Some("echo hello".to_string()));
         assert!(parsed_args.login);
         assert_eq!(parsed_args.script_args, Vec::<String>::new());
@@ -842,7 +845,7 @@ mod tests {
     fn parse_c_with_option_and_doubled_double_dash() -> Result<()> {
         // Only the first `--` terminates options; the second is the command
         // operand, matching `bash -c -l -- -- echo hi`.
-        let parsed_args = CommandLineArgs::try_parse_from(args(&[
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&[
             "brush", "-c", "-l", "--", "--", "echo", "hi",
         ]))?;
         assert_eq!(parsed_args.command, Some("--".to_string()));
@@ -858,7 +861,7 @@ mod tests {
             &["brush", "-lc", "echo hi", "name"][..],
             &["brush", "-c", "-l", "echo hi", "name"][..],
         ] {
-            let parsed_args = CommandLineArgs::try_parse_from(args(argv))?;
+            let parsed_args = CommandLineArgs::parse_shell_args(args(argv))?;
             assert!(parsed_args.login, "for {argv:?}");
             assert_eq!(
                 parsed_args.command,
@@ -872,12 +875,12 @@ mod tests {
 
     #[test]
     fn parse_c_without_command_string() {
-        assert!(CommandLineArgs::try_parse_from(args(&["brush", "-c"])).is_err());
+        assert!(CommandLineArgs::parse_shell_args(args(&["brush", "-c"])).is_err());
     }
 
     #[test]
     fn parse_c_with_empty_command_string() -> Result<()> {
-        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-c", ""]))?;
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&["brush", "-c", ""]))?;
         assert_eq!(parsed_args.command, Some(String::new()));
         Ok(())
     }
@@ -886,7 +889,7 @@ mod tests {
     fn parse_o_with_double_dash_is_not_transformed() {
         // Unlike -c, bash's -o consumes -- as its literal value (invalid option
         // name), not as an option terminator.
-        let result = CommandLineArgs::try_parse_from(args(&["brush", "-o", "--"]));
+        let result = CommandLineArgs::parse_shell_args(args(&["brush", "-o", "--"]));
         // try_parse_before_double_dash splits at --, so -o ends up
         // without a value and parsing correctly fails. The key assertion is
         // that we MUST NOT reinterpret -- as an option terminator for -o and
@@ -900,7 +903,7 @@ mod tests {
         // flag, so the -- is an ordinary option terminator here. NOTE: bash instead
         // takes the *next* word as -o's option name; see the known-failure compat
         // case "-oc with -- takes its option name from the next word".
-        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-oc", "--", "echo"]))?;
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&["brush", "-oc", "--", "echo"]))?;
         // -o consumed "c" as its value; -- ended the options; no -c command.
         assert!(parsed_args.command.is_none());
         assert_eq!(parsed_args.script_args, ["echo"]);
@@ -912,7 +915,7 @@ mod tests {
         // -e is a boolean flag, not -c. The -- ends the options, so
         // everything after it is positional (including -c).
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-e", "--", "-c", "echo"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-e", "--", "-c", "echo"]))?;
         assert!(parsed_args.command.is_none());
         assert!(parsed_args.exit_on_nonzero_command_exit);
         assert_eq!(parsed_args.script_args, ["-c", "echo"]);
@@ -921,7 +924,8 @@ mod tests {
 
     #[test]
     fn parse_s_with_double_dash_separator() -> Result<()> {
-        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-s", "--", "--", "a"]))?;
+        let parsed_args =
+            CommandLineArgs::parse_shell_args(args(&["brush", "-s", "--", "--", "a"]))?;
         assert!(parsed_args.read_commands_from_stdin);
         assert_eq!(parsed_args.script_args, ["--", "a"]);
         Ok(())
@@ -930,7 +934,7 @@ mod tests {
     #[test]
     fn parse_double_dash_before_script() -> Result<()> {
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "--", "script.sh", "--", "x"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "--", "script.sh", "--", "x"]))?;
         assert_eq!(parsed_args.script_args, ["script.sh", "--", "x"]);
         Ok(())
     }
@@ -940,7 +944,7 @@ mod tests {
         // After removing the first --, -c gets "echo". The second -- is
         // handled by try_parse_before_double_dash and appears in script_args.
         let parsed_args =
-            CommandLineArgs::try_parse_from(args(&["brush", "-c", "--", "echo", "--", "more"]))?;
+            CommandLineArgs::parse_shell_args(args(&["brush", "-c", "--", "echo", "--", "more"]))?;
         assert_eq!(parsed_args.command, Some("echo".to_string()));
         assert_eq!(parsed_args.script_args, ["--", "more"]);
         Ok(())
@@ -950,11 +954,11 @@ mod tests {
     fn parse_c_flag_group_edge_cases() -> Result<()> {
         // `-C` is a different flag, and `-oc` is `-o` with the value "c", so
         // neither puts the shell in command mode.
-        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-C", "script.sh"]))?;
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&["brush", "-C", "script.sh"]))?;
         assert!(!parsed_args.command_string_mode);
         assert!(parsed_args.command.is_none());
 
-        let parsed_args = CommandLineArgs::try_parse_from(args(&["brush", "-oc", "script.sh"]))?;
+        let parsed_args = CommandLineArgs::parse_shell_args(args(&["brush", "-oc", "script.sh"]))?;
         assert!(!parsed_args.command_string_mode);
         assert_eq!(parsed_args.enabled_options, ["c"]);
         Ok(())

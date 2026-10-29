@@ -26,14 +26,6 @@ const VERSION: &str = const_format::concatcp!(
     ")"
 );
 
-const HEADING_STANDARD_OPTIONS: &str = "Standard shell options";
-
-const HEADING_CONFIG_OPTIONS: &str = "Configuration options";
-
-const HEADING_UI_OPTIONS: &str = "User interface options";
-
-const HEADING_EXPERIMENTAL_OPTIONS: &str = "*Experimental* options (unstable)";
-
 /// Identifies the input backend to use for the shell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum InputBackendType {
@@ -64,30 +56,34 @@ pub enum InputBackendType {
        styles = brush_help_styles())]
 pub struct CommandLineArgs {
     /// Display usage information.
-    #[clap(long = "help", action = clap::ArgAction::HelpShort)]
+    #[arg(long = "help", action = clap::ArgAction::HelpShort)]
     pub help: Option<bool>,
 
     /// Display shell version.
-    #[clap(long = "version", action = clap::ArgAction::Version)]
+    #[arg(long = "version", action = clap::ArgAction::Version)]
     pub version: Option<bool>,
 
     /// Path to TOML-based `brush` config file (overrides default location).
-    #[clap(long = "config", value_name = "FILE", help_heading = HEADING_CONFIG_OPTIONS)]
+    #[arg(
+        long = "config",
+        value_name = "FILE",
+        help_heading = "Configuration options"
+    )]
     pub config_file: Option<PathBuf>,
 
     /// Disable loading of TOML-based `brush` config file.
-    #[clap(long = "no-config", help_heading = HEADING_CONFIG_OPTIONS)]
+    #[arg(long = "no-config", help_heading = "Configuration options")]
     pub no_config: bool,
 
     /// Enable `noclobber` shell option.
-    #[arg(short = 'C', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'C', help_heading = "Standard shell options")]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
 
     /// Execute the command given as the first operand and then exit.
     ///
-    /// Only an input to parsing: `try_parse_from` moves the command string into `command`,
+    /// Only an input to parsing: `parse_shell_args` moves the command string into `command`,
     /// which is what everything else consults.
-    #[arg(short = 'c', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'c', help_heading = "Standard shell options")]
     pub(crate) command_string_mode: bool,
 
     /// The command string to run, taken from the first operand when `-c` is
@@ -98,150 +94,206 @@ pub struct CommandLineArgs {
     pub command: Option<String>,
 
     /// Enable error-on-exit behavior.
-    #[clap(short = 'e', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'e', help_heading = "Standard shell options")]
     pub exit_on_nonzero_command_exit: bool,
 
     /// Disable pathname expansion (also known as filename globbing).
-    #[clap(short = 'f', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'f', help_heading = "Standard shell options")]
     pub disable_pathname_expansion: bool,
 
     /// Run in interactive mode.
-    #[clap(short = 'i', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'i', help_heading = "Standard shell options")]
     pub interactive: bool,
 
     /// Inherit the specified file descriptors injected by the parent process.
-    #[clap(long = "inherit-fd", value_name = "FD", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(
+        long = "inherit-fd",
+        value_name = "FD",
+        help_heading = "Standard shell options"
+    )]
     pub inherited_fds: Vec<i32>,
 
     /// Make shell act as if it had been invoked as a login shell.
-    #[clap(short = 'l', long = "login", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'l', long = "login", help_heading = "Standard shell options")]
     pub login: bool,
 
     /// Do not execute commands.
-    #[clap(short = 'n', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'n', help_heading = "Standard shell options")]
     pub do_not_execute_commands: bool,
 
     /// Don't use readline for input.
-    #[clap(long = "noediting", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(long = "noediting", help_heading = "Standard shell options")]
     pub no_editing: bool,
 
     /// Don't process any profile/login files (`/etc/profile`, `~/.bash_profile`, `~/.bash_login`,
     /// `~/.profile`).
-    #[clap(long = "noprofile", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(long = "noprofile", help_heading = "Standard shell options")]
     pub no_profile: bool,
 
     /// Don't process "rc" files if the shell is interactive (e.g., `~/.bashrc`, `~/.brushrc`).
-    #[clap(long = "norc", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(long = "norc", help_heading = "Standard shell options")]
     pub no_rc: bool,
 
     /// Don't inherit environment variables from the calling process.
-    #[clap(long = "noenv", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(long = "noenv", help_heading = "Standard shell options")]
     pub do_not_inherit_env: bool,
 
     /// Enable option (`set -o` option).
-    #[clap(short = 'o', value_name = "OPTION", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(
+        short = 'o',
+        value_name = "OPTION",
+        help_heading = "Standard shell options"
+    )]
     pub enabled_options: Vec<String>,
 
     /// Disable option (`set -o` option).
-    #[clap(long = "+o", value_name = "OPTION", hide = true, help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(
+        long = "+o",
+        value_name = "OPTION",
+        hide = true,
+        help_heading = "Standard shell options"
+    )]
     pub disabled_options: Vec<String>,
 
     /// Enable `shopt` option.
-    #[clap(short = 'O', value_name = "SHOPT_OPTION", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(
+        short = 'O',
+        value_name = "SHOPT_OPTION",
+        help_heading = "Standard shell options"
+    )]
     pub enabled_shopt_options: Vec<String>,
 
     /// Disable `shopt` option.
-    #[clap(long = "+O", value_name = "SHOPT_OPTION", hide = true, help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(
+        long = "+O",
+        value_name = "SHOPT_OPTION",
+        hide = true,
+        help_heading = "Standard shell options"
+    )]
     pub disabled_shopt_options: Vec<String>,
 
     /// Disable non-POSIX extensions.
-    #[clap(long = "posix", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(long = "posix", help_heading = "Standard shell options")]
     pub posix: bool,
 
     /// Path to the rc file to load in interactive shells (instead of `bash.bashrc` and
     /// `~/.bashrc`).
-    #[clap(long = "rcfile", alias = "init-file", value_name = "FILE", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(
+        long = "rcfile",
+        alias = "init-file",
+        value_name = "FILE",
+        help_heading = "Standard shell options"
+    )]
     pub rc_file: Option<PathBuf>,
 
     /// Read commands from standard input.
-    #[clap(short = 's', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 's', help_heading = "Standard shell options")]
     pub read_commands_from_stdin: bool,
 
     /// Run in `sh` compatibility mode, as if run as `/bin/sh`.
-    #[clap(long = "sh")]
+    #[arg(long = "sh")]
     pub sh_mode: bool,
 
     /// Run only one command and then exit.
-    #[clap(short = 't', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 't', help_heading = "Standard shell options")]
     pub exit_after_one_command: bool,
 
     /// Treat expansion of an unset variable as an error.
-    #[clap(short = 'u', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'u', help_heading = "Standard shell options")]
     pub treat_unset_variables_as_error: bool,
 
     /// Print input when it's processed.
-    #[clap(short = 'v', long = "verbose", help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'v', long = "verbose", help_heading = "Standard shell options")]
     pub verbose: bool,
 
     /// Print commands as they execute.
-    #[clap(short = 'x', help_heading = HEADING_STANDARD_OPTIONS)]
+    #[arg(short = 'x', help_heading = "Standard shell options")]
     pub print_commands_and_arguments: bool,
 
     /// Enable xtrace and configure for the given output file.
-    #[clap(long = "xtrace-file", value_name = "FILE", help_heading = HEADING_UI_OPTIONS)]
+    #[arg(
+        long = "xtrace-file",
+        value_name = "FILE",
+        help_heading = "User interface options"
+    )]
     pub xtrace_file_path: Option<PathBuf>,
 
     /// Disable bracketed paste.
-    #[clap(long = "disable-bracketed-paste", help_heading = HEADING_UI_OPTIONS)]
+    #[arg(
+        long = "disable-bracketed-paste",
+        help_heading = "User interface options"
+    )]
     pub disable_bracketed_paste: bool,
 
     /// Disable colorized output.
-    #[clap(long = "disable-color", help_heading = HEADING_UI_OPTIONS)]
+    #[arg(long = "disable-color", help_heading = "User interface options")]
     pub disable_color: bool,
 
     /// Enable syntax highlighting in input.
-    #[clap(long = "enable-highlighting", help_heading = HEADING_UI_OPTIONS, default_value_t = crate::entry::DEFAULT_ENABLE_HIGHLIGHTING)]
+    #[arg(long = "enable-highlighting", help_heading = "User interface options", default_value_t = crate::entry::DEFAULT_ENABLE_HIGHLIGHTING)]
     pub enable_highlighting: bool,
 
     /// Enable experimental parser (not ready for use).
     #[cfg(feature = "experimental-parser")]
-    #[clap(long = "experimental-parser", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    #[arg(
+        long = "experimental-parser",
+        help_heading = "*Experimental* options (unstable)"
+    )]
     pub experimental_parser: bool,
 
     /// Enable terminal integration (**experimental**).
-    #[clap(long = "enable-terminal-integration", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    #[arg(
+        long = "enable-terminal-integration",
+        help_heading = "*Experimental* options (unstable)"
+    )]
     pub terminal_shell_integration: bool,
 
     /// Enable zsh-style preexec/precmd hooks (**experimental**).
-    #[clap(long = "enable-zsh-hooks", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    #[arg(
+        long = "enable-zsh-hooks",
+        help_heading = "*Experimental* options (unstable)"
+    )]
     pub zsh_style_hooks: bool,
 
     /// Input backend.
-    #[clap(long = "input-backend", value_name = "BACKEND", help_heading = HEADING_UI_OPTIONS)]
+    #[arg(
+        long = "input-backend",
+        value_name = "BACKEND",
+        help_heading = "User interface options"
+    )]
     pub input_backend: Option<InputBackendType>,
 
     /// Load state from the given file; the saved state should be in JSON format
     /// and overrides any non-UI command-line options provided.
     #[cfg(feature = "experimental-load")]
-    #[clap(long = "load", value_name = "FILE", help_heading = HEADING_EXPERIMENTAL_OPTIONS)]
+    #[arg(
+        long = "load",
+        value_name = "FILE",
+        help_heading = "*Experimental* options (unstable)"
+    )]
     pub load_file: Option<PathBuf>,
 
     /// Enable debug logging for classes of tracing events.
-    #[clap(long = "debug", alias = "log-enable", value_name = "EVENT", help_heading = HEADING_UI_OPTIONS)]
+    #[arg(
+        long = "debug",
+        alias = "log-enable",
+        value_name = "EVENT",
+        help_heading = "User interface options"
+    )]
     pub enabled_debug_events: Vec<events::TraceEvent>,
 
     /// Disable logging for classes of tracing events (takes same event types as `--debug`).
-    #[clap(
+    #[arg(
         long = "disable-event",
         alias = "log-disable",
         value_name = "EVENT",
         hide_possible_values = true,
-        help_heading = HEADING_UI_OPTIONS
+        help_heading = "User interface options"
     )]
     pub disabled_events: Vec<events::TraceEvent>,
 
     /// Path and arguments for script to execute (optional).
-    #[clap(
+    #[arg(
         trailing_var_arg = true,
         allow_hyphen_values = false,
         value_name = "SCRIPT_PATH [SCRIPT_ARGS]..."
@@ -263,7 +315,7 @@ impl CommandLineArgs {
         // Parse with just the program name to get all defaults.
         // This won't fail because all arguments have defaults or are optional.
         #[allow(clippy::expect_used)]
-        Self::try_parse_from([String::from("brush")]).expect("parsing defaults should never fail")
+        Self::parse_shell_args([String::from("brush")]).expect("parsing defaults should never fail")
     }
 
     /// Returns whether the shell will read its commands from standard input, as opposed to
@@ -363,10 +415,10 @@ mod tests {
         ];
 
         for (args, expected) in cases {
-            // NOTE: This deliberately goes through the crate's own `try_parse_from` (which
-            // takes `String`s) and not `clap::Parser::try_parse_from`; only the former
-            // applies brush's `--` handling, so only the former sees what the shell sees.
-            let parsed = CommandLineArgs::try_parse_from(
+            // NOTE: This deliberately goes through `parse_shell_args` and not
+            // `clap::Parser::try_parse_from`; only the former applies brush's `--` and `-c`
+            // handling, so only the former sees what the shell sees.
+            let parsed = CommandLineArgs::parse_shell_args(
                 std::iter::once("brush")
                     .chain(args.iter().copied())
                     .map(String::from),

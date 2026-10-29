@@ -413,7 +413,7 @@ mod tests {
 
         // Simulate CLI explicitly setting values different from defaults
         // by parsing with the flags enabled
-        let args = CommandLineArgs::try_parse_from(
+        let args = CommandLineArgs::parse_shell_args(
             ["brush", "--enable-highlighting", "--enable-zsh-hooks"].map(String::from),
         )
         .unwrap();
@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn to_ui_options_cli_only_settings() {
         let config = Config::default();
-        let args = CommandLineArgs::try_parse_from(
+        let args = CommandLineArgs::parse_shell_args(
             ["brush", "--disable-bracketed-paste", "--disable-color"].map(String::from),
         )
         .unwrap();

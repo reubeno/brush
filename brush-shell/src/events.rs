@@ -11,37 +11,27 @@ use tracing_subscriber::{
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 pub enum TraceEvent {
     /// Traces parsing and evaluation of arithmetic expressions.
-    #[clap(name = "arithmetic")]
     Arithmetic,
     /// Traces command execution.
-    #[clap(name = "commands")]
     Commands,
     /// Traces command completion generation.
-    #[clap(name = "complete")]
     Complete,
     /// Traces word expansion.
-    #[clap(name = "expand")]
     Expand,
     /// Traces functions.
-    #[clap(name = "functions")]
     Functions,
     /// Traces input controls.
-    #[clap(name = "input")]
     Input,
     /// Traces job management.
-    #[clap(name = "jobs")]
     Jobs,
     /// Traces the process of parsing tokens into an abstract syntax tree.
-    #[clap(name = "parse")]
     Parse,
     /// Traces pattern matching.
-    #[clap(name = "pattern")]
     Pattern,
     /// Traces the process of tokenizing input text.
-    #[clap(name = "tokenize")]
     Tokenize,
     /// Traces usage of unimplemented functionality.
-    #[clap(name = "unimplemented", alias = "unimp")]
+    #[value(alias = "unimp")]
     Unimplemented,
 }
 
