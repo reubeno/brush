@@ -443,6 +443,13 @@ cases:
       printf '<%#q>\n' 'foo'
       printf '<%#12q>\n' 'foo bar'
 
+  - name: "printf -v followed by --"
+    stdin: |
+      printf -v x -- '%s' ho
+      echo "x=$x"
+      printf -vy -- '%s-' -- a
+      echo "y=$y"
+
   - name: "printf %q escapes commas"
     stdin: |
       printf '%q\n' 'a,b' ',' '{a,b}'

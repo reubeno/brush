@@ -1,26 +1,30 @@
 use std::io::{Read, Write};
 
-use clap::Parser;
-
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
 
 /// Read lines from standard input into an indexed array variable.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    validate = MapFileCommand::check_counts,
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
     #[arg(short = 'd')]
     delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default_value_t = 0)]
+    #[arg(short = 'n', default = "0")]
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O', allow_hyphen_values = true)]
+    #[arg(short = 'O', allow_negative_numbers)]
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
+    #[arg(short = 's', default = "0")]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -28,7 +32,7 @@ pub(crate) struct MapFileCommand {
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default_value_t = 0)]
+    #[arg(short = 'u', default = "0")]
     fd: brush_core::ShellFd,
 
     /// Name of function to call for each group of lines.
@@ -36,15 +40,32 @@ pub(crate) struct MapFileCommand {
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000, value_parser = clap::value_parser!(i64).range(1..))]
+    #[arg(short = 'c', default = "5000")]
     callback_group_size: i64,
 
     /// Name of array to read into.
-    #[arg(default_value = "MAPFILE")]
+    #[arg(positional, default = "MAPFILE")]
     array_var_name: String,
 }
 
-brush_clap_adapter::impl_parse_args!(MapFileCommand);
+impl MapFileCommand {
+    /// `-s` counts from 0, and `-c` from 1.
+    fn check_counts(&self) -> Result<(), winnow_args::Error> {
+        let out_of_range = |flag: &str, value: i64| {
+            let value = value.to_string();
+            winnow_args::Error::invalid_value(0, flag, value.as_bytes(), "out of range")
+        };
+        if self.skip_count < 0 {
+            return Err(out_of_range("-s", self.skip_count));
+        }
+        if self.callback_group_size < 1 {
+            return Err(out_of_range("-c", self.callback_group_size));
+        }
+        Ok(())
+    }
+}
+
+brush_winnow_args_adapter::impl_parse_args!(MapFileCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
     type Error = brush_core::Error;
