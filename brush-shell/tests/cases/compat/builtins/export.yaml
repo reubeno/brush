@@ -37,7 +37,6 @@ cases:
       declare -p result
 
   - name: "Export generated assignment does not expand its value again"
-    known_failure: true # TODO: export improvements required
     stdin: |
       assignment='result=$(printf expanded)'
       export "$assignment"
@@ -151,21 +150,18 @@ cases:
       unset -f export
 
   - name: "Export rejects an array element target"
-    known_failure: true # TODO: export improvements required
     ignore_stderr: true
     stdin: |
       export 'ea[0]=1'
       echo "status: $?"
 
   - name: "Export recognizes an assignment produced through command"
-    known_failure: true # TODO: export improvements required
     stdin: |
       value=world
       command export wrapped=$value
       declare -p wrapped
 
   - name: "export rejects dash-prefixed operands after a name"
-    known_failure: true # TODO(export): a -x after a name is taken as an option, not rejected as an invalid identifier
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
       { export v -x; echo "export v -x: $?"; } 2>&1 | strip
@@ -219,9 +215,28 @@ cases:
       echo "unset: $? r=$r"
 
   - name: "export rejects a name that isn't an identifier"
-    known_failure: true # TODO(export): names that aren't identifiers are accepted with status 0
     ignore_stderr: true
     stdin: |
       export "a b=1"; echo "a b=1: $?"
       export 1x=2; echo "1x=2: $?"
       export "a-b"; echo "a-b: $?"
+
+  - name: "export rejects an invalid name and goes on with the rest"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export ok 1x also=2; echo "rc=$?"; } 2>&1 | strip
+      { export -n a-b=1 =x; echo "rc=$?"; } 2>&1 | strip
+      { export arr[1]=x; echo "rc=$?"; } 2>&1 | strip
+      export ok also=2
+      env | grep -E '^(ok|also)='
+
+  - name: "export takes a word that expanded into an assignment"
+    stdin: |
+      v=A
+      export ${v}=x
+      env | grep '^A='
+      export ${v}+=y
+      echo "A=$A"
+      w="B="
+      export $w
+      env | grep -c '^B='

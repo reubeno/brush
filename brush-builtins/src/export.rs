@@ -4,7 +4,7 @@ use std::io::Write;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
-    env::{EnvironmentLookup, EnvironmentScope},
+    env::{self, EnvironmentLookup, EnvironmentScope},
     parser::ast,
     variables,
 };
@@ -81,6 +81,21 @@ impl ExportCommand {
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
                 }
+                // A word that expanded into an assignment (`export ${v}=x`): the
+                // parser can't see it as one, so it is split here, as bash does.
+                else if let Some((name, value)) = s.split_once('=') {
+                    let (name, append) = name
+                        .strip_suffix('+')
+                        .map_or((name, false), |name| (name, true));
+                    if !env::valid_variable_name(name) {
+                        return Self::invalid_identifier(context, s);
+                    }
+
+                    let value = variables::ShellValueLiteral::Scalar(value.to_owned());
+                    self.assign_and_mark(context, name, value, append)?;
+                } else if !env::valid_variable_name(s) {
+                    return Self::invalid_identifier(context, s);
+                }
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
                 else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
@@ -94,9 +109,8 @@ impl ExportCommand {
             brush_core::CommandArg::Assignment(assignment) => {
                 let name = match &assignment.name {
                     ast::AssignmentName::VariableName(name) => name,
-                    ast::AssignmentName::ArrayElementName(_, _) => {
-                        writeln!(context.stderr(), "not a valid variable name")?;
-                        return Ok(ExecutionExitCode::InvalidUsage.into());
+                    ast::AssignmentName::ArrayElementName(name, index) => {
+                        return Self::invalid_identifier(context, &format!("{name}[{index}]"));
                     }
                 };
 
@@ -113,41 +127,64 @@ impl ExportCommand {
                     }
                 };
 
-                // `export name+=value` appends to the existing value, exactly like a
-                // bare `name+=value`. update_or_add always replaces, so when the
-                // variable already exists honor the append here. A missing variable
-                // falls through: appending to nothing is a plain assignment.
-                if assignment.append
-                    && let Some((_, variable)) = context.shell.env_mut().get_mut(name)
-                {
-                    variable.assign(value, true)?;
-                    if self.unexport {
-                        variable.unexport();
-                    } else {
-                        variable.export();
-                    }
-                    return Ok(ExecutionResult::success());
-                }
-
-                // Update the variable with the provided value and then mark it exported.
-                context.shell.env_mut().update_or_add(
-                    name,
-                    value,
-                    |var| {
-                        if self.unexport {
-                            var.unexport();
-                        } else {
-                            var.export();
-                        }
-                        Ok(())
-                    },
-                    EnvironmentLookup::Anywhere,
-                    EnvironmentScope::Global,
-                )?;
+                self.assign_and_mark(context, name, value, assignment.append)?;
             }
         }
 
         Ok(ExecutionResult::success())
+    }
+
+    /// Reports `word` as an invalid name, as bash does, and returns the failure.
+    fn invalid_identifier(
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        word: &str,
+    ) -> Result<ExecutionResult, brush_core::Error> {
+        writeln!(
+            context.stderr(),
+            "{}: `{word}': not a valid identifier",
+            context.command_name
+        )?;
+        Ok(ExecutionResult::general_error())
+    }
+
+    /// Assigns `value` to `name`, appending to it for `name+=value`, and marks
+    /// the variable exported (or not, for `-n`).
+    fn assign_and_mark(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        value: variables::ShellValueLiteral,
+        append: bool,
+    ) -> Result<(), brush_core::Error> {
+        // `export name+=value` appends to the existing value, exactly like a
+        // bare `name+=value`. update_or_add always replaces, so when the
+        // variable already exists honor the append here. A missing variable
+        // falls through: appending to nothing is a plain assignment.
+        if append && let Some((_, variable)) = context.shell.env_mut().get_mut(name) {
+            variable.assign(value, true)?;
+            if self.unexport {
+                variable.unexport();
+            } else {
+                variable.export();
+            }
+            return Ok(());
+        }
+
+        // Update the variable with the provided value and then mark it exported.
+        context.shell.env_mut().update_or_add(
+            name,
+            value,
+            |var| {
+                if self.unexport {
+                    var.unexport();
+                } else {
+                    var.export();
+                }
+                Ok(())
+            },
+            EnvironmentLookup::Anywhere,
+            EnvironmentScope::Global,
+        )
     }
 }
 
