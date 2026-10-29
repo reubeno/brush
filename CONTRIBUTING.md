@@ -141,7 +141,7 @@ and is what CI invokes too:
 
 | Command | When | Needs |
 |---|---|---|
-| `cargo xtask ci quick` | Inner loop (~7s warm): fmt, build, clippy, unit tests | Rust toolchain only |
+| `cargo xtask ci quick` | Inner loop (~7s warm): fmt, crate structure, build, clippy, unit tests | Rust toolchain only |
 | `cargo xtask ci full` | Before opening a PR (~60s warm): adds the pre-commit hooks, schemas, integration tests | also `prek` |
 | `cargo xtask check <name>` | One check at a time; `cargo xtask check --help` lists them | varies |
 
