@@ -1,0 +1,5 @@
+# Search dot-prefixed files and directories (e.g. .github, .gitignore) by default.
+!.*
+# Re-exclude dot-prefixed directories that would otherwise be ignored.
+.git
+.pytest_cache/

@@ -714,8 +714,8 @@ jobs:
             description: "Arch Linux/latest"
             prereqs_command: "pacman -Sy --noconfirm bash-completion iputils grep less sed util-linux which"
 
-          - container: "mcr.microsoft.com/azurelinux-beta/base/core:4.0"
-            description: "Azure Linux/4.0"
+          - container: "mcr.microsoft.com/azurelinux/core:4"
+            description: "Azure Linux/4"
             prereqs_command: "dnf install -y bash-completion ca-certificates git iputils grep less sed util-linux which"
 
           - container: "debian:testing"
