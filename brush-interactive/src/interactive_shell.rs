@@ -61,8 +61,6 @@ pub struct InteractiveShell<'a, IB: InputBackend, SE: brush_core::ShellExtension
     input: &'a mut IB,
     /// Terminal integration utility; inert if integration is off or unsupported.
     terminal_integration: crate::term_integration::TerminalIntegration,
-    /// Terminal-control guard, held for the lifetime of the interactive shell.
-    _terminal_control: Option<brush_core::terminal::TerminalControl>,
     /// Options.
     options: InteractiveOptions,
 }
@@ -82,13 +80,6 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
     ) -> Result<Self, ShellError> {
         let stdin_is_terminal = std::io::stdin().is_terminal();
 
-        // Acquire terminal control if stdin is a terminal.
-        let terminal_control = if stdin_is_terminal {
-            Some(brush_core::terminal::TerminalControl::acquire()?)
-        } else {
-            None
-        };
-
         // Set up terminal integration if enabled *and* if stdin is a terminal. Otherwise a
         // switched-off one, which every call site below can report events to unconditionally.
         let terminal_integration = if options.terminal_shell_integration && stdin_is_terminal {
@@ -102,7 +93,6 @@ impl<'a, IB: InputBackend, SE: brush_core::ShellExtensions> InteractiveShell<'a,
             shell: shell.clone(),
             input,
             terminal_integration,
-            _terminal_control: terminal_control,
             options: options.clone(),
         })
     }

@@ -33,6 +33,7 @@ the architecture changes.
 ```text
 brush-shell → brush-interactive ──────────────────→ brush-core → brush-parser
             ↘ brush-builtins → brush-clap-adapter ↗
+            ↘ brush-hosting ──────────────────────↗
 ```
 
 ## 2. Testing Strategy

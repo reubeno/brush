@@ -15,7 +15,7 @@ shell itself. The workspace is therefore split into two tiers.
 
 ### Library tier
 
-`brush-core`, `brush-parser`, `brush-builtins`, `brush-coreutils-builtins`, and
+`brush-core`, `brush-parser`, `brush-builtins`, `brush-coreutils-builtins`, `brush-hosting`, and
 `brush-experimental-builtins` are the reusable pieces. Other projects embed them to get a shell
 runtime, a bash-compatible parser, or a set of builtins without taking on brush's interactive front
 end. Their dependency sets are deliberately narrow for the same reason.
