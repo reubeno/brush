@@ -631,6 +631,7 @@ dependencies = [
  "brush-interactive",
  "brush-parser",
  "brush-test-harness",
+ "brush-winnow-args-adapter",
  "clap",
  "clap-markdown",
  "clap_complete",
@@ -671,6 +672,7 @@ dependencies = [
  "version-compare",
  "walkdir",
  "which",
+ "winnow-args",
  "yaml_serde",
 ]
 

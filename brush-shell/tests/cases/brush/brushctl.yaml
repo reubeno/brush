@@ -1,0 +1,59 @@
+name: "brushctl"
+cases:
+  - name: "Events are enabled and disabled by name or alias"
+    stdin: |
+      brushctl events enable unimp
+      brushctl events status
+      brushctl events disable unimplemented
+      brushctl events status
+      echo "done"
+    expected_stdout: "unimplemented\ndone\n"
+
+  - name: "An unknown event is a usage error"
+    ignore_stderr: true
+    stdin: |
+      brushctl events enable bogus
+      echo "status: $?"
+    expected_stdout: "status: 2\n"
+
+  - name: "A subcommand's help lists its own subcommands"
+    stdin: |
+      [[ $(brushctl events --help) == *$'\n  enable '* ]] && echo "events lists enable"
+      [[ $(brushctl --help) == *$'\n  enable '* ]] || echo "brushctl doesn't"
+    expected_stdout: "events lists enable\nbrushctl doesn't\n"
+
+  - name: "-h and the help subcommand give help too"
+    stdin: |
+      [[ $(brushctl -h) == *$'\n  events '* ]] && echo "-h"
+      [[ $(brushctl help events) == *$'\n  enable '* ]] && echo "help events"
+      [[ $(brushctl events help enable) == *'Usage: brushctl events enable '* ]] && echo "events help enable"
+    expected_stdout: "-h\nhelp events\nevents help enable\n"
+
+  - name: "A group without a subcommand is a usage error"
+    ignore_stderr: true
+    stdin: |
+      out=$(brushctl events)
+      echo "status: $? stdout: ${#out}"
+      out=$(brushctl)
+      echo "status: $? stdout: ${#out}"
+    expected_stdout: "status: 2 stdout: 0\nstatus: 2 stdout: 0\n"
+
+  - name: "Completions for a line"
+    stdin: |
+      my_unique_func() { :; }
+      brushctl complete line 'my_unique_f'
+      brushctl complete line --cursor 6 'my_uniqZZZ'
+    expected_stdout: "my_unique_func\nmy_unique_func\n"
+
+  - name: "Process IDs"
+    incompatible_platforms: ["wasi"] # (No processes there)
+    stdin: |
+      [[ $(brushctl process pid) == "$$" ]] && echo "pid matches"
+      [[ $(brushctl process ppid) == "$PPID" ]] && echo "ppid matches"
+    expected_stdout: "pid matches\nppid matches\n"
+
+  - name: "Call stack names the calling function"
+    stdin: |
+      f() { brushctl call stack --detailed; }
+      [[ $(f) == *'func(f)'* ]] && echo "names f"
+    expected_stdout: "names f\n"
