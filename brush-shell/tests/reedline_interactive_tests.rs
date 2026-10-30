@@ -107,6 +107,76 @@ fn vi_operators_edit_the_buffer() -> anyhow::Result<()> {
 }
 
 #[test]
+fn callback_restores_end_cursor_after_selecting_vi_insert() -> anyhow::Result<()> {
+    check_callback_insertion("'abc'", 3, "set -o vi", "abc", "abcX", 4)
+}
+
+#[test]
+fn callback_restores_an_empty_buffer_in_vi_insert() -> anyhow::Result<()> {
+    check_callback_insertion("''", 0, "set -o vi", "", "X", 1)
+}
+
+#[test]
+fn callback_restores_a_unicode_end_cursor_in_vi_insert() -> anyhow::Result<()> {
+    check_callback_insertion("'é🦀'", 6, "set -o vi", "é🦀", "é🦀X", 7)
+}
+
+#[test]
+fn callback_restores_a_multiline_buffer_in_vi_insert() -> anyhow::Result<()> {
+    check_callback_insertion(
+        "$'first\\nlast'",
+        10,
+        "set -o vi",
+        "first\r\nlast",
+        "first\r\nlastX",
+        11,
+    )
+}
+
+#[test]
+fn callback_restores_an_interior_cursor_in_vi_insert() -> anyhow::Result<()> {
+    check_callback_insertion("'abcd'", 2, "set -o vi", "abcd", "abXcd", 3)
+}
+
+#[test]
+fn callback_restores_end_cursor_after_selecting_emacs() -> anyhow::Result<()> {
+    check_callback_insertion("'abc'", 3, "set -o emacs", "abc", "abcX", 4)
+}
+
+#[test]
+fn callback_without_a_mode_request_stays_in_vi_normal() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"set -o vi; _restore() { READLINE_LINE=abcd; READLINE_POINT=2; }; bind -m vi-command -x '"/": _restore'; bind -m vi-command -x '"\C-g": printf "CALLBACK_STATE=<%s>:%s\n" "$READLINE_LINE" "$READLINE_POINT"'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x1b")?;
+    session.expect(PROMPT)?;
+    session.send("/")?;
+    expect_next_prompt(&mut session, 0)?;
+    // `x` deletes the character under the normal-mode cursor, rather than inserting.
+    session.send("x\x07")?;
+    expect_callback_state(&mut session, "abd", 2)?;
+    Ok(())
+}
+
+#[test]
+fn callback_replaces_the_complete_previous_multiline_buffer() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"_seed() { READLINE_LINE=$'discard\nold'; READLINE_POINT=11; }; _restore() { READLINE_LINE=abc; READLINE_POINT=3; set -o vi; }; set -o vi; bind -m vi-insert -x '"\C-t": _seed'; bind -m vi-command -x '"/": _restore'; bind -m vi-insert -x '"\C-g": printf "CALLBACK_STATE=<%s>:%s\n" "$READLINE_LINE" "$READLINE_POINT"'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x14")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x1b")?;
+    session.expect(PROMPT)?;
+    session.send("/")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("X\x07")?;
+    expect_callback_state(&mut session, "abcX", 4)?;
+    Ok(())
+}
+
+#[test]
 fn explicit_same_option_selection_overrides_a_live_family_switch() -> anyhow::Result<()> {
     let mut session = start_reedline_session()?;
     expect_next_prompt(&mut session, 0)?;
@@ -381,6 +451,47 @@ fn unanswered_cursor_queries_still_yield_a_prompt() -> anyhow::Result<()> {
 //
 
 type ShellSession = Session<UnixProcess, LogStream<PtyStream, std::io::Stdout>>;
+
+/// Check both the restored point and an actual subsequent edit. Probing once
+/// before typing also catches an update incorrectly replayed on every read.
+fn check_callback_insertion(
+    line: &str,
+    point: usize,
+    mode_request: &str,
+    before: &str,
+    after: &str,
+    after_point: usize,
+) -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(format!(r#"_restore() {{ READLINE_LINE={line}; READLINE_POINT={point}; {mode_request}; }}; _probe() {{ printf 'CALLBACK_STATE=<%s>:%s\n' "$READLINE_LINE" "$READLINE_POINT"; }}; set -o vi; bind -m vi-command -x '"/": _restore'; bind -m vi-insert -x '"\C-g": _probe'; bind -m emacs-standard -x '"\C-g": _probe'"#))?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("discard")?;
+    session.expect("brush> discard")?;
+    session.send("\x1b")?;
+    session.expect(PROMPT)?;
+    session.send("/")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x07")?;
+    expect_callback_state(&mut session, before, point)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("X\x07")?;
+    expect_callback_state(&mut session, after, after_point)?;
+    Ok(())
+}
+
+fn expect_callback_state(
+    session: &mut ShellSession,
+    buffer: &str,
+    point: usize,
+) -> anyhow::Result<()> {
+    let state = session.expect(expectrl::Regex(r"(?s)CALLBACK_STATE=<.*?>:[0-9]+\r\n"))?;
+    assert_eq!(
+        String::from_utf8_lossy(&state[0]),
+        format!("CALLBACK_STATE=<{buffer}>:{point}\r\n")
+    );
+    Ok(())
+}
 
 /// Waits for the cursor-position query that precedes a prompt paint, answers
 /// it, and then waits for the prompt. The first `withhold` queries are left
