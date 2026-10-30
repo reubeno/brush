@@ -623,6 +623,103 @@ cases:
       f() { r=3; }; f; echo "same line after f: $?"
       echo "next line after f: $?"
 
+  # An error that bash abandons the current line for stays that way when the command it happens
+  # in is a compound command with redirections: the redirections only decide where the message
+  # goes (the cases above and below check that), not what the error does to the enclosing list.
+  - name: "An error in a redirected group drops the rest of the line"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line after assignment: $?"
+      echo "next line: $?"
+      { echo $((1/0)); } 2>/dev/null; echo "same line after arithmetic: $?"
+      echo "next line: $?"
+      shopt -s failglob
+      { echo /no-such-dir-*; } 2>/dev/null; echo "same line after failglob: $?"
+      echo "next line: $?"
+
+  - name: "An error in a redirected compound command drops the rest of the line"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      if true; then r=2; fi 2>/dev/null; echo "same line after if: $?"
+      echo "next line: $?"
+      for i in 1; do r=2; done 2>/dev/null; echo "same line after for: $?"
+      echo "next line: $?"
+      while true; do r=2; done 2>/dev/null; echo "same line after while: $?"
+      echo "next line: $?"
+
+  - name: "An error in a redirected group isn't a failure for ||"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null || echo "ran ||"; echo "same line"
+      echo "next line"
+
+  - name: "An error in a redirected group isn't a false condition"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      if { r=2; } 2>/dev/null; then echo "then"; else echo "else"; fi; echo "same line after if"
+      echo "next line"
+      ! { r=2; } 2>/dev/null && echo "negated"; echo "same line after !"
+      echo "next line"
+
+  - name: "An error in a redirected group abandons the enclosing loop"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      for i in 1 2 3; do { r=2; } 2>/dev/null; echo "iteration $i"; done
+      echo "after for"
+      i=0
+      until { r=2; } 2>/dev/null; do i=$((i + 1)); [ $i -ge 3 ] && break; echo "tick $i"; done
+      echo "after until"
+      i=0
+      while true; do { r=2; } 2>/dev/null || break; i=$((i + 1)); [ $i -ge 3 ] && break; done; echo "same line after while"
+      echo "after while"
+
+  - name: "An error in a redirected group abandons the function it's in"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      f() { { r=2; } 2>/dev/null; echo "still in f"; }
+      f
+      echo "next line"
+
+  - name: "An error in a redirected group doesn't run the ERR trap"
+    ignore_stderr: true
+    stdin: |
+      trap 'echo "ERR trap"' ERR
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line"
+      echo "next line"
+
+  # Not observable as a shell exit yet: an assignment error doesn't end a POSIX shell (see
+  # "A special builtin's usage and assignment errors are fatal in POSIX mode"), so this only
+  # checks that the rest of the line is still dropped.
+  - name: "An error in a redirected group drops the rest of the line (POSIX mode)"
+    ignore_stderr: true
+    stdin: |
+      set -o posix
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line"
+
+  - name: "A fatal error in a redirected group drops the rest of the line (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      unset zz
+      { echo "${zz?missing parameter}"; } 2>/dev/null; echo "same line"
+      echo "next line"
+
+  - name: "An error in a redirected group drops the rest of the line (interactive)"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null; echo "same line"
+      echo "next line"
+
   - name: "A syntax error in a sourced file fails the source and goes on"
     known_failure: true # TODO(errors): the syntax error ends the shell
     ignore_stderr: true
