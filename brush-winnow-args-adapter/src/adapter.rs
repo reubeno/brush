@@ -93,8 +93,11 @@ fn parse_words<T: Args>(name: &str, words: &[String]) -> Result<T, UsageError> {
 /// A parse failure as the builtin reports it.
 ///
 /// That is `name: error: …` in winnow-args' words, then the usage line. A
-/// help or version request is [`UsageError::help`], with the help text,
-/// which the shell prints on standard output.
+/// help request is [`UsageError::help`], with the help of the subcommand it
+/// was made in: the short page for `-h` and the long one for `--help`, as
+/// clap's. The shell prints it on standard output. A bare invocation of an
+/// `arg_required_else_help` command is instead a plain usage error with that
+/// help. A version request is the top-level help.
 ///
 /// # Arguments
 ///
@@ -102,11 +105,19 @@ fn parse_words<T: Args>(name: &str, words: &[String]) -> Result<T, UsageError> {
 /// * `error` - The failure.
 pub fn to_usage_error<T: Args>(name: &str, error: &Error) -> UsageError {
     match error.kind() {
-        ErrorKind::HelpRequested | ErrorKind::VersionRequested => UsageError::help(
-            // `--help` is the long form, as clap's is.
-            help::render_styled(T::HELP, &[name], true, help::width(), help::Style::PLAIN)
-                .trim_end(),
-        ),
+        ErrorKind::HelpRequested | ErrorKind::VersionRequested => {
+            let text = error
+                .render_help_styled(name, help::Style::PLAIN)
+                .unwrap_or_else(|| {
+                    // Only a version request has no help page of its own.
+                    help::render_styled(T::HELP, &[name], true, help::width(), help::Style::PLAIN)
+                });
+            if error.is_bare_help() {
+                UsageError::new(text.trim_end())
+            } else {
+                UsageError::help(text.trim_end())
+            }
+        }
         _ => UsageError::new(format!(
             "{name}: error: {}\nusage: {}",
             error.message(help::Style::PLAIN),
@@ -260,6 +271,28 @@ mod tests {
 
     crate::impl_parse_args!(HelpLike);
 
+    /// Subcommand-shaped: each subcommand has a help page of its own.
+    #[derive(Debug, winnow_args::Args)]
+    #[arg(arg_required_else_help)]
+    struct CtlLike {
+        #[arg(subcommand)]
+        command: CtlCommand,
+    }
+
+    #[derive(Debug, winnow_args::Subcommand)]
+    enum CtlCommand {
+        /// Show the status.
+        Status,
+        /// Enable a thing.
+        Enable {
+            /// The thing to enable.
+            #[arg(positional)]
+            thing: String,
+        },
+    }
+
+    crate::impl_parse_args!(CtlLike);
+
     fn words(parsed: Vec<CommandArg>) -> Vec<String> {
         into_words(parsed)
     }
@@ -324,6 +357,31 @@ mod tests {
         assert!(err.to_string().contains("Directory to enter."), "{err}");
         let err = <HelpLike as ParseArgs>::parse(Invocation::new("cd", ["-z"])).unwrap_err();
         assert!(!err.is_help(), "{err}");
+    }
+
+    #[test]
+    fn a_subcommand_and_its_arguments_parse() {
+        let parsed =
+            <CtlLike as ParseArgs>::parse(Invocation::new("ctl", ["enable", "x"])).unwrap();
+        assert!(matches!(parsed.command, CtlCommand::Enable { thing } if thing == "x"));
+    }
+
+    #[test]
+    fn a_help_request_in_a_subcommand_gives_its_help() {
+        let err = <CtlLike as ParseArgs>::parse(Invocation::new("ctl", ["enable", "--help"]))
+            .unwrap_err();
+        assert!(err.is_help(), "{err}");
+        assert!(err.to_string().contains("Usage: ctl enable "), "{err}");
+        assert!(err.to_string().contains("The thing to enable."), "{err}");
+        assert!(!err.to_string().contains("Show the status."), "{err}");
+    }
+
+    #[test]
+    fn a_bare_invocation_that_needs_more_is_an_error_with_the_help() {
+        let err =
+            <CtlLike as ParseArgs>::parse(Invocation::new("ctl", [] as [&str; 0])).unwrap_err();
+        assert!(!err.is_help(), "{err}");
+        assert!(err.to_string().contains("Show the status."), "{err}");
     }
 
     #[test]
