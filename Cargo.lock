@@ -553,10 +553,10 @@ dependencies = [
 name = "brush-experimental-builtins"
 version = "0.1.0"
 dependencies = [
- "brush-clap-adapter",
  "brush-core",
- "clap",
+ "brush-winnow-args-adapter",
  "serde_json",
+ "winnow-args",
 ]
 
 [[package]]
