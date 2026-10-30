@@ -11,3 +11,7 @@ TestBash#test_dir_completion
 # Load-flaky: under brush, fzf binds Ctrl-R with `bind -x`, and the test times out under CPU
 # contention (e.g. run 36155337854) but passes in isolation.
 TestBash#test_ctrl_r_delete
+
+# Load-flaky: fails in both CI full-suite runs but passes when selected alone locally.
+# It cannot be xfailed because it passes intermittently, which would fail the E2E run.
+TestBash#test_dynamic_completion_loader
