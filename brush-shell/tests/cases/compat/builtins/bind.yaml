@@ -100,6 +100,7 @@ cases:
           echo "bind -q result: $?"
 
   - name: "bind macro 1"
+    known_failure: true # Reedline: terminal/control-key macros need ordered engine replay; rejected, not silently stored.
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]
     additional_test_args: ["--input-backend=reedline"]
@@ -142,6 +143,7 @@ cases:
           echo "bind -S (after -r) result: ${PIPESTATUS[@]}"
 
   - name: "bind macro 2"
+    known_failure: true # Reedline: mixed literal/control-key macros need ordered engine replay.
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]
     additional_test_args: ["--input-backend=reedline"]
@@ -158,3 +160,18 @@ cases:
           echo "[bind -S]"
           bind -S | grep "${key_to_bind}"
           echo "bind -S result: ${PIPESTATUS[@]}"
+
+  - name: "bind literal insertion macro"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m emacs-standard '"\C-t":"literal text"'
+          echo "literal bind: $?"
+          bind -m emacs-standard -s | grep -F '"\C-t": "literal text"'
+          bind -m emacs-standard -r '\C-t'
+          bind -m emacs-standard -s | grep -F '"\C-t":'
+          echo "removed: ${PIPESTATUS[@]}"

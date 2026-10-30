@@ -100,13 +100,73 @@ This document details `brush`'s compatibility with `bash`, including supported f
 |--------|---------|
 | ✅ | Basic `bind` support |
 | ✅ | `bind -x` for custom key-bound commands |
-| 🔷 | Advanced bind features — in progress |
+| 🔷 | Named maps on Reedline: `emacs-standard`/`emacs`, `emacs-meta`, `vi-insert`, `vi-command`/`vi`/`vi-move` |
+| 🔷 | Reedline macros: bounded literal insertion only; general key replay is not supported |
+| 🚧 | Reedline `emacs-ctlx`, multi-key prefixes, and rebinding vi grammar motions |
+
+### Line Editing
+
+This integration is a draft: startup map selection, mixed literal/Meta macro
+validation, and default-binding queries/removal still have known regressions.
+See the [current review findings](reedline-upstreaming.md#draft-checkpoint-open-brush-local-findings)
+before relying on the supported behavior described below.
+
+Select the Reedline backend to use vi editing:
+
+```bash
+brush --input-backend=reedline
+set -o vi
+# Return to emacs editing:
+set -o emacs
+```
+
+Reedline provides the vi grammar, operators, and visual selection. This is basic
+vi support, not full Bash/Readline compatibility. Its defaults and searchable
+binding tables differ from Bash; `bind -p` does not synthesize entries for vi
+grammar commands. `vi-command` configures the normal-mode table, not the separate
+visual-mode table. The VT/basic backend does not implement vi editing or vi maps;
+named operations on unsupported maps fail rather than changing its emacs map.
+
+The shell's emacs/vi options are mutually exclusive. Disabling the selected family
+(`set +o vi` or `set +o emacs`), or starting with `--noediting`, uses the minimal
+reader on Reedline, including multiline programs, here documents, and continuations.
+Key-triggered family changes do not rewrite `SHELLOPTS`. An explicit `set -o emacs`
+or `set -o vi` selects that family again even if its shell option was already set.
+
+On Reedline, `emacs-meta` is a view of the standard map's Alt chords, so edits and
+unbindings through either spelling stay consistent. Binding definitions that need
+unsupported actions, grammar-motion remapping, or general macro replay fail without
+replacing the previous definition. `bind -r` cannot disable Reedline's internal vi
+grammar. Literal macros are limited to 4096 UTF-8 bytes, cannot be triggered by a
+plain printable key, and cannot contain controls or keys with explicit bindings.
+Remove a literal macro before rebinding a key used in its body.
+
+Reedline 0.52.1 parses terminal input in batches before executing events. A burst
+containing a family switch and keys intended for the new family can be interpreted
+under the old family; bursts spanning vi transitions can also edit incorrectly.
+This is an upstream limitation, not an ordered-input guarantee from brush.
+
+### External Editor on Reedline
+
+The editor is selected before each editing read from nonempty `VISUAL`, then
+nonempty `EDITOR`, then `vi`. Quoted literal arguments are supported; variable,
+command, and tilde expansion are not performed. Shell operators and malformed
+quoting are rejected as input-configuration errors (which end the interactive
+session), not executed as shell commands. A missing executable is reported when
+the editor is invoked. The editor uses the shell's current directory and exported
+environment. Its buffer lives in an owned private temporary directory removed
+when the backend is dropped; abrupt termination cannot guarantee cleanup.
+
+Reedline's default Ctrl+O opens the editor. A normal-mode binding such as
+`bind -m vi-command '"\C-t":vi-edit-and-execute-command'` opens it and submits the
+result. This does not replace vi's built-in `v` visual-selection key.
 
 ### Shell Options
 
 | Status | Feature |
 |--------|---------|
 | ✅ | Common options: `errexit`, `pipefail`, `extglob`, `globstar`, `noclobber`, `nounset`, `failglob` |
+| ✅ | Mutually exclusive `emacs`/`vi` option selection and `SHELLOPTS` reporting; editing capabilities depend on the backend |
 | 🔷 | Less common options — in progress |
 
 ## Not Yet Supported Features 🚧
