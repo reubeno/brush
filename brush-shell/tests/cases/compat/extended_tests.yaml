@@ -626,3 +626,80 @@ cases:
       t=$' \t\nabc \t\n'
       re=$'[ \t\n]+$'
       [[ $t =~ $re ]] && printf '[%s]\n' "${t::${#t}-${#BASH_REMATCH}}"
+
+  # An unquoted unary operator at the start of a test is read as the operator and
+  # takes the next word as its operand, even a word that looks like an operator.
+  - name: "Unary operator takes an operator-like word as operand"
+    stdin: |
+      [[ -z == ]]; echo "1: $?"
+      [[ -n == ]]; echo "2: $?"
+      [[ -z -z ]]; echo "3: $?"
+      [[ -n -eq ]]; echo "4: $?"
+      [[ -z =~ ]]; echo "5: $?"
+      [[ -z ! ]]; echo "6: $?"
+      [[ -f -nt ]]; echo "7: $?"
+      [[ ! -z == ]]; echo "8: $?"
+      [[ ( -z != ) ]]; echo "9: $?"
+      [[ -n x && -z != ]]; echo "10: $?"
+      [[ -z == || -n = ]]; echo "11: $?"
+
+  - name: "Quoted or expanded unary operator is a plain word"
+    stdin: |
+      [[ "-z" == x ]]; echo "1: $?"
+      [[ '-z' == -z ]]; echo "2: $?"
+      [[ \-z == -z ]]; echo "3: $?"
+      x=-z
+      [[ $x == -z ]]; echo "4: $?"
+      [[ $x ]]; echo "5: $?"
+      [[ x == -z ]]; echo "6: $?"
+      [[ -zz == x ]]; echo "7: $?"
+
+  - name: "Error: word after unary operand of [[ ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ -z == x ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of binary test"
+    ignore_stderr: true
+    stdin: |
+      [[ -f -nt x ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of arithmetic test"
+    ignore_stderr: true
+    stdin: |
+      [[ -n -eq 1 ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of < test"
+    ignore_stderr: true
+    stdin: |
+      [[ -z < x ]] && echo should-not-print
+
+  - name: "Error: unary operator as left side of =~ test"
+    ignore_stderr: true
+    stdin: |
+      [[ -z =~ x ]] && echo should-not-print
+
+  - name: "Error: unary operator followed by ||"
+    ignore_stderr: true
+    stdin: |
+      [[ -n || x ]] && echo should-not-print
+
+  - name: "Error: unary operator followed by ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ -z ]] && echo should-not-print
+
+  - name: "Error: unary operator followed by ) in [[ ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ ( -z ) ]] && echo should-not-print
+
+  - name: "Error: negated unary operator followed by ]]"
+    ignore_stderr: true
+    stdin: |
+      [[ ! -n ]] && echo should-not-print
+
+  - name: "Error: ]] as unary operand"
+    ignore_stderr: true
+    stdin: |
+      [[ -z ]] ]] && echo should-not-print
