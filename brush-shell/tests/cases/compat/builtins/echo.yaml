@@ -19,6 +19,28 @@ cases:
       f() { echo "$@"; }
       f a -n
 
+  - name: "echo with repeated options"
+    stdin: |
+      echo -n -n a; echo " rc=$?"
+      echo -nn b; echo " rc=$?"
+      echo -e -e 'c\td'
+      echo -n -e -n 'e\tf'; echo
+
+  - name: "echo uses the last of -e and -E"
+    stdin: |
+      echo -e -E 'a\tb'
+      echo -E -e 'c\td'
+      echo -eE 'e\tf'
+      echo -Ee 'g\th'
+
+  - name: "echo words that are not options"
+    stdin: |
+      echo - a
+      echo -nx b
+      echo -n -x c
+      echo -e -- 'd\te'
+      echo -n
+
   - name: "echo interprets escapes with xpg_echo"
     known_failure: true # TODO(echo): xpg_echo is not implemented
     stdin: |

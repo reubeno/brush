@@ -5,18 +5,22 @@ use brush_core::{ExecutionResult, builtins, escape};
 
 /// Echo text to standard output.
 #[derive(Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
+#[clap(
+    disable_help_flag = true,
+    disable_version_flag = true,
+    args_override_self = true
+)]
 pub(crate) struct EchoCommand {
     /// Suppress the trailing newline from the output.
     #[arg(short = 'n')]
     no_trailing_newline: bool,
 
     /// Interpret backslash escapes in the provided text.
-    #[arg(short = 'e')]
+    #[arg(short = 'e', overrides_with = "no_interpret_backslash_escapes")]
     interpret_backslash_escapes: bool,
 
     /// Do not interpret backslash escapes in the provided text.
-    #[arg(short = 'E')]
+    #[arg(short = 'E', overrides_with = "interpret_backslash_escapes")]
     no_interpret_backslash_escapes: bool,
 
     /// Tokens to echo to standard output.
