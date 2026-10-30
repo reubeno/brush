@@ -236,14 +236,11 @@ peg::parser! {
             --
             specific_operator("(") linebreak() e:extended_test_expression() specific_operator(")") linebreak() { ast::ExtendedTestExpr::Parenthesized(Box::from(e)) }
             --
-            // As in bash, an unquoted unary operator always starts a unary test and takes the
-            // next word as its operand, so it is never the left side of a binary test (`-z == x`
-            // is a syntax error) nor a bare string test (`-n || x` is one too).
-            !extended_unary_predicate() e:extended_test_binary_predicate() linebreak() { e }
+            e:extended_test_binary_predicate() linebreak() { e }
             --
             p:extended_unary_predicate() f:word() linebreak() { ast::ExtendedTestExpr::UnaryTest(p, ast::Word::from(f)) }
             --
-            !extended_unary_predicate() w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
+            w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
         }
 
         rule extended_test_binary_predicate() -> ast::ExtendedTestExpr =
