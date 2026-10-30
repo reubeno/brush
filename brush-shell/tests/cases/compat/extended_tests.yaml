@@ -615,6 +615,36 @@ cases:
       [[ ( ! a
       ) ]] && echo should-not-print
 
+  # An unquoted unary operator always starts a unary test, even when the word
+  # after it looks like a binary operator.
+  - name: "Unary operator takes a binary operator word as its operand"
+    stdin: |
+      [[ -z == ]]; echo "1 $?"
+      [[ -n = ]]; echo "2 $?"
+      [[ ! -z == ]]; echo "3 $?"
+      [[ -e -ef ]]; echo "4 $?"
+      [[ -n x && -z != ]]; echo "5 $?"
+      [[ "-z" == x ]]; echo "6 $?"
+      [[ x == -z ]]; echo "7 $?"
+
+  - name: "Error: unary operator as the left side of a binary test"
+    ignore_stderr: true
+    stdin: |
+      echo before
+      [[ -z == x ]] && echo should-not-print
+
+  - name: "Error: unary operator as the left side of a file test"
+    ignore_stderr: true
+    stdin: |
+      echo before
+      [[ -f -nt x ]] && echo should-not-print
+
+  - name: "Error: unary operator followed by ||"
+    ignore_stderr: true
+    stdin: |
+      echo before
+      [[ -n || x ]] && echo should-not-print
+
   # POSIX regexes have no line anchors: ^ and $ match only at the ends of the
   # whole string, while . matches any character including newline.
   - name: "Regex anchors match the whole string, not lines"
