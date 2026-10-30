@@ -280,9 +280,9 @@ fn compose_env(
     // Add in exported variables, but `_`, if it's to be set below.
     for (k, v) in shell.env().iter_exported() {
         // NOTE: To match bash behavior, we only include exported variables
-        // that are set (i.e., have a value). This means a variable that
-        // shows up in `declare -p` but has no *set* value will be omitted.
-        if v.value().is_set() && (program.is_none() || k != "_") {
+        // that are set and are not arrays. Arrays retain their export attribute
+        // in the shell but are not serialized into a child process's environment.
+        if v.value().is_set() && !v.value().is_array() && (program.is_none() || k != "_") {
             env.push((k.clone(), v.value().to_cow_str(shell).into_owned()));
         }
     }
