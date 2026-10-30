@@ -1,7 +1,8 @@
 //! Tests for compound command parsing.
 
-use super::{ParseResult, test_with_snapshot};
+use super::{ParseResult, ParserConfig, parse_with_config, test_with_snapshot};
 use crate::assert_snapshot_redacted;
+use crate::parser::ParserImpl;
 use anyhow::Result;
 
 // Arithmetic commands
@@ -336,4 +337,102 @@ fn parse_arith_and_non_arith_parens() -> Result<()> {
         result: &result
     });
     Ok(())
+}
+
+#[test]
+fn parse_case_empty() -> Result<()> {
+    let input = "case x in esac";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_case_parenthesized_pattern() -> Result<()> {
+    let input = "case x in (a|b) echo a;; esac";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_case_last_item_unterminated() -> Result<()> {
+    let input = "case x in a) echo a;; b) echo b\nesac";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_case_empty_items() -> Result<()> {
+    let input = "case x in a) ;; b)\nesac";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_case_unterminated_item_before_another_item() {
+    // Only the last item may leave out its terminator.
+    for input in [
+        "case x in a) echo a\nb) echo b;; esac",
+        "case x in a)\nb) echo b;; esac",
+    ] {
+        assert!(
+            test_with_snapshot(input).is_err(),
+            "expected an error for {input:?}"
+        );
+    }
+}
+
+/// Returns whether `input` parses, parsing it on a thread of its own and failing the test if that
+/// has not returned within a few seconds, so a regression to exponential time fails instead of
+/// hanging.
+#[allow(clippy::expect_used)]
+fn parses_promptly(input: String) -> bool {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let peg = ParserConfig {
+                name: "peg",
+                parser_impl: ParserImpl::Peg,
+            };
+            sender.send(parse_with_config(&input, &peg).is_ok())
+        })
+        .unwrap();
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("parse did not return within 10 seconds")
+}
+
+#[test]
+fn parse_nested_case_promptly() {
+    // Each level of a nested `case` used to parse the level below it twice whenever its item
+    // had no terminator, so these cost about 2^depth: the valid, unterminated form as much as
+    // the one with an error at the innermost level.
+    let depth = 24;
+    let open = "case x in x) ".repeat(depth);
+    let close = " ;; esac".repeat(depth);
+
+    assert!(parses_promptly(format!("{open} true {close}")));
+    assert!(parses_promptly(format!(
+        "{open} true\n{}",
+        "esac\n".repeat(depth)
+    )));
+    assert!(!parses_promptly(format!("{open} ) true {close}")));
+    let unclosed = format!("{} ;;", " ;; esac".repeat(depth - 1));
+    assert!(!parses_promptly(format!("{open} true {unclosed}")));
 }
