@@ -17,6 +17,8 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 - [Code of Conduct](#code-of-conduct)
 - [I Have a Question](#i-have-a-question)
   - [I Want To Contribute](#i-want-to-contribute)
+  - [Independent Implementation and Provenance](#independent-implementation-and-provenance)
+  - [AI Policy](#ai-policy)
   - [Reporting Bugs](#reporting-bugs)
   - [Suggesting Enhancements](#suggesting-enhancements)
   - [Your First Code Contribution](#your-first-code-contribution)
@@ -51,7 +53,49 @@ We will then take care of the issue as soon as possible.
 ### Legal Notice <!-- omit in toc -->
 
 > [!NOTE]
-> When contributing to this project, you must agree that you have authored 100% of the content, that you have the necessary rights to the content and that the content you contribute may be provided under the project license.
+> By contributing, you confirm that you have the necessary rights to submit your
+> contribution under the project's [MIT license](LICENSE). Identify any
+> third-party material and its license, and preserve required notices. Using AI
+> tools does not remove these obligations.
+
+### Independent Implementation and Provenance
+
+Brush is independently implemented. Matching Bash's observable behavior is a
+project goal; deriving brush's implementation from Bash's implementation is not
+an acceptable way to achieve it.
+
+#### Implementation boundaries
+
+- **Do not copy, translate, port, or adapt Bash implementation material into
+  brush.** This includes code, comments, implementation-specific tables, and
+  upstream tests from its code base. Changing languages, identifiers,
+  formatting, or structure, removing notices, or adding attribution does not
+  establish independent provenance or grant permission to use the material
+  under brush's license.
+- **Do not inspect or retrieve Bash source implementation material for
+  implementation guidance.** This includes mirrors, patches, source excerpts in
+  issues or articles, and source packages installed locally. Do not ask another
+  person or agent to inspect it on your behalf.
+- **Do not route that material through an intermediary.** AI-generated
+  translations, pseudocode, and implementation summaries derived from
+  Bash source are not independent inputs to a brush implementation.
+- **Apply the same licensing discipline to other third-party material.**
+  Identify the source, license, and required notices before including it. If
+  the terms do not permit the proposed inclusion, or the provenance is unclear,
+  stop and ask maintainers rather than attempting to rewrite around the terms.
+
+#### Behavioral compatibility work
+
+Use documented interfaces, specifications, and independently written behavioral
+reproductions. It's useful to run an installed Bash executable as a black-box
+oracle; we've implemented a testing framework that simplifies passing original
+input scripts through both Bash and brush and compare stdout, stderr, exit
+status, filesystem effects, etc. We strongly encourage adding original compat
+cases under `brush-shell/tests/cases/`.
+
+Our build and CI processes clone and run third-party test suites without
+importing their sources into this repository. Use them as external tests,
+not as source material or implementation guidance for brush.
 
 ### AI Policy
 
@@ -60,7 +104,7 @@ We will then take care of the issue as soon as possible.
 
 * **Human supervision and review remain critical.** You, the human authors, are the contributors to this project. Regardless of which tools you use along the way, you are all fully accountable for your contributions. This means that you are still accountable for ensuring that you have the necessary rights to the content you submit to this project. It also remains your responsibility to review, test, understand, and vouch for all code and content that you submit. Accordingly, you must fully understand all code and other content in your contributions and be able to explain their behavior and purpose.
 
-* **Please be transparent about your use of AI.** When contributions have been significantly assisted by AI tools, we ask that you note this in your Pull Request description or commit message via an `Assisted-by:` trailer. This helps us maintain openness in our practices and aid our project in learning and understanding how these tools are being used to contribute effectively.
+* **Please be transparent about your use of AI.** When contributions have been significantly assisted by AI tools, note this in your PR description or commit message via an `Assisted-by:` trailer.
 
 * **Our policies and practices will evolve.** Things are moving quickly; we consider it far better to adapt as we go, learn, and iterate rather than to remain static. We remain open to your input and feedback on this policy as it evolves, and commit to engaged, respectful discussion regarding it.
 

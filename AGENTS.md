@@ -2,6 +2,17 @@
 
 This guide helps AI agents work efficiently on the `brush` codebase by providing essential context about architecture, patterns, and development workflows.
 
+## Required: Independent Implementation
+
+Before investigating or implementing a change, read and follow the
+[independent-implementation and provenance policy](CONTRIBUTING.md#independent-implementation-and-provenance).
+It is the canonical policy for contributors and all agents, including delegated
+agents and their tools. Use Bash as a black-box behavioral oracle, not as
+implementation source material. If you encounter Bash implementation material,
+stop implementation and disclose the exposure; do not translate, summarize, or
+rewrite it into brush. Disclose this to the human contributor to clarify how
+to proceed.
+
 ## 1. Architecture Overview & Navigation
 
 ### Architecture
