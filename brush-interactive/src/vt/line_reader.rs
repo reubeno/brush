@@ -498,7 +498,7 @@ mod tests {
     /// LF as terminals do in raw mode; returns the rows it then shows, up to the
     /// last that isn't blank, and the cursor's row and column.
     fn shown(drawn: &str) -> (Vec<String>, (u16, u16)) {
-        let mut terminal = vt100::Parser::new(24, 80, 0);
+        let mut terminal = vt100::Parser::default();
         terminal.process(drawn.replace('\n', "\r\n").as_bytes());
         let screen = terminal.screen();
         let mut rows: Vec<String> = screen
@@ -525,7 +525,7 @@ mod tests {
             (vec!["$ cmd '界' $HOME".to_owned()], (1, 0))
         );
 
-        let mut terminal = vt100::Parser::new(24, 80, 0);
+        let mut terminal = vt100::Parser::default();
         terminal.process(output.replace('\n', "\r\n").as_bytes());
         // Quoted text and parameters use the same palette as Reedline.
         assert_eq!(
@@ -551,7 +551,7 @@ mod tests {
         };
         let (result, output) = read(&mut reader, &shell, "cmd 'first\r界'\r").await;
         assert_eq!(result, input("cmd 'first\n界'\n"));
-        let mut terminal = vt100::Parser::new(24, 80, 0);
+        let mut terminal = vt100::Parser::default();
         terminal.process(output.replace('\n', "\r\n").as_bytes());
         assert_eq!(
             terminal.screen().cell(1, 2).unwrap().fgcolor(),
