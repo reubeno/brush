@@ -11,6 +11,7 @@ the answer should follow from here. If it doesn't, this document needs updating.
 | `brush-parser` | yes | Tokenizes and parses shell syntax. Knows nothing about a running shell. |
 | `brush-core` | yes | The shell itself: the `Shell` type, expansion, execution, jobs, variables, traps, and programmable completion. Has no line editor or UI of its own. |
 | `brush-clap-adapter` | yes | Implements `brush-core`'s engine-neutral builtin contract for builtins whose arguments are parsed with clap. |
+| `brush-winnow-args-adapter` | yes | The same, for builtins whose arguments are parsed with [winnow-args](https://github.com/lu-zero/winnow-args). |
 | `brush-builtins` | yes | The standard builtins, registered on a `Shell` through `brush-core`'s public API. |
 | `brush-experimental-builtins` | yes | Builtins not ready to be standard. |
 | `brush-coreutils-builtins` | yes | Optional builtins wrapping [uutils/coreutils](https://github.com/uutils/coreutils); doesn't depend on the other crates. |
@@ -34,6 +35,7 @@ brush-interactive            → brush-core, brush-parser
 brush-builtins               → brush-clap-adapter, brush-core, brush-parser
 brush-experimental-builtins  → brush-clap-adapter, brush-core
 brush-clap-adapter           → brush-core
+brush-winnow-args-adapter    → brush-core
 brush-core                   → brush-parser
 brush-parser                 (none)
 brush-coreutils-builtins     (none)
@@ -54,7 +56,8 @@ without its front end. Keep that in mind when deciding what to export.
   argument-parsing engine. A builtin is a type that is its own parsed arguments: it
   parses an invocation's words (`ParseArgs`), supplies its help, and runs
   (`Builtin`), and is registered by type (`Registration::of`). Builtins that parse
-  with clap implement `ParseArgs` through `brush-clap-adapter`.
+  with clap implement `ParseArgs` through `brush-clap-adapter`, and those that parse
+  with winnow-args through `brush-winnow-args-adapter`.
 - A shell keeps its builtins' registrations, by name, in a `builtins::Registry`
   (`Shell::builtins`, `Shell::builtins_mut`), which is the one way to look them up,
   register them, or enable and disable them. How it stores them is private, so
