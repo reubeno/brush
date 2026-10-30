@@ -206,7 +206,7 @@ jobs:
           if [[ -n "${COMPONENTS}" ]]; then rustup component add "${COMPONENTS}"; fi
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: "${{ matrix.target }}"
 
@@ -218,7 +218,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.cross_tool_to_install != '' }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: ${{ matrix.cross_tool_to_install }}
 
@@ -336,22 +336,22 @@ jobs:
           if [[ -n "${TARGETS}" ]]; then rustup target add "${TARGETS}"; fi
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
         if: ${{ matrix.coverage }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-llvm-cov
 
       - name: Install WASI runtime
         if: ${{ matrix.wasi_runtime }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: ${{ matrix.wasi_runtime }}
 
@@ -360,7 +360,7 @@ jobs:
         id: set-up-homebrew
         # We ignore the stale-action-refs check because this action does not have any releases or tags.
         # We're forced to pick a specific commit.
-        uses: Homebrew/actions/setup-homebrew@4790763c0a3ba4036f72634dc079c4a7dfcd4878 # zizmor: ignore[stale-action-refs]
+        uses: Homebrew/actions/setup-homebrew@d482da0e602890d3160aade42e72c8556103bf04 # zizmor: ignore[stale-action-refs]
         with:
           stable: true
 
@@ -475,7 +475,7 @@ jobs:
           fi
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Format check
         run: cargo xtask check fmt
@@ -508,7 +508,7 @@ jobs:
           rustup override set nightly
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-udeps
 
@@ -529,7 +529,7 @@ jobs:
         run: rustup toolchain install --profile minimal
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Check generated schemas
         run: cargo xtask check schemas
@@ -553,7 +553,7 @@ jobs:
           rustup override set nightly
 
       - name: Install cargo-public-api
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-public-api
 
@@ -597,7 +597,7 @@ jobs:
         working-directory: pr
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             ./pr
@@ -659,7 +659,7 @@ jobs:
         run: rustup toolchain install --profile minimal
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Run e2e suites
         run: |
