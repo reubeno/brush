@@ -2,13 +2,14 @@
 //!
 //! This module provides shared functionality for:
 //! - Build profile selection (debug vs release)
-//! - Workspace root discovery
+//! - Workspace root and target directory discovery
 //! - Brush binary location for test commands
 
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::ValueEnum;
+use xshell::{Shell, cmd};
 
 /// Build profile for selecting which binary to use.
 #[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, Eq)]
@@ -48,6 +49,28 @@ pub fn find_workspace_root() -> Result<PathBuf> {
     Ok(workspace_root.to_path_buf())
 }
 
+/// The parts of `cargo metadata` that xtask reads.
+#[derive(serde::Deserialize)]
+struct Metadata {
+    target_directory: PathBuf,
+}
+
+fn cargo_metadata() -> Result<Metadata> {
+    let sh = Shell::new()?;
+    // `--no-deps` skips resolving the dependency graph.
+    let json = cmd!(sh, "cargo metadata --no-deps --format-version 1")
+        .quiet()
+        .read()
+        .context("Failed to read cargo metadata")?;
+    serde_json::from_str(&json).context("Failed to parse cargo metadata")
+}
+
+/// Find the directory cargo builds into, wherever `CARGO_TARGET_DIR`,
+/// `build.target-dir` or the default puts it.
+pub fn find_target_dir() -> Result<PathBuf> {
+    Ok(cargo_metadata()?.target_directory)
+}
+
 /// Find the brush binary path for the given build profile.
 ///
 /// If `override_path` is provided, it is used directly (after validation).
@@ -61,10 +84,8 @@ pub fn find_brush_binary(
     let binary_path = if let Some(path) = override_path {
         path.clone()
     } else {
-        let workspace_root = find_workspace_root()?;
         let binary_name = if cfg!(windows) { "brush.exe" } else { "brush" };
-        workspace_root
-            .join("target")
+        find_target_dir()?
             .join(profile.target_dir_name())
             .join(binary_name)
     };
@@ -106,5 +127,13 @@ mod tests {
         assert!(root.join("Cargo.toml").exists());
         // And it should contain the xtask directory
         assert!(root.join("xtask").exists());
+    }
+
+    #[test]
+    fn test_find_target_dir() {
+        // Wherever cargo was told to build, this test was built there. (The
+        // running executable's path has its symlinks resolved.)
+        let exe = std::env::current_exe().unwrap().canonicalize().unwrap();
+        assert!(exe.starts_with(find_target_dir().unwrap().canonicalize().unwrap()));
     }
 }

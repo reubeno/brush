@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use xshell::{Shell, cmd};
 
-use crate::common::{BuildProfile, find_workspace_root};
+use crate::common::{BuildProfile, find_target_dir};
 
 /// Integration test binaries that are excluded from unit tests.
 /// These tests execute the brush binary and are slower.
@@ -294,10 +294,9 @@ fn run_integration_tests_wasi(
     }
 
     // Locate the wasm module that was (or should have been) produced.
-    let workspace_root = find_workspace_root()?;
     let profile_dir = if is_release { "release" } else { "debug" };
-    let wasm_path = workspace_root
-        .join("target/wasm32-wasip3")
+    let wasm_path = find_target_dir()?
+        .join("wasm32-wasip3")
         .join(profile_dir)
         .join("brush.wasm");
     let wasm_path = wasm_path.canonicalize().with_context(|| {
@@ -385,8 +384,7 @@ fn run_nextest(
 
 /// Copy the nextest `JUnit` XML results to the given output path.
 fn copy_nextest_results(output: &Path) -> Result<()> {
-    let workspace_root = find_workspace_root()?;
-    let source = workspace_root.join("target/nextest/default/test-results.xml");
+    let source = find_target_dir()?.join("nextest/default/test-results.xml");
     std::fs::copy(&source, output).with_context(|| {
         format!(
             "Failed to copy nextest results from {} to {}",
