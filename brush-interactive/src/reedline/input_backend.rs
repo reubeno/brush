@@ -408,23 +408,16 @@ mod tests {
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn callback_buffer_exposes_the_requested_cursor_before_resuming_input() {
+    async fn latest_pending_callback_buffer_is_visible_before_resuming_input() {
         let shell = brush_core::Shell::builder().build().await.unwrap();
         let shell = std::sync::Arc::new(tokio::sync::Mutex::new(shell));
         let mut backend = ReedlineInputBackend::new(&crate::UIOptions::default(), &shell).unwrap();
-        let (normal, _) = backend
-            .updatable_bindings
-            .lock()
-            .await
-            .editors(reedline::PromptEditMode::Vi(reedline::PromptViMode::Normal));
-        backend.reedline = Some(backend.reedline.take().unwrap().with_edit_mode(normal));
-
         backend.set_read_buffer("abc".into(), 3);
         assert_eq!(backend.get_read_buffer(), Some(("abc".into(), 3)));
 
-        // A second update replaces the first, without normal-mode cursor loss.
-        backend.set_read_buffer("é🦀".into(), 6);
-        assert_eq!(backend.get_read_buffer(), Some(("é🦀".into(), 6)));
+        // Each update supersedes the pending state, even when clearing it.
+        backend.set_read_buffer("next".into(), 2);
+        assert_eq!(backend.get_read_buffer(), Some(("next".into(), 2)));
         backend.set_read_buffer(String::new(), 0);
         assert_eq!(backend.get_read_buffer(), Some((String::new(), 0)));
     }

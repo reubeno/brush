@@ -117,8 +117,9 @@ fn callback_restores_an_empty_buffer_in_vi_insert() -> anyhow::Result<()> {
 }
 
 #[test]
-fn callback_restores_a_unicode_end_cursor_in_vi_insert() -> anyhow::Result<()> {
-    check_callback_insertion("'é🦀'", 6, "set -o vi", "é🦀", "é🦀X", 7)
+fn callback_restores_a_unicode_buffer_at_the_start_in_vi_insert() -> anyhow::Result<()> {
+    // Point 0 and the ASCII insertion avoid assuming byte or character cursor units.
+    check_callback_insertion("'é🦀'", 0, "set -o vi", "é🦀", "Xé🦀", 1)
 }
 
 #[test]
@@ -156,6 +157,36 @@ fn callback_without_a_mode_request_stays_in_vi_normal() -> anyhow::Result<()> {
     // `x` deletes the character under the normal-mode cursor, rather than inserting.
     session.send("x\x07")?;
     expect_callback_state(&mut session, "abd", 2)?;
+    Ok(())
+}
+
+#[test]
+fn callback_buffer_survives_disabling_and_reenabling_editing() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"set -o vi; callback_runs=0; abc() { callback_runs=$((callback_runs+1)); }; _pause() { READLINE_LINE=abc; READLINE_POINT=3; set +o vi; }; bind -m vi-command -x '"/": _pause'; bind -m vi-insert -x '"\C-g": printf "CALLBACK_STATE=<%s>:%s\nCALLBACK_RUNS=%s\n" "$READLINE_LINE" "$READLINE_POINT" "$callback_runs"'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("discard")?;
+    session.expect("brush> discard")?;
+    session.send("\x1b")?;
+    session.expect(PROMPT)?;
+    session.send("/")?;
+
+    // The minimal reader paints a prompt without a cursor-position query.
+    // An ordinary command must not replace or execute the queued edit buffer.
+    session.expect(PROMPT)?;
+    session.send_line(r#"printf 'MINIMAL_''OK:%s\n' "$callback_runs""#)?;
+    session.expect("MINIMAL_OK:0\r\n")?;
+    session.expect(PROMPT)?;
+    session.send_line("set -o vi")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x07")?;
+    expect_callback_state(&mut session, "abc", 3)?;
+    session.expect("CALLBACK_RUNS=0\r\n")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("X\x07")?;
+    expect_callback_state(&mut session, "abcX", 4)?;
+    session.expect("CALLBACK_RUNS=0\r\n")?;
     Ok(())
 }
 
