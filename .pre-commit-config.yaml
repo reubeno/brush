@@ -116,7 +116,7 @@ repos:
   # .github/workflows/workflow-checks.yaml and is not redundant with it.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: d25b2b1dc80689fb633f21f6978bba69871181d3 # frozen: v1.31.0
+    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f # frozen: v1.31.1
     hooks:
       - id: zizmor
         alias: workflows
