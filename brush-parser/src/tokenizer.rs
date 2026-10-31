@@ -1801,6 +1801,42 @@ pub fn unquote_str(s: &str) -> String {
     result
 }
 
+/// Returns `s` single-quoted, so that the shell's quote removal turns it back into `s`.
+///
+/// Each single quote in `s` is written as `\'` outside the quoted runs. Nothing else is
+/// escaped, and control characters are kept as they are.
+///
+/// # Arguments
+///
+/// * `s` - The string to quote.
+pub fn single_quote_str(s: &str) -> Cow<'_, str> {
+    // Special-case the empty string and a lone single quote; both are rendered
+    // without any empty quoted runs.
+    match s {
+        "" => return Cow::Borrowed("''"),
+        "'" => return Cow::Borrowed(r"\'"),
+        _ => (),
+    }
+
+    let mut result = String::with_capacity(s.len() + 2);
+
+    // Go through the string; put everything in single quotes except for
+    // the single quote character itself. It will get escaped outside
+    // all quoting, with the quoted runs on either side of it kept even
+    // when they're empty.
+    for (i, part) in s.split('\'').enumerate() {
+        if i > 0 {
+            result.push_str(r"\'");
+        }
+
+        result.push('\'');
+        result.push_str(part);
+        result.push('\'');
+    }
+
+    Cow::Owned(result)
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -2630,5 +2666,20 @@ HERE2
         assert_eq!(unquote_str(r#""a b"#), "a b");
         assert_eq!(unquote_str(r#"$HOME'~'"$x""#), "$HOME~$x");
         assert_eq!(unquote_str(""), "");
+    }
+
+    #[test]
+    fn test_single_quote_str() {
+        assert_eq!(single_quote_str("EOF"), "'EOF'");
+        assert_eq!(single_quote_str("E O"), "'E O'");
+        assert_eq!(single_quote_str("it's"), r"'it'\''s'");
+        assert_eq!(single_quote_str("'"), r"\'");
+        assert_eq!(single_quote_str(""), "''");
+        assert_eq!(single_quote_str("$x\n`y`"), "'$x\n`y`'");
+
+        // Quote removal gives back what was quoted.
+        for s in ["EOF", "it's", "'", "''", "", r#"a"b\c$d"#] {
+            assert_eq!(unquote_str(&single_quote_str(s)), s);
+        }
     }
 }
