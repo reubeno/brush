@@ -484,6 +484,13 @@ cases:
       getopts --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(getopts --help 2>/dev/null) ]] && echo "help on stdout"
 
+  - name: "getopts takes --help after its optstring as an argument"
+    stdin: |
+      set -- --help
+      getopts h opt "$@" 2>/dev/null; echo "rc=$? opt=$opt"
+      OPTIND=1
+      getopts ab opt -b --help; echo "rc=$? opt=$opt"
+
   - name: "getopts rejects a name that isn't an identifier"
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }

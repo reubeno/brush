@@ -6,13 +6,13 @@ use brush_core::{ExecutionResult, builtins, env, variables};
 #[derive(winnow_args::Args)]
 #[arg(
     unknown_flags = "value",
-    disable_help_flag,
+    disable_help_short,
     disable_version_flag,
     disable_help_subcommand
 )]
 pub(crate) struct GetOptsCommand {
     /// Specification for options
-    #[arg(positional)]
+    #[arg(positional, stop_flags)]
     options_string: String,
     /// Name of variable to receive next option
     #[arg(positional)]
