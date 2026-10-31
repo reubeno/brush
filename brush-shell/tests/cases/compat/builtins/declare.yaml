@@ -1111,7 +1111,6 @@ cases:
       declare zzo=1; declare +x -x zzo; declare -p zzo
 
   - name: "An attribute given as both - and + is removed"
-    known_failure: true # TODO(declare): with both, brush leaves the attribute as it was
     stdin: |
       declare -x zzx=1; declare -x +x zzx; declare -p zzx
       declare -i zzi=1; declare +i -i zzi; declare -p zzi
@@ -1206,6 +1205,23 @@ cases:
       count_exported
       declare +x -f f; echo "rc=$?"
       count_exported
+
+  - name: "declare -f with both -x and +x leaves a function unexported"
+    stdin: |
+      f() { :; }
+      count_exported() { env | grep -c "^BASH_FUNC_f"; }
+      declare -f -x +x f; echo "rc=$?"
+      count_exported
+      declare -fx f; declare -f +x -x f; echo "rc=$?"
+      count_exported
+
+  - name: "declare -F -x lists only exported functions"
+    known_failure: true # TODO(declare): brush lists every function
+    stdin: |
+      f() { :; }
+      g() { :; }
+      declare -fx g
+      declare -F -x
 
   - name: "declare -f with attribute flags doesn't display the function"
     stdin: |
