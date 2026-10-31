@@ -435,7 +435,15 @@ fn key_sequence_to_abstract_strokes(
     let mut key_code_bytes = vec![];
     let mut uninterpretable = false;
     for mut phys_stroke in phys_strokes {
-        let mut key = sys::input::try_get_key_from_key_code(phys_stroke.key_code.as_slice());
+        // Both spellings must decode independently of terminfo so reusable
+        // macro listings also work on terminals with application-mode arrows.
+        let mut key = match phys_stroke.key_code.as_slice() {
+            b"\x1b[A" | b"\x1bOA" => Some(interfaces::Key::Up),
+            b"\x1b[B" | b"\x1bOB" => Some(interfaces::Key::Down),
+            b"\x1b[C" | b"\x1bOC" => Some(interfaces::Key::Right),
+            b"\x1b[D" | b"\x1bOD" => Some(interfaces::Key::Left),
+            bytes => sys::input::try_get_key_from_key_code(bytes),
+        };
 
         // If we couldn't interpret it directly but we see it starts with the escape character,
         // try to see if we can parse it as an Alt+<key> sequence.
@@ -555,6 +563,8 @@ fn display_macros(
         .into_iter()
         .sorted_by_key(|(left, _)| left.to_string())
     {
+        let left = format_macro_sequence(&left);
+        let right = format_macro_sequence(&right);
         if reusable {
             writeln!(context.stdout(), "\"{left}\": \"{right}\"")?;
         } else {
@@ -563,6 +573,29 @@ fn display_macros(
     }
 
     Ok(())
+}
+
+fn format_macro_sequence(sequence: &KeySequence) -> String {
+    let KeySequence::Strokes(strokes) = sequence else {
+        return sequence.to_string();
+    };
+    strokes
+        .iter()
+        .map(|stroke| {
+            // Terminfo decodes either cursor/application spelling to one arrow.
+            // Emit a reusable Readline spelling rather than the display name "Up".
+            if !stroke.alt && !stroke.control && !stroke.shift {
+                match stroke.key {
+                    interfaces::Key::Up => return r"\e[A".to_owned(),
+                    interfaces::Key::Down => return r"\e[B".to_owned(),
+                    interfaces::Key::Right => return r"\e[C".to_owned(),
+                    interfaces::Key::Left => return r"\e[D".to_owned(),
+                    _ => {}
+                }
+            }
+            stroke.to_string()
+        })
+        .collect()
 }
 
 fn find_key_seqs_bound_to_function(
@@ -655,5 +688,40 @@ mod tests {
             target,
             BindableReadlineTarget::Function(interfaces::InputFunction::TransposeChars)
         );
+    }
+
+    #[test]
+    fn macro_listing_serializes_decoded_arrows_as_readline_sequences() {
+        for (key, expected) in [
+            (interfaces::Key::Up, r"\e[A"),
+            (interfaces::Key::Down, r"\e[B"),
+            (interfaces::Key::Right, r"\e[C"),
+            (interfaces::Key::Left, r"\e[D"),
+        ] {
+            let sequence = KeySequence::from(interfaces::KeyStroke::from(key));
+            assert_eq!(format_macro_sequence(&sequence), expected);
+        }
+    }
+
+    #[test]
+    fn arrow_macro_listings_round_trip_without_terminfo_aliases() {
+        for (spelling, key) in [
+            (r"\e[A", interfaces::Key::Up),
+            (r"\e[B", interfaces::Key::Down),
+            (r"\e[C", interfaces::Key::Right),
+            (r"\e[D", interfaces::Key::Left),
+            (r"\eOA", interfaces::Key::Up),
+            (r"\eOB", interfaces::Key::Down),
+            (r"\eOC", interfaces::Key::Right),
+            (r"\eOD", interfaces::Key::Left),
+        ] {
+            let expected = KeySequence::from(interfaces::KeyStroke::from(key));
+            let parsed = parse_key_sequence(spelling).unwrap();
+            assert_eq!(parsed, expected);
+            assert_eq!(
+                parse_key_sequence(&format_macro_sequence(&parsed)).unwrap(),
+                expected
+            );
+        }
     }
 }

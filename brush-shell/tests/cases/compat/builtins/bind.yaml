@@ -130,7 +130,6 @@ cases:
           echo "bind -q result: $?"
 
   - name: "bind macro 1"
-    known_failure: true # Reedline: terminal/control-key macros need ordered engine replay; rejected, not silently stored.
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]
     additional_test_args: ["--input-backend=reedline"]
@@ -173,7 +172,6 @@ cases:
           echo "bind -S (after -r) result: ${PIPESTATUS[@]}"
 
   - name: "bind macro 2"
-    known_failure: true # Reedline: mixed literal/control-key macros need ordered engine replay.
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]
     additional_test_args: ["--input-backend=reedline"]
@@ -205,3 +203,45 @@ cases:
           bind -m emacs-standard -r '\C-t'
           bind -m emacs-standard -s | grep -F '"\C-t":'
           echo "removed: ${PIPESTATUS[@]}"
+
+  - name: "bind emacs intermediate prefix macro"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m emacs-standard '"\C-r":"\C-x\C-_probe\a"'
+          echo "macro: $?"
+          bind -m emacs-standard -x '"\C-x\C-_probe\a": echo probe'
+          echo "target: $?"
+          bind -m emacs-standard -s | grep -Fq '"\C-r":'
+          echo "listed: $?"
+          bind -m emacs-standard -r '\C-x\C-_probe\a'
+          echo "removed target: $?"
+          bind -m emacs-standard -s | grep -Fq '"\C-r":'
+          echo "macro retained: $?"
+
+  - name: "bind arrow macro listing is reusable"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    env: { TERM: "xterm" }
+    test_files:
+      - path: "run.sh"
+        contents: |
+          for arrow in A B C D; do
+            bind '"\eO'"$arrow"'":"probe"'
+            echo "macro: $?"
+            saved=$(bind -s)
+            [[ $saved == *probe* ]]
+            echo "listed: $?"
+            bind -r '\eO'"$arrow"
+            bind "$saved"
+            echo "restored: $?"
+            bind -r '\eO'"$arrow"
+            bind -s | grep -Fq probe
+            echo "removed: $?"
+          done

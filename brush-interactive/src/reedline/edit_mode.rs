@@ -13,10 +13,29 @@ use reedline::{
 type BindingId = (KeyModifiers, KeyCode);
 type EditorPair = (Box<dyn EditMode>, Box<dyn EditMode>);
 
+const MAX_MACRO_BYTES: usize = 4096;
+const MAX_COMPILED_COMMAND_BYTES: usize = 64 * 1024;
+const MAX_MACRO_WORK: usize = 16 * 1024;
+const MAX_ALIAS_DEPTH: usize = 32;
+
+#[derive(Default)]
+struct MacroExpansion {
+    events: Vec<ReedlineEvent>,
+    command_bytes: usize,
+    work: usize,
+}
+
+enum IntermediateTarget<'a> {
+    Action(&'a KeyAction),
+    Alias(&'a KeySequence, &'a [Vec<u8>]),
+}
+
 struct KeyMapState {
     bindings: Keybindings,
     actions: HashMap<KeySequence, KeyAction>,
     macros: HashMap<KeySequence, KeySequence>,
+    /// Intermediate Emacs sequences resolved during configuration, not terminal input.
+    raw_mappings: HashMap<Vec<u8>, KeyAction>,
 }
 
 impl KeyMapState {
@@ -35,6 +54,142 @@ impl KeyMapState {
             bindings,
             actions,
             macros: HashMap::new(),
+            raw_mappings: HashMap::new(),
+        }
+    }
+
+    /// Restore eager longest-prefix translation, including bounded acyclic aliases.
+    /// This only compiles configuration; no keys are replayed through an editor.
+    fn resolve_emacs_macro(&self, bytes: &[u8]) -> Result<ReedlineEvent, std::io::Error> {
+        let mut expansion = MacroExpansion::default();
+        self.append_emacs_macro(bytes, &mut expansion, &mut Vec::new())?;
+        Ok(match expansion.events.len() {
+            0 => ReedlineEvent::None,
+            1 => expansion.events.remove(0),
+            _ => ReedlineEvent::Multiple(expansion.events),
+        })
+    }
+
+    fn append_emacs_macro<'a>(
+        &'a self,
+        bytes: &[u8],
+        expansion: &mut MacroExpansion,
+        active: &mut Vec<&'a KeySequence>,
+    ) -> Result<(), std::io::Error> {
+        expansion.work = expansion.work.saturating_add(bytes.len());
+        if expansion.work > MAX_MACRO_WORK {
+            return Err(unsupported("macro exceeds compilation work limit"));
+        }
+        let mut remaining = bytes;
+        while !remaining.is_empty() {
+            let actions = self
+                .raw_mappings
+                .iter()
+                .map(|(key, action)| (key.as_slice(), IntermediateTarget::Action(action)));
+            let aliases = self.macros.iter().filter_map(|(seq, target)| {
+                let KeySequence::Bytes(parts) = seq else {
+                    return None;
+                };
+                let [key] = parts.as_slice() else { return None };
+                let body = match target {
+                    KeySequence::Bytes(parts) => parts.as_slice(),
+                    KeySequence::Strokes(strokes) if strokes.is_empty() => &[],
+                    KeySequence::Strokes(_) => return None,
+                };
+                Some((key.as_slice(), IntermediateTarget::Alias(seq, body)))
+            });
+            let matched = actions
+                .chain(aliases)
+                .filter(|(key, _)| remaining.starts_with(key))
+                .max_by_key(|(key, _)| key.len());
+            if let Some((key, target)) = matched {
+                match target {
+                    IntermediateTarget::Action(action) => {
+                        if let KeyAction::ShellCommand(command) = action {
+                            expansion.command_bytes =
+                                expansion.command_bytes.saturating_add(command.len());
+                        }
+                        if expansion.command_bytes > MAX_COMPILED_COMMAND_BYTES
+                            || expansion.events.len() >= MAX_MACRO_BYTES
+                        {
+                            return Err(unsupported("macro exceeds compiled output limit"));
+                        }
+                        expansion.events.push(
+                            action_event(action)
+                                .ok_or_else(|| unsupported("unsupported intermediate action"))?,
+                        );
+                    }
+                    IntermediateTarget::Alias(seq, body) => {
+                        if active.len() >= MAX_ALIAS_DEPTH || active.contains(&seq) {
+                            return Err(unsupported(
+                                "cyclic or excessively deep intermediate macro",
+                            ));
+                        }
+                        active.push(seq);
+                        self.append_emacs_macro(&body.concat(), expansion, active)?;
+                        active.pop();
+                    }
+                }
+                remaining = &remaining[key.len()..];
+            } else {
+                remaining = &remaining[1..];
+            }
+        }
+        Ok(())
+    }
+
+    /// Compile before touching live tables so a rejected intermediate replacement
+    /// leaves every previously compiled trigger intact.
+    fn update_raw_mapping(
+        &mut self,
+        bytes: Vec<u8>,
+        action: Option<KeyAction>,
+        macro_target: Option<KeySequence>,
+    ) -> Result<(), std::io::Error> {
+        let seq = KeySequence::Bytes(vec![bytes.clone()]);
+        let previous_macro = if let Some(target) = macro_target {
+            self.macros.insert(seq.clone(), target)
+        } else {
+            self.macros.remove(&seq)
+        };
+        let previous = if let Some(action) = action {
+            self.raw_mappings.insert(bytes.clone(), action)
+        } else {
+            self.raw_mappings.remove(&bytes)
+        };
+        let compiled = self
+            .macros
+            .iter()
+            .filter_map(|(seq, target)| {
+                let KeySequence::Bytes(parts) = target else {
+                    return None;
+                };
+                Some(
+                    self.resolve_emacs_macro(&parts.concat())
+                        .map(|event| binding_id(seq).map(|id| (id, event))),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>();
+        match compiled {
+            Ok(compiled) => {
+                for ((modifiers, code), event) in compiled.into_iter().flatten() {
+                    self.bindings.add_binding(modifiers, code, event);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                if let Some(previous_macro) = previous_macro {
+                    self.macros.insert(seq, previous_macro);
+                } else {
+                    self.macros.remove(&seq);
+                }
+                if let Some(previous) = previous {
+                    self.raw_mappings.insert(bytes, previous);
+                } else {
+                    self.raw_mappings.remove(&bytes);
+                }
+                Err(error)
+            }
         }
     }
 }
@@ -177,8 +332,8 @@ impl KeyBindings for UpdatableBindings {
             .unwrap_or_default()
     }
 
-    fn get_untranslated(&self, _bytes: &[u8]) -> Option<&KeyAction> {
-        None
+    fn get_untranslated(&self, bytes: &[u8]) -> Option<&KeyAction> {
+        self.state(self.current_keymap)?.raw_mappings.get(bytes)
     }
 
     fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error> {
@@ -191,6 +346,15 @@ impl KeyBindings for UpdatableBindings {
         seq: KeySequence,
         action: KeyAction,
     ) -> Result<(), std::io::Error> {
+        if let Some(bytes) = emacs_raw_sequence(map, &seq)? {
+            // Validate even unresolved actions before retaining them for macros.
+            if action_event(&action).is_none() {
+                return Err(unsupported("Readline action is not supported by Reedline"));
+            }
+            self.emacs.update_raw_mapping(bytes, Some(action), None)?;
+            self.revision = self.revision.wrapping_add(1);
+            return Ok(());
+        }
         let (modifiers, code) = self.validate_binding(map, &seq)?;
         let event = action_event(&action)
             .ok_or_else(|| unsupported("Readline action is not supported by Reedline"))?;
@@ -211,6 +375,20 @@ impl KeyBindings for UpdatableBindings {
     }
 
     fn try_unbind_for(&mut self, map: KeyMap, seq: KeySequence) -> bool {
+        match emacs_raw_sequence(map, &seq) {
+            Ok(Some(bytes)) => {
+                let seq = KeySequence::Bytes(vec![bytes.clone()]);
+                let removed = self.emacs.raw_mappings.contains_key(&bytes)
+                    || self.emacs.macros.contains_key(&seq);
+                if removed && self.emacs.update_raw_mapping(bytes, None, None).is_ok() {
+                    self.revision = self.revision.wrapping_add(1);
+                    return true;
+                }
+                return false;
+            }
+            Err(_) => return false,
+            Ok(None) => {}
+        }
         let Ok((modifiers, code)) = self.validate_binding(map, &seq) else {
             return false;
         };
@@ -220,10 +398,11 @@ impl KeyBindings for UpdatableBindings {
         let Some(state) = self.state_mut(map) else {
             return false;
         };
-        let removed = state
-            .bindings
-            .find_binding(modifiers, code)
-            .is_some_and(|event| event != ReedlineEvent::None);
+        let removed = state.macros.contains_key(&seq)
+            || state
+                .bindings
+                .find_binding(modifiers, code)
+                .is_some_and(|event| event != ReedlineEvent::None);
         state.actions.remove(&seq);
         state.macros.remove(&seq);
         if removed {
@@ -249,6 +428,18 @@ impl KeyBindings for UpdatableBindings {
         seq: KeySequence,
         target: KeySequence,
     ) -> Result<(), std::io::Error> {
+        if let Some(bytes) = emacs_raw_sequence(map, &seq)? {
+            match &target {
+                KeySequence::Strokes(strokes) if strokes.is_empty() => {}
+                KeySequence::Bytes(parts) => validate_macro_bytes(parts)?,
+                KeySequence::Strokes(_) => {
+                    return Err(unsupported("intermediate macro requires a byte body"));
+                }
+            }
+            self.emacs.update_raw_mapping(bytes, None, Some(target))?;
+            self.revision = self.revision.wrapping_add(1);
+            return Ok(());
+        }
         let (modifiers, code) = self.validate_binding(map, &seq)?;
         if map == KeyMap::ViCommand
             || (matches!(code, KeyCode::Char(_))
@@ -258,19 +449,27 @@ impl KeyBindings for UpdatableBindings {
                 "modal or recursive macros require ordered Reedline input replay",
             ));
         }
+        if let KeySequence::Bytes(parts) = &target {
+            validate_macro_bytes(parts)?;
+            if matches!(map, KeyMap::EmacsStandard | KeyMap::EmacsMeta)
+                && parts.iter().flatten().any(u8::is_ascii_control)
+            {
+                let event = self.emacs.resolve_emacs_macro(&parts.concat())?;
+                let seq = binding_sequence((modifiers, code))
+                    .ok_or_else(|| unsupported("unsupported key"))?;
+                self.emacs.bindings.add_binding(modifiers, code, event);
+                self.emacs.actions.remove(&seq);
+                self.emacs.macros.insert(seq, target);
+                self.revision = self.revision.wrapping_add(1);
+                return Ok(());
+            }
+        }
         // The bind parser may deliver an ordinary string as a byte chunk rather
         // than individual strokes. Decode only bounded UTF-8 text, never keys or
         // terminal escape sequences. This still compiles to a single insertion.
         let target = match target {
             KeySequence::Strokes(_) => target,
             KeySequence::Bytes(bytes) => {
-                if bytes
-                    .iter()
-                    .try_fold(0usize, |len, part| len.checked_add(part.len()))
-                    .is_none_or(|len| len > 4096)
-                {
-                    return Err(unsupported("literal macro exceeds 4096 bytes"));
-                }
                 let text = String::from_utf8(bytes.concat())
                     .map_err(|_| unsupported("macro must contain literal UTF-8 text"))?;
                 KeySequence::Strokes(
@@ -310,7 +509,7 @@ impl KeyBindings for UpdatableBindings {
             } else {
                 c
             });
-            if text.len() > 4096 {
+            if text.len() > MAX_MACRO_BYTES {
                 return Err(unsupported("literal macro exceeds 4096 bytes"));
             }
         }
@@ -349,6 +548,40 @@ impl KeyBindings for UpdatableBindings {
 
 fn unsupported(message: &'static str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Unsupported, message)
+}
+
+fn validate_macro_bytes(parts: &[Vec<u8>]) -> Result<(), std::io::Error> {
+    if parts
+        .iter()
+        .try_fold(0usize, |len, part| len.checked_add(part.len()))
+        .is_none_or(|len| len > MAX_MACRO_BYTES)
+    {
+        return Err(unsupported("macro exceeds 4096 bytes"));
+    }
+    Ok(())
+}
+
+fn emacs_raw_sequence(map: KeyMap, seq: &KeySequence) -> Result<Option<Vec<u8>>, std::io::Error> {
+    let KeySequence::Bytes(parts) = seq else {
+        return Ok(None);
+    };
+    if !matches!(map, KeyMap::EmacsStandard | KeyMap::EmacsMeta) {
+        return Err(unsupported(
+            "raw intermediate bindings require an Emacs map",
+        ));
+    }
+    validate_macro_bytes(parts)?;
+    let mut bytes = parts.concat();
+    if bytes.is_empty() {
+        return Err(unsupported("empty intermediate key sequence"));
+    }
+    if map == KeyMap::EmacsMeta {
+        bytes.insert(0, b'\x1b');
+        if bytes.len() > MAX_MACRO_BYTES {
+            return Err(unsupported("macro exceeds 4096 bytes"));
+        }
+    }
+    Ok(Some(bytes))
 }
 
 const fn is_vi_motion((modifiers, code): BindingId) -> bool {
@@ -563,6 +796,310 @@ mod tests {
     fn raw(c: char, modifiers: KeyModifiers) -> reedline::ReedlineRawEvent {
         reedline::ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(KeyCode::Char(c), modifiers)))
             .unwrap()
+    }
+
+    #[test]
+    fn emacs_prefix_macro_tracks_late_binding_replacement_and_removal() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        let target = KeySequence::Bytes(vec![
+            b"\x18\x1fprobe\x07".to_vec(),
+            b"\x18\x1fchain\x07".to_vec(),
+        ]);
+        bindings
+            .bind_for(
+                KeyMap::ViInsert,
+                ctrl('r'),
+                KeyAction::ShellCommand("vi".into()),
+            )
+            .unwrap();
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), target.clone())
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
+
+        for command in ["first", "replacement"] {
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    prefix.clone(),
+                    KeyAction::ShellCommand(command.into()),
+                )
+                .unwrap();
+            let (mut emacs, mut vi) = bindings.editors(PromptEditMode::Emacs);
+            assert_eq!(
+                emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand(command.into())
+            );
+            assert_eq!(
+                vi.parse_event(raw('r', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand("vi".into())
+            );
+        }
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, prefix));
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
+        assert_eq!(
+            bindings
+                .get_macros_for(KeyMap::EmacsStandard)
+                .get(&ctrl('r')),
+            Some(&target)
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_macro_uses_longest_matches_and_preserves_action_order() {
+        let mut bindings = bindings();
+        for (bytes, command) in [
+            (b"\x18".as_slice(), "short"),
+            (b"\x18\x1f".as_slice(), "long"),
+            (b"\x07".as_slice(), "last"),
+        ] {
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    KeySequence::Bytes(vec![bytes.to_vec()]),
+                    KeyAction::ShellCommand(command.into()),
+                )
+                .unwrap();
+        }
+        bindings
+            .define_macro_for(
+                KeyMap::EmacsStandard,
+                ctrl('r'),
+                KeySequence::Bytes(vec![b"\x18\x1funbound\x07".to_vec()]),
+            )
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::Multiple(vec![
+                ReedlineEvent::ExecuteHostCommand("long".into()),
+                ReedlineEvent::ExecuteHostCommand("last".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_macro_rejects_oversized_replacements_atomically() {
+        let mut bindings = bindings();
+        let target = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), target.clone())
+            .unwrap();
+        assert!(
+            bindings
+                .define_macro_for(
+                    KeyMap::EmacsStandard,
+                    ctrl('r'),
+                    KeySequence::Bytes(vec![vec![b'\x18'; 4097]]),
+                )
+                .is_err()
+        );
+        assert_eq!(
+            bindings
+                .get_macros_for(KeyMap::EmacsStandard)
+                .get(&ctrl('r')),
+            Some(&target)
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_empty_raw_macro_replaces_and_removes_an_intermediate_action() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeyAction::ShellCommand("probe".into()),
+            )
+            .unwrap();
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), prefix.clone())
+            .unwrap();
+        bindings
+            .define_macro_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeySequence::Strokes(vec![]),
+            )
+            .unwrap();
+        assert!(bindings.get_untranslated(b"\x18\x1fprobe\x07").is_none());
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, prefix));
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, ctrl('r')));
+    }
+
+    #[test]
+    fn emacs_prefix_rejects_excessive_compiled_output_without_replacing_target() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![vec![b'\x18']]);
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeyAction::ShellCommand("probe".into()),
+            )
+            .unwrap();
+        bindings
+            .define_macro_for(
+                KeyMap::EmacsStandard,
+                ctrl('r'),
+                KeySequence::Bytes(vec![vec![b'\x18'; 4096]]),
+            )
+            .unwrap();
+        let revision = bindings.revision();
+        assert!(
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    prefix,
+                    KeyAction::ShellCommand("x".repeat(4096))
+                )
+                .is_err()
+        );
+        assert_eq!(bindings.revision(), revision);
+        assert_eq!(
+            bindings.get_untranslated(b"\x18"),
+            Some(&KeyAction::ShellCommand("probe".into()))
+        );
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        let event = emacs.parse_event(raw('r', KeyModifiers::CONTROL));
+        assert!(matches!(event, ReedlineEvent::Multiple(_)));
+        let ReedlineEvent::Multiple(events) = event else {
+            return;
+        };
+        assert_eq!(events.len(), 4096);
+        assert!(
+            events
+                .iter()
+                .all(|event| *event == ReedlineEvent::ExecuteHostCommand("probe".into()))
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_raw_bindings_do_not_enable_vi_macro_replay() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeyAction::ShellCommand("probe".into()),
+            )
+            .unwrap();
+        for map in [KeyMap::ViInsert, KeyMap::ViCommand, KeyMap::EmacsCtlx] {
+            assert!(
+                bindings
+                    .bind_for(
+                        map,
+                        prefix.clone(),
+                        KeyAction::ShellCommand("wrong map".into())
+                    )
+                    .is_err()
+            );
+            assert!(
+                bindings
+                    .define_macro_for(map, ctrl('r'), prefix.clone())
+                    .is_err()
+            );
+            assert!(!bindings.try_unbind_for(map, prefix.clone()));
+        }
+        assert_eq!(
+            bindings.get_untranslated(b"\x18\x1fprobe\x07"),
+            Some(&KeyAction::ShellCommand("probe".into()))
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_alias_tracks_late_sink_replacement_and_removal() {
+        let mut bindings = bindings();
+        let alias = KeySequence::Bytes(vec![b"\x18alias\x07".to_vec()]);
+        let sink = KeySequence::Bytes(vec![b"\x18sink\x07".to_vec()]);
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, alias.clone(), sink.clone())
+            .unwrap();
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), alias.clone())
+            .unwrap();
+        for command in ["first", "replacement"] {
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    sink.clone(),
+                    KeyAction::ShellCommand(command.into()),
+                )
+                .unwrap();
+            let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+            assert_eq!(
+                emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand(command.into())
+            );
+        }
+        let revision = bindings.revision();
+        assert!(
+            bindings
+                .define_macro_for(KeyMap::EmacsStandard, sink.clone(), alias.clone())
+                .is_err()
+        );
+        assert_eq!(bindings.revision(), revision);
+        assert_eq!(
+            bindings.get_untranslated(b"\x18sink\x07"),
+            Some(&KeyAction::ShellCommand("replacement".into()))
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, sink));
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, alias));
+    }
+
+    #[test]
+    fn emacs_prefix_alias_expansion_is_bounded_even_without_output() {
+        let mut bindings = bindings();
+        let mut previous = KeySequence::Bytes(vec![b"\x18unbound\x07".to_vec()]);
+        let mut rejected = false;
+        for n in 0..32 {
+            let alias = KeySequence::Bytes(vec![format!("\x18alias{n}\x07").into_bytes()]);
+            let KeySequence::Bytes(parts) = &previous else {
+                unreachable!()
+            };
+            let mut repeated = parts.concat();
+            repeated.extend_from_within(..);
+            if bindings
+                .define_macro_for(
+                    KeyMap::EmacsStandard,
+                    alias.clone(),
+                    KeySequence::Bytes(vec![repeated]),
+                )
+                .is_err()
+            {
+                assert!(n >= 2, "small acyclic aliases must be accepted");
+                rejected = true;
+                assert!(
+                    !bindings
+                        .get_macros_for(KeyMap::EmacsStandard)
+                        .contains_key(&alias)
+                );
+                break;
+            }
+            previous = alias;
+        }
+        assert!(rejected, "branching aliases must have a total-work limit");
     }
 
     #[test]
@@ -856,7 +1393,7 @@ mod tests {
             .unwrap();
         for target in [
             ctrl('b'),
-            KeySequence::Bytes(vec![vec![b'\x1b']]),
+            KeySequence::Bytes(vec![vec![0xff]]),
             KeySequence::Strokes(vec![Key::Character('é').into(); 2049]),
         ] {
             assert!(

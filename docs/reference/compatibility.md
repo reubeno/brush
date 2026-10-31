@@ -101,15 +101,14 @@ This document details `brush`'s compatibility with `bash`, including supported f
 | ✅ | Basic `bind` support |
 | ✅ | `bind -x` for custom key-bound commands |
 | 🔷 | Named maps on Reedline: `emacs-standard`/`emacs`, `emacs-meta`, `vi-insert`, `vi-command`/`vi`/`vi-move` |
-| 🔷 | Reedline macros: bounded literal insertion only; general key replay is not supported |
-| 🚧 | Reedline `emacs-ctlx`, multi-key prefixes, and rebinding vi grammar motions |
+| 🔷 | Reedline macros: bounded literal insertion and eager Emacs intermediate-prefix translation; general key replay is not supported |
+| 🚧 | Reedline `emacs-ctlx`, live multi-key terminal dispatch, and rebinding vi grammar motions |
 
 ### Line Editing
 
-This integration is a draft: startup map selection, mixed literal/Meta macro
-validation, and default-binding queries/removal still have known regressions.
-See the [current review findings](reedline-upstreaming.md#draft-checkpoint-open-brush-local-findings)
-before relying on the supported behavior described below.
+This integration is a draft. See the
+[review checkpoint](reedline-upstreaming.md#draft-checkpoint-open-brush-local-findings)
+for the compatibility boundary and remaining limitations.
 
 Select the Reedline backend to use vi editing:
 
@@ -140,6 +139,24 @@ replacing the previous definition. `bind -r` cannot disable Reedline's internal 
 grammar. Literal macros are limited to 4096 UTF-8 bytes, cannot be triggered by a
 plain printable key, and cannot contain controls or keys with explicit bindings.
 Remove a literal macro before rebinding a key used in its body.
+
+Emacs also retains the earlier eager translation of control-bearing byte macros:
+raw intermediate actions are matched longest-prefix-first and compiled into
+Reedline events. Installing, replacing, or removing an intermediate action
+refreshes the compiled triggers. Unmatched bytes are skipped, and an unresolved
+trigger does nothing rather than falling back to an unrelated default action.
+Intermediate byte macros can alias these actions; empty macros disable their
+previous action. This configuration-time translation is not live multi-key
+terminal dispatch or arbitrary recursive replay. Cyclic aliases are rejected.
+Bodies and intermediate keys are limited to 4096 bytes. Compilation is limited
+to 32 alias levels, 16 KiB of visited body bytes (including aliases with no output),
+4096 actions, and 64 KiB of shell-command text per macro. Rejected updates leave
+prior definitions intact. These Emacs definitions do not alter the vi maps.
+
+This preserves the Emacs prefix mechanism used to open and cancel Atuin search;
+it does not implement ordered replay across a callback. A macro suffix cannot
+resume after a callback and observe bindings changed by that callback. Atuin's
+command-acceptance case remains an expected failure in the existing E2E suite.
 
 Reedline 0.52.1 parses terminal input in batches before executing events. A burst
 containing a family switch and keys intended for the new family can be interpreted
