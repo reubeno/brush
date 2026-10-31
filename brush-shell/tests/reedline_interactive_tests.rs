@@ -156,6 +156,22 @@ fn literal_macro_inserts_into_the_live_buffer() -> anyhow::Result<()> {
 }
 
 #[test]
+fn emacs_prefix_macro_dispatches_a_callback_and_preserves_input() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"bind '"\C-r":"\C-x\C-_probe\a"'; bind -x '"\C-x\C-_probe\a": printf "PREFIX_""FIRED\n"'; bind -x '"\C-g": printf "BUFFER=<%s>\n" "$READLINE_LINE"'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("keep-me")?;
+    session.expect("brush> keep-me")?;
+    session.send("\x12")?;
+    session.expect("PREFIX_FIRED")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x07")?;
+    session.expect("BUFFER=<keep-me>")?;
+    Ok(())
+}
+
+#[test]
 fn external_editor_uses_current_shell_state_and_cleans_up() -> anyhow::Result<()> {
     let directory = tempfile::tempdir()?;
     let script = directory.path().join("editor script");

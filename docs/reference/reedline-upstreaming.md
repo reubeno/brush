@@ -25,12 +25,19 @@ see the [compatibility reference](compatibility.md#line-editing).
 - Named maps are capability-gated. Reedline supports emacs standard/meta and vi
   insert/command; meta is a view of the same Alt bindings, not a shadowing table.
   Unsupported maps cannot mutate VT's emacs bindings.
-- Unsupported actions, multi-key definitions, intercepted vi keys, and grammar
-  motion remapping are rejected. Listings reflect representable table entries,
+- Unsupported actions, live multi-key terminal dispatch, intercepted vi keys,
+  and grammar motion remapping are rejected. Listings reflect representable table entries,
   not invented defaults for library grammar. The boolean unbinding interface
   cannot report errors for internal grammar keys; those keys remain library-owned.
-- Macros are restricted to bounded literal insertion compiled into one edit.
-  Terminal/control/modal input replay and recursive definitions are deferred.
+- Literal macros compile into one bounded insertion. Emacs additionally retains
+  the pre-vi eager translation of control-bearing byte macros through raw
+  intermediate actions, with longest-prefix matching and refresh on target
+  updates/removal. Acyclic intermediate byte aliases also compile eagerly; empty
+  macros disable an action. This is private configuration, not a replacement
+  editor or general recursive replay engine. Bodies/keys are bounded at 4096
+  bytes; compilation is bounded at 32 alias levels, 16 KiB of visited body bytes,
+  4096 actions, and 64 KiB of shell-command text. Rejected updates preserve prior
+  definitions. Ordered/modal input replay is deferred.
 - Disabled editing delegates to the existing minimal reader. External-editor
   commands use quoted literal arguments, current shell cwd/exported environment,
   and an owned private temporary directory. Invalid configuration is an input
@@ -38,8 +45,7 @@ see the [compatibility reference](compatibility.md#line-editing).
 
 ### Draft checkpoint: open brush-local findings
 
-The redesign is not yet ready to merge. Final review found three implementation
-regressions, distinct from the deliberately unsupported features below:
+The redesign remains a draft. Earlier review identified these brush-local issues:
 
 - Unqualified startup bindings can select the wrong family before the first read.
 - The builtin macro parser's byte fallback can lose Meta modifiers, bypassing
@@ -47,10 +53,24 @@ regressions, distinct from the deliberately unsupported features below:
 - Missing reverse mappings omit some supported default commands from queries and
   function-based removal.
 
-In addition, `bind -v` does not yet report the active keymap for consumers such as
-Atuin. Stock Atuin/fzf scripts still require prefix maps and ordered macros that
-are outside this adapter's supported scope. The validation record and remaining
-checks are captured in the [implementation plan](../superpowers/plans/2026-10-29-vi-readline-redesign.md#draft-checkpoint-validation-and-open-findings).
+The startup-map fix and atomic-replacement checks have focused coverage; the list
+above records the earlier checkpoint, not permission to accept further regressions.
+`bind -v` still does not report the active keymap for consumers that query it.
+
+The initial vi contribution also removed upstream's existing Emacs prefix/macro
+translation. The unchanged Atuin 18.21.0 E2E suite reproduced three unexpected
+failures in default Emacs mode; Bash passed all five cases. These were regressions,
+not acceptable vi scope limitations. The restoration keeps the original assertions
+and sole expected failure, and reinstates two upstream `bind` macro compatibility
+cases incorrectly exempted by the vi contribution. See the
+[restoration design](../superpowers/specs/2026-10-31-emacs-macro-regression-design.md)
+and [verification plan](../superpowers/plans/2026-10-31-emacs-macro-regression.md).
+
+Opening/canceling Atuin uses eager Emacs translation and does not require a new
+engine replay API. Its command-acceptance suffix does require ordered replay;
+that pre-existing E2E expected failure is not claimed fixed. General Atuin vi or
+fzf compatibility is not established by these Emacs tests. The earlier validation
+record is in the [redesign plan](../superpowers/plans/2026-10-29-vi-readline-redesign.md#draft-checkpoint-validation-and-open-findings).
 
 ### Remaining upstream work
 
