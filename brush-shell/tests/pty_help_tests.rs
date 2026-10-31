@@ -15,12 +15,13 @@ use std::time::Duration;
 use expectrl::{Expect, Session};
 
 /// Runs `script` with `brush -c` in a terminal `cols` wide and returns its
-/// output.
+/// output. `$BRUSH` names the shell.
 fn run_in_terminal(cols: u16, script: &str) -> anyhow::Result<String> {
     let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin!("brush"));
     cmd.args(["--norc", "--noprofile", "--no-config", "-c", script]);
     // No COLUMNS, NO_COLOR or COLORTERM from the caller: only the terminal decides.
     cmd.env_clear().env("TERM", "xterm");
+    cmd.env("BRUSH", assert_cmd::cargo::cargo_bin!("brush"));
 
     let mut session = Session::spawn(cmd)?;
     session.set_expect_timeout(Some(Duration::from_secs(8)));
@@ -48,5 +49,15 @@ fn builtin_help_wraps_to_the_terminal() -> anyhow::Result<()> {
         "{output}"
     );
     assert!(widest_line(&output) <= 40, "{output}");
+    Ok(())
+}
+
+#[test]
+fn shell_help_has_brush_colors_and_wraps_to_the_terminal() -> anyhow::Result<()> {
+    // Wide enough for the usage lines, which are never wrapped.
+    let output = run_in_terminal(60, r#"read; "$BRUSH" --help"#)?;
+    assert!(output.contains("\x1b[1;4;33mOptions:\x1b[0m"), "{output:?}");
+    assert!(output.contains("\x1b[1;35m--version\x1b[0m"), "{output:?}");
+    assert!(widest_line(&output) <= 60, "{output}");
     Ok(())
 }
