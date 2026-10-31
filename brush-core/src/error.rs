@@ -79,7 +79,7 @@ pub enum ErrorKind {
     WorkingDirMissing(PathBuf),
 
     /// Failed to execute command.
-    #[error("failed to execute command '{0}': {1}")]
+    #[error("failed to execute command '{command}': {message}", command = .0, message = io_error_message(.1))]
     FailedToExecuteCommand(String, #[source] std::io::Error),
 
     /// History item was not found.
@@ -176,8 +176,9 @@ pub enum ErrorKind {
     #[error("invalid regex: {0}; expression: '{1}'")]
     InvalidRegexError(fancy_regex::Error, String),
 
-    /// An I/O error occurred.
-    #[error("i/o error: {0}")]
+    /// An I/O error occurred. Displays as the system's message for it
+    /// (`No such file or directory`).
+    #[error("{}", io_error_message(.0))]
     IoError(#[from] std::io::Error),
 
     /// Invalid substitution syntax.
@@ -465,6 +466,26 @@ impl Error {
             next_control_flow,
             exit_code,
         }
+    }
+}
+
+/// Returns the message for an I/O error: the system's text (`No such file or
+/// directory`), without the `(os error N)` Rust adds.
+///
+/// # Arguments
+///
+/// * `error` - The error.
+pub fn io_error_message(error: &std::io::Error) -> String {
+    let message = error.to_string();
+    match message.rsplit_once(" (os error ") {
+        Some((text, code))
+            if code.strip_suffix(')').is_some_and(|digits| {
+                !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+            }) =>
+        {
+            text.to_owned()
+        }
+        _ => message,
     }
 }
 
