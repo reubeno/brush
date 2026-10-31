@@ -48,6 +48,80 @@ cases:
     # Runs brush as a child process, which WASI 0.2 cannot do.
     incompatible_platforms: ["wasi"]
 
+  - name: "Completion callback completes a flag value after other flags"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --norc --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "reedline\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback completes an attached flag value"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --input-backend=r'
+    expected_exit_code: 0
+    expected_stdout: "--input-backend=reedline\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback completes a long flag name"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --nor'
+    expected_exit_code: 0
+    expected_stdout: "--norc\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  # Flags stop at the script or `-c` command, so a later flag-like word is an
+  # argument: the callback answers `\x01files`, its request for file names.
+  - name: "Completion callback offers files, not flag values, after a script"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush script.sh --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not attached flag values, after a script"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush script.sh --input-backend=r'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag names, after a script"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush script.sh --nor'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag values, after a -c command"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush -c "echo hi" --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag names, after a -c command"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush -c "echo hi" --nor'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag names, after --"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush -- --nor'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
   - name: "Help flag succeeds"
     args:
       - "--help"
