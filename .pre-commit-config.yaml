@@ -94,6 +94,26 @@ repos:
         exclude: \.rs$
 
   # ---------------------------------------------------------------------------
+  # Schema validation for release-plz.toml, so a misspelled key or wrong type
+  # fails here instead of at release time. The schema is the one release-plz
+  # publishes, as of a release-plz release tag. Dependabot doesn't track that
+  # URL; bump the tag by hand when adopting newer release-plz config.
+  # check-jsonschema caches the download, so only the first run needs the
+  # network.
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: a76b92851fc9eede9f9bc4073eb55202f34eb0df # frozen: 0.39.0
+    hooks:
+      - id: check-jsonschema
+        name: Validate release-plz.toml
+        files: ^release-plz\.toml$
+        # Upstream's manifest limits this hook to [json, yaml].
+        types_or: [toml]
+        args:
+          - --schemafile
+          - https://raw.githubusercontent.com/release-plz/release-plz/release-plz-v0.4.3/.schema/latest.json
+
+  # ---------------------------------------------------------------------------
   # Spelling. Configured by Cargo.toml [workspace.metadata.typos].
   # ---------------------------------------------------------------------------
   - repo: https://github.com/crate-ci/typos
