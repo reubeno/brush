@@ -137,8 +137,38 @@ cases:
       set | grep "^m="
       declare -p m
 
+  - name: "set applies -o and +o in the order given"
+    stdin: |
+      set -o noglob +o noglob; echo "1 $-"
+      set +o noglob -o noglob; echo "2 $-"; set +f
+      set -o noglob -o noclobber +o noglob; echo "3 $-"; set +fC
+
+  - name: "set applies letters and -o names in the order given"
+    stdin: |
+      set -f +o noglob; echo "1 $-"
+      set -o noglob +f; echo "2 $-"; set +f
+      set +o noglob -f; echo "3 $-"; set +f
+      set -eo pipefail +e; echo "4 $-"; shopt -po pipefail; set +o pipefail
+
+  - name: "set -o alone after a name lists the options it just set"
+    stdin: |
+      set -o noglob -o | grep noglob
+      set +o noglob +o | grep noglob
+
+  - name: "set stops at an unknown option name"
+    ignore_stderr: true
+    stdin: |
+      set -- q
+      set -o nosuch -f a b; echo "$? $- [$*]"
+
+  - name: "set - turns off -x and -v"
+    ignore_stderr: true
+    stdin: |
+      set -x -v; set -; echo "1 $-"
+      set -x; set -e -; echo "2 $-"; set +e
+      set -x -v; set -- a; set +xv; echo "3 $- [$*]"
+
   - name: "set -o with an unknown option name"
-    known_failure: true # TODO(set): set -o bogus fails without bash's message
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       set -o bogus 2>&1 | strip
@@ -147,10 +177,11 @@ cases:
       echo "set +o: ${PIPESTATUS[0]}"
 
   - name: "set takes the letters after -o as more options"
-    known_failure: true # TODO(set): `-oe` is taken as `-o e`, where bash lists the options and then sets -e
     stdin: |
       set -oe | tail -1
       set -oe >/dev/null; echo "$-"
+      set +oe | tail -1
+      set +oe >/dev/null; echo "$-"
 
   - name: "set rejects an option it doesn't have"
     ignore_stderr: true
