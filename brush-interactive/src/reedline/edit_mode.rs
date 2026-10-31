@@ -55,7 +55,7 @@ impl UpdatableBindings {
             vi_insert: KeyMapState::new(vi_insert),
             vi_command: KeyMapState::new(vi_command),
             // Readline's initial binding map before the first interactive read.
-            current_keymap: KeyMap::ViInsert,
+            current_keymap: KeyMap::EmacsStandard,
             revision: 0,
         }
     }
@@ -563,6 +563,71 @@ mod tests {
     fn raw(c: char, modifiers: KeyModifiers) -> reedline::ReedlineRawEvent {
         reedline::ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(KeyCode::Char(c), modifiers)))
             .unwrap()
+    }
+
+    #[test]
+    fn initial_unqualified_query_uses_emacs() {
+        let mut emacs = Keybindings::new();
+        emacs.add_binding(
+            KeyModifiers::CONTROL,
+            KeyCode::Char('l'),
+            ReedlineEvent::ClearScreen,
+        );
+        let bindings = UpdatableBindings::new(emacs, Keybindings::new(), Keybindings::new());
+
+        assert_eq!(
+            bindings.get_current().get(&ctrl('l')),
+            Some(&KeyAction::DoInputFunction(InputFunction::ClearScreen))
+        );
+    }
+
+    #[test]
+    fn initial_unqualified_binding_dispatches_in_emacs() {
+        let mut bindings = bindings();
+        bindings
+            .bind(ctrl('t'), KeyAction::ShellCommand("startup".into()))
+            .unwrap();
+        bindings
+            .bind_for(
+                KeyMap::ViInsert,
+                ctrl('t'),
+                KeyAction::ShellCommand("vi".into()),
+            )
+            .unwrap();
+
+        let (mut emacs, mut vi) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('t', KeyModifiers::CONTROL)),
+            ReedlineEvent::ExecuteHostCommand("startup".into())
+        );
+        assert_eq!(
+            vi.parse_event(raw('t', KeyModifiers::CONTROL)),
+            ReedlineEvent::ExecuteHostCommand("vi".into())
+        );
+    }
+
+    #[test]
+    fn later_mode_selection_controls_unqualified_bindings() {
+        let mut bindings = bindings();
+        for (mode, map) in [
+            (PromptEditMode::Vi(PromptViMode::Insert), KeyMap::ViInsert),
+            (PromptEditMode::Vi(PromptViMode::Normal), KeyMap::ViCommand),
+            (PromptEditMode::Emacs, KeyMap::EmacsStandard),
+        ] {
+            bindings.set_current_mode(&mode);
+            bindings
+                .bind(ctrl('t'), KeyAction::ShellCommand("live".into()))
+                .unwrap();
+            assert_eq!(
+                bindings.get_current_for(map).get(&ctrl('t')),
+                Some(&KeyAction::ShellCommand("live".into()))
+            );
+            let (mut editor, _) = bindings.editors(mode);
+            assert_eq!(
+                editor.parse_event(raw('t', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand("live".into())
+            );
+        }
     }
 
     #[test]
