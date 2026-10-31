@@ -497,7 +497,7 @@ cases:
   #
 
   - name: "--posix turns on the posix option"
-    args: ["--posix", "-c", "shopt -o posix"]
+    args: ["--posix", "-c", "shopt -oq posix"]
 
   - name: "--noediting runs a -c command"
     args: ["--noediting", "-c", "echo hi"]

@@ -270,9 +270,9 @@ cases:
     expected_stdout: "unset\n"
 
   - name: "--sh turns on the posix option"
-    args: ["--sh", "-c", 'case :$SHELLOPTS: in *:posix:*) echo posix;; *) echo not posix;; esac']
+    # sh mode has no echo builtin, and Windows and WASI have no echo program.
+    args: ["--sh", "-c", 'case :$SHELLOPTS: in *:posix:*) exit 0;; esac; exit 1']
     expected_exit_code: 0
-    expected_stdout: "posix\n"
 
   - name: "--inherit-fd hands the shell a descriptor"
     stdin: |
