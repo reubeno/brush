@@ -6331,6 +6331,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0473d4caf0ca65af578058f6d4aa6012859896a87b7a7f82abfabf29f4bc094"
 dependencies = [
+ "terminal_size",
  "winnow",
  "winnow-args-derive",
 ]
