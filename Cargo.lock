@@ -624,7 +624,6 @@ dependencies = [
  "assert_cmd",
  "assert_fs",
  "brush-builtins",
- "brush-clap-adapter",
  "brush-core",
  "brush-coreutils-builtins",
  "brush-experimental-builtins",

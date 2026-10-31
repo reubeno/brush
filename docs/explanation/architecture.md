@@ -27,8 +27,8 @@ on the others (not counting dev-dependencies) are:
 
 ```text
 brush                        → brush-shell
-brush-shell                  → brush-interactive, brush-builtins, brush-clap-adapter,
-                               brush-core, brush-winnow-args-adapter,
+brush-shell                  → brush-interactive, brush-builtins, brush-core,
+                               brush-winnow-args-adapter,
                                brush-experimental-builtins (optional),
                                brush-coreutils-builtins (optional)
 brush-interactive            → brush-core, brush-parser

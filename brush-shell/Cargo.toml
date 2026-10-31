@@ -95,14 +95,12 @@ schema = ["dep:schemars"]
 workspace = true
 
 [dependencies]
-brush-clap-adapter = { version = "^0.1.0", path = "../brush-clap-adapter" }
 brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-winnow-args-adapter = { version = "^0.1.0", path = "../brush-winnow-args-adapter" }
 brush-builtins = { version = "^0.2.0", path = "../brush-builtins" }
 brush-interactive = { version = "^0.4.0", path = "../brush-interactive" }
 brush-coreutils-builtins = { version = "^0.1.0", path = "../brush-coreutils-builtins", optional = true }
 brush-experimental-builtins = { version = "^0.1.0", path = "../brush-experimental-builtins", optional = true }
-clap = { version = "4.6.0", features = ["derive", "env"] }
 color-print = "0.3.7"
 etcetera = "0.11.0"
 schemars = { version = "1.2.1", optional = true }
@@ -130,6 +128,8 @@ uuid = { version = "1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
+# Used by the tests and the `gen` example.
+clap = { version = "4.6.0", features = ["derive", "env"] }
 tempfile = "3.27.0"
 # Also a regular optional dependency, enabled by `experimental-load`. The `gen`
 # example needs it without that feature, so it's listed here too.
