@@ -370,17 +370,11 @@ impl ShellEnvironment {
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
-    ) -> Result<(), error::Error> {
+    ) -> Result<&mut ShellVariable, error::Error> {
         let name = name.into();
 
         let auto_export = self.export_variables_on_modification;
-        if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
-            var.assign(value, false)?;
-            if auto_export {
-                var.export();
-            }
-            updater(var)
-        } else {
+        if self.get_using_policy(&name, lookup_policy).is_none() {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
             var.assign(value, false)?;
             if auto_export {
@@ -388,8 +382,16 @@ impl ShellEnvironment {
             }
             updater(&mut var)?;
 
-            self.add(name, var, scope_if_creating)
+            return self.add_and_get(name, var, scope_if_creating);
         }
+
+        let var = self.get_existing_mut(&name, lookup_policy)?;
+        var.assign(value, false)?;
+        if auto_export {
+            var.export();
+        }
+        updater(var)?;
+        Ok(var)
     }
 
     /// Update an array element in the environment, or add it if it doesn't already exist.
@@ -410,13 +412,10 @@ impl ShellEnvironment {
         updater: impl Fn(&mut ShellVariable) -> Result<(), error::Error>,
         lookup_policy: EnvironmentLookup,
         scope_if_creating: EnvironmentScope,
-    ) -> Result<(), error::Error> {
+    ) -> Result<&mut ShellVariable, error::Error> {
         let name = name.into();
 
-        if let Some(var) = self.get_mut_using_policy(&name, lookup_policy) {
-            var.assign_at_index(index, value, false)?;
-            updater(var)
-        } else {
+        if self.get_using_policy(&name, lookup_policy).is_none() {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
             var.assign(
                 variables::ShellValueLiteral::Array(variables::ArrayLiteral(vec![(
@@ -427,8 +426,27 @@ impl ShellEnvironment {
             )?;
             updater(&mut var)?;
 
-            self.add(name, var, scope_if_creating)
+            return self.add_and_get(name, var, scope_if_creating);
         }
+
+        let var = self.get_existing_mut(&name, lookup_policy)?;
+        var.assign_at_index(index, value, false)?;
+        updater(var)?;
+        Ok(var)
+    }
+
+    /// Retrieves a mutable reference to a variable that's known to exist. Callers check for
+    /// the variable up front because returning the reference from an `if let` on
+    /// `get_mut_using_policy` while adding in the `else` branch doesn't pass the borrow checker.
+    fn get_existing_mut(
+        &mut self,
+        name: &str,
+        lookup_policy: EnvironmentLookup,
+    ) -> Result<&mut ShellVariable, error::Error> {
+        self.get_mut_using_policy(name, lookup_policy)
+            .ok_or_else(|| {
+                error::ErrorKind::InternalError(format!("variable {name} not found")).into()
+            })
     }
 
     /// Adds a variable to the environment.
@@ -441,21 +459,32 @@ impl ShellEnvironment {
     pub fn add<N: Into<String>>(
         &mut self,
         name: N,
-        mut var: ShellVariable,
+        var: ShellVariable,
         target_scope: EnvironmentScope,
     ) -> Result<(), error::Error> {
+        self.add_and_get(name, var, target_scope)?;
+        Ok(())
+    }
+
+    /// Adds a variable to the environment, returning a reference to the added variable.
+    fn add_and_get<N: Into<String>>(
+        &mut self,
+        name: N,
+        mut var: ShellVariable,
+        target_scope: EnvironmentScope,
+    ) -> Result<&mut ShellVariable, error::Error> {
         if self.export_variables_on_modification {
             var.export();
         }
 
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if *scope_type == target_scope {
-                let prev_var = map.set(name, var);
-                if prev_var.is_none() {
+                let (var, added) = map.set_and_get(name, var);
+                if added {
                     self.entry_count += 1;
                 }
 
-                return Ok(());
+                return Ok(var);
             }
         }
 
@@ -534,6 +563,21 @@ impl ShellVariableMap {
     /// * `var` - The variable to set.
     pub fn set<N: Into<String>>(&mut self, name: N, var: ShellVariable) -> Option<ShellVariable> {
         self.variables.insert(name.into(), var)
+    }
+
+    /// Sets a variable in the map, returning a reference to it and whether it was newly added.
+    fn set_and_get<N: Into<String>>(
+        &mut self,
+        name: N,
+        var: ShellVariable,
+    ) -> (&mut ShellVariable, bool) {
+        match self.variables.entry(name.into()) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(var);
+                (entry.into_mut(), false)
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => (entry.insert(var), true),
+        }
     }
 }
 

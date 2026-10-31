@@ -936,7 +936,23 @@ impl ShellValue {
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> Result<Option<Cow<'_, str>>, error::Error> {
         match self {
-            Self::Unset(_) => Ok(None),
+            Self::Dynamic { getter, .. } => {
+                let dynamic_value = getter(shell);
+                let result = dynamic_value.get_at(index, shell)?;
+                Ok(result.map(|s| s.to_string().into()))
+            }
+            _ => self.get_at_without_dynamic_support(index),
+        }
+    }
+
+    /// Retrieves the value at the given index, without evaluating dynamic values;
+    /// returns `None` for a dynamic value.
+    pub(crate) fn get_at_without_dynamic_support(
+        &self,
+        index: &str,
+    ) -> Result<Option<Cow<'_, str>>, error::Error> {
+        match self {
+            Self::Unset(_) | Self::Dynamic { .. } => Ok(None),
             Self::String(s) => {
                 if index.parse::<u64>().unwrap_or(0) == 0 {
                     Ok(Some(Cow::Borrowed(s)))
@@ -950,11 +966,6 @@ impl ShellValue {
             Self::IndexedArray(values) => {
                 let key = get_key_for_indexed_array(values, index)?;
                 Ok(values.get(&key).map(|s| Cow::Borrowed(s.as_str())))
-            }
-            Self::Dynamic { getter, .. } => {
-                let dynamic_value = getter(shell);
-                let result = dynamic_value.get_at(index, shell)?;
-                Ok(result.map(|s| s.to_string().into()))
             }
         }
     }
@@ -1008,7 +1019,7 @@ impl ShellValue {
         }
     }
 
-    fn try_get_cow_str_without_dynamic_support(&self) -> Option<Cow<'_, str>> {
+    pub(crate) fn try_get_cow_str_without_dynamic_support(&self) -> Option<Cow<'_, str>> {
         match self {
             Self::Unset(_) => None,
             Self::String(s) => Some(Cow::Borrowed(s.as_str())),
