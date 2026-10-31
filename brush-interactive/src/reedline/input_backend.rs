@@ -1,5 +1,8 @@
 use nu_ansi_term::Style;
 use reedline::MenuBuilder;
+use std::process::Command;
+
+use brush_core::options::LineEditingMode;
 
 use super::{completer, edit_mode, highlighter, history, validator};
 use crate::{InputBackend, ReadResult, ShellError, input_backend::InteractivePrompt, refs};
@@ -8,6 +11,10 @@ use crate::{InputBackend, ReadResult, ShellError, input_backend::InteractiveProm
 /// and reporting results to standard output and standard error streams.
 pub struct ReedlineInputBackend {
     reedline: Option<reedline::Reedline>,
+    updatable_bindings: std::sync::Arc<tokio::sync::Mutex<edit_mode::UpdatableBindings>>,
+    configured_mode: Option<(LineEditingMode, u64)>,
+    installed_bindings_revision: Option<u64>,
+    editor_directory: Option<tempfile::TempDir>,
 }
 
 const COMPLETION_MENU_NAME: &str = "completion_menu";
@@ -44,11 +51,17 @@ impl ReedlineInputBackend {
         shell_ref: &refs::ShellRef<impl brush_core::ShellExtensions>,
     ) -> Result<Self, ShellError> {
         // Set up key bindings.
-        let key_bindings = compose_key_bindings(COMPLETION_MENU_NAME);
+        let emacs_key_bindings = compose_emacs_key_bindings(COMPLETION_MENU_NAME);
+        let vi_insert_key_bindings = compose_vi_insert_key_bindings(COMPLETION_MENU_NAME);
+        let vi_command_key_bindings = compose_vi_command_key_bindings();
 
-        // Set up mutable edit mode.
-        let mutable_edit_mode = edit_mode::MutableEditMode::new(key_bindings);
-        let updatable_bindings = mutable_edit_mode.bindings();
+        // The shared object stores configuration only. Reedline owns the live editors.
+        let updatable_bindings =
+            std::sync::Arc::new(tokio::sync::Mutex::new(edit_mode::UpdatableBindings::new(
+                emacs_key_bindings,
+                vi_insert_key_bindings,
+                vi_command_key_bindings,
+            )));
 
         // Create helper objects that implement reedline traits; each will
         // hold a reference to the shell.
@@ -103,7 +116,6 @@ impl ReedlineInputBackend {
             .with_validator(Box::new(validator))
             .with_hinter(Box::new(hinter))
             .with_menu(reedline::ReedlineMenu::EngineCompleter(completion_menu))
-            .with_edit_mode(Box::new(mutable_edit_mode))
             .with_history(Box::new(history));
 
         // Override Reedline's default example highlighter, which hard-codes white as the
@@ -121,11 +133,15 @@ impl ReedlineInputBackend {
             tokio::runtime::Handle::current().block_on(shell_ref.lock())
         });
 
-        shell.set_key_bindings(Some(updatable_bindings));
+        shell.set_key_bindings(Some(updatable_bindings.clone()));
         drop(shell);
 
         Ok(Self {
             reedline: Some(reedline),
+            updatable_bindings,
+            configured_mode: None,
+            installed_bindings_revision: None,
+            editor_directory: None,
         })
     }
 }
@@ -159,14 +175,67 @@ impl InputBackend for ReedlineInputBackend {
     )]
     async fn read_line(
         &mut self,
-        _shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
+        shell: &crate::ShellRef<impl brush_core::ShellExtensions>,
         prompt: InteractivePrompt,
     ) -> Result<ReadResult, ShellError> {
-        let Some(reedline) = &mut self.reedline else {
+        let requested = {
+            let shell = shell.lock().await;
+            (
+                shell.options().line_editing_mode(),
+                shell.options().line_editing_mode_revision,
+            )
+        };
+
+        if matches!(requested.0, LineEditingMode::None) {
+            self.configured_mode = Some(requested);
+            return crate::MinimalInputBackend.read_line(shell, prompt).await;
+        }
+
+        let editor_command = configure_buffer_editor(&*shell.lock().await)?;
+        let directory = if let Some(directory) = &self.editor_directory {
+            directory
+        } else {
+            self.editor_directory
+                .insert(tempfile::tempdir().map_err(ShellError::InputError)?)
+        };
+        let path = directory.path().join("buffer");
+        // Acquire shared configuration before taking ownership of the editor:
+        // cancellation while waiting for a lock must not discard the editor.
+        let mut bindings = self.updatable_bindings.lock().await;
+        let Some(mut reedline) = self.reedline.take() else {
             return Ok(ReadResult::Eof);
         };
 
-        match reedline.read_line(&prompt) {
+        let revision = bindings.revision();
+        if self.configured_mode != Some(requested)
+            || self.installed_bindings_revision != Some(revision)
+        {
+            let active = if self.configured_mode != Some(requested) {
+                match requested.0 {
+                    LineEditingMode::Vi => {
+                        reedline::PromptEditMode::Vi(reedline::PromptViMode::Insert)
+                    }
+                    _ => reedline::PromptEditMode::Emacs,
+                }
+            } else {
+                reedline.prompt_edit_mode()
+            };
+            bindings.set_current_mode(&active);
+            let (active_editor, standby) = bindings.editors(active);
+            reedline = reedline
+                .clear_edit_modes()
+                .with_edit_mode(active_editor)
+                .with_additional_edit_mode(standby);
+        }
+        drop(bindings);
+        self.installed_bindings_revision = Some(revision);
+        self.configured_mode = Some(requested);
+        reedline = reedline.with_buffer_editor(editor_command, path);
+        let result = reedline.read_line(&prompt);
+        let mode = reedline.prompt_edit_mode();
+        self.reedline = Some(reedline);
+        self.updatable_bindings.lock().await.set_current_mode(&mode);
+        match result {
             Ok(reedline::Signal::Success(s)) => Ok(ReadResult::Input(s)),
             Ok(reedline::Signal::CtrlC) => Ok(ReadResult::Interrupted),
             Ok(reedline::Signal::CtrlD) => Ok(ReadResult::Eof),
@@ -200,9 +269,53 @@ impl InputBackend for ReedlineInputBackend {
     }
 }
 
-fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
-    let mut key_bindings = reedline::default_emacs_keybindings();
+fn configure_buffer_editor(
+    shell: &brush_core::Shell<impl brush_core::ShellExtensions>,
+) -> Result<Command, ShellError> {
+    let editor = shell
+        .env_str("VISUAL")
+        .filter(|value| !value.is_empty())
+        .or_else(|| shell.env_str("EDITOR").filter(|value| !value.is_empty()))
+        .unwrap_or_else(|| "vi".into());
 
+    let mut command = parse_editor_command(&editor).map_err(ShellError::InputError)?;
+    command.current_dir(shell.working_dir()).env_clear();
+    for (name, variable) in shell.env().iter_exported() {
+        if variable.value().is_set() {
+            command.env(name, variable.value().to_cow_str(shell).as_ref());
+        }
+    }
+    Ok(command)
+}
+
+fn parse_editor_command(editor: &str) -> Result<Command, std::io::Error> {
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "editor must be a program and literal quoted arguments",
+        )
+    };
+    if editor.contains('\0') {
+        return Err(invalid());
+    }
+    let words = brush_parser::tokenize_str(editor)
+        .map_err(|_| invalid())?
+        .into_iter()
+        .map(|token| match token {
+            brush_parser::Token::Word(word, _) => Ok(brush_parser::unquote_str(&word)),
+            brush_parser::Token::Operator(..) => Err(invalid()),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let (program, args) = words
+        .split_first()
+        .filter(|(program, _)| !program.is_empty())
+        .ok_or_else(invalid)?;
+    let mut command = Command::new(program);
+    command.args(args);
+    Ok(command)
+}
+
+fn add_completion_bindings(key_bindings: &mut reedline::Keybindings, completion_menu_name: &str) {
     // Wire up tab to completion.
     key_bindings.add_binding(
         reedline::KeyModifiers::NONE,
@@ -219,7 +332,9 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
         reedline::KeyCode::BackTab,
         reedline::ReedlineEvent::MenuPrevious,
     );
+}
 
+fn add_custom_common_bindings(key_bindings: &mut reedline::Keybindings) {
     // Add undo.
     // NOTE: To match readline, we bind Ctrl+_ to undo; in practice, the only way
     // to get that to work out is to specify Ctrl+7 for the binding. It's not clear
@@ -252,13 +367,137 @@ fn compose_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
             reedline::ReedlineEvent::Enter,
         ]),
     );
+}
+
+fn compose_emacs_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
+    let mut key_bindings = reedline::default_emacs_keybindings();
+
+    add_completion_bindings(&mut key_bindings, completion_menu_name);
+    add_custom_common_bindings(&mut key_bindings);
 
     key_bindings
+}
+
+fn compose_vi_insert_key_bindings(completion_menu_name: &str) -> reedline::Keybindings {
+    let mut key_bindings = reedline::default_vi_insert_keybindings();
+
+    add_completion_bindings(&mut key_bindings, completion_menu_name);
+    add_custom_common_bindings(&mut key_bindings);
+
+    // Bash vi-insert does not bind clear-screen by default.
+    let _ = key_bindings.remove_binding(
+        reedline::KeyModifiers::CONTROL,
+        reedline::KeyCode::Char('l'),
+    );
+
+    key_bindings
+}
+
+fn compose_vi_command_key_bindings() -> reedline::Keybindings {
+    reedline::default_vi_normal_keybindings()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_arguments_are_unquoted_but_never_expanded() {
+        let command = parse_editor_command(
+            r#"'/editor path' --flag 'two words' "" '$HOME' '$(touch sentinel)' a\ b"#,
+        )
+        .unwrap();
+        assert_eq!(command.get_program(), "/editor path");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                "--flag",
+                "two words",
+                "",
+                "$HOME",
+                "$(touch sentinel)",
+                "a b"
+            ]
+        );
+    }
+
+    #[test]
+    fn malformed_editor_commands_are_rejected() {
+        for editor in [
+            "",
+            "''",
+            "vi 'unterminated",
+            "vi; echo no",
+            "vi | cat",
+            "vi > file",
+            "vi\0",
+            "vi 'a\0b'",
+        ] {
+            assert!(parse_editor_command(editor).is_err(), "accepted {editor:?}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn editor_configuration_errors_do_not_consume_the_editor() {
+        let mut shell = brush_core::Shell::builder().build().await.unwrap();
+        shell
+            .options_mut()
+            .set_line_editing_mode(LineEditingMode::Emacs);
+        let result = shell
+            .run_string(
+                r#"VISUAL="vi '""#,
+                &brush_core::SourceInfo::from("test"),
+                &shell.default_exec_params(),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            result.exit_code,
+            brush_core::ExecutionExitCode::Success
+        ));
+        let shell = std::sync::Arc::new(tokio::sync::Mutex::new(shell));
+        let mut backend = ReedlineInputBackend::new(&crate::UIOptions::default(), &shell).unwrap();
+        let prompt = InteractivePrompt {
+            prompt: String::new(),
+            alt_side_prompt: String::new(),
+            continuation_prompt: String::new(),
+        };
+        assert!(
+            matches!(backend.read_line(&shell, prompt).await, Err(ShellError::InputError(error)) if error.kind() == std::io::ErrorKind::InvalidInput)
+        );
+        assert!(backend.reedline.is_some());
+        assert!(backend.editor_directory.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cancelling_configuration_keeps_the_editor() {
+        use std::{
+            future::Future as _,
+            task::{Context, Poll, Waker},
+        };
+
+        let mut shell = brush_core::Shell::builder().build().await.unwrap();
+        shell
+            .options_mut()
+            .set_line_editing_mode(LineEditingMode::Emacs);
+        let shell = std::sync::Arc::new(tokio::sync::Mutex::new(shell));
+        let mut backend = ReedlineInputBackend::new(&crate::UIOptions::default(), &shell).unwrap();
+        let bindings = backend.updatable_bindings.clone();
+        let _guard = bindings.lock().await;
+        {
+            let prompt = InteractivePrompt {
+                prompt: String::new(),
+                alt_side_prompt: String::new(),
+                continuation_prompt: String::new(),
+            };
+            let mut read = std::pin::pin!(backend.read_line(&shell, prompt));
+            assert!(matches!(
+                read.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+                Poll::Pending
+            ));
+        }
+        assert!(backend.get_read_buffer().is_some());
+    }
 
     #[test]
     fn history_hint_style_is_theme_adaptive() {
