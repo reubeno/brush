@@ -51,3 +51,60 @@ cases:
       echo "after a subshell: $(ulimit -S -n)"
       ulimit -S -n 256 | true
       echo "after a pipeline stage: $(ulimit -S -n)"
+
+  - name: "ulimit with no options reports the file size limit"
+    stdin: |
+      ulimit
+
+  - name: "ulimit -S and -H report the soft and hard limits"
+    stdin: |
+      ulimit -Sn
+      ulimit -Hn
+      ulimit -S -n
+
+  - name: "ulimit sets a limit given as a separate or attached value"
+    stdin: |
+      ulimit -n 100; ulimit -n
+      ulimit -n99; ulimit -n
+      ulimit -Sn 98; ulimit -Sn
+      ulimit -c 0; ulimit -c
+
+  - name: "ulimit sets the file size limit from an operand"
+    # Large enough not to stop the shell writing, e.g., coverage data at exit.
+    stdin: |
+      ulimit 100000000; ulimit -f
+      ulimit -- 90000000; echo "ulimit -- 90000000: $?"; ulimit -f
+
+  - name: "ulimit sets a limit to its soft limit"
+    stdin: |
+      ulimit -n soft; echo "ulimit -n soft: $?"; ulimit -n
+
+  - name: "ulimit sets several limits at once"
+    stdin: |
+      ulimit -n 100 -c 0; ulimit -n; ulimit -c
+
+  - name: "ulimit ignores operands after the first value"
+    stdin: |
+      ulimit -n 100 200; echo "ulimit -n 100 200: $?"; ulimit -n
+
+  - name: "ulimit rejects an unknown option and a negative limit"
+    ignore_stderr: true
+    stdin: |
+      ulimit -Z; echo "ulimit -Z: $?"
+      ulimit -n -1; echo "ulimit -n -1: $?"
+
+  - name: "ulimit lists several resources in the order given"
+    known_failure: true # TODO(ulimit): brush lists them in a fixed order, with its own labels and widths
+    stdin: |
+      ulimit -n -c
+      ulimit -s -t
+
+  - name: "ulimit labels a resource it reports alongside one it sets"
+    known_failure: true # TODO(ulimit): brush prints the bare value
+    stdin: |
+      ulimit -c 0 -n
+
+  - name: "ulimit takes a limit's value after --"
+    known_failure: true # TODO(ulimit): brush reports the limit and ignores the value
+    stdin: |
+      ulimit -n -- 100; echo "ulimit -n -- 100: $?"; ulimit -n

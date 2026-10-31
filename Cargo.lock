@@ -382,6 +382,7 @@ dependencies = [
  "brush-clap-adapter",
  "brush-core",
  "brush-parser",
+ "brush-winnow-args-adapter",
  "cfg-if",
  "chrono",
  "clap",
@@ -397,6 +398,7 @@ dependencies = [
  "tracing",
  "utf8-chars",
  "uucore",
+ "winnow-args",
 ]
 
 [[package]]

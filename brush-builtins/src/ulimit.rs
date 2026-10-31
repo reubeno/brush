@@ -1,7 +1,3 @@
-use clap::{
-    Parser,
-    builder::{IntoResettable, StyledStr},
-};
 use std::{
     io::{self, ErrorKind, Write},
     str::FromStr,
@@ -96,7 +92,6 @@ impl Resource {
 #[derive(Clone, Copy)]
 struct ResourceDescription {
     resource: Resource,
-    help: &'static str,
     description: &'static str,
     short: char,
     unit: Unit,
@@ -105,147 +100,126 @@ struct ResourceDescription {
 impl ResourceDescription {
     const SBSIZE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::SBSIZE),
-        help: "the socket buffer size",
         description: "socket buffer size",
         short: 'b',
         unit: Unit::Bytes,
     };
     const CORE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::CORE),
-        help: "the maximum size of core files created",
         description: "core file size",
         short: 'c',
         unit: Unit::Block,
     };
     const DATA: Self = Self {
         resource: Resource::Phy(rlimit::Resource::DATA),
-        help: "the maximum size of a process's data segment",
         description: "data seg size",
         short: 'd',
         unit: Unit::KBytes,
     };
     const NICE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NICE),
-        help: "the maximum scheduling priority (`nice`)",
         description: "scheduling priority",
         short: 'e',
         unit: Unit::Number,
     };
     const FSIZE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::FSIZE),
-        help: "the maximum size of files written by the shell and its children",
         description: "file size",
         short: 'f',
         unit: Unit::Block,
     };
     const SIGPENDING: Self = Self {
         resource: Resource::Phy(rlimit::Resource::SIGPENDING),
-        help: "the maximum number of pending signals",
         description: "pending signals",
         short: 'i',
         unit: Unit::Number,
     };
     const MEMLOCK: Self = Self {
         resource: Resource::Phy(rlimit::Resource::MEMLOCK),
-        help: "the maximum size a process may lock into memory",
         description: "max locked memory",
         short: 'l',
         unit: Unit::KBytes,
     };
     const KQUEUES: Self = Self {
         resource: Resource::Phy(rlimit::Resource::KQUEUES),
-        help: "the maximum number of kqueues allocated for this process",
         description: "max kqueues",
         short: 'k',
         unit: Unit::Number,
     };
     const RSS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RSS),
-        help: "the maximum resident set size",
         description: "max memory size",
         short: 'm',
         unit: Unit::KBytes,
     };
     const LOCKS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::LOCKS),
-        help: "the maximum number of file locks",
         description: "file locks",
         short: 'x',
         unit: Unit::Number,
     };
     const NOFILE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NOFILE),
-        help: "the maximum number of open file descriptors",
         description: "open files",
         short: 'n',
         unit: Unit::Number,
     };
     const MSGQUEUE: Self = Self {
         resource: Resource::Phy(rlimit::Resource::MSGQUEUE),
-        help: "the maximum number of bytes in POSIX message queues",
         description: "POSIX message queues",
         short: 'q',
         unit: Unit::Bytes,
     };
     const PIPE: Self = Self {
         resource: Resource::Virt(Virtual::Pipe),
-        help: "the pipe buffer size",
         description: "pipe size",
         short: 'p',
         unit: Unit::HalfKBytes,
     };
     const RTPRIO: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RTPRIO),
-        help: "the maximum real-time scheduling priority",
         description: "real-time priority",
         short: 'r',
         unit: Unit::Number,
     };
     const RTTIME: Self = Self {
         resource: Resource::Phy(rlimit::Resource::RTTIME),
-        help: "the maximum real-time scheduling priority",
         description: "real-time non-blocking time",
         short: 'R',
         unit: Unit::Micros,
     };
     const STACK: Self = Self {
         resource: Resource::Phy(rlimit::Resource::STACK),
-        help: "the maximum stack size",
         description: "stack size",
         short: 's',
         unit: Unit::KBytes,
     };
     const CPU: Self = Self {
         resource: Resource::Phy(rlimit::Resource::CPU),
-        help: "the maximum amount of cpu time in seconds",
         description: "cpu time",
         short: 't',
         unit: Unit::Seconds,
     };
     const NPROC: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NPROC),
-        help: "the maximum number of user processes",
         description: "max user processes",
         short: 'u',
         unit: Unit::Number,
     };
     const VMEM: Self = Self {
         resource: Resource::Virt(Virtual::VMem),
-        help: "the size of virtual memory",
         description: "virtual memory",
         short: 'v',
         unit: Unit::KBytes,
     };
     const THREADS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::THREADS),
-        help: "the maximum number of threads",
         description: "number of threads",
         short: 'T',
         unit: Unit::Number,
     };
     const NPTS: Self = Self {
         resource: Resource::Phy(rlimit::Resource::NPTS),
-        help: "the maximum number of pseudoterminals",
         description: "number of pseudoterminals",
         short: 'P',
         unit: Unit::Number,
@@ -306,25 +280,6 @@ impl ResourceDescription {
             resource
         )
     }
-
-    /// Provide the matching help String
-    fn help(&self) -> String {
-        format!(
-            "{} {}",
-            self.help,
-            if self.resource.is_supported() {
-                "(supported)"
-            } else {
-                "(unsupported)"
-            }
-        )
-    }
-}
-
-impl IntoResettable<StyledStr> for ResourceDescription {
-    fn into_resettable(self) -> clap::builder::Resettable<StyledStr> {
-        clap::builder::Resettable::Value(self.help().into())
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -350,11 +305,30 @@ impl FromStr for LimitValue {
     }
 }
 
+impl winnow_args::FromArg for LimitValue {
+    fn from_arg(value: &winnow_args::BStr) -> Result<Self, winnow_args::error::BoxError> {
+        Ok(winnow_args::value::to_str(value)?.parse()?)
+    }
+}
+
+/// A flag's help, and whether this platform has the resource: `ulimit --help`
+/// says "(supported)" or "(unsupported)" after it.
+macro_rules! limit_help {
+    ($resource:ident, $help:literal) => {
+        if ResourceDescription::$resource.resource.is_supported() {
+            concat!($help, " (supported)")
+        } else {
+            concat!($help, " (unsupported)")
+        }
+    };
+}
+
 /// Modify shell resource limits.
 ///
 /// Provides control over the resources available to the shell and processes
 /// it creates, on systems that allow such control.
-#[derive(Parser, Debug)]
+#[derive(winnow_args::Args, Debug)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ULimitCommand {
     /// use the `soft` resource limit
     #[arg(short = 'S')]
@@ -365,75 +339,147 @@ pub(crate) struct ULimitCommand {
     /// all current limits are reported
     #[arg(short = 'a')]
     all: bool,
-    /// the maximum socket buffer size
-    #[arg(short = 'b', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SBSIZE)]
+    /// the socket buffer size
+    #[arg(short = 'b', default_missing = "", help = limit_help!(SBSIZE, "the socket buffer size"))]
     sbsize: Option<LimitValue>,
     /// the maximum size of core files created
-    #[arg(short = 'c', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CORE)]
+    #[arg(
+        short = 'c',
+        default_missing = "",
+        help = limit_help!(CORE, "the maximum size of core files created")
+    )]
     core: Option<LimitValue>,
     /// the maximum size of a process's data segment
-    #[arg(short = 'd', default_missing_value = "", num_args(0..=1), help = ResourceDescription::DATA)]
+    #[arg(
+        short = 'd',
+        default_missing = "",
+        help = limit_help!(DATA, "the maximum size of a process's data segment")
+    )]
     data: Option<LimitValue>,
     /// the maximum scheduling priority (`nice`)
-    #[arg(short = 'e', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NICE)]
+    #[arg(
+        short = 'e',
+        default_missing = "",
+        help = limit_help!(NICE, "the maximum scheduling priority (`nice`)")
+    )]
     nice: Option<LimitValue>,
     /// the maximum size of files written by the shell and its children
-    #[arg(short = 'f', default_missing_value = "", num_args(0..=1), help = ResourceDescription::FSIZE)]
+    #[arg(
+        short = 'f',
+        default_missing = "",
+        help = limit_help!(FSIZE, "the maximum size of files written by the shell and its children")
+    )]
     file_size: Option<LimitValue>,
     /// the maximum number of pending signals
-    #[arg(short = 'i', default_missing_value = "", num_args(0..=1), help = ResourceDescription::SIGPENDING)]
+    #[arg(
+        short = 'i',
+        default_missing = "",
+        help = limit_help!(SIGPENDING, "the maximum number of pending signals")
+    )]
     sigpending: Option<LimitValue>,
     /// the maximum size a process may lock into memory
-    #[arg(short = 'l', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MEMLOCK)]
+    #[arg(
+        short = 'l',
+        default_missing = "",
+        help = limit_help!(MEMLOCK, "the maximum size a process may lock into memory")
+    )]
     memlock: Option<LimitValue>,
     /// the maximum number of kqueues allocated for this process
-    #[arg(short = 'k', default_missing_value = "", num_args(0..=1), help = ResourceDescription::KQUEUES)]
+    #[arg(
+        short = 'k',
+        default_missing = "",
+        help = limit_help!(KQUEUES, "the maximum number of kqueues allocated for this process")
+    )]
     kqueues: Option<LimitValue>,
     /// the maximum resident set size
-    #[arg(short = 'm', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RSS)]
+    #[arg(
+        short = 'm',
+        default_missing = "",
+        help = limit_help!(RSS, "the maximum resident set size")
+    )]
     rss: Option<LimitValue>,
     /// the maximum number of open file descriptors
-    #[arg(short = 'n', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NOFILE)]
+    #[arg(
+        short = 'n',
+        default_missing = "",
+        help = limit_help!(NOFILE, "the maximum number of open file descriptors")
+    )]
     file_open: Option<LimitValue>,
     /// the pipe buffer size
-    #[arg(short = 'p', default_missing_value = "", num_args(0..=1), help = ResourceDescription::PIPE)]
+    #[arg(short = 'p', default_missing = "", help = limit_help!(PIPE, "the pipe buffer size"))]
     pipe: Option<LimitValue>,
     /// the maximum number of bytes in POSIX message queues
-    #[arg(short = 'q', default_missing_value = "", num_args(0..=1), help = ResourceDescription::MSGQUEUE)]
+    #[arg(
+        short = 'q',
+        default_missing = "",
+        help = limit_help!(MSGQUEUE, "the maximum number of bytes in POSIX message queues")
+    )]
     msgqueue: Option<LimitValue>,
     /// the maximum real-time scheduling priority
-    #[arg(short = 'r', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTPRIO)]
+    #[arg(
+        short = 'r',
+        default_missing = "",
+        help = limit_help!(RTPRIO, "the maximum real-time scheduling priority")
+    )]
     rtprio: Option<LimitValue>,
     /// the maximum stack size
-    #[arg(short = 's', default_missing_value = "", num_args(0..=1), help = ResourceDescription::STACK)]
+    #[arg(short = 's', default_missing = "", help = limit_help!(STACK, "the maximum stack size"))]
     stack: Option<LimitValue>,
     /// the maximum amount of cpu time in seconds
-    #[arg(short = 't', default_missing_value = "", num_args(0..=1), help = ResourceDescription::CPU)]
+    #[arg(
+        short = 't',
+        default_missing = "",
+        help = limit_help!(CPU, "the maximum amount of cpu time in seconds")
+    )]
     cpu: Option<LimitValue>,
-    /// the size of virtual memory
-    #[arg(short = 'u', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPROC)]
+    /// the maximum number of user processes
+    #[arg(
+        short = 'u',
+        default_missing = "",
+        help = limit_help!(NPROC, "the maximum number of user processes")
+    )]
     nproc: Option<LimitValue>,
     /// the size of virtual memory
-    #[arg(short = 'v', default_missing_value = "", num_args(0..=1), help = ResourceDescription::VMEM)]
+    #[arg(short = 'v', default_missing = "", help = limit_help!(VMEM, "the size of virtual memory"))]
     vmem: Option<LimitValue>,
     /// the maximum number of file locks
-    #[arg(short = 'x', default_missing_value = "", num_args(0..=1), help = ResourceDescription::LOCKS)]
+    #[arg(
+        short = 'x',
+        default_missing = "",
+        help = limit_help!(LOCKS, "the maximum number of file locks")
+    )]
     file_lock: Option<LimitValue>,
     /// the maximum number of pseudoterminals
-    #[arg(short = 'P', default_missing_value = "", num_args(0..=1), help = ResourceDescription::NPTS)]
+    #[arg(
+        short = 'P',
+        default_missing = "",
+        help = limit_help!(NPTS, "the maximum number of pseudoterminals")
+    )]
     npts: Option<LimitValue>,
-    /// real-time non-blocking time
-    #[arg(short = 'R', default_missing_value = "", num_args(0..=1), help = ResourceDescription::RTTIME)]
+    /// the maximum time a real-time process can run before blocking
+    #[arg(
+        short = 'R',
+        default_missing = "",
+        help = limit_help!(
+            RTTIME,
+            "the maximum time a real-time process can run before blocking"
+        )
+    )]
     rttime: Option<LimitValue>,
     /// the maximum number of threads
-    #[arg(short = 'T', default_missing_value = "", num_args(0..=1), help = ResourceDescription::THREADS)]
+    #[arg(
+        short = 'T',
+        default_missing = "",
+        help = limit_help!(THREADS, "the maximum number of threads")
+    )]
     threads: Option<LimitValue>,
 
     /// argument for the implicit limit (`-f`)
+    #[arg(positional)]
     limit: Option<LimitValue>,
 }
 
-brush_clap_adapter::impl_parse_args!(ULimitCommand);
+brush_winnow_args_adapter::impl_parse_args!(ULimitCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ULimitCommand {
     type Error = brush_core::Error;
