@@ -4,9 +4,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Bound to a bare `-a`, `-n`, `-r` or `-w`: the default history file.
-const NO_FILE: &str = "\u{0}";
-
 /// Query or manipulate the shell's command history.
 // TODO(history): Evaluate which of the options conflict with each other.
 #[derive(winnow_args::Args)]
@@ -26,41 +23,25 @@ pub(crate) struct HistoryCommand {
     #[arg(short = 'd', value_name = "OFFSET", allow_negative_numbers)]
     delete_offset: Option<i64>,
 
-    /// Appends the history from the current session to the history file.
-    #[arg(
-        short = 'a',
-        group = "anrw",
-        value_name = "HIST_FILE",
-        default_missing = "\u{0}"
-    )]
-    append_session_to_file: Option<String>,
+    /// Appends the history from the current session to the history file. The
+    /// first argument names the file, if given.
+    #[arg(short = 'a', group = "anrw")]
+    append_session_to_file: bool,
 
-    /// Appends any remaining history from the history file to the current session.
-    #[arg(
-        short = 'n',
-        group = "anrw",
-        value_name = "HIST_FILE",
-        default_missing = "\u{0}"
-    )]
-    append_rest_of_file_to_session: Option<String>,
+    /// Appends any remaining history from the history file to the current session. The
+    /// first argument names the file, if given.
+    #[arg(short = 'n', group = "anrw")]
+    append_rest_of_file_to_session: bool,
 
-    /// Appends the history from the history file to the current session.
-    #[arg(
-        short = 'r',
-        group = "anrw",
-        value_name = "HIST_FILE",
-        default_missing = "\u{0}"
-    )]
-    append_file_to_session: Option<String>,
+    /// Appends the history from the history file to the current session. The first
+    /// argument names the file, if given.
+    #[arg(short = 'r', group = "anrw")]
+    append_file_to_session: bool,
 
-    /// Replaces the history file with the current session history.
-    #[arg(
-        short = 'w',
-        group = "anrw",
-        value_name = "HIST_FILE",
-        default_missing = "\u{0}"
-    )]
-    write_session_to_file: Option<String>,
+    /// Replaces the history file with the current session history. The first
+    /// argument names the file, if given.
+    #[arg(short = 'w', group = "anrw")]
+    write_session_to_file: bool,
 
     /// History-expands positional arguments and displays them.
     #[arg(short = 'p')]
@@ -148,11 +129,8 @@ impl HistoryCommand {
             return Ok(ExecutionResult::success());
         }
 
-        if let Some(append_option) = &self.append_session_to_file {
-            if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path.as_deref(),
-                Some(append_option.as_str()).filter(|f| *f != NO_FILE),
-            ) {
+        if self.append_session_to_file {
+            if let Some(file_path) = self.history_file_path(config) {
                 history.flush(
                     file_path,
                     true,                         /* append? */
@@ -164,19 +142,16 @@ impl HistoryCommand {
             return Ok(ExecutionResult::success());
         }
 
-        if self.append_rest_of_file_to_session.is_some() {
+        if self.append_rest_of_file_to_session {
             return error::unimp("history -n is not yet implemented");
         }
 
-        if self.append_file_to_session.is_some() {
+        if self.append_file_to_session {
             return error::unimp("history -r is not yet implemented");
         }
 
-        if let Some(write_option) = &self.write_session_to_file {
-            if let Some(file_path) = get_effective_history_file_path(
-                config.default_history_file_path.as_deref(),
-                Some(write_option.as_str()).filter(|f| *f != NO_FILE),
-            ) {
+        if self.write_session_to_file {
+            if let Some(file_path) = self.history_file_path(config) {
                 history.flush(
                     file_path,
                     false,                        /* append? */
@@ -206,6 +181,14 @@ impl HistoryCommand {
         display_history(history, config, max_entries, stdout, stderr)?;
 
         Ok(ExecutionResult::success())
+    }
+
+    /// The file named by the first argument, or else the shell's history file.
+    fn history_file_path<'a>(&'a self, config: &'a HistoryConfig) -> Option<&'a Path> {
+        self.args
+            .first()
+            .map(Path::new)
+            .or(config.default_history_file_path.as_deref())
     }
 }
 
@@ -243,19 +226,13 @@ fn display_history(
     Ok(())
 }
 
-fn get_effective_history_file_path<'a>(
-    default_history_file_path: Option<&'a Path>,
-    option: Option<&'a str>,
-) -> Option<&'a Path> {
-    option.map(Path::new).or(default_history_file_path)
-}
-
 #[cfg(test)]
+#[expect(clippy::panic_in_result_fn)]
 mod tests {
     use super::*;
     use anyhow::Result;
     use brush_core::builtins::{Invocation, ParseArgs};
-    use pretty_assertions::{assert_eq, assert_matches};
+    use pretty_assertions::assert_eq;
 
     fn parse(words: &[&str]) -> Result<HistoryCommand> {
         Ok(<HistoryCommand as ParseArgs>::parse(Invocation::new(
@@ -266,14 +243,29 @@ mod tests {
 
     #[test]
     fn test_parse_dash_a() -> Result<()> {
+        let config = HistoryConfig {
+            default_history_file_path: Some(PathBuf::from("default")),
+            time_format: None,
+        };
+
         let cmd = parse(&["5"])?;
-        assert_matches!(cmd.append_session_to_file, None);
+        assert!(!cmd.append_session_to_file);
 
         let cmd = parse(&["-a"])?;
-        assert_eq!(cmd.append_session_to_file.as_deref(), Some(NO_FILE));
+        assert!(cmd.append_session_to_file);
+        assert_eq!(cmd.history_file_path(&config), Some(Path::new("default")));
 
-        let cmd = parse(&["-a", "token"])?;
-        assert_eq!(cmd.append_session_to_file.as_deref(), Some("token"));
+        for words in [
+            &["-a", "token"][..],
+            &["-a", "--", "token"],
+            &["-ac", "token"],
+        ] {
+            let cmd = parse(words)?;
+            assert!(cmd.append_session_to_file);
+            assert_eq!(cmd.history_file_path(&config), Some(Path::new("token")));
+        }
+
+        assert!(parse(&["-atoken"]).is_err());
 
         Ok(())
     }

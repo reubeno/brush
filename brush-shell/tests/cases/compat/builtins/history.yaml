@@ -675,3 +675,54 @@ cases:
     stdin: |
       history -d-1
       echo "history -d-1: $?"
+
+  - name: "history -w takes its file name after --"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -w -- written.txt
+      unset HISTFILE
+
+  - name: "history -w takes its file name after other options"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -w -c written.txt
+      unset HISTFILE
+
+  - name: "history -w in a bundle takes the next word as its file name"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -wc written.txt
+      unset HISTFILE
+
+  - name: "history -w rejects an attached file name"
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -wwritten.txt
+      echo "history -wwritten.txt: $?"
+      unset HISTFILE
+
+  - name: "history rejects more than one of -anrw with status 1"
+    known_failure: true # brush reports the conflict as a usage error, with status 2
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -a -w
+      echo "history -a -w: $?"
+      history -aw
+      echo "history -aw: $?"
+      unset HISTFILE
