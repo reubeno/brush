@@ -735,3 +735,102 @@ cases:
       history -sp a b; echo "history -sp: $?"; history | tail -n 1 | sed 's/^ *[0-9]* *//'
       history -ps c d; echo "history -ps: $?"; history | tail -n 1 | sed 's/^ *[0-9]* *//'
       unset HISTFILE # brush also saves the history -s lines
+
+  - name: "history -s stops reading options at its first argument"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -s a -x; history | tail -n 1 | sed 's/^ *[0-9]* *//'
+      unset HISTFILE # brush also saves the history -s line
+
+  - name: "history -s rejects a negative number as an option"
+    known_failure: true # TODO(history): brush stores -1 as the entry
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -s -1; echo "history -s -1: $?"
+      unset HISTFILE
+
+  - name: "history -d -- -1 is an error"
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -d -- -1; echo "history -d -- -1: $?"
+      history
+      unset HISTFILE
+
+  - name: "history -d requires an offset"
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -d; echo "history -d: $?"
+      unset HISTFILE
+
+  - name: "history -d rejects a non-numeric offset with status 1"
+    known_failure: true # TODO(history): brush reports a usage error, with status 2
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -d abc; echo "history -d abc: $?"
+      unset HISTFILE
+
+  - name: "history takes its count after --"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -- 1
+      unset HISTFILE
+
+  - name: "history rejects a negative or non-numeric count with status 2"
+    known_failure: true # TODO(history): brush fails with status 1
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -1; echo "history -1: $?"
+      history abc; echo "history abc: $?"
+      unset HISTFILE
+
+  - name: "history rejects more than one count"
+    known_failure: true # TODO(history): brush uses the first and ignores the rest
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history 1 2; echo "history 1 2: $?"
+      unset HISTFILE
+
+  - name: "history -w ignores arguments after its file name"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -w written.txt -c
+      history | wc -l
+      unset HISTFILE
+
+  - name: "history -c with -s only clears the history"
+    known_failure: true # TODO(history): brush clears, then also stores the entry
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      echo one
+      history -c -s z
+      history
+      unset HISTFILE
