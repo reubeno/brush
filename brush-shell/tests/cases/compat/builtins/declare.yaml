@@ -338,6 +338,103 @@ cases:
       }
       declare -f f
 
+  - name: "Displaying a function with multi-line quoted strings"
+    stdin: |
+      f() {
+        echo "a
+        b" 'c
+      d'
+        x="m
+      n"
+        if true; then
+          echo "in
+        if"
+        fi
+      }
+      declare -f f
+      eval "$(declare -f f)"
+      f
+
+  - name: "Displaying a function with here-documents"
+    stdin: |
+      f() {
+        cat <<EOF
+        unquoted $HOME
+      EOF
+        cat <<'EOF'
+      single $HOME
+      EOF
+        cat <<"E O"
+      double
+      E O
+        cat <<\EOF
+      backslash
+      EOF
+        cat <<E"O"F
+      partly quoted
+      EOF
+        cat <<"it's"
+      with a quote
+      it's
+        cat <<EOF
+      EOF
+      }
+      declare -f f
+      eval "$(declare -f f)"
+      HOME=/home f
+
+  - name: "Displaying a function with a tab-stripping here-document"
+    stdin: |
+      f() {
+      	cat <<-EOF
+      	stripped
+      	EOF
+      }
+      declare -f f
+      eval "$(declare -f f)"
+      f
+
+  - name: "Displaying here-documents in compound commands"
+    stdin: |
+      f1() {
+        if true; then
+          cat <<A
+      in if
+      A
+        fi
+      }
+      f2() {
+        for i in 1; do
+          cat <<B
+      in for
+      B
+        done
+      }
+      f3() {
+        case x in
+          x) cat <<C
+      in case
+      C
+          ;;
+        esac
+      }
+      f4() {
+        ( cat <<D
+      in subshell
+      D
+        )
+      }
+      f5() {
+        cat <<E <<F 2> /dev/null
+      first
+      E
+      second
+      F
+      }
+      declare -f f1 f2 f3 f4 f5
+      eval "$(declare -f f1 f2 f3 f4 f5)"
+      f1; f2; f3; f4; f5
+
   - name: "Displaying non-existent functions"
     stdin: |
       declare -f not_a_function
