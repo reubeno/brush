@@ -346,7 +346,7 @@ impl DeclareCommand {
         if !env::valid_variable_name(name.as_str()) {
             writeln!(
                 context.stderr(),
-                "{}: `{name}': not a valid identifier",
+                "{}: `{declaration}': not a valid identifier",
                 context.command_name
             )?;
             return Ok(false);
