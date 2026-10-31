@@ -509,22 +509,21 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         args: Vec<CommandArg>,
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
+        let exit_params = params.clone();
         // Builtins may block (e.g., reading input), so keep them from holding up the
         // rest of the pipeline.
         let task = sys::tasks::spawn_blocking(async move {
-            // The stage runs in a shell of its own, as a subshell does, so an
-            // error ends the stage alone: it's reported on the stage's
-            // standard error and becomes the stage's status.
-            let stderr = params.try_stderr(&shell);
             let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let result = execute_builtin_command(&builtin, cmd_context, args).await;
-            let result = shell.end_subshell(result, || stderr);
 
             // Update $_ after command execution.
             shell.update_last_arg_variable(last_arg);
 
-            Ok(result)
+            // The stage runs in a shell of its own, as a subshell does, so it
+            // ends as one: an error ends the stage alone, reported on the
+            // stage's standard error, and the EXIT trap it set itself runs.
+            Ok(shell.end_child_context(&exit_params, result).await)
         });
 
         async move { ExecutionSpawnResult::StartedTask(task.await) }
@@ -594,10 +593,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         args: Vec<CommandArg>,
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
+        let exit_params = params.clone();
         let task = sys::tasks::spawn_blocking(async move {
-            // The stage runs in a shell of its own, as a subshell does, so an
-            // error ends the stage alone.
-            let stderr = params.try_stderr(&shell);
             let cmd_context = ExecutionContext::new(&mut shell, command_name, params);
 
             let spawn_result =
@@ -620,7 +617,11 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
                     );
                 }
             };
-            Ok(shell.end_subshell(result, || stderr))
+
+            // The stage runs in a shell of its own, as a subshell does, so it
+            // ends as one: an error ends the stage alone, and the EXIT trap it
+            // set itself runs.
+            Ok(shell.end_child_context(&exit_params, result).await)
         });
 
         async move { ExecutionSpawnResult::StartedTask(task.await) }
@@ -840,7 +841,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     s: String,
 ) -> Result<String, error::Error> {
     // Instantiate a subshell to run the command in.
-    let mut subshell = shell.clone();
+    let mut subshell = shell.clone_for_subshell();
 
     // Command substitutions don't inherit errexit by default. Only inherit it when
     // command_subst_inherits_errexit is enabled, otherwise disable errexit in the subshell.
@@ -888,9 +889,13 @@ async fn run_substitution_command(
     // If we failed to parse, then we'll fall below and handle it there.
     if let Ok(program) = &parse_result {
         if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
-            interp::setup_redirect(&mut shell, &mut params, redir).await?;
-            std::io::copy(&mut params.stdin(&shell), &mut params.stdout(&shell))?;
-            return Ok(ExecutionResult::new(0));
+            let result = async {
+                interp::setup_redirect(&mut shell, &mut params, redir).await?;
+                std::io::copy(&mut params.stdin(&shell), &mut params.stdout(&shell))?;
+                Ok::<_, error::Error>(ExecutionResult::new(0))
+            }
+            .await;
+            return Ok(shell.end_child_context(&params, result).await);
         }
     }
 
@@ -898,9 +903,12 @@ async fn run_substitution_command(
     let source_info = crate::SourceInfo::from("main");
 
     // Handle the parse result using default shell behavior.
-    shell
+    let result = shell
         .run_parsed_result(parse_result, &source_info, &params)
-        .await
+        .await;
+
+    // Ends the substitution: runs the EXIT trap it set itself, if any.
+    Ok(shell.end_child_context(&params, result).await)
 }
 
 // Detects a subshell command that consists solely of a single input redirection

@@ -82,6 +82,19 @@ cases:
       (exec -l sh -c 'echo "login argv0: $0"')
       echo hello | (exec cat; echo "still running")
 
+  - name: "exec in a child context and its EXIT trap"
+    stdin: |
+      (trap 'echo "[subshell exit]"' EXIT; exec echo subshell)
+      echo "substitution: $(trap 'echo "[substitution exit]"' EXIT; exec echo captured)"
+      { trap 'echo "[stage exit]"' EXIT; exec echo stage; } | cat
+      (trap 'echo "[missing exit]"' EXIT; exec /nonexistent-command) 2>/dev/null
+      echo "status: $?"
+      (trap 'echo "[missing path exit]"' EXIT; exec ./no-such-dir/program) 2>/dev/null
+      echo "status: $?"
+      (trap 'echo "[not found exit]"' EXIT; exec nonexistent-command-xyz) 2>/dev/null
+      (exec true; trap 'echo "[late exit]"' EXIT; echo "after exec")
+      echo "status: $?"
+
   - name: "exec in a subshell runs the program, not a builtin"
     known_failure: true # TODO(exec): exec in a subshell runs a builtin of the same name instead
     ignore_stderr: true
