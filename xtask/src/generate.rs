@@ -10,15 +10,19 @@
 //! write while `brush-shell` is checked with `WINNOW_ARGS_SPEC` set: one TOML
 //! file per command-line type.
 //!
-//! Completion scripts and the config schema are produced by the `gen` example
-//! in `brush-shell`, which this module shells out to. Either way xtask stays
-//! free of any dependency on the shell it's used to build.
+//! Completion scripts are winnow-args' own: they call back into `brush` for
+//! their answers, so they need only its name, which comes from those
+//! fragments too.
+//!
+//! The config schema is produced by the `gen` example in `brush-shell`, which
+//! this module shells out to. Either way xtask stays free of any dependency on
+//! the shell it's used to build.
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use winnow_args::complete::Shell as CompletionShell;
 use winnow_args_man::Manual;
 use winnow_args_spec::Catalog;
 use xshell::{Shell, cmd};
@@ -29,21 +33,6 @@ use crate::common::find_package_version;
 /// command line.
 const SHELL_CRATE: &str = "brush_shell";
 const SHELL_COMMAND: &str = "CommandLineArgs";
-
-/// Run the `gen` example in `brush-shell` with the given arguments.
-///
-/// The example is built with brush-shell's default features plus `schema`; the
-/// artifacts it generates describe the command-line interface as it appears
-/// with that feature set.
-fn run_gen_example(sh: &Shell, args: &[&OsStr]) -> Result<()> {
-    cmd!(
-        sh,
-        "cargo run --package brush-shell --features schema --example gen -- {args...}"
-    )
-    .run()
-    .context("Failed to run the gen example in brush-shell")?;
-    Ok(())
-}
 
 /// Generate various artifacts.
 #[derive(Parser)]
@@ -142,13 +131,12 @@ pub fn run(cmd: &GenCommand, verbose: bool) -> Result<()> {
             DocsCommand::Dist(args) => gen_docs_dist(&sh, args, verbose),
         },
         GenCommand::Completion(completion_cmd) => {
-            // These names are the ones the `gen` example takes.
             let shell = match completion_cmd {
-                CompletionCommand::Bash => "bash",
-                CompletionCommand::Elvish => "elvish",
-                CompletionCommand::Fish => "fish",
-                CompletionCommand::PowerShell => "powershell",
-                CompletionCommand::Zsh => "zsh",
+                CompletionCommand::Bash => CompletionShell::Bash,
+                CompletionCommand::Elvish => CompletionShell::Elvish,
+                CompletionCommand::Fish => CompletionShell::Fish,
+                CompletionCommand::PowerShell => CompletionShell::PowerShell,
+                CompletionCommand::Zsh => CompletionShell::Zsh,
             };
             gen_completion_script(&sh, shell, verbose)
         }
@@ -246,11 +234,14 @@ fn write_pages(dir: &Path, pages: &[(String, String)]) -> Result<()> {
 ///
 /// The completion script is written directly to stdout so it can be piped
 /// to a file or sourced directly by the shell.
-fn gen_completion_script(sh: &Shell, shell: &str, verbose: bool) -> Result<()> {
+fn gen_completion_script(sh: &Shell, shell: CompletionShell, verbose: bool) -> Result<()> {
     if verbose {
-        eprintln!("Generating {shell} completion script...");
+        eprintln!("Generating {} completion script...", shell.as_str());
     }
-    run_gen_example(sh, &[OsStr::new("completion"), OsStr::new(shell)])
+    let spec = write_fragments(sh)?;
+    let command = shell_command(spec.path())?;
+    print!("{}", winnow_args::complete::script(&command.name, shell));
+    Ok(())
 }
 
 fn gen_config_schema(sh: &Shell, args: &GenerateSchemaArgs, verbose: bool) -> Result<()> {
@@ -261,7 +252,16 @@ fn gen_config_schema(sh: &Shell, args: &GenerateSchemaArgs, verbose: bool) -> Re
         );
     }
 
-    run_gen_example(sh, &[OsStr::new("schema"), args.output_path.as_os_str()])
+    // Built with brush-shell's default features plus `schema`, so the schema
+    // describes the config as that feature set has it.
+    let output_path = &args.output_path;
+    cmd!(
+        sh,
+        "cargo run --package brush-shell --features schema --example gen -- {output_path}"
+    )
+    .run()
+    .context("Failed to run the gen example in brush-shell")?;
+    Ok(())
 }
 
 fn gen_docs_dist(sh: &Shell, args: &GenerateDistArgs, verbose: bool) -> Result<()> {

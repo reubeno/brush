@@ -402,4 +402,19 @@ mod tests {
             );
         }
     }
+
+    /// `cargo xtask gen completion` writes the script from the command's name
+    /// alone, without linking brush.
+    #[test]
+    fn completion_scripts_need_only_the_name() {
+        use winnow_args::Args as _;
+        use winnow_args::complete::{Shell, script};
+        for &shell in Shell::ALL {
+            assert_eq!(
+                CommandLineArgs::completion_script(shell),
+                script("brush", shell),
+                "{shell:?}"
+            );
+        }
+    }
 }

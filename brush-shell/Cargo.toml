@@ -52,9 +52,8 @@ path = "tests/completion_tests.rs"
 # jobs, which run prebuilt test binaries outside a cargo target dir and so
 # can't run pty-based tests (see the interactive/version test skips there).
 
-# Generates completion scripts and the config schema. Lives here so that
-# xtask doesn't have to depend on brush-shell; `cargo xtask gen` shells out
-# to it.
+# Generates the config schema. Lives here so that xtask doesn't have to
+# depend on brush-shell; `cargo xtask gen schema` shells out to it.
 [[example]]
 name = "gen"
 path = "examples/gen.rs"
@@ -128,7 +127,7 @@ uuid = { version = "1", features = ["js"] }
 
 [dev-dependencies]
 anyhow = "1.0.102"
-# Used by the tests and the `gen` example.
+# Used by the tests.
 clap = { version = "4.6.0", features = ["derive", "env"] }
 tempfile = "3.27.0"
 # Also a regular optional dependency, enabled by `experimental-load`. The `gen`

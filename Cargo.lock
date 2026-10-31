@@ -6409,6 +6409,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "winnow-args",
  "winnow-args-man",
  "winnow-args-markdown",
  "winnow-args-spec",

@@ -69,7 +69,7 @@ impl Config {
     ///
     /// * `args` - The parsed command-line arguments
     #[must_use]
-    pub fn to_ui_options(&self, args: &CommandLineArgs) -> UIOptions {
+    pub(crate) fn to_ui_options(&self, args: &CommandLineArgs) -> UIOptions {
         // Get the defaults by parsing an empty argument list.
         // This lets us detect which CLI values were explicitly set vs. defaulted.
         let defaults = CommandLineArgs::default_values();

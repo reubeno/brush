@@ -2,11 +2,11 @@
 
 #![allow(dead_code)]
 
-pub mod args;
+mod args;
 mod brushctl;
 pub mod bundled;
 pub mod config;
 pub mod entry;
 mod error_formatter;
-pub mod events;
+mod events;
 mod productinfo;
