@@ -70,9 +70,10 @@ cases:
       ulimit -c 0; ulimit -c
 
   - name: "ulimit sets the file size limit from an operand"
+    # Large enough not to stop the shell writing, e.g., coverage data at exit.
     stdin: |
-      ulimit 1000; ulimit -f
-      ulimit -- 900; echo "ulimit -- 900: $?"; ulimit -f
+      ulimit 100000000; ulimit -f
+      ulimit -- 90000000; echo "ulimit -- 90000000: $?"; ulimit -f
 
   - name: "ulimit sets a limit to its soft limit"
     stdin: |
