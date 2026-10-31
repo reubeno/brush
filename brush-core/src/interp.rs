@@ -10,7 +10,8 @@ use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
-    ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
+    ExecutionControlFlow, ExecutionExitCode, ExecutionResult, ExecutionSpawnResult,
+    ExecutionWaitResult,
 };
 use crate::shell::Shell;
 use crate::variables::{
@@ -286,6 +287,13 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
 
     // Mark the child shell as not interactive; we don't want it messing with the terminal too much.
     cloned_shell.options_mut().interactive = false;
+
+    // An and-or list or a lone compound command starts outside the loops it's run in. A
+    // pipeline's stages decide for themselves, as they do in the foreground.
+    let is_lone_compound = matches!(ao_list.first.seq.as_slice(), [ast::Command::Compound(..)]);
+    if !ao_list.additional.is_empty() || is_lone_compound {
+        cloned_shell.start_outside_loops();
+    }
 
     // Redirect stdin to null, per spec.
     if let Ok(null) = openfiles::null() {
@@ -660,6 +668,14 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
         match self {
             Self::Simple(simple) => simple.execute_in_pipeline(pipeline_context, params).await,
             Self::Compound(compound, redirects) => {
+                // A stage in a shell of its own starts outside the loops it's run in, from
+                // its redirects on.
+                if let commands::ShellForCommand::OwnedShell { target, .. } =
+                    &mut pipeline_context.shell
+                {
+                    target.start_outside_loops();
+                }
+
                 // Set up any additional redirects.
                 if let Some(redirects) = redirects {
                     for redirect in &redirects.0 {
@@ -713,6 +729,7 @@ impl Execute for ast::CompoundCommand {
                 // Clone off a new subshell, and run the body of the subshell there.
                 // TODO(source-info): Do we need to reset the line number?
                 let mut subshell = shell.clone();
+                subshell.start_outside_loops();
 
                 // Handle errors within the subshell context to prevent fatal errors
                 // from propagating to the parent shell.
@@ -777,6 +794,9 @@ impl Execute for ast::CoprocessCommand {
         // Crete a subshell that the coprocess will own and run in.
         let mut child_shell = shell.clone();
         child_shell.options_mut().interactive = false;
+        if matches!(*self.body, ast::Command::Compound(..)) {
+            child_shell.start_outside_loops();
+        }
 
         // Setup redirection for the coprocess's shell's stdin/stdout.
         let mut child_params = params.clone();
@@ -834,10 +854,13 @@ impl Execute for ast::ForClauseCommand {
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
 
+        // The words are expanded in the loop.
+        let mut shell = shell.enter_loop();
+
         // If we were given explicit words to iterate over, then expand them all, with splitting
         // enabled.
         let expanded_values = if let Some(unexpanded_values) = &self.values {
-            expand_words(shell, params, unexpanded_values).await?
+            expand_words(&mut shell, params, unexpanded_values).await?
         } else {
             // Otherwise, we use the current positional parameters.
             shell.current_shell_args().to_vec()
@@ -872,7 +895,7 @@ impl Execute for ast::ForClauseCommand {
                 EnvironmentScope::Global,
             )?;
 
-            result = self.body.list.execute(shell, params).await?;
+            result = self.body.list.execute(&mut shell, params).await?;
             if result.is_return_or_exit() {
                 break;
             }
@@ -1031,18 +1054,36 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
         let mut condition_params = params.clone();
         condition_params.suppress_errexit = true;
 
+        // The condition is in the loop as much as the body is.
+        let mut shell = shell.enter_loop();
+
         loop {
-            let condition_result = test_condition.execute(shell, &condition_params).await?;
+            let condition_result = test_condition
+                .execute(&mut shell, &condition_params)
+                .await?;
 
             // Update status for condition
             shell.set_last_exit_status(condition_result.exit_code.into());
 
             if !condition_result.is_normal_flow() {
+                let continues_this_loop = matches!(
+                    condition_result.next_control_flow,
+                    ExecutionControlFlow::ContinueLoop { levels: 0 }
+                );
+
                 result = condition_result;
 
                 // If the condition has break/continue, the while/until loop itself
                 // consumes one level. We need to decrement the level before returning.
                 result.next_control_flow = result.next_control_flow.try_decrement_loop_levels();
+
+                // A `continue` for this loop skips the rest of the condition, which then
+                // tests `continue`'s own status: the loop goes on as if that were the
+                // condition's.
+                if continues_this_loop && result.is_success() == is_while {
+                    continue;
+                }
+
                 break;
             }
 
@@ -1050,7 +1091,7 @@ impl Execute for (WhileOrUntil, &ast::WhileOrUntilClauseCommand) {
                 break;
             }
 
-            result = body.list.execute(shell, params).await?;
+            result = body.list.execute(&mut shell, params).await?;
             if result.is_return_or_exit() {
                 break;
             }
@@ -1097,19 +1138,25 @@ impl Execute for ast::ArithmeticForClauseCommand {
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         let mut result = ExecutionResult::success();
+
+        // The initializer is evaluated in the loop.
+        let mut shell = shell.enter_loop();
+
         if let Some(initializer) = &self.initializer {
-            initializer.eval(shell, params, true).await?;
+            initializer.eval(&mut shell, params, true).await?;
         }
 
         loop {
             if let Some(condition) = &self.condition {
                 // An empty condition (e.g., `for (( ; ; ))`) means "always true".
-                if !condition.value.is_empty() && condition.eval(shell, params, true).await? == 0 {
+                if !condition.value.is_empty()
+                    && condition.eval(&mut shell, params, true).await? == 0
+                {
                     break;
                 }
             }
 
-            result = self.body.list.execute(shell, params).await?;
+            result = self.body.list.execute(&mut shell, params).await?;
             if result.is_return_or_exit() {
                 break;
             }
@@ -1123,7 +1170,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             if let Some(updater) = &self.updater {
-                updater.eval(shell, params, true).await?;
+                updater.eval(&mut shell, params, true).await?;
             }
         }
 

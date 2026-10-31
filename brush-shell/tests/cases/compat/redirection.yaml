@@ -349,3 +349,11 @@ cases:
       fi
 
       $0 $args test.sh 3>output.txt
+
+  - name: "Redirection failure on a compound command"
+    known_failure: true # TODO(redirection): a compound command's failed redirection ends the rest of the line
+    ignore_stderr: true
+    stdin: |
+      { echo "not reached"; } >/non-existent-dir/file.txt; echo "brace: $?"
+      ( echo "not reached" ) >/non-existent-dir/file.txt; echo "subshell: $?"
+      while false; do :; done >/non-existent-dir/file.txt; echo "while: $?"

@@ -44,7 +44,6 @@ cases:
       echo "x=$x"
 
   - name: "A subshell starts outside any loop"
-    known_failure: true # TODO(subshell): a `break` in a subshell inside a loop breaks the parent's loop, not just the subshell's
     ignore_stderr: true
     stdin: |
       for i in 1 2; do
@@ -52,3 +51,12 @@ cases:
         (continue 2; echo "continued $i: $?")
       done
       echo done
+
+  - name: "A subshell's redirections are expanded in the subshell"
+    known_failure: true # TODO(subshell): a subshell's redirections are expanded in its parent, before the subshell starts
+    ignore_stderr: true
+    stdin: |
+      for i in 1; do ( read -r v; echo "[$v]" ) <<<"$(break; echo "subshell went on")"; done
+      ( : ) >"${x:=/dev/null}"
+      echo "x=[$x]"
+      ( : ) 3>&1 >"/dev/null$(echo "BASH_SUBSHELL=$BASH_SUBSHELL" >&3)"
