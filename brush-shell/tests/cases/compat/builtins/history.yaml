@@ -643,6 +643,17 @@ cases:
       history -z
       echo "history -z: $?"
 
+  - name: "history --help fails with status 2"
+    stdin: |
+      history --help >/dev/null 2>&1
+      echo "history --help: $?"
+
+  - name: "history rejects an unknown long option with status 2"
+    ignore_stderr: true
+    stdin: |
+      history --bogus
+      echo "history --bogus: $?"
+
   - name: "history -s takes words that look like options after --"
     args: ["-o", "history"]
     env:
