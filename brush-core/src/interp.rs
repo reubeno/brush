@@ -1667,6 +1667,40 @@ async fn apply_assignment(
         EnvironmentLookup::Anywhere,
         EnvironmentLookup::OnlyInCurrent,
     );
+
+    // An integer variable takes its value's arithmetic result (`declare -i n; n=1+1`),
+    // evaluated where the variable is. A readonly one rejects the assignment below, before
+    // its expression can run.
+    let integer_target = shell
+        .env()
+        .get_using_policy(variable_name.as_str(), lookup)
+        .is_some_and(|var| var.is_treated_as_integer() && !var.is_readonly());
+    let new_value = match new_value {
+        ShellValueLiteral::Scalar(s) if integer_target && array_index.is_some() => {
+            ShellValueLiteral::Scalar(arithmetic::eval_integer_value(shell, &s)?)
+        }
+        new_value if integer_target => {
+            let export = export
+                || (export_variables_on_modification
+                    && !matches!(new_value, ShellValueLiteral::Array(_)));
+            arithmetic::assign_to_integer_variable(
+                shell,
+                variable_name,
+                lookup,
+                new_value,
+                assignment.append,
+            )?;
+            if export
+                && let Some(var) = shell
+                    .env_mut()
+                    .get_mut_using_policy(variable_name.as_str(), lookup)
+            {
+                var.export();
+            }
+            return Ok(());
+        }
+        new_value => new_value,
+    };
     let existing_value = shell
         .env_mut()
         .get_mut_using_policy(variable_name.as_str(), lookup);
