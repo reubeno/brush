@@ -67,7 +67,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
 }
 
 impl ExportCommand {
-    #[expect(clippy::too_many_lines)]
     async fn process_decl(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
