@@ -280,10 +280,14 @@ fn compose_env(
     // Add in exported variables, but `_`, if it's to be set below.
     for (k, v) in shell.env().iter_exported() {
         // NOTE: To match bash behavior, we only include exported variables
-        // that are set (i.e., have a value). This means a variable that
-        // shows up in `declare -p` but has no *set* value will be omitted.
-        if v.value().is_set() && (program.is_none() || k != "_") {
-            env.push((k.clone(), v.value().to_cow_str(shell).into_owned()));
+        // that are set and are not arrays. Arrays retain their export attribute
+        // in the shell but are not serialized into a child process's environment.
+        if program.is_some() && k == "_" {
+            continue;
+        }
+        let value = v.resolve_value(shell);
+        if value.is_set() && !value.is_array() {
+            env.push((k.clone(), value.to_cow_str(shell).into_owned()));
         }
     }
 
@@ -959,6 +963,85 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+    async fn exported_dynamic_arrays_and_unset_values_are_not_in_child_env()
+    -> Result<(), error::Error> {
+        use variables::{ShellValue, ShellValueUnsetType, ShellVariable};
+
+        let mut shell = Shell::builder()
+            .profile(crate::ProfileLoadBehavior::Skip)
+            .rc(crate::RcLoadBehavior::Skip)
+            .build()
+            .await?;
+        for (name, getter) in [
+            (
+                "indexed",
+                (|_: &dyn crate::ShellState| ShellValue::indexed_array_from_strs(&["secret"]))
+                    as fn(&dyn crate::ShellState) -> ShellValue,
+            ),
+            ("associative", |_| {
+                ShellValue::AssociativeArray([("0".into(), "secret".into())].into())
+            }),
+            ("unset", |_| ShellValue::Unset(ShellValueUnsetType::Untyped)),
+        ] {
+            let mut variable = ShellVariable::new(ShellValue::Dynamic {
+                getter,
+                setter: |_| (),
+            });
+            variable.export();
+            shell.env_mut().set_global(name, variable)?;
+        }
+
+        let env = compose_env(&shell, None);
+        let leaked_names: Vec<_> = env
+            .iter()
+            .filter(|(name, _)| matches!(name.as_str(), "indexed" | "associative" | "unset"))
+            .map(|(name, _)| name)
+            .collect();
+        assert!(
+            leaked_names.is_empty(),
+            "dynamic variables leaked into the child environment: {leaked_names:?}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+    async fn child_env_resolves_each_dynamic_value_once() -> Result<(), error::Error> {
+        use std::cell::Cell;
+        use variables::{ShellValue, ShellVariable};
+
+        thread_local! { static READS: Cell<usize> = const { Cell::new(0) }; }
+        READS.set(0);
+        let mut shell = Shell::builder()
+            .profile(crate::ProfileLoadBehavior::Skip)
+            .rc(crate::RcLoadBehavior::Skip)
+            .build()
+            .await?;
+        let mut variable = ShellVariable::new(ShellValue::Dynamic {
+            getter: |_| {
+                let reads = READS.replace(READS.get() + 1);
+                if reads == 0 {
+                    "first".into()
+                } else {
+                    ShellValue::indexed_array_from_strs(&["secret"])
+                }
+            },
+            setter: |_| (),
+        });
+        variable.export();
+        shell.env_mut().set_global("changing", variable)?;
+
+        let env = compose_env(&shell, None);
+        assert_eq!(
+            env.iter().find(|(name, _)| name == "changing"),
+            Some(&("changing".into(), "first".into()))
+        );
+        assert_eq!(READS.get(), 1);
+        Ok(())
+    }
 
     fn assignment(name: ast::AssignmentName, value: &str, append: bool) -> CommandArg {
         CommandArg::Assignment(ast::Assignment {

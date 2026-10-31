@@ -532,7 +532,18 @@ impl ShellVariable {
     /// Returns the canonical attribute flag string for this variable.
     pub fn attribute_flags(&self, shell: &Shell<impl extensions::ShellExtensions>) -> String {
         let value = self.resolve_value(shell);
+        self.attribute_flags_for_value(&value)
+    }
 
+    /// Returns the canonical attribute flags using an already resolved value.
+    ///
+    /// Use this when the same value is also inspected or formatted, so a dynamic
+    /// variable is not evaluated again while computing its type flags.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The resolved value of this variable.
+    pub fn attribute_flags_for_value(&self, value: &ShellValue) -> String {
         let mut result = String::new();
 
         if value.is_indexed_array() {
