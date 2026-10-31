@@ -294,8 +294,49 @@ impl DeclareCommand {
             return Ok(false);
         }
 
-        // Figure out where we should look.
-        let lookup = if create_var_local {
+        let (lookup, created) =
+            self.put_declared_variable(context, &name, create_var_local, name_is_array)?;
+
+        if let Some(initial_value) = initial_value {
+            // We append for `name+=value`, or if the declaration included
+            // an explicit index.
+            let append = append || assigned_index.is_some();
+            let var = Self::declared_variable(context, &name, lookup)?;
+            if var.is_treated_as_integer() && !var.is_readonly() {
+                brush_core::arithmetic::assign_to_integer_variable(
+                    context.shell,
+                    &name,
+                    lookup,
+                    initial_value,
+                    append,
+                )?;
+            } else {
+                var.assign(initial_value, append)?;
+            }
+        }
+
+        let export_on_modification = context.shell.options().export_variables_on_modification;
+        let var = Self::declared_variable(context, &name, lookup)?;
+        if created && export_on_modification && !var.value().is_array() {
+            var.export();
+        }
+        self.apply_attributes_after_update(var, verb)?;
+
+        Ok(true)
+    }
+
+    /// Puts the variable a declaration names where the declaration leaves it,
+    /// typed and with the attributes it takes before a value, so that its
+    /// value is assigned, and evaluated for an integer (`local -i n=n+1`),
+    /// there. Returns where to find it, and whether it is new.
+    fn put_declared_variable(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        create_var_local: bool,
+        name_is_array: bool,
+    ) -> Result<(EnvironmentLookup, bool), brush_core::Error> {
+        let mut lookup = if create_var_local {
             EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
         } else {
             EnvironmentLookup::Anywhere
@@ -306,42 +347,25 @@ impl DeclareCommand {
         // enclosing scope instead of starting unset; `+=` appends to the
         // inherited value. With no same-name variable anywhere, fall through
         // to ordinary creation.
-        if self.locals_inherit_from_prev_scope && create_var_local {
-            let inherited = context
+        let inherited = if self.locals_inherit_from_prev_scope && create_var_local {
+            context
                 .shell
                 .env()
-                .get_using_policy(name.as_str(), EnvironmentLookup::Anywhere)
-                .cloned();
+                .get_using_policy(name, EnvironmentLookup::Anywhere)
+                .cloned()
+        } else {
+            None
+        };
 
-            if let Some(mut var) = inherited {
-                self.apply_attributes_before_update(&mut var)?;
-
-                if let Some(initial_value) = initial_value {
-                    var.assign(initial_value, append || assigned_index.is_some())?;
-                }
-
-                if context.shell.options().export_variables_on_modification
-                    && !var.value().is_array()
-                {
-                    var.export();
-                }
-
-                self.apply_attributes_after_update(&mut var, verb)?;
-
-                context
-                    .shell
-                    .env_mut()
-                    .add(name, var, EnvironmentScope::Local)?;
-                return Ok(true);
-            }
-        }
-
-        // Look up the variable.
-        if let Some(var) = context
-            .shell
-            .env_mut()
-            .get_mut_using_policy(name.as_str(), lookup)
-        {
+        let created = if let Some(mut var) = inherited {
+            self.apply_attributes_before_update(&mut var)?;
+            context
+                .shell
+                .env_mut()
+                .add(name, var, EnvironmentScope::Local)?;
+            lookup = EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local);
+            true
+        } else if let Some(var) = context.shell.env_mut().get_mut_using_policy(name, lookup) {
             if self.make_associative_array.is_some() {
                 var.convert_to_associative_array()?;
             }
@@ -350,14 +374,7 @@ impl DeclareCommand {
             }
 
             self.apply_attributes_before_update(var)?;
-
-            if let Some(initial_value) = initial_value {
-                // We append for `name+=value`, or if the declaration included
-                // an explicit index.
-                var.assign(initial_value, append || assigned_index.is_some())?;
-            }
-
-            self.apply_attributes_after_update(var, verb)?;
+            false
         } else {
             let unset_type = if self.make_indexed_array.is_some() {
                 ShellValueUnsetType::IndexedArray
@@ -370,29 +387,33 @@ impl DeclareCommand {
             };
 
             let mut var = ShellVariable::new(ShellValue::Unset(unset_type));
-
             self.apply_attributes_before_update(&mut var)?;
-
-            if let Some(initial_value) = initial_value {
-                var.assign(initial_value, append)?;
-            }
-
-            if context.shell.options().export_variables_on_modification && !var.value().is_array() {
-                var.export();
-            }
-
-            self.apply_attributes_after_update(&mut var, verb)?;
 
             let scope = if create_var_local {
                 EnvironmentScope::Local
             } else {
                 EnvironmentScope::Global
             };
-
             context.shell.env_mut().add(name, var, scope)?;
-        }
+            true
+        };
 
-        Ok(true)
+        Ok((lookup, created))
+    }
+
+    /// Returns the variable a declaration has put in place.
+    fn declared_variable<'a>(
+        context: &'a mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        lookup: EnvironmentLookup,
+    ) -> Result<&'a mut ShellVariable, brush_core::Error> {
+        context
+            .shell
+            .env_mut()
+            .get_mut_using_policy(name, lookup)
+            .ok_or_else(|| {
+                ErrorKind::InternalError(format!("declared variable {name} not found")).into()
+            })
     }
 
     #[expect(clippy::type_complexity)]
