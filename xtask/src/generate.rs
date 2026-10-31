@@ -182,6 +182,8 @@ fn manual() -> Result<Manual> {
     let version = find_package_version("brush-shell")?;
     Ok(Manual {
         source: format!("brush {version}"),
+        // What man shows for section 1 when a page names no manual.
+        manual: "General Commands Manual".into(),
         ..Manual::default()
     })
 }
@@ -341,4 +343,19 @@ fn gen_docs_dist(sh: &Shell, args: &GenerateDistArgs, verbose: bool) -> Result<(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn man_pages_name_the_version_and_the_manual() {
+        let manual = manual().unwrap();
+        assert_eq!(
+            manual.source,
+            format!("brush {}", find_package_version("brush-shell").unwrap())
+        );
+        assert_eq!(manual.manual, "General Commands Manual");
+    }
 }
