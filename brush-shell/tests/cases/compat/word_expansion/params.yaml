@@ -192,6 +192,61 @@ cases:
       printf '<%s>' "${empty[*]+ALT}" x; echo
       printf '<%s>' a"${empty[@]+ALT}"b; echo
 
+  - name: "Parameter expression: null test of several empty elements"
+    stdin: |
+      # The test applies to the elements joined into one string, so several
+      # empty elements are not null -- unless a double-quoted [*] joins them
+      # with an empty IFS.
+      blanks=("" "")
+      printf '<%s>' "${blanks[@]:+ALT}" x; echo
+      printf '<%s>' "${blanks[@]:-DEF}" x; echo
+      printf '<%s>' "${blanks[*]:+ALT}" x; echo
+      printf '<%s>' ${blanks[@]:+ALT} x; echo
+      : "${blanks[@]:?unexpected}"; echo "no error"
+      set -- "" ""
+      printf '<%s>' "${@:+ALT}" x; echo
+      printf '<%s>' "${@:-DEF}" x; echo
+
+      IFS=
+      printf '<%s>' "${blanks[@]:+ALT}" x; echo
+      printf '<%s>' "${blanks[*]:+ALT}" x; echo
+      printf '<%s>' "${*:-DEF}" x; echo
+
+      # Unquoted, [*] and $* join with a space for the test, even with an empty IFS.
+      printf '<%s>' ${blanks[*]:+ALT} x; echo
+      printf '<%s>' ${*:+ALT} x; echo
+      printf '<%s>' ${blanks[*]:-DEF} x; echo
+      : ${blanks[*]:?unexpected}; echo "no error"
+      unquoted=${blanks[*]:+ALT}; quoted="${blanks[*]:+ALT}"
+      echo "[$unquoted] [$quoted]"
+      [[ -n ${blanks[*]:+ALT} ]] && echo "[[ ]] sees ALT"
+      case ${blanks[*]:+ALT} in ALT) echo "case sees ALT" ;; esac
+      cat <<< ${blanks[*]:+ALT}
+
+      # A single empty element is still null.
+      single=("")
+      printf '<%s>' "${single[@]:+ALT}" x; echo
+
+  - name: "Parameter expression: quoted word nested in a quoted expansion"
+    known_failure: true # TODO(expansion): expand_parameter_word expands the inner word as unquoted, so 'q' loses its quotes, ~ expands, and [*] joins as if unquoted
+    stdin: |
+      p() { printf '<%s>' "$@"; echo; }
+      blanks=("" "")
+      p "${unset_var:-"'q'"}"
+      p "${unset_var:-"~"}"
+      p "${unset_var:-"a\b"}"
+      IFS=
+      p "${unset_var:-"${blanks[*]:+ALT}"}"
+
+  - name: "Parameter expression: = and ? on [@] and @ report the parameter"
+    known_failure: true # TODO(expansion): reports "cannot assign in this way" / "expansion error: msg", not bash's "name[@]: ..."
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      empty=()
+      (: "${empty[@]=x}") 2>&1 | strip; echo "status: ${PIPESTATUS[0]}"
+      (: "${empty[@]?is empty}") 2>&1 | strip; echo "status: ${PIPESTATUS[0]}"
+      (set --; : "${@?no args}") 2>&1 | strip; echo "status: ${PIPESTATUS[0]}"
+
   - name: "Parameter expression: index-listing combined with conditional operator"
     # brush currently fails to parse the ${!arr[@]} index-listing form when it is
     # combined with a conditional operator (+/-/:+/:-). bash accepts it; for an

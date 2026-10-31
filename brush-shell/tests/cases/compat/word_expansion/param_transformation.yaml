@@ -104,6 +104,31 @@ cases:
       echo "\${arr2[@]@A}: ${arr2[@]@A}"
       echo "\${arr2[*]@A}: ${arr2[*]@A}"
 
+  - name: "Parameter transformation: quoted [@]@A expands to separate words"
+    known_failure: true # TODO(expansion): "${arr[@]@A}" yields one word; bash splits the declare command into words
+    stdin: |
+      empty=()
+      arr=(1 2)
+      declare -A assoc=([k]=v)
+      printf '<%s>' "${empty[@]@A}"; echo
+      printf '<%s>' "${arr[@]@A}"; echo
+      printf '<%s>' "${arr[*]@A}"; echo
+      printf '<%s>' "${assoc[@]@A}"; echo
+
+  - name: "Parameter transformation: assignment of a scalar with attributes"
+    known_failure: true # TODO(expansion): @A on a scalar drops its attributes, giving ro='1' rather than declare -r ro='1'
+    stdin: |
+      plain=1
+      declare -r ro=1
+      declare -i num=2
+      declare -x exported=3
+      declare -ir both=4
+      echo "${plain@A}"
+      echo "${ro@A}"
+      echo "${num@A}"
+      echo "${exported@A}"
+      echo "${both@A}"
+
   - name: "Parameter transformation: attributes"
     stdin: |
       var="hello"
