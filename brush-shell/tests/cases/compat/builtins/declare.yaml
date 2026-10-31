@@ -1101,6 +1101,22 @@ cases:
       declare -p b 2>&1
 
   #
+  # An attribute option given as both `-` and `+`.
+  #
+  - name: "An attribute given as both - and + is not set"
+    stdin: |
+      declare +x -x zzx=1; declare -p zzx
+      declare -x +x zzy=1; declare -p zzy
+      declare +i -i zzi=1+1; declare -p zzi
+      declare zzo=1; declare +x -x zzo; declare -p zzo
+
+  - name: "An attribute given as both - and + is removed"
+    known_failure: true # TODO(declare): with both, brush leaves the attribute as it was
+    stdin: |
+      declare -x zzx=1; declare -x +x zzx; declare -p zzx
+      declare -i zzi=1; declare +i -i zzi; declare -p zzi
+
+  #
   # Attribute-filtered display.
   #
   - name: "Display filtered by readonly and trace attributes"
