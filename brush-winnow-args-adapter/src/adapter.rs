@@ -5,7 +5,18 @@ use std::fmt::Write as _;
 use brush_core::CommandArg;
 use brush_core::builtins::{ContentOptions, ContentType, Invocation, UsageError};
 use winnow_args::BStr;
+use winnow_args::color::{Ansi, Depth, Paint, Palette};
 use winnow_args::{Args, Error, ErrorKind, help};
+
+/// The colors of brush's help: yellow headings, magenta flags and cyan value
+/// names, with clap's colors for errors.
+pub const HELP_PALETTE: Palette = Palette {
+    header: Paint::ansi(Ansi::Yellow).bold().underline(),
+    flag: Paint::ansi(Ansi::Magenta).bold(),
+    command: Paint::ansi(Ansi::Magenta).bold(),
+    placeholder: Paint::ansi(Ansi::Cyan),
+    ..Palette::CLAP
+};
 
 /// Parses a builtin's arguments, each flattened to a word.
 ///
@@ -139,7 +150,7 @@ pub fn content<T: Args>(
     Ok(match content_type {
         ContentType::DetailedHelp => {
             let style = if options.colorized {
-                help::Style::COLORED
+                help::Style::at(HELP_PALETTE, Depth::Ansi16)
             } else {
                 help::Style::PLAIN
             };
@@ -403,5 +414,14 @@ mod tests {
             description,
             "cd - Help-shaped: `--help` gives the help text.\n"
         );
+    }
+
+    #[test]
+    fn colorized_help_uses_brush_colors() {
+        let options = ContentOptions { colorized: true };
+        let help = HelpLike::content("cd", ContentType::DetailedHelp, &options).unwrap();
+        assert!(help.contains("\x1b[1;4;33mUsage:\x1b[0m"), "{help:?}");
+        assert!(help.contains("\x1b[1;35m-P\x1b[0m"), "{help:?}");
+        assert!(help.contains("\x1b[36mTARGET\x1b[0m"), "{help:?}");
     }
 }
