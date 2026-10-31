@@ -726,3 +726,12 @@ cases:
       history -aw
       echo "history -aw: $?"
       unset HISTFILE
+
+  - name: "history -s with -p stores its arguments"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -sp a b; echo "history -sp: $?"; history | tail -n 1 | sed 's/^ *[0-9]* *//'
+      history -ps c d; echo "history -ps: $?"; history | tail -n 1 | sed 's/^ *[0-9]* *//'
+      unset HISTFILE # brush also saves the history -s lines

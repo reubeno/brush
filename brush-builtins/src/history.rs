@@ -163,13 +163,14 @@ impl HistoryCommand {
             return Ok(ExecutionResult::success());
         }
 
-        if self.expand {
-            return error::unimp("history -p is not yet implemented");
-        }
-
+        // With -s, -p only expands the entry; history expansion isn't implemented.
         if self.append {
             history.add(history::Item::new(self.args.join(" ")))?;
             return Ok(ExecutionResult::success());
+        }
+
+        if self.expand {
+            return error::unimp("history -p is not yet implemented");
         }
 
         let max_entries: Option<usize> = if let Some(arg) = self.args.first() {
