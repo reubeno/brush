@@ -1,0 +1,160 @@
+name: "Builtins: bind vi keymaps"
+cases:
+  - name: "bind -m vi-insert keyseq"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          echo "[bind -m vi-insert]"
+          bind -m vi-insert '"\C-t":clear-screen'
+          echo "bind result: $?"
+          bind -m vi-insert -q clear-screen
+          echo "bind -q result: $?"
+          bind -m vi-insert -p | grep '^"\\C-t": clear-screen$'
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+  - name: "bind -m vi-command keyseq"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          echo "[bind -m vi-command]"
+          bind -m vi-command '"x":clear-screen'
+          echo "bind result: $?"
+          bind -m vi-command -q clear-screen
+          echo "bind -q result: $?"
+          bind -m vi-command -p | grep '^"x": clear-screen$'
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+  - name: "bind -m vi aliases vi-command"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m vi '"x":clear-screen'
+          bind -m vi-command -q clear-screen
+          echo "bind -q result: $?"
+
+  - name: "bind mode switching functions"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m vi-command '"\C-z": emacs-editing-mode'
+          echo "vi-command bind result: $?"
+          bind -m vi-command -q emacs-editing-mode
+          echo "vi-command query result: $?"
+          bind -m vi-insert '"\C-z": emacs-editing-mode'
+          echo "vi-insert bind result: $?"
+          bind -m vi-insert -q emacs-editing-mode
+          echo "vi-insert query result: $?"
+          bind -m emacs-standard '"\C-z": vi-editing-mode'
+          echo "emacs bind result: $?"
+          bind -m emacs-standard -q vi-editing-mode
+          echo "emacs query result: $?"
+
+  - name: "bind vi edit and execute command"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    env:
+      VISUAL: "/bin/true"
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m vi-command -u vi-edit-and-execute-command
+          bind -m vi-command '"\C-t": vi-edit-and-execute-command'
+          echo "bind result: $?"
+          bind -m vi-command -q vi-edit-and-execute-command
+          echo "bind -q result: $?"
+          bind -m vi-command -p | grep '^"\\C-t": vi-edit-and-execute-command$'
+          echo "bind -p result: ${PIPESTATUS[@]}"
+
+  - name: "bind vi default queries"
+    known_failure: true # Reedline owns vi grammar; do not invent Bash default bindings for query output.
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m vi-command -q vi-search
+          echo "vi-search query: $?"
+          bind -m vi-command -q vi-search-again
+          echo "vi-search-again query: $?"
+          bind -m vi-command -q vi-fetch-history
+          echo "vi-fetch-history query: $?"
+          bind -m vi-command -q vi-next-word
+          echo "vi-next-word query: $?"
+          bind -m vi-command -q vi-delete-to
+          echo "vi-delete-to query: $?"
+          bind -m vi-insert -q vi-movement-mode
+          echo "vi-movement-mode query: $?"
+          bind -m vi-insert -q reverse-search-history
+          echo "reverse-search-history query: $?"
+          bind -m vi-command -p | grep -F '"/": vi-search'
+          echo "vi-search slash: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"?": vi-search'
+          echo "vi-search question: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"N": vi-search-again'
+          echo "vi-search-again upper: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"n": vi-search-again'
+          echo "vi-search-again lower: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"G": vi-fetch-history'
+          echo "vi-fetch-history print: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"W": vi-next-word'
+          echo "vi-next-word upper: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"w": vi-next-word'
+          echo "vi-next-word lower: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"D": vi-delete-to'
+          echo "vi-delete-to upper: ${PIPESTATUS[@]}"
+          bind -m vi-command -p | grep -F '"d": vi-delete-to'
+          echo "vi-delete-to lower: ${PIPESTATUS[@]}"
+          bind -m vi-insert -p | grep -F '"\e": vi-movement-mode'
+          echo "vi-movement-mode print: ${PIPESTATUS[@]}"
+          bind -m vi-insert -p | grep -F '"\C-r": reverse-search-history'
+          echo "reverse-search-history print: ${PIPESTATUS[@]}"
+
+  - name: "bind vi canonical unbind rebind"
+    known_failure: true # Reedline's Esc and grammar motions cannot be rebound faithfully through its public tables.
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m vi-insert -r '\e'
+          echo "unbind escape: $?"
+          bind -m vi-insert -q vi-movement-mode
+          echo "query escape after unbind: $?"
+          bind -m vi-insert '"\e": vi-movement-mode'
+          echo "rebind escape: $?"
+          bind -m vi-insert -q vi-movement-mode
+          echo "query escape after rebind: $?"
+          bind -m vi-insert -p | grep -F '"\e": vi-movement-mode'
+          echo "print escape after rebind: ${PIPESTATUS[@]}"
+          bind -m vi-command -r 'G'
+          echo "unbind fetch-history: $?"
+          bind -m vi-command -q vi-fetch-history
+          echo "query fetch-history after unbind: $?"
+          bind -m vi-command '"G": vi-fetch-history'
+          echo "rebind fetch-history: $?"
+          bind -m vi-command -q vi-fetch-history
+          echo "query fetch-history after rebind: $?"
+          bind -m vi-command -p | grep -F '"G": vi-fetch-history'
+          echo "print fetch-history after rebind: ${PIPESTATUS[@]}"

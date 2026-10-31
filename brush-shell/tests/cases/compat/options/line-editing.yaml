@@ -1,0 +1,44 @@
+name: "Options: line editing"
+cases:
+  - name: "Interactive defaults prefer emacs"
+    pty: true
+    args: ["-i", "-c", "set -o | grep -E '^(emacs|vi)[[:space:]]' | sort"]
+
+  - name: "set -o vi enables vi and disables emacs"
+    stdin: |
+      set -o vi
+      set -o | grep -E '^(emacs|vi)[[:space:]]' | sort
+      [[ -o vi ]] && echo "vi enabled"
+      [[ -o emacs ]] && echo "emacs enabled"
+
+  - name: "set -o emacs enables emacs and disables vi"
+    stdin: |
+      set -o vi
+      set -o emacs
+      set -o | grep -E '^(emacs|vi)[[:space:]]' | sort
+      [[ -o emacs ]] && echo "emacs enabled"
+      [[ -o vi ]] && echo "vi enabled"
+
+  - name: "set +o emacs disables line editing"
+    stdin: |
+      set -o emacs
+      set +o emacs
+      set -o | grep -E '^(emacs|vi)[[:space:]]' | sort
+      [[ -o emacs ]] && echo "emacs enabled"
+      [[ -o vi ]] && echo "vi enabled"
+
+  - name: "set +o vi disables line editing"
+    stdin: |
+      set -o vi
+      set +o vi
+      set -o | grep -E '^(emacs|vi)[[:space:]]' | sort
+      [[ -o emacs ]] && echo "emacs enabled"
+      [[ -o vi ]] && echo "vi enabled"
+
+  - name: "SHELLOPTS tracks line editing mode"
+    stdin: |
+      printf 'default=%s\n' "$SHELLOPTS"
+      set -o vi
+      printf 'vi=%s\n' "$SHELLOPTS"
+      set +o vi
+      printf 'none=%s\n' "$SHELLOPTS"

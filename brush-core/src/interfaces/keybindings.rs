@@ -3,6 +3,21 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
+/// Named readline-style keymaps.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum KeyMap {
+    /// Emacs standard bindings.
+    EmacsStandard,
+    /// Emacs meta bindings.
+    EmacsMeta,
+    /// Emacs control-x bindings.
+    EmacsCtlx,
+    /// Vi command mode bindings.
+    ViCommand,
+    /// Vi insert mode bindings.
+    ViInsert,
+}
+
 /// Represents an action that can be taken in response to a key sequence.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum KeyAction {
@@ -376,7 +391,7 @@ impl Display for Key {
             Self::Delete => write!(f, "Delete")?,
             Self::Insert => write!(f, "Insert")?,
             Self::F(n) => write!(f, "F{n}")?,
-            Self::Escape => write!(f, "Esc")?,
+            Self::Escape => write!(f, "\\e")?,
         }
 
         Ok(())
@@ -385,8 +400,23 @@ impl Display for Key {
 
 /// Encapsulates the shell's interaction with key bindings for input.
 pub trait KeyBindings: Send {
+    /// Whether this backend implements the requested named keymap.
+    /// Backends with a single map support only `EmacsStandard` by default.
+    fn supports_keymap(&self, keymap: KeyMap) -> bool {
+        matches!(keymap, KeyMap::EmacsStandard)
+    }
+
     /// Retrieves current bindings.
     fn get_current(&self) -> HashMap<KeySequence, KeyAction>;
+
+    /// Retrieves current bindings for a specific keymap.
+    fn get_current_for(&self, keymap: KeyMap) -> HashMap<KeySequence, KeyAction> {
+        if self.supports_keymap(keymap) {
+            self.get_current()
+        } else {
+            HashMap::new()
+        }
+    }
 
     /// Tries to find a binding for an untranslated byte sequence.
     fn get_untranslated(&self, bytes: &[u8]) -> Option<&KeyAction>;
@@ -399,12 +429,33 @@ pub trait KeyBindings: Send {
     /// * `action` - The action to bind to the sequence.
     fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error>;
 
+    /// Sets or updates a binding for a specific keymap.
+    fn bind_for(
+        &mut self,
+        keymap: KeyMap,
+        seq: KeySequence,
+        action: KeyAction,
+    ) -> Result<(), std::io::Error> {
+        if !self.supports_keymap(keymap) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "input backend does not support this keymap",
+            ));
+        }
+        self.bind(seq, action)
+    }
+
     /// Unbinds a key sequence. Returns true if a binding was removed.
     ///
     /// # Arguments
     ///
     /// * `seq` - The key sequence to unbind.
     fn try_unbind(&mut self, seq: KeySequence) -> bool;
+
+    /// Unbinds a key sequence for a specific keymap.
+    fn try_unbind_for(&mut self, keymap: KeyMap, seq: KeySequence) -> bool {
+        self.supports_keymap(keymap) && self.try_unbind(seq)
+    }
 
     /// Defines a macro that remaps a key sequence to another key sequence.
     ///
@@ -415,6 +466,31 @@ pub trait KeyBindings: Send {
     fn define_macro(&mut self, seq: KeySequence, target: KeySequence)
     -> Result<(), std::io::Error>;
 
+    /// Defines a macro for a specific keymap.
+    fn define_macro_for(
+        &mut self,
+        keymap: KeyMap,
+        seq: KeySequence,
+        target: KeySequence,
+    ) -> Result<(), std::io::Error> {
+        if !self.supports_keymap(keymap) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "input backend does not support this keymap",
+            ));
+        }
+        self.define_macro(seq, target)
+    }
+
     /// Retrieves all defined macros.
     fn get_macros(&self) -> HashMap<KeySequence, KeySequence>;
+
+    /// Retrieves all defined macros for a specific keymap.
+    fn get_macros_for(&self, keymap: KeyMap) -> HashMap<KeySequence, KeySequence> {
+        if self.supports_keymap(keymap) {
+            self.get_macros()
+        } else {
+            HashMap::new()
+        }
+    }
 }

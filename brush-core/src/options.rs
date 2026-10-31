@@ -4,6 +4,19 @@ use itertools::Itertools;
 
 use crate::{CreateOptions, extensions, namedoptions};
 
+/// Active line editing mode for interactive input.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum LineEditingMode {
+    /// Disable line editing entirely.
+    None,
+    /// Emacs-style line editing.
+    #[default]
+    Emacs,
+    /// Vi-style line editing.
+    Vi,
+}
+
 /// Runtime changeable options for a shell instance.
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -64,6 +77,11 @@ pub struct RuntimeOptions {
     pub posix_mode: bool,
     /// 'vi'
     pub vi_mode: bool,
+
+    /// Revision of explicit line-editing selections. Front ends use this to distinguish
+    /// `set -o emacs` from a live editor switch that leaves the shell options unchanged.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub line_editing_mode_revision: u64,
 
     //
     // Options set through shopt.
@@ -258,7 +276,11 @@ impl RuntimeOptions {
         // Additional options are enabled by default for interactive shells.
         if create_options.interactive {
             options.enable_bang_style_history_substitution = true;
-            options.emacs_mode = !create_options.no_editing;
+            options.set_line_editing_mode(if create_options.no_editing {
+                LineEditingMode::None
+            } else {
+                LineEditingMode::Emacs
+            });
             options.expand_aliases = true;
         }
 
@@ -295,6 +317,42 @@ impl RuntimeOptions {
         }
 
         options
+    }
+
+    /// Returns the currently active line editing mode.
+    pub const fn line_editing_mode(&self) -> LineEditingMode {
+        if self.vi_mode {
+            LineEditingMode::Vi
+        } else if self.emacs_mode {
+            LineEditingMode::Emacs
+        } else {
+            LineEditingMode::None
+        }
+    }
+
+    /// Sets the active line editing mode.
+    pub const fn set_line_editing_mode(&mut self, mode: LineEditingMode) {
+        self.emacs_mode = matches!(mode, LineEditingMode::Emacs);
+        self.vi_mode = matches!(mode, LineEditingMode::Vi);
+        self.line_editing_mode_revision = self.line_editing_mode_revision.wrapping_add(1);
+    }
+
+    /// Enables or disables emacs line editing using Bash-compatible semantics.
+    pub const fn set_emacs_mode(&mut self, enabled: bool) {
+        if enabled {
+            self.set_line_editing_mode(LineEditingMode::Emacs);
+        } else if matches!(self.line_editing_mode(), LineEditingMode::Emacs) {
+            self.set_line_editing_mode(LineEditingMode::None);
+        }
+    }
+
+    /// Enables or disables vi line editing using Bash-compatible semantics.
+    pub const fn set_vi_mode(&mut self, enabled: bool) {
+        if enabled {
+            self.set_line_editing_mode(LineEditingMode::Vi);
+        } else if matches!(self.line_editing_mode(), LineEditingMode::Vi) {
+            self.set_line_editing_mode(LineEditingMode::None);
+        }
     }
 
     /// Returns a string representing the current `set`-style option flags set in the shell.
@@ -367,7 +425,7 @@ const fn option_flag_sort_key(ch: char) -> (u8, char) {
 
 #[cfg(test)]
 mod tests {
-    use super::option_flag_sort_key;
+    use super::{LineEditingMode, RuntimeOptions, option_flag_sort_key};
 
     #[test]
     fn lowercase_excluding_c_and_s_sort_first() {
@@ -391,5 +449,41 @@ mod tests {
         flags.sort_by_key(|flag| option_flag_sort_key(*flag));
 
         assert_eq!(flags, vec!['%', ':', 'c', 's']);
+    }
+
+    #[test]
+    fn enabling_vi_disables_emacs() {
+        let mut options = RuntimeOptions::default();
+
+        options.set_emacs_mode(true);
+        options.set_vi_mode(true);
+
+        assert_eq!(options.line_editing_mode(), LineEditingMode::Vi);
+        assert!(!options.emacs_mode);
+        assert!(options.vi_mode);
+    }
+
+    #[test]
+    fn disabling_active_emacs_mode_turns_off_line_editing() {
+        let mut options = RuntimeOptions::default();
+
+        options.set_emacs_mode(true);
+        options.set_emacs_mode(false);
+
+        assert_eq!(options.line_editing_mode(), LineEditingMode::None);
+        assert!(!options.emacs_mode);
+        assert!(!options.vi_mode);
+    }
+
+    #[test]
+    fn disabling_inactive_vi_mode_preserves_emacs() {
+        let mut options = RuntimeOptions::default();
+
+        options.set_emacs_mode(true);
+        options.set_vi_mode(false);
+
+        assert_eq!(options.line_editing_mode(), LineEditingMode::Emacs);
+        assert!(options.emacs_mode);
+        assert!(!options.vi_mode);
     }
 }

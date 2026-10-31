@@ -59,6 +59,29 @@ impl Default for VtKeyBindings {
     }
 }
 
+#[cfg(test)]
+mod named_keymap_tests {
+    use super::*;
+    use brush_core::interfaces::{KeyBindings as _, KeyMap};
+
+    #[test]
+    fn unsupported_vi_map_does_not_modify_emacs_bindings() {
+        let mut bindings = VtKeyBindings::default();
+        let before = bindings.get_current();
+        assert!(
+            bindings
+                .bind_for(
+                    KeyMap::ViCommand,
+                    KeySequence::from(KeyStroke::from(Key::Character('x'))),
+                    KeyAction::DoInputFunction(InputFunction::ClearScreen),
+                )
+                .is_err()
+        );
+        assert_eq!(bindings.get_current(), before);
+        assert!(bindings.get_current_for(KeyMap::ViCommand).is_empty());
+    }
+}
+
 impl VtKeyBindings {
     /// Looks up what `keys` are bound to.
     pub fn lookup(&self, keys: &[Keypress]) -> Lookup {
