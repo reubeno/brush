@@ -213,6 +213,35 @@ fn ext_test_word<'a>(
     }
 }
 
+/// The word after a unary operator, whatever it looks like (`[[ -z ! ]]` tests the string "!"),
+/// except the closing `]]`.
+fn ext_test_unary_operand<'a>(
+    tracker: &'a PositionTracker,
+) -> impl ModalParser<StrStream<'a>, ast::Word, ContextError> + 'a {
+    move |input: &mut StrStream<'a>| {
+        let start_offset = tracker.offset_from_locating(input);
+        let checkpoint = input.checkpoint();
+        if winnow::combinator::opt('!').parse_next(input)?.is_some() {
+            if matches!(
+                peek_char().parse_next(input),
+                Ok(' ' | '\t' | '\n') | Err(_)
+            ) {
+                let end_offset = tracker.offset_from_locating(input);
+                return Ok(ast::Word {
+                    value: "!".to_owned(),
+                    loc: Some(tracker.range_to_span(start_offset..end_offset)),
+                });
+            }
+            input.reset(&checkpoint);
+        }
+        let word = ext_test_word(tracker).parse_next(input)?;
+        if word.value == "]]" {
+            return fail.parse_next(input);
+        }
+        Ok(word)
+    }
+}
+
 /// After a quoted string in a regex word, parse the word characters joined to it: up to a
 /// blank, an operator, a parenthesis, the next quote, or a `]` that closes a bracket
 /// expression.
@@ -428,7 +457,7 @@ fn ext_test_primary<'a>(
         if let Ok(op_word) = ext_test_word(tracker).parse_next(input) {
             if let Some(unary_pred) = parse_unary_operator(&op_word.value) {
                 ext_test_spaces().parse_next(input)?;
-                let operand = ext_test_word(tracker).parse_next(input)?;
+                let operand = ext_test_unary_operand(tracker).parse_next(input)?;
                 return Ok((ast::ExtendedTestExpr::UnaryTest(unary_pred, operand), true));
             }
         }
