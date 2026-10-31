@@ -80,12 +80,16 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
         self.params.stdin(self.shell)
     }
 
-    /// Returns the standard output file; usable with `write!` et al.
+    /// Returns the standard output file; usable with `write!` et al. An error
+    /// from it says that a write failed (`write error: No space left on
+    /// device`).
     pub fn stdout(&self) -> impl std::io::Write + 'static {
         self.params.stdout(self.shell)
     }
 
-    /// Returns the standard error file; usable with `write!` et al.
+    /// Returns the standard error file; usable with `write!` et al. An error
+    /// from it says what failed (`write error: …`), as from
+    /// [`stdout`](Self::stdout).
     pub fn stderr(&self) -> impl std::io::Write + 'static {
         self.params.stderr(self.shell)
     }
