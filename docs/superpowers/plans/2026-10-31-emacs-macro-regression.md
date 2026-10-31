@@ -69,7 +69,7 @@
   ```
 
 - [x] Require original Atuin expectations: four passes, zero unexpected failures, one original expected failure. Update documentation to distinguish restored eager Emacs compatibility from unsupported ordered/modal replay.
-- [ ] Run broader checks, review the diff, then commit with an `Assisted-by: OpenCode:gpt-6.1-sol-fast` trailer:
+- [x] Run broader checks, review the diff, then commit with an `Assisted-by: OpenCode:gpt-6.1-sol-fast` trailer:
 
   ```bash
   cargo fmt --check
@@ -84,9 +84,9 @@
 
 **Interfaces:** Consume the verified prerequisite commit; preserve the callback branch's separate layer.
 
-- [ ] Push the prerequisite follow-up normally to `origin/reassess/vi-readline-upstream`, after verifying the remote head has not advanced independently.
-- [ ] Check out the clean callback branch in an isolated worktree and merge the prerequisite normally, without rebasing or force-pushing.
-- [ ] Rerun its full Reedline library/PTy and unchanged Atuin suites; check formatting and strict Clippy.
+- [x] Push the prerequisite follow-up normally to `origin/reassess/vi-readline-upstream`, after verifying the remote head has not advanced independently.
+- [x] Check out the clean callback branch in an isolated worktree and merge the prerequisite normally, without rebasing or force-pushing.
+- [x] Rerun its full Reedline library/PTy and unchanged Atuin suites; check formatting and strict Clippy.
 - [ ] Push the callback update normally. Correct the two PR descriptions and post the actual before/after evidence, removing the suggestion that an Emacs regression is an acceptable limitation.
 - [ ] Follow new fork checks and upstream approval status. Report any infrastructure/permission blockers separately; do not claim success before observing completed verification.
 
@@ -123,3 +123,23 @@
   aliases and four-arrow listing round trips), with no remaining substantive
   blocker. It independently reran the 66 interactive and 28 builtin library tests,
   arrow restoration, and rejected-replacement preservation checks.
+
+## Callback propagation verification (2026-10-31)
+
+- Committed the implementation as `55056375`, then pushed it normally to the
+  unchanged remote prerequisite branch. Merged it into the clean callback
+  worktree as `157d6bd4`; no published history was rewritten.
+- The callback-only comparison remains two files, 190 additions / 17 deletions.
+  Its stable patch ID matches the original `f3ee39f0..c8b67f25` callback patch.
+- On the combined source/test tree: 67 Reedline-enabled interactive library tests
+  passed, all 23 Reedline PTY tests passed, and `Builtins: bind` reported 16
+  succeeded, zero unexpected failures, and two original known failures.
+- Rebuilt the combined shell and reran unchanged pinned Atuin 18.21.0: four
+  passes and its sole original expected failure (`target/e2e/run-djnrKM` in the
+  callback worktree). Atuin files remain unchanged against `3871270a`.
+- Combined locked workspace/all-target/all-feature strict Clippy, formatting,
+  and whitespace checks passed. The broad workspace suite was not rerun on
+  the callback merge; the prerequisite's limitations above remain disclosed.
+- Subsequent bookkeeping changes only this verification document, not the
+  verified production/test tree. Final publication and remote CI/approval
+  outcomes are recorded in the PR discussions rather than predicted here.
