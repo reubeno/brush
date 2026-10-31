@@ -220,6 +220,13 @@ impl ExportCommand {
     ) -> Result<ExecutionResult, brush_core::Error> {
         use variables::{ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable};
 
+        // Resolve before borrowing the environment mutably. Keep this snapshot for
+        // both type checking and conversion; getters such as RANDOM can change.
+        let resolved_value = context.shell.env().get(name).map_or(
+            ShellValue::Unset(ShellValueUnsetType::IndexedArray),
+            |(_, variable)| variable.resolve_value(context.shell),
+        );
+
         let assign = |variable: &mut ShellVariable| -> Result<(), brush_core::Error> {
             // Bash applies the export attribute even when this assignment fails.
             if self.unexport {
@@ -232,7 +239,7 @@ impl ExportCommand {
                 return Err(brush_core::ErrorKind::ReadonlyVariable.into());
             }
 
-            match variable.value() {
+            match resolved_value {
                 ShellValue::AssociativeArray(_)
                 | ShellValue::Unset(ShellValueUnsetType::AssociativeArray) => {
                     return Err(
@@ -250,6 +257,16 @@ impl ExportCommand {
                     };
                     return variable.assign(value, append);
                 }
+                ShellValue::String(s) if matches!(variable.value(), ShellValue::Dynamic { .. }) => {
+                    // The conversion helper cannot resolve dynamic values; seed
+                    // element zero from the snapshot so appending preserves it.
+                    variable.assign(
+                        ShellValueLiteral::Array(variables::ArrayLiteral::new(vec![(None, s)])),
+                        false,
+                    )?;
+                }
+                // Dynamic indexed arrays need no conversion either.
+                ShellValue::IndexedArray(_) => (),
                 _ => variable.convert_to_indexed_array()?,
             }
 
@@ -298,25 +315,19 @@ fn display_all_exported_vars(
     for (name, variable) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if variable.is_exported() {
             if indexed_arrays_only {
-                if !matches!(
-                    variable.value(),
-                    variables::ShellValue::IndexedArray(_)
-                        | variables::ShellValue::Unset(
-                            variables::ShellValueUnsetType::IndexedArray
-                        )
-                ) {
+                let resolved_value = variable.resolve_value(context.shell);
+                if !resolved_value.is_indexed_array() {
                     continue;
                 }
 
-                let flags = variable.attribute_flags(context.shell);
-                let separator = if matches!(variable.value(), variables::ShellValue::Unset(_)) {
+                let flags = variable.attribute_flags_for_value(&resolved_value);
+                let separator = if matches!(resolved_value, variables::ShellValue::Unset(_)) {
                     ""
                 } else {
                     "="
                 };
-                let value = variable
-                    .value()
-                    .format(variables::FormatStyle::DeclarePrint, context.shell)?;
+                let value =
+                    resolved_value.format(variables::FormatStyle::DeclarePrint, context.shell)?;
                 writeln!(
                     context.stdout(),
                     "declare -{flags} {name}{separator}{value}"
@@ -334,4 +345,48 @@ fn display_all_exported_vars(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use std::{cell::Cell, io::Read as _};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn indexed_listing_resolves_each_dynamic_value_once() -> anyhow::Result<()> {
+        thread_local! { static READS: Cell<usize> = const { Cell::new(0) }; }
+        READS.set(0);
+        let mut shell = brush_core::Shell::builder()
+            .profile(brush_core::ProfileLoadBehavior::Skip)
+            .rc(brush_core::RcLoadBehavior::Skip)
+            .build()
+            .await?;
+        let mut variable = variables::ShellVariable::new(variables::ShellValue::Dynamic {
+            getter: |_| {
+                let reads = READS.replace(READS.get() + 1);
+                if reads == 0 {
+                    variables::ShellValue::indexed_array_from_strs(&["first"])
+                } else {
+                    "second".into()
+                }
+            },
+            setter: |_| (),
+        });
+        variable.export().treat_as_integer().set_readonly();
+        shell.env_mut().set_global("changing", variable)?;
+
+        let (mut reader, writer) = std::io::pipe()?;
+        let mut params = shell.default_exec_params();
+        params.set_fd(brush_core::openfiles::OpenFiles::STDOUT_FD, writer.into());
+        let context = brush_core::ExecutionContext::new(&mut shell, "export".into(), params);
+        display_all_exported_vars(&context, true)?;
+        drop(context);
+        let mut output = String::new();
+        reader.read_to_string(&mut output)?;
+        assert_eq!(output, "declare -airx changing=([0]=\"first\")\n");
+        assert_eq!(READS.get(), 1);
+        Ok(())
+    }
 }

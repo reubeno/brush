@@ -125,7 +125,7 @@ cases:
       echo "status: $?"
       env | grep -q '^BASH_FUNC_example%%='
       echo "exported: $?"
-      export -anf example
+      export -fan example
       env | grep -q '^BASH_FUNC_example%%='
       echo "unexported: $?"
 
@@ -194,6 +194,39 @@ cases:
       declare -a BRUSH_EXPORT_PENDING
       export -a BRUSH_EXPORT_PENDING
       env | grep '^BRUSH_EXPORT_' | sort
+
+  - name: "Export -a lists exported dynamic indexed arrays"
+    stdin: |
+      export -a DIRSTACK GROUPS
+      expected=$(declare -p DIRSTACK GROUPS)
+      actual=$(export -a | grep -E ' (DIRSTACK|GROUPS)=')
+      [[ "$actual" == "$expected" ]]
+      echo "export -a matches declarations: $?"
+      actual=$(export -ap | grep -E ' (DIRSTACK|GROUPS)=')
+      [[ "$actual" == "$expected" ]]
+      echo "export -ap matches declarations: $?"
+
+  - name: "Export -a dynamic arrays do not become child environment strings"
+    stdin: |
+      export -a DIRSTACK GROUPS
+      env | grep -E '^(DIRSTACK|GROUPS)='
+      echo "environment match: $?"
+
+  - name: "Export -a rejects assignment to dynamic associative arrays"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      alias sample=value
+      { export -a BASH_ALIASES=new next=ok; echo "status: $?"; declare -p BASH_ALIASES next; } 2>&1 | strip
+
+  - name: "Export -a appends to a resolved dynamic scalar"
+    stdin: |
+      export -a BASH_SUBSHELL+=2
+      declare -p BASH_SUBSHELL
+
+  - name: "Export -a assigns to a dynamic integer scalar"
+    stdin: |
+      export -a RANDOM=7
+      declare -p RANDOM
 
   - name: "Export scalar assignment with parameter expansion"
     stdin: |
