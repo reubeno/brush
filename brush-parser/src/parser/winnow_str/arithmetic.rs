@@ -78,19 +78,19 @@ pub(super) fn arithmetic_command<'a>(
     move |input: &mut StrStream<'a>| {
         let start_offset = tracker.offset_from_locating(input);
 
-        // Parse (( - allow optional whitespace between them to match peg tokenizer behavior
-        // (the tokenizer produces separate ( tokens even with spaces)
+        // As in bash, `((` and `))` only form an arithmetic command when each
+        // pair of parentheses touch. Otherwise (e.g., `( (cmd) )`) this
+        // declines, and the text is read as nested subshells instead.
         '('.parse_next(input)?;
-        spaces().parse_next(input)?;
         '('.parse_next(input)?;
 
         // Parse expression
         let expr = arithmetic_expression().parse_next(input)?;
 
-        // Parse )) - allow optional whitespace between them
+        // Whitespace before the closing pair belongs to the expression. The two
+        // closing parentheses themselves must touch.
         spaces().parse_next(input)?;
         ')'.parse_next(input)?;
-        spaces().parse_next(input)?;
         ')'.parse_next(input)?;
 
         let end_offset = tracker.offset_from_locating(input);
