@@ -224,7 +224,10 @@ pub struct CommandLineArgs {
 
     /// Use legacy PEG parser instead of the default winnow parser.
     #[cfg(feature = "experimental-parser")]
-    #[arg(long = "peg-parser", help_heading = "*Experimental* options (unstable)")]
+    #[arg(
+        long = "peg-parser",
+        help_heading = "*Experimental* options (unstable)"
+    )]
     pub peg_parser: bool,
 
     /// Enable terminal integration (**experimental**).
