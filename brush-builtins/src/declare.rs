@@ -315,7 +315,10 @@ impl DeclareCommand {
 
         // Make sure it's a valid name.
         if !env::valid_variable_name(name.as_str()) {
-            let message = format!("{}: `{name}': not a valid identifier", context.command_name);
+            let message = format!(
+                "{}: `{declaration}': not a valid identifier",
+                context.command_name
+            );
             writeln_async!(context.stderr_async(), "{message}").await?;
             return Ok(false);
         }
