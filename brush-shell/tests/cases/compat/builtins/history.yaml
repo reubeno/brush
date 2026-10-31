@@ -642,3 +642,36 @@ cases:
     stdin: |
       history -z
       echo "history -z: $?"
+
+  - name: "history -s takes words that look like options after --"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -s -- -x y; history | tail -n 1 | sed 's/^ *[0-9]* *//'
+      unset HISTFILE # brush also saves the history -s line
+
+  - name: "history -s keeps a -- after its first word"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -s a -- b; history | tail -n 1 | sed 's/^ *[0-9]* *//'
+      unset HISTFILE # brush also saves the history -s line
+
+  - name: "history -s rejects an unknown option with status 2"
+    args: ["-o", "history"]
+    ignore_stderr: true
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -s -x
+      echo "history -s -x: $?"
+
+  - name: "history -d takes an attached negative offset"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      history -d-1
+      echo "history -d-1: $?"
