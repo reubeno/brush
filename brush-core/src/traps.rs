@@ -178,6 +178,11 @@ pub struct TrapHandler {
 pub struct TrapHandlerConfig {
     /// Registered handlers for traps; maps signal type to command.
     handlers: HashMap<TrapSignal, TrapHandler>,
+    /// Whether the registered `EXIT` handler was inherited from a parent shell rather than set by
+    /// this shell. A subshell shows the inherited handler (`trap -p EXIT`) but never runs it: the
+    /// parent runs it when the parent exits.
+    #[cfg_attr(feature = "serde", serde(default))]
+    exit_inherited: bool,
 }
 
 impl TrapHandlerConfig {
@@ -202,6 +207,19 @@ impl TrapHandlerConfig {
         self.handlers.contains_key(&signal_type)
     }
 
+    /// Returns whether this shell itself registered an `EXIT` handler, as opposed to inheriting
+    /// one from a parent shell.
+    pub(crate) fn has_own_exit_handler(&self) -> bool {
+        !self.exit_inherited && self.handlers.contains_key(&TrapSignal::Exit)
+    }
+
+    /// Marks the registered `EXIT` handler as inherited from a parent shell: it stays visible
+    /// (`trap -p EXIT`) but this shell does not run it when it ends. A handler this shell
+    /// registers afterwards is its own.
+    pub(crate) const fn mark_exit_inherited(&mut self) {
+        self.exit_inherited = true;
+    }
+
     /// Registers a handler for a trap signal.
     ///
     /// # Arguments
@@ -215,6 +233,9 @@ impl TrapHandlerConfig {
         command: String,
         source_info: crate::SourceInfo,
     ) {
+        if signal_type == TrapSignal::Exit {
+            self.exit_inherited = false;
+        }
         let _ = self.handlers.insert(
             signal_type,
             TrapHandler {
