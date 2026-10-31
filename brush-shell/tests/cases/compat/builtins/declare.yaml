@@ -1104,7 +1104,6 @@ cases:
   # Attribute-filtered display.
   #
   - name: "Display filtered by readonly and trace attributes"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -r zzro=1
       declare -t zztr=2
