@@ -79,13 +79,16 @@ cases:
       echo "BASHOPTS: $BASHOPTS"
 
   - name: "BASH_SOURCE"
-    max_oracle_version: "5.2" # Behavior changed in bash 5.3; still needs investigation
+    min_oracle_version: "5.3" # bash 5.2 names the source of a function defined on standard input `main`
     stdin: |
       echo "Input entry"; declare -p BASH_SOURCE
 
       function myfunc() {
           echo "In function: \$1: $1"
-          declare -p BASH_SOURCE
+          # A function defined on standard input has `$0` as its source.
+          for source in "${BASH_SOURCE[@]}"; do
+              [[ $source == "$0" ]] && echo "source: \$0" || echo "source: $source"
+          done
 
           if [[ $1 -gt 0 ]]; then
               myfunc $(( $1 - 1 ))
@@ -290,4 +293,37 @@ cases:
       unset BASH_LINENO; echo "BASH_LINENO: $?"
       unset BASH_ARGV; echo "BASH_ARGV: $?"
       unset FUNCNAME; echo "FUNCNAME: $?"
+
+  - name: "BASH_SOURCE in a function not defined in a file"
+    min_oracle_version: "5.3" # bash 5.2 names the source `environment` for -c and `main` for standard input
+    args: ["-c", "f() { [[ ${BASH_SOURCE[0]} == \"$0\" ]] && echo \"-c: \\$0\"; }; f", "myname"]
+
+  - name: "BASH_SOURCE in a function defined on standard input"
+    min_oracle_version: "5.3" # bash 5.2 names the source `environment` for -c and `main` for standard input
+    stdin: |
+      f() { [[ ${BASH_SOURCE[0]} == "$0" ]] && echo "stdin: \$0"; }; f
+
+  - name: "BASH_SOURCE in a function imported from the environment"
+    env:
+      "BASH_FUNC_g%%": "() { echo \"[${BASH_SOURCE[0]}]\"; }"
+    stdin: |
+      g
+
+  - name: "BASH_SOURCE in a function not defined in a file, interactively"
+    min_oracle_version: "5.3" # bash 5.2 names the source `environment` for -c and `main` for standard input
+    args: ["-i", "-c", "f() { echo \"[${BASH_SOURCE[0]}]\"; }; f"]
+    ignore_stderr: true
+
+  - name: "$0 and BASH_SOURCE in a script's EXIT trap"
+    known_failure: true # TODO(traps): the script's frame is left before its EXIT trap runs
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          trap 'echo "[$0] [${BASH_SOURCE[*]}]"' EXIT
+          true
+
+  - name: "BASH_SOURCE in a function defined in a trap handler, not in a file"
+    min_oracle_version: "5.3" # bash 5.2 names the source of a function defined with -c `environment`
+    args: ["-c", "trap 'f() { echo \"[${BASH_SOURCE[0]}]\"; }; trap - DEBUG' DEBUG; true; f", "myname"]
 

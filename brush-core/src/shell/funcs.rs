@@ -79,7 +79,9 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
             body: func_body,
         };
 
-        self.define_func(name, def, &crate::SourceInfo::default());
+        // A function defined from text, as one imported from the environment
+        // is, has no file; bash names its source `environment`.
+        self.define_func(name, def, &crate::SourceInfo::from("environment"));
 
         Ok(())
     }
