@@ -10,3 +10,4 @@ These documents serve as reference material for the `brush` project.
 * [Compatibility](compatibility.md)
 * [Examples](examples.md)
 * [Related projects](related-projects.md)
+* [`brush` vs `reedline` for readline/vi compatibility work](reedline-upstreaming.md)
