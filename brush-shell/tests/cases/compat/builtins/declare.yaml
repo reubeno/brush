@@ -1138,13 +1138,19 @@ cases:
       declare -prt | grep zz | sort
 
   - name: "Display is not filtered by a plus attribute option"
-    # brush treats `+x` as a request for variables lacking the attribute; a shell applies no
-    # filter at all in that case. This affects every attribute, not just the one shown here.
-    known_failure: true
     stdin: |
       declare -x zzex=1
       zzplain=2
       declare +x | grep zz | sort
+
+  - name: "Display is filtered by -X, not +X, when both are given"
+    stdin: |
+      declare -x zzex=1
+      declare -i zzint=2
+      zzplain=3
+      declare -p -x +x | grep zz
+      declare -p +x -x | grep zz
+      declare -p -i +x | grep zz
 
   - name: "Combining -a and -A is rejected"
     # A shell treats `-a` and `-A` together as an invalid option combination. brush accepts it and

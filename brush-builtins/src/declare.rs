@@ -511,55 +511,56 @@ impl DeclareCommand {
             filters.push(Box::new(|(_, v)| v.is_readonly()));
         }
 
-        // Add filters depending on attribute flags.
-        if let Some(value) = change(&self.make_indexed_array) {
-            filters.push(Box::new(move |(_, v)| {
-                matches!(v.value(), ShellValue::IndexedArray(_)) == value
+        // Add filters depending on attribute flags. Only `-X` filters; `+X` doesn't.
+        let given = |options: &[bool]| options.contains(&true);
+        if given(&self.make_indexed_array) {
+            filters.push(Box::new(|(_, v)| {
+                matches!(v.value(), ShellValue::IndexedArray(_))
             }));
         }
-        if let Some(value) = change(&self.make_associative_array) {
-            filters.push(Box::new(move |(_, v)| {
-                matches!(v.value(), ShellValue::AssociativeArray(_)) == value
+        if given(&self.make_associative_array) {
+            filters.push(Box::new(|(_, v)| {
+                matches!(v.value(), ShellValue::AssociativeArray(_))
             }));
         }
-        if let Some(value) = change(&self.make_integer) {
-            filters.push(Box::new(move |(_, v)| v.is_treated_as_integer() == value));
+        if given(&self.make_integer) {
+            filters.push(Box::new(|(_, v)| v.is_treated_as_integer()));
         }
-        if let Some(value) = change(&self.capitalize_value_on_assignment) {
-            filters.push(Box::new(move |(_, v)| {
+        if given(&self.capitalize_value_on_assignment) {
+            filters.push(Box::new(|(_, v)| {
                 matches!(
                     v.get_update_transform(),
                     ShellVariableUpdateTransform::Capitalize
-                ) == value
+                )
             }));
         }
-        if let Some(value) = change(&self.lowercase_value_on_assignment) {
-            filters.push(Box::new(move |(_, v)| {
+        if given(&self.lowercase_value_on_assignment) {
+            filters.push(Box::new(|(_, v)| {
                 matches!(
                     v.get_update_transform(),
                     ShellVariableUpdateTransform::Lowercase
-                ) == value
+                )
             }));
         }
-        if let Some(value) = change(&self.make_nameref) {
-            filters.push(Box::new(move |(_, v)| v.is_treated_as_nameref() == value));
+        if given(&self.make_nameref) {
+            filters.push(Box::new(|(_, v)| v.is_treated_as_nameref()));
         }
-        if let Some(value) = change(&self.make_readonly) {
-            filters.push(Box::new(move |(_, v)| v.is_readonly() == value));
+        if given(&self.make_readonly) {
+            filters.push(Box::new(|(_, v)| v.is_readonly()));
         }
-        if let Some(value) = change(&self.make_traced) {
-            filters.push(Box::new(move |(_, v)| v.is_trace_enabled() == value));
+        if given(&self.make_traced) {
+            filters.push(Box::new(|(_, v)| v.is_trace_enabled()));
         }
-        if let Some(value) = change(&self.uppercase_value_on_assignment) {
-            filters.push(Box::new(move |(_, v)| {
+        if given(&self.uppercase_value_on_assignment) {
+            filters.push(Box::new(|(_, v)| {
                 matches!(
                     v.get_update_transform(),
                     ShellVariableUpdateTransform::Uppercase
-                ) == value
+                )
             }));
         }
-        if let Some(value) = change(&self.make_exported) {
-            filters.push(Box::new(move |(_, v)| v.is_exported() == value));
+        if given(&self.make_exported) {
+            filters.push(Box::new(|(_, v)| v.is_exported()));
         }
 
         let iter_policy = if matches!(verb, DeclareVerb::Local) {
