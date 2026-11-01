@@ -18,7 +18,7 @@ pub(crate) struct ExecCommand {
     exec_as_login: bool,
 
     /// Pass given name as zeroth argument to command.
-    #[arg(short = 'a', value_name = "NAME")]
+    #[arg(short = 'a', value_name = "NAME", allow_hyphen_values)]
     name_for_argv0: Option<String>,
 
     /// Command and args.

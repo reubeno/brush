@@ -6,7 +6,7 @@ use std::io::Write;
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct FcCommand {
     /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
+    #[arg(short = 'e', value_name = "ENAME", allow_hyphen_values)]
     editor: Option<String>,
 
     /// List commands instead of editing them.
