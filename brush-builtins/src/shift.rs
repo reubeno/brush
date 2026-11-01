@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Shift positional arguments.
@@ -21,7 +23,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShiftCommand {
         let n = self.n.unwrap_or(1);
 
         if n < 0 {
-            return Ok(ExecutionExitCode::InvalidUsage.into());
+            writeln!(
+                context.stderr(),
+                "{}: {n}: shift count out of range",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::general_error());
         }
 
         #[expect(clippy::cast_sign_loss)]

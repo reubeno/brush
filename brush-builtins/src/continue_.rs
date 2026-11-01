@@ -1,4 +1,6 @@
-use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
+use std::io::Write;
+
+use brush_core::{ExecutionControlFlow, ExecutionResult, builtins};
 
 /// Continue to the next iteration of a control-flow loop.
 #[derive(winnow_args::Args)]
@@ -16,11 +18,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ContinueCommand 
 
     async fn execute(
         self,
-        _context: brush_core::ExecutionContext<'_, SE>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        // If specified, which_loop needs to be positive.
+        // A count that isn't positive is reported.
         if self.which_loop <= 0 {
-            return Ok(ExecutionExitCode::InvalidUsage.into());
+            writeln!(
+                context.stderr(),
+                "{}: {}: loop count out of range",
+                context.command_name,
+                self.which_loop
+            )?;
+            return Ok(ExecutionResult::general_error());
         }
 
         let mut result = ExecutionResult::success();

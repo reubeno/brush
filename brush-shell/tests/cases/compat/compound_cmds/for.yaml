@@ -202,7 +202,7 @@ cases:
       echo "after loop: $?"
 
   - name: "break with a count of zero"
-    known_failure: true # TODO(loops): break 0 doesn't report "loop count out of range" and fail with 1
+    known_failure: true # TODO(loops): break 0 reports the count and fails with 1, but doesn't leave the loop
     ignore_stderr: true
     stdin: |
       for i in 1 2; do break 0; echo "body $i"; done
@@ -276,3 +276,11 @@ cases:
       echo "after: $?"
       f() { for k in 1 2; do continue 99; echo "in f $k"; done; echo "f end"; }
       for i in 1 2; do f; echo "loop $i"; done
+
+  - name: "break and continue report a negative count and fail with status 1"
+    stdin: |
+      for i in 1; do break -1 2>err.txt; done; echo "break -1: $?"
+      [[ -s err.txt ]] && echo "break reported"
+      for i in 1; do continue -1 2>err.txt; done; echo "continue -1: $?"
+      [[ -s err.txt ]] && echo "continue reported"
+      rm err.txt
