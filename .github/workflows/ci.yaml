@@ -106,7 +106,8 @@ jobs:
             extra_build_args: ""
             toolchain: "nightly"
           # Build for x86_64/windows target on x86_64/linux host.
-          - host: "ubuntu-26.04"
+          # cross 0.2.5's windows-gnu container exits 1, without an error, on ubuntu-26.04.
+          - host: "ubuntu-24.04"
             target: "x86_64-pc-windows-gnu"
             cross_command: "cross"
             cross_tool_to_install: "cross"
