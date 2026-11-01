@@ -65,6 +65,42 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         .await
     }
 
+    /// Source an already parsed program, as [`Self::source_script`] sources a file: in a
+    /// script's call frame, with `args` as its positional parameters. A script sourced many
+    /// times (as an eclass is) then needs parsing only once.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The parsed program to run.
+    /// * `source_info` - Where the program came from, for its call frame and errors.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `params` - Execution parameters.
+    pub async fn source_program<S: Into<String>, I: Iterator<Item = S>>(
+        &mut self,
+        program: &brush_parser::ast::Program,
+        source_info: &crate::SourceInfo,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        let mut shell = self.enter_script(
+            callstack::ScriptCallType::Source,
+            source_info,
+            args.map(Into::into),
+        );
+        let result = program.execute(&mut shell, params).await;
+        let mut result = shell.report_error(result, params);
+
+        // As for a sourced file, a `return` ends the script and goes no further.
+        if matches!(
+            result.next_control_flow,
+            ExecutionControlFlow::ReturnFromFunctionOrScript
+        ) {
+            result.next_control_flow = ExecutionControlFlow::Normal;
+        }
+
+        Ok(result)
+    }
+
     /// Parse and execute the given file as a shell script, returning the execution result.
     ///
     /// # Arguments
@@ -251,16 +287,25 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             .into_fatal()),
         };
 
-        // Report any errors.
+        Ok(self.report_error(result, params))
+    }
+
+    /// Reports the error a program's run ended with, if any, returning the result it stands
+    /// for.
+    fn report_error(
+        &mut self,
+        result: Result<ExecutionResult, error::Error>,
+        params: &ExecutionParameters,
+    ) -> ExecutionResult {
         match result {
-            Ok(result) => Ok(result),
+            Ok(result) => result,
             Err(err) => {
                 let _ = self.display_error(&mut params.stderr(self), &err);
 
                 let result = err.into_result(self);
                 self.set_last_exit_status(result.exit_code.into());
 
-                Ok(result)
+                result
             }
         }
     }
