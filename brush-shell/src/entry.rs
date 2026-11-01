@@ -192,11 +192,13 @@ pub fn run() {
         Ok(parsed_args) => parsed_args,
         Err(error) => {
             // Help and version requests succeed, so they go to stdout like any
-            // other requested output; real failures go to stderr.
+            // other requested output; real failures go to stderr. Help already
+            // ends with a newline.
+            let message = error.message.trim_end_matches('\n');
             let _ = if error.exit_code == 0 {
-                writeln!(std::io::stdout(), "{}", error.message)
+                writeln!(std::io::stdout(), "{message}")
             } else {
-                writeln!(std::io::stderr(), "{}", error.message)
+                writeln!(std::io::stderr(), "{message}")
             };
             std::process::exit(i32::from(error.exit_code));
         }

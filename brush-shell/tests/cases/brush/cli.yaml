@@ -127,6 +127,13 @@ cases:
       - "--help"
     expected_exit_code: 0
 
+  - name: "Help ends without a blank line"
+    stdin: |
+      "$BASH" --help | tail -n 1 | grep -c .
+    expected_stdout: "1\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
   - name: "Invalid option fails"
     args:
       - "--unknown-argument-here"
