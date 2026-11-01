@@ -29,7 +29,7 @@ concurrency:
 jobs:
   zizmor:
     name: zizmor latest via zizmor-action
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       security-events: write # needed for SARIF uploads
     steps:
