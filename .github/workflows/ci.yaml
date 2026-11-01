@@ -22,6 +22,15 @@ env:
   CLICOLOR: 1
   CLICOLOR_FORCE: 1
 
+# NIGHTLY PIN (temporary): the jobs below that need nightly use nightly-2026-10-31
+# (rustc 92b5b8c87, 2026-10-29) rather than floating `nightly`. The next nightly,
+# nightly-2026-11-01 (rustc f9ceb4a4d), fails to compile brush-core with
+# "error[E0391]: cycle detected when computing when `ArithmeticTarget` needs async
+# drop": a rustc regression on mutually recursive enums held across an `.await`,
+# likely from rust-lang/rust#164987 (stable and beta are unaffected). Once a nightly
+# compiles brush again, go back to `nightly` everywhere the date appears in this file,
+# and run `cargo xtask check unused-deps` again in check-deps. analyze-public-api
+# stays on `nightly`: rustdoc doesn't hit the regression.
 permissions:
   actions: read
   contents: read
@@ -104,7 +113,7 @@ jobs:
             required_tools: ""
             binary_name: "brush.wasm"
             extra_build_args: ""
-            toolchain: "nightly"
+            toolchain: "nightly-2026-10-31" # See NIGHTLY PIN above.
           # Build for x86_64/windows target on x86_64/linux host.
           # cross 0.2.5's windows-gnu container exits 1, without an error, on ubuntu-26.04.
           - host: "ubuntu-24.04"
@@ -170,7 +179,7 @@ jobs:
             required_tools: ""
             binary_name: "brush"
             extra_build_args: "-Zbuild-std=std,panic_abort"
-            toolchain: "nightly"
+            toolchain: "nightly-2026-10-31" # See NIGHTLY PIN above.
             components: "rust-src"
             # std is built from source, so there's no prebuilt target to install.
             skip_rustup_target: true
@@ -301,7 +310,7 @@ jobs:
             homebrew_supported: false
             coverage: false
             # See the wasm32-wasip3 build leg: nightly until Rust 1.100.
-            toolchain: "nightly"
+            toolchain: "nightly-2026-10-31" # See NIGHTLY PIN above.
             extra_rust_targets: "wasm32-wasip3"
             wasi_runtime: "wasmtime"
             xtask_test_args: "--wasi"
@@ -505,16 +514,18 @@ jobs:
       # so the pinned toolchain doesn't have to be installed as well.
       - name: Set up nightly rust toolchain
         run: |
-          rustup toolchain install nightly --profile minimal
-          rustup override set nightly
+          rustup toolchain install nightly-2026-10-31 --profile minimal # See NIGHTLY PIN above.
+          rustup override set nightly-2026-10-31
 
       - name: Install cargo-udeps
         uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-udeps
 
+      # xtask's check runs `cargo +nightly udeps`, which ignores the override; while
+      # nightly is pinned, run its command with the pinned toolchain.
       - name: Check for unused dependencies
-        run: cargo xtask check unused-deps
+        run: cargo +nightly-2026-10-31 udeps --workspace --all-targets --all-features
 
   # Check that generated schemas are up-to-date
   check-schemas:
