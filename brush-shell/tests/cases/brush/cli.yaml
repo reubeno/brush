@@ -127,6 +127,17 @@ cases:
       - "--help"
     expected_exit_code: 0
 
+  - name: "Help ends without a blank line"
+    # Pure shell (no tail/grep) so it also runs on Windows. The trailing "."
+    # keeps command substitution from stripping the newlines under test.
+    stdin: |
+      out=$("$BASH" --help; echo .)
+      out=${out%.}
+      [[ $out == *$'\n' && $out != *$'\n\n' ]] && echo ok
+    expected_stdout: "ok\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
   - name: "Invalid option fails"
     args:
       - "--unknown-argument-here"
