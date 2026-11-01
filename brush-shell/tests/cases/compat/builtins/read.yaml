@@ -164,6 +164,7 @@ cases:
       done
 
   - name: "read accepts a timeout too long to represent"
+    incompatible_platforms: ["macos"] # bash fails with EINVAL there; brush waits
     stdin: |
       for t in 9223372036854775807 99999999999999999999; do
         echo x | { read -t "$t" v; echo "$t: rc=$? v='$v'"; }
