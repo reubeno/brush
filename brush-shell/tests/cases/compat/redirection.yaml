@@ -209,12 +209,12 @@ cases:
   - name: "Close standard streams of external commands: exit status"
     known_failure: true # TODO(redirection): a closed standard stream is opened on the null device, not closed
     ignore_stderr: true
-    # Duplicating the closed descriptor fails; whether echo or cat does depends on the system's
-    # coreutils.
+    # sh, not a coreutils program run by env: uutils' programs, being Rust ones, reopen a closed
+    # standard stream on the null device as they start.
     stdin: |
-      env sh -c 'exec 3>&1' 1>&-
+      sh -c 'exec 3>&1' 1>&-
       echo "stdout: $?"
-      env sh -c 'exec 3<&0' <&-
+      sh -c 'exec 3<&0' <&-
       echo "stdin: $?"
 
   - name: "Redirect for an external command with one file descriptor to spare"
