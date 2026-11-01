@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: read
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
 
     # Pinned, since findings differ across shellcheck versions.

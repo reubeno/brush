@@ -35,21 +35,21 @@ jobs:
       matrix:
         include:
           - name: "linux-x86_64"
-            os: ubuntu-latest
+            os: ubuntu-26.04
           - name: "linux-aarch64"
-            os: ubuntu-24.04-arm
+            os: ubuntu-26.04-arm
           - name: "macos-aarch64"
             os: macos-latest
           - name: "macos-x86_64"
-            os: macos-15-intel
+            os: macos-26-intel
           # musl + busybox userland, no gh.
           - name: "alpine"
-            os: ubuntu-latest
+            os: ubuntu-26.04
             container: "alpine:3"
             prepare: "apk add --no-cache bash curl"
           # glibc too old for the gnu build; exercises the musl fallback.
           - name: "almalinux-8"
-            os: ubuntu-latest
+            os: ubuntu-26.04
             container: "almalinux:8"
 
     runs-on: ${{ matrix.os }}
