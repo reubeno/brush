@@ -85,13 +85,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
 
         context.shell.set_working_dir(&target_dir)?;
 
-        // Bash compatibility
-        // https://www.gnu.org/software/bash/manual/bash.html#index-cd
-        // If a non-empty directory name from CDPATH is used, or if '-' is the first argument, and
-        // the directory change is successful, the absolute pathname of the new working
-        // directory is written to the standard output.
         if should_print {
-            writeln!(context.stdout(), "{}", target_dir.display())?;
+            let mut output = Vec::new();
+            writeln!(output, "{}", target_dir.display())?;
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
         }
 
         Ok(ExecutionResult::success())

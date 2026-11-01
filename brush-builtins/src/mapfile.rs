@@ -80,12 +80,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             }
         }
 
-        let input_file = context
-            .try_fd(self.fd)
+        let input_file_async = context
+            .try_fd_async(self.fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
-        // Read!
-        let lines = self.read_lines(input_file)?;
+        // For terminals, use blocking I/O (terminal mode setup requires it)
+        // For files/pipes, use async I/O for better performance
+        let lines = if input_file_async.is_terminal() {
+            let input_file = context
+                .try_fd(self.fd)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
+            self.read_lines(input_file)?
+        } else {
+            self.read_lines_async(input_file_async).await?
+        };
 
         if let Some(origin) = self.origin {
             // -O: preserve existing array, assign at offset.
@@ -141,6 +149,64 @@ impl MapFileCommand {
 
             loop {
                 match input_file.read(&mut buf) {
+                    Ok(0) => break,                                         // End of input
+                    Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
+                    Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
+                    Ok(1) => {
+                        let byte = buf[0];
+                        line.push(byte);
+                        if byte == delimiter {
+                            saw_delimiter = true;
+                            break;
+                        }
+                    }
+                    Ok(_) => unreachable!("input can only be 0, 1, or error"),
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            if line.is_empty() && !saw_delimiter {
+                break;
+            }
+
+            if read_count < self.skip_count {
+                read_count += 1;
+                continue;
+            }
+
+            if self.remove_delimiter && line.ends_with(&[delimiter]) {
+                line.pop();
+            }
+
+            let line_str = String::from_utf8_lossy(&line).to_string();
+
+            entries.push(line_str);
+        }
+
+        Ok(entries)
+    }
+
+    async fn read_lines_async(
+        &self,
+        mut input_file: brush_core::openfiles::async_file::AsyncOpenFile,
+    ) -> Result<Vec<String>, brush_core::Error> {
+        let mut entries = vec![];
+        let mut read_count = 0;
+        let max_count = self.max_count.try_into()?;
+        let delimiter = match &self.delimiter {
+            Some(d) if d.is_empty() => b'\0',
+            Some(d) => d.as_bytes().first().copied().unwrap_or(b'\n'),
+            None => b'\n',
+        };
+
+        let mut buf = [0u8; 1];
+
+        while max_count == 0 || entries.len() < max_count {
+            let mut line = vec![];
+            let mut saw_delimiter = false;
+
+            loop {
+                match input_file.read(&mut buf).await {
                     Ok(0) => break,                                         // End of input
                     Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
                     Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
