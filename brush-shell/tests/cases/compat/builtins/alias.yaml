@@ -283,3 +283,10 @@ cases:
     stdin: |
       alias a=(1 2); echo "rc=$?"
       alias a 2>/dev/null; echo "rc=$?"
+
+  - name: "alias and unalias take --"
+    stdin: |
+      alias -- a=b
+      alias a
+      unalias -- a
+      alias a 2>/dev/null; echo "rc=$?"

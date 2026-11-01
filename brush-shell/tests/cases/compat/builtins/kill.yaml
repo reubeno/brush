@@ -156,3 +156,14 @@ cases:
     stdin: |
       kill -0 $$ -l || true
       echo "done"
+
+  - name: "kill takes its signal in each form"
+    ignore_stderr: true
+    stdin: |
+      kill -l -- 9
+      kill -l HUP
+      kill -sUSR1 999999; echo "a=$?"
+      kill -n9 999999; echo "b=$?"
+      kill -HUP 999999; echo "c=$?"
+      kill -9 -- 999999; echo "d=$?"
+      kill -s HUP -- -999999; echo "e=$?"

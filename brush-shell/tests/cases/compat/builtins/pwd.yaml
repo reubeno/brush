@@ -68,3 +68,9 @@ cases:
 
       echo "pwd -L: $(basename $(pwd -L))"
       echo "pwd -P: $(basename $(pwd -P))"
+
+  - name: "pwd takes -- and both of -L and -P"
+    stdin: |
+      cd /
+      pwd --
+      pwd -LP

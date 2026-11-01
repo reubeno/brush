@@ -41,3 +41,11 @@ cases:
       set -u
       let 'y = nope + 1'; echo "rc=$?"
       echo next
+
+  - name: "let takes expressions that start with -"
+    stdin: |
+      let -1; echo "a=$?"
+      let -0; echo "b=$?"
+      let -- -1; echo "c=$?"
+      x=5; let --x; echo "d=$? x=$x"
+      x=5; let -- --x; echo "e=$? x=$x"

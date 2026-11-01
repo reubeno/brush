@@ -15,3 +15,11 @@ cases:
       echo "after a subshell: $(umask)"
       umask 077 | true
       echo "after a pipeline stage: $(umask)"
+
+  - name: "umask -S, -p and --"
+    stdin: |
+      umask 022
+      umask -S
+      umask -p
+      umask -- 077
+      umask

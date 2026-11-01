@@ -959,3 +959,14 @@ cases:
       trap - BOGUS INT; echo "reset: $?"
       trap -p INT USR1
       trap 'echo y' EXIT --; echo "exit: $?"
+
+  - name: "trap takes -- before the action, and - to reset"
+    stdin: |
+      trap -- 'echo x' USR1
+      trap -p USR1
+      trap -- - USR1
+      trap -p USR1
+      trap 'echo y' USR1
+      trap -- USR1
+      trap -p USR1
+      echo "done"

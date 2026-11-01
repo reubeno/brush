@@ -364,3 +364,15 @@ cases:
       echo "test: $?"
       [ 1 -lt b ]
       echo "[: $?"
+
+  - name: "test and [ take words that look like options as operands"
+    stdin: |
+      test --; echo "a=$?"
+      test -n --; echo "b=$?"
+      test -- = --; echo "c=$?"
+      test --help; echo "d=$?"
+      test -h; echo "e=$?"
+      [ -- ]; echo "f=$?"
+      [ --help ]; echo "g=$?"
+      [ ! -- ]; echo "h=$?"
+      [ -1 -lt 0 ]; echo "i=$?"

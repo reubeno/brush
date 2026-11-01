@@ -172,3 +172,10 @@ cases:
       f() { return 1 2; echo "still in f"; }
       f; echo "same line: $?"
       echo "next line: $?"
+
+  - name: "return takes -- and a negative status"
+    stdin: |
+      f() { return -1; }; f; echo "a=$?"
+      f() { return -256; }; f; echo "b=$?"
+      f() { return -0; }; false; f; echo "c=$?"
+      f() { return -- 6; }; f; echo "d=$?"

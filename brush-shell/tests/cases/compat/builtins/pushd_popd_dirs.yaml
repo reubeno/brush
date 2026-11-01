@@ -81,3 +81,10 @@ cases:
       cd /
       pushd /tmp >/dev/full; echo "pushd rc=$?"
       popd >/dev/full; echo "popd rc=$?"
+
+  - name: "pushd -n and popd -n may be repeated"
+    stdin: |
+      pushd -n / -n >/dev/null; echo "pushd: $?"
+      dirs -l -p | tail -n 1
+      popd -n -n >/dev/null; echo "popd: $?"
+      dirs -p | wc -l | tr -d ' '

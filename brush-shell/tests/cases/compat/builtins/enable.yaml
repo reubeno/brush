@@ -37,3 +37,9 @@ cases:
       enable -n echo
       enable -p | grep -c echo
       enable -n -p | grep echo
+
+  - name: "enable takes --"
+    stdin: |
+      enable -n -- echo; echo "a=$?"
+      enable -- echo; echo "b=$?"
+      type -t echo

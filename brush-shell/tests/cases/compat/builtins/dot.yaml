@@ -160,3 +160,13 @@ cases:
       set -u
       . ./script.sh; echo "rc=$?"
       echo next
+
+  - name: "source passes -- and options to the script"
+    test_files:
+      - path: "script.sh"
+        contents: |
+          echo "$#: $*"
+    stdin: |
+      . ./script.sh -- a
+      . ./script.sh -x
+      . -- ./script.sh b

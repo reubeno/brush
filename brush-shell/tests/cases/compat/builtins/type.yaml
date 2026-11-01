@@ -147,3 +147,9 @@ cases:
 
       echo "[the fallback keeps searching the rest of PATH]"
       type only2; echo "rc=$?"
+
+  - name: "type takes -- and combined options"
+    stdin: |
+      type -t -- echo
+      type -at true
+      type -t -- -x; echo "rc=$?"

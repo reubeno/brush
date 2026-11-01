@@ -240,3 +240,11 @@ cases:
       w="B="
       export $w
       env | grep -c '^B='
+
+  - name: "export takes -- and -n"
+    stdin: |
+      export -- B=2
+      env | grep '^B='
+      export -n B
+      env | grep -c '^B='
+      echo "B=$B"

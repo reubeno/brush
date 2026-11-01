@@ -25,3 +25,8 @@ cases:
       [[ -s err.txt ]] && echo "reported"
       shift -0; echo "shift -0: $? $#"
       rm err.txt
+
+  - name: "shift takes --"
+    stdin: |
+      set -- a b c
+      shift -- 2; echo "$? $*"
