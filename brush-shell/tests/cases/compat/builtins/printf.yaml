@@ -461,6 +461,21 @@ cases:
       printf -vy -- '%s-' -- a
       echo "y=$y"
 
+  - name: "printf -v with an invalid name fails with status 2"
+    ignore_stderr: true
+    stdin: |
+      printf -v 1bad '%s' x; echo "rc=$?"
+      printf -v -x '%s' x; echo "rc=$?"
+      printf -v -- '%s' x; echo "rc=$?"
+      printf -v-x '%s' x; echo "rc=$?"
+      printf -v 'a b' '%s' x; echo "rc=$?"
+      printf -v '' '%s' x; echo "rc=$?"
+      printf -v 'a[' '%s' x; echo "rc=$?"
+      printf -v 'a[]' '%s' x; echo "rc=$?"
+      declare -p a 2>/dev/null || echo "a unset"
+      # The name is checked before the format.
+      printf -v 1bad '%d' abc; echo "rc=$?"
+
   - name: "printf --help prints help on stdout"
     known_failure: true # TODO(printf): --help is taken for an invalid option
     stdin: |

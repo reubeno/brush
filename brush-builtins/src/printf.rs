@@ -1,7 +1,7 @@
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
-use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
+use brush_core::{Error, ErrorKind, ExecutionResult, builtins, env, escape, expansion};
 
 /// Format a string.
 #[derive(winnow_args::Args)]
@@ -86,6 +86,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if let Some(variable_name) = &self.output_variable {
+            if !valid_output_variable(variable_name) {
+                writeln!(
+                    context.stderr(),
+                    "{}: `{variable_name}': not a valid identifier",
+                    context.command_name
+                )?;
+                return Ok(ExecutionResult::new(2));
+            }
+
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];
             format(self.format_and_args.as_slice(), &mut result)?;
@@ -109,6 +118,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
         }
 
         Ok(ExecutionResult::success())
+    }
+}
+
+/// Whether `name` is a variable name, or one followed by a non-empty `[subscript]`.
+fn valid_output_variable(name: &str) -> bool {
+    match name.split_once('[') {
+        None => env::valid_variable_name(name),
+        Some((base, rest)) => {
+            env::valid_variable_name(base) && rest.len() > 1 && rest.ends_with(']')
+        }
     }
 }
 
