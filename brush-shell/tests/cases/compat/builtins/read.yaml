@@ -149,6 +149,35 @@ cases:
       read -t -1
       echo "exit: $?"
 
+  - name: "read rejects an infinite or NaN timeout"
+    ignore_stderr: true
+    stdin: |
+      for t in inf -inf +inf Infinity nan NaN 1e400; do
+        echo x | { read -t "$t" v; echo "$t: rc=$? v='$v'"; }
+      done
+
+  - name: "read rejects a timeout that isn't a decimal number"
+    ignore_stderr: true
+    stdin: |
+      for t in 0x10 1:2 1.5.2 ++1 ' 1' '1 '; do
+        echo x | { read -t "$t" v; echo "[$t]: rc=$? v='$v'"; }
+      done
+
+  - name: "read accepts a timeout too long to represent"
+    incompatible_platforms: ["macos"] # bash fails with EINVAL there; brush waits
+    stdin: |
+      for t in 9223372036854775807 99999999999999999999; do
+        echo x | { read -t "$t" v; echo "$t: rc=$? v='$v'"; }
+      done
+
+  - name: "read treats an empty timeout as zero"
+    known_failure: true # TODO(read): an empty timeout is rejected as invalid
+    ignore_stderr: true
+    stdin: |
+      for t in '' .; do
+        read -t "$t" v <<< x; echo "[$t]: rc=$? v='$v'"
+      done
+
   - name: "read -t with -n option"
     stdin: |
       echo "abcdef" | { read -t 1 -n 3 var; echo "exit: $?, var: '$var'"; }
@@ -443,7 +472,6 @@ cases:
       echo "read: $?"
 
   - name: "read with an invalid timeout fails with status 1"
-    known_failure: true # TODO(read): fails with status 2, where bash fails with 1
     ignore_stderr: true
     stdin: |
       read -t abc x <<< "hello"
