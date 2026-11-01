@@ -24,6 +24,28 @@ cases:
     stdin: |
       ulimit -n
 
+  - name: "ulimit -s"
+    stdin: |
+      ulimit -s
+
+  - name: "ulimit -t"
+    stdin: |
+      ulimit -t
+
+  - name: "ulimit -u"
+    stdin: |
+      ulimit -u
+
+  - name: "ulimit -v"
+    stdin: |
+      ulimit -v
+
+  - name: "ulimit -p"
+    known_failure: true # TODO(ulimit): brush reports a pipe size of 5 blocks, where bash reports 8 (4096 bytes)
+    incompatible_platforms: ["macos"] # the pipe size differs there
+    stdin: |
+      ulimit -p
+
   - name: "ulimit -d unlimited"
     stdin: |
       ulimit -d unlimited
@@ -108,3 +130,33 @@ cases:
     known_failure: true # TODO(ulimit): brush reports the limit and ignores the value
     stdin: |
       ulimit -n -- 100; echo "ulimit -n -- 100: $?"; ulimit -n
+
+  - name: "ulimit rejects a resource this platform lacks with status 2"
+    known_failure: true # TODO(ulimit): brush takes each and fails with "unsupported resource", status 1
+    incompatible_platforms: ["macos"] # which of these exist differs there
+    ignore_stderr: true
+    stdin: |
+      ulimit -b; echo "ulimit -b: $?"
+      ulimit -k; echo "ulimit -k: $?"
+      ulimit -P; echo "ulimit -P: $?"
+      ulimit -T; echo "ulimit -T: $?"
+
+  - name: "ulimit --help fails with status 2"
+    stdin: |
+      ulimit --help >/dev/null 2>&1; echo "ulimit --help: $?"
+
+  - name: "ulimit rejects an unknown long option with status 2"
+    ignore_stderr: true
+    stdin: |
+      ulimit --bogus; echo "ulimit --bogus: $?"
+
+  - name: "ulimit -a lists every limit"
+    known_failure: true # TODO(ulimit): brush's labels, widths and order differ, e.g. `(block, -c)` for `(blocks, -c)`
+    stdin: |
+      ulimit -a
+
+  - name: "ulimit -a with another resource lists each limit once"
+    known_failure: true # TODO(ulimit): brush lists the other resource a second time
+    stdin: |
+      a=$(ulimit -a); an=$(ulimit -a -n)
+      [[ $a == "$an" ]] && echo same || echo differs

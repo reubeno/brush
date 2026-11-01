@@ -48,6 +48,80 @@ cases:
     # Runs brush as a child process, which WASI 0.2 cannot do.
     incompatible_platforms: ["wasi"]
 
+  - name: "Completion callback completes a flag value after other flags"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --norc --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "reedline\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback completes an attached flag value"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --input-backend=r'
+    expected_exit_code: 0
+    expected_stdout: "--input-backend=reedline\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback completes a long flag name"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush --nor'
+    expected_exit_code: 0
+    expected_stdout: "--norc\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  # Flags stop at the script or `-c` command, so a later flag-like word is an
+  # argument: the callback answers `\x01files`, its request for file names.
+  - name: "Completion callback offers files, not flag values, after a script"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush script.sh --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not attached flag values, after a script"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush script.sh --input-backend=r'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag names, after a script"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush script.sh --nor'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag values, after a -c command"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush -c "echo hi" --input-backend r'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag names, after a -c command"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush -c "echo hi" --nor'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "Completion callback offers files, not flag names, after --"
+    stdin: |
+      "$BASH" __complete_word__ --shell bash --line 'brush -- --nor'
+    expected_exit_code: 0
+    expected_stdout: "\x01files\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
   - name: "Help flag succeeds"
     args:
       - "--help"
@@ -107,3 +181,140 @@ cases:
       - "echo forward_compat"
     expected_exit_code: 0
     expected_stdout: "forward_compat\n"
+
+  - name: "--input-backend selects the minimal backend"
+    args: ["--input-backend", "minimal", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--input-backend takes an attached value"
+    args: ["--input-backend=minimal", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--input-backend selects the basic backend"
+    args: ["--input-backend", "basic", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+    incompatible_platforms: ["windows", "wasi"] # basic is Unix-only
+
+  - name: "--input-backend selects the vt backend"
+    args: ["--input-backend", "vt", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+    incompatible_platforms: ["windows", "wasi"] # vt is Unix-only
+
+  - name: "--input-backend selects the reedline backend"
+    args: ["--input-backend", "reedline", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+    incompatible_platforms: ["wasi"] # reedline is not built for wasm
+
+  - name: "--input-backend rejects an unknown backend"
+    args: ["--input-backend", "nope", "-c", "echo hi"]
+    expected_exit_code: 2
+    expected_stdout: ""
+
+  - name: "--input-backend needs a value"
+    args: ["--input-backend"]
+    expected_exit_code: 2
+    expected_stdout: ""
+
+  - name: "--debug enables an event class"
+    args: ["--debug", "commands", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--debug takes an attached event class"
+    args: ["--debug=commands", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--log-enable is another name for --debug"
+    args: ["--log-enable", "commands", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--debug rejects an unknown event class"
+    args: ["--debug", "nosuch", "-c", "echo hi"]
+    expected_exit_code: 2
+    expected_stdout: ""
+
+  - name: "--disable-event disables an event class"
+    args: ["--disable-event", "commands", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--log-disable is another name for --disable-event"
+    args: ["--log-disable", "commands", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--disable-event rejects an unknown event class"
+    args: ["--disable-event", "nosuch", "-c", "echo hi"]
+    expected_exit_code: 2
+    expected_stdout: ""
+
+  - name: "The caller's environment is inherited"
+    env:
+      FOO: "set"
+    args: ["-c", 'echo "${FOO-unset}"']
+    expected_exit_code: 0
+    expected_stdout: "set\n"
+
+  - name: "--noenv starts without the caller's environment"
+    env:
+      FOO: "set"
+    args: ["--noenv", "-c", 'echo "${FOO-unset}"']
+    expected_exit_code: 0
+    expected_stdout: "unset\n"
+
+  - name: "--sh turns on the posix option"
+    # sh mode has no echo builtin, and Windows and WASI have no echo program.
+    args: ["--sh", "-c", 'case :$SHELLOPTS: in *:posix:*) exit 0;; esac; exit 1']
+    expected_exit_code: 0
+
+  - name: "--inherit-fd hands the shell a descriptor"
+    stdin: |
+      "$BASH" --inherit-fd 3 -c 'echo via3 >&3' 3>&1
+    expected_exit_code: 0
+    expected_stdout: "via3\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do; fd 3 is a Unix notion.
+    incompatible_platforms: ["wasi", "windows"]
+
+  - name: "--inherit-fd rejects a descriptor that is not a number"
+    args: ["--inherit-fd", "nope", "-c", "echo hi"]
+    expected_exit_code: 2
+    expected_stdout: ""
+
+  - name: "--enable-highlighting runs a -c command"
+    args: ["--enable-highlighting", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--enable-terminal-integration runs a -c command"
+    args: ["--enable-terminal-integration", "-c", "echo hi"]
+    expected_exit_code: 0
+    expected_stdout: "hi\n"
+
+  - name: "--version wins over a later -c"
+    stdin: |
+      out=$("$BASH" --version -c 'echo ran')
+      echo "status=$?"
+      echo "${out%% *}"
+      case $out in *ran*) echo "ran too" ;; esac
+    expected_exit_code: 0
+    expected_stdout: "status=0\nbrush\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]
+
+  - name: "--version wins over a later short option missing its value"
+    known_failure: true # brush fails with "`-o` needs a value" (exit 2) instead of printing its version
+    stdin: |
+      out=$("$BASH" --version -o 2>/dev/null)
+      echo "status=$?"
+      echo "${out%% *}"
+    expected_exit_code: 0
+    expected_stdout: "status=0\nbrush\n"
+    # Runs brush as a child process, which WASI 0.2 cannot do.
+    incompatible_platforms: ["wasi"]

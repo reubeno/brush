@@ -417,4 +417,50 @@ mod tests {
             );
         }
     }
+
+    /// Each script asks brush itself for its answers.
+    #[test]
+    fn completion_scripts_call_back_into_brush() {
+        use winnow_args::Args as _;
+        use winnow_args::complete::Shell;
+        for &shell in Shell::ALL {
+            assert!(
+                CommandLineArgs::completion_script(shell).contains("brush __complete_word__"),
+                "{shell:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn help_lists_every_flag() {
+        use winnow_args::Args as _;
+        let data = CommandLineArgs::help_data();
+        let help = winnow_args::help::render(data, &[], false);
+        let flags: Vec<_> = data
+            .items
+            .iter()
+            .filter(|item| !item.hide && !item.positional)
+            .collect();
+        assert!(flags.len() > 30, "only {} flags", flags.len());
+        // Each flag starts a row of its own, as `-l, --login` or `--norc`.
+        let has_row = |names: &str| {
+            help.lines().any(|line| {
+                line.trim_start()
+                    .strip_prefix(names)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+            })
+        };
+        for flag in flags {
+            let names: Vec<_> = [
+                flag.short.map(|short| format!("-{short}")),
+                flag.long.map(|long| format!("--{long}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            let names = names.join(", ");
+            assert!(has_row(&names), "no `{names}` row in:\n{help}");
+        }
+        assert!(has_row("--help"), "no `--help` row in:\n{help}");
+    }
 }

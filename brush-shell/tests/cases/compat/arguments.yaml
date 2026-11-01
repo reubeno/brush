@@ -490,3 +490,170 @@ cases:
     args: ["-s", "-s"]
     stdin: |
       echo "count=[$#] all=[$@]"
+
+  #
+  # The shell's own flags. Long options come first in each case: bash reads none after a
+  # short one.
+  #
+
+  - name: "--posix turns on the posix option"
+    args: ["--posix", "-c", "shopt -oq posix"]
+
+  - name: "--noediting runs a -c command"
+    args: ["--noediting", "-c", "echo hi"]
+
+  - name: "repeated --norc and --noprofile"
+    args: ["--norc", "--noprofile", "--norc", "-c", "echo hi"]
+
+  - name: "--init-file names the rc file of an interactive shell"
+    removed_default_args: ["--norc"]
+    ignore_stderr: true # bash warns that it has no job control
+    args: ["--init-file", "testrc", "-i", "-c", 'echo "RC[$RC_MARKER]"']
+
+  - name: "--rcfile names the rc file of an interactive -c shell"
+    removed_default_args: ["--norc"]
+    ignore_stderr: true # bash warns that it has no job control
+    args: ["--rcfile", "testrc", "-i", "-c", 'echo "RC[$RC_MARKER]"']
+
+  - name: "--rcfile with no file name"
+    ignore_stderr: true
+    args: ["--rcfile"]
+
+  - name: "--rcfile does not take an attached file name"
+    known_failure: true # brush accepts `--rcfile=FILE` and runs the command; bash rejects it (exit 2)
+    ignore_stderr: true
+    args: ["--rcfile=testrc", "-c", "echo hi"]
+
+  - name: "an abbreviated long option is rejected"
+    ignore_stderr: true
+    args: ["--nor", "-c", "echo hi"]
+
+  - name: "a value attached to a long switch is rejected"
+    ignore_stderr: true
+    args: ["--norc=1", "-c", "echo hi"]
+
+  - name: "an unknown long option is rejected"
+    ignore_stderr: true
+    args: ["--bogus", "-c", "echo hi"]
+
+  - name: "an unknown short option is rejected"
+    ignore_stderr: true
+    args: ["-Z", "-c", "echo hi"]
+
+  - name: "--version with an unknown long option is rejected"
+    ignore_stderr: true
+    args: ["--version", "--bogus"]
+
+  - name: "--version after the -c command is a positional"
+    args: ["-c", 'echo "0=[$0]"', "--version"]
+
+  - name: "--debug takes no value"
+    known_failure: true # brush's --debug takes an event class, so this fails with "`--debug` needs a value" (exit 2)
+    args: ["--debug", "-c", "echo hi"]
+
+  - name: "-o with an unknown option name"
+    known_failure: true # brush ignores the unknown name and runs the command; bash fails (exit 2)
+    ignore_stderr: true
+    args: ["-o", "nosuch", "-c", "echo after"]
+
+  - name: "-O with an unknown option name"
+    known_failure: true # brush ignores the unknown name and runs the command; bash fails (exit 2)
+    ignore_stderr: true
+    args: ["-O", "nosuch", "-c", "echo after"]
+
+  - name: "-o with no option name lists the options"
+    known_failure: true # brush fails with "`-o` needs a value" (exit 2)
+    args: ["-o"]
+
+  - name: "-O with no option name lists the shopt options"
+    known_failure: true # brush fails with "`-O` needs a value" (exit 2)
+    args: ["-O"]
+
+  - name: "-o followed by -c"
+    ignore_stderr: true
+    args: ["-o", "-c", "echo hi"]
+
+  - name: "-O followed by -c"
+    ignore_stderr: true
+    args: ["-O", "-c", "echo hi"]
+
+  - name: "-O takes its option name from the next word"
+    known_failure: true # brush takes the attached `nullglob` as the option name; bash takes none attached (exit 2)
+    ignore_stderr: true
+    args: ["-Onullglob", "-c", "shopt nullglob"]
+
+  - name: "+O disables extglob"
+    known_failure: true # brush turns extglob on as the shell starts, after the command line is applied
+    args: ["+O", "extglob", "-c", "shopt extglob"]
+
+  - name: "+e disables errexit enabled with -e"
+    known_failure: true # brush accepts only `+o` and `+O`, so `+e` is an unknown flag (exit 2)
+    args: ["-e", "+e", "-c", "false; echo after"]
+
+  - name: "-v prints input as it is read"
+    known_failure: true # brush accepts -v but prints nothing
+    args: ["-v", "-c", "echo hi"]
+
+  - name: "--verbose prints input as it is read"
+    known_failure: true # brush accepts --verbose but prints nothing
+    args: ["--verbose", "-c", "echo hi"]
+
+  # Single-letter `set` options that bash also takes on its command line.
+  - name: "-a on the command line"
+    known_failure: true # brush rejects -a as an unknown flag (exit 2)
+    args: ["-a", "-c", 'echo "$-"']
+
+  - name: "-b on the command line"
+    known_failure: true # brush rejects -b as an unknown flag (exit 2)
+    args: ["-b", "-c", 'echo "$-"']
+
+  - name: "-h on the command line"
+    known_failure: true # brush rejects -h as an unknown flag (exit 2)
+    args: ["-h", "-c", 'echo "$-"']
+
+  - name: "-k on the command line"
+    known_failure: true # brush rejects -k as an unknown flag (exit 2)
+    args: ["-k", "-c", 'echo "$-"']
+
+  - name: "-m on the command line"
+    known_failure: true # brush rejects -m as an unknown flag (exit 2)
+    ignore_stderr: true # bash warns that it has no job control
+    args: ["-m", "-c", 'echo "$-"']
+
+  - name: "-p on the command line"
+    known_failure: true # brush rejects -p as an unknown flag (exit 2)
+    args: ["-p", "-c", 'echo "$-"']
+
+  - name: "-r on the command line"
+    known_failure: true # brush rejects -r as an unknown flag (exit 2)
+    args: ["-r", "-c", 'echo "$-"']
+
+  - name: "-B on the command line"
+    known_failure: true # brush rejects -B as an unknown flag (exit 2)
+    args: ["-B", "-c", 'echo "$-"']
+
+  - name: "-D on the command line"
+    known_failure: true # brush rejects -D as an unknown flag (exit 2)
+    args: ["-D", "-c", 'echo $"hi"']
+
+  - name: "-E on the command line"
+    known_failure: true # brush rejects -E as an unknown flag (exit 2)
+    args: ["-E", "-c", 'echo "$-"']
+
+  - name: "-H on the command line"
+    known_failure: true # brush rejects -H as an unknown flag (exit 2)
+    args: ["-H", "-c", 'echo "$-"']
+
+  - name: "-P on the command line"
+    known_failure: true # brush rejects -P as an unknown flag (exit 2)
+    args: ["-P", "-c", 'echo "$-"']
+
+  - name: "-T on the command line"
+    known_failure: true # brush rejects -T as an unknown flag (exit 2)
+    args: ["-T", "-c", 'echo "$-"']
+
+  - name: "a child shell inherits open file descriptors"
+    known_failure: true # without --inherit-fd, brush gives its shell only 0-2, so `>&3` fails with "bad file descriptor"
+    incompatible_platforms: ["wasi", "windows"] # spawns a child shell; fd 3 is a Unix notion
+    stdin: |
+      "$BASH" -c 'echo via3 >&3' 3>&1

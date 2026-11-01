@@ -10,3 +10,9 @@ cases:
     args:
       - "-c"
       - "shopt -q login_shell"
+
+  - name: "login_shell is on for -l"
+    args:
+      - "-l"
+      - "-c"
+      - "shopt -q login_shell"
