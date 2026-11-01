@@ -158,3 +158,29 @@ cases:
           echo "[bind -S]"
           bind -S | grep "${key_to_bind}"
           echo "bind -S result: ${PIPESTATUS[@]}"
+
+  - name: "bind -m takes each keymap name"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          for keymap in emacs emacs-standard emacs-meta emacs-ctlx vi vi-move vi-command vi-insert; do
+            bind -m "${keymap}" -p >/dev/null
+            echo "${keymap}: $?"
+          done
+          bind -memacs -p >/dev/null; echo "attached: $?"
+          bind -m; echo "no keymap: $?"
+
+  - name: "bind -m with an unknown keymap fails with status 1"
+    known_failure: true # TODO(bind): fails with status 2
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m bogus -p >/dev/null; echo "rc=$?"

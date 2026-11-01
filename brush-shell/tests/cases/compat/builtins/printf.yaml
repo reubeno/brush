@@ -454,6 +454,23 @@ cases:
       printf -vy -- '%s-' -- a
       echo "y=$y"
 
+  - name: "printf -v given more than once keeps the last"
+    stdin: |
+      printf -v x -v y '%s' z; echo "x=[$x] y=[$y] rc=$?"
+      printf -vp -vq '%s' r; echo "p=[$p] q=[$q] rc=$?"
+
+  - name: "printf -v leaves later option-like words as data"
+    stdin: |
+      printf -v x '%s,' -v y -- -x; echo "x=[$x] y=[$y]"
+      printf -v x -- -- a; echo "x=[$x]"
+
+  - name: "printf -v with no format fails"
+    ignore_stderr: true
+    stdin: |
+      printf -v x; echo "rc=$?"
+      printf -v x --; echo "rc=$?"
+      printf -v; echo "rc=$?"
+
   - name: "printf -v with an invalid name fails with status 2"
     ignore_stderr: true
     stdin: |

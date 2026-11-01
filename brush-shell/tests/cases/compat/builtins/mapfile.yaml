@@ -212,3 +212,71 @@ cases:
       ( sleep 0.2; /bin/kill -TERM $$ ) &
       mapfile -t -n 1 a <&3
       echo "not reached"
+
+  #
+  # Option parsing
+  #
+  - name: "mapfile options given more than once keep the last"
+    stdin: |
+      mapfile -t -n 1 -n 2 arr <<< $'a\nb\nc'; declare -p arr
+      mapfile -t -s 1 -s 0 arr <<< $'a\nb'; declare -p arr
+      arr=(x y z); mapfile -t -O 2 -O 1 arr <<< $'a\nb'; declare -p arr
+      mapfile -t -d , -d . arr <<< 'a.b,c'; declare -p arr
+
+  - name: "mapfile with combined and attached short options"
+    stdin: |
+      mapfile -tn2 arr <<< $'a\nb\nc'; declare -p arr
+      mapfile -td, arr <<< 'a,b'; declare -p arr
+      mapfile -t -u3 arr 3<<< $'a\nb'; declare -p arr
+      arr=(x y z); mapfile -t -O+1 arr <<< $'a\nb'; declare -p arr
+      mapfile -t -n +2 arr <<< $'a\nb\nc'; declare -p arr
+      mapfile -t -d - arr <<< 'a-b'; declare -p arr
+
+  - name: "mapfile with -- before the array name"
+    stdin: |
+      mapfile -t -- arr <<< $'a\nb'; declare -p arr
+
+  - name: "mapfile with an unknown option or missing value fails with status 2"
+    ignore_stderr: true
+    stdin: |
+      mapfile -Z arr <<< a; echo "rc=$?"
+      mapfile -t -O; echo "rc=$?"
+
+  - name: "mapfile with an invalid count fails with status 1"
+    known_failure: true # TODO(mapfile): fails with status 2
+    ignore_stderr: true
+    stdin: |
+      mapfile -t -n abc arr <<< a; echo "rc=$?"
+      mapfile -t -n -1 arr <<< a; echo "rc=$?"
+      mapfile -t -s -1 arr <<< a; echo "rc=$?"
+      mapfile -t -s abc arr <<< a; echo "rc=$?"
+      mapfile -t -O abc arr <<< a; echo "rc=$?"
+      mapfile -t -c 0 arr <<< a; echo "rc=$?"
+      mapfile -t -c abc arr <<< a; echo "rc=$?"
+      mapfile -t -u -1 arr <<< a; echo "rc=$?"
+
+  - name: "mapfile -C calls back for each group of lines"
+    known_failure: true # TODO(mapfile): -C and -c are not implemented
+    stdin: |
+      cb() { echo "cb $*"; }
+      mapfile -t -C cb -c 1 arr <<< $'a\nb'; declare -p arr
+
+  - name: "mapfile ignores words after the array name"
+    known_failure: true # TODO(mapfile): an extra word is an error, and later options are parsed
+    ignore_stderr: true
+    stdin: |
+      mapfile -t arr extra <<< a; echo "rc=$?"
+      mapfile -t arr -n 1 <<< $'a\nb'; declare -p arr
+
+  - name: "mapfile into an invalid name fails"
+    known_failure: true # TODO(mapfile): an invalid name is accepted
+    ignore_stderr: true
+    stdin: |
+      mapfile -t 1bad <<< a; echo "rc=$?"
+      mapfile -t -- -x <<< a; echo "rc=$?"
+
+  - name: "mapfile option values may begin with a hyphen"
+    known_failure: true # TODO(mapfile): such a value is taken for an option
+    stdin: |
+      mapfile -t -d -- arr <<< 'a--b'; declare -p arr
+      mapfile -t -s -0 arr <<< $'a\nb'; declare -p arr
