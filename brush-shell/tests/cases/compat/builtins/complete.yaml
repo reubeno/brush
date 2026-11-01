@@ -342,3 +342,93 @@ cases:
       complete -p -D
       complete -p cat
       rm err
+
+  - name: "compopt +o wins over -o in any order and number, for each spec it updates"
+    stdin: |
+      complete -W x a; complete -W y b
+      complete -D -W z; complete -E -W w; complete -I -W v
+      compopt -o nospace +o nospace -o nospace a b
+      compopt +o nospace -o nospace +o nospace -o nospace -o filenames a
+      compopt -D +o nospace -o nospace -o dirnames
+      compopt -E -o nospace -o nospace
+      compopt -I -o default -o nosort +o default
+      complete -p a; complete -p b
+      for flag in -D -E -I; do complete -p $flag; done
+
+  - name: "compopt takes +o and -o with the option name attached"
+    stdin: |
+      complete -o nospace -o filenames -W x cmd
+      compopt +onospace -odirnames cmd; echo "rc=$?"
+      complete -p cmd
+
+  - name: "complete and compopt pick one of -D, -E, and -I, in that order"
+    stdin: |
+      complete -E -I -W x; complete -p
+      complete -r
+      complete -I -D -W y; complete -p
+      complete -r
+      complete -D -W d; complete -E -W e; complete -I -W i
+      compopt -I -E -o nospace; compopt -E -D -o filenames
+      for flag in -D -E -I; do complete -p $flag; done
+
+  - name: "complete takes the last of a repeated option argument"
+    stdin: |
+      complete -W x -W y -F f -F g -P a -P b -S c -S d -G '*.a' -G '*.b' -X p -X q -C c1 -C c2 cmd
+      complete -p cmd
+
+  - name: "complete takes flags clustered and option arguments attached"
+    stdin: |
+      complete -do nospace c1
+      complete -fWab c2
+      complete -Aalias -onospace c3
+      complete -dA function -Wx c4
+      for c in c1 c2 c3 c4; do complete -p $c; done
+
+  - name: "complete -p takes precedence over -r"
+    stdin: |
+      complete -W x c
+      complete -pr c; echo "rc=$?"
+      complete -rp c; echo "rc=$?"
+      complete -p
+
+  - name: "complete and compopt reject unknown options and names"
+    stdin: |
+      complete -W x c
+      for cmd in 'complete -x d' 'complete -A bogus d' 'complete -o bogus d' 'complete -A' \
+          'complete -o' 'complete -W' 'complete -W x -A bogus d' 'compopt -x c' \
+          'compopt -o bogus c' 'compopt +o bogus c' 'compopt +x c' 'compopt -o' 'compopt +o'; do
+        $cmd 2>/dev/null; echo "$cmd: rc=$?"
+      done
+      complete -p
+
+  - name: "compopt takes +D, +E, and +I as -D, -E, and -I"
+    min_oracle_version: "5.3" # not checked against older versions
+    known_failure: true # TODO(compopt): brush rejects +D, +E, and +I as unknown options
+    stdin: |
+      complete -D -W x; complete -E -W y; complete -I -W z
+      compopt +D -o nospace; echo "rc=$?"
+      compopt +E -o nospace; echo "rc=$?"
+      compopt +I +o nospace -o dirnames; echo "rc=$?"
+      for flag in -D -E -I; do complete -p $flag; done
+
+  - name: "complete with options but no names is a usage error"
+    known_failure: true # TODO(complete): brush succeeds, registering nothing
+    stdin: |
+      complete -W x 2>/dev/null; echo "rc=$?"
+      complete -o nospace 2>/dev/null; echo "rc=$?"
+      complete -p
+
+  - name: "complete -F rejects a function name with blanks or metacharacters"
+    min_oracle_version: "5.3" # not checked against older versions
+    known_failure: true # TODO(complete): brush registers the spec with that name
+    stdin: |
+      complete -F 'a b' c1 2>/dev/null; echo "rc=$?"
+      complete -F 'f;g' c2 2>/dev/null; echo "rc=$?"
+      complete -p
+
+  - name: "complete -p shows an empty -F function name unquoted"
+    min_oracle_version: "5.3" # not checked against older versions
+    known_failure: true # TODO(complete): brush shows it as ''
+    stdin: |
+      complete -F '' c
+      complete -p c

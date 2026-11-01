@@ -580,3 +580,76 @@ cases:
     known_failure: true # TODO(compgen): set -o names come out in a different order on each run
     stdin: |
       compgen -A setopt | grep -E '^(allexport|braceexpand|emacs|errexit|errtrace|functrace|hashall|histexpand|history|ignoreeof)$'
+
+  - name: "compgen takes the last of a repeated option argument, and repeated flags"
+    stdin: |
+      compgen -W 'a b' -W 'c d'
+      compgen -W x -P a -P b -S c -S d
+      compgen -ff -W 'xa xb' x
+
+  - name: "compgen takes flags clustered and option arguments attached"
+    stdin: |
+      compgen -Wab
+      compgen -kW 'zz' -- zz
+      compgen -Akeyword -W 'whz' wh
+
+  - name: "compgen takes each shorthand action flag"
+    stdin: |
+      alias zzalias=ls zyalias=pwd
+      export ZZEXP=1
+      zzvar=1
+      zzfunc() { :; }
+      mkdir zzdir
+      touch zzfile
+      compgen -a z | sort; echo "rc=${PIPESTATUS[0]}"
+      compgen -b ech; echo "rc=$?"
+      compgen -d zz; echo "rc=$?"
+      compgen -e ZZ; echo "rc=$?"
+      compgen -f zz | sort
+      compgen -k fu; echo "rc=$?"
+      compgen -v zz; echo "rc=$?"
+      compgen -j; echo "rc=$?"
+      compgen -A function zz; echo "rc=$?"
+      enable -n echo
+      compgen -A disabled ech; echo "rc=$?"
+      compgen -A enabled ech; echo "rc=$?"
+
+  - name: "compgen rejects unknown options and names"
+    stdin: |
+      for cmd in 'compgen -x' 'compgen -A bogus' 'compgen -o bogus' 'compgen -A' 'compgen -o' \
+          'compgen -W' 'compgen -X'; do
+        $cmd 2>/dev/null; echo "$cmd: rc=$?"
+      done
+
+  - name: "compgen ignores words after the first"
+    known_failure: true # TODO(compgen): brush rejects them with a usage error
+    stdin: |
+      compgen -W 'ab ac' a zz; echo "rc=$?"
+      compgen -W 'ab ac' -- a zz; echo "rc=$?"
+
+  - name: "compgen with no options succeeds"
+    known_failure: true # TODO(compgen): brush returns 1
+    stdin: |
+      compgen; echo "rc=$?"
+      compgen x; echo "rc=$?"
+      compgen -- -x; echo "rc=$?"
+      compgen -o nospace x; echo "rc=$?"
+
+  - name: "compgen -F and -C warn that they may not work as expected"
+    known_failure: true # TODO(compgen): brush prints no warning
+    stdin: |
+      strip() { sed -E 's/^.*compgen:/compgen:/'; }
+      f() { COMPREPLY=(a); }
+      compgen -F f 2>&1 | strip
+      compgen -C 'echo b' 2>&1 | strip
+
+  - name: "compgen -A signal lists signals by number, with DEBUG, ERR, and RETURN last"
+    known_failure: true # TODO(compgen): brush sorts the names, so DEBUG and ERR come first, and leaves out RETURN
+    stdin: |
+      compgen -A signal | grep -E '^(EXIT|SIGHUP|SIGINT|SIGKILL|SIGTERM|DEBUG|ERR|RETURN)$'
+
+  - name: "compgen -A variable lists names sorted"
+    known_failure: true # TODO(compgen): variable names come out in a different order on each run
+    stdin: |
+      zv5=1 zv3=1 zv8=1 zv1=1 zv7=1 zv2=1 zv6=1 zv4=1
+      compgen -v zv
