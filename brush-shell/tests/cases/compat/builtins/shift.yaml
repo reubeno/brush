@@ -30,3 +30,11 @@ cases:
     stdin: |
       set -- a b c
       shift -- 2; echo "$? $*"
+
+  - name: "shift with too many arguments abandons the rest of the line"
+    known_failure: true # TODO(shift): a usage error with status 2, and the line goes on
+    ignore_stderr: true
+    stdin: |
+      set -- a b
+      shift 1 2; echo "same line: $?"
+      echo "next line: $? $#"

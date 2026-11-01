@@ -88,3 +88,23 @@ cases:
       dirs -l -p | tail -n 1
       popd -n -n >/dev/null; echo "popd: $?"
       dirs -p | wc -l | tr -d ' '
+
+  - name: "pushd with no directory swaps the top two"
+    known_failure: true # TODO(pushd): a directory is required
+    ignore_stderr: true
+    stdin: |
+      cd /
+      pushd /usr >/dev/null
+      pushd >/dev/null; echo "rc=$?"
+      pwd
+
+  - name: "pushd, popd and dirs take +N and -N"
+    known_failure: true # TODO(dirs): +N and -N are not implemented
+    ignore_stderr: true
+    stdin: |
+      cd /
+      pushd -n /usr >/dev/null
+      dirs -l +1; echo "dirs: $?"
+      dirs -l -0; echo "dirs: $?"
+      popd -n +1 >/dev/null; echo "popd: $?"
+      dirs -l

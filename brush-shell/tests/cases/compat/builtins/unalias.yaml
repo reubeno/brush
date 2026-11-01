@@ -13,3 +13,9 @@ cases:
     stdin: |
       shopt -s expand_aliases
       unalias not_an_alias
+
+  - name: "unalias with no names fails with status 2"
+    known_failure: true # TODO(unalias): succeeds
+    ignore_stderr: true
+    stdin: |
+      unalias; echo "rc=$?"

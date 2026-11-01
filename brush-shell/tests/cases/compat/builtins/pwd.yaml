@@ -74,3 +74,9 @@ cases:
       cd /
       pwd --
       pwd -LP
+
+  - name: "pwd ignores operands"
+    known_failure: true # TODO(pwd): an operand is a usage error
+    stdin: |
+      cd /
+      pwd foo; echo "rc=$?"

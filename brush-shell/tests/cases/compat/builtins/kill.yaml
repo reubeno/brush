@@ -167,3 +167,18 @@ cases:
       kill -HUP 999999; echo "c=$?"
       kill -9 -- 999999; echo "d=$?"
       kill -s HUP -- -999999; echo "e=$?"
+
+  - name: "kill -l with several signals prints each"
+    known_failure: true # TODO(kill): `kill -l` with more than one signal fails as too many jobs
+    stdin: |
+      kill -l 15 9
+
+  - name: "kill -l maps an exit status above 128 to its signal"
+    known_failure: true # TODO(kill): a status above 128 is an invalid signal specification
+    stdin: |
+      kill -l 129
+
+  - name: "kill -l lists the signals in columns"
+    known_failure: true # TODO(kill): one signal a line, not bash's table
+    stdin: |
+      kill -l | head -n 1

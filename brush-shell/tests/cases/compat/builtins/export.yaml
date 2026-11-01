@@ -248,3 +248,16 @@ cases:
       export -n B
       env | grep -c '^B='
       echo "B=$B"
+
+  - name: "export -f with no names lists the exported functions"
+    known_failure: true # TODO(export): lists the exported variables
+    stdin: |
+      f() { echo F; }
+      export -f f
+      export -f | grep -c 'declare -x '
+
+  - name: "export -nf of a name that isn't a function fails with status 1"
+    known_failure: true # TODO(export): fails with status 2
+    ignore_stderr: true
+    stdin: |
+      export -nf nosuchfunction; echo "rc=$?"
