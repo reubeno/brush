@@ -1111,7 +1111,6 @@ cases:
       declare zzo=1; declare +x -x zzo; declare -p zzo
 
   - name: "An attribute given as both - and + is removed"
-    known_failure: true # TODO(declare): with both, brush leaves the attribute as it was
     stdin: |
       declare -x zzx=1; declare -x +x zzx; declare -p zzx
       declare -i zzi=1; declare +i -i zzi; declare -p zzi
@@ -1139,13 +1138,19 @@ cases:
       declare -prt | grep zz | sort
 
   - name: "Display is not filtered by a plus attribute option"
-    # brush treats `+x` as a request for variables lacking the attribute; a shell applies no
-    # filter at all in that case. This affects every attribute, not just the one shown here.
-    known_failure: true
     stdin: |
       declare -x zzex=1
       zzplain=2
       declare +x | grep zz | sort
+
+  - name: "Display is filtered by -X, not +X, when both are given"
+    stdin: |
+      declare -x zzex=1
+      declare -i zzint=2
+      zzplain=3
+      declare -p -x +x | grep zz
+      declare -p +x -x | grep zz
+      declare -p -i +x | grep zz
 
   - name: "Combining -a and -A is rejected"
     # A shell treats `-a` and `-A` together as an invalid option combination. brush accepts it and
@@ -1206,6 +1211,23 @@ cases:
       count_exported
       declare +x -f f; echo "rc=$?"
       count_exported
+
+  - name: "declare -f with both -x and +x leaves a function unexported"
+    stdin: |
+      f() { :; }
+      count_exported() { env | grep -c "^BASH_FUNC_f"; }
+      declare -f -x +x f; echo "rc=$?"
+      count_exported
+      declare -fx f; declare -f +x -x f; echo "rc=$?"
+      count_exported
+
+  - name: "declare -F -x lists only exported functions"
+    known_failure: true # TODO(declare): brush lists every function
+    stdin: |
+      f() { :; }
+      g() { :; }
+      declare -fx g
+      declare -F -x
 
   - name: "declare -f with attribute flags doesn't display the function"
     stdin: |
