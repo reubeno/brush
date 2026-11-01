@@ -40,29 +40,35 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TrapCommand {
                 Self::display_all_handlers(&context)?;
             }
             Ok(ExecutionResult::success())
-        } else if self.args.len() == 1 {
-            // When only a single argument is given, it is assumed to be a signal name
-            // and an indication to remove the handlers for that signal.
-            let signal = self.args[0].as_str();
-            Self::remove_all_handlers(&mut context, signal.parse()?);
-            Ok(ExecutionResult::success())
-        } else if self.args[0] == "-" {
-            // "-" as the first argument indicates that the remaining
-            // arguments are signal names and we need to remove the handlers for them.
-            for signal in &self.args[1..] {
-                Self::remove_all_handlers(&mut context, signal.parse()?);
-            }
-            Ok(ExecutionResult::success())
         } else {
-            let handler = &self.args[0];
+            // A single argument is a signal whose handlers are removed, as are
+            // the signals after a leading "-"; otherwise the first argument is
+            // the handler for the signals after it.
+            let (handler, signals) = match self.args.as_slice() {
+                [first, rest @ ..] if !rest.is_empty() => {
+                    (Some(first.as_str()).filter(|h| *h != "-"), rest)
+                }
+                all => (None, all),
+            };
 
-            let mut signal_types = Vec::with_capacity(self.args.len() - 1);
-            for signal in &self.args[1..] {
-                signal_types.push(signal.parse()?);
+            // An invalid signal is reported and fails the command, but the
+            // valid ones around it are still updated.
+            let mut result = ExecutionResult::success();
+            for signal in signals {
+                match signal.parse() {
+                    Ok(signal) => match handler {
+                        Some(handler) => {
+                            Self::register_handler(&mut context, [signal], handler);
+                        }
+                        None => Self::remove_all_handlers(&mut context, signal),
+                    },
+                    Err(e) => {
+                        writeln!(context.stderr(), "{}: {e}", context.command_name)?;
+                        result = ExecutionResult::general_error();
+                    }
+                }
             }
-
-            Self::register_handler(&mut context, signal_types, handler.as_str());
-            Ok(ExecutionResult::success())
+            Ok(result)
         }
     }
 }

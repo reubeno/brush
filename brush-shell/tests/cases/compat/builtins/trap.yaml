@@ -945,9 +945,17 @@ cases:
       echo not-reached
 
   - name: "trap rejects -- after the action as a signal"
-    known_failure: true # TODO(trap): a -- among the signals is skipped
     stdin: |
       trap 'echo x' -- INT 2>/dev/null; echo "rc=$?"
       trap -p INT
       trap -- 'echo y' INT; echo "rc=$?"
       trap -p INT
+
+  - name: "trap sets and resets the valid signals around an invalid one"
+    ignore_stderr: true
+    stdin: |
+      trap 'echo x' INT BOGUS USR1; echo "set: $?"
+      trap -p INT USR1
+      trap - BOGUS INT; echo "reset: $?"
+      trap -p INT USR1
+      trap 'echo y' EXIT --; echo "exit: $?"
