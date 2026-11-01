@@ -1,16 +1,17 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
     env::{self, EnvironmentLookup, EnvironmentScope},
+    error,
     parser::ast,
     variables,
 };
 
 /// Add or update exported shell variables.
-#[derive(Parser)]
+#[derive(Default, winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ExportCommand {
     /// Names are treated as function names.
     #[arg(short = 'f')]
@@ -27,12 +28,12 @@ pub(crate) struct ExportCommand {
     //
     // Declarations
     //
-    // N.B. These are skipped by clap, but filled in by `impl_parse_args!`.
-    #[clap(skip)]
+    // N.B. These are skipped by winnow-args, but filled in by `impl_parse_args!`.
+    #[arg(skip)]
     declarations: Vec<brush_core::CommandArg>,
 }
 
-brush_clap_adapter::impl_parse_args!(ExportCommand, declarations = declarations);
+brush_winnow_args_adapter::impl_parse_args!(ExportCommand, declarations = declarations);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
     type Error = brush_core::Error;
@@ -42,7 +43,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.declarations.is_empty() {
-            display_all_exported_vars(&context)?;
+            let output = display_all_exported_vars(&context)?;
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
+                }
+            }
             return Ok(ExecutionResult::success());
         }
 
@@ -66,10 +76,7 @@ impl ExportCommand {
     ) -> Result<ExecutionResult, brush_core::Error> {
         match decl {
             brush_core::CommandArg::String(s) => {
-                // See if this is supposed to be a function name.
                 if self.names_are_functions {
-                    // Try to find the function already present; if we find it, then mark it
-                    // exported.
                     if let Some(func) = context.shell.func_mut(s) {
                         if self.unexport {
                             func.unexport();
@@ -80,6 +87,13 @@ impl ExportCommand {
                         writeln!(context.stderr(), "{s}: not a function")?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
+                } else if !s.contains('=') && !brush_core::env::valid_variable_name(s) {
+                    writeln!(
+                        context.stderr(),
+                        "{}: `{s}': not a valid identifier",
+                        context.command_name
+                    )?;
+                    return Ok(ExecutionResult::general_error());
                 }
                 // A word that expanded into an assignment (`export ${v}=x`): the
                 // parser can't see it as one, so it is split here, as bash does.
@@ -97,12 +111,34 @@ impl ExportCommand {
                     return Self::invalid_identifier(context, s);
                 }
                 // Try to find the variable already present; if we find it, then mark it
-                // exported.
-                else if let Some((_, variable)) = context.shell.env_mut().get_mut(s) {
-                    if self.unexport {
-                        variable.unexport();
-                    } else {
-                        variable.export();
+                // exported. For subscripted namerefs (e.g., ref→arr[1]), bash rejects the
+                // target as "not a valid identifier" — export/unexport only applies to
+                // whole variables. For circular namerefs, bash emits a warning and skips.
+                else {
+                    // Check for circular namerefs upfront so we can emit a warning
+                    // (env_mut().get_mut() silently swallows the resolution error).
+                    if let Err(err) = context.shell.env().resolve_nameref(s)
+                        && matches!(err.kind(), error::ErrorKind::CircularNameReference(_))
+                    {
+                        writeln!(context.stderr(), "{}: warning: {err}", context.command_name)?;
+                    } else if let Some(mut resolved) = context.shell.env_mut().get_mut(s) {
+                        if resolved.has_subscript() {
+                            // Resolve the nameref to get the full target string for the error.
+                            let target = context
+                                .shell
+                                .env()
+                                .resolve_nameref_to_name(s)
+                                .unwrap_or_else(|_| s.to_owned());
+                            writeln!(
+                                context.stderr(),
+                                "{}: `{target}': not a valid identifier",
+                                context.command_name
+                            )?;
+                        } else if self.unexport {
+                            resolved.base_var_mut().unexport();
+                        } else {
+                            resolved.base_var_mut().export();
+                        }
                     }
                 }
             }
@@ -160,12 +196,12 @@ impl ExportCommand {
         // bare `name+=value`. update_or_add always replaces, so when the
         // variable already exists honor the append here. A missing variable
         // falls through: appending to nothing is a plain assignment.
-        if append && let Some((_, variable)) = context.shell.env_mut().get_mut(name) {
-            variable.assign(value, true)?;
+        if append && let Some(mut resolved) = context.shell.env_mut().get_mut(name) {
+            resolved.base_var_mut().assign(value, true)?;
             if self.unexport {
-                variable.unexport();
+                resolved.base_var_mut().unexport();
             } else {
-                variable.export();
+                resolved.base_var_mut().export();
             }
             return Ok(());
         }
@@ -190,18 +226,19 @@ impl ExportCommand {
 
 fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-) -> Result<(), brush_core::Error> {
-    // Enumerate variables, sorted by key.
+) -> Result<Vec<u8>, brush_core::Error> {
+    let mut output = Vec::new();
+
     for (name, variable) in context.shell.env().iter().sorted_by_key(|v| v.0) {
         if variable.is_exported() {
             let value = variable.value().try_get_cow_str(context.shell);
             if let Some(value) = value {
-                writeln!(context.stdout(), "declare -x {name}=\"{value}\"")?;
+                writeln!(output, "declare -x {name}=\"{value}\"")?;
             } else {
-                writeln!(context.stdout(), "declare -x {name}")?;
+                writeln!(output, "declare -x {name}")?;
             }
         }
     }
 
-    Ok(())
+    Ok(output)
 }

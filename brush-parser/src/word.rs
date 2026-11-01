@@ -15,7 +15,30 @@ use std::fmt::Display;
 use crate::ParserOptions;
 use crate::SourceSpan;
 use crate::ast;
+use crate::cache;
 use crate::error;
+
+#[cfg(feature = "winnow-parser")]
+mod winnow_str;
+
+/// Whether the winnow word grammar parses for these options.
+#[cfg(feature = "winnow-parser")]
+const fn winnow(options: &ParserOptions) -> bool {
+    matches!(options.parser_impl, crate::ParserImpl::Winnow)
+}
+
+/// Runs the winnow grammar when the options ask for it; `None` sends the word to the PEG
+/// grammar, which then reports the error a word it cannot parse has.
+macro_rules! try_winnow {
+    ($options:expr, $parse:expr) => {
+        #[cfg(feature = "winnow-parser")]
+        if winnow($options) {
+            if let Some(parsed) = $parse {
+                return Ok(parsed);
+            }
+        }
+    };
+}
 
 /// Encapsulates a `WordPiece` together with its position in the string it came from.
 #[derive(Clone, Debug)]
@@ -527,23 +550,27 @@ pub enum BraceExpressionMember {
 ///
 /// * `word` - The word to parse.
 /// * `options` - The parser options to use.
+// The cache is per thread: one shared behind a mutex stalled many shells
+// parsing at once on many threads.
 pub fn parse(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    cacheable_parse(word, options)
+    thread_local! {
+        static CACHE: cache::Cache<(String, ParserOptions), Vec<WordPieceWithSource>> =
+            cache::new();
+    }
+    cache::get_or_parse(&CACHE, (word.to_owned(), options.clone()), || {
+        uncached_parse(word, options)
+    })
 }
 
-#[cached::macros::cached(
-    max_size = 64,
-    key = "(String, ParserOptions)",
-    convert = r#"{ (word.to_owned(), options.to_owned()) }"#
-)]
-fn cacheable_parse(
+fn uncached_parse(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
     tracing::debug!(target: "expansion", "Parsing word '{}'", word);
+    try_winnow!(options, winnow_str::parse(word, options));
 
     let pieces = expansion_parser::unexpanded_word(word, options)
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))?;
@@ -563,6 +590,7 @@ pub fn parse_heredoc(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
+    try_winnow!(options, winnow_str::parse_heredoc(word, options));
     expansion_parser::unexpanded_heredoc_word(word, options)
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
 }
@@ -577,6 +605,7 @@ pub fn parse_parameter(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Parameter, error::WordParseError> {
+    try_winnow!(options, winnow_str::parse_parameter(word, options));
     expansion_parser::parameter(word, options)
         .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err.into()))
 }
@@ -591,6 +620,10 @@ pub fn parse_brace_expansions(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Option<Vec<BraceExpressionOrText>>, error::WordParseError> {
+    try_winnow!(
+        options,
+        winnow_str::parse_brace_expansions(word, options).ok()
+    );
     expansion_parser::brace_expansions(word, options)
         .map_err(|err| error::WordParseError::BraceExpansion(word.to_owned(), err.into()))
 }
@@ -608,6 +641,7 @@ pub fn parse_scalar_assignment(
     word: &str,
     options: &ParserOptions,
 ) -> Result<ast::Assignment, error::WordParseError> {
+    try_winnow!(options, winnow_str::parse_scalar_assignment(word, options));
     expansion_parser::name_equals_scalar_value(word, options)
         .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
 }
@@ -643,8 +677,18 @@ pub(crate) fn parse_array_assignment(
     elements: &[&String],
     options: &ParserOptions,
 ) -> Result<ast::Assignment, &'static str> {
-    let (assignment_name, append) =
-        expansion_parser::name_equals(word, options).map_err(|_| "not array assignment word")?;
+    #[cfg(feature = "winnow-parser")]
+    let parsed = winnow(options)
+        .then(|| winnow_str::parse_name_equals(word, options))
+        .flatten();
+    #[cfg(not(feature = "winnow-parser"))]
+    let parsed = None;
+    let (assignment_name, append) = match parsed {
+        Some(parsed) => parsed,
+        None => {
+            expansion_parser::name_equals(word, options).map_err(|_| "not array assignment word")?
+        }
+    };
 
     Ok(ast::Assignment {
         name: assignment_name,
@@ -705,8 +749,17 @@ fn parse_array_elements<'a>(
     elements
         .into_iter()
         .map(|element| {
-            let (key, value) = expansion_parser::literal_array_element(element, options)
-                .map_err(|_| "invalid array element in literal")?;
+            #[cfg(feature = "winnow-parser")]
+            let parsed = winnow(options)
+                .then(|| winnow_str::parse_literal_array_element(element))
+                .flatten();
+            #[cfg(not(feature = "winnow-parser"))]
+            let parsed = None;
+            let (key, value) = match parsed {
+                Some(parsed) => parsed,
+                None => expansion_parser::literal_array_element(element, options)
+                    .map_err(|_| "invalid array element in literal")?,
+            };
             Ok((
                 key.map(|key| ast::Word::new(key.as_str())),
                 ast::Word::new(value.as_str()),
@@ -1322,6 +1375,61 @@ mod tests {
             input: word,
             result: parsed,
         })
+    }
+
+    /// The PEG and winnow word grammars agree, errors included, on random words over the
+    /// characters the grammar cares about.
+    #[cfg(feature = "winnow-parser")]
+    #[test]
+    fn the_two_word_grammars_agree() {
+        let peg = ParserOptions::default();
+        let winnow = ParserOptions {
+            parser_impl: crate::ParserImpl::Winnow,
+            ..ParserOptions::default()
+        };
+        let alphabet: Vec<char> = "ab0_ $'\"`\\{}()[],:;/#%^?+=-!@*~.\n".chars().collect();
+        let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for _ in 0..20_000 {
+            let len = usize::try_from(next() % 12).unwrap() + 1;
+            let word: String = (0..len)
+                .map(|_| alphabet[usize::try_from(next() % alphabet.len() as u64).unwrap()])
+                .collect();
+            // The PEG grammar panics on an increment past `i64` (see the brace tests).
+            if word.contains("..") {
+                continue;
+            }
+            assert_eq!(
+                format!("{:?}", parse(&word, &peg)),
+                format!("{:?}", parse(&word, &winnow)),
+                "{word:?}"
+            );
+            assert_eq!(
+                format!("{:?}", parse_heredoc(&word, &peg)),
+                format!("{:?}", parse_heredoc(&word, &winnow)),
+                "{word:?}"
+            );
+            assert_eq!(
+                format!("{:?}", parse_parameter(&word, &peg)),
+                format!("{:?}", parse_parameter(&word, &winnow)),
+                "{word:?}"
+            );
+            assert_eq!(
+                format!("{:?}", parse_brace_expansions(&word, &peg)),
+                format!("{:?}", parse_brace_expansions(&word, &winnow)),
+                "{word:?}"
+            );
+            assert_eq!(
+                format!("{:?}", parse_scalar_assignment(&word, &peg)),
+                format!("{:?}", parse_scalar_assignment(&word, &winnow)),
+                "{word:?}"
+            );
+        }
     }
 
     #[test]

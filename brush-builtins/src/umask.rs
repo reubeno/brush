@@ -1,12 +1,12 @@
 use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
-use clap::Parser;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 use nix::sys::stat::Mode;
 use std::io::Write;
 
 /// Manage the process umask.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct UmaskCommand {
     /// If MODE is omitted, output in a form that may be reused as input.
     #[arg(short = 'p')]
@@ -17,10 +17,11 @@ pub(crate) struct UmaskCommand {
     symbolic_output: bool,
 
     /// Mode mask.
+    #[arg(positional)]
     mode: Option<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(UmaskCommand);
+brush_winnow_args_adapter::impl_parse_args!(UmaskCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
     type Error = brush_core::Error;
@@ -48,10 +49,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
                 std::format!("{umask:04o}")
             };
 
+            let mut output = Vec::new();
             if self.print_roundtrippable {
-                writeln!(context.stdout(), "umask {formatted}")?;
+                writeln!(output, "umask {formatted}")?;
             } else {
-                writeln!(context.stdout(), "{formatted}")?;
+                writeln!(output, "{formatted}")?;
+            }
+
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
             }
         }
 

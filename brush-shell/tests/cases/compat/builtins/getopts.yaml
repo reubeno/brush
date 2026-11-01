@@ -456,7 +456,6 @@ cases:
       echo "OPTIND: ${OPTIND}"
 
   - name: "getopts writes through nameref"
-    known_failure: true
     stdin: |
       declare -n ref=result
       getopts "a:b" ref -a value
@@ -466,7 +465,6 @@ cases:
       echo "OPTARG: ${OPTARG}"
 
   - name: "getopts writes through subscripted nameref"
-    known_failure: true
     stdin: |
       arr=(x x x)
       declare -n ref='arr[1]'
@@ -485,6 +483,13 @@ cases:
     stdin: |
       getopts --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(getopts --help 2>/dev/null) ]] && echo "help on stdout"
+
+  - name: "getopts takes --help after its optstring as an argument"
+    stdin: |
+      set -- --help
+      getopts h opt "$@" 2>/dev/null; echo "rc=$? opt=$opt"
+      OPTIND=1
+      getopts ab opt -b --help; echo "rc=$? opt=$opt"
 
   - name: "getopts rejects a name that isn't an identifier"
     stdin: |

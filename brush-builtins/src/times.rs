@@ -1,18 +1,18 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, timing};
 
 /// Report on usage time.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct TimesCommand {
     /// Operands, which are ignored. Options before the first operand are
     /// still misuse; everything after it is an operand.
-    #[arg(hide = true, trailing_var_arg = true)]
+    #[arg(positional, stop_flags, hide)]
     _operands: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(TimesCommand);
+brush_winnow_args_adapter::impl_parse_args!(TimesCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
     type Error = brush_core::Error;
@@ -21,9 +21,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
+        let mut output = Vec::new();
+
         let (self_user, self_system) = brush_core::sys::resource::get_self_user_and_system_time()?;
         writeln!(
-            context.stdout(),
+            output,
             "{} {}",
             timing::format_duration_non_posixly(&self_user),
             timing::format_duration_non_posixly(&self_system),
@@ -32,11 +34,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TimesCommand {
         let (children_user, children_system) =
             brush_core::sys::resource::get_children_user_and_system_time()?;
         writeln!(
-            context.stdout(),
+            output,
             "{} {}",
             timing::format_duration_non_posixly(&children_user),
             timing::format_duration_non_posixly(&children_system),
         )?;
+
+        if let Some(mut stdout) = context.stdout_async() {
+            stdout.write_all(&output).await?;
+            stdout.flush().await?;
+        } else {
+            context.stdout().write_all(&output)?;
+            context.stdout().flush()?;
+        }
 
         Ok(ExecutionResult::success())
     }

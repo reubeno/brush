@@ -76,14 +76,26 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HistoryCommand {
             time_format: context.shell.history_time_format(),
         };
 
-        let stdout = context.stdout();
         let stderr = context.stderr();
+        let mut output = Vec::new();
 
-        if let Some(history) = context.shell.history_mut() {
-            self.execute_with_history(history, &config, stdout, stderr)
+        let result = if let Some(history) = context.shell.history_mut() {
+            self.execute_with_history(history, &config, &mut output, stderr)
         } else {
             Err(brush_core::ErrorKind::HistoryNotEnabled.into())
+        };
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
         }
+
+        result
     }
 }
 

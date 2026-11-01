@@ -1,26 +1,30 @@
 use std::io::{Read, Write};
 
-use clap::Parser;
-
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
 
 /// Read lines from standard input into an indexed array variable.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(
+    validate = MapFileCommand::check_counts,
+    disable_help_short,
+    disable_version_flag,
+    disable_help_subcommand
+)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
     #[arg(short = 'd')]
     delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default_value_t = 0)]
+    #[arg(short = 'n', default = "0")]
     max_count: i64,
 
     /// Index into array at which to start assignment.
-    #[arg(short = 'O', allow_hyphen_values = true)]
+    #[arg(short = 'O', allow_negative_numbers)]
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default_value_t = 0, value_parser = clap::value_parser!(i64).range(0..))]
+    #[arg(short = 's', default = "0")]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -28,7 +32,7 @@ pub(crate) struct MapFileCommand {
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default_value_t = 0)]
+    #[arg(short = 'u', default = "0")]
     fd: brush_core::ShellFd,
 
     /// Name of function to call for each group of lines.
@@ -36,15 +40,32 @@ pub(crate) struct MapFileCommand {
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default_value_t = 5000, value_parser = clap::value_parser!(i64).range(1..))]
+    #[arg(short = 'c', default = "5000")]
     callback_group_size: i64,
 
     /// Name of array to read into.
-    #[arg(default_value = "MAPFILE")]
+    #[arg(positional, default = "MAPFILE")]
     array_var_name: String,
 }
 
-brush_clap_adapter::impl_parse_args!(MapFileCommand);
+impl MapFileCommand {
+    /// `-s` counts from 0, and `-c` from 1.
+    fn check_counts(&self) -> Result<(), winnow_args::Error> {
+        let out_of_range = |flag: &str, value: i64| {
+            let value = value.to_string();
+            winnow_args::Error::invalid_value(0, flag, value.as_bytes(), "out of range")
+        };
+        if self.skip_count < 0 {
+            return Err(out_of_range("-s", self.skip_count));
+        }
+        if self.callback_group_size < 1 {
+            return Err(out_of_range("-c", self.callback_group_size));
+        }
+        Ok(())
+    }
+}
+
+brush_winnow_args_adapter::impl_parse_args!(MapFileCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
     type Error = brush_core::Error;
@@ -68,8 +89,8 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             }
         }
 
-        if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
-            if var.value().is_associative_array() {
+        if let Some(resolved) = context.shell.env().get(&self.array_var_name) {
+            if resolved.base_var().value().is_associative_array() {
                 writeln!(
                     context.stderr(),
                     "{}: {}: not an indexed array",
@@ -80,12 +101,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             }
         }
 
-        let input_file = context
-            .try_fd(self.fd)
+        let input_file_async = context
+            .try_fd_async(self.fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
 
-        // Read!
-        let lines = self.read_lines(input_file)?;
+        // For terminals, use blocking I/O (terminal mode setup requires it)
+        // For files/pipes, use async I/O for better performance
+        let lines = if input_file_async.is_terminal() {
+            let input_file = context
+                .try_fd(self.fd)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
+            self.read_lines(input_file)?
+        } else {
+            self.read_lines_async(input_file_async).await?
+        };
 
         if let Some(origin) = self.origin {
             // -O: preserve existing array, assign at offset.
@@ -141,6 +170,64 @@ impl MapFileCommand {
 
             loop {
                 match input_file.read(&mut buf) {
+                    Ok(0) => break,                                         // End of input
+                    Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
+                    Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
+                    Ok(1) => {
+                        let byte = buf[0];
+                        line.push(byte);
+                        if byte == delimiter {
+                            saw_delimiter = true;
+                            break;
+                        }
+                    }
+                    Ok(_) => unreachable!("input can only be 0, 1, or error"),
+                    Err(e) => return Err(e.into()),
+                }
+            }
+
+            if line.is_empty() && !saw_delimiter {
+                break;
+            }
+
+            if read_count < self.skip_count {
+                read_count += 1;
+                continue;
+            }
+
+            if self.remove_delimiter && line.ends_with(&[delimiter]) {
+                line.pop();
+            }
+
+            let line_str = String::from_utf8_lossy(&line).to_string();
+
+            entries.push(line_str);
+        }
+
+        Ok(entries)
+    }
+
+    async fn read_lines_async(
+        &self,
+        mut input_file: brush_core::openfiles::async_file::AsyncOpenFile,
+    ) -> Result<Vec<String>, brush_core::Error> {
+        let mut entries = vec![];
+        let mut read_count = 0;
+        let max_count = self.max_count.try_into()?;
+        let delimiter = match &self.delimiter {
+            Some(d) if d.is_empty() => b'\0',
+            Some(d) => d.as_bytes().first().copied().unwrap_or(b'\n'),
+            None => b'\n',
+        };
+
+        let mut buf = [0u8; 1];
+
+        while max_count == 0 || entries.len() < max_count {
+            let mut line = vec![];
+            let mut saw_delimiter = false;
+
+            loop {
+                match input_file.read(&mut buf).await {
                     Ok(0) => break,                                         // End of input
                     Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
                     Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D

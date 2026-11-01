@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
@@ -7,18 +6,19 @@ use brush_core::{ExecutionResult, builtins};
 use crate::write_alias_definition;
 
 /// Manage aliases within the shell.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct AliasCommand {
     /// Print all defined aliases in a reusable format.
     #[arg(short = 'p')]
     print: bool,
 
     /// List of aliases to display or update.
-    #[arg(name = "name[=value]")]
+    #[arg(positional, value_name = "name[=value]")]
     aliases: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(AliasCommand);
+brush_winnow_args_adapter::impl_parse_args!(AliasCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for AliasCommand {
     type Error = brush_core::Error;
@@ -28,11 +28,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for AliasCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
         if self.print || self.aliases.is_empty() {
             // Aliases are stored unordered; bash lists them sorted by name.
             for (name, value) in context.shell.aliases().iter().sorted() {
-                write_alias_definition(context.stdout(), name, value)?;
+                write_alias_definition(&mut output, name, value)?;
             }
         } else {
             for alias in &self.aliases {
@@ -44,16 +46,32 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for AliasCommand {
                         .aliases_mut()
                         .insert(name.to_owned(), unexpanded_value.to_owned());
                 } else if let Some(value) = context.shell.aliases().get(alias) {
-                    write_alias_definition(context.stdout(), alias, value)?;
+                    write_alias_definition(&mut output, alias, value)?;
                 } else {
                     writeln!(
-                        context.stderr(),
+                        stderr_output,
                         "{}: {alias}: not found",
                         context.command_name
                     )?;
                     exit_code = ExecutionResult::general_error();
                 }
             }
+        }
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
         }
 
         Ok(exit_code)

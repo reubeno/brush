@@ -1,16 +1,20 @@
 use brush_core::{ExecutionResult, builtins, error, history};
-use clap::Parser;
 use std::io::Write;
 
 /// Process command history list.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct FcCommand {
+    /// Editor to use (only relevant when not listing or substituting).
+    #[arg(short = 'e', value_name = "ENAME")]
+    editor: Option<String>,
+
     /// List commands instead of editing them.
     #[arg(short = 'l')]
     list: bool,
 
     /// Suppress line numbers when listing.
-    #[arg(short = 'n', requires = "list")]
+    #[arg(short = 'n', requires = "-l")]
     no_line_numbers: bool,
 
     /// Reverse the order of commands.
@@ -21,20 +25,16 @@ pub(crate) struct FcCommand {
     #[arg(short = 's')]
     substitute: bool,
 
-    /// Editor to use (only relevant when not listing or substituting).
-    #[arg(short = 'e', value_name = "ENAME")]
-    editor: Option<String>,
-
     /// First command in range (number or string prefix).
-    #[arg(value_name = "FIRST", allow_hyphen_values = true)]
+    #[arg(positional, value_name = "FIRST", allow_negative_numbers)]
     first: Option<String>,
 
     /// Last command in range (number or string prefix).
-    #[arg(value_name = "LAST", allow_hyphen_values = true)]
+    #[arg(positional, value_name = "LAST", allow_negative_numbers)]
     last: Option<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(FcCommand);
+brush_winnow_args_adapter::impl_parse_args!(FcCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FcCommand {
     type Error = brush_core::Error;
@@ -48,7 +48,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FcCommand {
         }
 
         if self.list {
-            return self.do_list(&context);
+            return self.do_list(&context).await;
         }
 
         error::unimp("fc editor mode is not yet implemented")
@@ -56,7 +56,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FcCommand {
 }
 
 impl FcCommand {
-    fn do_list(
+    async fn do_list(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, brush_core::Error> {
@@ -67,7 +67,9 @@ impl FcCommand {
 
         let (first_idx, last_idx, reverse) = self.resolve_range(history)?;
 
-        // Determine the order of iteration
+        // Buffer output
+        let mut output = Vec::new();
+
         let indices: Vec<usize> = if reverse {
             (first_idx..=last_idx).rev().collect()
         } else {
@@ -77,12 +79,21 @@ impl FcCommand {
         for idx in indices {
             if let Some(item) = history.get(idx) {
                 if self.no_line_numbers {
-                    // With -n, bash still outputs a tab before the command
-                    writeln!(context.stdout(), "\t {}", item.command_line)?;
+                    writeln!(output, "\t {}", item.command_line)?;
                 } else {
-                    // Match bash's fc format: number, tab, command
-                    writeln!(context.stdout(), "{}\t {}", idx + 1, item.command_line)?;
+                    writeln!(output, "{}\t {}", idx + 1, item.command_line)?;
                 }
+            }
+        }
+
+        // Write output async
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
             }
         }
 

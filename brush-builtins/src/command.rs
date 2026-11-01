@@ -1,4 +1,3 @@
-use clap::Parser;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -8,27 +7,30 @@ use crate::lookup::{self, Resolved};
 use crate::write_alias_definition;
 
 /// Directly invokes an external command, without going through typical search order.
-#[derive(Default, Parser)]
+#[derive(Default, winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
     #[arg(short = 'p')]
-    pub use_default_path: bool,
-
-    /// Display a short description of the command.
-    #[arg(short = 'v', overrides_with = "print_verbose_description")]
-    pub print_description: bool,
+    pub(crate) use_default_path: bool,
 
     /// Display a more verbose description of the command.
-    #[arg(short = 'V', overrides_with = "print_description")]
-    pub print_verbose_description: bool,
+    #[arg(short = 'V', overrides = "-v")]
+    pub(crate) print_verbose_description: bool,
+
+    /// Display a short description of the command.
+    #[arg(short = 'v', overrides = "-V")]
+    pub(crate) print_description: bool,
 
     /// Command and arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    pub command_and_args: Vec<String>,
+    #[arg(positional, double_dash = "automatic")]
+    pub(crate) command_and_args: Vec<String>,
 }
 
+brush_winnow_args_adapter::impl_parse_args!(CommandCommand);
+
 impl CommandCommand {
-    fn command(&self) -> Option<&str> {
+    fn command_word(&self) -> Option<&str> {
         self.command_and_args.first().map(|s| s.as_str())
     }
 
@@ -38,7 +40,7 @@ impl CommandCommand {
     }
 
     /// Describes every name given, as `-v`/`-V` do; succeeds if any name was found.
-    fn describe_names<SE: brush_core::ShellExtensions>(
+    async fn describe_names<SE: brush_core::ShellExtensions>(
         &self,
         context: &brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, brush_core::Error> {
@@ -52,6 +54,7 @@ impl CommandCommand {
             ..Default::default()
         };
 
+        let mut output = Vec::new();
         let mut any_found = false;
         for name in &self.command_and_args {
             let Some(mut found) = lookup::resolve(context.shell, name, &options)
@@ -59,6 +62,8 @@ impl CommandCommand {
                 .next()
             else {
                 if self.print_verbose_description {
+                    // Keep the two streams in loop order when they're merged (`2>&1`).
+                    crate::flush_buffered_stdout(context, &mut output).await?;
                     writeln!(context.stderr(), "command: {name}: not found")?;
                 }
                 continue;
@@ -69,13 +74,13 @@ impl CommandCommand {
                 // Display in a form that could be reused as shell input.
                 match &found {
                     Resolved::Alias(target) => {
-                        write_alias_definition(context.stdout(), name, target)?;
+                        write_alias_definition(&mut output, name, target)?;
                     }
                     Resolved::Keyword | Resolved::Function(_) | Resolved::Builtin => {
-                        writeln!(context.stdout(), "{name}")?;
+                        writeln!(output, "{name}")?;
                     }
                     Resolved::File { path, .. } => {
-                        writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                        writeln!(output, "{}", path.to_string_lossy())?;
                     }
                 }
             } else {
@@ -94,9 +99,11 @@ impl CommandCommand {
                     *path = context.shell.absolute_path(relative);
                 }
 
-                lookup::describe(context.stdout(), name, &found)?;
+                lookup::describe(&mut output, name, &found)?;
             }
         }
+
+        crate::flush_buffered_stdout(context, &mut output).await?;
 
         if any_found {
             Ok(ExecutionResult::success())
@@ -132,8 +139,6 @@ impl CommandCommand {
     }
 }
 
-brush_clap_adapter::impl_parse_args!(CommandCommand);
-
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CommandCommand {
     type Error = brush_core::Error;
 
@@ -142,11 +147,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CommandCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.print_description || self.print_verbose_description {
-            return self.describe_names(&context);
+            return self.describe_names(&context).await;
         }
 
         // Silently exit if no command was provided.
-        let Some(command_name) = self.command() else {
+        let Some(command_name) = self.command_word() else {
             return Ok(ExecutionResult::success());
         };
 

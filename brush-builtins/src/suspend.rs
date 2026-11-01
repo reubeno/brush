@@ -1,17 +1,17 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Suspend the shell.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct SuspendCommand {
     /// Force suspend login shells.
     #[arg(short = 'f')]
     force: bool,
 }
 
-brush_clap_adapter::impl_parse_args!(SuspendCommand);
+brush_winnow_args_adapter::impl_parse_args!(SuspendCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SuspendCommand {
     type Error = brush_core::Error;
@@ -21,7 +21,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SuspendCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if context.shell.options().login_shell && !self.force {
-            writeln!(context.stderr(), "login shell cannot be suspended")?;
+            let mut stderr_output = Vec::new();
+            writeln!(stderr_output, "login shell cannot be suspended")?;
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 

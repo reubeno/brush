@@ -1,35 +1,36 @@
-use clap::Parser;
 use std::{io::Write, path::PathBuf};
 
 use brush_core::{ExecutionResult, builtins};
 
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct HashCommand {
-    /// Remove entries associated with the given names.
-    #[arg(short = 'd')]
-    remove: bool,
-
     /// Display paths in a format usable for input.
     #[arg(short = 'l')]
     display_as_usable_input: bool,
+
+    /// Remove all entries.
+    #[arg(short = 'r')]
+    remove_all: bool,
 
     /// The path to associate with the names.
     #[arg(short = 'p', value_name = "PATH")]
     path_to_use: Option<PathBuf>,
 
-    /// Remove all entries.
-    #[arg(short = 'r')]
-    remove_all: bool,
+    /// Remove entries associated with the given names.
+    #[arg(short = 'd')]
+    remove: bool,
 
     /// Display the paths associated with the names.
     #[arg(short = 't')]
     display_paths: bool,
 
     /// Names to process.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(HashCommand);
+brush_winnow_args_adapter::impl_parse_args!(HashCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HashCommand {
     type Error = brush_core::Error;
@@ -40,13 +41,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HashCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut result = ExecutionResult::success();
         let cmd = &context.command_name;
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
 
         if self.remove_all {
             context.shell.program_location_cache_mut().reset();
         } else if self.remove {
             for name in &self.names {
                 if !context.shell.program_location_cache_mut().unset(name) {
-                    writeln!(context.stderr(), "{cmd}: {name}: not found")?;
+                    writeln!(stderr_output, "{cmd}: {name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -54,11 +57,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HashCommand {
             for name in &self.names {
                 if let Some(path) = context.shell.program_location_cache().get(name) {
                     if self.display_as_usable_input {
-                        writeln!(
-                            context.stdout(),
-                            "builtin hash -p {} {name}",
-                            path.to_string_lossy()
-                        )?;
+                        writeln!(output, "builtin hash -p {} {name}", path.to_string_lossy())?;
                     } else {
                         let mut prefix = String::new();
 
@@ -67,14 +66,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HashCommand {
                             prefix.push('\t');
                         }
 
-                        writeln!(
-                            context.stdout(),
-                            "{prefix}{}",
-                            path.to_string_lossy().as_ref()
-                        )?;
+                        writeln!(output, "{prefix}{}", path.to_string_lossy().as_ref())?;
                     }
                 } else {
-                    writeln!(context.stderr(), "{cmd}: {name}: not found")?;
+                    writeln!(stderr_output, "{cmd}: {name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -85,11 +80,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HashCommand {
 
             for name in &self.names {
                 if is_dir {
-                    writeln!(
-                        context.stderr(),
-                        "{cmd}: {}: Is a directory",
-                        path.display()
-                    )?;
+                    writeln!(stderr_output, "{cmd}: {}: Is a directory", path.display())?;
                     result = ExecutionResult::general_error();
                     continue;
                 }
@@ -101,24 +92,36 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HashCommand {
             }
         } else {
             for name in &self.names {
-                // Remove from the cache if already hashed.
                 let _ = context.shell.program_location_cache_mut().unset(name);
 
-                // Names with slashes are accepted silently
                 if name.contains('/') {
                     continue;
                 }
 
-                // Hash the path
                 if context
                     .shell
                     .find_first_executable_in_path_using_cache(name)
                     .is_none()
                 {
-                    writeln!(context.stderr(), "{cmd}: {name}: not found")?;
+                    writeln!(stderr_output, "{cmd}: {name}: not found")?;
                     result = ExecutionResult::general_error();
                 }
             }
+        }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
+        if !stderr_output.is_empty() {
+            context.stderr().write_all(&stderr_output)?;
+            context.stderr().flush()?;
         }
 
         Ok(result)

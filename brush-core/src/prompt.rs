@@ -1,5 +1,5 @@
 use crate::{
-    ExecutionParameters, error, expansion, extensions,
+    ExecutionParameters, cache, error, expansion, extensions,
     shell::Shell,
     sys::{self, users},
 };
@@ -15,7 +15,7 @@ pub(crate) async fn expand_prompt(
     spec: &str,
 ) -> Result<String, error::Error> {
     // Parse the prompt spec into its pieces.
-    let prompt_pieces = parse_prompt(spec)?;
+    let prompt_pieces = parse_prompt(spec, shell.parser_options().parser_impl)?;
 
     // Now, render each piece.
     let mut formatted_prompt = String::new();
@@ -59,11 +59,19 @@ pub(crate) async fn expand_prompt(
     Ok(formatted_prompt)
 }
 
-#[cached::macros::cached(max_size = 64, key = "String", convert = r#"{ spec.to_owned() }"#)]
 fn parse_prompt(
     spec: &str,
+    parser_impl: brush_parser::ParserImpl,
 ) -> Result<Vec<brush_parser::prompt::PromptPiece>, brush_parser::WordParseError> {
-    brush_parser::prompt::parse(spec)
+    thread_local! {
+        static CACHE: cache::Cache<
+            (String, brush_parser::ParserImpl),
+            Vec<brush_parser::prompt::PromptPiece>,
+        > = cache::new();
+    }
+    cache::get_or_parse(&CACHE, (spec.to_owned(), parser_impl), || {
+        brush_parser::prompt::parse_with(spec, parser_impl)
+    })
 }
 
 fn format_prompt_piece(

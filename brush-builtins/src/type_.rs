@@ -1,13 +1,12 @@
 use std::io::Write;
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins};
 
 use crate::lookup::{self, Resolved};
 
 /// Inspect the type of a named shell item.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct TypeCommand {
     /// Display all locations of the specified name, not just the first.
     #[arg(short = 'a')]
@@ -31,10 +30,11 @@ pub(crate) struct TypeCommand {
     type_only: bool,
 
     /// Names to search for.
+    #[arg(positional)]
     names: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(TypeCommand);
+brush_winnow_args_adapter::impl_parse_args!(TypeCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
     type Error = brush_core::Error;
@@ -50,12 +50,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
             all_locations: self.all_locations,
             path_dirs: None,
         };
+        let mut output = Vec::new();
 
         for name in &self.names {
             let resolved_types = lookup::resolve(context.shell, name, &options);
 
             if resolved_types.is_empty() {
                 if !self.type_only && !self.force_path_search && !self.show_path_only {
+                    // Keep the two streams in loop order when they're merged (`2>&1`).
+                    crate::flush_buffered_stdout(&context, &mut output).await?;
                     writeln!(context.stderr(), "type: {name}: not found")?;
                 }
 
@@ -69,22 +72,22 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
                 } else if self.type_only {
                     match &resolved_type {
                         Resolved::Alias(_) => {
-                            writeln!(context.stdout(), "alias")?;
+                            writeln!(output, "alias")?;
                         }
                         Resolved::Keyword => {
-                            writeln!(context.stdout(), "keyword")?;
+                            writeln!(output, "keyword")?;
                         }
                         Resolved::Function(_) => {
-                            writeln!(context.stdout(), "function")?;
+                            writeln!(output, "function")?;
                         }
                         Resolved::Builtin => {
-                            writeln!(context.stdout(), "builtin")?;
+                            writeln!(output, "builtin")?;
                         }
                         Resolved::File { path, .. } => {
                             if self.show_path_only || self.force_path_search {
-                                writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                                writeln!(output, "{}", path.to_string_lossy())?;
                             } else {
-                                writeln!(context.stdout(), "file")?;
+                                writeln!(output, "file")?;
                             }
                         }
                     }
@@ -96,18 +99,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
                         Resolved::File { path, .. }
                             if self.show_path_only || self.force_path_search =>
                         {
-                            writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                            writeln!(output, "{}", path.to_string_lossy())?;
                         }
-                        _ => lookup::describe(context.stdout(), name, &resolved_type)?,
+                        _ => lookup::describe(&mut output, name, &resolved_type)?,
                     }
                 }
 
-                // If we only want the first, then break after the first.
                 if !self.all_locations {
                     break;
                 }
             }
         }
+
+        crate::flush_buffered_stdout(&context, &mut output).await?;
 
         Ok(result)
     }

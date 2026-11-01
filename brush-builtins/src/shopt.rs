@@ -1,11 +1,11 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::io::Write;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Manage shopt-style options.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ShoptCommand {
     /// Manage set -o options.
     #[arg(short = 'o')]
@@ -28,10 +28,11 @@ pub(crate) struct ShoptCommand {
     unset: bool,
 
     /// Names of options to operate on.
+    #[arg(positional)]
     options: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(ShoptCommand);
+brush_winnow_args_adapter::impl_parse_args!(ShoptCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
     type Error = brush_core::Error;
@@ -49,12 +50,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
+        let mut output = Vec::new();
+        let mut stderr_output = Vec::new();
+
         if self.options.is_empty() {
             if self.quiet {
                 return Ok(ExecutionResult::success());
             }
 
-            // Enumerate all options of the selected type.
             let options = if self.set_o_names_only {
                 brush_core::namedoptions::options(brush_core::namedoptions::ShellOptionKind::SetO)
                     .iter()
@@ -77,22 +80,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
                 if self.print {
                     if self.set_o_names_only {
                         let option_value_str = if option_value { "-o" } else { "+o" };
-                        writeln!(context.stdout(), "set {option_value_str} {}", option.name)?;
+                        writeln!(output, "set {option_value_str} {}", option.name)?;
                     } else {
                         let option_value_str = if option_value { "-s" } else { "-u" };
-                        writeln!(context.stdout(), "shopt {option_value_str} {}", option.name)?;
+                        writeln!(output, "shopt {option_value_str} {}", option.name)?;
                     }
                 } else {
                     let option_value_str = if option_value { "on" } else { "off" };
-                    writeln!(context.stdout(), "{:20}\t{option_value_str}", option.name)?;
+                    writeln!(output, "{:20}\t{option_value_str}", option.name)?;
                 }
             }
-
-            Ok(ExecutionResult::success())
         } else {
             let mut return_value = ExecutionResult::success();
 
-            // Enumerate only the specified options.
             for option_name in &self.options {
                 let option_definition = if self.set_o_names_only {
                     brush_core::namedoptions::options(
@@ -121,35 +121,55 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
                             if self.print {
                                 if self.set_o_names_only {
                                     let option_value_str = if option_value { "-o" } else { "+o" };
-                                    writeln!(
-                                        context.stdout(),
-                                        "set {option_value_str} {option_name}"
-                                    )?;
+                                    writeln!(output, "set {option_value_str} {option_name}")?;
                                 } else {
                                     let option_value_str = if option_value { "-s" } else { "-u" };
-                                    writeln!(
-                                        context.stdout(),
-                                        "shopt {option_value_str} {option_name}"
-                                    )?;
+                                    writeln!(output, "shopt {option_value_str} {option_name}")?;
                                 }
                             } else {
                                 let option_value_str = if option_value { "on" } else { "off" };
-                                writeln!(context.stdout(), "{option_name:20}\t{option_value_str}")?;
+                                writeln!(output, "{option_name:20}\t{option_value_str}")?;
                             }
                         }
                     }
                 } else {
                     writeln!(
-                        context.stderr(),
+                        stderr_output,
                         "{}: {}: invalid shell option name",
-                        context.command_name,
-                        option_name
+                        context.command_name, option_name
                     )?;
                     return_value = ExecutionResult::general_error();
                 }
             }
 
-            Ok(return_value)
+            if !stderr_output.is_empty() {
+                context.stderr().write_all(&stderr_output)?;
+                context.stderr().flush()?;
+            }
+
+            if !output.is_empty() {
+                if let Some(mut stdout) = context.stdout_async() {
+                    stdout.write_all(&output).await?;
+                    stdout.flush().await?;
+                } else {
+                    context.stdout().write_all(&output)?;
+                    context.stdout().flush()?;
+                }
+            }
+
+            return Ok(return_value);
         }
+
+        if !output.is_empty() {
+            if let Some(mut stdout) = context.stdout_async() {
+                stdout.write_all(&output).await?;
+                stdout.flush().await?;
+            } else {
+                context.stdout().write_all(&output)?;
+                context.stdout().flush()?;
+            }
+        }
+
+        Ok(ExecutionResult::success())
     }
 }

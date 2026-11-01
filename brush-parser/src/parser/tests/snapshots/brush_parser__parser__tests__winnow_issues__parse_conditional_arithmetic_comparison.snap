@@ -1,0 +1,74 @@
+---
+source: brush-parser/src/parser/tests/winnow_issues.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "if [ $((1 + 1)) -eq 2 ]; then\n  echo \"true\"\nfi",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Compound(IfClause(IfClauseCommand(
+                condition: CompoundList([
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Simple(SimpleCommand(
+                          word_or_name: Some(Word(
+                            value: "[",
+                            loc: "[location]",
+                          )),
+                          suffix: Some(CommandSuffix([
+                            Word(Word(
+                              value: "$((1 + 1))",
+                              loc: "[location]",
+                            )),
+                            Word(Word(
+                              value: "-eq",
+                              loc: "[location]",
+                            )),
+                            Word(Word(
+                              value: "2",
+                              loc: "[location]",
+                            )),
+                            Word(Word(
+                              value: "]",
+                              loc: "[location]",
+                            )),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                ]),
+                then: CompoundList([
+                  CompoundListItem(AndOrList(
+                    first: Pipeline(
+                      seq: [
+                        Simple(SimpleCommand(
+                          word_or_name: Some(Word(
+                            value: "echo",
+                            loc: "[location]",
+                          )),
+                          suffix: Some(CommandSuffix([
+                            Word(Word(
+                              value: "\"true\"",
+                              loc: "[location]",
+                            )),
+                          ])),
+                        )),
+                      ],
+                    ),
+                  ), Sequence),
+                ]),
+                loc: "[location]",
+              )), None),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)
