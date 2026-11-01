@@ -24,7 +24,7 @@ pub(crate) struct KillCommand {
     #[arg(short = 'l', short = 'L')]
     list_signals: bool,
 
-    #[arg(positional, allow_negative_numbers)]
+    #[arg(positional, allow_negative_numbers, stop_flags)]
     args: Vec<String>,
 }
 
