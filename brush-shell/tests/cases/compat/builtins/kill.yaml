@@ -211,16 +211,22 @@ cases:
       kill -0 -n 0 $$; echo "a=$?"
       kill -TERM -s 0 $$; echo "b=$?"
 
-  - name: "kill takes -- after a signal, and -s with a signal number"
-    known_failure: true # TODO(kill): `-9 --` takes `--` for a pid, and -s takes only names
+  - name: "kill takes -- after a signal"
+    known_failure: true # TODO(kill): `-9 --` takes `--` for a pid
     ignore_stderr: true
     stdin: |
       # An exited process's ID names no process or group, so nothing else is
       # signaled; only the reason kill gives for failing is compared.
       dead=$(sh -c 'echo $$')
       kill -9 -- $dead 2>&1 | grep -c 'invalid signal'; echo "a=${PIPESTATUS[0]}"
-      kill -s 9 $dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
-      kill -s HUP -- -$dead 2>&1 | grep -c 'invalid signal'; echo "c=${PIPESTATUS[0]}"
+      kill -s HUP -- -$dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
+
+  - name: "kill -s takes a signal number"
+    known_failure: true # TODO(kill): -s takes only signal names
+    ignore_stderr: true
+    stdin: |
+      dead=$(sh -c 'echo $$')
+      kill -s 9 $dead 2>&1 | grep -c 'invalid signal'; echo "rc=${PIPESTATUS[0]}"
 
   - name: "kill -l with several signals prints each"
     known_failure: true # TODO(kill): `kill -l` with more than one signal fails as too many jobs

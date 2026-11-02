@@ -120,6 +120,13 @@ cases:
       (exec -- echo a)
       (exec echo -a b)
       (exec echo -- c)
+      # A top-level exec replaces the shell with the program, so its arguments
+      # take the launch path rather than the builtin echo.
+      printf '#!/bin/sh\nprintf "[%%s]" "$@"; echo\n' > args; chmod +x args
+      "$0" --noprofile --norc -c 'exec -- ./args a'
+      "$0" --noprofile --norc -c 'exec ./args -a b'
+      "$0" --noprofile --norc -c 'exec ./args -- c'
+      rm args
 
   - name: "exec rejects an unknown option with status 2"
     stdin: |

@@ -84,9 +84,10 @@ cases:
 
   - name: "pushd -n and popd -n may be repeated"
     stdin: |
-      pushd -n / -n >/dev/null; echo "pushd: $?"
+      cd /usr
+      pushd -n / -n >/dev/null; echo "pushd: $? $PWD"
       dirs -l -p | tail -n 1
-      popd -n -n >/dev/null; echo "popd: $?"
+      popd -n -n >/dev/null; echo "popd: $? $PWD"
       dirs -p | wc -l | tr -d ' '
 
   - name: "pushd with no directory swaps the top two"
