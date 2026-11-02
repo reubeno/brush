@@ -5,7 +5,6 @@ use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, e
 /// Read lines from standard input into an indexed array variable.
 #[derive(winnow_args::Args)]
 #[arg(
-    validate = MapFileCommand::check_counts,
     disable_help_short,
     disable_version_flag,
     disable_help_subcommand
@@ -24,7 +23,7 @@ pub(crate) struct MapFileCommand {
     origin: Option<i64>,
 
     /// Number of initial entries to skip.
-    #[arg(short = 's', default = "0")]
+    #[arg(short = 's', default = "0", parse_with = |s: &str| at_least(s, 0))]
     skip_count: i64,
 
     /// Whether or not to remove the delimiter from each read line.
@@ -40,7 +39,7 @@ pub(crate) struct MapFileCommand {
     callback: Option<String>,
 
     /// Number of lines to pass the callback for each group.
-    #[arg(short = 'c', default = "5000")]
+    #[arg(short = 'c', default = "5000", parse_with = |s: &str| at_least(s, 1))]
     callback_group_size: i64,
 
     /// Name of array to read into.
@@ -48,21 +47,14 @@ pub(crate) struct MapFileCommand {
     array_var_name: String,
 }
 
-impl MapFileCommand {
-    /// `-s` counts from 0, and `-c` from 1.
-    fn check_counts(&self) -> Result<(), winnow_args::Error> {
-        let out_of_range = |flag: &str, value: i64| {
-            let value = value.to_string();
-            winnow_args::Error::invalid_value(0, flag, value.as_bytes(), "out of range")
-        };
-        if self.skip_count < 0 {
-            return Err(out_of_range("-s", self.skip_count));
-        }
-        if self.callback_group_size < 1 {
-            return Err(out_of_range("-c", self.callback_group_size));
-        }
-        Ok(())
+/// A count of at least `min`. Each occurrence is checked as it is parsed, so a
+/// later valid one doesn't hide an earlier invalid one.
+fn at_least(text: &str, min: i64) -> Result<i64, String> {
+    let count: i64 = text.parse().map_err(|e| format!("{e}"))?;
+    if count < min {
+        return Err("out of range".to_owned());
     }
+    Ok(count)
 }
 
 brush_winnow_args_adapter::impl_parse_args!(MapFileCommand);
