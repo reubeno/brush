@@ -128,9 +128,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
 }
 
 /// Whether `name` is a variable name, or one followed by a non-empty `[subscript]`.
+/// `a[@]` and `a[*]` pass here and fail only if they are assigned to.
 fn valid_output_variable(name: &str, options: &brush_parser::ParserOptions) -> bool {
     match brush_parser::word::parse_parameter(name, options) {
-        Ok(brush_parser::word::Parameter::Named(_)) => true,
+        Ok(
+            brush_parser::word::Parameter::Named(_)
+            | brush_parser::word::Parameter::NamedWithAllIndices { .. },
+        ) => true,
         Ok(brush_parser::word::Parameter::NamedWithIndex { index, .. }) => !index.is_empty(),
         _ => false,
     }
