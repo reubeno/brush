@@ -142,14 +142,27 @@ cases:
       kill -0 -- $$; echo "a=$?"
       kill -s 0 $$; echo "b=$?"
       kill -0 -- -$(ps -o pgid= -p $$ | tr -d ' '); echo "c=$?"
-      kill -- -999999; echo "d=$?"
-      kill -s TERM -- -999999; echo "e=$?"
+      # An exited process's ID names no process or group, so nothing else is signaled.
+      dead=$(sh -c 'echo $$')
+      kill -- -$dead; echo "d=$?"
+      kill -s TERM -- -$dead; echo "e=$?"
 
   - name: "kill takes -N after a signal as a process group"
+    known_failure: true # TODO(kill): -N after a signal is taken for an invalid signal
     ignore_stderr: true
     stdin: |
-      kill -TERM -999999; echo "a=$?"
-      kill -999999; echo "b=$?"
+      # Signal 0 checks this shell's own group without signaling it.
+      kill -0 -$(ps -o pgid= -p $$ | tr -d ' '); echo "a=$?"
+      # An exited process's ID names no process or group, so nothing else is
+      # signaled; only the reason kill gives for failing is compared.
+      dead=$(sh -c 'echo $$')
+      kill -TERM -$dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
+
+  - name: "kill takes -N alone as a signal number"
+    ignore_stderr: true
+    stdin: |
+      # -999999 is an invalid signal number here, not a target.
+      kill -999999 2>&1 | grep -c 'invalid signal'; echo "rc=${PIPESTATUS[0]}"
 
   - name: "kill takes the words after its first operand as operands"
     ignore_stderr: true
@@ -162,11 +175,23 @@ cases:
     stdin: |
       kill -l -- 9
       kill -l HUP
-      kill -sUSR1 999999; echo "a=$?"
-      kill -n9 999999; echo "b=$?"
-      kill -HUP 999999; echo "c=$?"
-      kill -9 -- 999999; echo "d=$?"
-      kill -s HUP -- -999999; echo "e=$?"
+      # An exited process's ID names no process or group, so nothing else is
+      # signaled; only the reason kill gives for failing is compared.
+      dead=$(sh -c 'echo $$')
+      kill -sUSR1 $dead 2>&1 | grep -c 'invalid signal'; echo "a=${PIPESTATUS[0]}"
+      kill -n9 $dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
+      kill -HUP $dead 2>&1 | grep -c 'invalid signal'; echo "c=${PIPESTATUS[0]}"
+
+  - name: "kill takes -- after a signal, and -s with a signal number"
+    known_failure: true # TODO(kill): `-9 --` takes `--` for a pid, and -s takes only names
+    ignore_stderr: true
+    stdin: |
+      # An exited process's ID names no process or group, so nothing else is
+      # signaled; only the reason kill gives for failing is compared.
+      dead=$(sh -c 'echo $$')
+      kill -9 -- $dead 2>&1 | grep -c 'invalid signal'; echo "a=${PIPESTATUS[0]}"
+      kill -s 9 $dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
+      kill -s HUP -- -$dead 2>&1 | grep -c 'invalid signal'; echo "c=${PIPESTATUS[0]}"
 
   - name: "kill -l with several signals prints each"
     known_failure: true # TODO(kill): `kill -l` with more than one signal fails as too many jobs

@@ -254,6 +254,7 @@ cases:
     stdin: |
       f() { echo F; }
       export -f f
+      export -f | grep -c 'declare -fx f'
       export -f | grep -c 'declare -x '
 
   - name: "export -nf of a name that isn't a function fails with status 1"
