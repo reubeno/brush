@@ -41,5 +41,6 @@ cases:
   - name: "enable takes --"
     stdin: |
       enable -n -- echo; echo "a=$?"
+      type -t echo
       enable -- echo; echo "b=$?"
       type -t echo

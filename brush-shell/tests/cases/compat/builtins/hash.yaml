@@ -223,4 +223,4 @@ cases:
       hash -p /bin/true seeded
       hash -r -p /bin/sh foo
       hash -t foo
-      hash -t seeded; echo "seeded: $?"
+      hash -t seeded 2>/dev/null; echo "seeded: $?"

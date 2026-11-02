@@ -191,5 +191,9 @@ cases:
       mkdir -- -d
       cd -- -d && basename -- "$PWD"
       cd -- /; pwd
-      cd -LP /; pwd
-      cd -PL /; pwd
+
+  - name: "cd takes the last of -L and -P"
+    stdin: |
+      mkdir real; ln -s real link
+      cd -LP link; basename -- "$PWD"; cd ..
+      cd -PL link; basename -- "$PWD"; cd ..

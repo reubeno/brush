@@ -22,6 +22,27 @@ cases:
     stdin: |
       kill -n 9 $$
 
+  - name: "kill -s with its signal attached"
+    stdin: |
+      kill -sUSR1 $$
+
+  - name: "kill -n with its signal attached"
+    stdin: |
+      kill -n15 $$
+
+  - name: "kill -SIGNAME"
+    stdin: |
+      kill -HUP $$
+
+  - name: "kill -s SIG -- pid"
+    stdin: |
+      kill -s HUP -- $$
+
+  - name: "kill -SIG -- pid"
+    known_failure: true # TODO(kill): `--` after -SIG is taken for a pid
+    stdin: |
+      kill -9 -- $$
+
   - name: "kill -n 0"
     stdin: |
       kill -n $((5-5)) $$
