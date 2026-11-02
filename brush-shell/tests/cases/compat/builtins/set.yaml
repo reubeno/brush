@@ -220,3 +220,22 @@ cases:
     ignore_stderr: true
     stdin: |
       set + -Z; echo "status: $?"
+
+  - name: "set -o and +o list the options as they stand at that point"
+    stdin: |
+      set -eo | grep '^errexit'
+      set -oe | grep '^errexit'
+      set -o errexit -o | grep '^errexit'
+      set -o -o errexit | grep '^errexit'
+      set +o -e | grep ' errexit$'
+      set -e +o | grep ' errexit$'
+      set -u -o -u | grep '^nounset'
+      set -o '' | grep '^errexit'
+      set +o '' | grep ' errexit$'
+      set +o -o | grep -E '^(set [-+]o errexit|errexit)'
+
+  - name: "set -o takes an empty word as its first operand"
+    known_failure: true # TODO(set): brush takes the empty word as -o's name and applies the options after it
+    stdin: |
+      set a; set -o '' -e >/dev/null; echo "$- $# [$*]"
+      set -o '' x >/dev/null; echo "$# [$*]"

@@ -4,10 +4,6 @@ use itertools::Itertools;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
 
-/// Sentinel bound to a bare `-o`/`+o` (a list-all request). `default_missing` injects
-/// it for an occurrence without a value; it is not a real option name.
-const BARE_OPTION: &str = "\u{0}";
-
 /// Manage set-based shell options.
 #[derive(winnow_args::Args)]
 #[arg(
@@ -144,11 +140,12 @@ enum SetOption {
     Functrace(bool),
 
     /// Set (`-o`) or unset (`+o`) the named option; alone, list the options.
+    // A bare `-o` holds the empty name, which lists the options as `-o ''` does.
     #[arg(
         short = 'o',
         plus = 'o',
         value_name = "OPT",
-        default_missing = "\u{0}",
+        default_missing = "",
         detached_only
     )]
     Named(bool, String),
@@ -192,7 +189,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                 SetOption::Functrace(on) => {
                     options.shell_functions_inherit_debug_and_return_traps = *on;
                 }
-                SetOption::Named(on, name) if name == BARE_OPTION => {
+                SetOption::Named(on, name) if name.is_empty() => {
                     list_named_options(&context, *on, &mut stdout)?;
                 }
                 SetOption::Named(on, name) => {
