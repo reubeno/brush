@@ -1,148 +1,417 @@
-use brush_core::{
-    interfaces::{self, InputFunction, Key, KeyAction, KeyBindings as _, KeySequence, KeyStroke},
-    trace_categories,
+//! Shell-facing binding configuration. Reedline owns all live modal state.
+
+use std::collections::HashMap;
+
+use brush_core::interfaces::{
+    InputFunction, Key, KeyAction, KeyBindings, KeyMap, KeySequence, KeyStroke,
 };
-use radix_trie::Trie;
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
+use reedline::{
+    EditCommand, EditMode, KeyCode, KeyModifiers, Keybindings, PromptEditMode, PromptViMode,
+    ReedlineEvent,
+};
 
-#[derive(thiserror::Error, Debug)]
-pub enum KeyError {
-    /// Unsupported key sequence
-    #[error("unsupported key sequence: {0}")]
-    UnsupportedKeySequence(KeySequence),
+type BindingId = (KeyModifiers, KeyCode);
+type EditorPair = (Box<dyn EditMode>, Box<dyn EditMode>);
 
-    /// Unsupported key action
-    #[error("unsupported key action: {0}")]
-    UnsupportedKeyAction(KeyAction),
+const MAX_MACRO_BYTES: usize = 4096;
+const MAX_COMPILED_COMMAND_BYTES: usize = 64 * 1024;
+const MAX_MACRO_WORK: usize = 16 * 1024;
+const MAX_ALIAS_DEPTH: usize = 32;
+
+#[derive(Default)]
+struct MacroExpansion {
+    events: Vec<ReedlineEvent>,
+    command_bytes: usize,
+    work: usize,
 }
 
-pub(crate) struct MutableEditMode {
-    inner: Arc<Mutex<UpdatableBindings>>,
+enum IntermediateTarget<'a> {
+    Action(&'a KeyAction),
+    Alias(&'a KeySequence, &'a [Vec<u8>]),
 }
 
-impl MutableEditMode {
-    pub fn new(bindings: reedline::Keybindings) -> Self {
+struct KeyMapState {
+    bindings: Keybindings,
+    actions: HashMap<KeySequence, KeyAction>,
+    macros: HashMap<KeySequence, KeySequence>,
+    /// Intermediate Emacs sequences resolved during configuration, not terminal input.
+    raw_mappings: HashMap<Vec<u8>, KeyAction>,
+}
+
+impl KeyMapState {
+    fn new(bindings: Keybindings) -> Self {
+        let actions = bindings
+            .get_keybindings()
+            .iter()
+            .filter_map(|(key, event)| {
+                Some((
+                    binding_sequence((key.modifier, key.key_code))?,
+                    event_action(event)?,
+                ))
+            })
+            .collect();
         Self {
-            inner: Arc::new(Mutex::new(UpdatableBindings::new(bindings))),
+            bindings,
+            actions,
+            macros: HashMap::new(),
+            raw_mappings: HashMap::new(),
         }
     }
 
-    pub fn bindings(&self) -> Arc<Mutex<UpdatableBindings>> {
-        self.inner.clone()
+    /// Restore eager longest-prefix translation, including bounded acyclic aliases.
+    /// This only compiles configuration; no keys are replayed through an editor.
+    fn resolve_emacs_macro(&self, bytes: &[u8]) -> Result<ReedlineEvent, std::io::Error> {
+        let mut expansion = MacroExpansion::default();
+        self.append_emacs_macro(bytes, &mut expansion, &mut Vec::new())?;
+        Ok(match expansion.events.len() {
+            0 => ReedlineEvent::None,
+            1 => expansion.events.remove(0),
+            _ => ReedlineEvent::Multiple(expansion.events),
+        })
+    }
+
+    fn append_emacs_macro<'a>(
+        &'a self,
+        bytes: &[u8],
+        expansion: &mut MacroExpansion,
+        active: &mut Vec<&'a KeySequence>,
+    ) -> Result<(), std::io::Error> {
+        expansion.work = expansion.work.saturating_add(bytes.len());
+        if expansion.work > MAX_MACRO_WORK {
+            return Err(unsupported("macro exceeds compilation work limit"));
+        }
+        let mut remaining = bytes;
+        while !remaining.is_empty() {
+            let actions = self
+                .raw_mappings
+                .iter()
+                .map(|(key, action)| (key.as_slice(), IntermediateTarget::Action(action)));
+            let aliases = self.macros.iter().filter_map(|(seq, target)| {
+                let KeySequence::Bytes(parts) = seq else {
+                    return None;
+                };
+                let [key] = parts.as_slice() else { return None };
+                let body = match target {
+                    KeySequence::Bytes(parts) => parts.as_slice(),
+                    KeySequence::Strokes(strokes) if strokes.is_empty() => &[],
+                    KeySequence::Strokes(_) => return None,
+                };
+                Some((key.as_slice(), IntermediateTarget::Alias(seq, body)))
+            });
+            let matched = actions
+                .chain(aliases)
+                .filter(|(key, _)| remaining.starts_with(key))
+                .max_by_key(|(key, _)| key.len());
+            if let Some((key, target)) = matched {
+                match target {
+                    IntermediateTarget::Action(action) => {
+                        if let KeyAction::ShellCommand(command) = action {
+                            expansion.command_bytes =
+                                expansion.command_bytes.saturating_add(command.len());
+                        }
+                        if expansion.command_bytes > MAX_COMPILED_COMMAND_BYTES
+                            || expansion.events.len() >= MAX_MACRO_BYTES
+                        {
+                            return Err(unsupported("macro exceeds compiled output limit"));
+                        }
+                        expansion.events.push(
+                            action_event(action)
+                                .ok_or_else(|| unsupported("unsupported intermediate action"))?,
+                        );
+                    }
+                    IntermediateTarget::Alias(seq, body) => {
+                        if active.len() >= MAX_ALIAS_DEPTH || active.contains(&seq) {
+                            return Err(unsupported(
+                                "cyclic or excessively deep intermediate macro",
+                            ));
+                        }
+                        active.push(seq);
+                        self.append_emacs_macro(&body.concat(), expansion, active)?;
+                        active.pop();
+                    }
+                }
+                remaining = &remaining[key.len()..];
+            } else {
+                remaining = &remaining[1..];
+            }
+        }
+        Ok(())
+    }
+
+    /// Compile before touching live tables so a rejected intermediate replacement
+    /// leaves every previously compiled trigger intact.
+    fn update_raw_mapping(
+        &mut self,
+        bytes: Vec<u8>,
+        action: Option<KeyAction>,
+        macro_target: Option<KeySequence>,
+    ) -> Result<(), std::io::Error> {
+        let seq = KeySequence::Bytes(vec![bytes.clone()]);
+        let previous_macro = if let Some(target) = macro_target {
+            self.macros.insert(seq.clone(), target)
+        } else {
+            self.macros.remove(&seq)
+        };
+        let previous = if let Some(action) = action {
+            self.raw_mappings.insert(bytes.clone(), action)
+        } else {
+            self.raw_mappings.remove(&bytes)
+        };
+        let compiled = self
+            .macros
+            .iter()
+            .filter_map(|(seq, target)| {
+                let KeySequence::Bytes(parts) = target else {
+                    return None;
+                };
+                Some(
+                    self.resolve_emacs_macro(&parts.concat())
+                        .map(|event| binding_id(seq).map(|id| (id, event))),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>();
+        match compiled {
+            Ok(compiled) => {
+                for ((modifiers, code), event) in compiled.into_iter().flatten() {
+                    self.bindings.add_binding(modifiers, code, event);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                if let Some(previous_macro) = previous_macro {
+                    self.macros.insert(seq, previous_macro);
+                } else {
+                    self.macros.remove(&seq);
+                }
+                if let Some(previous) = previous {
+                    self.raw_mappings.insert(bytes, previous);
+                } else {
+                    self.raw_mappings.remove(&bytes);
+                }
+                Err(error)
+            }
+        }
     }
 }
 
-impl reedline::EditMode for MutableEditMode {
-    fn parse_event(&mut self, event: reedline::ReedlineRawEvent) -> reedline::ReedlineEvent {
-        let mut inner = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.inner.lock())
-        });
-
-        inner.parse_event(event)
-    }
-
-    fn edit_mode(&self) -> reedline::PromptEditMode {
-        let inner = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.inner.lock())
-        });
-
-        inner.edit_mode()
-    }
-}
-
+/// Configuration shared with `bind`, never installed as a Reedline edit mode.
 pub(crate) struct UpdatableBindings {
-    bindings: reedline::Keybindings,
-    edit_mode: Box<dyn reedline::EditMode>,
-    /// Trie for raw byte sequences. Supports both exact lookups and prefix matching
-    /// during macro resolution.
-    raw_mappings: Trie<Vec<u8>, interfaces::KeyAction>,
-    /// Tracks defined macros.
-    macros: HashMap<interfaces::KeySequence, interfaces::KeySequence>,
+    emacs: KeyMapState,
+    vi_insert: KeyMapState,
+    vi_command: KeyMapState,
+    current_keymap: KeyMap,
+    revision: u64,
 }
 
 impl UpdatableBindings {
-    pub fn new(bindings: reedline::Keybindings) -> Self {
-        // Clone the bindings so we can keep a copy for later updates.
-        let edit_mode = Self::rebuild_edit_mode(&bindings);
-
+    pub fn new(emacs: Keybindings, vi_insert: Keybindings, vi_command: Keybindings) -> Self {
         Self {
-            bindings,
-            edit_mode,
-            raw_mappings: Trie::new(),
-            macros: HashMap::new(),
+            emacs: KeyMapState::new(emacs),
+            vi_insert: KeyMapState::new(vi_insert),
+            vi_command: KeyMapState::new(vi_command),
+            // Readline's initial binding map before the first interactive read.
+            current_keymap: KeyMap::EmacsStandard,
+            revision: 0,
         }
     }
 
-    pub fn update(&mut self, f: impl Fn(&mut reedline::Keybindings)) {
-        f(&mut self.bindings);
-        self.try_update_bindings_for_all_macros();
-        self.edit_mode = Self::rebuild_edit_mode(&self.bindings);
+    pub const fn revision(&self) -> u64 {
+        self.revision
     }
 
-    fn rebuild_edit_mode(bindings: &reedline::Keybindings) -> Box<dyn reedline::EditMode> {
-        Box::new(reedline::Emacs::new(bindings.clone()))
-    }
-}
-
-impl reedline::EditMode for UpdatableBindings {
-    fn parse_event(&mut self, event: reedline::ReedlineRawEvent) -> reedline::ReedlineEvent {
-        self.edit_mode.parse_event(event)
+    pub const fn set_current_mode(&mut self, mode: &PromptEditMode) {
+        self.current_keymap = match mode {
+            PromptEditMode::Vi(PromptViMode::Normal | PromptViMode::Visual) => KeyMap::ViCommand,
+            PromptEditMode::Vi(PromptViMode::Insert) => KeyMap::ViInsert,
+            _ => KeyMap::EmacsStandard,
+        };
     }
 
-    fn edit_mode(&self) -> reedline::PromptEditMode {
-        self.edit_mode.edit_mode()
+    /// Build the two library machines, preserving the active prompt state when bindings change.
+    pub fn editors(&self, active: PromptEditMode) -> EditorPair {
+        let emacs = Box::new(reedline::Emacs::new(self.emacs.bindings.clone()));
+        let mut vi = reedline::Vi::new(
+            self.vi_insert.bindings.clone(),
+            self.vi_command.bindings.clone(),
+            reedline::default_vi_visual_keybindings(),
+        );
+        if matches!(active, PromptEditMode::Vi(_)) {
+            // This initializes a replacement machine in the same state, not a live transition.
+            // EventStatus is private in Reedline 0.52; wrappers cannot implement this hook.
+            let _ = vi.handle_mode_specific_event(ReedlineEvent::SwitchMode(active));
+            (Box::new(vi), emacs)
+        } else {
+            (emacs, Box::new(vi))
+        }
     }
-}
 
-impl interfaces::KeyBindings for UpdatableBindings {
-    fn get_current(&self) -> HashMap<interfaces::KeySequence, interfaces::KeyAction> {
-        let mut results = HashMap::new();
+    const fn state(&self, map: KeyMap) -> Option<&KeyMapState> {
+        match map {
+            KeyMap::EmacsStandard | KeyMap::EmacsMeta => Some(&self.emacs),
+            KeyMap::ViInsert => Some(&self.vi_insert),
+            KeyMap::ViCommand => Some(&self.vi_command),
+            KeyMap::EmacsCtlx => None,
+        }
+    }
 
-        for (key_combo, event) in self.bindings.get_keybindings() {
-            let action = translate_reedline_event_to_action(event);
-            if let Some(action) = action {
-                if let Some(key) = translate_reedline_keycode(key_combo.key_code) {
-                    let mut stroke = KeyStroke::from(key);
+    const fn state_mut(&mut self, map: KeyMap) -> Option<&mut KeyMapState> {
+        match map {
+            KeyMap::EmacsStandard | KeyMap::EmacsMeta => Some(&mut self.emacs),
+            KeyMap::ViInsert => Some(&mut self.vi_insert),
+            KeyMap::ViCommand => Some(&mut self.vi_command),
+            KeyMap::EmacsCtlx => None,
+        }
+    }
 
-                    if key_combo.modifier.contains(reedline::KeyModifiers::CONTROL) {
-                        stroke.control = true;
-                    }
-                    if key_combo.modifier.contains(reedline::KeyModifiers::ALT) {
-                        stroke.alt = true;
-                    }
-                    if key_combo.modifier.contains(reedline::KeyModifiers::SHIFT) {
-                        stroke.shift = true;
-                    }
-                    if key_combo.modifier.contains(reedline::KeyModifiers::HYPER) {
-                        // TODO
-                    }
-                    if key_combo.modifier.contains(reedline::KeyModifiers::META) {
-                        // TODO
-                    }
-                    if key_combo.modifier.contains(reedline::KeyModifiers::SUPER) {
-                        // TODO
-                    }
-
-                    let seq = KeySequence::from(stroke);
-                    results.insert(seq, action);
+    fn validate_binding(
+        &self,
+        map: KeyMap,
+        seq: &KeySequence,
+    ) -> Result<BindingId, std::io::Error> {
+        if !self.supports_keymap(map) {
+            return Err(unsupported(
+                "Reedline does not support the emacs-ctlx prefix map",
+            ));
+        }
+        let mut id =
+            binding_id(seq).ok_or_else(|| unsupported("Reedline requires a single decoded key"))?;
+        if map == KeyMap::EmacsMeta {
+            if id.0.contains(KeyModifiers::ALT) {
+                return Err(unsupported(
+                    "nested meta prefixes require multi-key input replay",
+                ));
+            }
+            id.0.insert(KeyModifiers::ALT);
+        }
+        // A custom binding cannot change a motion inside a pending operator in 0.52.
+        // Reject that promise rather than stealing the key from the vi parser.
+        if (map == KeyMap::ViCommand && is_vi_motion(id))
+            || (matches!(map, KeyMap::ViInsert | KeyMap::ViCommand)
+                && id == (KeyModifiers::NONE, KeyCode::Esc))
+        {
+            return Err(unsupported(
+                "rebinding vi grammar motions requires Reedline support",
+            ));
+        }
+        if matches!(map, KeyMap::EmacsStandard | KeyMap::ViInsert) {
+            if let Some(state) = self.state(map) {
+                if state.macros.values().any(|target| match target {
+                    KeySequence::Strokes(strokes) => strokes
+                        .iter()
+                        .any(|stroke| binding_id(&KeySequence::from(stroke.clone())) == Some(id)),
+                    KeySequence::Bytes(_) => false,
+                }) {
+                    return Err(unsupported(
+                        "key is used by a literal macro; remove the macro first",
+                    ));
                 }
             }
         }
+        Ok(id)
+    }
+}
 
-        results
+impl KeyBindings for UpdatableBindings {
+    fn supports_keymap(&self, map: KeyMap) -> bool {
+        self.state(map).is_some()
+    }
+
+    fn get_current(&self) -> HashMap<KeySequence, KeyAction> {
+        self.get_current_for(self.current_keymap)
+    }
+
+    fn get_current_for(&self, map: KeyMap) -> HashMap<KeySequence, KeyAction> {
+        self.state(map)
+            .map(|state| {
+                state
+                    .actions
+                    .iter()
+                    .filter_map(|(seq, action)| Some((view_sequence(map, seq)?, action.clone())))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn get_untranslated(&self, bytes: &[u8]) -> Option<&KeyAction> {
-        self.raw_mappings.get(bytes)
+        self.state(self.current_keymap)?.raw_mappings.get(bytes)
     }
 
     fn bind(&mut self, seq: KeySequence, action: KeyAction) -> Result<(), std::io::Error> {
-        self.do_bind(seq, action, true)
+        self.bind_for(self.current_keymap, seq, action)
+    }
+
+    fn bind_for(
+        &mut self,
+        map: KeyMap,
+        seq: KeySequence,
+        action: KeyAction,
+    ) -> Result<(), std::io::Error> {
+        if let Some(bytes) = emacs_raw_sequence(map, &seq)? {
+            // Validate even unresolved actions before retaining them for macros.
+            if action_event(&action).is_none() {
+                return Err(unsupported("Readline action is not supported by Reedline"));
+            }
+            self.emacs.update_raw_mapping(bytes, Some(action), None)?;
+            self.revision = self.revision.wrapping_add(1);
+            return Ok(());
+        }
+        let (modifiers, code) = self.validate_binding(map, &seq)?;
+        let event = action_event(&action)
+            .ok_or_else(|| unsupported("Readline action is not supported by Reedline"))?;
+        let seq =
+            binding_sequence((modifiers, code)).ok_or_else(|| unsupported("unsupported key"))?;
+        let state = self
+            .state_mut(map)
+            .ok_or_else(|| unsupported("unsupported keymap"))?;
+        state.macros.remove(&seq);
+        state.bindings.add_binding(modifiers, code, event);
+        state.actions.insert(seq, action);
+        self.revision = self.revision.wrapping_add(1);
+        Ok(())
     }
 
     fn try_unbind(&mut self, seq: KeySequence) -> bool {
-        self.try_unbind_impl(&seq, true)
+        self.try_unbind_for(self.current_keymap, seq)
+    }
+
+    fn try_unbind_for(&mut self, map: KeyMap, seq: KeySequence) -> bool {
+        match emacs_raw_sequence(map, &seq) {
+            Ok(Some(bytes)) => {
+                let seq = KeySequence::Bytes(vec![bytes.clone()]);
+                let removed = self.emacs.raw_mappings.contains_key(&bytes)
+                    || self.emacs.macros.contains_key(&seq);
+                if removed && self.emacs.update_raw_mapping(bytes, None, None).is_ok() {
+                    self.revision = self.revision.wrapping_add(1);
+                    return true;
+                }
+                return false;
+            }
+            Err(_) => return false,
+            Ok(None) => {}
+        }
+        let Ok((modifiers, code)) = self.validate_binding(map, &seq) else {
+            return false;
+        };
+        let Some(seq) = binding_sequence((modifiers, code)) else {
+            return false;
+        };
+        let Some(state) = self.state_mut(map) else {
+            return false;
+        };
+        let removed = state.macros.contains_key(&seq)
+            || state
+                .bindings
+                .find_binding(modifiers, code)
+                .is_some_and(|event| event != ReedlineEvent::None);
+        state.actions.remove(&seq);
+        state.macros.remove(&seq);
+        if removed {
+            state
+                .bindings
+                .add_binding(modifiers, code, ReedlineEvent::None);
+            self.revision = self.revision.wrapping_add(1);
+        }
+        removed
     }
 
     fn define_macro(
@@ -150,546 +419,1030 @@ impl interfaces::KeyBindings for UpdatableBindings {
         seq: KeySequence,
         target: KeySequence,
     ) -> Result<(), std::io::Error> {
-        self.macros.insert(seq, target);
-        self.update(|_| {});
+        self.define_macro_for(self.current_keymap, seq, target)
+    }
 
+    fn define_macro_for(
+        &mut self,
+        map: KeyMap,
+        seq: KeySequence,
+        target: KeySequence,
+    ) -> Result<(), std::io::Error> {
+        if let Some(bytes) = emacs_raw_sequence(map, &seq)? {
+            match &target {
+                KeySequence::Strokes(strokes) if strokes.is_empty() => {}
+                KeySequence::Bytes(parts) => validate_macro_bytes(parts)?,
+                KeySequence::Strokes(_) => {
+                    return Err(unsupported("intermediate macro requires a byte body"));
+                }
+            }
+            self.emacs.update_raw_mapping(bytes, None, Some(target))?;
+            self.revision = self.revision.wrapping_add(1);
+            return Ok(());
+        }
+        let (modifiers, code) = self.validate_binding(map, &seq)?;
+        if map == KeyMap::ViCommand
+            || (matches!(code, KeyCode::Char(_))
+                && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT))
+        {
+            return Err(unsupported(
+                "modal or recursive macros require ordered Reedline input replay",
+            ));
+        }
+        if let KeySequence::Bytes(parts) = &target {
+            validate_macro_bytes(parts)?;
+            if matches!(map, KeyMap::EmacsStandard | KeyMap::EmacsMeta)
+                && parts.iter().flatten().any(u8::is_ascii_control)
+            {
+                let event = self.emacs.resolve_emacs_macro(&parts.concat())?;
+                let seq = binding_sequence((modifiers, code))
+                    .ok_or_else(|| unsupported("unsupported key"))?;
+                self.emacs.bindings.add_binding(modifiers, code, event);
+                self.emacs.actions.remove(&seq);
+                self.emacs.macros.insert(seq, target);
+                self.revision = self.revision.wrapping_add(1);
+                return Ok(());
+            }
+        }
+        // The bind parser may deliver an ordinary string as a byte chunk rather
+        // than individual strokes. Decode only bounded UTF-8 text, never keys or
+        // terminal escape sequences. This still compiles to a single insertion.
+        let target = match target {
+            KeySequence::Strokes(_) => target,
+            KeySequence::Bytes(bytes) => {
+                let text = String::from_utf8(bytes.concat())
+                    .map_err(|_| unsupported("macro must contain literal UTF-8 text"))?;
+                KeySequence::Strokes(
+                    text.chars()
+                        .map(|c| KeyStroke::from(Key::Character(c)))
+                        .collect(),
+                )
+            }
+        };
+        let KeySequence::Strokes(strokes) = &target else {
+            unreachable!()
+        };
+        let mut text = String::new();
+        let insert_state = if map == KeyMap::ViInsert {
+            &self.vi_insert
+        } else {
+            &self.emacs
+        };
+        for stroke in strokes {
+            let Key::Character(c) = stroke.key else {
+                return Err(unsupported("only literal insertion macros are supported"));
+            };
+            if stroke.alt || stroke.control || c.is_control() {
+                return Err(unsupported(
+                    "control-key macros require ordered Reedline input replay",
+                ));
+            }
+            let (mods, key) = binding_id(&KeySequence::from(stroke.clone()))
+                .ok_or_else(|| unsupported("unsupported macro key"))?;
+            if insert_state.bindings.find_binding(mods, key).is_some() {
+                return Err(unsupported(
+                    "macro refers to a bound key; ordered input replay is required",
+                ));
+            }
+            text.push(if stroke.shift {
+                c.to_ascii_uppercase()
+            } else {
+                c
+            });
+            if text.len() > MAX_MACRO_BYTES {
+                return Err(unsupported("literal macro exceeds 4096 bytes"));
+            }
+        }
+        let seq =
+            binding_sequence((modifiers, code)).ok_or_else(|| unsupported("unsupported key"))?;
+        let state = self
+            .state_mut(map)
+            .ok_or_else(|| unsupported("unsupported keymap"))?;
+        state.bindings.add_binding(
+            modifiers,
+            code,
+            ReedlineEvent::Edit(vec![EditCommand::InsertString(text)]),
+        );
+        state.actions.remove(&seq);
+        state.macros.insert(seq, target);
+        self.revision = self.revision.wrapping_add(1);
         Ok(())
     }
 
     fn get_macros(&self) -> HashMap<KeySequence, KeySequence> {
-        self.macros.clone()
+        self.get_macros_for(self.current_keymap)
+    }
+
+    fn get_macros_for(&self, map: KeyMap) -> HashMap<KeySequence, KeySequence> {
+        self.state(map)
+            .map(|state| {
+                state
+                    .macros
+                    .iter()
+                    .filter_map(|(seq, target)| Some((view_sequence(map, seq)?, target.clone())))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
-impl UpdatableBindings {
-    /// Internal implementation that optionally removes from the macros map.
-    /// When updating bindings for macros, we don't want to remove the macro definition itself.
-    fn try_unbind_impl(&mut self, seq: &KeySequence, remove_from_macros: bool) -> bool {
-        // Optionally remove from macros.
-        let removed_macro = if remove_from_macros {
-            self.macros.remove(seq).is_some()
-        } else {
-            false
-        };
+fn unsupported(message: &'static str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Unsupported, message)
+}
 
-        match seq {
-            interfaces::KeySequence::Strokes(_) => {
-                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(seq) {
-                    let found = self.bindings.find_binding(modifiers, key_code).is_some();
+fn validate_macro_bytes(parts: &[Vec<u8>]) -> Result<(), std::io::Error> {
+    if parts
+        .iter()
+        .try_fold(0usize, |len, part| len.checked_add(part.len()))
+        .is_none_or(|len| len > MAX_MACRO_BYTES)
+    {
+        return Err(unsupported("macro exceeds 4096 bytes"));
+    }
+    Ok(())
+}
 
-                    if found {
-                        self.update(|bindings| {
-                            let _ = bindings.remove_binding(modifiers, key_code);
-                        });
-                    }
-
-                    found || removed_macro
-                } else {
-                    removed_macro
-                }
-            }
-            interfaces::KeySequence::Bytes(bytes) => {
-                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
-                let removed_raw = self.raw_mappings.remove(&flat_bytes).is_some();
-
-                removed_raw || removed_macro
-            }
+fn emacs_raw_sequence(map: KeyMap, seq: &KeySequence) -> Result<Option<Vec<u8>>, std::io::Error> {
+    let KeySequence::Bytes(parts) = seq else {
+        return Ok(None);
+    };
+    if !matches!(map, KeyMap::EmacsStandard | KeyMap::EmacsMeta) {
+        return Err(unsupported(
+            "raw intermediate bindings require an Emacs map",
+        ));
+    }
+    validate_macro_bytes(parts)?;
+    let mut bytes = parts.concat();
+    if bytes.is_empty() {
+        return Err(unsupported("empty intermediate key sequence"));
+    }
+    if map == KeyMap::EmacsMeta {
+        bytes.insert(0, b'\x1b');
+        if bytes.len() > MAX_MACRO_BYTES {
+            return Err(unsupported("macro exceeds 4096 bytes"));
         }
     }
+    Ok(Some(bytes))
+}
 
-    fn do_bind(
-        &mut self,
-        seq: KeySequence,
-        action: KeyAction,
-        rebuild_for_reedline: bool,
-    ) -> Result<(), std::io::Error> {
-        let Some(event) = translate_action_to_reedline_event(&action) else {
-            return Err(std::io::Error::other(KeyError::UnsupportedKeyAction(
-                action,
-            )));
-        };
+const fn is_vi_motion((modifiers, code): BindingId) -> bool {
+    matches!(modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+        && matches!(
+            code,
+            KeyCode::Char(
+                'h' | 'j' | 'k' | 'l' | 'w' | 'b' | 'e' | 'f' | 't' | 'g' | 'v' | '0'
+                    ..='9' | '^' | '$' | '%' | ';' | ','
+            )
+        )
+}
 
-        match seq {
-            interfaces::KeySequence::Strokes(_) => {
-                if let Some((modifiers, key_code)) = translate_key_sequence_to_reedline(&seq) {
-                    if rebuild_for_reedline {
-                        self.update(|bindings| {
-                            bindings.add_binding(modifiers, key_code, event.clone());
-                        });
-                    } else {
-                        self.bindings
-                            .add_binding(modifiers, key_code, event.clone());
-                    }
-
-                    Ok(())
-                } else {
-                    Err(std::io::Error::other(KeyError::UnsupportedKeySequence(seq)))
-                }
-            }
-            interfaces::KeySequence::Bytes(ref bytes) => {
-                let flat_bytes: Vec<u8> = bytes.iter().flatten().copied().collect();
-                self.raw_mappings.insert(flat_bytes, action);
-
-                Ok(())
-            }
-        }
+/// The meta map is a view of the standard map's Alt chords, not a second
+/// table that could shadow later bindings or resurrect unbound keys.
+fn view_sequence(map: KeyMap, seq: &KeySequence) -> Option<KeySequence> {
+    if map != KeyMap::EmacsMeta {
+        return Some(seq.clone());
     }
-
-    fn try_update_bindings_for_all_macros(&mut self) {
-        let macros = self.macros.clone();
-        for (seq, target) in macros {
-            let _ = self.update_bindings_for_macro(seq, target);
-        }
+    let (mut modifiers, code) = binding_id(seq)?;
+    if !modifiers.contains(KeyModifiers::ALT) {
+        return None;
     }
+    modifiers.remove(KeyModifiers::ALT);
+    binding_sequence((modifiers, code))
+}
 
-    fn update_bindings_for_macro(
-        &mut self,
-        seq: KeySequence,
-        target: KeySequence,
-    ) -> Result<(), std::io::Error> {
-        match target {
-            // TODO(input): We acknowledge that this implementation eagerly resolves the macro
-            // and what it will do. Subsequent changes to other key binding might invalidate
-            // this. We also are *extremely* limited in what we support here.
-            interfaces::KeySequence::Strokes(key_strokes) => {
-                if key_strokes.is_empty() {
-                    // Empty macro target - unbind any existing binding for this sequence.
-                    self.try_unbind(seq);
-                } else {
-                    return Err(std::io::Error::other(
-                        "binding key sequence to readline macro with strokes",
-                    ));
-                }
-            }
-            interfaces::KeySequence::Bytes(items) => {
-                // Flatten all byte sequences into one contiguous buffer for prefix matching.
-                let flat_bytes: Vec<u8> = items.iter().flatten().copied().collect();
-                let actions = self.resolve_macro_body(&flat_bytes);
-
-                if actions.is_empty() {
-                    // No actions resolved - unbind any existing key binding for this sequence,
-                    // but keep the macro definition so it shows up in `bind -s/-S`.
-                    self.try_unbind_impl(&seq, false);
-                    return Ok(());
-                }
-
-                // Create a single action: either the action itself (if just one), or a Sequence.
-                let action = if let [single] = actions.as_slice() {
-                    single.clone()
-                } else {
-                    KeyAction::Sequence(actions)
-                };
-
-                self.do_bind(seq, action, false)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Resolve a macro body (byte sequence) into a sequence of actions using prefix matching.
-    /// Returns a flattened vector of actions (any nested Sequences are expanded).
-    fn resolve_macro_body(&self, bytes: &[u8]) -> Vec<KeyAction> {
-        let mut actions = Vec::new();
-        let mut remaining = bytes;
-
-        while !remaining.is_empty() {
-            // Find the longest prefix match in the trie.
-            if let Some((matched_key, action)) = self.find_longest_prefix_match(remaining) {
-                // Flatten any nested Sequence actions.
-                Self::flatten_action_into(&mut actions, action.clone());
-                remaining = &remaining[matched_key.len()..];
+fn binding_id(seq: &KeySequence) -> Option<BindingId> {
+    let KeySequence::Strokes(strokes) = seq else {
+        return None;
+    };
+    let [stroke] = strokes.as_slice() else {
+        return None;
+    };
+    let mut modifiers = KeyModifiers::empty();
+    modifiers.set(KeyModifiers::CONTROL, stroke.control);
+    modifiers.set(KeyModifiers::ALT, stroke.alt);
+    modifiers.set(KeyModifiers::SHIFT, stroke.shift);
+    let code = match stroke.key {
+        Key::Character(c) => {
+            if c.is_ascii_uppercase() {
+                modifiers.insert(KeyModifiers::SHIFT);
+                KeyCode::Char(c.to_ascii_lowercase())
             } else {
-                // No match found - skip one byte and continue.
-                // This handles unbound byte sequences gracefully.
-                tracing::debug!(
-                    target: trace_categories::INPUT,
-                    "skipping unbound byte in macro resolution: 0x{:02x}",
-                    remaining[0]
-                );
-                remaining = &remaining[1..];
+                KeyCode::Char(c)
             }
         }
+        Key::Backspace => KeyCode::Backspace,
+        Key::Enter => KeyCode::Enter,
+        Key::Left => KeyCode::Left,
+        Key::Right => KeyCode::Right,
+        Key::Up => KeyCode::Up,
+        Key::Down => KeyCode::Down,
+        Key::Home => KeyCode::Home,
+        Key::End => KeyCode::End,
+        Key::PageUp => KeyCode::PageUp,
+        Key::PageDown => KeyCode::PageDown,
+        Key::Tab => KeyCode::Tab,
+        Key::BackTab => KeyCode::BackTab,
+        Key::Delete => KeyCode::Delete,
+        Key::Insert => KeyCode::Insert,
+        Key::F(n) => KeyCode::F(n),
+        Key::Escape => KeyCode::Esc,
+    };
+    Some((modifiers, code))
+}
 
-        actions
+fn binding_sequence((modifiers, code): BindingId) -> Option<KeySequence> {
+    let key = match code {
+        KeyCode::Char(c) => Key::Character(if modifiers.contains(KeyModifiers::SHIFT) {
+            c.to_ascii_uppercase()
+        } else {
+            c
+        }),
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Left => Key::Left,
+        KeyCode::Right => Key::Right,
+        KeyCode::Up => Key::Up,
+        KeyCode::Down => Key::Down,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::BackTab => Key::BackTab,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::Insert => Key::Insert,
+        KeyCode::F(n) => Key::F(n),
+        KeyCode::Esc => Key::Escape,
+        _ => return None,
+    };
+    Some(KeySequence::from(KeyStroke {
+        control: modifiers.contains(KeyModifiers::CONTROL),
+        alt: modifiers.contains(KeyModifiers::ALT),
+        shift: !matches!(key, Key::Character(_)) && modifiers.contains(KeyModifiers::SHIFT),
+        key,
+    }))
+}
+
+fn action_event(action: &KeyAction) -> Option<ReedlineEvent> {
+    match action {
+        KeyAction::ShellCommand(command) => {
+            Some(ReedlineEvent::ExecuteHostCommand(command.clone()))
+        }
+        // Multiple stops at suspension/exit events; it is not a resumable
+        // ordered host-action sequence. Do not promise replay through barriers.
+        KeyAction::Sequence(_) => None,
+        KeyAction::DoInputFunction(function) => function_event(function),
     }
+}
 
-    /// Find the longest prefix match in the trie for the given bytes.
-    /// Uses the trie's native `get_ancestor` method which efficiently finds
-    /// the longest matching prefix.
-    fn find_longest_prefix_match(&self, bytes: &[u8]) -> Option<(Vec<u8>, &KeyAction)> {
-        use radix_trie::TrieCommon;
+fn function_event(function: &InputFunction) -> Option<ReedlineEvent> {
+    use InputFunction as F;
+    let command = match function {
+        F::BackwardDeleteChar => EditCommand::Backspace,
+        F::BackwardKillWord => EditCommand::CutWordLeft,
+        F::UnixLineDiscard => EditCommand::CutFromStart,
+        F::KillLine => EditCommand::KillLine,
+        F::KillWord => EditCommand::CutWordRight,
+        F::DeleteChar => EditCommand::Delete,
+        F::DowncaseWord => EditCommand::LowercaseWord,
+        F::BackwardChar => EditCommand::MoveLeft { select: false },
+        F::ForwardChar => EditCommand::MoveRight { select: false },
+        F::EndOfLine => EditCommand::MoveToLineEnd { select: false },
+        F::BeginningOfLine => EditCommand::MoveToLineStart { select: false },
+        F::BackwardWord => EditCommand::MoveWordLeft { select: false },
+        F::ForwardWord => EditCommand::MoveWordRight { select: false },
+        F::Yank => EditCommand::PasteCutBufferAfter,
+        F::TransposeChars => EditCommand::SwapGraphemes,
+        F::UpcaseWord => EditCommand::UppercaseWord,
+        F::Undo => EditCommand::Undo,
+        F::Complete => EditCommand::Complete,
+        F::ClearScreen => return Some(ReedlineEvent::ClearScreen),
+        F::AcceptLine => return Some(ReedlineEvent::Enter),
+        F::PreviousHistory => return Some(ReedlineEvent::PreviousHistory),
+        F::NextHistory => return Some(ReedlineEvent::NextHistory),
+        F::ReverseSearchHistory => return Some(ReedlineEvent::SearchHistory),
+        F::RedrawCurrentLine => return Some(ReedlineEvent::Repaint),
+        F::EmacsEditingMode => return Some(ReedlineEvent::SwitchMode(PromptEditMode::Emacs)),
+        F::ViEditingMode => {
+            return Some(ReedlineEvent::SwitchMode(PromptEditMode::Vi(
+                PromptViMode::Insert,
+            )));
+        }
+        F::BrushAcceptHint => return Some(ReedlineEvent::HistoryHintComplete),
+        F::BrushAcceptHintWord => return Some(ReedlineEvent::HistoryHintWordComplete),
+        F::ViEditAndExecuteCommand => {
+            return Some(ReedlineEvent::Multiple(vec![
+                ReedlineEvent::OpenEditor,
+                ReedlineEvent::Submit,
+            ]));
+        }
+        _ => return None,
+    };
+    Some(ReedlineEvent::Edit(vec![command]))
+}
 
-        self.raw_mappings.get_ancestor(bytes).and_then(|subtrie| {
-            let key = subtrie.key()?.clone();
-            let value = subtrie.value()?;
-            Some((key, value))
+fn event_action(event: &ReedlineEvent) -> Option<KeyAction> {
+    use InputFunction as F;
+    let function = match event {
+        ReedlineEvent::ClearScreen => F::ClearScreen,
+        ReedlineEvent::Enter => F::AcceptLine,
+        ReedlineEvent::PreviousHistory => F::PreviousHistory,
+        ReedlineEvent::NextHistory => F::NextHistory,
+        ReedlineEvent::SearchHistory => F::ReverseSearchHistory,
+        ReedlineEvent::Repaint => F::RedrawCurrentLine,
+        ReedlineEvent::ExecuteHostCommand(command) => {
+            return Some(KeyAction::ShellCommand(command.clone()));
+        }
+        ReedlineEvent::Edit(commands) => match commands.as_slice() {
+            [EditCommand::Backspace] => F::BackwardDeleteChar,
+            [EditCommand::CutWordLeft] => F::BackwardKillWord,
+            [EditCommand::CutFromStart] => F::UnixLineDiscard,
+            [EditCommand::KillLine] => F::KillLine,
+            [EditCommand::CutWordRight] => F::KillWord,
+            [EditCommand::Delete] => F::DeleteChar,
+            [EditCommand::MoveLeft { select: false }] => F::BackwardChar,
+            [EditCommand::MoveRight { select: false }] => F::ForwardChar,
+            [EditCommand::MoveToLineEnd { select: false }] => F::EndOfLine,
+            [EditCommand::MoveToLineStart { select: false }] => F::BeginningOfLine,
+            [EditCommand::Complete] => F::Complete,
+            [EditCommand::Undo] => F::Undo,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(KeyAction::DoInputFunction(function))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{Event, KeyEvent};
+
+    fn bindings() -> UpdatableBindings {
+        UpdatableBindings::new(
+            reedline::default_emacs_keybindings(),
+            reedline::default_vi_insert_keybindings(),
+            reedline::default_vi_normal_keybindings(),
+        )
+    }
+    fn key(c: char) -> KeySequence {
+        KeySequence::from(KeyStroke::from(Key::Character(c)))
+    }
+    fn ctrl(c: char) -> KeySequence {
+        KeySequence::from(KeyStroke {
+            control: true,
+            ..KeyStroke::from(Key::Character(c))
         })
     }
-
-    /// Flatten an action into the actions vector, expanding any Sequence variants.
-    fn flatten_action_into(actions: &mut Vec<KeyAction>, action: KeyAction) {
-        match action {
-            KeyAction::Sequence(inner_actions) => {
-                for inner in inner_actions {
-                    Self::flatten_action_into(actions, inner);
-                }
-            }
-            other => actions.push(other),
-        }
+    fn raw(c: char, modifiers: KeyModifiers) -> reedline::ReedlineRawEvent {
+        reedline::ReedlineRawEvent::try_from(Event::Key(KeyEvent::new(KeyCode::Char(c), modifiers)))
+            .unwrap()
     }
-}
 
-fn translate_key_sequence_to_reedline(
-    seq: &KeySequence,
-) -> Option<(reedline::KeyModifiers, reedline::KeyCode)> {
-    let KeySequence::Strokes(strokes) = seq else {
-        // TODO(input): handle other kinds of key sequences
-        return None;
-    };
+    #[test]
+    fn emacs_prefix_macro_tracks_late_binding_replacement_and_removal() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        let target = KeySequence::Bytes(vec![
+            b"\x18\x1fprobe\x07".to_vec(),
+            b"\x18\x1fchain\x07".to_vec(),
+        ]);
+        bindings
+            .bind_for(
+                KeyMap::ViInsert,
+                ctrl('r'),
+                KeyAction::ShellCommand("vi".into()),
+            )
+            .unwrap();
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), target.clone())
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
 
-    let [stroke] = &strokes.as_slice() else {
-        // TODO(input): handle multiple strokes
-        return None;
-    };
-
-    let mut modifiers = reedline::KeyModifiers::empty();
-    modifiers.set(reedline::KeyModifiers::ALT, stroke.alt);
-    modifiers.set(reedline::KeyModifiers::CONTROL, stroke.control);
-    modifiers.set(reedline::KeyModifiers::SHIFT, stroke.shift);
-
-    let key_code = match stroke.key {
-        Key::Character(c) => reedline::KeyCode::Char(c),
-        Key::Backspace => reedline::KeyCode::Backspace,
-        Key::Enter => reedline::KeyCode::Enter,
-        Key::Left => reedline::KeyCode::Left,
-        Key::Right => reedline::KeyCode::Right,
-        Key::Up => reedline::KeyCode::Up,
-        Key::Down => reedline::KeyCode::Down,
-        Key::Home => reedline::KeyCode::Home,
-        Key::End => reedline::KeyCode::End,
-        Key::PageUp => reedline::KeyCode::PageUp,
-        Key::PageDown => reedline::KeyCode::PageDown,
-        Key::Tab => reedline::KeyCode::Tab,
-        Key::BackTab => reedline::KeyCode::BackTab,
-        Key::Delete => reedline::KeyCode::Delete,
-        Key::Insert => reedline::KeyCode::Insert,
-        Key::F(n) => reedline::KeyCode::F(n),
-        Key::Escape => reedline::KeyCode::Esc,
-    };
-
-    Some((modifiers, key_code))
-}
-
-fn translate_action_to_reedline_event(action: &KeyAction) -> Option<reedline::ReedlineEvent> {
-    match action {
-        KeyAction::ShellCommand(cmd) => {
-            Some(reedline::ReedlineEvent::ExecuteHostCommand(cmd.to_owned()))
+        for command in ["first", "replacement"] {
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    prefix.clone(),
+                    KeyAction::ShellCommand(command.into()),
+                )
+                .unwrap();
+            let (mut emacs, mut vi) = bindings.editors(PromptEditMode::Emacs);
+            assert_eq!(
+                emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand(command.into())
+            );
+            assert_eq!(
+                vi.parse_event(raw('r', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand("vi".into())
+            );
         }
-        KeyAction::DoInputFunction(func) => translate_input_function_to_reedline_event(func),
-        KeyAction::Sequence(actions) => {
-            // Convert each action in the sequence to a reedline event.
-            let events: Vec<_> = actions
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, prefix));
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
+        assert_eq!(
+            bindings
+                .get_macros_for(KeyMap::EmacsStandard)
+                .get(&ctrl('r')),
+            Some(&target)
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_macro_uses_longest_matches_and_preserves_action_order() {
+        let mut bindings = bindings();
+        for (bytes, command) in [
+            (b"\x18".as_slice(), "short"),
+            (b"\x18\x1f".as_slice(), "long"),
+            (b"\x07".as_slice(), "last"),
+        ] {
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    KeySequence::Bytes(vec![bytes.to_vec()]),
+                    KeyAction::ShellCommand(command.into()),
+                )
+                .unwrap();
+        }
+        bindings
+            .define_macro_for(
+                KeyMap::EmacsStandard,
+                ctrl('r'),
+                KeySequence::Bytes(vec![b"\x18\x1funbound\x07".to_vec()]),
+            )
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::Multiple(vec![
+                ReedlineEvent::ExecuteHostCommand("long".into()),
+                ReedlineEvent::ExecuteHostCommand("last".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_macro_rejects_oversized_replacements_atomically() {
+        let mut bindings = bindings();
+        let target = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), target.clone())
+            .unwrap();
+        assert!(
+            bindings
+                .define_macro_for(
+                    KeyMap::EmacsStandard,
+                    ctrl('r'),
+                    KeySequence::Bytes(vec![vec![b'\x18'; 4097]]),
+                )
+                .is_err()
+        );
+        assert_eq!(
+            bindings
+                .get_macros_for(KeyMap::EmacsStandard)
+                .get(&ctrl('r')),
+            Some(&target)
+        );
+    }
+
+    #[test]
+    fn emacs_prefix_empty_raw_macro_replaces_and_removes_an_intermediate_action() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeyAction::ShellCommand("probe".into()),
+            )
+            .unwrap();
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), prefix.clone())
+            .unwrap();
+        bindings
+            .define_macro_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeySequence::Strokes(vec![]),
+            )
+            .unwrap();
+        assert!(bindings.get_untranslated(b"\x18\x1fprobe\x07").is_none());
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, prefix));
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, ctrl('r')));
+    }
+
+    #[test]
+    fn emacs_prefix_rejects_excessive_compiled_output_without_replacing_target() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![vec![b'\x18']]);
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeyAction::ShellCommand("probe".into()),
+            )
+            .unwrap();
+        bindings
+            .define_macro_for(
+                KeyMap::EmacsStandard,
+                ctrl('r'),
+                KeySequence::Bytes(vec![vec![b'\x18'; 4096]]),
+            )
+            .unwrap();
+        let revision = bindings.revision();
+        assert!(
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    prefix,
+                    KeyAction::ShellCommand("x".repeat(4096))
+                )
+                .is_err()
+        );
+        assert_eq!(bindings.revision(), revision);
+        assert_eq!(
+            bindings.get_untranslated(b"\x18"),
+            Some(&KeyAction::ShellCommand("probe".into()))
+        );
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        let event = emacs.parse_event(raw('r', KeyModifiers::CONTROL));
+        assert!(matches!(event, ReedlineEvent::Multiple(_)));
+        let ReedlineEvent::Multiple(events) = event else {
+            return;
+        };
+        assert_eq!(events.len(), 4096);
+        assert!(
+            events
                 .iter()
-                .filter_map(translate_action_to_reedline_event)
-                .collect();
-
-            if events.is_empty() {
-                None
-            } else if events.len() == 1 {
-                events.into_iter().next()
-            } else {
-                Some(reedline::ReedlineEvent::Multiple(events))
-            }
-        }
+                .all(|event| *event == ReedlineEvent::ExecuteHostCommand("probe".into()))
+        );
     }
-}
 
-fn translate_input_function_to_reedline_event(
-    func: &InputFunction,
-) -> Option<reedline::ReedlineEvent> {
-    use reedline::{EditCommand, ReedlineEvent};
-
-    match func {
-        InputFunction::BackwardDeleteChar => {
-            Some(ReedlineEvent::Edit(vec![EditCommand::Backspace]))
+    #[test]
+    fn emacs_prefix_raw_bindings_do_not_enable_vi_macro_replay() {
+        let mut bindings = bindings();
+        let prefix = KeySequence::Bytes(vec![b"\x18\x1fprobe\x07".to_vec()]);
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                prefix.clone(),
+                KeyAction::ShellCommand("probe".into()),
+            )
+            .unwrap();
+        for map in [KeyMap::ViInsert, KeyMap::ViCommand, KeyMap::EmacsCtlx] {
+            assert!(
+                bindings
+                    .bind_for(
+                        map,
+                        prefix.clone(),
+                        KeyAction::ShellCommand("wrong map".into())
+                    )
+                    .is_err()
+            );
+            assert!(
+                bindings
+                    .define_macro_for(map, ctrl('r'), prefix.clone())
+                    .is_err()
+            );
+            assert!(!bindings.try_unbind_for(map, prefix.clone()));
         }
-        InputFunction::BackwardKillWord => {
-            Some(ReedlineEvent::Edit(vec![EditCommand::CutWordLeft]))
-        }
-        InputFunction::KillLine => Some(ReedlineEvent::Edit(vec![EditCommand::KillLine])),
-        InputFunction::KillWholeLine => Some(ReedlineEvent::Edit(vec![EditCommand::CutFromStart])),
-        InputFunction::KillWord => Some(ReedlineEvent::Edit(vec![EditCommand::CutWordRight])),
-        InputFunction::DeleteChar => Some(ReedlineEvent::Edit(vec![EditCommand::Delete])),
-        InputFunction::DowncaseWord => Some(ReedlineEvent::Edit(vec![EditCommand::LowercaseWord])),
-        InputFunction::BackwardChar => Some(ReedlineEvent::Edit(vec![EditCommand::MoveLeft {
-            select: false,
-        }])),
-        InputFunction::ForwardChar => Some(ReedlineEvent::Edit(vec![EditCommand::MoveRight {
-            select: false,
-        }])),
-        InputFunction::EndOfLine => Some(ReedlineEvent::Edit(vec![EditCommand::MoveToLineEnd {
-            select: false,
-        }])),
-        InputFunction::BeginningOfLine => {
-            Some(ReedlineEvent::Edit(vec![EditCommand::MoveToLineStart {
-                select: false,
-            }]))
-        }
-        InputFunction::BackwardWord => Some(ReedlineEvent::Edit(vec![EditCommand::MoveWordLeft {
-            select: false,
-        }])),
-        InputFunction::ForwardWord => Some(ReedlineEvent::Edit(vec![EditCommand::MoveWordRight {
-            select: false,
-        }])),
-        InputFunction::Yank => Some(ReedlineEvent::Edit(vec![EditCommand::PasteCutBufferAfter])),
-        InputFunction::ViRedo => Some(ReedlineEvent::Edit(vec![EditCommand::Redo])),
-        InputFunction::TransposeChars => {
-            Some(ReedlineEvent::Edit(vec![EditCommand::SwapGraphemes]))
-        }
-        InputFunction::UpcaseWord => Some(ReedlineEvent::Edit(vec![EditCommand::UppercaseWord])),
-        InputFunction::Undo => Some(ReedlineEvent::Edit(vec![EditCommand::Undo])),
-        InputFunction::ClearScreen => Some(ReedlineEvent::ClearScreen),
-        InputFunction::AcceptLine => Some(ReedlineEvent::Enter),
-        InputFunction::HistorySearchBackward => Some(ReedlineEvent::SearchHistory),
-        InputFunction::RedrawCurrentLine => Some(ReedlineEvent::Repaint),
-        InputFunction::Complete => Some(ReedlineEvent::Edit(vec![EditCommand::Complete])),
-        InputFunction::BrushAcceptHint => Some(ReedlineEvent::HistoryHintComplete),
-        InputFunction::BrushAcceptHintWord => Some(ReedlineEvent::HistoryHintWordComplete),
-        _ => None,
+        assert_eq!(
+            bindings.get_untranslated(b"\x18\x1fprobe\x07"),
+            Some(&KeyAction::ShellCommand("probe".into()))
+        );
     }
-}
 
-const fn translate_reedline_keycode(keycode: reedline::KeyCode) -> Option<Key> {
-    match keycode {
-        reedline::KeyCode::Backspace => Some(Key::Backspace),
-        reedline::KeyCode::Enter => Some(Key::Enter),
-        reedline::KeyCode::Left => Some(Key::Left),
-        reedline::KeyCode::Right => Some(Key::Right),
-        reedline::KeyCode::Up => Some(Key::Up),
-        reedline::KeyCode::Down => Some(Key::Down),
-        reedline::KeyCode::Home => Some(Key::Home),
-        reedline::KeyCode::End => Some(Key::End),
-        reedline::KeyCode::PageUp => Some(Key::PageUp),
-        reedline::KeyCode::PageDown => Some(Key::PageDown),
-        reedline::KeyCode::Tab => Some(Key::Tab),
-        reedline::KeyCode::BackTab => Some(Key::BackTab),
-        reedline::KeyCode::Delete => Some(Key::Delete),
-        reedline::KeyCode::Insert => Some(Key::Insert),
-        reedline::KeyCode::F(n) => Some(Key::F(n)),
-        reedline::KeyCode::Char(c) => Some(Key::Character(c)),
-        reedline::KeyCode::Null => None,
-        reedline::KeyCode::Esc => Some(Key::Escape),
-        reedline::KeyCode::CapsLock => None,
-        reedline::KeyCode::ScrollLock => None,
-        reedline::KeyCode::NumLock => None,
-        reedline::KeyCode::PrintScreen => None,
-        reedline::KeyCode::Pause => None,
-        reedline::KeyCode::Menu => None,
-        reedline::KeyCode::KeypadBegin => None,
-        reedline::KeyCode::Media(_media_key_code) => None,
-        reedline::KeyCode::Modifier(_modifier_key_code) => None,
+    #[test]
+    fn emacs_prefix_alias_tracks_late_sink_replacement_and_removal() {
+        let mut bindings = bindings();
+        let alias = KeySequence::Bytes(vec![b"\x18alias\x07".to_vec()]);
+        let sink = KeySequence::Bytes(vec![b"\x18sink\x07".to_vec()]);
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, alias.clone(), sink.clone())
+            .unwrap();
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('r'), alias.clone())
+            .unwrap();
+        for command in ["first", "replacement"] {
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    sink.clone(),
+                    KeyAction::ShellCommand(command.into()),
+                )
+                .unwrap();
+            let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+            assert_eq!(
+                emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand(command.into())
+            );
+        }
+        let revision = bindings.revision();
+        assert!(
+            bindings
+                .define_macro_for(KeyMap::EmacsStandard, sink.clone(), alias.clone())
+                .is_err()
+        );
+        assert_eq!(bindings.revision(), revision);
+        assert_eq!(
+            bindings.get_untranslated(b"\x18sink\x07"),
+            Some(&KeyAction::ShellCommand("replacement".into()))
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, sink));
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('r', KeyModifiers::CONTROL)),
+            ReedlineEvent::None
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, alias));
     }
-}
 
-#[expect(clippy::too_many_lines)]
-fn translate_reedline_event_to_action(event: &reedline::ReedlineEvent) -> Option<KeyAction> {
-    match event {
-        reedline::ReedlineEvent::Edit(cmds) => {
-            match cmds.as_slice() {
-                [reedline::EditCommand::Backspace] => Some(KeyAction::DoInputFunction(
-                    InputFunction::BackwardDeleteChar,
-                )),
-                [reedline::EditCommand::BackspaceWord] => {
-                    // Not quite accurate, because it doesn't save the deleted text.
-                    Some(KeyAction::DoInputFunction(InputFunction::BackwardKillWord))
-                }
-                [reedline::EditCommand::CapitalizeChar] => None,
-                [reedline::EditCommand::ClearToLineEnd] => {
-                    // Not quite accurate, because it doesn't save the deleted text.
-                    Some(KeyAction::DoInputFunction(InputFunction::KillLine))
-                }
-                [reedline::EditCommand::Complete] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::Complete))
-                }
-                [reedline::EditCommand::CutFromStart] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::KillWholeLine))
-                }
-                [reedline::EditCommand::KillLine] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::KillLine))
-                }
-                [reedline::EditCommand::CutWordLeft] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::BackwardKillWord))
-                }
-                [reedline::EditCommand::CutWordRight] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::KillWord))
-                }
-                [reedline::EditCommand::Delete] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::DeleteChar))
-                }
-                [reedline::EditCommand::DeleteWord] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::KillWord))
-                }
-                [reedline::EditCommand::InsertNewline] => None,
-                [reedline::EditCommand::LowercaseWord] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::DowncaseWord))
-                }
-                [reedline::EditCommand::MoveLeft { select: false }] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::BackwardChar))
-                }
-                [reedline::EditCommand::MoveLeft { select: true }] => None,
-                [reedline::EditCommand::MoveRight { select: false }] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::ForwardChar))
-                }
-                [reedline::EditCommand::MoveRight { select: true }] => None,
-                [reedline::EditCommand::MoveToEnd { select: false }] => {
-                    // TODO(input): Not quite accurate, because it doesn't just go to end of line.
-                    Some(KeyAction::DoInputFunction(InputFunction::EndOfLine))
-                }
-                [reedline::EditCommand::MoveToEnd { select: true }] => None,
-                [reedline::EditCommand::MoveToLineEnd { select: false }] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::EndOfLine))
-                }
-                [reedline::EditCommand::MoveToLineEnd { select: true }] => None,
-                [reedline::EditCommand::MoveToLineStart { select: false }] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::BeginningOfLine))
-                }
-                [reedline::EditCommand::MoveToLineStart { select: true }] => None,
-                [reedline::EditCommand::MoveToStart { select: false }] => {
-                    // TODO(input): Not quite accurate, because it doesn't just go to beginning of
-                    // line.
-                    Some(KeyAction::DoInputFunction(InputFunction::BeginningOfLine))
-                }
-                [reedline::EditCommand::MoveToStart { select: true }] => None,
-                [reedline::EditCommand::MoveWordLeft { select: false }] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::BackwardWord))
-                }
-                [reedline::EditCommand::MoveWordLeft { select: true }] => None,
-                [reedline::EditCommand::MoveWordRight { select: false }] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::ForwardWord))
-                }
-                [reedline::EditCommand::MoveWordRight { select: true }] => None,
-                [reedline::EditCommand::PasteCutBufferAfter] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::Yank))
-                }
-                [reedline::EditCommand::PasteCutBufferBefore] => None,
-                [reedline::EditCommand::Redo] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::ViRedo))
-                }
-                [reedline::EditCommand::SelectAll] => None,
-                [reedline::EditCommand::SwapGraphemes] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::TransposeChars))
-                }
-                [reedline::EditCommand::UppercaseWord] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::UpcaseWord))
-                }
-                [reedline::EditCommand::Undo] => {
-                    Some(KeyAction::DoInputFunction(InputFunction::Undo))
-                }
-                _ => {
-                    // TODO(input): Handle more?
-                    tracing::debug!(target: trace_categories::INPUT, "unhandled edit commands: {cmds:?}");
-                    None
-                }
-            }
-        }
-        reedline::ReedlineEvent::ClearScreen => {
-            Some(KeyAction::DoInputFunction(InputFunction::ClearScreen))
-        }
-        reedline::ReedlineEvent::CtrlC => None,
-        reedline::ReedlineEvent::CtrlD => None,
-        reedline::ReedlineEvent::Enter => {
-            Some(KeyAction::DoInputFunction(InputFunction::AcceptLine))
-        }
-        reedline::ReedlineEvent::Esc => None,
-        reedline::ReedlineEvent::MenuPrevious => None,
-        reedline::ReedlineEvent::OpenEditor => None,
-        reedline::ReedlineEvent::Left => {
-            Some(KeyAction::DoInputFunction(InputFunction::BackwardChar))
-        }
-        reedline::ReedlineEvent::Right => {
-            Some(KeyAction::DoInputFunction(InputFunction::ForwardChar))
-        }
-        reedline::ReedlineEvent::Up => Some(KeyAction::DoInputFunction(
-            InputFunction::PreviousScreenLine,
-        )),
-        reedline::ReedlineEvent::Down => {
-            Some(KeyAction::DoInputFunction(InputFunction::NextScreenLine))
-        }
-        reedline::ReedlineEvent::SearchHistory => Some(KeyAction::DoInputFunction(
-            InputFunction::HistorySearchBackward,
-        )),
-        reedline::ReedlineEvent::Repaint => {
-            Some(KeyAction::DoInputFunction(InputFunction::RedrawCurrentLine))
-        }
-        reedline::ReedlineEvent::HistoryHintComplete => {
-            Some(KeyAction::DoInputFunction(InputFunction::BrushAcceptHint))
-        }
-        reedline::ReedlineEvent::HistoryHintWordComplete => Some(KeyAction::DoInputFunction(
-            InputFunction::BrushAcceptHintWord,
-        )),
-        reedline::ReedlineEvent::Multiple(evts) => {
-            if let &[
-                reedline::ReedlineEvent::Edit(ref edit_cmds),
-                reedline::ReedlineEvent::Enter,
-            ] = evts.as_slice()
+    #[test]
+    fn emacs_prefix_alias_expansion_is_bounded_even_without_output() {
+        let mut bindings = bindings();
+        let mut previous = KeySequence::Bytes(vec![b"\x18unbound\x07".to_vec()]);
+        let mut rejected = false;
+        for n in 0..32 {
+            let alias = KeySequence::Bytes(vec![format!("\x18alias{n}\x07").into_bytes()]);
+            let KeySequence::Bytes(parts) = &previous else {
+                unreachable!()
+            };
+            let mut repeated = parts.concat();
+            repeated.extend_from_within(..);
+            if bindings
+                .define_macro_for(
+                    KeyMap::EmacsStandard,
+                    alias.clone(),
+                    KeySequence::Bytes(vec![repeated]),
+                )
+                .is_err()
             {
-                if let &[
-                    reedline::EditCommand::MoveToStart { select: false },
-                    reedline::EditCommand::InsertChar('#'),
-                ] = edit_cmds.as_slice()
-                {
-                    return Some(KeyAction::DoInputFunction(InputFunction::InsertComment));
-                }
+                assert!(n >= 2, "small acyclic aliases must be accepted");
+                rejected = true;
+                assert!(
+                    !bindings
+                        .get_macros_for(KeyMap::EmacsStandard)
+                        .contains_key(&alias)
+                );
+                break;
             }
-
-            // TODO(input): Try to extract something from these?
-            tracing::debug!(target: trace_categories::INPUT, "unhandled composite event: {evts:?}");
-            None
+            previous = alias;
         }
-        reedline::ReedlineEvent::UntilFound(uf_events) => {
-            let mut i = 0;
+        assert!(rejected, "branching aliases must have a total-work limit");
+    }
 
-            if uf_events.is_empty() {
-                return None;
-            }
+    #[test]
+    fn initial_unqualified_query_uses_emacs() {
+        let mut emacs = Keybindings::new();
+        emacs.add_binding(
+            KeyModifiers::CONTROL,
+            KeyCode::Char('l'),
+            ReedlineEvent::ClearScreen,
+        );
+        let bindings = UpdatableBindings::new(emacs, Keybindings::new(), Keybindings::new());
 
-            while i < uf_events.len() {
-                match &uf_events[i] {
-                    reedline::ReedlineEvent::HistoryHintComplete
-                    | reedline::ReedlineEvent::HistoryHintWordComplete
-                    | reedline::ReedlineEvent::Menu(_)
-                    | reedline::ReedlineEvent::MenuDown
-                    | reedline::ReedlineEvent::MenuUp
-                    | reedline::ReedlineEvent::MenuLeft
-                    | reedline::ReedlineEvent::MenuRight
-                    | reedline::ReedlineEvent::MenuNext
-                    | reedline::ReedlineEvent::MenuPrevious
-                    | reedline::ReedlineEvent::MenuPageNext
-                    | reedline::ReedlineEvent::MenuPagePrevious => {
-                        i += 1;
-                    }
-                    _ => {
-                        break;
-                    }
-                }
-            }
+        assert_eq!(
+            bindings.get_current().get(&ctrl('l')),
+            Some(&KeyAction::DoInputFunction(InputFunction::ClearScreen))
+        );
+    }
 
-            if i == uf_events.len() - 1 {
-                translate_reedline_event_to_action(&uf_events[i])
-            } else {
-                // TODO(input): Try to extract something from these?
-                tracing::debug!(target: trace_categories::INPUT, "unhandled until-found event: {uf_events:?}");
-                None
-            }
+    #[test]
+    fn initial_unqualified_binding_dispatches_in_emacs() {
+        let mut bindings = bindings();
+        bindings
+            .bind(ctrl('t'), KeyAction::ShellCommand("startup".into()))
+            .unwrap();
+        bindings
+            .bind_for(
+                KeyMap::ViInsert,
+                ctrl('t'),
+                KeyAction::ShellCommand("vi".into()),
+            )
+            .unwrap();
+
+        let (mut emacs, mut vi) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('t', KeyModifiers::CONTROL)),
+            ReedlineEvent::ExecuteHostCommand("startup".into())
+        );
+        assert_eq!(
+            vi.parse_event(raw('t', KeyModifiers::CONTROL)),
+            ReedlineEvent::ExecuteHostCommand("vi".into())
+        );
+    }
+
+    #[test]
+    fn later_mode_selection_controls_unqualified_bindings() {
+        let mut bindings = bindings();
+        for (mode, map) in [
+            (PromptEditMode::Vi(PromptViMode::Insert), KeyMap::ViInsert),
+            (PromptEditMode::Vi(PromptViMode::Normal), KeyMap::ViCommand),
+            (PromptEditMode::Emacs, KeyMap::EmacsStandard),
+        ] {
+            bindings.set_current_mode(&mode);
+            bindings
+                .bind(ctrl('t'), KeyAction::ShellCommand("live".into()))
+                .unwrap();
+            assert_eq!(
+                bindings.get_current_for(map).get(&ctrl('t')),
+                Some(&KeyAction::ShellCommand("live".into()))
+            );
+            let (mut editor, _) = bindings.editors(mode);
+            assert_eq!(
+                editor.parse_event(raw('t', KeyModifiers::CONTROL)),
+                ReedlineEvent::ExecuteHostCommand("live".into())
+            );
         }
-        reedline::ReedlineEvent::ExecuteHostCommand(cmd) => {
-            Some(KeyAction::ShellCommand(cmd.to_owned()))
+    }
+
+    #[test]
+    fn mode_switch_is_applied_only_by_the_engine_hook() {
+        let mut bindings = bindings();
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                ctrl('t'),
+                KeyAction::DoInputFunction(InputFunction::ViEditingMode),
+            )
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('t', KeyModifiers::CONTROL)),
+            ReedlineEvent::SwitchMode(PromptEditMode::Vi(PromptViMode::Insert))
+        );
+        assert_eq!(emacs.edit_mode(), PromptEditMode::Emacs);
+    }
+
+    #[test]
+    fn unsupported_actions_and_rebound_motions_are_rejected() {
+        let mut bindings = bindings();
+        let before = bindings.get_current_for(KeyMap::ViCommand);
+        for (keyseq, function) in [
+            (key('q'), InputFunction::ViDelete),
+            (key('q'), InputFunction::ViRedo),
+            (key('w'), InputFunction::ForwardChar),
+        ] {
+            assert!(
+                bindings
+                    .bind_for(
+                        KeyMap::ViCommand,
+                        keyseq,
+                        KeyAction::DoInputFunction(function)
+                    )
+                    .is_err()
+            );
         }
-        evt => {
-            // TODO(input): Handle more?
-            tracing::debug!(target: trace_categories::INPUT, "unhandled event: {evt:?}");
-            None
+        assert_eq!(bindings.get_current_for(KeyMap::ViCommand), before);
+        assert!(
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    ctrl('t'),
+                    KeyAction::Sequence(vec![
+                        KeyAction::ShellCommand("barrier".into()),
+                        KeyAction::DoInputFunction(InputFunction::ForwardChar),
+                    ])
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn modal_macro_replay_is_rejected_without_installing_a_macro() {
+        let mut bindings = bindings();
+        assert!(
+            bindings
+                .define_macro_for(
+                    KeyMap::ViCommand,
+                    key('x'),
+                    KeySequence::Strokes(vec![Key::Character('x').into(); 2])
+                )
+                .is_err()
+        );
+        assert!(bindings.get_macros_for(KeyMap::ViCommand).is_empty());
+    }
+
+    #[test]
+    fn emacs_meta_dispatches_through_library_bindings() {
+        let mut bindings = bindings();
+        bindings
+            .bind_for(
+                KeyMap::EmacsMeta,
+                key('q'),
+                KeyAction::ShellCommand("meta".into()),
+            )
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('q', KeyModifiers::ALT)),
+            ReedlineEvent::ExecuteHostCommand("meta".into())
+        );
+        assert!(
+            bindings
+                .bind_for(
+                    KeyMap::EmacsCtlx,
+                    key('q'),
+                    KeyAction::ShellCommand("ctlx".into())
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn meta_and_standard_alt_bindings_are_the_same_binding() {
+        let mut bindings = bindings();
+        let alt_q = KeySequence::from(KeyStroke {
+            alt: true,
+            ..KeyStroke::from(Key::Character('q'))
+        });
+        bindings
+            .bind_for(
+                KeyMap::EmacsMeta,
+                key('q'),
+                KeyAction::ShellCommand("old".into()),
+            )
+            .unwrap();
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                alt_q.clone(),
+                KeyAction::ShellCommand("new".into()),
+            )
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('q', KeyModifiers::ALT)),
+            ReedlineEvent::ExecuteHostCommand("new".into())
+        );
+        assert_eq!(
+            bindings.get_current_for(KeyMap::EmacsMeta).get(&key('q')),
+            Some(&KeyAction::ShellCommand("new".into()))
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, alt_q));
+        assert!(
+            !bindings
+                .get_current_for(KeyMap::EmacsMeta)
+                .contains_key(&key('q'))
+        );
+    }
+
+    #[test]
+    fn equivalent_key_spellings_replace_and_unbind_the_same_binding() {
+        let mut bindings = bindings();
+        let shifted_x = KeySequence::from(KeyStroke {
+            shift: true,
+            ..KeyStroke::from(Key::Character('x'))
+        });
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                key('X'),
+                KeyAction::ShellCommand("old".into()),
+            )
+            .unwrap();
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                shifted_x,
+                KeyAction::ShellCommand("new".into()),
+            )
+            .unwrap();
+        assert_eq!(
+            bindings
+                .get_current_for(KeyMap::EmacsStandard)
+                .get(&key('X')),
+            Some(&KeyAction::ShellCommand("new".into()))
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, key('X')));
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('X', KeyModifiers::SHIFT)),
+            ReedlineEvent::None
+        );
+    }
+
+    #[test]
+    fn macros_reject_printable_triggers_even_with_shift() {
+        let mut bindings = bindings();
+        assert!(
+            bindings
+                .define_macro_for(KeyMap::EmacsStandard, key('X'), key('X'))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn literal_macros_insert_replace_and_unbind_without_replay() {
+        let mut bindings = bindings();
+        let literal =
+            KeySequence::Strokes("Hi!".chars().map(|c| Key::Character(c).into()).collect());
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('t'), literal.clone())
+            .unwrap();
+        let (mut emacs, _) = bindings.editors(PromptEditMode::Emacs);
+        assert_eq!(
+            emacs.parse_event(raw('t', KeyModifiers::CONTROL)),
+            ReedlineEvent::Edit(vec![EditCommand::InsertString("Hi!".into())])
+        );
+        assert!(
+            bindings
+                .bind_for(
+                    KeyMap::EmacsStandard,
+                    key('H'),
+                    KeyAction::ShellCommand("no".into())
+                )
+                .is_err()
+        );
+        bindings
+            .bind_for(
+                KeyMap::EmacsStandard,
+                ctrl('t'),
+                KeyAction::ShellCommand("replacement".into()),
+            )
+            .unwrap();
+        assert!(bindings.get_macros_for(KeyMap::EmacsStandard).is_empty());
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('t'), literal)
+            .unwrap();
+        assert!(
+            !bindings
+                .get_current_for(KeyMap::EmacsStandard)
+                .contains_key(&ctrl('t'))
+        );
+        assert!(bindings.try_unbind_for(KeyMap::EmacsStandard, ctrl('t')));
+        assert!(bindings.get_macros_for(KeyMap::EmacsStandard).is_empty());
+    }
+
+    #[test]
+    fn invalid_macro_replacement_is_atomic_and_byte_bounded() {
+        let mut bindings = bindings();
+        bindings
+            .define_macro_for(KeyMap::EmacsStandard, ctrl('t'), key('a'))
+            .unwrap();
+        for target in [
+            ctrl('b'),
+            KeySequence::Bytes(vec![vec![0xff]]),
+            KeySequence::Strokes(vec![Key::Character('é').into(); 2049]),
+        ] {
+            assert!(
+                bindings
+                    .define_macro_for(KeyMap::EmacsStandard, ctrl('t'), target)
+                    .is_err()
+            );
+            assert_eq!(
+                bindings
+                    .get_macros_for(KeyMap::EmacsStandard)
+                    .get(&ctrl('t')),
+                Some(&key('a'))
+            );
         }
+        bindings
+            .define_macro_for(
+                KeyMap::EmacsStandard,
+                ctrl('t'),
+                KeySequence::Strokes(vec![Key::Character('é').into(); 2048]),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn intercepted_vi_keys_and_all_grammar_motion_prefixes_are_rejected() {
+        let mut bindings = bindings();
+        for seq in [
+            key('j'),
+            key('k'),
+            key('g'),
+            key('G'),
+            key('2'),
+            key('v'),
+            KeySequence::from(KeyStroke::from(Key::Escape)),
+        ] {
+            assert!(
+                bindings
+                    .bind_for(KeyMap::ViCommand, seq, KeyAction::ShellCommand("no".into()))
+                    .is_err()
+            );
+        }
+        assert!(
+            bindings
+                .bind_for(
+                    KeyMap::ViInsert,
+                    KeySequence::from(KeyStroke::from(Key::Escape)),
+                    KeyAction::ShellCommand("no".into())
+                )
+                .is_err()
+        );
     }
 }

@@ -68,6 +68,31 @@ without its front end. Keep that in mind when deciding what to export.
   with the shell, so it follows subshell rules as a variable does. A program embedding
   the shell can set it beforehand (`Shell::set_builtin_state`).
 
+## Interactive editing boundary
+
+The shell owns explicit emacs/vi option selection and exposes an editor-neutral
+`KeyBindings` interface. Its named-map capability query prevents a single-map
+backend from treating an unsupported vi map as its active emacs map. New named
+operations have safe defaults for existing implementations of that interface.
+
+The builtins layer owns `bind` syntax, Readline function names, and aliases. The
+interactive layer translates only supported operations into backend events. In
+the Reedline backend, a shared binding object is configuration, not an edit-mode
+wrapper: Reedline's registered emacs and vi machines own live modal state, grammar,
+selection, and cursor policy. The normal and visual vi tables remain distinct.
+
+Explicit shell selections have a revision separate from their option flags. A
+front end can therefore preserve a key-triggered live family switch across a
+bound command or another read, yet honor an explicit same-family reselection.
+Input submission does not mirror live editor state back into the shell options.
+Embedders should use the line-editing selection methods rather than setting flags
+directly when they need to force a same-family reselection.
+
+The Reedline adapter refreshes external-editor policy from current shell state
+before reading and owns the temporary buffer directory. Reedline performs editor
+handoff and file exchange. Disabled editing reuses the existing minimal reader;
+it does not introduce a separate definition of a complete shell program.
+
 ## Layering principles
 
 These decide where a behavior belongs when more than one crate could plausibly own it.
