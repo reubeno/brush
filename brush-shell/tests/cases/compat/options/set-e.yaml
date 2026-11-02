@@ -160,6 +160,13 @@ cases:
       false && true
       echo "after &&"
 
+  - name: "Error on left side of && as the last command of a for loop"
+    known_failure: true # TODO(errexit): brush exits once the loop's status is the && list's
+    stdin: |
+      set -e
+      for x in a; do false && true; done
+      echo "after for"
+
   - name: "Error on both sides of ||"
     stdin: |
       set -e
