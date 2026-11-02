@@ -4,11 +4,7 @@ use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, e
 
 /// Read lines from standard input into an indexed array variable.
 #[derive(winnow_args::Args)]
-#[arg(
-    disable_help_short,
-    disable_version_flag,
-    disable_help_subcommand
-)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct MapFileCommand {
     /// Delimiter to use (defaults to newline).
     #[arg(short = 'd')]
