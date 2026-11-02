@@ -12,71 +12,11 @@ pub(crate) struct PrintfCommand {
     output_variables: Vec<String>,
 
     /// Format string + arguments to the format string.
-    ///
-    /// N.B. We intentionally do *not* enable `allow_hyphen_values` here. Doing so would
-    /// cause an attached short-option value such as `-va` (i.e. `-v a`) to be misparsed as
-    /// a positional argument. With it disabled, a format string that genuinely needs to
-    /// start with a hyphen must be preceded by `--`, matching other shells' behavior.
-    #[arg(positional, double_dash = "automatic", required)]
+    #[arg(positional, stop_flags, required)]
     format_and_args: Vec<String>,
 }
 
-brush_winnow_args_adapter::impl_parse_args!(PrintfCommand, parse = PrintfCommand::parse_args);
-
-impl PrintfCommand {
-    // Parsed by hand: only leading `-v` options come before the format, at most
-    // one `--` ends them, and every later word is data. That is the whole
-    // grammar, and a loop over the words is the cheapest way to read it; the
-    // derive above still provides the help.
-    fn parse_args(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
-        let name = invocation.name();
-        let error = |error: winnow_args::Error| {
-            brush_winnow_args_adapter::to_usage_error::<Self>(name, &error)
-        };
-        let mut words: Vec<String> = invocation
-            .into_args()
-            .into_iter()
-            .map(String::from)
-            .collect();
-        let mut output_variables = vec![];
-        let mut index = 0;
-
-        while let Some(word) = words.get(index) {
-            if word == "--" {
-                index += 1;
-                break;
-            } else if word == "-v" {
-                let Some(value) = words.get_mut(index + 1) else {
-                    return Err(error(winnow_args::Error::missing_value(index, "-v")));
-                };
-                output_variables.push(std::mem::take(value));
-                index += 2;
-            } else if let Some(value) = word.strip_prefix("-v") {
-                output_variables.push(value.to_owned());
-                index += 1;
-            } else if word.len() > 1 && word.starts_with('-') {
-                return Err(error(winnow_args::Error::unknown_flag(
-                    index,
-                    word.as_str(),
-                )));
-            } else {
-                break;
-            }
-        }
-
-        if index >= words.len() {
-            return Err(error(winnow_args::Error::missing_argument(
-                index,
-                "FORMAT_AND_ARGS",
-            )));
-        }
-        words.drain(..index);
-        Ok(Self {
-            output_variables,
-            format_and_args: words,
-        })
-    }
-}
+brush_winnow_args_adapter::impl_parse_args!(PrintfCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
     type Error = brush_core::Error;
