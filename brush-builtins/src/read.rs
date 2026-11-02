@@ -67,11 +67,11 @@ pub(crate) struct ReadCommand {
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
     #[arg(short = 't', value_name = "SECONDS", allow_hyphen_values)]
-    timeout_in_seconds: Option<String>,
+    timeout_in_seconds: Vec<String>,
 
     /// File descriptor to read from instead of stdin.
     #[arg(short = 'u', value_name = "FD")]
-    fd_num_to_read: Option<u8>,
+    fd_num_to_read: Vec<u8>,
 
     /// Optionally, names of variables to receive read input.
     #[arg(positional)]
@@ -94,27 +94,27 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
             return error::unimp("read -i");
         }
 
-        // Validate timeout value if provided.
-        let timeout = match self.timeout_in_seconds.as_deref() {
-            None => None,
-            Some(spec) => {
-                let Some(timeout) = parse_timeout(spec) else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {spec}: invalid timeout specification",
-                        context.command_name
-                    )?;
-                    return Ok(brush_core::ExecutionResult::general_error());
-                };
-                Some(timeout)
-            }
-        };
+        // Every -t and -u given is checked before reading, and the last one is used.
+        let mut timeout = None;
+        for spec in &self.timeout_in_seconds {
+            let Some(parsed) = parse_timeout(spec) else {
+                writeln!(
+                    context.stderr(),
+                    "{}: {spec}: invalid timeout specification",
+                    context.command_name
+                )?;
+                return Ok(brush_core::ExecutionResult::general_error());
+            };
+            timeout = Some(parsed);
+        }
 
-        // Find the input stream to use.
-        let fd_num = self.fd_num_to_read.map_or(
-            brush_core::openfiles::OpenFiles::STDIN_FD,
-            brush_core::ShellFd::from,
-        );
+        let mut fd_num = brush_core::openfiles::OpenFiles::STDIN_FD;
+        for fd in &self.fd_num_to_read {
+            fd_num = brush_core::ShellFd::from(*fd);
+            context
+                .try_fd(fd_num)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+        }
 
         // Retrieve the file.
         let input_stream = context

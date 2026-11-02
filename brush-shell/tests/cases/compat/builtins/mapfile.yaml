@@ -255,12 +255,15 @@ cases:
       mapfile -t -c abc arr <<< a; echo "rc=$?"
       mapfile -t -u -1 arr <<< a; echo "rc=$?"
 
-  - name: "mapfile checks every -s and -c it is given"
+  - name: "mapfile checks every count, origin and descriptor it is given"
     ignore_stderr: true
     stdin: |
       # Only whether it fails is compared: the status itself is a known failure.
       arr=(keep); mapfile -t -s-1 -s0 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"
       arr=(keep); mapfile -t -c0 -c5000 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"
+      arr=(keep); mapfile -t -n-1 -n1 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"
+      arr=(keep); mapfile -t -O-1 -O0 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"
+      arr=(keep); mapfile -t -u 99 -u 0 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"
       arr=(keep); mapfile -t -s0 -s1 arr <<< $'a\nb'; echo "failed=$(($? != 0)) ${arr[*]}"
 
   - name: "mapfile -C calls back for each group of lines"

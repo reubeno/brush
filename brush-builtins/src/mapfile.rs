@@ -11,12 +11,12 @@ pub(crate) struct MapFileCommand {
     delimiter: Option<String>,
 
     /// Maximum number of entries to read (0 means no limit).
-    #[arg(short = 'n', default = "0")]
+    #[arg(short = 'n', default = "0", parse_with = |s: &str| at_least(s, 0))]
     max_count: i64,
 
     /// Index into array at which to start assignment.
     #[arg(short = 'O', allow_negative_numbers)]
-    origin: Option<i64>,
+    origin: Vec<i64>,
 
     /// Number of initial entries to skip.
     #[arg(short = 's', default = "0", parse_with = |s: &str| at_least(s, 0))]
@@ -27,8 +27,8 @@ pub(crate) struct MapFileCommand {
     remove_delimiter: bool,
 
     /// File descriptor to read from (defaults to stdin).
-    #[arg(short = 'u', default = "0")]
-    fd: brush_core::ShellFd,
+    #[arg(short = 'u')]
+    fd: Vec<brush_core::ShellFd>,
 
     /// Name of function to call for each group of lines.
     #[arg(short = 'C')]
@@ -66,16 +66,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             return error::unimp("mapfile -C/-c is not yet implemented");
         }
 
-        if let Some(origin) = self.origin {
-            if origin < 0 {
-                writeln!(
-                    context.stderr(),
-                    "{}: {origin}: invalid array origin",
-                    context.command_name
-                )?;
-                return Ok(ExecutionExitCode::GeneralError.into());
-            }
+        // Every -O and -u given is checked before reading, and the last one is used.
+        if let Some(origin) = self.origin.iter().find(|origin| **origin < 0) {
+            writeln!(
+                context.stderr(),
+                "{}: {origin}: invalid array origin",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::GeneralError.into());
         }
+        let origin = self.origin.last().copied();
 
         if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
             if var.value().is_associative_array() {
@@ -89,14 +89,21 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             }
         }
 
+        let mut fd = brush_core::openfiles::OpenFiles::STDIN_FD;
+        for &given in &self.fd {
+            fd = given;
+            context
+                .try_fd(fd)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd))?;
+        }
         let input_file = context
-            .try_fd(self.fd)
-            .ok_or_else(|| ErrorKind::BadFileDescriptor(self.fd))?;
+            .try_fd(fd)
+            .ok_or_else(|| ErrorKind::BadFileDescriptor(fd))?;
 
         // Read!
         let lines = self.read_lines(input_file)?;
 
-        if let Some(origin) = self.origin {
+        if let Some(origin) = origin {
             // -O: preserve existing array, assign at offset.
             for (elem_idx, value) in lines.into_iter().enumerate() {
                 // If the user is getting to wraparounds in *bash*, they got bigger problems.

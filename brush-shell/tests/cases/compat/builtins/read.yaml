@@ -525,6 +525,15 @@ cases:
       read -u abc x <<< 'a'; echo "rc=$?"
       read -u -1 x <<< 'a'; echo "rc=$?"
 
+  - name: "read checks every -t and -u it is given"
+    ignore_stderr: true
+    stdin: |
+      x=keep; read -t abc -t 1 x <<< data; echo "rc=$? x=$x"
+      x=keep; read -t inf -t 1 x <<< data; echo "rc=$? x=$x"
+      x=keep; read -t 1 -t abc x <<< data; echo "rc=$? x=$x"
+      x=keep; read -u 99 -u 0 x <<< data; echo "rc=$? x=$x"
+      x=keep; read -t 5 -t 1 x <<< data; echo "rc=$? x=$x"
+
   - name: "read -t with an exponent fails with status 1"
     known_failure: true # TODO(read): accepts 1e1
     ignore_stderr: true
