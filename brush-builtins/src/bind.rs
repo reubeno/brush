@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
-    interfaces::{self, InputFunction, KeyAction, KeySequence},
+    interfaces::{self, InputFunction, KeyAction, KeyMap, KeySequence},
     sys, trace_categories,
 };
 
@@ -26,16 +26,14 @@ enum BindKeyMap {
 }
 
 impl BindKeyMap {
-    const fn is_vi(&self) -> bool {
-        matches!(self, Self::ViCommand | Self::ViInsert)
-    }
-
-    #[expect(dead_code)]
-    const fn is_emacs(&self) -> bool {
-        matches!(
-            self,
-            Self::EmacsStandard | Self::EmacsMeta | Self::EmacsCtlx
-        )
+    const fn as_keymap(&self) -> KeyMap {
+        match self {
+            Self::EmacsStandard => KeyMap::EmacsStandard,
+            Self::EmacsMeta => KeyMap::EmacsMeta,
+            Self::EmacsCtlx => KeyMap::EmacsCtlx,
+            Self::ViCommand => KeyMap::ViCommand,
+            Self::ViInsert => KeyMap::ViInsert,
+        }
     }
 }
 
@@ -103,7 +101,7 @@ pub(crate) enum BindError {
     Unimplemented(&'static str),
 
     /// An I/O error occurred.
-    #[error("I/O error occurred")]
+    #[error(transparent)]
     IoError(#[from] std::io::Error),
 
     /// A binding parse error occurred.
@@ -150,6 +148,12 @@ impl BindCommand {
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, BindError> {
         let mut bindings = bindings.lock().await;
+        let selected_keymap = self.keymap.as_ref().map(BindKeyMap::as_keymap);
+        if selected_keymap.is_some_and(|keymap| !bindings.supports_keymap(keymap)) {
+            return Err(BindError::Unimplemented(
+                "requested keymap is not supported by this input backend",
+            ));
+        }
 
         if self.list_funcs {
             for func in interfaces::InputFunction::iter() {
@@ -158,19 +162,39 @@ impl BindCommand {
         }
 
         if self.list_funcs_and_bindings {
-            display_funcs_and_bindings(&*bindings, context, false /* reusable? */)?;
+            display_funcs_and_bindings(
+                &*bindings,
+                context,
+                false, /* reusable? */
+                selected_keymap,
+            )?;
         }
 
         if self.list_funcs_and_bindings_reusable {
-            display_funcs_and_bindings(&*bindings, context, true /* reusable? */)?;
+            display_funcs_and_bindings(
+                &*bindings,
+                context,
+                true, /* reusable? */
+                selected_keymap,
+            )?;
         }
 
         if self.list_key_seqs_that_invoke_macros {
-            display_macros(&*bindings, context, false /* reusable? */)?;
+            display_macros(
+                &*bindings,
+                context,
+                false, /* reusable? */
+                selected_keymap,
+            )?;
         }
 
         if self.list_key_seqs_that_invoke_macros_reusable {
-            display_macros(&*bindings, context, true /* reusable? */)?;
+            display_macros(
+                &*bindings,
+                context,
+                true, /* reusable? */
+                selected_keymap,
+            )?;
         }
 
         if self.list_vars {
@@ -206,7 +230,7 @@ impl BindCommand {
         }
 
         if let Some(func_str) = &self.query_func_bindings {
-            let seqs = find_key_seqs_bound_to_function(&*bindings, func_str)?;
+            let seqs = find_key_seqs_bound_to_function(&*bindings, func_str, selected_keymap)?;
 
             if !seqs.is_empty() {
                 writeln!(
@@ -221,16 +245,25 @@ impl BindCommand {
         }
 
         if let Some(func_str) = &self.remove_func_bindings {
-            let found_seqs = find_key_seqs_bound_to_function(&*bindings, func_str)?;
+            let found_seqs =
+                find_key_seqs_bound_to_function(&*bindings, func_str, selected_keymap)?;
 
             for seq in found_seqs {
-                let _ = bindings.try_unbind(seq);
+                if let Some(keymap) = selected_keymap {
+                    let _ = bindings.try_unbind_for(keymap, seq);
+                } else {
+                    let _ = bindings.try_unbind(seq);
+                }
             }
         }
 
         if let Some(key_seq_str) = &self.remove_key_seq_binding {
             let key_seq = parse_key_sequence(key_seq_str)?;
-            let _ = bindings.try_unbind(key_seq);
+            if let Some(keymap) = selected_keymap {
+                let _ = bindings.try_unbind_for(keymap, key_seq);
+            } else {
+                let _ = bindings.try_unbind(key_seq);
+            }
         }
 
         if self.bindings_file.is_some() {
@@ -238,7 +271,9 @@ impl BindCommand {
         }
 
         if self.list_key_seq_bindings {
-            for (seq, action) in &bindings.get_current() {
+            let current_bindings = current_bindings(&*bindings, selected_keymap);
+
+            for (seq, action) in &current_bindings {
                 let KeyAction::ShellCommand(cmd) = action else {
                     continue;
                 };
@@ -248,25 +283,15 @@ impl BindCommand {
         }
 
         if !self.key_seq_bindings.is_empty() {
-            if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
-                // NOTE(vi): Quietly ignore since we don't support vi mode.
-                return Ok(ExecutionResult::success());
-            }
-
             for key_seq_and_command in &self.key_seq_bindings {
                 let (key_seq, command) = parse_key_sequence_and_shell_command(key_seq_and_command)?;
-                bind_key_sequence_to_shell_cmd(&mut *bindings, key_seq, command)?;
+                bind_key_sequence_to_shell_cmd(&mut *bindings, selected_keymap, key_seq, command)?;
             }
         }
 
         if let Some(key_sequence) = &self.key_sequence {
-            if self.keymap.as_ref().is_some_and(|k| k.is_vi()) {
-                // NOTE(vi): Quietly ignore since we don't support vi mode.
-                return Ok(ExecutionResult::success());
-            }
-
             let (key_seq, target) = parse_key_sequence_and_readline_target(key_sequence.as_str())?;
-            bind_key_sequence_to_readline_target(&mut *bindings, key_seq, target)?;
+            bind_key_sequence_to_readline_target(&mut *bindings, selected_keymap, key_seq, target)?;
         }
 
         drop(bindings);
@@ -342,6 +367,7 @@ fn parse_key_sequence_and_readline_target(
 
 fn bind_key_sequence_to_shell_cmd(
     bindings: &mut dyn interfaces::KeyBindings,
+    keymap: Option<KeyMap>,
     key_sequence: interfaces::KeySequence,
     command: String,
 ) -> Result<(), BindError> {
@@ -349,13 +375,22 @@ fn bind_key_sequence_to_shell_cmd(
         "binding key sequence: '{key_sequence}' => command '{command}'"
     );
 
-    bindings.bind(key_sequence, interfaces::KeyAction::ShellCommand(command))?;
+    if let Some(keymap) = keymap {
+        bindings.bind_for(
+            keymap,
+            key_sequence,
+            interfaces::KeyAction::ShellCommand(command),
+        )?;
+    } else {
+        bindings.bind(key_sequence, interfaces::KeyAction::ShellCommand(command))?;
+    }
 
     Ok(())
 }
 
 fn bind_key_sequence_to_readline_target(
     bindings: &mut dyn interfaces::KeyBindings,
+    keymap: Option<KeyMap>,
     key_sequence: interfaces::KeySequence,
     target: BindableReadlineTarget,
 ) -> Result<(), BindError> {
@@ -365,22 +400,28 @@ fn bind_key_sequence_to_readline_target(
                 "binding key sequence: '{key_sequence}' => readline function '{func}'"
             );
 
-            if matches!(func, interfaces::InputFunction::ViEditingMode) {
-                // NOTE(vi): We don't support vi mode; silently ignore.
-                return Ok(());
+            if let Some(keymap) = keymap {
+                bindings.bind_for(
+                    keymap,
+                    key_sequence,
+                    interfaces::KeyAction::DoInputFunction(func),
+                )?;
+            } else {
+                bindings.bind(key_sequence, interfaces::KeyAction::DoInputFunction(func))?;
             }
-
-            bindings.bind(key_sequence, interfaces::KeyAction::DoInputFunction(func))?;
         }
         BindableReadlineTarget::Macro(cmd_macro) => {
             tracing::debug!(target: trace_categories::INPUT,
                 "binding key sequence: '{key_sequence}' => readline macro '{cmd_macro}'"
             );
 
-            bindings.define_macro(key_sequence, cmd_macro)?;
+            if let Some(keymap) = keymap {
+                bindings.define_macro_for(keymap, key_sequence, cmd_macro)?;
+            } else {
+                bindings.define_macro(key_sequence, cmd_macro)?;
+            }
         }
     }
-
     Ok(())
 }
 
@@ -394,7 +435,15 @@ fn key_sequence_to_abstract_strokes(
     let mut key_code_bytes = vec![];
     let mut uninterpretable = false;
     for mut phys_stroke in phys_strokes {
-        let mut key = sys::input::try_get_key_from_key_code(phys_stroke.key_code.as_slice());
+        // Both spellings must decode independently of terminfo so reusable
+        // macro listings also work on terminals with application-mode arrows.
+        let mut key = match phys_stroke.key_code.as_slice() {
+            b"\x1b[A" | b"\x1bOA" => Some(interfaces::Key::Up),
+            b"\x1b[B" | b"\x1bOB" => Some(interfaces::Key::Down),
+            b"\x1b[C" | b"\x1bOC" => Some(interfaces::Key::Right),
+            b"\x1b[D" | b"\x1bOD" => Some(interfaces::Key::Left),
+            bytes => sys::input::try_get_key_from_key_code(bytes),
+        };
 
         // If we couldn't interpret it directly but we see it starts with the escape character,
         // try to see if we can parse it as an Alt+<key> sequence.
@@ -422,6 +471,16 @@ fn key_sequence_to_abstract_strokes(
                 shift: false,
                 key,
             });
+        } else if !phys_stroke.meta
+            && !phys_stroke.control
+            && phys_stroke.key_code.as_slice() == b"\x1b"
+        {
+            abstract_strokes.push(interfaces::KeyStroke {
+                alt: false,
+                control: false,
+                shift: false,
+                key: interfaces::Key::Escape,
+            });
         } else {
             uninterpretable = true;
         }
@@ -447,9 +506,11 @@ fn display_funcs_and_bindings(
     bindings: &dyn interfaces::KeyBindings,
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     reusable: bool,
+    keymap: Option<KeyMap>,
 ) -> Result<(), BindError> {
     let mut sequences_by_func: HashMap<InputFunction, Vec<KeySequence>> = HashMap::new();
-    for (seq, action) in &bindings.get_current() {
+    let current_bindings = current_bindings(bindings, keymap);
+    for (seq, action) in &current_bindings {
         let KeyAction::DoInputFunction(func) = action else {
             continue;
         };
@@ -465,7 +526,7 @@ fn display_funcs_and_bindings(
     for func in sorted_funcs {
         match sequences_by_func.get(&func) {
             Some(seqs) if reusable => {
-                for seq in seqs {
+                for seq in seqs.iter().sorted_by_key(|seq| seq.to_string()) {
                     writeln!(context.stdout(), "\"{seq}\": {func}")?;
                 }
             }
@@ -473,7 +534,10 @@ fn display_funcs_and_bindings(
                 writeln!(
                     context.stdout(),
                     "{func} can be found on {}.",
-                    seqs.iter().map(|seq| std::format!("\"{seq}\"")).join(", ")
+                    seqs.iter()
+                        .sorted_by_key(|seq| seq.to_string())
+                        .map(|seq| std::format!("\"{seq}\""))
+                        .join(", ")
                 )?;
             }
             None if reusable => {
@@ -492,8 +556,15 @@ fn display_macros(
     bindings: &dyn interfaces::KeyBindings,
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     reusable: bool,
+    keymap: Option<KeyMap>,
 ) -> Result<(), BindError> {
-    for (left, right) in bindings.get_macros() {
+    let macros = current_macros(bindings, keymap);
+    for (left, right) in macros
+        .into_iter()
+        .sorted_by_key(|(left, _)| left.to_string())
+    {
+        let left = format_macro_sequence(&left);
+        let right = format_macro_sequence(&right);
         if reusable {
             writeln!(context.stdout(), "\"{left}\": \"{right}\"")?;
         } else {
@@ -504,17 +575,42 @@ fn display_macros(
     Ok(())
 }
 
+fn format_macro_sequence(sequence: &KeySequence) -> String {
+    let KeySequence::Strokes(strokes) = sequence else {
+        return sequence.to_string();
+    };
+    strokes
+        .iter()
+        .map(|stroke| {
+            // Terminfo decodes either cursor/application spelling to one arrow.
+            // Emit a reusable Readline spelling rather than the display name "Up".
+            if !stroke.alt && !stroke.control && !stroke.shift {
+                match stroke.key {
+                    interfaces::Key::Up => return r"\e[A".to_owned(),
+                    interfaces::Key::Down => return r"\e[B".to_owned(),
+                    interfaces::Key::Right => return r"\e[C".to_owned(),
+                    interfaces::Key::Left => return r"\e[D".to_owned(),
+                    _ => {}
+                }
+            }
+            stroke.to_string()
+        })
+        .collect()
+}
+
 fn find_key_seqs_bound_to_function(
     bindings: &dyn interfaces::KeyBindings,
     func_str: &str,
+    keymap: Option<KeyMap>,
 ) -> Result<Vec<interfaces::KeySequence>, BindError> {
     let Ok(func_to_find) = InputFunction::from_str(func_str) else {
         return Err(BindError::UnknownFunction(func_str.to_owned()));
     };
 
     let mut found_seqs = vec![];
+    let current_bindings = current_bindings(bindings, keymap);
 
-    for (seq, action) in &bindings.get_current() {
+    for (seq, action) in &current_bindings {
         if let KeyAction::DoInputFunction(func) = action
             && *func == func_to_find
         {
@@ -522,7 +618,29 @@ fn find_key_seqs_bound_to_function(
         }
     }
 
+    found_seqs.sort_by_key(std::string::ToString::to_string);
+
     Ok(found_seqs)
+}
+
+fn current_bindings(
+    bindings: &dyn interfaces::KeyBindings,
+    keymap: Option<KeyMap>,
+) -> HashMap<KeySequence, KeyAction> {
+    match keymap {
+        Some(keymap) => bindings.get_current_for(keymap),
+        None => bindings.get_current(),
+    }
+}
+
+fn current_macros(
+    bindings: &dyn interfaces::KeyBindings,
+    keymap: Option<KeyMap>,
+) -> HashMap<KeySequence, KeySequence> {
+    match keymap {
+        Some(keymap) => bindings.get_macros_for(keymap),
+        None => bindings.get_macros(),
+    }
 }
 
 #[cfg(test)]
@@ -570,5 +688,40 @@ mod tests {
             target,
             BindableReadlineTarget::Function(interfaces::InputFunction::TransposeChars)
         );
+    }
+
+    #[test]
+    fn macro_listing_serializes_decoded_arrows_as_readline_sequences() {
+        for (key, expected) in [
+            (interfaces::Key::Up, r"\e[A"),
+            (interfaces::Key::Down, r"\e[B"),
+            (interfaces::Key::Right, r"\e[C"),
+            (interfaces::Key::Left, r"\e[D"),
+        ] {
+            let sequence = KeySequence::from(interfaces::KeyStroke::from(key));
+            assert_eq!(format_macro_sequence(&sequence), expected);
+        }
+    }
+
+    #[test]
+    fn arrow_macro_listings_round_trip_without_terminfo_aliases() {
+        for (spelling, key) in [
+            (r"\e[A", interfaces::Key::Up),
+            (r"\e[B", interfaces::Key::Down),
+            (r"\e[C", interfaces::Key::Right),
+            (r"\e[D", interfaces::Key::Left),
+            (r"\eOA", interfaces::Key::Up),
+            (r"\eOB", interfaces::Key::Down),
+            (r"\eOC", interfaces::Key::Right),
+            (r"\eOD", interfaces::Key::Left),
+        ] {
+            let expected = KeySequence::from(interfaces::KeyStroke::from(key));
+            let parsed = parse_key_sequence(spelling).unwrap();
+            assert_eq!(parsed, expected);
+            assert_eq!(
+                parse_key_sequence(&format_macro_sequence(&parsed)).unwrap(),
+                expected
+            );
+        }
     }
 }

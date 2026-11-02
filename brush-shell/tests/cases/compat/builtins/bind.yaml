@@ -20,11 +20,15 @@ cases:
           echo "bind -l result: ${PIPESTATUS[@]}"
 
   - name: "bind -q/-P/-p"
+    home_dir: "."
     args: ["run.sh"]
     removed_default_args: ["--input-backend=basic"]
     additional_test_args: ["--input-backend=reedline"]
     ignore_stderr: true
+    env: { INPUTRC: ".inputrc" }
     test_files:
+      - path: ".inputrc"
+        contents: ""
       - path: "run.sh"
         contents: |
           # Basic-check some known bindings
@@ -41,6 +45,32 @@ cases:
           echo "[bind -p]"
           bind -p | grep ${well_known_func}
           echo "bind -p result: ${PIPESTATUS[@]}"
+
+  - name: "bind startup bindings use emacs"
+    home_dir: "."
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    env: { INPUTRC: ".inputrc" }
+    test_files:
+      - path: ".inputrc"
+        contents: ""
+      - path: "run.sh"
+        contents: |
+          # No interactive read has selected a map yet.
+          bind '"\C-t":clear-screen'
+          bind -m emacs-standard -q clear-screen
+          echo "emacs query: $?"
+          bind -m vi-insert -q clear-screen
+          echo "vi-insert query: $?"
+
+          # An explicit vi binding must not select or overwrite the default map.
+          bind -m vi-insert '"\C-g":clear-screen'
+          bind -m vi-insert -q clear-screen
+          echo "vi-insert after bind: $?"
+          bind -q clear-screen
+          echo "default after vi bind: $?"
 
   - name: "bind -x/-X/-r/-u"
     args: ["run.sh"]
@@ -158,3 +188,60 @@ cases:
           echo "[bind -S]"
           bind -S | grep "${key_to_bind}"
           echo "bind -S result: ${PIPESTATUS[@]}"
+
+  - name: "bind literal insertion macro"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m emacs-standard '"\C-t":"literal text"'
+          echo "literal bind: $?"
+          bind -m emacs-standard -s | grep -F '"\C-t": "literal text"'
+          bind -m emacs-standard -r '\C-t'
+          bind -m emacs-standard -s | grep -F '"\C-t":'
+          echo "removed: ${PIPESTATUS[@]}"
+
+  - name: "bind emacs intermediate prefix macro"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    test_files:
+      - path: "run.sh"
+        contents: |
+          bind -m emacs-standard '"\C-r":"\C-x\C-_probe\a"'
+          echo "macro: $?"
+          bind -m emacs-standard -x '"\C-x\C-_probe\a": echo probe'
+          echo "target: $?"
+          bind -m emacs-standard -s | grep -Fq '"\C-r":'
+          echo "listed: $?"
+          bind -m emacs-standard -r '\C-x\C-_probe\a'
+          echo "removed target: $?"
+          bind -m emacs-standard -s | grep -Fq '"\C-r":'
+          echo "macro retained: $?"
+
+  - name: "bind arrow macro listing is reusable"
+    args: ["run.sh"]
+    removed_default_args: ["--input-backend=basic"]
+    additional_test_args: ["--input-backend=reedline"]
+    ignore_stderr: true
+    env: { TERM: "xterm" }
+    test_files:
+      - path: "run.sh"
+        contents: |
+          for arrow in A B C D; do
+            bind '"\eO'"$arrow"'":"probe"'
+            echo "macro: $?"
+            saved=$(bind -s)
+            [[ $saved == *probe* ]]
+            echo "listed: $?"
+            bind -r '\eO'"$arrow"
+            bind "$saved"
+            echo "restored: $?"
+            bind -r '\eO'"$arrow"
+            bind -s | grep -Fq probe
+            echo "removed: $?"
+          done

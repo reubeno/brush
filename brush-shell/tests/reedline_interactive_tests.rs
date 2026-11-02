@@ -40,6 +40,189 @@ const DSR_REPLY: &str = "\x1b[1;1R";
 const COMMAND_STARTED: &str = "\x1b]633;C";
 const COMMAND_FINISHED: &str = "\x1b]633;D";
 
+#[test]
+fn no_editing_reads_complete_programs() -> anyhow::Result<()> {
+    use std::{io::Write as _, process::Stdio};
+
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin!("brush"))
+        .args([
+            "--no-config",
+            "--norc",
+            "--noprofile",
+            "--input-backend=reedline",
+            "--noediting",
+            "-i",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    child.stdin.take().unwrap().write_all(
+        b"if false\nthen\necho WRONG_BRANCH\nfi\ncat <<EOF\nhere-doc\nEOF\nprintf '%s\\n' con\\\ntinued\nexit\n",
+    )?;
+    let output = child.wait_with_output()?;
+    assert_eq!(String::from_utf8(output.stdout)?, "here-doc\ncontinued\n");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
+
+#[test]
+fn editor_family_survives_bound_commands() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"bind -m emacs-standard '"\C-t":vi-editing-mode'; bind -m vi-insert -x '"\C-g":echo FAMILY_""KEPT'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x14")?;
+    // Reedline parses a terminal burst before applying SwitchMode. Wait until
+    // the switch has painted before sending a key for the newly active family.
+    session.expect(PROMPT)?;
+    for _ in 0..2 {
+        session.send("\x07")?;
+        session.expect("FAMILY_KEPT")?;
+        expect_next_prompt(&mut session, 0)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn vi_operators_edit_the_buffer() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(
+        r#"set -o vi; bind -m vi-command -x '"\C-g":printf "BUFFER=<%s>\n" "$READLINE_LINE"'"#,
+    )?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("abc def")?;
+    session.expect("brush> abc def")?;
+    session.send("\x1b")?;
+    session.expect(PROMPT)?;
+    session.send("0dw")?;
+    session.send("\x07")?;
+    session.expect("BUFFER=<def>")?;
+    Ok(())
+}
+
+#[test]
+fn explicit_same_option_selection_overrides_a_live_family_switch() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"set -o emacs; bind -m emacs-standard '"\C-t":vi-editing-mode'; bind -m emacs-standard -x '"\C-g":echo EMACS_""SELECTED'; bind -m vi-insert -x '"\C-g":set -o emacs'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x14")?;
+    session.expect(PROMPT)?;
+    session.send("\x07")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x07")?;
+    session.expect("EMACS_SELECTED")?;
+    Ok(())
+}
+
+#[test]
+fn vi_visual_selection_deletes_the_selected_text() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(
+        r#"set -o vi; bind -m vi-command -x '"\C-g":printf "BUFFER=<%s>\n" "$READLINE_LINE"'"#,
+    )?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("abc def")?;
+    session.expect("brush> abc def")?;
+    session.send("\x1b")?;
+    session.expect(PROMPT)?;
+    for key in ["0", "v", "l", "d"] {
+        session.send(key)?;
+        session.expect(PROMPT)?;
+    }
+    session.send("\x07")?;
+    session.expect("BUFFER=<c def>")?;
+    Ok(())
+}
+
+#[test]
+fn literal_macro_inserts_into_the_live_buffer() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"bind -m emacs-standard '"\C-t":"echo MACRO_OK"'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x14")?;
+    session.expect("brush> echo MACRO_OK")?;
+    session.send_line("")?;
+    session.expect("\r\nMACRO_OK\r\n")?;
+    Ok(())
+}
+
+#[test]
+fn emacs_prefix_macro_dispatches_a_callback_and_preserves_input() -> anyhow::Result<()> {
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send_line(r#"bind '"\C-r":"\C-x\C-_probe\a"'; bind -x '"\C-x\C-_probe\a": printf "PREFIX_""FIRED\n"'; bind -x '"\C-g": printf "BUFFER=<%s>\n" "$READLINE_LINE"'"#)?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("keep-me")?;
+    session.expect("brush> keep-me")?;
+    session.send("\x12")?;
+    session.expect("PREFIX_FIRED")?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("\x07")?;
+    session.expect("BUFFER=<keep-me>")?;
+    Ok(())
+}
+
+#[test]
+fn external_editor_uses_current_shell_state_and_cleans_up() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let script = directory.path().join("editor script");
+    let record = directory.path().join("record");
+    std::fs::write(
+        &script,
+        r#"printf '%s\n' "$1" "$PWD" "$BRUSH_EDITOR_MARKER" "$2" > "$BRUSH_EDITOR_RECORD"
+printf 'echo EDITOR_""EXECUTED\n' > "$2"
+"#,
+    )?;
+    let mut session = start_reedline_session()?;
+    expect_next_prompt(&mut session, 0)?;
+    // VISUAL is deliberately selected after startup and contains both a quoted
+    // script path and a quoted argument. The command must see shell-local cwd/env.
+    session.send_line(format!(r#"set -o vi; VISUAL="/bin/sh '{}' 'two words'"; export BRUSH_EDITOR_MARKER=from-shell BRUSH_EDITOR_RECORD='{}'; cd '{}'; bind -m vi-command '"\C-t":vi-edit-and-execute-command'"#, script.display(), record.display(), directory.path().display()))?;
+    expect_next_prompt(&mut session, 0)?;
+    session.send("discard me")?;
+    session.expect("brush> discard me")?;
+    session.send("\x1b")?;
+    session.expect(PROMPT)?;
+    session.send("\x14")?;
+    session.expect(DSR_QUERY)?;
+    session.send(DSR_REPLY)?;
+    session.expect("\r\nEDITOR_EXECUTED\r\n")?;
+    expect_next_prompt(&mut session, 0)?;
+    let recorded = std::fs::read_to_string(record)?;
+    let lines: Vec<_> = recorded.lines().collect();
+    assert_eq!(
+        &lines[..3],
+        [
+            "two words",
+            directory.path().to_str().unwrap(),
+            "from-shell"
+        ]
+    );
+    let buffer = std::path::Path::new(lines[3]);
+    assert!(buffer.is_file());
+    session.send("\x04")?;
+    session.expect(expectrl::Eof)?;
+    assert!(
+        !buffer.exists(),
+        "editor buffer leaked after shell exit: {}",
+        buffer.display()
+    );
+    assert!(
+        !buffer.parent().unwrap().exists(),
+        "private editor directory leaked"
+    );
+    Ok(())
+}
+
 /// A key bound with `bind -x` must run its command and leave the shell
 /// alive. Regression test for reedline >= 0.48 delivering such keys as
 /// `Signal::HostCommand`, which previously fell through to a fatal
