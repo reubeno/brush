@@ -503,6 +503,15 @@ cases:
       x=old; printf -v x -v 1bad '%s' new; echo "rc=$? x=$x"
       printf -v y -v x '%s' last; echo "rc=$? x=$x y=${y-unset}"
 
+  - name: "printf -v doesn't evaluate a subscript to check the name"
+    ignore_stderr: true
+    stdin: |
+      x=old; printf -v 'a[(]' -v x '%s' new; echo "rc=$? x=$x"
+      x=old; printf -v 'a[\]]' -v x '%s' new; echo "rc=$? x=$x"
+      x=old; printf -v "a['x]']" -v x '%s' new; echo "rc=$? x=$x"
+      x=old; printf -v 'a["x]' -v x '%s' new; echo "rc=$? x=$x"
+      x=old; printf -v 'a[[]' -v x '%s' new; echo "rc=$? x=$x"
+
   - name: "printf -v takes a[@] and a[*] as names but can't assign to them"
     ignore_stderr: true
     stdin: |
