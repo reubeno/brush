@@ -792,13 +792,6 @@ pub(crate) async fn invoke_shell_function(
 ) -> Result<ExecutionSpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function.definition().body;
 
-    // Apply any redirects specified at function definition-time.
-    if let Some(redirects) = redirects {
-        for redirect in &redirects.0 {
-            interp::setup_redirect(context.shell, &mut context.params, redirect).await?;
-        }
-    }
-
     let positional_args = args.iter().map(|a| a.to_string());
 
     // Enter the function; it's left however its body ends, even if it's cancelled.
@@ -806,6 +799,13 @@ pub(crate) async fn invoke_shell_function(
         context
             .shell
             .enter_function(context.command_name.as_str(), &function, positional_args)?;
+
+    // Apply any redirects specified at function definition-time, in the function.
+    if let Some(redirects) = redirects {
+        for redirect in &redirects.0 {
+            interp::setup_redirect(&mut shell, &mut context.params, redirect).await?;
+        }
+    }
 
     // A function executes within the current shell process and shares its caller's open files,
     // so the parameters are passed through by shared reference rather than cloned. This prevents

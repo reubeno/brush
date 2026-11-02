@@ -129,7 +129,6 @@ cases:
       done
 
   - name: "Continue in nested for loop with too large N"
-    known_failure: true
     stdin: |
       for f in a b c; do
         for g in 1 2 3; do
@@ -202,23 +201,29 @@ cases:
       echo "after loop: $?"
 
   - name: "break with a count of zero"
-    known_failure: true # TODO(loops): break 0 doesn't report "loop count out of range" and fail with 1
     ignore_stderr: true
     stdin: |
       for i in 1 2; do break 0; echo "body $i"; done
       echo "after loop: $?"
 
   - name: "break and continue with a count of zero leave every loop"
-    known_failure: true # TODO(loops): a count of zero doesn't leave every loop
     ignore_stderr: true
     stdin: |
       for i in 1 2; do for j in a b; do break 0; done; echo "outer $i"; done
+      echo "after break: $?"
+      for i in 1 2; do for j in a b; do continue 0; done; echo "outer $i"; done
+      echo "after continue: $?"
+
+  - name: "break and continue with a negative count leave every loop"
+    known_failure: true # TODO(loops): a negative count is taken for an option and rejected
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do for j in a b; do break -1; done; echo "outer $i"; done
       echo "after break: $?"
       for i in 1 2; do for j in a b; do continue -1; done; echo "outer $i"; done
       echo "after continue: $?"
 
   - name: "break and continue outside a loop"
-    known_failure: true # TODO(loops): outside a loop, they end the line (or fail in a function), where bash reports it and goes on
     ignore_stderr: true
     stdin: |
       break; echo "after break: $?"
@@ -232,7 +237,6 @@ cases:
       f
 
   - name: "break and continue act only on the loops of the current function"
-    known_failure: true # TODO(loops): a function's body doesn't start outside its caller's loops
     ignore_stderr: true
     stdin: |
       f() { break; echo "f went on: $?"; }
@@ -249,7 +253,6 @@ cases:
       for i in 1; do cat <(break; echo "not read"); echo "after process substitution"; done
 
   - name: "break and continue past the outermost loop"
-    known_failure: true # TODO(loops): a count past the outermost loop doesn't stop there
     stdin: |
       for i in 1 2; do for j in a b; do break 5; done; echo "not reached"; done
       echo "after break: $?"
@@ -267,7 +270,6 @@ cases:
       for i in 1; do break --help >/dev/null; echo "help: $?"; done
 
   - name: "break and continue clamp their count to the loop depth"
-    known_failure: true # TODO(loops): the shell doesn't track its loop depth, so a count past it leaves every loop, the function, and the script
     stdin: |
       for i in 1 2; do
         for j in 1 2; do break 99; echo "inner $i$j"; done
@@ -276,3 +278,81 @@ cases:
       echo "after: $?"
       f() { for k in 1 2; do continue 99; echo "in f $k"; done; echo "f end"; }
       for i in 1 2; do f; echo "loop $i"; done
+
+  - name: "break outside a loop reports it, except in POSIX mode"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { break; echo "break: $?"; } 2>&1 | strip
+      { continue; echo "continue: $?"; } 2>&1 | strip
+      set -o posix
+      break; echo "POSIX break: $?"
+      continue; echo "POSIX continue: $?"
+
+  - name: "A compound command in a subshell of its own starts outside any loop"
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do { break; echo "first stage went on"; } | cat; echo "body $i"; done
+      for i in 1 2; do : | if true; then break; echo "last stage went on"; fi; echo "body $i"; done
+      for i in 1 2; do { break; echo "async group went on"; } & wait $!; echo "body $i"; done
+      for i in 1 2; do true && break & wait $!; echo "async list $i"; done
+      for i in 1 2; do : | for j in 1; do break 2; done; echo "stage loop $i"; done
+
+  - name: "A simple command in a subshell keeps the enclosing loops"
+    stdin: |
+      for i in 1 2; do : | break; echo "last stage $i"; done
+      for i in 1 2; do break | :; echo "first stage $i"; done
+      for i in 1 2; do break & wait $!; echo "async $i"; done
+      for i in 1 2; do x=$({ break; echo "not captured"; }); echo "substitution $i [$x]"; done
+      shopt -s lastpipe
+      for i in 1 2; do : | { break; echo "not reached"; }; echo "not reached $i"; done
+      echo "lastpipe: $?"
+
+  - name: "eval and a sourced script share the loops they're run in"
+    ignore_stderr: true
+    stdin: |
+      for i in 1 2; do eval 'break'; echo "not reached $i"; done
+      for i in 1 2; do eval 'break 2'; echo "not reached $i"; done
+      echo "eval: $?"
+      printf 'break\necho "not reached in file"\n' > in_loop.sh
+      for i in 1 2; do . ./in_loop.sh; echo "not reached $i"; done
+      echo "sourced: $?"
+      printf 'break\necho "in file: $?"\n' > no_loop.sh
+      . ./no_loop.sh
+      for i in 1 2; do eval 'f() { break; echo "f went on"; }; f'; echo "eval $i"; done
+      rm in_loop.sh no_loop.sh
+
+  - name: "continue in a loop's condition"
+    ignore_stderr: true
+    stdin: |
+      n=0
+      while n=$((n + 1)); [ $n -lt 3 ] && continue; [ $n -lt 5 ]; do echo "while body $n"; done
+      echo "while: n=$n"
+      n=0
+      until n=$((n + 1)); [ $n -lt 3 ] && continue; [ $n -ge 5 ]; do echo "until body $n"; done
+      echo "until: n=$n"
+      while break; do echo "not reached"; done
+      echo "break in a condition: $?"
+
+  - name: "break and continue go on when they can't report"
+    stdin: |
+      for i in 1 2; do break 0 2>&-; echo "break went on"; done
+      echo "break 0: $?"
+      for i in 1 2; do continue 0 2>&-; echo "continue went on"; done
+      echo "continue 0: $?"
+      break 2>&-; echo "break: $?"
+      continue 2>&-; echo "continue: $?"
+
+  - name: "A loop's words and initializer are in the loop"
+    stdin: |
+      for v in "$(break; echo "word went on")"; do echo "[$v]"; done
+      for ((i = 1$(continue; echo 7); i < 3; i++)); do echo "i=$i"; done
+
+  - name: "Redirections of a compound command in a subshell of its own are outside any loop"
+    ignore_stderr: true
+    stdin: |
+      for i in 1; do : | { read -r v; echo "[$v]"; } <<<"$(break; echo "stage went on")"; done
+      for i in 1; do : | while read -r v; do echo "[$v]"; done <<<"$(break; echo "loop stage went on")"; done
+      f() { read -r v; echo "[$v]"; } <<<"$(break; echo "function went on")"
+      for i in 1; do f; done
+      shopt -s lastpipe
+      for i in 1; do : | { read -r v; echo "[$v]"; } <<<"$(break; echo "not captured")"; done

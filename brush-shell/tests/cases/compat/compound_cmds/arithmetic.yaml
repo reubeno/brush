@@ -14,3 +14,11 @@ cases:
     stdin: |
       (( (0) == 0 )) && echo "0 == 0"
       (( (1) != 0 )) && echo "1 != 0"
+
+  - name: "An arithmetic error in an arithmetic command fails it alone"
+    known_failure: true # TODO(arithmetic): an arithmetic error in '((' or an arithmetic for ends the rest of the line
+    ignore_stderr: true
+    stdin: |
+      ((1+)); echo "syntax: $?"
+      ((1/0)); echo "division: $?"
+      for ((; 1/0; )); do :; done; echo "for: $?"

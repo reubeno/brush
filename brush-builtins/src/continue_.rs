@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{ExecutionControlFlow, builtins};
 
 /// Continue to the next iteration of a control-flow loop.
 #[derive(Parser)]
@@ -17,20 +17,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ContinueCommand 
 
     async fn execute(
         self,
-        _context: brush_core::ExecutionContext<'_, SE>,
+        context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        // If specified, which_loop needs to be positive.
-        if self.which_loop <= 0 {
-            return Ok(ExecutionExitCode::InvalidUsage.into());
-        }
-
-        let mut result = ExecutionResult::success();
-
-        result.next_control_flow = ExecutionControlFlow::ContinueLoop {
-            #[expect(clippy::cast_sign_loss)]
-            levels: (self.which_loop - 1) as usize,
-        };
-
-        Ok(result)
+        Ok(crate::loops::leave(
+            &context,
+            "continue",
+            self.which_loop,
+            |levels| ExecutionControlFlow::ContinueLoop { levels },
+        ))
     }
 }
