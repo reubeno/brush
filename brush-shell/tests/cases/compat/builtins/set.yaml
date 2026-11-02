@@ -200,3 +200,23 @@ cases:
       set -r; echo "status: $?"
       [[ $- == *r* ]] && echo "restricted"
       cd / 2>/dev/null; echo "cd: $?"
+
+  - name: "set skips a lone +"
+    stdin: |
+      opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
+      set a b; set +; echo "$# $*"
+      set + | wc -l
+      set + x y; echo "$# $*"
+      set + -e; opts; echo "$# $*"; set +e
+      set -e + z; opts; echo "$# $*"; set +e
+      set + + -u; opts; set +u
+      set + -- w; echo "$# $*"
+      set -- +; echo "$# $*"
+      set - +; echo "$# $*"
+      set v + -e; opts; echo "$# $*"
+
+  - name: "set rejects an unknown letter after a lone + with status 1"
+    known_failure: true # TODO(set): brush fails with status 2
+    ignore_stderr: true
+    stdin: |
+      set + -Z; echo "status: $?"
