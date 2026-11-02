@@ -1,7 +1,7 @@
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
-use brush_core::{Error, ErrorKind, ExecutionResult, builtins, env, escape, expansion};
+use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
 #[derive(winnow_args::Args)]
@@ -9,7 +9,7 @@ use brush_core::{Error, ErrorKind, ExecutionResult, builtins, env, escape, expan
 pub(crate) struct PrintfCommand {
     /// If specified, the output of the command is assigned to this variable.
     #[arg(short = 'v', allow_hyphen_values)]
-    output_variable: Option<String>,
+    output_variables: Vec<String>,
 
     /// Format string + arguments to the format string.
     ///
@@ -38,7 +38,7 @@ impl PrintfCommand {
             .into_iter()
             .map(String::from)
             .collect();
-        let mut output_variable = None;
+        let mut output_variables = vec![];
         let mut index = 0;
 
         while let Some(word) = words.get(index) {
@@ -49,10 +49,10 @@ impl PrintfCommand {
                 let Some(value) = words.get_mut(index + 1) else {
                     return Err(error(winnow_args::Error::missing_value(index, "-v")));
                 };
-                output_variable = Some(std::mem::take(value));
+                output_variables.push(std::mem::take(value));
                 index += 2;
             } else if let Some(value) = word.strip_prefix("-v") {
-                output_variable = Some(value.to_owned());
+                output_variables.push(value.to_owned());
                 index += 1;
             } else if word.len() > 1 && word.starts_with('-') {
                 return Err(error(winnow_args::Error::unknown_flag(
@@ -72,7 +72,7 @@ impl PrintfCommand {
         }
         words.drain(..index);
         Ok(Self {
-            output_variable,
+            output_variables,
             format_and_args: words,
         })
     }
@@ -85,15 +85,22 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        if let Some(variable_name) = &self.output_variable {
-            if !valid_output_variable(variable_name) {
-                writeln!(
-                    context.stderr(),
-                    "{}: `{variable_name}': not a valid identifier",
-                    context.command_name
-                )?;
-                return Ok(ExecutionResult::new(2));
-            }
+        // Every -v name must be valid, not just the last one, which is used.
+        let parser_options = context.shell.parser_options();
+        if let Some(invalid) = self
+            .output_variables
+            .iter()
+            .find(|name| !valid_output_variable(name, &parser_options))
+        {
+            writeln!(
+                context.stderr(),
+                "{}: `{invalid}': not a valid identifier",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::new(2));
+        }
+
+        if let Some(variable_name) = self.output_variables.last() {
 
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];
@@ -122,12 +129,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
 }
 
 /// Whether `name` is a variable name, or one followed by a non-empty `[subscript]`.
-fn valid_output_variable(name: &str) -> bool {
-    match name.split_once('[') {
-        None => env::valid_variable_name(name),
-        Some((base, rest)) => {
-            env::valid_variable_name(base) && rest.len() > 1 && rest.ends_with(']')
-        }
+fn valid_output_variable(name: &str, options: &brush_parser::ParserOptions) -> bool {
+    match brush_parser::word::parse_parameter(name, options) {
+        Ok(brush_parser::word::Parameter::Named(_)) => true,
+        Ok(brush_parser::word::Parameter::NamedWithIndex { index, .. }) => !index.is_empty(),
+        _ => false,
     }
 }
 

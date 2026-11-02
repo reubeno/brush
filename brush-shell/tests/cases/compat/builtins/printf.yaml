@@ -486,6 +486,23 @@ cases:
       # The name is checked before the format.
       printf -v 1bad '%d' abc; echo "rc=$?"
 
+  - name: "printf -v rejects a subscript with text after its closing bracket"
+    ignore_stderr: true
+    stdin: |
+      printf -v 'a[0]]' '%s' x; echo "rc=$?"
+      printf -v 'a[0]junk]' '%s' x; echo "rc=$?"
+      declare -p a 2>/dev/null || echo "a unset"
+      printf -v 'a[x[1]]' '%s' x; echo "nested: rc=$?"
+      declare -A m; printf -v 'm["]"]' '%s' x; echo "quoted: rc=$? ${m["]"]}"
+
+  - name: "printf -v checks every name it is given"
+    ignore_stderr: true
+    stdin: |
+      x=old; printf -v -x -v x '%s' new; echo "rc=$? x=$x"
+      x=old; printf -v 1bad -v x '%s' new; echo "rc=$? x=$x"
+      x=old; printf -v x -v 1bad '%s' new; echo "rc=$? x=$x"
+      printf -v y -v x '%s' last; echo "rc=$? x=$x y=${y-unset}"
+
   - name: "printf --help prints help on stdout"
     known_failure: true # TODO(printf): --help is taken for an invalid option
     stdin: |
