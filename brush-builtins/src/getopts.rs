@@ -1,20 +1,21 @@
 use std::{collections::HashMap, io::Write};
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins, env, variables};
 
 /// Parse command options.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct GetOptsCommand {
     /// Specification for options
+    #[arg(positional, stop_flags)]
     options_string: String,
 
     /// Name of variable to receive next option
+    #[arg(positional)]
     variable_name: String,
 
     /// Arguments to parse
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, double_dash = "preserve")]
     args: Vec<String>,
 }
 
@@ -85,7 +86,7 @@ fn parse_option_spec(spec: &str) -> OptionSpec {
     }
 }
 
-brush_clap_adapter::impl_parse_args!(GetOptsCommand, keep_double_dash = args);
+brush_winnow_args_adapter::impl_parse_args!(GetOptsCommand, keep_double_dash = args);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for GetOptsCommand {
     type Error = brush_core::Error;
