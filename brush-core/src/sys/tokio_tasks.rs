@@ -39,6 +39,13 @@ where
     std::future::ready(task)
 }
 
+/// Lets the runtime run other tasks before the caller goes on: a task the
+/// caller just spawned gets the chance to start, and to be picked up by
+/// another worker, before the caller blocks its thread.
+pub(crate) async fn yield_now() {
+    tokio::task::yield_now().await;
+}
+
 fn join_error(err: tokio::task::JoinError) -> error::Error {
     error::ErrorKind::TaskError(Box::new(err)).into()
 }
