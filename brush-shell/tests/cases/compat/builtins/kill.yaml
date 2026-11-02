@@ -225,8 +225,9 @@ cases:
     known_failure: true # TODO(kill): -s takes only signal names
     ignore_stderr: true
     stdin: |
-      dead=$(sh -c 'echo $$')
-      kill -s 9 $dead 2>&1 | grep -c 'invalid signal'; echo "rc=${PIPESTATUS[0]}"
+      # The shell's termination status shows which signal it was sent.
+      kill -s 15 $$
+      echo "survived: $?"
 
   - name: "kill -l with several signals prints each"
     known_failure: true # TODO(kill): `kill -l` with more than one signal fails as too many jobs
