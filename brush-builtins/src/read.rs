@@ -1,4 +1,3 @@
-use clap::Parser;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -24,60 +23,62 @@ const DEFAULT_DELIMITER: char = '\n';
 const NUL_DELIMITER: char = '\0';
 
 /// Parse standard input.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ReadCommand {
+    /// Use readline-like input.
+    #[arg(short = 'e')]
+    use_readline: bool,
+
+    /// Read input in raw mode; no escape sequences.
+    #[arg(short = 'r')]
+    raw_mode: bool,
+
+    /// Do not echo input.
+    #[arg(short = 's')]
+    silent: bool,
+
     /// Optionally, name of an array variable to receive read words
     /// of input.
-    #[clap(short = 'a', value_name = "VAR_NAME")]
+    #[arg(short = 'a', value_name = "VAR_NAME")]
     array_variable: Option<String>,
 
     /// Optionally, a delimiter to use other than a newline character.
-    #[clap(short = 'd')]
+    #[arg(short = 'd')]
     delimiter: Option<String>,
 
-    /// Use readline-like input.
-    #[clap(short = 'e')]
-    use_readline: bool,
-
     /// Provide text to use as initial input for readline.
-    #[clap(short = 'i', value_name = "STR")]
+    #[arg(short = 'i', value_name = "STR")]
     initial_text: Option<String>,
 
     /// Read only the first N characters or until a specified
     /// delimiter is reached, whichever happens first.
-    #[clap(short = 'n', value_name = "COUNT")]
+    #[arg(short = 'n', value_name = "COUNT")]
     return_after_n_chars: Option<usize>,
 
     /// Read exactly N characters, ignoring any specified delimiter.
-    #[clap(short = 'N', value_name = "COUNT")]
+    #[arg(short = 'N', value_name = "COUNT")]
     return_after_n_chars_no_delimiter: Option<usize>,
 
     /// Prompt to display before reading.
-    #[clap(short = 'p')]
+    #[arg(short = 'p')]
     prompt: Option<String>,
-
-    /// Read input in raw mode; no escape sequences.
-    #[clap(short = 'r')]
-    raw_mode: bool,
-
-    /// Do not echo input.
-    #[clap(short = 's')]
-    silent: bool,
 
     /// Specify timeout in seconds; fail if the timeout elapses before
     /// input is completed.
-    #[clap(short = 't', value_name = "SECONDS", allow_hyphen_values = true)]
-    timeout_in_seconds: Option<String>,
+    #[arg(short = 't', value_name = "SECONDS", allow_hyphen_values)]
+    timeout_in_seconds: Vec<String>,
 
     /// File descriptor to read from instead of stdin.
-    #[clap(short = 'u', name = "FD")]
-    fd_num_to_read: Option<u8>,
+    #[arg(short = 'u', value_name = "FD")]
+    fd_num_to_read: Vec<u8>,
 
     /// Optionally, names of variables to receive read input.
+    #[arg(positional)]
     variable_names: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(ReadCommand);
+brush_winnow_args_adapter::impl_parse_args!(ReadCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
     type Error = brush_core::Error;
@@ -93,27 +94,27 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
             return error::unimp("read -i");
         }
 
-        // Validate timeout value if provided.
-        let timeout = match self.timeout_in_seconds.as_deref() {
-            None => None,
-            Some(spec) => {
-                let Some(timeout) = parse_timeout(spec) else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {spec}: invalid timeout specification",
-                        context.command_name
-                    )?;
-                    return Ok(brush_core::ExecutionResult::general_error());
-                };
-                Some(timeout)
-            }
-        };
+        // Every -t and -u given is checked before reading, and the last one is used.
+        let mut timeout = None;
+        for spec in &self.timeout_in_seconds {
+            let Some(parsed) = parse_timeout(spec) else {
+                writeln!(
+                    context.stderr(),
+                    "{}: {spec}: invalid timeout specification",
+                    context.command_name
+                )?;
+                return Ok(brush_core::ExecutionResult::general_error());
+            };
+            timeout = Some(parsed);
+        }
 
-        // Find the input stream to use.
-        let fd_num = self.fd_num_to_read.map_or(
-            brush_core::openfiles::OpenFiles::STDIN_FD,
-            brush_core::ShellFd::from,
-        );
+        let mut fd_num = brush_core::openfiles::OpenFiles::STDIN_FD;
+        for fd in &self.fd_num_to_read {
+            fd_num = brush_core::ShellFd::from(*fd);
+            context
+                .try_fd(fd_num)
+                .ok_or_else(|| ErrorKind::BadFileDescriptor(fd_num))?;
+        }
 
         // Retrieve the file.
         let input_stream = context

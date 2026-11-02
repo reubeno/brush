@@ -481,3 +481,81 @@ cases:
     known_failure: true # TODO(signals): control characters are dropped from any input
     stdin: |
       printf 'a\003b\004c\n' | { read -r x; echo "rc=$? len=${#x}"; }
+
+  - name: "read options given more than once keep the last"
+    stdin: |
+      read -n 1 -n 2 x <<< "abc"; echo "x=[$x] rc=$?"
+      read -d , -d . x <<< "a.b,c"; echo "x=[$x] rc=$?"
+      read -a a1 -a a2 <<< "x y"; declare -p a2; declare -p a1 2>/dev/null || echo "a1 unset"
+      read -t 5 -t 0 <<< "a"; echo "rc=$?"
+
+  - name: "read with combined and attached short options"
+    stdin: |
+      read -rn1 x <<< 'abc'; echo "x=[$x]"
+      read -n2 x <<< 'abc'; echo "x=[$x]"
+      read -rsn2 x <<< 'abc'; echo "x=[$x]"
+      read -rN2 x <<< $'a\nbc'; echo "x=[$x]"
+      read -d, x <<< 'a,b'; echo "x=[$x]"
+      read -dX x <<< 'aXb'; echo "x=[$x]"
+      read -ra arr <<< 'a\b c'; declare -p arr
+      read -aarr <<< 'a b'; declare -p arr
+      read -u0 x <<< 'fd0'; echo "x=[$x]"
+      read -n +3 x <<< 'abcdef'; echo "x=[$x]"
+      read -t .5 x <<< 'a'; echo "x=[$x] rc=$?"
+
+  - name: "read with -- before the names"
+    stdin: |
+      read -- x y <<< 'a b c'; echo "x=[$x] y=[$y]"
+      read -r -- x <<< 'a\b'; echo "x=[$x]"
+
+  - name: "read with an unknown option or missing value fails with status 2"
+    ignore_stderr: true
+    stdin: |
+      read -Z x <<< 'a'; echo "rc=$?"
+      read -a; echo "rc=$?"
+      read -n; echo "rc=$?"
+
+  - name: "read with an invalid count or descriptor fails with status 1"
+    known_failure: true # TODO(read): fails with status 2
+    ignore_stderr: true
+    stdin: |
+      read -n abc x <<< 'a'; echo "rc=$?"
+      read -n -1 x <<< 'a'; echo "rc=$?"
+      read -N 1r x <<< 'a'; echo "rc=$?"
+      read -u abc x <<< 'a'; echo "rc=$?"
+      read -u -1 x <<< 'a'; echo "rc=$?"
+
+  - name: "read checks every -t and -u it is given"
+    ignore_stderr: true
+    stdin: |
+      x=keep; read -t abc -t 1 x <<< data; echo "rc=$? x=$x"
+      x=keep; read -t inf -t 1 x <<< data; echo "rc=$? x=$x"
+      x=keep; read -t 1 -t abc x <<< data; echo "rc=$? x=$x"
+      x=keep; read -u 99 -u 0 x <<< data; echo "rc=$? x=$x"
+      x=keep; read -t 5 -t 1 x <<< data; echo "rc=$? x=$x"
+
+  - name: "read -t with an exponent fails with status 1"
+    known_failure: true # TODO(read): accepts 1e1
+    ignore_stderr: true
+    stdin: |
+      read -t 1e1 x <<< 'a'; echo "rc=$? x=[$x]"
+
+  - name: "read -n 0 and -N 0 read nothing"
+    known_failure: true # TODO(read): reads one character
+    stdin: |
+      read -n 0 x <<< 'abc'; echo "x=[$x] rc=$?"
+      read -N 0 x <<< 'abc'; echo "x=[$x] rc=$?"
+
+  - name: "read option values may begin with a hyphen"
+    known_failure: true # TODO(read): such a value is taken for an option
+    stdin: |
+      read -d -x x <<< 'a-xb'; echo "x=[$x] rc=$?"
+      read -d -- x <<< 'a-b'; echo "x=[$x] rc=$?"
+      read -p -x x <<< 'a'; echo "x=[$x] rc=$?"
+
+  - name: "read takes words after the first name as names"
+    known_failure: true # TODO(read): a later option-like word is taken for an option
+    ignore_stderr: true
+    stdin: |
+      read x -r <<< 'a b'; echo "x=[$x] rc=$?"
+      read x -- y <<< 'a b'; echo "x=[$x] y=[$y] rc=$?"
