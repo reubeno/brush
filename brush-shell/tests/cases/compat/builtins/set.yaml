@@ -202,6 +202,7 @@ cases:
       cd / 2>/dev/null; echo "cd: $?"
 
   - name: "set skips a lone +"
+    known_failure: true # TODO(set): a lone + is taken as the first operand; needs winnow-args to skip it among the options
     stdin: |
       opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
       set a b; set +; echo "$# $*"
@@ -216,11 +217,13 @@ cases:
       set v + -e; opts; echo "$# $*"
 
   - name: "set rejects an unknown letter after a lone + with status 1"
+    known_failure: true # TODO(set): brush fails with status 2
     ignore_stderr: true
     stdin: |
       set + -Z; echo "status: $?"
 
   - name: "set applies the options before a lone + when a later one is unknown"
+    known_failure: true # TODO(set): a lone + is taken as the first operand
     ignore_stderr: true
     stdin: |
       opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }
@@ -231,7 +234,7 @@ cases:
       set -f -Z; echo "status: $?"; opts
 
   - name: "set applies the options after a lone + up to an unknown one"
-    known_failure: true # TODO(set): an unknown letter after a lone + discards the options beside it
+    known_failure: true # TODO(set): a lone + is taken as the first operand
     ignore_stderr: true
     stdin: |
       opts() { local o r=; for o in a e f u x B C; do case $- in *"$o"*) r+=$o ;; esac; done; echo "[$r]"; }

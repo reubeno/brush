@@ -18,56 +18,9 @@ pub(crate) struct SetCommand {
 
     #[arg(positional, double_dash = "preserve", stop_flags)]
     positional_args: Vec<String>,
-
-    /// Whether a lone `+` was among the options.
-    #[arg(skip)]
-    lone_plus: bool,
-
-    /// A usage error in the words after a lone `+`, reported once the options
-    /// before it are applied.
-    #[arg(skip)]
-    error_after_plus: Option<builtins::UsageError>,
 }
 
-brush_winnow_args_adapter::impl_parse_args!(SetCommand, parse = SetCommand::parse_args);
-
-impl SetCommand {
-    /// Parses set's arguments. The first `--` and every word after it are
-    /// positional parameters. A lone `+` among the options is skipped, and the
-    /// options go on after it; an error after it is kept, so the options before
-    /// it still apply.
-    fn parse_args(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
-        let name = invocation.name().to_owned();
-        let parse = |words: &[String]| {
-            <Self as winnow_args::Args>::parse_words(&winnow_args::words(words))
-                .map_err(|e| brush_winnow_args_adapter::to_usage_error::<Self>(&name, &e))
-        };
-
-        let mut words: Vec<String> = invocation
-            .into_args()
-            .into_iter()
-            .map(String::from)
-            .collect();
-        let trailing = words.split_off(words.iter().position(|w| w == "--").unwrap_or(words.len()));
-
-        let mut this = parse(&words)?;
-        while this.positional_args.first().is_some_and(|w| w == "+") {
-            this.lone_plus = true;
-            match parse(&this.positional_args[1..]) {
-                Ok(rest) => {
-                    this.options.extend(rest.options);
-                    this.positional_args = rest.positional_args;
-                }
-                Err(error) => {
-                    this.error_after_plus = Some(error);
-                    return Ok(this);
-                }
-            }
-        }
-        this.positional_args.extend(trailing);
-        Ok(this)
-    }
-}
+brush_winnow_args_adapter::impl_parse_args!(SetCommand, keep_double_dash = positional_args);
 
 /// One option, `true` for its `-` spelling and `false` for its `+` one, in command-line order.
 #[derive(winnow_args::Occurrence)]
@@ -223,12 +176,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             }
         }
 
-        if let Some(error) = &self.error_after_plus {
-            stdout.flush()?;
-            writeln!(context.stderr(), "{error}")?;
-            return Ok(ExecutionResult::general_error());
-        }
-
         let args = context.shell.current_shell_args_mut();
 
         let skip = match self.positional_args.first() {
@@ -260,7 +207,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
             options.print_shell_input_lines = false;
         }
 
-        if self.options.is_empty() && self.positional_args.is_empty() && !self.lone_plus {
+        if self.options.is_empty() && self.positional_args.is_empty() {
             stdout.write_all(&display_all(&context)?)?;
         }
 
