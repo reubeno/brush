@@ -210,3 +210,17 @@ cases:
       hash -p /no/such/prog prog
       prog; echo "status: $?"
       prog 2>&1 | grep -q 'No such file' && echo "says no such file" || echo "says something else"
+
+  - name: "hash -t with no names fails with status 1"
+    known_failure: true # TODO(hash): succeeds
+    ignore_stderr: true
+    stdin: |
+      hash -t; echo "rc=$?"
+
+  - name: "hash -r -p empties the table, then adds the path"
+    known_failure: true # TODO(hash): the table is emptied after the path is added
+    stdin: |
+      hash -p /bin/true seeded
+      hash -r -p /bin/sh foo
+      hash -t foo
+      hash -t seeded 2>/dev/null; echo "seeded: $?"

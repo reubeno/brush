@@ -86,3 +86,14 @@ cases:
       set -u
       builtin eval 'echo $nope'; echo "rc=$?"
       echo next
+
+  - name: "eval passes the evaluated command's options through"
+    stdin: |
+      eval -- echo a
+      eval echo -- b
+      eval echo -n c; echo
+      eval 'echo --help'
+
+  - name: "eval rejects an unknown option with status 2"
+    stdin: |
+      eval -x 2>/dev/null; echo "rc=$?"

@@ -15,3 +15,25 @@ cases:
       echo "after a subshell: $(umask)"
       umask 077 | true
       echo "after a pipeline stage: $(umask)"
+
+  - name: "umask -S, -p and --"
+    stdin: |
+      umask 022
+      umask -S
+      umask -p
+      umask -- 077
+      umask
+
+  - name: "umask -p -S prints a reusable symbolic command"
+    known_failure: true # TODO(umask): prints `umask u=...`, without `-S`
+    stdin: |
+      umask 022
+      umask -p -S
+
+  - name: "umask takes a symbolic mode"
+    known_failure: true # TODO(umask): a symbolic mode is not implemented
+    ignore_stderr: true
+    stdin: |
+      umask 022
+      umask u=rwx,g=rx,o=; umask
+      umask g-r; umask

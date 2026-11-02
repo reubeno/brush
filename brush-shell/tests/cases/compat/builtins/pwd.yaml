@@ -68,3 +68,20 @@ cases:
 
       echo "pwd -L: $(basename $(pwd -L))"
       echo "pwd -P: $(basename $(pwd -P))"
+
+  - name: "pwd takes -- and both of -L and -P"
+    stdin: |
+      cd /
+      pwd --
+
+  - name: "pwd takes the last of -L and -P"
+    stdin: |
+      mkdir real; ln -s real link; cd link
+      basename -- "$(pwd -LP)"
+      basename -- "$(pwd -PL)"
+
+  - name: "pwd ignores operands"
+    known_failure: true # TODO(pwd): an operand is a usage error
+    stdin: |
+      cd /
+      pwd foo; echo "rc=$?"

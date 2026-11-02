@@ -959,3 +959,26 @@ cases:
       trap - BOGUS INT; echo "reset: $?"
       trap -p INT USR1
       trap 'echo y' EXIT --; echo "exit: $?"
+
+  - name: "trap takes -- before the action, and - to reset"
+    stdin: |
+      trap -- 'echo x' USR1
+      trap -p USR1
+      trap -- - USR1
+      trap -p USR1
+      trap 'echo y' USR1
+      trap -- USR1
+      trap -p USR1
+      echo "done"
+
+  - name: "trap -l lists the signals in columns"
+    known_failure: true # TODO(trap): one signal a line, starting with EXIT, not bash's table
+    stdin: |
+      trap -l | head -n 1
+
+  - name: "trap -P prints the action alone"
+    known_failure: true # TODO(trap): -P is an unknown flag
+    min_oracle_version: "5.3"
+    stdin: |
+      trap 'echo x' USR1
+      trap -P USR1

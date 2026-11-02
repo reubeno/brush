@@ -22,6 +22,27 @@ cases:
     stdin: |
       kill -n 9 $$
 
+  - name: "kill -s with its signal attached"
+    stdin: |
+      kill -sUSR1 $$
+
+  - name: "kill -n with its signal attached"
+    stdin: |
+      kill -n15 $$
+
+  - name: "kill -SIGNAME"
+    stdin: |
+      kill -HUP $$
+
+  - name: "kill -s SIG -- pid"
+    stdin: |
+      kill -s HUP -- $$
+
+  - name: "kill -SIG -- pid"
+    known_failure: true # TODO(kill): `--` after -SIG is taken for a pid
+    stdin: |
+      kill -9 -- $$
+
   - name: "kill -n 0"
     stdin: |
       kill -n $((5-5)) $$
@@ -142,17 +163,83 @@ cases:
       kill -0 -- $$; echo "a=$?"
       kill -s 0 $$; echo "b=$?"
       kill -0 -- -$(ps -o pgid= -p $$ | tr -d ' '); echo "c=$?"
-      kill -- -999999; echo "d=$?"
-      kill -s TERM -- -999999; echo "e=$?"
+      # An exited process's ID names no process or group, so nothing else is signaled.
+      dead=$(sh -c 'echo $$')
+      kill -- -$dead; echo "d=$?"
+      kill -s TERM -- -$dead; echo "e=$?"
 
   - name: "kill takes -N after a signal as a process group"
+    known_failure: true # TODO(kill): -N after a signal is taken for an invalid signal
     ignore_stderr: true
     stdin: |
-      kill -TERM -999999; echo "a=$?"
-      kill -999999; echo "b=$?"
+      # Signal 0 checks this shell's own group without signaling it.
+      kill -0 -$(ps -o pgid= -p $$ | tr -d ' '); echo "a=$?"
+      # An exited process's ID names no process or group, so nothing else is
+      # signaled; only the reason kill gives for failing is compared.
+      dead=$(sh -c 'echo $$')
+      kill -TERM -$dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
+
+  - name: "kill takes -N alone as a signal number"
+    ignore_stderr: true
+    stdin: |
+      # -999999 is an invalid signal number here, not a target.
+      kill -999999 2>&1 | grep -c 'invalid signal'; echo "rc=${PIPESTATUS[0]}"
 
   - name: "kill takes the words after its first operand as operands"
     ignore_stderr: true
     stdin: |
       kill -0 $$ -l || true
       echo "done"
+
+  - name: "kill takes its signal in each form"
+    ignore_stderr: true
+    stdin: |
+      kill -l -- 9
+      kill -l HUP
+      # An exited process's ID names no process or group, so nothing else is
+      # signaled; only the reason kill gives for failing is compared.
+      dead=$(sh -c 'echo $$')
+      kill -sUSR1 $dead 2>&1 | grep -c 'invalid signal'; echo "a=${PIPESTATUS[0]}"
+      kill -n9 $dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
+      kill -HUP $dead 2>&1 | grep -c 'invalid signal'; echo "c=${PIPESTATUS[0]}"
+
+  - name: "kill takes options after a -SIG shorthand"
+    known_failure: true # TODO(kill): a word after -SIG is taken for an operand
+    ignore_stderr: true
+    stdin: |
+      # Each sends signal 0 to this shell, which only checks that it exists.
+      kill -0 -n 0 $$; echo "a=$?"
+      kill -TERM -s 0 $$; echo "b=$?"
+
+  - name: "kill takes -- after a signal"
+    known_failure: true # TODO(kill): `-9 --` takes `--` for a pid
+    ignore_stderr: true
+    stdin: |
+      # An exited process's ID names no process or group, so nothing else is
+      # signaled; only the reason kill gives for failing is compared.
+      dead=$(sh -c 'echo $$')
+      kill -9 -- $dead 2>&1 | grep -c 'invalid signal'; echo "a=${PIPESTATUS[0]}"
+      kill -s HUP -- -$dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
+
+  - name: "kill -s takes a signal number"
+    known_failure: true # TODO(kill): -s takes only signal names
+    ignore_stderr: true
+    stdin: |
+      # The shell's termination status shows which signal it was sent.
+      kill -s 15 $$
+      echo "survived: $?"
+
+  - name: "kill -l with several signals prints each"
+    known_failure: true # TODO(kill): `kill -l` with more than one signal fails as too many jobs
+    stdin: |
+      kill -l 15 9
+
+  - name: "kill -l maps an exit status above 128 to its signal"
+    known_failure: true # TODO(kill): a status above 128 is an invalid signal specification
+    stdin: |
+      kill -l 129
+
+  - name: "kill -l lists the signals in columns"
+    known_failure: true # TODO(kill): one signal a line, not bash's table
+    stdin: |
+      kill -l | head -n 1
