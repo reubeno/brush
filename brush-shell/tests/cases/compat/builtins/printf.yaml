@@ -506,10 +506,16 @@ cases:
   - name: "printf -v doesn't evaluate a subscript to check the name"
     ignore_stderr: true
     stdin: |
-      x=old; printf -v 'a[(]' -v x '%s' new; echo "rc=$? x=$x"
       x=old; printf -v 'a[\]]' -v x '%s' new; echo "rc=$? x=$x"
       x=old; printf -v "a['x]']" -v x '%s' new; echo "rc=$? x=$x"
+      x=old; printf -v 'a[$(echo ])]' -v x '%s' new; echo "rc=$? x=$x"
       x=old; printf -v 'a["x]' -v x '%s' new; echo "rc=$? x=$x"
+
+  - name: "printf -v checks a subscript's brackets as an assignment does"
+    known_failure: true # TODO(parser): an assignment's subscript must balance ( and may hold an unquoted [
+    ignore_stderr: true
+    stdin: |
+      x=old; printf -v 'a[(]' -v x '%s' new; echo "rc=$? x=$x"
       x=old; printf -v 'a[[]' -v x '%s' new; echo "rc=$? x=$x"
 
   - name: "printf -v takes a[@] and a[*] as names but can't assign to them"

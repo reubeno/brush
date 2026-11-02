@@ -1,7 +1,7 @@
 use std::{ffi::OsString, io::Write, ops::ControlFlow};
 use uucore::format;
 
-use brush_core::{Error, ErrorKind, ExecutionResult, builtins, env, escape, expansion};
+use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
 
 /// Format a string.
 #[derive(winnow_args::Args)]
@@ -26,10 +26,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // Every -v name must be valid, not just the last one, which is used.
+        let parser_options = context.shell.parser_options();
         if let Some(invalid) = self
             .output_variables
             .iter()
-            .find(|name| !valid_output_variable(name))
+            .find(|name| !valid_output_variable(name, &parser_options))
         {
             writeln!(
                 context.stderr(),
@@ -66,43 +67,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
     }
 }
 
-/// Whether `name` is a variable name, or one followed by a non-empty `[subscript]`.
-/// The subscript isn't evaluated here: `a[@]` or `a[(]` passes, and fails only if
-/// it is assigned to.
-fn valid_output_variable(name: &str) -> bool {
-    let Some((base, subscript)) = name.split_once('[') else {
-        return env::valid_variable_name(name);
-    };
-    if !env::valid_variable_name(base) {
-        return false;
-    }
-
-    // The subscript runs to its matching `]`, which must end the name. Brackets
-    // nest, and quotes and backslashes protect them.
-    let mut depth = 1;
-    let mut quote = None;
-    let mut chars = subscript.char_indices();
-    while let Some((i, c)) = chars.next() {
-        match (quote, c) {
-            (Some('\''), '\'') => quote = None,
-            (Some('\''), _) => {}
-            (_, '\\') => {
-                chars.next();
-            }
-            (Some(q), c) if c == q => quote = None,
-            (Some(_), _) => {}
-            (None, '\'' | '"') => quote = Some(c),
-            (None, '[') => depth += 1,
-            (None, ']') => {
-                depth -= 1;
-                if depth == 0 {
-                    return i > 0 && i + 1 == subscript.len();
+/// Whether `name` is a variable name, or one followed by a non-empty `[subscript]`,
+/// by the grammar of an assignment's name. The subscript isn't evaluated here.
+fn valid_output_variable(name: &str, options: &brush_parser::ParserOptions) -> bool {
+    use brush_parser::ast::{AssignmentName, AssignmentValue};
+    match brush_parser::word::parse_scalar_assignment(&format!("{name}="), options) {
+        Ok(assignment) if !assignment.append => {
+            matches!(&assignment.value, AssignmentValue::Scalar(word) if word.value.is_empty())
+                && match assignment.name {
+                    AssignmentName::VariableName(_) => true,
+                    AssignmentName::ArrayElementName(_, index) => !index.is_empty(),
                 }
-            }
-            (None, _) => {}
         }
+        _ => false,
     }
-    false
 }
 
 fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {
