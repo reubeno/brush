@@ -182,6 +182,14 @@ cases:
       kill -n9 $dead 2>&1 | grep -c 'invalid signal'; echo "b=${PIPESTATUS[0]}"
       kill -HUP $dead 2>&1 | grep -c 'invalid signal'; echo "c=${PIPESTATUS[0]}"
 
+  - name: "kill takes options after a -SIG shorthand"
+    known_failure: true # TODO(kill): a word after -SIG is taken for an operand
+    ignore_stderr: true
+    stdin: |
+      # Each sends signal 0 to this shell, which only checks that it exists.
+      kill -0 -n 0 $$; echo "a=$?"
+      kill -TERM -s 0 $$; echo "b=$?"
+
   - name: "kill takes -- after a signal, and -s with a signal number"
     known_failure: true # TODO(kill): `-9 --` takes `--` for a pid, and -s takes only names
     ignore_stderr: true
