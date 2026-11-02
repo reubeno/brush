@@ -1,10 +1,10 @@
-use clap::Parser;
 use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins, error, jobs};
 
 /// Manage jobs.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct JobsCommand {
     /// Also show process IDs.
     #[arg(short = 'l')]
@@ -28,10 +28,11 @@ pub(crate) struct JobsCommand {
 
     /// Job specs to list.
     // TODO(jobs): Add -x option
+    #[arg(positional)]
     job_specs: Vec<String>,
 }
 
-brush_clap_adapter::impl_parse_args!(JobsCommand);
+brush_winnow_args_adapter::impl_parse_args!(JobsCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for JobsCommand {
     type Error = brush_core::Error;

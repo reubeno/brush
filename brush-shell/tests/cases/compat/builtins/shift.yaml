@@ -17,3 +17,11 @@ cases:
       echo "shift x: $?"
       strip <err.txt
       rm err.txt
+
+  - name: "shift with a negative count reports it and fails with status 1"
+    stdin: |
+      set -- a b
+      shift -1 2>err.txt; echo "shift -1: $? $#"
+      [[ -s err.txt ]] && echo "reported"
+      shift -0; echo "shift -0: $? $#"
+      rm err.txt

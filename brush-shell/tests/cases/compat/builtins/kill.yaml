@@ -150,3 +150,9 @@ cases:
     stdin: |
       kill -TERM -999999; echo "a=$?"
       kill -999999; echo "b=$?"
+
+  - name: "kill takes the words after its first operand as operands"
+    ignore_stderr: true
+    stdin: |
+      kill -0 $$ -l || true
+      echo "done"

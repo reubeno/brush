@@ -110,3 +110,7 @@ cases:
       cd sub
       started_by=$("$0" -c 'exec ./prog')
       [[ ${started_by} == "${PWD}/prog" ]] && echo "full path" || echo "other: ${started_by}"
+
+  - name: "exec -a takes a name that starts with -"
+    stdin: |
+      exec -a -shellname $0 --noprofile -c 'echo "0: $0"'
