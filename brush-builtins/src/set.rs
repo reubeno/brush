@@ -22,6 +22,11 @@ pub(crate) struct SetCommand {
     /// Whether a lone `+` was among the options.
     #[arg(skip)]
     lone_plus: bool,
+
+    /// A usage error in the words after a lone `+`, reported once the options
+    /// before it are applied.
+    #[arg(skip)]
+    error_after_plus: Option<builtins::UsageError>,
 }
 
 brush_winnow_args_adapter::impl_parse_args!(SetCommand, parse = SetCommand::parse_args);
@@ -29,7 +34,8 @@ brush_winnow_args_adapter::impl_parse_args!(SetCommand, parse = SetCommand::pars
 impl SetCommand {
     /// Parses set's arguments. The first `--` and every word after it are
     /// positional parameters. A lone `+` among the options is skipped, and the
-    /// options go on after it.
+    /// options go on after it; an error after it is kept, so the options before
+    /// it still apply.
     fn parse_args(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
         let name = invocation.name().to_owned();
         let parse = |words: &[String]| {
@@ -46,10 +52,17 @@ impl SetCommand {
 
         let mut this = parse(&words)?;
         while this.positional_args.first().is_some_and(|w| w == "+") {
-            let rest = parse(&this.positional_args[1..])?;
-            this.options.extend(rest.options);
-            this.positional_args = rest.positional_args;
             this.lone_plus = true;
+            match parse(&this.positional_args[1..]) {
+                Ok(rest) => {
+                    this.options.extend(rest.options);
+                    this.positional_args = rest.positional_args;
+                }
+                Err(error) => {
+                    this.error_after_plus = Some(error);
+                    return Ok(this);
+                }
+            }
         }
         this.positional_args.extend(trailing);
         Ok(this)
@@ -208,6 +221,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                     definition.set(options, *on);
                 }
             }
+        }
+
+        if let Some(error) = &self.error_after_plus {
+            stdout.flush()?;
+            writeln!(context.stderr(), "{error}")?;
+            return Ok(ExecutionResult::general_error());
         }
 
         let args = context.shell.current_shell_args_mut();
