@@ -42,8 +42,8 @@ the architecture changes.
 ### Module Dependencies
 
 ```text
-brush-shell → brush-interactive ──────────────────→ brush-core → brush-parser
-            ↘ brush-builtins → brush-clap-adapter ↗
+brush-shell → brush-interactive ─────────────────────────→ brush-core → brush-parser
+            ↘ brush-builtins → brush-winnow-args-adapter ↗
 ```
 
 ## 2. Testing Strategy
