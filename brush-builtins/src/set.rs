@@ -65,6 +65,10 @@ enum SetOption {
     #[arg(short = 'p', plus = 'p')]
     Privileged(bool),
 
+    /// Restricted mode.
+    #[arg(short = 'r', plus = 'r')]
+    Restricted(#[expect(dead_code, reason = "restricted mode is not implemented")] bool),
+
     /// Exit after one command.
     #[arg(short = 't', plus = 't')]
     Onecmd(bool),
@@ -137,6 +141,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                 SetOption::Monitor(on) => options.enable_job_control = *on,
                 SetOption::Noexec(on) => options.do_not_execute_commands = *on,
                 SetOption::Privileged(on) => options.real_effective_uid_mismatch = *on,
+                // shortcut: restricted mode isn't implemented, so -r and +r are accepted and
+                // change nothing; set the option here once brush-core has one.
+                SetOption::Restricted(_) => {}
                 SetOption::Onecmd(on) => options.exit_after_one_command = *on,
                 SetOption::Nounset(on) => options.treat_unset_variables_as_error = *on,
                 SetOption::Verbose(on) => options.print_shell_input_lines = *on,

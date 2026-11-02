@@ -188,3 +188,15 @@ cases:
     stdin: |
       set -Z; echo "set -Z: $?"
       set +Z; echo "set +Z: $?"
+
+  - name: "set accepts -r and +r"
+    stdin: |
+      set +r; echo "+r: $?"
+      set -r; echo "-r: $?"
+
+  - name: "set -r turns on restricted mode"
+    known_failure: true # TODO(set): brush accepts -r but doesn't restrict the shell or show r in $-
+    stdin: |
+      set -r; echo "status: $?"
+      [[ $- == *r* ]] && echo "restricted"
+      cd / 2>/dev/null; echo "cd: $?"
