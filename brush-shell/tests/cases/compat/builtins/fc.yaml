@@ -320,3 +320,9 @@ cases:
       : b
       fc -l
       fc -l
+
+  - name: "fc rejects -h and an unknown option with status 2"
+    ignore_stderr: true
+    stdin: |
+      (fc -h); echo "rc=$?"
+      (fc -z); echo "rc=$?"

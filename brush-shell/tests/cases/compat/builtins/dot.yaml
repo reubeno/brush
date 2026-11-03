@@ -170,3 +170,7 @@ cases:
       . ./script.sh -- a
       . ./script.sh -x
       . -- ./script.sh b
+
+  - name: ". --help prints what help . prints"
+    stdin: |
+      [[ "$(. --help; echo .)" == "$(help .; echo .)" ]] && echo "same"

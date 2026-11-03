@@ -94,8 +94,8 @@ impl From<&PickyError> for brush_core::ExecutionExitCode {
     }
 }
 
-/// Rejects the argument `bad` while parsing, fails on `fail`, returns status 7
-/// for `seven`, and otherwise writes `ran`.
+/// Rejects the argument `bad` while parsing, asks for its help on `--help`,
+/// fails on `fail`, returns status 7 for `seven`, and otherwise writes `ran`.
 struct Picky {
     arg: Option<String>,
 }
@@ -113,6 +113,9 @@ impl ParseArgs for Picky {
         let name = invocation.name();
         let mut args = invocation.args().iter().map(ToString::to_string);
         let arg = args.next();
+        if arg.as_deref() == Some("--help") {
+            return Err(UsageError::help(format!("{name} - picky help")));
+        }
         if arg.as_deref() == Some("bad") {
             return Err(UsageError::new(format!("{name}: bad: invalid argument")));
         }
@@ -252,6 +255,34 @@ async fn a_usage_error_does_not_end_the_script() -> Result<()> {
     let output = run(&mut shell, "picky bad; echo $?; picky").await?;
     assert_eq!(output.status, 0);
     assert_eq!(output.stdout, "2\nran\n");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_help_request_writes_the_help_to_stdout_and_fails() -> Result<()> {
+    let mut shell = new_shell().await?;
+    assert_eq!(
+        run(&mut shell, "fussy --help").await?,
+        Output {
+            status: 2,
+            stdout: "fussy - picky help\n".to_owned(),
+            stderr: String::new(),
+        }
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_help_request_with_nowhere_to_write_still_fails_quietly() -> Result<()> {
+    let mut shell = new_shell().await?;
+    assert_eq!(
+        run(
+            &mut shell,
+            "picky --help >&-; echo $?; picky --help 1</dev/null; echo $?"
+        )
+        .await?,
+        success("2\n2\n")
+    );
     Ok(())
 }
 

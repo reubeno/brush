@@ -126,3 +126,8 @@ cases:
       echo "${y//${test_root}/ROOT}"
       builtin declare d=~/w
       echo "${d//${test_root}/ROOT}"
+
+  - name: "builtin passes --help on to the builtin it runs"
+    stdin: |
+      builtin cd --help >/dev/null 2>&1; echo "rc=$?"
+      [[ "$(builtin cd --help; echo .)" == "$(help cd; echo .)" ]] && echo "same as help cd"
