@@ -20,7 +20,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut stderr = context.stdout();
+        let mut stdout = context.stdout();
 
         // Read interactive option before taking mutable borrow on jobs
         let is_interactive = context.shell.options().interactive;
@@ -28,7 +28,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
         if let Some(job_spec) = &self.job_spec {
             if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
                 job.move_to_foreground()?;
-                writeln!(stderr, "{}", job.command_line)?;
+                writeln!(stdout, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
                 if is_interactive {
@@ -44,16 +44,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
                 Ok(result)
             } else {
                 writeln!(
-                    stderr,
+                    context.stderr(),
                     "{}: {}: no such job",
-                    job_spec, context.command_name
+                    context.command_name,
+                    job_spec
                 )?;
                 Ok(ExecutionResult::general_error())
             }
         } else {
             if let Some(job) = context.shell.jobs_mut().current_job_mut() {
                 job.move_to_foreground()?;
-                writeln!(stderr, "{}", job.command_line)?;
+                writeln!(stdout, "{}", job.command_line)?;
 
                 let result = job.wait().await?;
                 if is_interactive {
@@ -68,7 +69,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
 
                 Ok(result)
             } else {
-                writeln!(stderr, "{}: no current job", context.command_name)?;
+                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
                 Ok(ExecutionResult::general_error())
             }
         }

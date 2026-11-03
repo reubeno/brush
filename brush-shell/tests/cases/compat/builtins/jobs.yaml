@@ -32,14 +32,12 @@ cases:
       rm err.txt
 
   - name: "fg without a current job reports on stderr"
-    known_failure: true # TODO(fg): "no current job" is reported on stdout
     ignore_stderr: true
     stdin: |
       fg
       echo "fg: $?"
 
   - name: "fg and bg report a job that doesn't exist on stderr, naming the builtin first"
-    known_failure: true # TODO(fg): fg reports a missing job on stdout, as "%5: fg: no such job"
     # The leading "file: line N:" a shell prefixes is stripped.
     stdin: |
       set -m
