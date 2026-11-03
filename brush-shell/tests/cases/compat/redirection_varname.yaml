@@ -3,16 +3,12 @@ name: "Redirection: {varname} file descriptors"
 # descriptor number. The shell then allocates a free descriptor >= 10, opens the
 # redirection on it, and assigns its number to varname; with `>&-` or `<&-`, the
 # value of varname instead names the descriptor to close (issue #1292).
-#
-# Cases marked `known_failure` exercise behavior brush doesn't implement yet. The
-# rest guard that words which merely look like `{varname}` stay ordinary words.
 incompatible_configs: ["sh"]
 cases:
   #
   # Allocation
   #
   - name: "exec {var}> allocates fd 10"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {fd}>out.txt
       echo "fd=$fd"
@@ -21,7 +17,6 @@ cases:
       cat out.txt
 
   - name: "Successive {var} allocations take the lowest free fd >= 10"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {a}>a.txt {b}>b.txt
       echo "a=$a b=$b"
@@ -29,14 +24,12 @@ cases:
       echo "c=$c"
 
   - name: "{var} allocation skips fds already in use"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec 10>x.txt 12>y.txt
       exec {a}>a.txt {b}>b.txt {c}>c.txt
       echo "$a $b $c"
 
   - name: "{var} allocation reuses a closed fd"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {a}>a.txt {b}>b.txt
       exec {a}>&-
@@ -44,7 +37,6 @@ cases:
       echo "a=$a b=$b c=$c"
 
   - name: "{var} allocation while a background job runs"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       # The shell's own bookkeeping for the job must not take the fd.
       sleep 0.5 &
@@ -53,7 +45,6 @@ cases:
       wait
 
   - name: "Same {var} twice in one command"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {fd}>f.txt {fd}>g.txt
       echo "fd=$fd"
@@ -62,7 +53,6 @@ cases:
       cat f.txt g.txt
 
   - name: "Reassigning a {var} leaves the previous fd open"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {fd}>f.txt
       old=$fd
@@ -73,7 +63,6 @@ cases:
       cat f.txt g.txt
 
   - name: "Later redirections in the same command see the assigned {var}"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {a}>a.txt {b}>&$a
       echo "a=$a b=$b"
@@ -81,19 +70,16 @@ cases:
       cat a.txt
 
   - name: "{var} redirection before the command name"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       {f}>&1 echo hello >&$f
       echo "f=$f"
 
   - name: "{var} redirection with an assignment prefix"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       x=1 {f}>&1 echo hello >&$f
       echo "f=$f x=[$x]"
 
   - name: "Arguments are expanded before {var} is assigned"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       echo "during=[$fd]" {fd}>out.txt
       echo "after=$fd"
@@ -102,7 +88,6 @@ cases:
   # Each redirection operator
   #
   - name: "{var}< opens a file for reading"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     test_files:
       - path: "in.txt"
         contents: |
@@ -115,7 +100,6 @@ cases:
       echo "$r: $a $b"
 
   - name: "{var}>> appends"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       echo one >f.txt
       exec {w}>>f.txt
@@ -123,7 +107,6 @@ cases:
       cat f.txt
 
   - name: "{var}<> opens for reading and writing"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       echo abc >f.txt
       exec {rw}<>f.txt
@@ -135,7 +118,6 @@ cases:
       ls created.txt
 
   - name: "{var}> and {var}>| with noclobber"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true # bash names the variable, not the file, in its error
     stdin: |
       set -o noclobber
@@ -148,7 +130,6 @@ cases:
       cat f.txt
 
   - name: "{var}<<< here-string"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       v=value
       exec {h}<<<"here $v"
@@ -156,7 +137,6 @@ cases:
       echo "h=$h"
 
   - name: "{var}<< here-document"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {h}<<EOF
       doc line $((1+1))
@@ -165,7 +145,6 @@ cases:
       echo "h=$h"
 
   - name: "{var}<<- here-document strips tabs"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {h}<<-EOF
       	tabbed
@@ -173,7 +152,6 @@ cases:
       cat <&$h
 
   - name: "{var}>&n duplicates an output fd"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec 3>f.txt
       exec {fd}>&3
@@ -184,7 +162,6 @@ cases:
       cat f.txt
 
   - name: "{var}<&n duplicates an input fd"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     test_files:
       - path: "in.txt"
         contents: |
@@ -198,7 +175,6 @@ cases:
       echo "fd=$fd a=$a b=$b"
 
   - name: "{var}>&n- moves an output fd"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec 5>f.txt
@@ -209,7 +185,6 @@ cases:
       cat f.txt
 
   - name: "{var}<&n- moves an input fd"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     test_files:
       - path: "in.txt"
@@ -223,7 +198,6 @@ cases:
       read -r l <&5 || echo "fd 5 closed"
 
   - name: "{var}>&word that isn't a number is an error"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec {fd}>&file.txt
@@ -231,7 +205,6 @@ cases:
       [[ -e file.txt ]] && echo created || echo not-created
 
   - name: "{var}>&n of a closed fd is an error"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec {fd}>&9
@@ -244,7 +217,6 @@ cases:
   # Closing with {var}>&- and {var}<&-
   #
   - name: "exec {var}>&- closes the fd and keeps the variable"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec {fd}>f.txt
@@ -253,7 +225,6 @@ cases:
       echo x >&$fd || echo "write failed"
 
   - name: "exec {var}<&- closes an input fd"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     test_files:
       - path: "in.txt"
@@ -266,7 +237,6 @@ cases:
       read -r l <&$fd || echo "read failed"
 
   - name: "{var}>&- closes whichever fd the variable names"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec 7>f.txt
@@ -276,7 +246,6 @@ cases:
       echo x >&7 || echo "fd 7 closed"
 
   - name: "{var}>&- can close stdout"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec 3>&1
@@ -286,7 +255,6 @@ cases:
       echo "shown status=$?" >&3
 
   - name: "Closing an fd that isn't open succeeds"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       fd=42
       exec {fd}>&-
@@ -297,7 +265,6 @@ cases:
       echo "twice status=$?"
 
   - name: "Values {var}>&- accepts as fd numbers"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       for v in 7 " 7" "7 " +7; do
         exec 7>f.txt
@@ -307,7 +274,6 @@ cases:
       done
 
   - name: "Values {var}>&- rejects"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true # bash reports these as "ambiguous redirect"
     stdin: |
       exec 7>seven.txt 10>ten.txt
@@ -324,7 +290,6 @@ cases:
       cat seven.txt ten.txt
 
   - name: "{var}>&- on a non-exec command closes only for that command"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec 7>f.txt
@@ -337,7 +302,6 @@ cases:
       cat f.txt
 
   - name: "{var}>&- with an array element"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec {a[1]}>f.txt
@@ -349,7 +313,6 @@ cases:
   # Lifetime: a {var} redirection outlives the command it's on
   #
   - name: "{var} redirection on a builtin stays open afterward"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       echo hi {fd}>out.txt
       echo "fd=$fd"
@@ -360,7 +323,6 @@ cases:
       cat out.txt out2.txt
 
   - name: "Builtin output sent to a {var} fd; stdout restored afterward"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       echo to-file {fd}>f.txt >&$fd
       echo "fd=$fd"
@@ -368,7 +330,6 @@ cases:
       cat f.txt
 
   - name: "{var} redirections through command, builtin, and eval"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       command echo a {a}>a.txt
       builtin echo b {b}>b.txt
@@ -376,7 +337,6 @@ cases:
       echo "$a $b $c"
 
   - name: "{var} redirection on a function call"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       f() { echo "in f: $fd" >&$fd; }
       f {fd}>out.txt
@@ -385,7 +345,6 @@ cases:
       cat out.txt
 
   - name: "{var} redirection on a function definition allocates per call"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       g() { echo "body: $fd" >&$fd; } {fd}>out.txt
       g
@@ -395,7 +354,6 @@ cases:
       cat out.txt
 
   - name: "{var} redirection on a brace group"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       { echo "in group: $fd" >&$fd; } {fd}>out.txt
       echo "fd=$fd"
@@ -403,25 +361,21 @@ cases:
       cat out.txt
 
   - name: "{var} redirection on a while loop"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       while read -r l <&$fd; do echo "got $l"; done {fd}<<<"a"
       echo "fd=$fd"
 
   - name: "{var} redirection on an if command"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       if true; then echo "in if: $fd"; fi {fd}>out.txt
       echo "fd=$fd"
 
   - name: "{var} redirections in a loop allocate new fds each time"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       for i in 1 2 3; do : {fd}>f$i.txt; printf '%s ' "$fd"; done
       echo
 
   - name: "{var} with a local variable"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       f() { local fd; exec {fd}>out.txt; echo "inside=$fd"; }
       fd=outer
@@ -432,7 +386,6 @@ cases:
       cat out.txt
 
   - name: "Failed {var} redirection leaves the variable unchanged"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       fd=old
@@ -445,7 +398,6 @@ cases:
       echo "g=$g"
 
   - name: "{var} redirection to a readonly variable fails"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       readonly fd=3
@@ -456,7 +408,7 @@ cases:
       echo "exec status=$? fd=$fd"
 
   - name: "{var} allocation fails when no fd is available"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
+    known_failure: true # TODO(redirection): brush's fd numbers aren't bounded by `ulimit -n` (nor are numbered ones, as in `exec 20>f`)
     incompatible_platforms: ["wasi"]
     ignore_stderr: true
     stdin: |
@@ -472,21 +424,18 @@ cases:
   # Commands run in a child don't assign the variable in the shell
   #
   - name: "{var} redirection on an external command"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       sh -c 'echo "child wrote to fd 10" >&10' {fd}>out.txt
       echo "fd=[$fd]"
       cat out.txt
 
   - name: "{var} redirection without a command"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       {fd}>out.txt
       echo "status=$? fd=[$fd]"
       ls out.txt
 
   - name: "{var} redirection on a subshell"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       ( echo "inside: $fd" >&$fd ) {fd}>out.txt
       echo "outside=[$fd]"
@@ -495,19 +444,16 @@ cases:
       echo "exec outside=[$g]"
 
   - name: "{var} redirection in a pipeline"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       echo hi {fd}>out.txt | cat
       echo "fd=[$fd]"
 
   - name: "{var} redirection in a command substitution"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       x=$(: {fd}>out.txt; echo "inner=$fd")
       echo "$x outer=[$fd]"
 
   - name: "{var} fds are inherited by children"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {fd}>out.txt
       sh -c "echo external >&$fd"
@@ -522,7 +468,6 @@ cases:
   # varredir_close
   #
   - name: "varredir_close closes a builtin's {var} fd afterward"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       shopt -s varredir_close
@@ -531,7 +476,6 @@ cases:
       echo x >&$fd || echo "fd closed"
 
   - name: "varredir_close doesn't affect exec"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       shopt -s varredir_close
       exec {fd}>out.txt
@@ -540,7 +484,6 @@ cases:
       cat out.txt
 
   - name: "varredir_close with compound commands and functions"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       shopt -s varredir_close
@@ -552,7 +495,6 @@ cases:
       cat out.txt
 
   - name: "varredir_close frees the fd for reuse"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       shopt -s varredir_close
       echo hi {fd}>f.txt
@@ -563,7 +505,6 @@ cases:
   # What varname may be
   #
   - name: "{var} with array elements"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {a[1]}>a.txt
       declare -p a
@@ -578,7 +519,6 @@ cases:
       declare -p c
 
   - name: "{var} with an invalid array subscript"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       exec {a[@]}>a.txt
@@ -586,14 +526,13 @@ cases:
       declare -p a 2>/dev/null || echo "a unset"
 
   - name: "{var} with a nameref"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
+    known_failure: true # TODO(nameref): assigning through a nameref (`declare -n`) isn't implemented
     stdin: |
       declare -n r=target
       exec {r}>out.txt
       echo "target=$target"
 
   - name: "{var} keeps the variable's attributes"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       exec {plain}>p.txt
       declare -p plain
@@ -602,13 +541,11 @@ cases:
       declare -p int
 
   - name: "{var} with underscores and digits in the name"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       echo hi {_x9}>f.txt {FD_2}>g.txt
       echo "$_x9 $FD_2"
 
   - name: "{var} under set -u"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     ignore_stderr: true
     stdin: |
       set -u
@@ -619,7 +556,6 @@ cases:
       echo "close unset status=$?"
 
   - name: "{var} in POSIX mode"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       set -o posix
       echo hi {fd}>f.txt
@@ -662,13 +598,11 @@ cases:
   # Display
   #
   - name: "declare -f shows {var} redirections"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       f() { echo hi {fd}>out; cat {r}<in; cat {a}>>z; cat {b}<>y; read x {h}<<<"str"; exec {c[1]}>arr; }
       declare -f f
 
   - name: "xtrace omits {var} redirections"
-    known_failure: true # TODO(redirection): {varname} redirections not implemented (#1292)
     stdin: |
       set -x
       exec {fd}>f.txt
