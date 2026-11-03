@@ -262,3 +262,7 @@ cases:
     ignore_stderr: true
     stdin: |
       export -nf nosuchfunction; echo "rc=$?"
+
+  - name: "export -h is an invalid option and prints nothing on stdout"
+    stdin: |
+      x=$(export -h 2>/dev/null); echo "rc=$? len=${#x}"

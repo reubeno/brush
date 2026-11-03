@@ -561,3 +561,7 @@ cases:
     stdin: |
       read x -r <<< 'a b'; echo "x=[$x] rc=$?"
       read x -- y <<< 'a b'; echo "x=[$x] y=[$y] rc=$?"
+
+  - name: "read -h is an invalid option and prints nothing on stdout"
+    stdin: |
+      x=$(read -h 2>/dev/null); echo "rc=$? len=${#x}"
