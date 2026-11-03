@@ -1820,7 +1820,7 @@ pub(crate) async fn setup_redirect(
                         }
                     }
 
-                    let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+                    let fd_num = numbered_fd(specified_fd_num.as_ref(), default_fd_if_unspecified)?;
 
                     let opened_file = shell
                         .open_file(&options, &expanded_file_path, params)
@@ -1843,7 +1843,7 @@ pub(crate) async fn setup_redirect(
                         }
                     };
 
-                    let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+                    let fd_num = numbered_fd(specified_fd_num.as_ref(), default_fd_if_unspecified)?;
 
                     if let Some(target_file) = params.try_fd(shell, *fd) {
                         params.open_files.set_fd(fd_num, target_file);
@@ -1861,7 +1861,7 @@ pub(crate) async fn setup_redirect(
                         }
                     };
 
-                    let fd_num = specified_fd_num.unwrap_or(default_fd_if_unspecified);
+                    let fd_num = numbered_fd(specified_fd_num.as_ref(), default_fd_if_unspecified)?;
 
                     let mut expanded_fields =
                         expansion::full_expand_and_split_word(shell, params, word).await?;
@@ -1925,8 +1925,10 @@ pub(crate) async fn setup_redirect(
                             let target_file = substitution_file.clone();
                             params.open_files.set_fd(substitution_fd, substitution_file);
 
-                            let fd_num = specified_fd_num
-                                .unwrap_or_else(|| get_default_fd_for_redirect_kind(kind));
+                            let fd_num = numbered_fd(
+                                specified_fd_num.as_ref(),
+                                get_default_fd_for_redirect_kind(kind),
+                            )?;
 
                             params.open_files.set_fd(fd_num, target_file);
                         }
@@ -1938,7 +1940,7 @@ pub(crate) async fn setup_redirect(
 
         ast::IoRedirect::HereDocument(fd_num, io_here) => {
             // If not specified, default to stdin (fd 0).
-            let fd_num = fd_num.unwrap_or(0);
+            let fd_num = numbered_fd(fd_num.as_ref(), 0)?;
 
             // Expand if required.
             let io_here_doc = if io_here.requires_expansion {
@@ -1954,7 +1956,7 @@ pub(crate) async fn setup_redirect(
 
         ast::IoRedirect::HereString(fd_num, word) => {
             // If not specified, default to stdin (fd 0).
-            let fd_num = fd_num.unwrap_or(0);
+            let fd_num = numbered_fd(fd_num.as_ref(), 0)?;
 
             let mut expanded_word = expansion::basic_expand_word(shell, params, word).await?;
             expanded_word.push('\n');
@@ -1966,6 +1968,15 @@ pub(crate) async fn setup_redirect(
     }
 
     Ok(())
+}
+
+/// Returns the file descriptor number a redirection applies to.
+fn numbered_fd(spec: Option<&ast::IoFdSpec>, default_fd: ShellFd) -> Result<ShellFd, error::Error> {
+    match spec {
+        None => Ok(default_fd),
+        Some(ast::IoFdSpec::Number(fd)) => Ok(*fd),
+        Some(ast::IoFdSpec::Variable(_)) => error::unimp("{varname} redirections"),
+    }
 }
 
 /// Sets up redirection of both stdout and stderr to the same file, given by `file_path`.

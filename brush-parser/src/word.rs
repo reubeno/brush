@@ -581,6 +581,20 @@ pub fn parse_parameter(
         .map_err(|err| error::WordParseError::Parameter(word.to_owned(), err.into()))
 }
 
+/// Parses a word of the form `{name}` or `{name[index]}`, as may precede a redirection
+/// operator in place of a file descriptor number, returning the variable it names. Returns
+/// `None` if the word is not of that form.
+pub(crate) fn parse_redirect_variable(
+    word: &str,
+    options: &ParserOptions,
+) -> Option<ast::AssignmentName> {
+    let inner = word.strip_prefix('{')?.strip_suffix('}')?;
+    match expansion_parser::assignment_name(inner, options).ok()? {
+        ast::AssignmentName::ArrayElementName(_, index) if index.is_empty() => None,
+        name => Some(name),
+    }
+}
+
 /// Parse brace expansion from a given word .
 ///
 /// # Arguments
@@ -1273,7 +1287,7 @@ peg::parser! {
                 (None, value.to_owned())
             }
 
-        rule assignment_name() -> ast::AssignmentName =
+        pub(crate) rule assignment_name() -> ast::AssignmentName =
             aen:array_element_name() {
                 let (name, index) = aen;
                 ast::AssignmentName::ArrayElementName(name.to_owned(), index.to_owned())

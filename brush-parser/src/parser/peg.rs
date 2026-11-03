@@ -555,14 +555,14 @@ peg::parser! {
 
         // N.B. here strings are extensions to the POSIX standard.
         rule io_redirect() -> ast::IoRedirect =
-            n:io_number()? f:io_file() {
+            n:io_fd_spec()? f:io_file() {
                     let (kind, target) = f;
                     ast::IoRedirect::File(n, kind, target)
                 } /
             non_posix_extensions_enabled() specific_operator("&>>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target), true) } /
             non_posix_extensions_enabled() specific_operator("&>") target:filename() { ast::IoRedirect::OutputAndError(ast::Word::from(target), false) } /
-            non_posix_extensions_enabled() n:io_number()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
-            n:io_number()? h:io_here() { ast::IoRedirect::HereDocument(n, h) } /
+            non_posix_extensions_enabled() n:io_fd_spec()? specific_operator("<<<") w:word() { ast::IoRedirect::HereString(n, ast::Word::from(w)) } /
+            n:io_fd_spec()? h:io_here() { ast::IoRedirect::HereDocument(n, h) } /
             expected!("I/O redirect")
 
         // N.B. Process substitution forms are extensions to the POSIX standard.
@@ -724,18 +724,28 @@ peg::parser! {
         // followed by a '<' or '>' character (but not consume them). We also
         // need to make sure that there was no space between the number and the
         // redirection operator; unfortunately we don't have the space anymore
-        // but we can infer it by looking at the tokens' locations.
-        rule io_number() -> ast::IoFd =
-            [Token::Word(w, num_loc) if w.chars().all(|c: char| c.is_ascii_digit())]
+        // but we can infer it by looking at the tokens' locations. The same
+        // holds for a `{name}` variable in place of the number, which is a
+        // non-sh extension.
+        rule io_fd_spec() -> ast::IoFdSpec =
+            [Token::Word(w, num_loc)]
             &([Token::Operator(o, redir_loc) if
                     o.starts_with(['<', '>']) &&
                     locations_are_contiguous(num_loc, redir_loc)]) {?
 
-                // A run of ASCII digits still need not fit in an `IoFd`; e.g.
-                // `echo 99999999999999999999>&1` overflows. Decline the rule
-                // instead of unwrapping, so the token is reconsidered as an
-                // ordinary word rather than panicking the parser.
-                w.parse().map_err(|_| "io number out of range")
+                if w.chars().all(|c: char| c.is_ascii_digit()) {
+                    // A run of ASCII digits still need not fit in an `IoFd`; e.g.
+                    // `echo 99999999999999999999>&1` overflows. Decline the rule
+                    // instead of unwrapping, so the token is reconsidered as an
+                    // ordinary word rather than panicking the parser.
+                    w.parse().map(ast::IoFdSpec::Number).map_err(|_| "io number out of range")
+                } else if parser_options.sh_mode {
+                    Err("io number")
+                } else {
+                    word::parse_redirect_variable(w, parser_options)
+                        .map(ast::IoFdSpec::Variable)
+                        .ok_or("io number or variable")
+                }
             }
 
         //
@@ -764,7 +774,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) {
     }
 
     let r = ast::IoRedirect::File(
-        Some(2),
+        Some(ast::IoFdSpec::Number(2)),
         ast::IoFileRedirectKind::DuplicateOutput,
         ast::IoFileRedirectTarget::Fd(1),
     );

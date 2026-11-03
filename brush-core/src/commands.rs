@@ -952,10 +952,10 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
     // ...that is a file input redirection to a filename, targeting stdin.
     match redir {
         ast::IoRedirect::File(
-            fd,
+            None | Some(ast::IoFdSpec::Number(openfiles::OpenFiles::STDIN_FD)),
             ast::IoFileRedirectKind::Read,
             ast::IoFileRedirectTarget::Filename(..),
-        ) if fd.is_none_or(|fd| fd == openfiles::OpenFiles::STDIN_FD) => Some(redir),
+        ) => Some(redir),
         _ => None,
     }
 }

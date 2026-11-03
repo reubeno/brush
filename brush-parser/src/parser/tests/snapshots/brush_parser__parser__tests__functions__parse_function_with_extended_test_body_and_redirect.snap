@@ -22,7 +22,7 @@ ParseResult(
                   )),
                   loc: "[location]",
                 )), Some(RedirectList([
-                  File(Some(2), DuplicateOutput, Duplicate(Word(
+                  File(Some(Number(2)), DuplicateOutput, Duplicate(Word(
                     value: "1",
                     loc: "[location]",
                   ))),

@@ -38,7 +38,7 @@ ParseResult(
                   ]),
                   loc: "[location]",
                 )), Some(RedirectList([
-                  File(Some(2), DuplicateOutput, Fd(1)),
+                  File(Some(Number(2)), DuplicateOutput, Fd(1)),
                 ]))),
               )),
               Simple(SimpleCommand(

@@ -1,0 +1,43 @@
+---
+source: brush-parser/src/parser/tests/redirections.rs
+expression: "ParseResult { input, result: &result }"
+---
+ParseResult(
+  input: "echo hi {fd}>out {a[i+1]}<&0 {h}<<<str",
+  result: Program(
+    complete_commands: [
+      CompoundList([
+        CompoundListItem(AndOrList(
+          first: Pipeline(
+            seq: [
+              Simple(SimpleCommand(
+                word_or_name: Some(Word(
+                  value: "echo",
+                  loc: "[location]",
+                )),
+                suffix: Some(CommandSuffix([
+                  Word(Word(
+                    value: "hi",
+                    loc: "[location]",
+                  )),
+                  IoRedirect(File(Some(Variable(VariableName("fd"))), Write, Filename(Word(
+                    value: "out",
+                    loc: "[location]",
+                  )))),
+                  IoRedirect(File(Some(Variable(ArrayElementName("a", "i+1"))), DuplicateInput, Duplicate(Word(
+                    value: "0",
+                    loc: "[location]",
+                  )))),
+                  IoRedirect(HereString(Some(Variable(VariableName("h"))), Word(
+                    value: "str",
+                    loc: "[location]",
+                  ))),
+                ])),
+              )),
+            ],
+          ),
+        ), Sequence),
+      ]),
+    ],
+  ),
+)

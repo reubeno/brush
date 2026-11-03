@@ -1529,6 +1529,32 @@ impl Display for RedirectList {
 /// A file descriptor number.
 pub type IoFd = i32;
 
+/// The file descriptor an I/O redirection applies to, when given explicitly.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
+pub enum IoFdSpec {
+    /// A file descriptor number (e.g., the `2` in `2>file`).
+    Number(IoFd),
+    /// A variable (e.g., the `{name}` in `{name}>file`). The redirection is opened on a newly
+    /// allocated file descriptor, whose number is assigned to the variable; or, when the
+    /// redirection closes a file descriptor (`{name}>&-`), the variable's value names the file
+    /// descriptor to close.
+    Variable(AssignmentName),
+}
+
+impl Display for IoFdSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Number(fd) => write!(f, "{fd}"),
+            Self::Variable(name) => write!(f, "{{{name}}}"),
+        }
+    }
+}
+
 /// An I/O redirection.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -1538,11 +1564,11 @@ pub type IoFd = i32;
 )]
 pub enum IoRedirect {
     /// Redirection to a file.
-    File(Option<IoFd>, IoFileRedirectKind, IoFileRedirectTarget),
+    File(Option<IoFdSpec>, IoFileRedirectKind, IoFileRedirectTarget),
     /// Redirection from a here-document.
-    HereDocument(Option<IoFd>, IoHereDocument),
+    HereDocument(Option<IoFdSpec>, IoHereDocument),
     /// Redirection from a here-string.
-    HereString(Option<IoFd>, Word),
+    HereString(Option<IoFdSpec>, Word),
     /// Redirection of both standard output and standard error (with optional append).
     OutputAndError(Word, bool),
 }

@@ -16,7 +16,7 @@ ParseResult(
                   loc: "[location]",
                 )),
                 suffix: Some(CommandSuffix([
-                  IoRedirect(File(Some(1), DuplicateOutput, Duplicate(Word(
+                  IoRedirect(File(Some(Number(1)), DuplicateOutput, Duplicate(Word(
                     value: "2",
                     loc: "[location]",
                   )))),

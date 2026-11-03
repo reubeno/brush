@@ -24,7 +24,7 @@ ParseResult(
                     value: "output.txt",
                     loc: "[location]",
                   )))),
-                  IoRedirect(File(Some(2), DuplicateOutput, Duplicate(Word(
+                  IoRedirect(File(Some(Number(2)), DuplicateOutput, Duplicate(Word(
                     value: "1",
                     loc: "[location]",
                   )))),
