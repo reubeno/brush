@@ -858,7 +858,11 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
 
-    let cmd_join_handle = sys::tasks::spawn(run_substitution_command(subshell, params, s));
+    // The command may block writing to the pipe (e.g., a builtin writing more than the
+    // pipe's buffer holds), so don't run it on a thread that drives the runtime's I/O:
+    // that thread must stay free to deliver readiness to the reader below.
+    let cmd_join_handle =
+        sys::tasks::spawn_blocking(run_substitution_command(subshell, params, s)).await;
 
     let output_str = async_reader.read_to_string().await?;
 

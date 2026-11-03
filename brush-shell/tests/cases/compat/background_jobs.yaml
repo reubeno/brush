@@ -132,7 +132,6 @@ cases:
       #send:Ctrl+D
 
   - name: "A background job started in a command substitution runs during it"
-    known_failure: true # TODO(jobs): the job's task doesn't run until the substitution's busy loop ends, so neither does a signal it sends
     stdin: |
       x=$(
         (sleep 0.1; echo ran > ran.txt) &
