@@ -224,6 +224,32 @@ cases:
       false
       echo $?
 
+  - name: "Prompt expansion error"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      prompt='[\$] $(( 1 + ))'
+      echo "[${prompt@P}]"
+      echo "rc=$?"
+      prompt='${x:?oops} b'
+      echo "[${prompt@P}]"
+      echo "rc=$?"
+
+  - name: "Prompt expansion error (interactive mode)"
+    args: ["-i"]
+    ignore_stderr: true # error wording differs
+    stdin: |
+      PS1='${x:?oops}> '
+      echo "after PS1"
+      PS0='$(( 1 + ))'
+      echo "after PS0: $?"
+      PS0='' PS4='$(( 1 + ))'
+      set -x
+      echo "after PS4"
+      set +x
+      set -u
+      PS4='+ ' PS1='$nope> '
+      echo "after PS1 with nounset"
+
   - name: "Brackets and var"
     stdin: |
       prompt='\[$var\]\u > '
