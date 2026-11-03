@@ -117,26 +117,7 @@ pub(crate) fn chld_signal_listener() -> Result<tokio::signal::unix::Signal, erro
     Ok(signal)
 }
 
-/// Waits for SIGINT. A shell started with SIGINT ignored never gets it: listening would
-/// replace the ignore with tokio's handler, and the shell's programs would then no longer
-/// inherit the ignore.
-pub async fn await_ctrl_c() -> std::io::Result<()> {
-    if sigint_ignored() {
-        std::future::pending::<()>().await;
-    }
-    tokio::signal::ctrl_c().await
-}
-
-/// Returns whether SIGINT is ignored. Only tokio's listener changes what SIGINT does, so once
-/// it's listening this is false.
-fn sigint_ignored() -> bool {
-    let mut action = std::mem::MaybeUninit::<nix::libc::sigaction>::uninit();
-    // SAFETY: with no new action, sigaction() only reads the current one.
-    let rc =
-        unsafe { nix::libc::sigaction(nix::libc::SIGINT, std::ptr::null(), action.as_mut_ptr()) };
-    // SAFETY: sigaction() filled in the action, as it succeeded.
-    rc == 0 && unsafe { action.assume_init() }.sa_sigaction == nix::libc::SIG_IGN
-}
+pub use tokio::signal::ctrl_c as await_ctrl_c;
 
 pub(crate) fn mask_sigttou() -> Result<(), error::Error> {
     let ignore = nix::sys::signal::SigAction::new(
