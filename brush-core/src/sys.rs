@@ -38,6 +38,7 @@ pub(crate) use platform::env;
 pub use platform::fd;
 pub use platform::input;
 pub(crate) use platform::network;
+pub(crate) use platform::pipe_io;
 pub(crate) use platform::pipes;
 pub use platform::poll;
 pub use platform::process;
