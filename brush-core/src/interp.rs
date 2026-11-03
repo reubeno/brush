@@ -684,10 +684,11 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                         match compound.execute(shell, &params).await {
                             Ok(result) => Ok(result.into()),
                             // Report the error here, where the compound command's own
-                            // redirections are still in effect.
-                            Err(err) if redirects.is_some() => {
+                            // redirections are still in effect, then keep propagating it
+                            // (marked as reported) so its fatality is still honored.
+                            Err(err) if redirects.is_some() && !err.is_reported() => {
                                 let _ = shell.display_error(&mut params.stderr(shell), &err);
-                                Ok(err.into_result(shell).into())
+                                Err(err.into_reported())
                             }
                             Err(err) => Err(err),
                         }

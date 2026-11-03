@@ -81,6 +81,9 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         err: &error::Error,
     ) -> Result<(), error::Error> {
         use crate::extensions::ErrorFormatter as _;
+        if err.is_reported() {
+            return Ok(());
+        }
         let str = self.error_formatter.format_error(err, self);
         write!(file, "{str}")?;
 

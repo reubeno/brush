@@ -16,6 +16,9 @@ pub struct Error {
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+
+    /// Whether or not the error has already been displayed to the user.
+    reported: bool,
 }
 
 /// Monolithic error type for the shell
@@ -401,6 +404,7 @@ where
         Self {
             kind: Box::new(convertible_to_kind.into()),
             fatal: false,
+            reported: false,
         }
     }
 }
@@ -416,6 +420,19 @@ impl Error {
     /// Returns whether or not this error is fatal.
     pub const fn is_fatal(&self) -> bool {
         self.fatal
+    }
+
+    /// Marks this error as already displayed, so that it isn't displayed again as it
+    /// propagates.
+    #[must_use]
+    pub(crate) const fn into_reported(mut self) -> Self {
+        self.reported = true;
+        self
+    }
+
+    /// Returns whether or not this error has already been displayed to the user.
+    pub(crate) const fn is_reported(&self) -> bool {
+        self.reported
     }
 
     /// Returns a reference to the error kind.
