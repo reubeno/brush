@@ -155,6 +155,16 @@ cases:
       export 'ea[0]=1'
       echo "status: $?"
 
+  - name: "Export identifier failure inside a pipeline exits with bash's status"
+    # A shell's declaration builtins report an invalid identifier with status 4 when run
+    # directly as a pipeline element; only at top level is it status 1.
+    known_failure: true # TODO: pipeline-element status for an invalid identifier is 1, not 4
+    stdin: |
+      export "e[0]=1" 2>/dev/null | cat
+      echo "pipeline: ${PIPESTATUS[0]}"
+      export "e[0]=1" 2>/dev/null
+      echo "direct: $?"
+
   - name: "Export recognizes an assignment produced through command"
     stdin: |
       value=world
@@ -186,7 +196,6 @@ cases:
     stdin: |
       export --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(export --help 2>/dev/null) ]] && echo "help on stdout"
-
 
   - name: "export --help is fatal in POSIX mode"
     known_failure: true # TODO(posix): a special builtin's --help doesn't end a non-interactive POSIX shell
@@ -262,6 +271,56 @@ cases:
     ignore_stderr: true
     stdin: |
       export -nf nosuchfunction; echo "rc=$?"
+
+  - name: "export rejects attribute options other than -a and -A"
+    stdin: |
+      for opt in -i -r -u -x -t -g; do
+        export $opt v=1 2>/dev/null
+        echo "$opt: $?"
+      done
+      declare -p v 2>/dev/null
+      echo "declare_status: $?"
+
+  - name: "export -n on a missing variable creates nothing"
+    stdin: |
+      export -n nosuch_n
+      echo "status: $?"
+      declare -p nosuch_n 2>/dev/null
+      echo "declare_status: $?"
+
+  - name: "export -n with an assignment creates the variable unexported"
+    stdin: |
+      export -n zz_n=5
+      echo "status: $?"
+      declare -p zz_n
+      export -n zz_n2+=x
+      declare -p zz_n2
+
+  - name: "set -a does not export what export -n assigns"
+    # `set -a` outranks `declare +x`, but not `export -n`.
+    stdin: |
+      set -a
+      export -n zz_na=1
+      declare +x zz_nb=2
+      set +a
+      declare -p zz_na zz_nb
+
+  - name: "export with no operands lists in declare -p form"
+    stdin: |
+      export zz_v=1
+      export | grep zz_
+
+  - name: "export -n outranks set -a"
+    stdin: |
+      set -a
+      v=1
+      export -n v=2
+      declare -p v
+      w=1
+      export -n w
+      declare -p w
+      export -n nv=3
+      declare -p nv
 
   - name: "export -h is an invalid option and prints nothing on stdout"
     stdin: |

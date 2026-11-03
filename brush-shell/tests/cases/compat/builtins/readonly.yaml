@@ -58,6 +58,23 @@ cases:
       echo "exit: $?"
       echo "target: $target"
 
+  - name: "a failed readonly assignment inside a pipeline reports its status"
+    known_failure: true # TODO: a readonly assignment failing as a pipeline element reports status 0
+    stdin: |
+      readonly r=1
+      r=2 | cat
+      echo "pipeline: ${PIPESTATUS[0]}"
+
+  - name: "readonly -a with an assignment converts and types the variable"
+    stdin: |
+      e5=x
+      readonly -a e5=y
+      echo "value_status=$?"
+      declare -p e5
+      readonly -A na=([k]=v)
+      echo "assoc_status=$?"
+      declare -p na
+
   - name: "readonly -f marks a function readonly rather than displaying it"
     # brush routes `readonly -f` through the same display path as `declare -f`, so it prints the
     # function's definition and never makes it readonly. A shell prints nothing, rejects a later

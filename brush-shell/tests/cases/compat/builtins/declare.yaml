@@ -1162,6 +1162,17 @@ cases:
       echo "status: $?"
       declare -p both 2>&1
 
+  - name: "Combining -a and -A with a compound operand still creates the variable"
+    # bash reports the invalid option combination and still creates the variable from the
+    # compound operand, as an associative array. brush creates nothing.
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      declare -aA both=(x)
+      echo "status: $?"
+      declare -p both 2>/dev/null
+      echo "declare_status: $?"
+
   - name: "Display diagnostics name the builtin as invoked"
     known_failure: true # TODO: declare improvements required
     stdin: |
@@ -1175,6 +1186,13 @@ cases:
       check "typeset: nosuch: not found" "$(typeset -p nosuch 2>&1)"
       f() { check "local: nosuch: not found" "$(local -p nosuch 2>&1)"; }
       f
+
+  - name: "Display quotes an associative key of @"
+    # bash quotes both `*` and `@` when displaying an associative key; brush quotes only `*`.
+    known_failure: true
+    stdin: |
+      declare -A zzat=(['@']=at ['*']=star [k]=v)
+      declare -p zzat
 
   - name: "Display filtered by array attributes includes unassigned arrays"
     known_failure: true # TODO: declare improvements required
@@ -1330,3 +1348,99 @@ cases:
       declare -p c
       f() { local x=1 -r 2>/dev/null; echo "local: $?"; x=2; declare -p x; }
       f
+
+  - name: "the integer attribute evaluates an arithmetic value on assignment"
+    known_failure: true # TODO: integer-attributed assignments are not evaluated arithmetically
+    stdin: |
+      declare -i x=1+1
+      declare -p x
+      declare -i y
+      y=2*3
+      declare -p y
+      declare -ai a=(1+1 2*3)
+      declare -p a
+
+  #
+  # `declare -g` names a global, but a shell resolves a subscripted operand's kind against the
+  # local that shadows it and then assigns there -- so the global is left untouched.
+  #
+  - name: "declare -g with a subscripted operand under a shadowing local"
+    stdin: |
+      declare -A g=([x]=1)
+      f() {
+        local -a g=(9)
+        declare -g g[y]=2
+        declare -p g
+      }
+      f
+      declare -p g
+
+  #
+  # A declaration naming a nameref acts on the variable it references.
+  #
+  - name: "declare assigns through a nameref"
+    known_failure: true # TODO: declaration builtins do not follow namerefs
+    stdin: |
+      declare -n nr=tgt
+      declare nr=hello
+      declare -p tgt nr
+
+  - name: "a subscripted assignment through a nameref targets the referenced array"
+    known_failure: true # TODO: subscripted assignments do not follow namerefs
+    stdin: |
+      declare -A m
+      declare -n r=m
+      r[key]=v
+      declare -p m
+      declare r[other]=w
+      declare -p m
+
+  #
+  # Every one of `declare`'s options has a `+X` form, including the four that select a mode rather
+  # than an attribute. For those four `+X` means "off", which is already the default, so they are
+  # accepted and (except for `+p`) do nothing: `+f` and `+F` drop the function restriction, `+g`
+  # drops global creation, and `+p` prints just as `-p` does. brush models those four as plain
+  # boolean flags with no plus form, so the word is rejected outright and the command exits 2.
+  # This also takes down any combined form that includes one of them, such as `+ft`.
+  #
+  - name: "declare +f drops the function restriction"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      f() { :; }
+      { declare +fp f; echo "status: $?"; } 2>&1 | strip
+
+  - name: "declare +F drops names-only display and declares a variable instead"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      f() { :; }
+      declare -F f
+      declare +F f
+      echo "status: $?"
+      declare -p f
+
+  - name: "declare +g declares locally inside a function"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      g=outer
+      f() { declare +g g=inner; echo "inside: $g"; }
+      f
+      echo "outside: $g"
+
+  - name: "declare +p displays just as -p does"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      x=1
+      declare -p x
+      declare +p x
+      echo "status: $?"
+
+  - name: "declare +ft combines a mode option and an attribute option"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      f() { :; }
+      declare -ft f
+      declare +ft f
+      echo "status: $?"
+      declare -pF f
+      declare -p f

@@ -270,6 +270,24 @@ cases:
       echo "result: $?"
       echo "x=${x-unset}"
 
+  - name: "unset does not evaluate an associative key arithmetically"
+    stdin: |
+      declare -A zz_m
+      zz_m[1+1]=literal
+      zz_m[2]=numeric
+      unset 'zz_m[1+1]'
+      declare -p zz_m
+
+  - name: "unset with a star or at subscript leaves an associative array alone"
+    stdin: |
+      declare -A zz_m=([k]=v)
+      unset 'zz_m[*]'
+      echo "status: $?"
+      declare -p zz_m
+      unset 'zz_m[@]'
+      echo "status: $?"
+      declare -p zz_m
+
   - name: "unset -v rejects a name that isn't a variable's"
     known_failure: true # TODO(unset): an invalid name is accepted silently
     stdin: |
