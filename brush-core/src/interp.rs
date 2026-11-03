@@ -259,6 +259,12 @@ impl Execute for ast::CompoundList {
                 }
 
                 result = ExecutionResult::success();
+
+                // A task spawned from a worker waits in a slot of that worker's that no
+                // other worker takes tasks from, until this task yields. What follows may
+                // not yield for a long time (e.g., a loop of builtins waiting for what the
+                // job does), so yield now and let the job start.
+                tokio::task::yield_now().await;
             } else {
                 result = ao_list.execute(shell, params).await?;
 
