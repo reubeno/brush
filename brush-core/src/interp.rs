@@ -656,6 +656,11 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
 
         // Updates the shell with information about the currently executing command.
         pipeline_context.shell.set_current_cmd(self);
+        // The parent shell may report an error from a stage in a shell of its own,
+        // so it records the stage's position too.
+        if let commands::ShellForCommand::OwnedShell { parent, .. } = &mut pipeline_context.shell {
+            parent.set_current_cmd(self);
+        }
 
         match self {
             Self::Simple(simple) => simple.execute_in_pipeline(pipeline_context, params).await,
@@ -715,9 +720,10 @@ impl Execute for ast::CompoundCommand {
                 let mut subshell = shell.clone();
 
                 // Handle errors within the subshell context to prevent fatal errors
-                // from propagating to the parent shell.
+                // from propagating to the parent shell. The subshell, where an error
+                // arose, reports it.
                 let result = list.execute(&mut subshell, params).await;
-                Ok(shell.end_subshell(result, || Some(params.stderr(shell))))
+                Ok(subshell.end_subshell(result, || Some(params.stderr(shell))))
             }
             Self::ForClause(f) => f.execute(shell, params).await,
             Self::CaseClause(c) => c.execute(shell, params).await,
@@ -863,7 +869,8 @@ impl Execute for ast::ForClauseCommand {
                 }
             }
 
-            // Update the variable.
+            // Update the variable, at the loop's header: the body has moved the position on.
+            shell.set_current_cmd(self);
             shell.env_mut().update_or_add(
                 &self.variable_name,
                 ShellValueLiteral::Scalar(value),
@@ -1102,6 +1109,9 @@ impl Execute for ast::ArithmeticForClauseCommand {
         }
 
         loop {
+            // The condition and the updater run at the loop's header: the body has moved
+            // the position on.
+            shell.set_current_cmd(self);
             if let Some(condition) = &self.condition {
                 // An empty condition (e.g., `for (( ; ; ))`) means "always true".
                 if !condition.value.is_empty() && condition.eval(shell, params, true).await? == 0 {
@@ -1123,6 +1133,7 @@ impl Execute for ast::ArithmeticForClauseCommand {
             }
 
             if let Some(updater) = &self.updater {
+                shell.set_current_cmd(self);
                 updater.eval(shell, params, true).await?;
             }
         }
@@ -1157,13 +1168,30 @@ impl Execute for ast::FunctionDefinition {
         }
 
         // The function definition's source context should be the same as the current frame
-        // so we directly pass that through.
-        let source_info = shell
+        // so we directly pass that through. Its source is the file it's defined in; for
+        // commands that weren't read from one (as `-c`'s or standard input's), it's `main` in
+        // an interactive shell and `$0` otherwise.
+        let mut source_info = shell
             .call_stack()
             .current_frame()
             .map_or_else(crate::SourceInfo::default, |frame| {
                 frame.adjusted_source_info()
             });
+        // The file it's defined in is the one running (`BASH_SOURCE[0]`), however deep in
+        // handlers or `eval`s the definition is.
+        let defining_file = crate::wellknownvars::bash_source(shell.call_stack())
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        source_info.source = if !defining_file.is_empty() {
+            defining_file
+        } else if shell.started_interactive() {
+            String::from("main")
+        } else {
+            shell
+                .current_shell_name()
+                .map_or_else(String::new, |name| name.into_owned())
+        };
         shell.define_func(func_name, self.clone(), &source_info);
 
         let result = ExecutionResult::success();
@@ -1201,7 +1229,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
                     if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
                     {
-                        writeln!(params.stderr(&context.shell), "error: {e}")?;
+                        let _ = context
+                            .shell
+                            .display_error(&mut params.stderr(&context.shell), &e);
                         return Ok(ExecutionResult::general_error().into());
                     }
                 }

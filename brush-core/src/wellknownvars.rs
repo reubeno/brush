@@ -642,14 +642,17 @@ fn get_bash_lineno_value(shell: &dyn ShellState) -> variables::ShellValue {
 }
 
 fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
-    let stack = shell.call_stack();
+    bash_source(shell.call_stack()).into()
+}
 
+/// Returns `BASH_SOURCE`'s elements: the files the call stack's frames run
+/// from, innermost first.
+pub(crate) fn bash_source(stack: &crate::callstack::CallStack) -> Vec<String> {
     if stack.iter_function_calls().next().is_none() {
         stack
             .iter_script_calls()
             .map(|frame| frame.source_info.source.clone())
-            .collect::<Vec<_>>()
-            .into()
+            .collect()
     } else {
         // When in a function, include both functions and sourced scripts in the stack
         // This mirrors the FUNCNAME array structure
@@ -673,8 +676,7 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
                 crate::callstack::FrameType::CommandString
                 | crate::callstack::FrameType::InteractiveSession => None,
             })
-            .collect::<Vec<_>>()
-            .into()
+            .collect()
     }
 }
 

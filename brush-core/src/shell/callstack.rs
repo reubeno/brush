@@ -125,6 +125,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Ok(ShellGuard::new(self, leave))
     }
 
+    /// Maps the lines of text that starts on line `start_line` of the current
+    /// frame's source (as `eval`'s text does) onto the frame's lines, until the
+    /// returned guard is dropped.
+    pub(crate) fn map_lines_from(&mut self, start_line: usize) -> ShellGuard<'_, SE> {
+        let saved = self.call_stack.map_lines_from(start_line).map(Box::new);
+        let frames = self.call_stack.depth();
+        ShellGuard::new(self, Leave::Lines { frames, saved })
+    }
+
     /// Enters a new variable scope on the shell, until the returned guard is dropped.
     pub(crate) fn enter_scope(&mut self, scope: env::EnvironmentScope) -> ShellGuard<'_, SE> {
         self.env.push_scope(scope);
@@ -185,7 +194,8 @@ fn repeated_char_str(c: char, count: usize) -> String {
 }
 
 /// Guards something entered on a shell -- a function call, a script, a trap handler, a
-/// variable scope, or a block on trap delivery -- and leaves it when dropped: when
+/// variable scope, a block on trap delivery, or a frame's mapping of lines -- and leaves
+/// it when dropped: when
 /// whatever runs in it returns, fails, or is cancelled (its future dropped, as when the
 /// user hits Ctrl-C during completion).
 ///
@@ -197,7 +207,7 @@ pub(crate) struct ShellGuard<'a, SE: crate::extensions::ShellExtensions> {
 
 /// What a [`ShellGuard`] leaves when it's dropped, with how deep the call stack (`frames`)
 /// and variable scopes (`scopes`) were once it was entered.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum Leave {
     Function {
         frames: usize,
@@ -215,6 +225,11 @@ enum Leave {
         scope: env::EnvironmentScope,
     },
     TrapBlock,
+    Lines {
+        frames: usize,
+        // Boxed to keep every guard, which futures hold across awaits, small.
+        saved: Option<Box<callstack::SavedLines>>,
+    },
 }
 
 impl<'a, SE: crate::extensions::ShellExtensions> ShellGuard<'a, SE> {
@@ -279,8 +294,8 @@ impl<SE: crate::extensions::ShellExtensions> Drop for ShellGuard<'_, SE> {
         // borrowed this one; so unless something left the shell out of balance, what this
         // entered is on top. If it isn't, report that and pop nothing, rather than risk
         // popping something else.
-        let left = match self.leave {
-            Leave::Function { frames, scopes } => {
+        let left = match &mut self.leave {
+            &mut Leave::Function { frames, scopes } => {
                 // Pop the frame and its scope together, or neither.
                 let left = self.frame_on_top(frames, callstack::FrameType::is_function)
                     && self.pop_scope(scopes, env::EnvironmentScope::Local);
@@ -295,19 +310,28 @@ impl<SE: crate::extensions::ShellExtensions> Drop for ShellGuard<'_, SE> {
                 }
                 left
             }
-            Leave::Script { frames } => self.pop_frame(frames, callstack::FrameType::is_script),
-            Leave::TrapHandler {
+            &mut Leave::Script { frames } => {
+                self.pop_frame(frames, callstack::FrameType::is_script)
+            }
+            &mut Leave::TrapHandler {
                 frames,
                 last_exit_status,
             } => {
                 self.shell.last_exit_status = last_exit_status;
                 self.pop_frame(frames, callstack::FrameType::is_trap_handler)
             }
-            Leave::Scope { scopes, scope } => self.pop_scope(scopes, scope),
+            &mut Leave::Scope { scopes, scope } => self.pop_scope(scopes, scope),
             Leave::TrapBlock => {
                 let blocked = self.shell.call_stack.is_trap_delivery_suppressed();
                 self.shell.call_stack.release_trap_delivery_block();
                 blocked
+            }
+            Leave::Lines { frames, saved } => {
+                let on_top = self.shell.call_stack.depth() == *frames;
+                if on_top && let Some(saved) = saved.take() {
+                    self.shell.call_stack.restore_lines(*saved);
+                }
+                on_top
             }
         };
 

@@ -229,10 +229,17 @@ impl Frame {
 
     /// Returns the current line number.
     pub fn current_line(&self) -> Option<usize> {
-        let start_line = self.source_info.start.as_ref().map_or(1, |pos| pos.line);
         let current_line = self.current.as_ref().map(|pos| pos.line)?;
 
-        Some(start_line.saturating_sub(1) + current_line + self.current_line_offset)
+        Some(self.line_at(current_line))
+    }
+
+    /// Returns the line number, in the frame's source, of the given line of the
+    /// input the frame is running.
+    pub(crate) fn line_at(&self, line: usize) -> usize {
+        let start_line = self.source_info.start.as_ref().map_or(1, |pos| pos.line);
+
+        start_line.saturating_sub(1) + line + self.current_line_offset
     }
 
     /// Returns the current line number, relative to the frame's entry.
@@ -242,6 +249,14 @@ impl Frame {
 
         Some(current_line.saturating_sub(entry_line) + self.current_line_offset + 1)
     }
+}
+
+/// A frame's line mapping and position, saved while text from elsewhere runs
+/// in it.
+#[derive(Clone, Debug)]
+pub(crate) struct SavedLines {
+    line_offset: usize,
+    current: Option<Arc<crate::SourcePosition>>,
 }
 
 /// Options for formatting a call stack.
@@ -443,6 +458,33 @@ impl CallStack {
         frame.current_line_offset += delta;
     }
 
+    /// Maps the lines of text that starts on line `start_line` of the current
+    /// frame's source (as `eval`'s text does) onto the frame's lines, for as
+    /// long as the text runs. Returns what to pass to
+    /// [`restore_lines`](Self::restore_lines) once it's done.
+    ///
+    /// Use [`Shell::map_lines_from`](crate::Shell::map_lines_from), whose guard
+    /// restores the lines however the text's run ends.
+    pub(crate) fn map_lines_from(&mut self, start_line: usize) -> Option<SavedLines> {
+        let frame = self.frames.front_mut()?;
+        let frame_start = frame.source_info.start.as_ref().map_or(1, |pos| pos.line);
+        let saved = SavedLines {
+            line_offset: frame.current_line_offset,
+            current: frame.current.clone(),
+        };
+        frame.current_line_offset = start_line.saturating_sub(frame_start);
+        Some(saved)
+    }
+
+    /// Restores the current frame's lines as they were before
+    /// [`map_lines_from`](Self::map_lines_from).
+    pub(crate) fn restore_lines(&mut self, saved: SavedLines) {
+        if let Some(frame) = self.frames.front_mut() {
+            frame.current_line_offset = saved.line_offset;
+            frame.current = saved.current;
+        }
+    }
+
     /// Pushes a new script call frame onto the stack.
     ///
     /// # Arguments
@@ -484,8 +526,12 @@ impl CallStack {
         signal: traps::TrapSignal,
         handler: Option<&traps::TrapHandler>,
     ) {
-        let source_info =
-            handler.map_or_else(crate::SourceInfo::default, |h| h.source_info.clone());
+        // The handler's text is numbered from its own first line; where it was
+        // registered doesn't matter. (Running it may map its lines onto those of the
+        // command that triggered it.)
+        let source_info = handler.map_or_else(crate::SourceInfo::default, |h| {
+            crate::SourceInfo::from(h.source_info.source.as_str())
+        });
 
         self.frames.push_front(Frame {
             frame_type: FrameType::TrapHandler(signal),

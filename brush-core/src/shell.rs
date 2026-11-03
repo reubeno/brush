@@ -109,6 +109,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Clone depth from the original ancestor shell.
     depth: usize,
 
+    /// Whether the shell started interactive, which its subshells and background
+    /// jobs did too, though they don't read commands interactively.
+    started_interactive: bool,
+
     /// Shell name
     name: Option<String>,
 
@@ -197,6 +201,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            started_interactive: self.started_interactive,
         }
     }
 }
@@ -230,6 +235,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             process_launcher: options.process_launcher,
             builtin_states: builtins::BuiltinStates::default(),
             open_files: openfiles::OpenFiles::new(),
+            started_interactive: runtime_options.interactive,
             options: runtime_options,
             name: options.shell_name,
             args: options.shell_args.unwrap_or_default(),
@@ -390,6 +396,28 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
+    }
+
+    /// Returns whether the shell started interactive. A subshell or background job of an
+    /// interactive shell started interactive too, though it doesn't read commands
+    /// interactively (as [`RuntimeOptions::interactive`] says).
+    pub const fn started_interactive(&self) -> bool {
+        self.started_interactive
+    }
+
+    /// Returns where the shell is running commands: the file (`BASH_SOURCE[0]`,
+    /// from the call stack rather than the variable) and the line.
+    pub fn current_location(&self) -> crate::error::ErrorLocation {
+        crate::error::ErrorLocation {
+            source: crate::wellknownvars::bash_source(&self.call_stack)
+                .into_iter()
+                .next()
+                .unwrap_or_default(),
+            line: self
+                .call_stack
+                .current_frame()
+                .and_then(crate::callstack::Frame::current_line),
+        }
     }
 }
 

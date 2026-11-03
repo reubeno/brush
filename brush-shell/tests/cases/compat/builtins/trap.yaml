@@ -277,7 +277,6 @@ cases:
       echo "after"
 
   - name: "trap ERR - has access to LINENO"
-    known_failure: true # TODO(traps): ERR trap basic execution not implemented
     stdin: |
       trap 'echo "ERR at line: $LINENO"' ERR
       false
@@ -730,7 +729,6 @@ cases:
       echo "x is $x"
 
   - name: "DEBUG trap - sees LINENO"
-    known_failure: true # TODO(traps): LINENO in DEBUG trap not accurate
     stdin: |
       trap 'echo "line: $LINENO"' DEBUG
       echo first

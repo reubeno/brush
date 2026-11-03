@@ -410,3 +410,31 @@ cases:
     expected_exit_code: 0
     expected_stdout: |
       exit: 1
+
+  # The harness runs brush by its path, which is `$0`, so the name is stripped
+  # and the rest of bash's shape, with the line number, is compared. (Stripped
+  # in the shell, not with sed, which Windows lacks.)
+  - name: "An error is prefixed with the shell's name and the line"
+    stdin: |
+      exec 2>err.txt
+      (echo ${x?boom})
+      while IFS= read -r line; do echo "${line#*: }"; done <err.txt
+    expected_stdout: |
+      line 2: expansion error: boom
+
+  # brush lets `BASH_SOURCE` be unset, which bash refuses; the prefix still
+  # names the file the error arose in.
+  - name: "An error's prefix doesn't depend on BASH_SOURCE"
+    test_files:
+      - path: "child.sh"
+        contents: |
+          unset BASH_SOURCE
+          r=2
+    stdin: |
+      readonly r=1
+      exec 2>err.txt
+      source ./child.sh
+      while IFS= read -r line; do echo "${line%%: line*}: line${line#*: line}"; done <err.txt | while IFS= read -r line; do echo "${line%%: cannot*}"; done
+    expected_stdout: |
+      ./child.sh: line 2
+

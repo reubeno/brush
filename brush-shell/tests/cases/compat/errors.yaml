@@ -469,10 +469,14 @@ cases:
     stdin: |
       { export -Z; } 2>&1 | head -n 1
 
+  # Only the shell's name differs, so only that is stripped: the shape, with
+  # the line number, is what's compared.
   - name: "Builtin I/O errors are reported as bash reports them"
     known_failure: true # TODO(errors): brush reports "i/o error: ... (os error 2)"
     stdin: |
-      cd /nonexistent-dir
+      strip() { sed -E 's/^[^ ]*: line /line /'; }
+      cd /nonexistent-dir 2>err.txt; echo "cd: $?"; strip <err.txt
+      rm err.txt
 
   # The leading "file: line N:" a shell prefixes is stripped.
   - name: "Parameter expansion errors name the parameter"
@@ -741,4 +745,313 @@ cases:
       set -o posix
       . ./bad.sh
       echo "after: $?"
+
+  - name: "An error's prefix names the file and line it arose in"
+    # Only the prefix is compared, since the messages differ.
+    args: ["script.sh"]
+    test_files:
+      - path: "child.sh"
+        contents: |
+          true
+          r=2
+      - path: "lib.sh"
+        contents: |
+          g() {
+            true
+            r=2
+          }
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          readonly r=1
+          source ./child.sh
+          source ./lib.sh
+          f() {
+            true
+            r=2
+          }
+          f
+          g
+          (
+            true
+            r=2
+          )
+          echo hi >/nonexistent-dir/file
+          exec 2>&3
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "A pipeline stage's error prefix names the stage's line"
+    # Only the prefix is compared, since the messages differ.
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          true
+          nosuch | true
+          true |
+            nosuch2
+          true | echo hi >/nonexistent-dir/file
+          cd /nonexistent-dir |
+            true
+          true | {
+            true
+            cd /nonexistent-dir
+          }
+          exec 2>&3
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "An error that ends a pipeline stage, subshell, or background job names its line"
+    # Only the prefix is compared, since the messages differ.
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          : ${u1?msg} | cat
+          f() {
+            : ${u2?msg}
+          }
+          f | cat
+          { : ${u3?msg}; } | cat
+          ( : ${u4?msg} )
+          x=${u5?msg} true | cat
+          true | : ${u6?msg}
+          : ${u7?msg} &
+          wait
+          exec 2>&3
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "An error that ends a pipeline stage, subshell, or background job names its line (command line)"
+    min_oracle_version: "5.3" # bash 5.2 names one of these "environment"
+    # Only the prefix is compared, since the messages differ.
+    args:
+      - "-c"
+      - |
+        exec 3>&2 2>err.txt
+        : ${u1?msg} | cat
+        f() {
+          : ${u2?msg}
+        }
+        f | cat
+        { : ${u3?msg}; } | cat
+        ( : ${u4?msg} )
+        x=${u5?msg} true | cat
+        true | : ${u6?msg}
+        : ${u7?msg} &
+        wait
+        exec 2>&3
+        while IFS= read -r line; do
+          [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+        done <err.txt
+        rm err.txt
+      - "myshell"
+
+  - name: "A syntax error's prefix names the file and line"
+    # Only the prefix of each error's first line is compared, since the
+    # messages differ, and bash also shows the line in error.
+    args: ["script.sh"]
+    test_files:
+      - path: "bad.sh"
+        contents: |
+          true
+          echo )
+      - path: "script.sh"
+        contents: |
+          true
+          (source ./bad.sh) 2>err.txt
+          x=$(source ./bad.sh 2>&1)
+          echo "$x" >>err.txt
+          while IFS= read -r line; do
+            [[ $line == *"syntax error"* && $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "A syntax error in eval is prefixed with eval"
+    known_failure: true # TODO(errors): the prefix lacks bash's `eval: ` before the line (also `-c: `, `error trap: `, `exit trap: `)
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          true
+          eval 'echo )' 2>err.txt
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "Errors and LINENO in eval and command substitution name the script's line"
+    # Only the prefix is compared, since the messages differ.
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          true
+          x=$(nosuch)
+          readonly r=1
+          eval 'r=2'
+          echo "eval: $(eval 'echo $LINENO')" >&3
+          eval 'echo "eval LINENO: $LINENO"' >&3
+          y=$(echo "substitution LINENO: $LINENO"); echo "$y" >&3
+          f() {
+            eval 'r=3'
+          }
+          f
+          exec 2>&3
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "LINENO in a command substitution on a later line of its command"
+    known_failure: true # TODO(LINENO): a command substitution's lines are counted from its command's first line, not its own
+    stdin: |
+      true
+      value="literal
+      $(echo "$LINENO")"
+      echo "$value"
+
+  - name: "A syntax error at the end of a file names the line"
+    known_failure: true # TODO(errors): the parser reports no position for the end of its input
+    args: ["script.sh"]
+    test_files:
+      - path: "bad.sh"
+        contents: |
+          true
+          if true; then
+      - path: "script.sh"
+        contents: |
+          (source ./bad.sh) 2>err.txt
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "A function definition's failed redirection is reported at the definition"
+    # Only the prefix is compared, since the messages differ.
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          f() { :; } >/dev/null/missing
+          f |
+            true
+          f
+          exec 2>&3
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "A multi-line eval's text is numbered from the eval's first line"
+    min_oracle_version: "5.3" # bash 5.2 numbers it from the eval's last line
+    # Only the prefix is compared, since the messages differ.
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          eval "true
+          g() { echo \"g: \$LINENO\" >&3; }
+          nosuch
+          "
+          g
+          exec 2>&3
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "An error in a trap handler names the line bash numbers it from"
+    # Only the line is compared, since the messages differ (and the EXIT
+    # handler's file is tracked on its own).
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          trap 'echo "ERR LINENO: $LINENO" >&3
+          nosuch_err; trap - ERR' ERR
+          trap 'true
+          nosuch_exit
+          re=": (line [0-9]+):"
+          while IFS= read -r line; do
+            [[ $line =~ $re ]] && echo "${BASH_REMATCH[1]}" >&3
+          done <err.txt
+          rm err.txt' EXIT
+          true
+          false
+          true
+
+  - name: "An interactive shell names the file a syntax error is in"
+    # Only the prefix after the shell's name is compared.
+    args: ["-i"]
+    ignore_stderr: true
+    test_files:
+      - path: "bad.sh"
+        contents: |
+          true
+          echo )
+    stdin: |
+      source ./bad.sh 2>err.txt
+      while IFS= read -r line; do
+        [[ $line == *"syntax error"* && ${line#*: } =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+      done <err.txt
+      rm err.txt
+
+  - name: "A loop's failing variable assignment is reported at its header"
+    # Only the prefix is compared, since the messages differ.
+    args: ["script.sh"]
+    test_files:
+      - path: "script.sh"
+        contents: |
+          exec 3>&2 2>err.txt
+          for i in a b; do
+            readonly i
+          done
+          for ((j = 0; j < 2; j++)); do
+            readonly j
+          done
+          exec 2>&3
+          while IFS= read -r line; do
+            [[ $line =~ ^(.*: line [0-9]+): ]] && echo "${BASH_REMATCH[1]}"
+          done <err.txt
+          rm err.txt
+
+  - name: "An interactive syntax error in eval names no file"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      f() { eval 'echo )'; }
+      f 2>err.txt
+      re='^[^:]*: [^:]*: line [0-9]+:'
+      while IFS= read -r line; do
+        [[ $line == *"syntax error"* ]] || continue
+        [[ $line =~ $re ]] && echo "names a file and line" || echo "names no file"
+      done <err.txt
+      rm err.txt
+
+  - name: "An interactive shell's background job reports errors as the shell does"
+    args: ["-i"]
+    ignore_stderr: true
+    stdin: |
+      set +m
+      nosuch_cmd 2>err.txt &
+      wait
+      re='^[^:]*: line [0-9]+:'
+      while IFS= read -r line; do
+        [[ $line =~ $re ]] && echo "names a line" || echo "names no line"
+      done <err.txt
+      rm err.txt
 
