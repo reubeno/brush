@@ -266,3 +266,11 @@ cases:
   - name: "export -h is an invalid option and prints nothing on stdout"
     stdin: |
       x=$(export -h 2>/dev/null); echo "rc=$? len=${#x}"
+
+  - name: "export treats a plus option as an invalid identifier operand"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export +x zz_plus=1; } 2>&1 | strip
+      export +x zz_plus=1 2>/dev/null
+      echo "status=$?"
+      declare -p zz_plus
