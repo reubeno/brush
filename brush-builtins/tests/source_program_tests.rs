@@ -6,12 +6,16 @@
 use anyhow::Result;
 use brush_builtins::{BuiltinSet, ShellBuilderExt as _};
 
-#[tokio::test]
-async fn a_parsed_program_is_sourced_as_a_script() -> Result<()> {
-    let mut shell = brush_core::Shell::builder()
+async fn new_shell() -> Result<brush_core::Shell> {
+    Ok(brush_core::Shell::builder()
         .default_builtins(BuiltinSet::BashMode)
         .build()
-        .await?;
+        .await?)
+}
+
+#[tokio::test]
+async fn a_parsed_program_is_sourced_as_a_script() -> Result<()> {
+    let mut shell = new_shell().await?;
     let params = shell.default_exec_params();
     let source_info = brush_core::SourceInfo::from(std::path::PathBuf::from("lib.sh"));
     let program = shell.parse_string("seen+=\"$1 \"; return 3; seen+=late")?;
@@ -34,10 +38,7 @@ async fn a_parsed_program_is_sourced_as_a_script() -> Result<()> {
 
 #[tokio::test]
 async fn a_sourced_program_runs_in_its_own_script_frame() -> Result<()> {
-    let mut shell = brush_core::Shell::builder()
-        .default_builtins(BuiltinSet::BashMode)
-        .build()
-        .await?;
+    let mut shell = new_shell().await?;
     let params = shell.default_exec_params();
     let source_info = brush_core::SourceInfo::from(std::path::PathBuf::from("lib.sh"));
     let program = shell.parse_string("src=${BASH_SOURCE[0]}")?;
@@ -60,10 +61,7 @@ async fn a_sourced_program_runs_in_its_own_script_frame() -> Result<()> {
 
 #[tokio::test]
 async fn exit_in_a_sourced_program_still_exits() -> Result<()> {
-    let mut shell = brush_core::Shell::builder()
-        .default_builtins(BuiltinSet::BashMode)
-        .build()
-        .await?;
+    let mut shell = new_shell().await?;
     let params = shell.default_exec_params();
     let source_info = brush_core::SourceInfo::from(std::path::PathBuf::from("lib.sh"));
     let program = shell.parse_string("exit 4; echo late")?;
