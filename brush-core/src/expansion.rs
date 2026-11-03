@@ -647,6 +647,22 @@ pub async fn assign_to_named_parameter(
     expander.assign_to_parameter(&parameter, value).await
 }
 
+/// Returns the value of a named parameter (e.g., `x` or `a[1]`); an unset parameter has an empty
+/// value, even under `nounset`.
+pub(crate) async fn named_parameter_value(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    name: &str,
+) -> Result<String, error::Error> {
+    let parser_options = shell.parser_options();
+    let parameter = brush_parser::word::parse_parameter(name, &parser_options)?;
+    let mut expander = WordExpander::new(shell, params);
+    let expansion = expander
+        .expand_parameter_allowing_unset(&parameter, false)
+        .await?;
+    Ok(expander.fields_to_string(expansion))
+}
+
 struct WordExpander<'a, SE: extensions::ShellExtensions> {
     /// The shell in which to perform expansion.
     shell: &'a mut Shell<SE>,

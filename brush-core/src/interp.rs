@@ -660,10 +660,35 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
         match self {
             Self::Simple(simple) => simple.execute_in_pipeline(pipeline_context, params).await,
             Self::Compound(compound, redirects) => {
-                // Set up any additional redirects.
-                if let Some(redirects) = redirects {
-                    for redirect in &redirects.0 {
-                        setup_redirect(&mut pipeline_context.shell, &mut params, redirect).await?;
+                // Set up any additional redirects. bash makes a subshell's in the subshell, so
+                // the `{name}` redirections of one are undone here afterward.
+                let in_shell = !matches!(compound, ast::CompoundCommand::Subshell(_));
+                let mut subshell_var_redirects = vec![];
+                for redirect in redirects.iter().flat_map(|r| &r.0) {
+                    let var_redirect =
+                        match setup_redirect(&mut pipeline_context.shell, &mut params, redirect)
+                            .await
+                        {
+                            Ok(var_redirect) => var_redirect,
+                            Err(e) => {
+                                settle_var_redirects(
+                                    &mut pipeline_context.shell,
+                                    &params,
+                                    subshell_var_redirects,
+                                    false,
+                                )?;
+                                return Err(e);
+                            }
+                        };
+                    if in_shell {
+                        settle_var_redirects(
+                            &mut pipeline_context.shell,
+                            &params,
+                            var_redirect,
+                            true,
+                        )?;
+                    } else {
+                        subshell_var_redirects.extend(var_redirect);
                     }
                 }
 
@@ -681,7 +706,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                         ))
                     }
                     commands::ShellForCommand::ParentShell(shell) => {
-                        Ok(compound.execute(shell, &params).await?.into())
+                        let result = compound.execute(shell, &params).await;
+                        settle_var_redirects(shell, &params, subshell_var_redirects, false)?;
+                        Ok(result?.into())
                     }
                 }
             }
@@ -1191,6 +1218,7 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         let mut assignments = vec![];
         let mut args: Vec<CommandArg> = vec![];
         let mut command_takes_assignments = false;
+        let mut var_redirects = vec![];
 
         // Capture the status change count before expansion, so we can detect
         // if expansion (e.g., command substitution) set an exit status.
@@ -1199,10 +1227,19 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
         for item in prefix_iter.chain(cmd_name_items.iter()).chain(suffix_iter) {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => {
-                    if let Err(e) = setup_redirect(&mut context.shell, &mut params, redirect).await
-                    {
-                        writeln!(params.stderr(&context.shell), "error: {e}")?;
-                        return Ok(ExecutionResult::general_error().into());
+                    match setup_redirect(&mut context.shell, &mut params, redirect).await {
+                        Ok(var_redirect) => var_redirects.extend(var_redirect),
+                        Err(e) => {
+                            writeln!(params.stderr(&context.shell), "error: {e}")?;
+                            let in_shell = commands::runs_in_shell(&context.shell, &args);
+                            settle_var_redirects(
+                                &mut context.shell,
+                                &params,
+                                var_redirects,
+                                in_shell,
+                            )?;
+                            return Ok(ExecutionResult::general_error().into());
+                        }
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
@@ -1304,6 +1341,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                 }
             }
         }
+
+        let in_shell = commands::runs_in_shell(&context.shell, &args);
+        settle_var_redirects(&mut context.shell, &params, var_redirects, in_shell)?;
 
         // If we have a command, then execute it.
         if let Some(CommandArg::String(cmd_name)) = args.first() {
@@ -1740,13 +1780,17 @@ async fn apply_assignment(
     shell.env_mut().add(variable_name, new_var, creation_scope)
 }
 
+/// Sets up the given redirection in `params`. Returns what a `{name}` redirection that opened a
+/// file descriptor did, for the caller to settle (see [`settle_var_redirects`]).
 #[expect(clippy::too_many_lines)]
 pub(crate) async fn setup_redirect(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &'_ mut ExecutionParameters,
     redirect: &ast::IoRedirect,
-) -> Result<(), error::Error> {
-    match redirect {
+) -> Result<Option<VarRedirect>, error::Error> {
+    // Find the file to open, unless the redirection is done here; and, when it moves an fd
+    // (`n>&m-`), the fd to close afterward.
+    let (fd_spec, default_fd, file, moved_fd) = match redirect {
         ast::IoRedirect::OutputAndError(f, append) => {
             let mut expanded_fields =
                 expansion::full_expand_and_split_word(shell, params, f).await?;
@@ -1756,6 +1800,7 @@ pub(crate) async fn setup_redirect(
 
             let expanded_file_path = expanded_fields.remove(0);
             setup_redirect_output_and_error_to(shell, params, &expanded_file_path, *append)?;
+            return Ok(None);
         }
 
         ast::IoRedirect::File(specified_fd_num, kind, target) => {
@@ -1820,8 +1865,6 @@ pub(crate) async fn setup_redirect(
                         }
                     }
 
-                    let fd_num = numbered_fd(specified_fd_num.as_ref(), default_fd_if_unspecified)?;
-
                     let opened_file = shell
                         .open_file(&options, &expanded_file_path, params)
                         .map_err(|err| {
@@ -1831,7 +1874,12 @@ pub(crate) async fn setup_redirect(
                             )
                         })?;
 
-                    params.open_files.set_fd(fd_num, opened_file);
+                    (
+                        specified_fd_num,
+                        default_fd_if_unspecified,
+                        opened_file,
+                        None,
+                    )
                 }
 
                 ast::IoFileRedirectTarget::Fd(fd) => {
@@ -1843,13 +1891,16 @@ pub(crate) async fn setup_redirect(
                         }
                     };
 
-                    let fd_num = numbered_fd(specified_fd_num.as_ref(), default_fd_if_unspecified)?;
-
-                    if let Some(target_file) = params.try_fd(shell, *fd) {
-                        params.open_files.set_fd(fd_num, target_file);
-                    } else {
+                    let Some(target_file) = params.try_fd(shell, *fd) else {
                         return Err(error::ErrorKind::BadFileDescriptor(*fd).into());
-                    }
+                    };
+
+                    (
+                        specified_fd_num,
+                        default_fd_if_unspecified,
+                        target_file,
+                        None,
+                    )
                 }
 
                 ast::IoFileRedirectTarget::Duplicate(word) => {
@@ -1861,7 +1912,7 @@ pub(crate) async fn setup_redirect(
                         }
                     };
 
-                    let fd_num = numbered_fd(specified_fd_num.as_ref(), default_fd_if_unspecified)?;
+                    let fd_num = numbered_fd(specified_fd_num.as_ref(), default_fd_if_unspecified);
 
                     let mut expanded_fields =
                         expansion::full_expand_and_split_word(shell, params, word).await?;
@@ -1882,8 +1933,15 @@ pub(crate) async fn setup_redirect(
                     if expanded.is_empty() {
                         if dash {
                             // Close the specified fd. Ignore it if it's not valid.
+                            let fd_num =
+                                if let Some(ast::IoFdSpec::Variable(name)) = specified_fd_num {
+                                    Box::pin(fd_named_by_variable(shell, params, name)).await?
+                                } else {
+                                    fd_num.unwrap_or(default_fd_if_unspecified)
+                                };
                             params.open_files.remove_fd(fd_num);
                         }
+                        return Ok(None);
                     } else if expanded.chars().all(|c: char| c.is_ascii_digit()) {
                         let source_fd_num = expanded
                             .parse::<ShellFd>()
@@ -1894,18 +1952,19 @@ pub(crate) async fn setup_redirect(
                             return Err(error::ErrorKind::BadFileDescriptor(source_fd_num).into());
                         };
 
-                        params.open_files.set_fd(fd_num, target_file);
-
-                        // `n>&m-` moves fd m to n, closing m.
-                        if dash && source_fd_num != fd_num {
-                            params.open_files.remove_fd(source_fd_num);
-                        }
-                    } else if fd_num == 1 && !dash {
+                        (
+                            specified_fd_num,
+                            default_fd_if_unspecified,
+                            target_file,
+                            dash.then_some(source_fd_num),
+                        )
+                    } else if fd_num == Some(1) && !dash {
                         // Special case for compatibility: redirect stdout and stderr to the file
                         // given by `expanded`.
                         setup_redirect_output_and_error_to(
                             shell, params, &expanded, false, /* append? */
                         )?;
+                        return Ok(None);
                     } else {
                         return Err(error::ErrorKind::InvalidRedirection.into());
                     }
@@ -1928,12 +1987,12 @@ pub(crate) async fn setup_redirect(
                             let target_file = substitution_file.clone();
                             params.open_files.set_fd(substitution_fd, substitution_file);
 
-                            let fd_num = numbered_fd(
-                                specified_fd_num.as_ref(),
+                            (
+                                specified_fd_num,
                                 get_default_fd_for_redirect_kind(kind),
-                            )?;
-
-                            params.open_files.set_fd(fd_num, target_file);
+                                target_file,
+                                None,
+                            )
                         }
                         _ => return error::unimp("invalid process substitution"),
                     }
@@ -1942,9 +2001,6 @@ pub(crate) async fn setup_redirect(
         }
 
         ast::IoRedirect::HereDocument(fd_num, io_here) => {
-            // If not specified, default to stdin (fd 0).
-            let fd_num = numbered_fd(fd_num.as_ref(), 0)?;
-
             // Expand if required.
             let io_here_doc = if io_here.requires_expansion {
                 expansion::basic_expand_heredoc_word(shell, params, &io_here.doc).await?
@@ -1954,32 +2010,142 @@ pub(crate) async fn setup_redirect(
 
             let f = setup_open_file_with_contents(io_here_doc.as_str())?;
 
-            params.open_files.set_fd(fd_num, f);
+            // If not specified, default to stdin (fd 0).
+            (fd_num, 0, f, None)
         }
 
         ast::IoRedirect::HereString(fd_num, word) => {
-            // If not specified, default to stdin (fd 0).
-            let fd_num = numbered_fd(fd_num.as_ref(), 0)?;
-
             let mut expanded_word = expansion::basic_expand_word(shell, params, word).await?;
             expanded_word.push('\n');
 
             let f = setup_open_file_with_contents(expanded_word.as_str())?;
 
-            params.open_files.set_fd(fd_num, f);
+            // If not specified, default to stdin (fd 0).
+            (fd_num, 0, f, None)
+        }
+    };
+
+    let var_redirect = if let Some(ast::IoFdSpec::Variable(name)) = fd_spec {
+        // Boxed, so this rare case doesn't grow the future of every redirection (and so of
+        // every simple command).
+        Some(Box::pin(install_var_redirect(shell, params, name, file)).await?)
+    } else {
+        let fd = match fd_spec {
+            Some(ast::IoFdSpec::Number(fd)) => *fd,
+            _ => default_fd,
+        };
+        params.open_files.set_fd(fd, file);
+        None
+    };
+
+    // `n>&m-` moves fd m to n, closing m.
+    if let Some(moved_fd) = moved_fd
+        && numbered_fd(fd_spec.as_ref(), default_fd) != Some(moved_fd)
+    {
+        params.open_files.remove_fd(moved_fd);
+    }
+
+    Ok(var_redirect)
+}
+
+/// Returns the number of the file descriptor a redirection applies to, unless it names a
+/// variable instead.
+const fn numbered_fd(spec: Option<&ast::IoFdSpec>, default_fd: ShellFd) -> Option<ShellFd> {
+    match spec {
+        None => Some(default_fd),
+        Some(ast::IoFdSpec::Number(fd)) => Some(*fd),
+        Some(ast::IoFdSpec::Variable(_)) => None,
+    }
+}
+
+/// The lowest file descriptor a `{name}` redirection may allocate.
+const FIRST_VAR_REDIRECT_FD: ShellFd = 10;
+
+/// What a `{name}` redirection that opened a file descriptor did.
+pub(crate) struct VarRedirect {
+    /// The file descriptor it allocated.
+    fd: ShellFd,
+    /// The name of the variable it assigned, without any array index.
+    var_name: String,
+    /// The variable as it was before.
+    prior: Option<ShellVariable>,
+}
+
+/// Opens `file` in `params` on a newly allocated file descriptor, and assigns its number to the
+/// variable `name`.
+async fn install_var_redirect(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &mut ExecutionParameters,
+    name: &ast::AssignmentName,
+    file: OpenFile,
+) -> Result<VarRedirect, error::Error> {
+    // Take the lowest free fd. It mustn't be open in the shell either, in case it stays open
+    // there after the command (see `settle_var_redirects`).
+    let fd = (FIRST_VAR_REDIRECT_FD..OpenFiles::MAX_FD)
+        .find(|fd| {
+            params.try_fd(shell, *fd).is_none() && !shell.persistent_open_files().contains_fd(*fd)
+        })
+        .ok_or(error::ErrorKind::TooManyOpenFiles)?;
+
+    let var_name = name.base_name().to_owned();
+    let prior = shell.env().get(&var_name).map(|(_, var)| var.clone());
+    expansion::assign_to_named_parameter(shell, params, &name.to_string(), fd.to_string()).await?;
+
+    params.open_files.set_fd(fd, file);
+
+    Ok(VarRedirect {
+        fd,
+        var_name,
+        prior,
+    })
+}
+
+/// Returns the file descriptor a closing `{name}>&-` redirection names: the value of the
+/// variable, which may have blanks around it and a leading `+`.
+async fn fd_named_by_variable(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    name: &ast::AssignmentName,
+) -> Result<ShellFd, error::Error> {
+    let value = expansion::named_parameter_value(shell, params, &name.to_string()).await?;
+    value
+        .trim_ascii()
+        .parse::<u32>()
+        .ok()
+        .and_then(|fd| ShellFd::try_from(fd).ok())
+        .ok_or_else(|| error::ErrorKind::InvalidRedirection.into())
+}
+
+/// Settles the `{name}` redirections made for a command, once it's known whether the command runs
+/// in this shell. If it does, the file descriptors they opened stay open in the shell afterward
+/// (unless `varredir_close` is set). If not, bash would have made them in a child process, so the
+/// variables they assigned are restored.
+pub(crate) fn settle_var_redirects(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    redirects: impl IntoIterator<Item = VarRedirect>,
+    in_shell: bool,
+) -> Result<(), error::Error> {
+    let redirects: Vec<_> = redirects.into_iter().collect();
+
+    // Restore in reverse, in case a variable was assigned more than once.
+    for redirect in redirects.into_iter().rev() {
+        if in_shell {
+            if !shell.options().var_redir_close
+                && let Some(file) = params.try_fd(shell, redirect.fd)
+            {
+                shell.open_files_mut().set_fd(redirect.fd, file);
+            }
+        } else if let Some(prior) = redirect.prior {
+            if let Some((_, var)) = shell.env_mut().get_mut(&redirect.var_name) {
+                *var = prior;
+            }
+        } else {
+            shell.env_mut().unset(&redirect.var_name)?;
         }
     }
 
     Ok(())
-}
-
-/// Returns the file descriptor number a redirection applies to.
-fn numbered_fd(spec: Option<&ast::IoFdSpec>, default_fd: ShellFd) -> Result<ShellFd, error::Error> {
-    match spec {
-        None => Ok(default_fd),
-        Some(ast::IoFdSpec::Number(fd)) => Ok(*fd),
-        Some(ast::IoFdSpec::Variable(_)) => error::unimp("{varname} redirections"),
-    }
 }
 
 /// Sets up redirection of both stdout and stderr to the same file, given by `file_path`.

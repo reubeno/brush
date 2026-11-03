@@ -668,6 +668,20 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
     }
 }
 
+/// Returns whether the command that `args` invoke runs in the shell itself, as a builtin or a
+/// function, rather than as an external command. This follows [`SimpleCommand::execute`].
+pub(crate) fn runs_in_shell(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    args: &[CommandArg],
+) -> bool {
+    let Some(CommandArg::String(name)) = args.first() else {
+        return false;
+    };
+
+    shell.funcs().get(name.as_str()).is_some()
+        || shell.builtins().get(name).is_some_and(|r| r.is_enabled())
+}
+
 pub(crate) fn execute_external_command(
     context: ExecutionContext<'_, impl extensions::ShellExtensions>,
     executable_path: &Path,
@@ -792,10 +806,13 @@ pub(crate) async fn invoke_shell_function(
 ) -> Result<ExecutionSpawnResult, error::Error> {
     let ast::FunctionBody(body, redirects) = &function.definition().body;
 
-    // Apply any redirects specified at function definition-time.
+    // Apply any redirects specified at function definition-time. A function runs in the shell,
+    // so its `{name}` redirections stay with the shell.
     if let Some(redirects) = redirects {
         for redirect in &redirects.0 {
-            interp::setup_redirect(context.shell, &mut context.params, redirect).await?;
+            let var_redirect =
+                interp::setup_redirect(context.shell, &mut context.params, redirect).await?;
+            interp::settle_var_redirects(context.shell, &context.params, var_redirect, true)?;
         }
     }
 

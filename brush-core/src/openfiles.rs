@@ -313,7 +313,7 @@ impl OpenFiles {
     /// First file descriptor available for non-stdio files.
     const FIRST_NON_STDIO_FD: ShellFd = 3;
     /// Maximum file descriptor number allowed.
-    const MAX_FD: ShellFd = 1024;
+    pub(crate) const MAX_FD: ShellFd = 1024;
 
     /// Creates a new `OpenFiles` instance populated with stdin, stdout, and stderr
     /// from the host environment.
