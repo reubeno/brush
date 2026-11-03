@@ -1677,7 +1677,7 @@ async fn apply_assignment(
                     existing_value.assign_at_index(array_index, s, assignment.append)?;
                 }
                 ShellValueLiteral::Array(_) => {
-                    return error::unimp("replacing an array item with an array");
+                    return Err(error::ErrorKind::AssigningListToArrayMember.into());
                 }
             }
         } else {
@@ -1706,7 +1706,7 @@ async fn apply_assignment(
                 ShellValue::indexed_array_from_literals(ArrayLiteral(vec![(Some(array_index), s)]))
             }
             ShellValueLiteral::Array(_) => {
-                return error::unimp("cannot assign list to array member");
+                return Err(error::ErrorKind::AssigningListToArrayMember.into());
             }
         }
     } else {
