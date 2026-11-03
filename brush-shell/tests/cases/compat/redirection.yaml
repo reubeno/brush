@@ -272,6 +272,27 @@ cases:
       # Make sure we can't read from it.
       read line <&3 2>/dev/null || echo "Cannot read from closed fd"
 
+  - name: "Move file descriptors"
+    ignore_stderr: true
+    test_files:
+      - path: "input.txt"
+        contents: |
+          line1
+    stdin: |
+      exec 5>out.txt
+      exec 6>&5-
+      echo moved >&6
+      echo to-5 >&5 || echo "fd 5 closed"
+      exec 7<input.txt
+      exec 8<&7-
+      read -r line <&8
+      echo "read: $line"
+      read -r line <&7 || echo "fd 7 closed"
+      exec 9>>out.txt
+      exec 9>&9-
+      echo self-move >&9
+      cat out.txt
+
   - name: "Duplicate input file descriptor"
     test_files:
       - path: "input.txt"

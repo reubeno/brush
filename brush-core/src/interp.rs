@@ -1880,7 +1880,10 @@ pub(crate) async fn setup_redirect(
                     };
 
                     if expanded.is_empty() {
-                        // Nothing to do
+                        if dash {
+                            // Close the specified fd. Ignore it if it's not valid.
+                            params.open_files.remove_fd(fd_num);
+                        }
                     } else if expanded.chars().all(|c: char| c.is_ascii_digit()) {
                         let source_fd_num = expanded
                             .parse::<ShellFd>()
@@ -1892,6 +1895,11 @@ pub(crate) async fn setup_redirect(
                         };
 
                         params.open_files.set_fd(fd_num, target_file);
+
+                        // `n>&m-` moves fd m to n, closing m.
+                        if dash && source_fd_num != fd_num {
+                            params.open_files.remove_fd(source_fd_num);
+                        }
                     } else if fd_num == 1 && !dash {
                         // Special case for compatibility: redirect stdout and stderr to the file
                         // given by `expanded`.
@@ -1900,11 +1908,6 @@ pub(crate) async fn setup_redirect(
                         )?;
                     } else {
                         return Err(error::ErrorKind::InvalidRedirection.into());
-                    }
-
-                    if dash {
-                        // Close the specified fd. Ignore it if it's not valid.
-                        params.open_files.remove_fd(fd_num);
                     }
                 }
 
