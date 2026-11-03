@@ -410,3 +410,47 @@ cases:
       (\
       (\
       10+3)) && echo "arithmetic"
+
+  - name: "An empty arithmetic expression evaluates to 0"
+    stdin: |
+      echo "[$(( ))]"
+      x=" "
+      echo "[$(( x ))]"
+      echo "[$(( $x ))]"
+
+  #
+  # An expression that is empty or holds nothing but whitespace evaluates to 0, whichever entry
+  # point reaches the arithmetic parser: an expansion, a `((...))` command, `let`, or an array
+  # subscript.
+  #
+  - name: "A whitespace-only arithmetic expression evaluates to 0"
+    stdin: |
+      echo "[$((  ))]"
+      echo "[$(( 	))]"
+      s="   "
+      echo "[$(( s ))]"
+      echo "[$(( s + 1 ))]"
+
+  - name: "let with an empty or blank expression fails without a diagnostic"
+    stdin: |
+      let ""
+      echo "empty: $?"
+      let " "
+      echo "blank: $?"
+      let "" 1
+      echo "trailing: $?"
+
+  - name: "(( )) with a blank expression is false"
+    stdin: |
+      (( ))
+      echo "empty: $?"
+      ((   ))
+      echo "blank: $?"
+
+  - name: "A blank array subscript is element 0"
+    stdin: |
+      zz_b=(x y z)
+      unset 'zz_b[ ]'
+      declare -p zz_b
+      zz_c=(p q)
+      echo "[${zz_c[ ]}]"
