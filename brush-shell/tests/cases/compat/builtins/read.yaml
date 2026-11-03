@@ -319,6 +319,7 @@ cases:
   - name: "read -u with invalid file descriptor"
     ignore_stderr: true
     stdin: |
+      exec 99<&-  # fd 99 must be closed, but the harness can leak one in
       read -u 99 var
       echo "exit: $?"
 
@@ -528,6 +529,7 @@ cases:
   - name: "read checks every -t and -u it is given"
     ignore_stderr: true
     stdin: |
+      exec 99<&-  # fd 99 must be closed, but the harness can leak one in
       x=keep; read -t abc -t 1 x <<< data; echo "rc=$? x=$x"
       x=keep; read -t inf -t 1 x <<< data; echo "rc=$? x=$x"
       x=keep; read -t 1 -t abc x <<< data; echo "rc=$? x=$x"
