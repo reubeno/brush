@@ -114,11 +114,7 @@ fn try_read_ready(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<Option<usize
     } else {
         return Ok(None);
     };
-    // Another reader (a child sharing the pipe) may have taken what was there since the
-    // check, in which case this read blocks: let the runtime's other tasks go on meanwhile.
-    Ok(Some(without_holding_up_the_runtime(|| {
-        rustix::io::read(fd, &mut buf[..count])
-    })?))
+    Ok(Some(rustix::io::read(fd, &mut buf[..count])?))
 }
 
 /// [`try_write`] for when a write can't be told not to block: a pipe that polls
@@ -127,11 +123,7 @@ fn try_read_ready(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<Option<usize
 fn try_write_ready(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<Option<usize>> {
     if polls(fd, PollFlags::POLLOUT)? {
         let count = buf.len().min(libc::PIPE_BUF);
-        // Another writer (a child sharing the pipe) may have filled it since the check, in
-        // which case this write blocks: let the runtime's other tasks go on meanwhile.
-        Ok(Some(without_holding_up_the_runtime(|| {
-            rustix::io::write(fd, &buf[..count])
-        })?))
+        Ok(Some(rustix::io::write(fd, &buf[..count])?))
     } else {
         Ok(None)
     }
