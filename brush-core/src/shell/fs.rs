@@ -259,7 +259,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             return Ok(open_file);
         }
 
-        Ok(options.open(path_to_open)?.into())
+        crate::sys::pipe_io::open_file(options, &path_to_open)
     }
 
     /// Replaces the shell's currently configured open files with the given set.
@@ -280,7 +280,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     }
 }
 
-fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
+pub(super) fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
     match path.to_str()? {
         "/dev/stdin" => return Some(openfiles::OpenFiles::STDIN_FD),
         "/dev/stdout" => return Some(openfiles::OpenFiles::STDOUT_FD),

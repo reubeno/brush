@@ -240,9 +240,10 @@ impl std::io::Read for OpenFile {
                 error::ErrorKind::OpenFileNotReadable("stderr"),
             )),
             // The handle is shared behind an `Arc`; read through a shared reference (`&File`
-            // and `&PipeReader` both implement `Read`).
+            // implements `Read`). The other end of a pipe may be one of the shell's own tasks,
+            // so a read from one mustn't hold up the runtime.
             Self::File(f) => f.as_ref().read(buf),
-            Self::PipeReader(reader) => reader.as_ref().read(buf),
+            Self::PipeReader(reader) => sys::pipe_io::read(reader, buf),
             Self::PipeWriter(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("pipe writer"),
             )),
@@ -260,12 +261,13 @@ impl std::io::Write for OpenFile {
             Self::Stdout(f) => f.write(buf),
             Self::Stderr(f) => f.write(buf),
             // The handle is shared behind an `Arc`; write through a shared reference (`&File`
-            // and `&PipeWriter` both implement `Write`).
+            // implements `Write`). The other end of a pipe may be one of the shell's own tasks,
+            // so a write to one mustn't hold up the runtime.
             Self::File(f) => f.as_ref().write(buf),
             Self::PipeReader(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotWritable("pipe reader"),
             )),
-            Self::PipeWriter(writer) => writer.as_ref().write(buf),
+            Self::PipeWriter(writer) => sys::pipe_io::write(writer, buf),
             Self::Stream(s) => s.write(buf),
         }
     }

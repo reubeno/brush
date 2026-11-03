@@ -73,7 +73,15 @@ fn poll_fd_for_input(fd: BorrowedFd<'_>, deadline: Option<Instant>) -> std::io::
         first_iteration = false;
         let poll_timeout = PollTimeout::try_from(timeout_ms).unwrap_or(PollTimeout::MAX);
 
-        match poll(&mut poll_fds, poll_timeout) {
+        // Check first without waiting; only a wait for input, which may come from one of
+        // the shell's own tasks, needs to let the runtime run its other tasks meanwhile.
+        let polled = match poll(&mut poll_fds, PollTimeout::ZERO) {
+            Ok(0) if timeout_ms != 0 => crate::sys::pipe_io::without_holding_up_the_runtime(|| {
+                poll(&mut poll_fds, poll_timeout)
+            }),
+            other => other,
+        };
+        match polled {
             Ok(0) => return Ok(false), // Timeout
             Ok(_) => {
                 let revents = poll_fds[0].revents().unwrap_or(PollFlags::empty());

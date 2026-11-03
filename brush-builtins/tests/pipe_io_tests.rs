@@ -142,3 +142,43 @@ on_each_runtime!(
     "result=$(read -r x < <(echo hi); echo \"$x\")",
     "hi"
 );
+
+// `read -t` waits for input that a process substitution, another of the shell's
+// tasks, is about to write.
+on_each_runtime!(
+    read_with_a_timeout_from_a_process_substitution_inside_a_command_substitution,
+    "result=$(read -t 5 -r x < <(echo hi); echo \"$?:$x\")",
+    "0:hi"
+);
+
+// Opening a FIFO waits for its other end, here a background job of the same shell.
+on_each_runtime!(
+    a_fifo_between_a_background_job_and_a_command_substitution,
+    concat!(
+        "d=$(mktemp -d); mkfifo \"$d/p\"\n",
+        "result=$(echo hi > \"$d/p\" & read -r x < \"$d/p\"; echo \"$x\")\n",
+        "rm -r \"$d\""
+    ),
+    "hi"
+);
+
+on_each_runtime!(
+    large_builtin_output_through_a_fifo_inside_a_command_substitution,
+    concat!(
+        large!(),
+        "d=$(mktemp -d); mkfifo \"$d/p\"\n",
+        "result=$(printf '%s\\n' \"$s\" > \"$d/p\" & mapfile -t a < \"$d/p\"; echo \"${#a[0]}\")\n",
+        "rm -r \"$d\""
+    ),
+    "2097152"
+);
+
+on_each_runtime!(
+    a_fifo_inside_a_background_job,
+    concat!(
+        "d=$(mktemp -d); mkfifo \"$d/p\"\n",
+        "f() { echo hi > \"$d/p\" & read -r x < \"$d/p\"; echo \"$x\" > \"$d/out\"; }\n",
+        "f & wait; read -r result < \"$d/out\"; rm -r \"$d\""
+    ),
+    "hi"
+);
