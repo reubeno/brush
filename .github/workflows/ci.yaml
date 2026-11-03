@@ -732,7 +732,7 @@ jobs:
 
           - container: "mcr.microsoft.com/azurelinux/core:4"
             description: "Azure Linux/4"
-            prereqs_command: "dnf install -y bash-completion ca-certificates git iputils grep less sed util-linux which"
+            prereqs_command: "dnf install -y bash-completion ca-certificates git iputils grep less procps-ng sed util-linux which"
 
           - container: "debian:testing"
             description: "Debian/testing"
