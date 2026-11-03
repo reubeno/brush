@@ -1,11 +1,10 @@
 //! Execution support for shell.
 
-use std::{io::Read, path::Path};
+use std::path::Path;
 
 use crate::{
     ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, SourceInfo,
     arithmetic::Evaluatable as _, callstack, error, interp::Execute as _, openfiles,
-    trace_categories,
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
@@ -86,7 +85,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             callstack::ScriptCallType::Source,
             source_info,
             args,
-            Ok::<_, brush_parser::ParseError>(program),
+            Ok(program),
             params,
         )
         .await
@@ -130,35 +129,9 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
 
         let source_info = crate::SourceInfo::from(path.to_owned());
+        let parse_result = self.parse(opened_file);
 
-        self.source_file(opened_file, &source_info, args, params, call_type)
-            .await
-    }
-
-    /// Source the given file as a shell script, returning the execution result.
-    ///
-    /// # Arguments
-    ///
-    /// * `file` - The file to source.
-    /// * `source_info` - Information about the source of the script.
-    /// * `args` - The arguments to pass to the script as positional parameters.
-    /// * `params` - Execution parameters.
-    /// * `call_type` - The type of script call being made.
-    async fn source_file<F: Read, S: Into<String>, I: Iterator<Item = S>>(
-        &mut self,
-        file: F,
-        source_info: &crate::SourceInfo,
-        args: I,
-        params: &ExecutionParameters,
-        call_type: callstack::ScriptCallType,
-    ) -> Result<ExecutionResult, error::Error> {
-        let mut reader = std::io::BufReader::new(file);
-        let mut parser = brush_parser::Parser::new(&mut reader, &self.parser_options());
-
-        tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
-        let parse_result = parser.parse_program();
-
-        self.run_in_script_frame(call_type, source_info, args, parse_result, params)
+        self.run_in_script_frame(call_type, &source_info, args, parse_result, params)
             .await
     }
 
@@ -295,7 +268,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<ExecutionResult, error::Error> {
         // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
         let result = match parse_result {
-            Ok(prog) => self.execute_program(prog.borrow(), params).await,
+            Ok(prog) => prog.borrow().execute(self, params).await,
             Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
                 parse_err,
                 source_info.clone(),
@@ -326,16 +299,6 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub async fn run_program(
         &mut self,
         program: brush_parser::ast::Program,
-        params: &ExecutionParameters,
-    ) -> Result<ExecutionResult, error::Error> {
-        self.execute_program(&program, params).await
-    }
-
-    /// Executes the given parsed shell program: the one place every way of running a
-    /// program runs it. Errors are returned, not reported.
-    async fn execute_program(
-        &mut self,
-        program: &brush_parser::ast::Program,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         program.execute(self, params).await
