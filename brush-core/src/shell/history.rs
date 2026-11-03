@@ -12,6 +12,16 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             return Ok(None);
         };
 
+        // A FIFO reports no size, so it's skipped below as an empty file would be; skip it
+        // before opening it, which would wait for a writer. (A path naming one of the
+        // shell's own open files, such as a pipe, is that file, and isn't skipped.)
+        let absolute = self.absolute_path(&history_path);
+        if super::fs::shell_fd_path_to_fd(&absolute).is_none()
+            && crate::sys::pipe_io::is_fifo(&absolute)
+        {
+            return Ok(None);
+        }
+
         let mut options = std::fs::File::options();
         options.read(true);
 

@@ -454,6 +454,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.10.4",
  "rpds",
+ "rustix",
  "serde",
  "strum",
  "strum_macros",
