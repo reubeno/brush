@@ -100,8 +100,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             .try_fd(fd)
             .ok_or_else(|| ErrorKind::BadFileDescriptor(fd))?;
 
-        // Read!
-        let lines = self.read_lines(input_file)?;
+        // Read! A pipe or file may block until whoever writes it -- possibly another of
+        // the shell's own tasks, as for `mapfile < <(cmd)` -- writes or closes it, so
+        // wait for it where that task can still run.
+        let options = self.read_options()?;
+        let lines = if input_file.is_terminal() {
+            read_lines(input_file, &options)?
+        } else {
+            brush_core::tasks::run_blocking(move || read_lines(input_file, &options)).await??
+        };
 
         if let Some(origin) = origin {
             // -O: preserve existing array, assign at offset.
@@ -133,66 +140,92 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
     }
 }
 
+/// What to read, and how to split it into lines.
+struct ReadOptions {
+    /// The most lines to keep; 0 for all of them.
+    max_count: usize,
+    /// How many lines to discard first.
+    skip_count: i64,
+    /// The byte that ends a line.
+    delimiter: u8,
+    /// Whether to drop the delimiter from the end of each line.
+    remove_delimiter: bool,
+}
+
 impl MapFileCommand {
-    fn read_lines(
-        &self,
-        mut input_file: brush_core::openfiles::OpenFile,
-    ) -> Result<Vec<String>, brush_core::Error> {
-        let _term_mode = setup_terminal_settings(&input_file)?;
+    fn read_options(&self) -> Result<ReadOptions, brush_core::Error> {
+        Ok(ReadOptions {
+            max_count: self.max_count.try_into()?,
+            skip_count: self.skip_count,
+            delimiter: match &self.delimiter {
+                Some(d) if d.is_empty() => b'\0',
+                Some(d) => d.as_bytes().first().copied().unwrap_or(b'\n'),
+                None => b'\n',
+            },
+            remove_delimiter: self.remove_delimiter,
+        })
+    }
+}
 
-        let mut entries = vec![];
-        let mut read_count = 0;
-        let max_count = self.max_count.try_into()?;
-        let delimiter = match &self.delimiter {
-            Some(d) if d.is_empty() => b'\0',
-            Some(d) => d.as_bytes().first().copied().unwrap_or(b'\n'),
-            None => b'\n',
-        };
+/// Reads the lines `options` asks for from `input_file`.
+fn read_lines(
+    mut input_file: brush_core::openfiles::OpenFile,
+    options: &ReadOptions,
+) -> Result<Vec<String>, brush_core::Error> {
+    let _term_mode = setup_terminal_settings(&input_file)?;
 
-        let mut buf = [0u8; 1];
+    let mut entries = vec![];
+    let mut read_count = 0;
+    let ReadOptions {
+        max_count,
+        skip_count,
+        delimiter,
+        remove_delimiter,
+    } = *options;
 
-        while max_count == 0 || entries.len() < max_count {
-            let mut line = vec![];
-            let mut saw_delimiter = false;
+    let mut buf = [0u8; 1];
 
-            loop {
-                match input_file.read(&mut buf) {
-                    Ok(0) => break,                                         // End of input
-                    Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
-                    Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
-                    Ok(1) => {
-                        let byte = buf[0];
-                        line.push(byte);
-                        if byte == delimiter {
-                            saw_delimiter = true;
-                            break;
-                        }
+    while max_count == 0 || entries.len() < max_count {
+        let mut line = vec![];
+        let mut saw_delimiter = false;
+
+        loop {
+            match input_file.read(&mut buf) {
+                Ok(0) => break,                                         // End of input
+                Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
+                Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D
+                Ok(1) => {
+                    let byte = buf[0];
+                    line.push(byte);
+                    if byte == delimiter {
+                        saw_delimiter = true;
+                        break;
                     }
-                    Ok(_) => unreachable!("input can only be 0, 1, or error"),
-                    Err(e) => return Err(e.into()),
                 }
+                Ok(_) => unreachable!("input can only be 0, 1, or error"),
+                Err(e) => return Err(e.into()),
             }
-
-            if line.is_empty() && !saw_delimiter {
-                break;
-            }
-
-            if read_count < self.skip_count {
-                read_count += 1;
-                continue;
-            }
-
-            if self.remove_delimiter && line.ends_with(&[delimiter]) {
-                line.pop();
-            }
-
-            let line_str = String::from_utf8_lossy(&line).to_string();
-
-            entries.push(line_str);
         }
 
-        Ok(entries)
+        if line.is_empty() && !saw_delimiter {
+            break;
+        }
+
+        if read_count < skip_count {
+            read_count += 1;
+            continue;
+        }
+
+        if remove_delimiter && line.ends_with(&[delimiter]) {
+            line.pop();
+        }
+
+        let line_str = String::from_utf8_lossy(&line).to_string();
+
+        entries.push(line_str);
     }
+
+    Ok(entries)
 }
 
 fn setup_terminal_settings(
