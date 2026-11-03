@@ -1046,6 +1046,9 @@ fn run_e2e_adapter(run: &E2eRun<'_>, app: &str) -> Result<Option<String>> {
     let mut test = ProcessCommand::new(docker);
     test.args(["run", "--rm", "--name", &container, "--user"])
         .arg(format!("{uid}:{gid}"))
+        // Under SELinux the container may not read or write the bind mounts as they are labeled.
+        // Relabeling them (`:z`) would permanently change whatever `--shell` names on the host.
+        .args(["--security-opt", "label=disable"])
         .args(["-e", "HOME=/tmp", "-v"])
         .arg(results_mount);
     if let Some(path) = shell {
