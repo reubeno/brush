@@ -182,3 +182,28 @@ on_each_runtime!(
     ),
     "hi"
 );
+
+// What the shell writes itself, rather than a builtin through the async views, blocks
+// its thread when the pipe is full: a command substitution on a runtime with a single
+// thread then has to run on a thread of its own.
+on_each_runtime!(
+    large_trace_output_in_a_command_substitution,
+    "v=$( { set -x; for i in {1..40000}; do :; done; } 2>&1 ); result=${#v}",
+    "1119999"
+);
+
+on_each_runtime!(
+    many_errors_in_a_command_substitution,
+    "v=$( for i in {1..30000}; do nosuchcmd_zz; done 2>&1 ); result=ok",
+    "ok"
+);
+
+on_each_runtime!(
+    large_bare_input_redirection_in_a_command_substitution,
+    concat!(
+        large!(),
+        "d=$(mktemp -d); printf '%s' \"$s\" > \"$d/f\"\n",
+        "v=$(< \"$d/f\"); result=${#v}; rm -r \"$d\""
+    ),
+    "2097152"
+);

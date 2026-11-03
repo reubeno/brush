@@ -862,13 +862,20 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
 
-    // The command may block writing to the pipe (e.g., a builtin writing more than the
-    // pipe's buffer holds), so don't run it on a thread that drives the runtime's I/O:
-    // that thread must stay free to deliver readiness to the reader below.
-    let cmd_join_handle = shell
-        .task_spawner()
-        .spawn_blocking(run_substitution_command(subshell, params, s))
-        .await;
+    // On a runtime with several workers, the command's writes to the pipe don't hold up
+    // the runtime (see `sys::pipe_io`), so the reader below gets to run even while the
+    // pipe is full, and the command can run as a task. With a single thread, writes
+    // that don't go through the async views (tracing, error messages, `$(< file)`) block
+    // it, and so would the reader's wait: the command goes to a thread of its own.
+    let multi_threaded = tokio::runtime::Handle::try_current()
+        .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
+    let command = run_substitution_command(subshell, params, s);
+    let cmd_join_handle = if multi_threaded {
+        shell.task_spawner().spawn(command)
+    } else {
+        shell.task_spawner().spawn_blocking(command).await
+    };
+
 
     let output_str = async_reader.read_to_string().await?;
 
