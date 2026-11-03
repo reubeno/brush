@@ -113,6 +113,9 @@ extend-ignore-re = [
 "iterm" = "iterm"
 "jod" = "jod"
 
+# POSIX names.
+"wronly" = "wronly"
+
 # Partial words completed in completion tests, allowed only in the files with those tests.
 # (A type's globs match just file names, not paths.)
 [workspace.metadata.typos.type.completion-tests]
