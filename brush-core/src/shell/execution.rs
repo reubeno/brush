@@ -65,8 +65,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     }
 
     /// Source an already parsed program, as [`Self::source_script`] sources a file: in a
-    /// script's call frame, with `args` as its positional parameters. A script sourced many
-    /// times (as an eclass is) then needs parsing only once.
+    /// script's call frame, with `args` as its positional parameters. A library sourced by
+    /// many scripts then needs parsing only once.
+    ///
+    /// Parsing is the caller's job. A parse error never reaches this function, so it is not
+    /// reported as fatal the way [`Self::source_script`] reports one. The program also keeps
+    /// the [`Self::parser_options`] it was parsed with (e.g., extended globbing), so a cache
+    /// of parsed programs should be keyed on them.
     ///
     /// # Arguments
     ///
