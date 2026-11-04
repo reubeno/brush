@@ -8,33 +8,54 @@ pub(crate) struct PushdCommand {
     #[arg(short = 'n')]
     no_directory_change: bool,
 
-    /// Directory to push on the directory stack.
+    /// Directory to push on the directory stack. Without one, the top two
+    /// directories on the stack are exchanged.
     #[arg(positional)]
-    dir: String,
+    dir: Option<String>,
     // TODO(pushd): implement +N and -N
 }
 
 brush_winnow_args_adapter::impl_parse_args!(PushdCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PushdCommand {
-    type Error = brush_core::Error;
+    type Error = crate::dirs::DirError;
 
     async fn execute(
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        if self.no_directory_change {
-            context
-                .shell
-                .directory_stack_mut()
-                .push(std::path::PathBuf::from(&self.dir));
+        if let Some(dir) = &self.dir {
+            if self.no_directory_change {
+                context
+                    .shell
+                    .directory_stack_mut()
+                    .push(std::path::PathBuf::from(dir));
+            } else {
+                let prev_working_dir = context.shell.working_dir().to_path_buf();
+
+                let dir = std::path::Path::new(dir);
+                context.shell.set_working_dir(dir)?;
+
+                context.shell.directory_stack_mut().push(prev_working_dir);
+            }
         } else {
+            // With no directory, exchange the current directory with the one on top of
+            // the stack.
+            let Some(top) = context.shell.directory_stack().last().cloned() else {
+                return Err(crate::dirs::DirError::NoOtherDirectory);
+            };
+
+            // As in bash, -n leaves both the stack and the current directory alone here.
+            if self.no_directory_change {
+                return Ok(ExecutionResult::success());
+            }
+
             let prev_working_dir = context.shell.working_dir().to_path_buf();
+            context.shell.set_working_dir(&top)?;
 
-            let dir = std::path::Path::new(&self.dir);
-            context.shell.set_working_dir(dir)?;
-
-            context.shell.directory_stack_mut().push(prev_working_dir);
+            let stack = context.shell.directory_stack_mut();
+            stack.pop();
+            stack.push(prev_working_dir);
         }
 
         // Display dirs.
