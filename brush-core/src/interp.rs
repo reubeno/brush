@@ -19,7 +19,7 @@ use crate::variables::{
 };
 use crate::{
     ShellFd, builtins, error, expansion, extendedtests, extensions, ioutils, jobs, openfiles, sys,
-    timing,
+    tasks, timing,
 };
 
 /// Encapsulates the context of execution in a command pipeline.
@@ -273,6 +273,24 @@ impl Execute for ast::CompoundList {
 
         Ok(result)
     }
+}
+
+/// Starts running a compound command in a subshell of its own.
+///
+/// Borrowing `shell` for its task spawner inside an `async fn` makes the
+/// compiler keep the whole `Shell` in that function's future across the next
+/// `.await`, even after the task has taken it. Doing it here, in a function
+/// that isn't `async`, keeps `Command::execute_in_pipeline`'s future small.
+fn spawn_compound_in_subshell<SE: extensions::ShellExtensions>(
+    mut shell: Shell<SE>,
+    compound: ast::CompoundCommand,
+    params: ExecutionParameters,
+) -> impl Future<Output = tasks::TaskHandle<Result<ExecutionResult, error::Error>>> + use<SE> {
+    let spawner = shell.task_spawner().clone();
+    spawner.spawn_blocking(async move {
+        let result = compound.execute(&mut shell, &params).await;
+        Ok(shell.end_subshell(result, || params.try_stderr(&shell)))
+    })
 }
 
 fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
@@ -672,16 +690,8 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                     // An owned shell is a discarded clone, so this stage can run asynchronously.
                     // That lets the pipeline start readers before writers fill the pipe.
                     commands::ShellForCommand::OwnedShell { target, .. } => {
-                        let (mut shell, compound) = (*target, compound.clone());
-                        let spawner = shell.task_spawner().clone();
-                        Ok(ExecutionSpawnResult::StartedTask(
-                            spawner
-                                .spawn_blocking(async move {
-                                    let result = compound.execute(&mut shell, &params).await;
-                                    Ok(shell.end_subshell(result, || params.try_stderr(&shell)))
-                                })
-                                .await,
-                        ))
+                        let task = spawn_compound_in_subshell(*target, compound.clone(), params);
+                        Ok(ExecutionSpawnResult::StartedTask(task.await))
                     }
                     commands::ShellForCommand::ParentShell(shell) => {
                         Ok(compound.execute(shell, &params).await?.into())
