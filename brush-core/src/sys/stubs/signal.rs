@@ -126,3 +126,9 @@ pub(crate) fn poll_for_stopped_children(
 pub(crate) fn poll_for_stopped_child(_pid: sys::process::ProcessId) -> Result<bool, error::Error> {
     Ok(false)
 }
+
+/// Computes the name bash uses for a real-time signal: there are none on this
+/// platform.
+pub(crate) const fn real_time_signal_name(_n: i32) -> Option<String> {
+    None
+}
