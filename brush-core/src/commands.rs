@@ -11,7 +11,7 @@ use brush_parser::ast;
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
-    extensions::{self, ProcessLauncher as _, ShellExtensions},
+    extensions::{self, ProcessLauncher as _, ShellExtensions, TaskSpawner as _},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFiles},
@@ -511,7 +511,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let last_arg = Self::take_last_arg(&args);
         // Builtins may block (e.g., reading input), so keep them from holding up the
         // rest of the pipeline.
-        let task = sys::tasks::spawn_blocking(async move {
+        let spawner = shell.task_spawner().clone();
+        let task = spawner.spawn_blocking(async move {
             // The stage runs in a shell of its own, as a subshell does, so an
             // error ends the stage alone: it's reported on the stage's
             // standard error and becomes the stage's status.
@@ -594,7 +595,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         args: Vec<CommandArg>,
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
-        let task = sys::tasks::spawn_blocking(async move {
+        let spawner = shell.task_spawner().clone();
+        let task = spawner.spawn_blocking(async move {
             // The stage runs in a shell of its own, as a subshell does, so an
             // error ends the stage alone.
             let stderr = params.try_stderr(&shell);
@@ -861,8 +863,10 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     // The command may block writing to the pipe (e.g., a builtin writing more than the
     // pipe's buffer holds), so don't run it on a thread that drives the runtime's I/O:
     // that thread must stay free to deliver readiness to the reader below.
-    let cmd_join_handle =
-        sys::tasks::spawn_blocking(run_substitution_command(subshell, params, s)).await;
+    let cmd_join_handle = shell
+        .task_spawner()
+        .spawn_blocking(run_substitution_command(subshell, params, s))
+        .await;
 
     let output_str = async_reader.read_to_string().await?;
 

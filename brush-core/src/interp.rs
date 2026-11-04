@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::arithmetic::{self, ExpandAndEvaluate};
 use crate::commands::{self, CommandArg};
 use crate::env::{EnvironmentLookup, EnvironmentScope, valid_variable_name};
+use crate::extensions::TaskSpawner as _;
 use crate::openfiles::{OpenFile, OpenFiles};
 use crate::results::{
     ExecutionExitCode, ExecutionResult, ExecutionSpawnResult, ExecutionWaitResult,
@@ -293,7 +294,7 @@ fn spawn_async_ao_list_in_task<'a, SE: extensions::ShellExtensions>(
     }
 
     // The job runs in a shell of its own, so only its status leaves it.
-    let join_handle = sys::tasks::spawn(async move {
+    let join_handle = shell.task_spawner().spawn(async move {
         let result = cloned_ao_list
             .execute(&mut cloned_shell, &cloned_params)
             .await;
@@ -672,12 +673,14 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::Command {
                     // That lets the pipeline start readers before writers fill the pipe.
                     commands::ShellForCommand::OwnedShell { target, .. } => {
                         let (mut shell, compound) = (*target, compound.clone());
+                        let spawner = shell.task_spawner().clone();
                         Ok(ExecutionSpawnResult::StartedTask(
-                            sys::tasks::spawn_blocking(async move {
-                                let result = compound.execute(&mut shell, &params).await;
-                                Ok(shell.end_subshell(result, || params.try_stderr(&shell)))
-                            })
-                            .await,
+                            spawner
+                                .spawn_blocking(async move {
+                                    let result = compound.execute(&mut shell, &params).await;
+                                    Ok(shell.end_subshell(result, || params.try_stderr(&shell)))
+                                })
+                                .await,
                         ))
                     }
                     commands::ShellForCommand::ParentShell(shell) => {
@@ -788,7 +791,7 @@ impl Execute for ast::CoprocessCommand {
             .set_fd(OpenFiles::STDOUT_FD, stdout_writer.into());
 
         let body = self.body.clone();
-        let join_handle = sys::tasks::spawn(async move {
+        let join_handle = shell.task_spawner().spawn(async move {
             let pipeline_context = PipelineExecutionContext {
                 shell: commands::ShellForCommand::ParentShell(&mut child_shell),
                 process_group_id: None,
@@ -2052,7 +2055,7 @@ fn setup_process_substitution(
     // Asynchronously spawn off the subshell; we intentionally don't block on its
     // completion.
     let subshell_cmd = subshell_cmd.to_owned();
-    sys::tasks::spawn(async move {
+    shell.task_spawner().spawn(async move {
         // Intentionally ignore the result of the subshell command.
         let _ = subshell_cmd
             .list

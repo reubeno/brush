@@ -4,6 +4,7 @@ use crate::{
     Shell, error, extensions,
     processes::{ChildProcess, LaunchRequest},
     sys,
+    tasks::TaskHandle,
 };
 
 /// Trait for static shell extensions. Collects all associated types needed to
@@ -13,6 +14,8 @@ pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
     type ErrorFormatter: ErrorFormatter;
     /// Type of the process launcher implementation.
     type ProcessLauncher: ProcessLauncher;
+    /// Type of the task spawner implementation.
+    type TaskSpawner: TaskSpawner;
 }
 
 /// Shell extensions implementation constructed from component types.
@@ -20,13 +23,17 @@ pub trait ShellExtensions: Clone + Default + Send + Sync + 'static {
 pub struct ShellExtensionsImpl<
     EF: ErrorFormatter = DefaultErrorFormatter,
     PL: ProcessLauncher = DefaultProcessLauncher,
+    TS: TaskSpawner = DefaultTaskSpawner,
 > {
-    _marker: std::marker::PhantomData<(EF, PL)>,
+    _marker: std::marker::PhantomData<(EF, PL, TS)>,
 }
 
-impl<EF: ErrorFormatter, PL: ProcessLauncher> ShellExtensions for ShellExtensionsImpl<EF, PL> {
+impl<EF: ErrorFormatter, PL: ProcessLauncher, TS: TaskSpawner> ShellExtensions
+    for ShellExtensionsImpl<EF, PL, TS>
+{
     type ErrorFormatter = EF;
     type ProcessLauncher = PL;
+    type TaskSpawner = TS;
 }
 
 /// Default shell extensions implementation.
@@ -125,6 +132,70 @@ impl ProcessLauncher for DefaultProcessLauncher {
 
     fn exec(&self, request: LaunchRequest) -> std::io::Error {
         sys::process::exec(request)
+    }
+}
+
+/// Trait for starting the tasks a shell runs concurrently with itself (e.g.,
+/// pipeline stages, asynchronous lists, and command and process substitutions).
+///
+/// By default, they run on tokio's runtime with [`tokio::spawn`], which needs
+/// tokio to be driving the thread. A host provides its own spawner when
+/// something else drives it: for example, a WASI 0.3 component, whose async
+/// imports only make progress under the component's own executor, can start the
+/// shell's tasks with [`tokio::task::spawn_local`] on a
+/// [`tokio::task::LocalSet`] it drives from that executor.
+pub trait TaskSpawner: Clone + Default + Send + Sync + 'static {
+    /// Starts running a future concurrently with the caller.
+    ///
+    /// # Arguments
+    ///
+    /// * `future` - The future to run.
+    fn spawn<F>(&self, future: F) -> TaskHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static;
+
+    /// Starts running a future that may block the thread it runs on (e.g., with
+    /// synchronous I/O), so that it doesn't hold up the caller where it can be
+    /// avoided. The returned future yields the task's handle once the caller may
+    /// go on: right away if the task runs elsewhere, or once it has finished if
+    /// it can only run on the caller's thread.
+    ///
+    /// # Arguments
+    ///
+    /// * `future` - The future to run.
+    fn spawn_blocking<F>(
+        &self,
+        future: F,
+    ) -> impl Future<Output = TaskHandle<F::Output>> + Send + use<Self, F>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + Sync + 'static;
+}
+
+/// Default task spawner implementation: runs tasks on tokio's runtime, with
+/// blocking tasks on threads of their own where the platform has them.
+#[derive(Clone, Default)]
+pub struct DefaultTaskSpawner;
+
+impl TaskSpawner for DefaultTaskSpawner {
+    fn spawn<F>(&self, future: F) -> TaskHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        sys::tasks::spawn(future)
+    }
+
+    fn spawn_blocking<F>(
+        &self,
+        future: F,
+    ) -> impl Future<Output = TaskHandle<F::Output>> + Send + use<F>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + Sync + 'static,
+    {
+        sys::tasks::spawn_blocking(future)
     }
 }
 
