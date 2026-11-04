@@ -353,3 +353,64 @@ fn siginfo_to_wait_status(
 
     Ok(status)
 }
+
+/// Computes the name bash uses for a real-time signal (e.g., `SIGRTMIN`,
+/// `SIGRTMIN+1`, `SIGRTMAX-1`).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) fn real_time_signal_name(n: i32) -> Option<String> {
+    let rtmin = nix::libc::SIGRTMIN();
+    let rtmax = nix::libc::SIGRTMAX();
+    if n < rtmin || n > rtmax {
+        return None;
+    }
+    let rtcnt = (rtmax - rtmin) / 2;
+    if n - rtmin <= rtcnt {
+        let offset = n - rtmin;
+        if offset == 0 {
+            Some("SIGRTMIN".to_owned())
+        } else {
+            Some(format!("SIGRTMIN+{offset}"))
+        }
+    } else {
+        let offset = rtmax - n;
+        if offset == 0 {
+            Some("SIGRTMAX".to_owned())
+        } else {
+            Some(format!("SIGRTMAX-{offset}"))
+        }
+    }
+}
+
+/// Other systems have no real-time signals.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+pub(crate) const fn real_time_signal_name(_n: i32) -> Option<String> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::traps::signal_name_for_number;
+
+    #[test]
+    fn signals_are_named_as_bash_names_them() {
+        assert_eq!(signal_name_for_number(1), "SIGHUP");
+        assert_eq!(signal_name_for_number(13), "SIGPIPE");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn real_time_signals_are_named_from_both_ends() {
+        let rtmin = nix::libc::SIGRTMIN();
+        let rtmax = nix::libc::SIGRTMAX();
+        let rtcnt = (rtmax - rtmin) / 2;
+
+        assert_eq!(signal_name_for_number(rtmin), "SIGRTMIN");
+        assert_eq!(signal_name_for_number(rtmin + 1), "SIGRTMIN+1");
+        assert_eq!(
+            signal_name_for_number(rtmin + rtcnt),
+            format!("SIGRTMIN+{rtcnt}")
+        );
+        assert_eq!(signal_name_for_number(rtmax), "SIGRTMAX");
+        assert_eq!(signal_name_for_number(rtmax - 1), "SIGRTMAX-1");
+    }
+}

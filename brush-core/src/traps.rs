@@ -98,39 +98,7 @@ pub fn signal_name_for_number(n: i32) -> String {
     if let Ok(signal) = TrapSignal::try_from(n) {
         return signal.as_str().to_owned();
     }
-    real_time_signal_name(n).unwrap_or_else(|| n.to_string())
-}
-
-/// Computes the name bash uses for a real-time signal (e.g., `SIGRTMIN`,
-/// `SIGRTMIN+1`, `SIGRTMAX-1`).
-#[cfg(any(target_os = "linux", target_os = "android"))]
-fn real_time_signal_name(n: i32) -> Option<String> {
-    let rtmin = nix::libc::SIGRTMIN();
-    let rtmax = nix::libc::SIGRTMAX();
-    if n < rtmin || n > rtmax {
-        return None;
-    }
-    let rtcnt = (rtmax - rtmin) / 2;
-    if n - rtmin <= rtcnt {
-        let offset = n - rtmin;
-        if offset == 0 {
-            Some("SIGRTMIN".to_owned())
-        } else {
-            Some(format!("SIGRTMIN+{offset}"))
-        }
-    } else {
-        let offset = rtmax - n;
-        if offset == 0 {
-            Some("SIGRTMAX".to_owned())
-        } else {
-            Some(format!("SIGRTMAX-{offset}"))
-        }
-    }
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-const fn real_time_signal_name(_n: i32) -> Option<String> {
-    None
+    crate::sys::signal::real_time_signal_name(n).unwrap_or_else(|| n.to_string())
 }
 
 // implement s.parse::<TrapSignal>()
@@ -307,32 +275,9 @@ impl TrapHandlerConfig {
 mod tests {
     use super::*;
 
+    // Names of real signals are tested where the platform's signals are (`sys`).
     #[test]
     fn test_signal_name_for_number() {
         assert_eq!(signal_name_for_number(0), "EXIT");
-
-        // Only platforms with a real `Signal` enum can map signal numbers to
-        // names; the stubbed platforms (e.g., Windows) cannot.
-        #[cfg(unix)]
-        {
-            assert_eq!(signal_name_for_number(1), "SIGHUP");
-            assert_eq!(signal_name_for_number(13), "SIGPIPE");
-        }
-
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        {
-            let rtmin = nix::libc::SIGRTMIN();
-            let rtmax = nix::libc::SIGRTMAX();
-            let rtcnt = (rtmax - rtmin) / 2;
-
-            assert_eq!(signal_name_for_number(rtmin), "SIGRTMIN");
-            assert_eq!(signal_name_for_number(rtmin + 1), "SIGRTMIN+1");
-            assert_eq!(
-                signal_name_for_number(rtmin + rtcnt),
-                format!("SIGRTMIN+{rtcnt}")
-            );
-            assert_eq!(signal_name_for_number(rtmax), "SIGRTMAX");
-            assert_eq!(signal_name_for_number(rtmax - 1), "SIGRTMAX-1");
-        }
     }
 }
