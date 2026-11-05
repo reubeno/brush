@@ -19,11 +19,17 @@ pub fn eval_expr(
     match expr {
         brush_parser::ast::TestExpr::False => Ok(false),
         brush_parser::ast::TestExpr::Literal(s) => Ok(!s.is_empty()),
+        // Like bash, both sides are always evaluated, so an invalid operand on either side is
+        // reported even when the other side decides the result.
         brush_parser::ast::TestExpr::And(left, right) => {
-            Ok(eval_expr(left, shell, params)? && eval_expr(right, shell, params)?)
+            let left = eval_expr(left, shell, params)?;
+            let right = eval_expr(right, shell, params)?;
+            Ok(left && right)
         }
         brush_parser::ast::TestExpr::Or(left, right) => {
-            Ok(eval_expr(left, shell, params)? || eval_expr(right, shell, params)?)
+            let left = eval_expr(left, shell, params)?;
+            let right = eval_expr(right, shell, params)?;
+            Ok(left || right)
         }
         brush_parser::ast::TestExpr::Not(expr) => Ok(!eval_expr(expr, shell, params)?),
         brush_parser::ast::TestExpr::Parenthesized(expr) => eval_expr(expr, shell, params),
