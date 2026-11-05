@@ -48,8 +48,8 @@ without its front end. Keep that in mind when deciding what to export.
 
 - Shells are built with `Shell::builder()`, a type-safe builder.
 - `Shell` is generic over `ShellExtensions`, which lets embedders swap in parts of its
-  behavior (today, how errors are formatted and how processes are launched) at compile
-  time.
+  behavior (today, how errors are formatted, how processes are launched, and how the
+  tasks the shell runs concurrently with itself are started) at compile time.
 - Platform-specific code lives under the `sys` module, so the rest of the crate stays
   platform-neutral.
 - Builtins meet the shell at one contract, `brush_core::builtins`, which names no

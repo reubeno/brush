@@ -65,6 +65,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     #[cfg_attr(feature = "serde", serde(skip, default = "default_process_launcher"))]
     process_launcher: SE::ProcessLauncher,
 
+    /// Injected task spawner.
+    #[cfg_attr(feature = "serde", serde(skip, default = "default_task_spawner"))]
+    task_spawner: SE::TaskSpawner,
+
     /// The builtins' state; see [`crate::ExecutionContext::state_mut`].
     #[cfg_attr(feature = "serde", serde(skip, default))]
     builtin_states: builtins::BuiltinStates,
@@ -164,6 +168,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
         Self {
             error_formatter: self.error_formatter.clone(),
             process_launcher: self.process_launcher.clone(),
+            task_spawner: self.task_spawner.clone(),
             builtin_states: self.builtin_states.clone(),
             traps: self.traps.clone(),
             open_files: self.open_files.clone(),
@@ -233,6 +238,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         let mut shell = Self {
             error_formatter: options.error_formatter,
             process_launcher: options.process_launcher,
+            task_spawner: options.task_spawner,
             builtin_states: builtins::BuiltinStates::default(),
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
@@ -387,6 +393,12 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Returns the launcher that starts the processes the shell runs.
     pub const fn process_launcher(&self) -> &SE::ProcessLauncher {
         &self.process_launcher
+    }
+
+    /// Returns the spawner that starts the tasks the shell runs concurrently with
+    /// itself.
+    pub const fn task_spawner(&self) -> &SE::TaskSpawner {
+        &self.task_spawner
     }
 
     /// Checks if the given string is a keyword reserved in this shell.
@@ -623,6 +635,11 @@ fn default_error_formatter<EF: extensions::ErrorFormatter>() -> EF {
 #[cfg(feature = "serde")]
 fn default_process_launcher<PL: extensions::ProcessLauncher>() -> PL {
     PL::default()
+}
+
+#[cfg(feature = "serde")]
+fn default_task_spawner<TS: extensions::TaskSpawner>() -> TS {
+    TS::default()
 }
 
 #[cfg(test)]
