@@ -410,3 +410,25 @@ cases:
       (\
       (\
       10+3)) && echo "arithmetic"
+
+  - name: "Assignment to something that is not a variable"
+    ignore_stderr: true
+    stdin: |
+      x=5
+      let -x=1; echo "let -x=1: $? x=$x"
+      let '!x=2'; echo "let !x=2: $? x=$x"
+      let '1 + x = 3'; echo "let 1 + x = 3: $? x=$x"
+      let '0 ? 1 : x = 4'; echo "let 0 ? 1 : x = 4: $? x=$x"
+      (( (x) = 6 ))
+      echo "(x) = 6: $? x=$x"
+
+  - name: "Assignments nested in other expressions"
+    stdin: |
+      x=5
+      echo "$(( -(x = 1) )) x=$x"
+      echo "$(( x = y = 2 )) x=$x y=$y"
+      echo "$(( x += y *= 3 )) x=$x y=$y"
+      echo "$(( 1 ? x = 7 : 8 )) x=$x"
+      echo "$(( x == 7 ? 1 : 0 ))"
+      echo "$(( a[x = 1] = 9 )) x=$x a[1]=${a[1]}"
+      echo "$(( x = 1, y = x + 1 )) x=$x y=$y"
