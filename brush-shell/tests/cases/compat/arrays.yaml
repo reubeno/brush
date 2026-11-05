@@ -387,6 +387,24 @@ cases:
       echo "\${myarray[@]}:" ${myarray[@]}
       echo "\${myarray[*]}:" ${myarray[*]}
 
+  #
+  # Field splitting applies to what an expansion produced, not to the literal text around it. A
+  # compound value's elements are separated by the parser on whitespace; an IFS character sitting
+  # in literal text is just a character.
+  #
+  - name: "Literal text in a compound value is not field-split"
+    stdin: |
+      IFS=,
+      arr=(a,b)
+      declare -p arr
+
+  - name: "A compound value field-splits an expansion but not the literal beside it"
+    stdin: |
+      IFS=,
+      v="p,q"
+      arr=(a,b $v keep,me)
+      declare -p arr
+
   - name: "Empty array with newline"
     stdin: |
       declare -a myarray=(
@@ -422,6 +440,53 @@ cases:
       i=1
       declare -a b=([i+1]=y [i*5]=z)
       declare -p b
+
+  #
+  # Ordering between value expansion and subscript evaluation. A shell expands an
+  # assignment's words before it evaluates any arithmetic subscript, so side effects
+  # in a subscript are not visible to the value being assigned.
+  #
+  - name: "Index arithmetic is evaluated after the value is expanded"
+    stdin: |
+      i=0
+      a[i++]=$i
+      declare -p a
+      echo "i=$i"
+
+  - name: "Append with an arithmetic subscript"
+    stdin: |
+      i=0
+      a[i++]=$i
+      a[i++]+=$i
+      declare -p a
+      echo "i=$i"
+
+  - name: "Associative subscripts are not arithmetically evaluated"
+    stdin: |
+      i=0
+      declare -A m
+      m[i++]=$i
+      declare -p m
+      echo "i=$i"
+
+  - name: "Associative subscript is expanded once in a plain assignment"
+    stdin: |
+      declare -A m
+      k='$(echo expanded-twice)'
+      m[$k]=v
+      declare -p m
+
+  #
+  # An empty subscript in a parameter reference is rejected while the word is parsed, before any
+  # array is consulted.
+  #
+  - name: "An empty subscript is a bad substitution"
+    known_failure: true # TODO: the word parser accepts an empty subscript and treats it as element 0
+    ignore_stderr: true
+    stdin: |
+      zz_a=(1 2 3)
+      echo "[${zz_a[]}]"
+      echo "status: $?"
 
   - name: "Negative index into sparse indexed array"
     stdin: |
