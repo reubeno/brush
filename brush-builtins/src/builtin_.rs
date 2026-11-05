@@ -31,9 +31,29 @@ impl builtins::ParseArgs for BuiltinCommand {
     }
 
     fn parse(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
-        Ok(Self {
-            args: invocation.into_args(),
-        })
+        let name = invocation.name().to_owned();
+        let mut args = invocation.into_args();
+
+        // `builtin` takes no options, but like bash it takes `--` and `--help`
+        // and rejects anything else that looks like an option.
+        match args.first().map(ToString::to_string).as_deref() {
+            Some("--") => {
+                args.remove(0);
+            }
+            Some("--help") => {
+                return Err(builtins::UsageError::help(format!(
+                    "Execute SHELL-BUILTIN with arguments ARGs without performing command lookup.\n\nUsage: {name} [shell-builtin [arg ...]]"
+                )));
+            }
+            Some(arg) if arg.len() > 1 && arg.starts_with('-') => {
+                return Err(builtins::UsageError::new(format!(
+                    "{name}: error: unknown flag `{arg}`\nusage: {name} [shell-builtin [arg ...]]"
+                )));
+            }
+            _ => (),
+        }
+
+        Ok(Self { args })
     }
 }
 
