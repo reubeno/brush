@@ -12,6 +12,11 @@ pub(crate) struct PwdCommand {
     /// Print the physical directory without any symlinks.
     #[arg(short = 'P', overrides = "-L")]
     physical: bool,
+
+    /// Operands, which are ignored. Options before the first operand are
+    /// still misuse; everything after it is an operand.
+    #[arg(positional, stop_flags, hide)]
+    _operands: Vec<String>,
 }
 
 brush_winnow_args_adapter::impl_parse_args!(PwdCommand);

@@ -81,7 +81,14 @@ cases:
       basename -- "$(pwd -PL)"
 
   - name: "pwd ignores operands"
-    known_failure: true # TODO(pwd): an operand is a usage error
     stdin: |
       cd /
       pwd foo; echo "rc=$?"
+
+  - name: "pwd takes options only before the first operand"
+    stdin: |
+      mkdir real; ln -s real link; cd link
+      basename -- "$(pwd -P foo)"
+      basename -- "$(pwd foo -P)"
+      basename -- "$(pwd -- -P)"
+      pwd foo bar >/dev/null; echo "rc=$?"
