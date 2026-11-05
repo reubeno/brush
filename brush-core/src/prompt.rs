@@ -80,7 +80,7 @@ fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::BellCharacter => "\x07".to_owned(),
         brush_parser::prompt::PromptPiece::CarriageReturn => "\r".to_owned(),
         brush_parser::prompt::PromptPiece::CurrentCommandNumber => {
-            return error::unimp("prompt: current command number");
+            shell.command_number().to_string()
         }
         brush_parser::prompt::PromptPiece::CurrentHistoryNumber => {
             return error::unimp("prompt: current history number");

@@ -110,11 +110,48 @@ cases:
       [[ ${expanded} == ${roundtripped} ]] && echo "History number matches"
 
   - name: "Current command number"
-    known_failure: true # Issue #471
+    known_failure: true # bash advances the number before a command runs, brush after
     stdin: |
       prompt='\#'
       expanded=${prompt@P}
       echo "${expanded}"
+
+  - name: "Current command number at each interactive prompt"
+    args: ["-i"]
+    ignore_stderr: true
+    env:
+      n: '\#'
+      PROMPT_COMMAND: 'echo "prompt: ${n@P}"'
+    stdin: |
+      true
+      true; true; true
+      if true; then
+        true
+      fi
+      cd .
+      env true
+
+  - name: "Current command number skips blank and comment-only lines"
+    known_failure: true # brush counts every line its interactive loop runs
+    args: ["-i"]
+    ignore_stderr: true
+    env:
+      n: '\#'
+      PROMPT_COMMAND: 'echo "prompt: ${n@P}"'
+    stdin: |
+      true
+
+      # comment only
+      true
+
+  - name: "Current command number in a -c string"
+    args:
+      - "-c"
+      - |
+        n='\#'
+        echo "${n@P}"
+        true
+        echo "${n@P}"
 
   - name: "Escaped dollar-sign"
     stdin: |
