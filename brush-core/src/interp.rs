@@ -1524,7 +1524,7 @@ async fn basic_expand_assignment_name(
     }
 }
 
-async fn expand_assignment_value(
+pub(crate) async fn expand_assignment_value(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     value: &ast::AssignmentValue,
