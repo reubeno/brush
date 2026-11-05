@@ -116,6 +116,15 @@ cases:
       expanded=${prompt@P}
       echo "${expanded}"
 
+  - name: "Current command number in a -c string"
+    args:
+      - "-c"
+      - |
+        n='\#'
+        echo "${n@P}"
+        true
+        echo "${n@P}"
+
   - name: "Escaped dollar-sign"
     stdin: |
       prompt='\$'
