@@ -79,8 +79,9 @@ fn format_prompt_piece(
         brush_parser::prompt::PromptPiece::Backslash => "\\".to_owned(),
         brush_parser::prompt::PromptPiece::BellCharacter => "\x07".to_owned(),
         brush_parser::prompt::PromptPiece::CarriageReturn => "\r".to_owned(),
-        // shortcut: always the first prompt's number; count commands once the reader loop does.
-        brush_parser::prompt::PromptPiece::CurrentCommandNumber => "1".to_owned(),
+        brush_parser::prompt::PromptPiece::CurrentCommandNumber => {
+            shell.command_number().to_string()
+        }
         brush_parser::prompt::PromptPiece::CurrentHistoryNumber => {
             return error::unimp("prompt: current history number");
         }

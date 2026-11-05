@@ -109,6 +109,10 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     /// Clone depth from the original ancestor shell.
     depth: usize,
 
+    /// The number the `\#` prompt escape shows: 1, plus one for each command the
+    /// interactive loop has run.
+    command_number: usize,
+
     /// Shell name
     name: Option<String>,
 
@@ -197,6 +201,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             key_bindings: self.key_bindings.clone(),
             history: self.history.clone(),
             depth: self.depth + 1,
+            command_number: self.command_number,
         }
     }
 }
@@ -276,13 +281,18 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
 impl<SE: extensions::ShellExtensions> Shell<SE> {
     /// Increments the interactive line offset in the shell by the indicated number
-    /// of lines.
+    /// of lines. The interactive loop calls this once after each command it runs, so
+    /// it also advances the command number that the `\#` prompt escape shows.
     ///
     /// # Arguments
     ///
     /// * `delta` - The number of lines to increment the current line offset by.
     pub fn increment_interactive_line_offset(&mut self, delta: usize) {
         self.call_stack.increment_current_line_offset(delta);
+        // shortcut: counts every line the loop runs, which bash doesn't for blank, comment-only
+        // or unparsable ones or for a bound key; count where the reader loop parses, once it's
+        // in core.
+        self.command_number += 1;
     }
 
     /// Updates the currently executing command in the shell.
@@ -390,6 +400,10 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
     pub(crate) const fn last_exit_status_change_count(&self) -> usize {
         self.last_exit_status_change_count
+    }
+
+    pub(crate) const fn command_number(&self) -> usize {
+        self.command_number
     }
 }
 
