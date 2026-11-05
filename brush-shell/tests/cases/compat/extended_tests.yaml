@@ -438,6 +438,16 @@ cases:
       [[ 5 -le ' 5' ]] && echo "10. -le with space"
       [[ 5 -ge ' 5' ]] && echo "11. -ge with space"
 
+  - name: "Arithmetic comparison errors make the comparison false"
+    ignore_stderr: true
+    stdin: |
+      [[ 1 -eq "1 +" ]]; echo "1. syntax error: $?"
+      [[ 1/0 -lt 1 ]] || echo "2. division by zero: $?"
+      [[ ! 1/0 -eq 1 ]] && echo "3. negated"
+      [[ 1/0 -eq 1 || 1 -eq 1 ]] && echo "4. other side of ||"
+      [[ 1/0 -eq x=5 ]]; echo "5. right side skipped: ${x-unset}"
+      f() { [[ x -ge "1 +" ]]; echo "6. still in f: $?"; }; f; echo "7. f returned: $?"
+
       # Negative numbers with whitespace
       [[ -5 -eq ' -5' ]] && echo "12. negative with space"
 
