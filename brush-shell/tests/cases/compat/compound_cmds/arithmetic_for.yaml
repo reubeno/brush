@@ -202,3 +202,10 @@ cases:
         echo "ref=$ref target=$target"
       done
       echo "final target=$target"
+
+  - name: "Arithmetic for with an error in its header fails without aborting the list"
+    ignore_stderr: true
+    stdin: |
+      for ((i = 0; i < ; i++)); do echo "body $i"; done; echo "condition: $?"
+      for ((i = 1 / 0; i < 3; i++)); do echo "body $i"; done; echo "initializer: $?"
+      for ((i = 0; i < 3; i += 1 / 0)); do echo "body $i"; done; echo "updater: $?"

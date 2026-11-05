@@ -1059,7 +1059,6 @@ cases:
 
   - name: "Division by zero in (( ))"
     ignore_stderr: true
-    known_failure: true # TODO(arithmetic): Division by zero should trigger errexit
     stdin: |
       set -e
       echo "before"
