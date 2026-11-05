@@ -273,8 +273,10 @@ impl ShellVariable {
                 ShellValue::String(base) => match value {
                     ShellValueLiteral::Scalar(suffix) => {
                         if treat_as_int {
-                            let int_value = base.parse::<i64>().unwrap_or(0)
-                                + suffix.parse::<i64>().unwrap_or(0);
+                            let int_value = base
+                                .parse::<i64>()
+                                .unwrap_or(0)
+                                .wrapping_add(suffix.parse::<i64>().unwrap_or(0));
                             base.clear();
                             base.push_str(int_value.to_string().as_str());
                         } else {
@@ -402,9 +404,11 @@ impl ShellVariable {
 
                     let mut new_value;
                     if treat_as_int {
-                        new_value = (existing_value.parse::<i64>().unwrap_or(0)
-                            + value.parse::<i64>().unwrap_or(0))
-                        .to_string();
+                        new_value = existing_value
+                            .parse::<i64>()
+                            .unwrap_or(0)
+                            .wrapping_add(value.parse::<i64>().unwrap_or(0))
+                            .to_string();
                     } else {
                         new_value = existing_value.to_owned();
                         new_value.push_str(value.as_str());
@@ -423,9 +427,11 @@ impl ShellVariable {
 
                     let mut new_value;
                     if treat_as_int {
-                        new_value = (existing_value.parse::<i64>().unwrap_or(0)
-                            + value.parse::<i64>().unwrap_or(0))
-                        .to_string();
+                        new_value = existing_value
+                            .parse::<i64>()
+                            .unwrap_or(0)
+                            .wrapping_add(value.parse::<i64>().unwrap_or(0))
+                            .to_string();
                     } else {
                         new_value = existing_value.to_owned();
                         new_value.push_str(value.as_str());
