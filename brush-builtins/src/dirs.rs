@@ -8,6 +8,10 @@ pub(crate) enum DirError {
     #[error("directory stack is empty")]
     DirStackEmpty,
 
+    /// There is no other directory to exchange with the current one.
+    #[error("no other directory")]
+    NoOtherDirectory,
+
     /// A shell error occurred.
     #[error(transparent)]
     ShellError(#[from] brush_core::Error),
@@ -16,7 +20,7 @@ pub(crate) enum DirError {
 impl From<&DirError> for brush_core::ExecutionExitCode {
     fn from(value: &DirError) -> Self {
         match value {
-            DirError::DirStackEmpty => Self::GeneralError,
+            DirError::DirStackEmpty | DirError::NoOtherDirectory => Self::GeneralError,
             DirError::ShellError(e) => e.into(),
         }
     }

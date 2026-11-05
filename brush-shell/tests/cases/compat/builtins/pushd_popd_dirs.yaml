@@ -91,13 +91,31 @@ cases:
       dirs -p | wc -l | tr -d ' '
 
   - name: "pushd with no directory swaps the top two"
-    known_failure: true # TODO(pushd): a directory is required
     ignore_stderr: true
     stdin: |
       cd /
       pushd /usr >/dev/null
       pushd >/dev/null; echo "rc=$?"
       pwd
+
+  - name: "pushd with no directory swaps only the top two"
+    stdin: |
+      cd /
+      pushd -n /usr >/dev/null
+      pushd -n /tmp >/dev/null
+      pushd; echo "rc=$?"
+      pwd
+      pushd; echo "rc=$?"
+      pwd
+      dirs
+
+  - name: "pushd with no directory and an empty stack"
+    ignore_stderr: true
+    stdin: |
+      cd /
+      pushd; echo "rc=$?"
+      pwd
+      dirs
 
   - name: "dirs takes +N and -N"
     known_failure: true # TODO(dirs): +N and -N are not implemented

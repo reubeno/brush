@@ -71,6 +71,20 @@ cases:
       num+=10
       echo $num
 
+  - name: "Appending to an integer wraps around on overflow"
+    stdin: |
+      declare -i n=1
+      n+=9223372036854775807
+      echo "$n"
+
+      declare -ai arr=(1)
+      arr[0]+=9223372036854775807
+      declare -p arr
+
+      declare -Ai assoc=([key]=-2)
+      assoc[key]+=-9223372036854775807
+      declare -p assoc
+
   - name: "Declare integer with non-integer string"
     stdin: |
       declare -i var=value
