@@ -31,23 +31,28 @@ impl builtins::ParseArgs for BuiltinCommand {
     }
 
     fn parse(invocation: builtins::Invocation<'_>) -> Result<Self, builtins::UsageError> {
-        let name = invocation.name().to_owned();
+        let name = invocation.name();
         let mut args = invocation.into_args();
 
         // `builtin` takes no options, but like bash it takes `--` and `--help`
         // and rejects anything else that looks like an option.
-        match args.first().map(ToString::to_string).as_deref() {
-            Some("--") => {
+        let content = |content_type| {
+            Self::content(name, content_type, &builtins::ContentOptions::default())
+                .unwrap_or_default()
+        };
+        match args.first() {
+            Some(brush_core::CommandArg::String(arg)) if arg == "--" => {
                 args.remove(0);
             }
-            Some("--help") => {
-                return Err(builtins::UsageError::help(format!(
-                    "Execute SHELL-BUILTIN with arguments ARGs without performing command lookup.\n\nUsage: {name} [shell-builtin [arg ...]]"
-                )));
+            Some(brush_core::CommandArg::String(arg)) if arg == "--help" => {
+                let help = content(builtins::ContentType::DetailedHelp);
+                return Err(builtins::UsageError::help(help.trim_end()));
             }
-            Some(arg) if arg.len() > 1 && arg.starts_with('-') => {
+            Some(brush_core::CommandArg::String(arg)) if arg.len() > 1 && arg.starts_with('-') => {
+                let usage = content(builtins::ContentType::ShortUsage);
                 return Err(builtins::UsageError::new(format!(
-                    "{name}: error: unknown flag `{arg}`\nusage: {name} [shell-builtin [arg ...]]"
+                    "{name}: {arg}: invalid option\n{}",
+                    usage.trim_end()
                 )));
             }
             _ => (),
@@ -83,5 +88,46 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BuiltinCommand {
         } else {
             Err(brush_core::ErrorKind::BuiltinNotFound(builtin_name).into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use builtins::{ContentOptions, ContentType, Invocation, ParseArgs};
+
+    fn usage_error(args: &[&str]) -> builtins::UsageError {
+        BuiltinCommand::parse(Invocation::new("builtin", args.iter().copied()))
+            .err()
+            .unwrap()
+    }
+
+    #[test]
+    fn help_matches_detailed_help() {
+        let err = usage_error(&["--help"]);
+        assert!(err.is_help());
+        let help = BuiltinCommand::content(
+            "builtin",
+            ContentType::DetailedHelp,
+            &ContentOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(err.to_string(), help.trim_end());
+    }
+
+    #[test]
+    fn invalid_option_shows_short_usage() {
+        let err = usage_error(&["-z", "true"]);
+        assert!(!err.is_help());
+        let usage = BuiltinCommand::content(
+            "builtin",
+            ContentType::ShortUsage,
+            &ContentOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            err.to_string(),
+            format!("builtin: -z: invalid option\n{}", usage.trim_end())
+        );
     }
 }
