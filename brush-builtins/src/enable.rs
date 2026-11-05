@@ -66,14 +66,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EnableCommand {
             }
         } else {
             for (builtin_name, builtin) in context.shell.builtins().iter() {
-                if self.disable {
-                    if builtin.is_enabled() {
-                        continue;
-                    }
-                } else if self.print_list {
-                    if !builtin.is_enabled() {
-                        continue;
-                    }
+                // With -a, every builtin is listed. Otherwise -n lists just the disabled
+                // ones and the default (with or without -p) lists just the enabled ones.
+                if !self.print_list && builtin.is_enabled() == self.disable {
+                    continue;
                 }
 
                 if self.special_only && !builtin.is_special() {
