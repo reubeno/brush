@@ -24,7 +24,9 @@ version = 2
 yanked = "deny"
 #db-path = "$CARGO_HOME/advisory-dbs"
 #db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils is unmaintained, not vulnerable; test-only, via expectrl -> nix 0.26 (default `aio` feature); drop once expectrl moves to nix >= 0.27" },
+]
 #git-fetch-with-cli = true
 
 # This section is considered when running `cargo deny check licenses`
