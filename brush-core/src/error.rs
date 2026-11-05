@@ -443,7 +443,7 @@ impl Error {
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> results::ExecutionControlFlow {
         if self.is_fatal() && !shell.options().interactive {
-            results::ExecutionControlFlow::ExitShell
+            results::ExecutionControlFlow::ExitShellOnFatalError
         } else {
             results::ExecutionControlFlow::Normal
         }

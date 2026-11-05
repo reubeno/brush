@@ -203,7 +203,6 @@ cases:
       echo "x: $x"
 
   - name: "Command substitution with only input redir in pipeline"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: file.txt

@@ -201,6 +201,17 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
     }
 }
 
+impl<SE: extensions::ShellExtensions> Shell<SE> {
+    /// Returns the shell a child context (subshell, command substitution, pipeline stage,
+    /// background job, coprocess or process substitution) runs in: a clone that does not own the
+    /// parent's `EXIT` trap, so it runs only an `EXIT` trap it sets itself when it ends.
+    pub(crate) fn clone_for_subshell(&self) -> Self {
+        let mut subshell = self.clone();
+        subshell.traps.mark_exit_inherited();
+        subshell
+    }
+}
+
 impl<SE: extensions::ShellExtensions> AsRef<Self> for Shell<SE> {
     fn as_ref(&self) -> &Self {
         self

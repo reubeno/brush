@@ -1,6 +1,9 @@
 //! Trap handling for the shell.
 
-use crate::{ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error, traps::TrapSignal};
+use crate::{
+    ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, error,
+    traps::TrapSignal,
+};
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// Runs any exit steps for the shell.
@@ -12,10 +15,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Ok(())
     }
 
-    /// Invokes the `EXIT` trap handler, if any. If the handler exits the shell, returns
-    /// the status it exits with, having made it the shell's last exit status.
+    /// Invokes the `EXIT` trap handler this shell set itself, if any. If the handler exits the
+    /// shell, returns the status it exits with, having made it the shell's last exit status.
     pub(crate) async fn run_exit_trap(&mut self) -> Result<Option<u8>, error::Error> {
-        if !self.traps.handles(TrapSignal::Exit) {
+        if !self.traps.has_own_exit_handler() {
             return Ok(None);
         }
 
@@ -29,6 +32,44 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             Ok(Some(status))
         } else {
             Ok(None)
+        }
+    }
+
+    /// Ends a child context (subshell, command substitution, pipeline stage, background job,
+    /// coprocess or process substitution) that ran in a shell from
+    /// [`Shell::clone_for_subshell`], and returns the result the parent sees.
+    ///
+    /// The context's own `EXIT` trap runs with the execution parameters of that context, so it
+    /// writes where the context's own commands write, and sees the status the context ended with
+    /// in `$?`. An `EXIT` trap inherited from the parent shell does not run; the parent runs it
+    /// when the parent ends. As in bash, a trap that itself calls `exit` replaces the context's
+    /// status.
+    ///
+    /// Only the context's exit code reaches the parent: its own `exit`, `return`, `break` or
+    /// `continue` ends just that context, and a fatal error in it is displayed and becomes its
+    /// exit code instead of ending the parent.
+    pub(crate) async fn end_child_context(
+        &mut self,
+        params: &ExecutionParameters,
+        result: Result<ExecutionResult, error::Error>,
+    ) -> ExecutionResult {
+        let result = self.end_subshell(result, || params.try_stderr(self));
+        if !self.traps.has_own_exit_handler() {
+            return result;
+        }
+
+        self.set_last_exit_status(result.exit_code.into());
+
+        match self.invoke_trap_handler(TrapSignal::Exit, params).await {
+            Ok(trap_result)
+                if matches!(
+                    trap_result.next_control_flow,
+                    ExecutionControlFlow::ExitShell
+                ) =>
+            {
+                ExecutionResult::from(trap_result.exit_code)
+            }
+            _ => result,
         }
     }
 
@@ -101,7 +142,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             }
             // EXIT and system signals are always inherited — i.e. their visibility is
             // not gated by errtrace/functrace options. (The actual trap *state* for
-            // subshells is managed separately via `Shell::clone`.)
+            // subshells is managed separately via `Shell::clone_for_subshell`.)
             TrapSignal::Exit | TrapSignal::Signal(_) => true,
         }
     }

@@ -332,12 +332,26 @@ cases:
       echo "back in parent"
 
   - name: "subshell can set its own EXIT trap"
-    known_failure: true # TODO(traps): EXIT trap in subshell
     stdin: |
       trap 'echo "[parent exit]"' EXIT
       echo "parent"
       (trap 'echo "[subshell exit]"' EXIT; echo "subshell")
       echo "back in parent"
+
+  - name: "subshell EXIT trap runs after exit"
+    stdin: |
+      (trap 'echo "[subshell exit]"' EXIT; echo "subshell"; exit 3)
+      echo "status: $?"
+
+  - name: "subshell EXIT trap runs after errexit failure"
+    stdin: |
+      (set -e; trap 'echo "[subshell exit]"' EXIT; false; echo "unreachable")
+      echo "status: $?"
+
+  - name: "nested subshells each run their own EXIT trap"
+    stdin: |
+      (trap 'echo "[outer exit]"' EXIT; (trap 'echo "[inner exit]"' EXIT; echo "inner"); echo "outer")
+      echo "after"
 
   - name: "subshell inherited EXIT trap does not fire"
     stdin: |
@@ -375,7 +389,6 @@ cases:
       echo "result: $result"
 
   - name: "command substitution can have its own EXIT trap"
-    known_failure: true # TODO: EXIT trap in command substitution subshell
     stdin: |
       trap 'echo "[parent exit]"' EXIT
       result=$(trap 'echo "[sub exit]"' EXIT; echo "inside")
@@ -399,6 +412,47 @@ cases:
     stdin: |
       trap 'echo "[parent int]"' INT
       { trap 'echo "[pipe int]"' INT; trap -p INT; } | cat
+
+  - name: "pipeline component can set its own EXIT trap"
+    stdin: |
+      { trap 'echo "[stage exit]"' EXIT; echo "in stage"; } | cat
+      echo "after pipe"
+
+  - name: "pipeline function component can set its own EXIT trap"
+    stdin: |
+      f() { trap 'echo "[func exit]"' EXIT; echo "in func"; }
+      f | cat
+      echo "after pipe"
+
+  - name: "exit in the EXIT trap of a pipeline's last stage does not end the shell"
+    stdin: |
+      echo a | { trap 'exit 3' EXIT; cat >/dev/null; }
+      echo "after status: $?"
+
+  - name: "exit in the body of a pipeline's last stage does not end the shell"
+    stdin: |
+      echo a | { cat >/dev/null; exit 3; }
+      echo "after status: $?"
+
+  - name: "EXIT trap of a pipeline stage sees the status of a fatal error"
+    stdin: |
+      { trap 'echo "[in trap: $?]"' EXIT; : ${unset_var?unset}; } 2>/dev/null | cat
+      echo "after"
+
+  - name: "fatal error in a subshell EXIT trap keeps the subshell status"
+    ignore_stderr: true
+    stdin: |
+      (trap ': ${undefined_variable?unset}; echo "not reached"' EXIT; exit 4)
+      echo "status: $?"
+
+  - name: "fatal error in a function or eval run by a subshell EXIT trap keeps the subshell status"
+    ignore_stderr: true
+    stdin: |
+      g() { : ${undefined_variable?unset}; echo "not reached"; }
+      (trap g EXIT; exit 4)
+      echo "function: $?"
+      (trap 'eval ": \${undefined_variable?unset}"' EXIT; exit 5)
+      echo "eval: $?"
 
   - name: "pipeline EXIT trap behavior"
     stdin: |
@@ -429,7 +483,6 @@ cases:
       wait
 
   - name: "process substitution can set own EXIT trap"
-    known_failure: true # TODO: EXIT trap in process substitution
     stdin: |
       trap 'echo "[parent exit]"' EXIT
       cat <(trap 'echo "[sub exit]"' EXIT; echo "inside")
@@ -467,6 +520,12 @@ cases:
       { trap 'echo "[bg int]"' INT; trap -p INT; } &
       wait
       trap -p INT
+
+  - name: "background job can set its own EXIT trap"
+    stdin: |
+      { trap 'echo "[bg exit]"' EXIT; echo "bg job"; } &
+      wait
+      echo "main continues"
 
   #
   # Coproc trap inheritance (all coproc tests consolidated here)
@@ -933,7 +992,6 @@ cases:
       echo after
 
   - name: "EXIT trap - exit in the handler sets a subshell's status"
-    known_failure: true # TODO(trap): a subshell ignores its EXIT trap's exit status
     stdin: |
       (trap 'exit 5' EXIT; true)
       echo "rc=$?"

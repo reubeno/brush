@@ -104,8 +104,6 @@ cases:
       echo "marker: $contents"
 
   - name: "Export expansion error occurs before any operand is applied"
-    known_failure: true # Requires EXIT traps to fire at subshell exit; brush only runs them
-                        # when the top-level shell exits, so the trap below never observes the state.
     stdin: |
       state=state.txt
       : > "$state"

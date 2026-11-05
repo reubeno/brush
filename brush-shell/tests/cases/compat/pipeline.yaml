@@ -82,6 +82,22 @@ cases:
       echo "status: $?"
       cd /nonexistent 2>&1 | { read -r line; echo "got an error message: ${line:+yes}"; }
 
+  - name: "Fatal error while starting a pipeline stage ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      true | echo ${undefined_variable?unset} | cat
+      echo "statuses: ${PIPESTATUS[*]}"
+      true | ${undefined_variable?unset}
+      echo "last stage: $?"
+
+  - name: "Failed redirect on a compound pipeline stage ends only that stage"
+    ignore_stderr: true
+    stdin: |
+      { echo hi; } > /nonexistent-dir/file | cat
+      echo "statuses: ${PIPESTATUS[*]}"
+      echo hi | { cat; } < /nonexistent-dir/file
+      echo "last stage: $?"
+
   - name: "Exit in a pipeline's last stage"
     stdin: |
       echo hi | exit 3
