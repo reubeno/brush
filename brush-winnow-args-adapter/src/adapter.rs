@@ -51,9 +51,11 @@ pub fn parse_with_double_dash<T: Args>(
 /// Parses a declaration utility's arguments: its options, and the rest as
 /// declarations, which it returns as they arrived.
 ///
-/// The options are the words that start with `-` or `+`, and aren't only
-/// that, up to the first word that doesn't or to `--`, which is dropped. No
-/// declaration utility's option takes its value as a separate word.
+/// The options are the words that start with `-` (or `+`, for a builtin
+/// that takes `+` options), and aren't only that, up to the first word that
+/// doesn't or to `--`, which is dropped. To any other builtin (`export`) a
+/// `+x` word is an operand, which it rejects as an invalid name, as a shell
+/// does. No declaration utility's option takes its value as a separate word.
 ///
 /// # Errors
 ///
@@ -63,10 +65,14 @@ pub fn parse_declarations<T: Args>(
 ) -> Result<(T, Vec<CommandArg>), UsageError> {
     let name = invocation.name();
     let mut args = invocation.into_args();
+    let takes_plus = T::HELP.items.iter().any(|item| item.plus.is_some());
     let end = args
         .iter()
         .position(|arg| match arg {
-            CommandArg::String(s) => s == "--" || !(s.len() > 1 && s.starts_with(['-', '+'])),
+            CommandArg::String(s) => {
+                s == "--"
+                    || !(s.len() > 1 && (s.starts_with('-') || (takes_plus && s.starts_with('+'))))
+            }
             CommandArg::Assignment(_) => true,
         })
         .unwrap_or(args.len());
@@ -331,6 +337,14 @@ mod tests {
         assert!(parsed.unexport);
         assert_eq!(ExportLike::DECLARATION_ROLE, DeclarationRole::Utility);
         assert_eq!(words(parsed.declarations), ["FOO", "-p"]);
+    }
+
+    #[test]
+    fn a_plus_word_is_an_operand_to_a_builtin_without_plus_options() {
+        let parsed =
+            <ExportLike as ParseArgs>::parse(Invocation::new("export", ["+n", "FOO"])).unwrap();
+        assert!(!parsed.unexport);
+        assert_eq!(words(parsed.declarations), ["+n", "FOO"]);
     }
 
     #[test]
