@@ -38,7 +38,7 @@ indexmap = "2.13.0"
 nu-ansi-term = { version = "0.50.3", optional = true }
 radix_trie = "0.3.0"
 thiserror = "2.0.18"
-tokio = { version = "1.52.3", features = ["rt", "sync"] }
+tokio = { version = "1.54.0", features = ["rt", "sync"] }
 tracing = "0.1.44"
 unicode-width = { version = "0.2.2", optional = true }
 
