@@ -1,11 +1,11 @@
+use brush_core::writeln_async;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use brush_core::{ErrorKind, builtins, env, error, variables};
 
-use std::io::{Read, Write};
-use utf8_chars::BufReadCharsExt;
+use tokio::io::AsyncReadExt as _;
 
 /// Exit code returned when `read` times out.
 /// This is 128 + SIGALRM (14) = 142, matching bash behavior.
@@ -98,11 +98,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         let mut timeout = None;
         for spec in &self.timeout_in_seconds {
             let Some(parsed) = parse_timeout(spec) else {
-                writeln!(
-                    context.stderr(),
+                writeln_async!(
+                    context.stderr_async(),
                     "{}: {spec}: invalid timeout specification",
                     context.command_name
-                )?;
+                )
+                .await?;
                 return Ok(brush_core::ExecutionResult::general_error());
             };
             timeout = Some(parsed);
@@ -127,7 +128,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         let ifs = context.shell.ifs().into_owned();
 
         // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        let read_result = self
+            .read_line(input_stream, context.stderr(), timeout)
+            .await?;
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -301,9 +304,18 @@ enum ReadResult {
 ///
 /// This separates the concerns of character-level I/O with timeout handling from the
 /// higher-level logic of line building and escape processing.
+///
+/// Input is read one byte at a time, so `read` never consumes more of the descriptor
+/// than it uses -- whatever runs next may want the rest -- and through an async view, so
+/// waiting for a pipe gives way to the task writing to it.
 struct InputReader {
     /// The input source.
-    input: std::io::BufReader<PolledInput>,
+    input: brush_core::openfiles::async_file::AsyncOpenFile,
+    /// A byte read that turned out not to belong to the UTF-8 sequence it followed,
+    /// to be read again.
+    pushed_back: Option<u8>,
+    /// Optional deadline for timeout.
+    deadline: Option<Instant>,
     /// Bytes from a malformed UTF-8 sequence, still owed to the caller one at a time.
     pending: VecDeque<char>,
     /// Terminal mode guard - kept alive for RAII cleanup on drop.
@@ -329,6 +341,22 @@ enum InputEvent {
     CtrlD,
 }
 
+/// A character that couldn't be read: the bytes of it that were, and why the rest
+/// couldn't be.
+struct CharError {
+    bytes: Vec<u8>,
+    error: std::io::Error,
+}
+
+impl CharError {
+    fn invalid(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            error: std::io::ErrorKind::InvalidData.into(),
+        }
+    }
+}
+
 impl InputReader {
     /// Creates a new input reader with optional timeout.
     fn new(
@@ -337,14 +365,10 @@ impl InputReader {
         term_mode: Option<brush_core::terminal::AutoModeGuard>,
     ) -> Self {
         Self {
-            input: std::io::BufReader::with_capacity(
-                1,
-                PolledInput {
-                    input,
-                    // A deadline too far off to represent is no deadline at all.
-                    deadline: timeout.and_then(|t| Instant::now().checked_add(t)),
-                },
-            ),
+            input: input.into(),
+            pushed_back: None,
+            // A deadline too far off to represent is no deadline at all.
+            deadline: timeout.and_then(|t| Instant::now().checked_add(t)),
             pending: VecDeque::new(),
             _term_mode: term_mode,
         }
@@ -353,18 +377,17 @@ impl InputReader {
     /// Checks if input is immediately available (for `-t 0`). Returns `false` if an error
     /// occurs while checking for available input.
     fn check_input_available(&self) -> bool {
-        brush_core::sys::poll::poll_for_input(&self.input.get_ref().input, Duration::ZERO)
-            .unwrap_or(false)
+        brush_core::sys::poll::poll_for_input(self.input.file(), Duration::ZERO).unwrap_or(false)
     }
 
     /// Reads the next input event, handling timeout and control characters.
-    fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
+    async fn read_event(&mut self) -> Result<InputEvent, brush_core::Error> {
         let ch = loop {
             if let Some(ch) = self.pending.pop_front() {
                 break ch;
             }
 
-            match self.input.read_char_raw() {
+            match self.read_char().await {
                 Ok(Some(ch)) => break ch,
                 Ok(None) => return Ok(InputEvent::Eof),
                 Err(e) => {
@@ -373,14 +396,13 @@ impl InputReader {
                     //
                     // TODO(utf-8): `line` is a `String`, so an invalid byte can't
                     // round-trip; bash preserves it verbatim, we re-encode it.
-                    if e.as_bytes().is_empty() {
-                        if e.as_io_error().kind() == std::io::ErrorKind::TimedOut {
+                    if e.bytes.is_empty() {
+                        if e.error.kind() == std::io::ErrorKind::TimedOut {
                             return Ok(InputEvent::Timeout);
                         }
-                        return Err(e.into_io_error().into());
+                        return Err(e.error.into());
                     }
-                    self.pending
-                        .extend(e.as_bytes().iter().copied().map(char::from));
+                    self.pending.extend(e.bytes.into_iter().map(char::from));
                 }
             }
         };
@@ -392,32 +414,92 @@ impl InputReader {
             _ => InputEvent::Char(ch),
         })
     }
-}
 
-/// Reads the input file one byte at a time, enforcing the deadline on every byte.
-///
-/// Wrapped in a 1-byte `BufReader`, which gives us both the pushback a byte that turns
-/// out not to belong to the current UTF-8 sequence needs, and the guarantee that `read`
-/// never consumes more of the descriptor than it asked for -- whatever runs next may
-/// want the rest.
-struct PolledInput {
-    /// The input source.
-    input: brush_core::openfiles::OpenFile,
-    /// Optional deadline for timeout.
-    deadline: Option<Instant>,
-}
+    /// Reads one UTF-8 encoded character, or `None` at the end of the input.
+    ///
+    /// A malformed sequence is an error carrying the bytes consumed for it: a lead byte
+    /// no character starts with is consumed, but a byte that should have continued a
+    /// sequence and doesn't is left to be read again.
+    async fn read_char(&mut self) -> Result<Option<char>, CharError> {
+        /// The bits of a lead byte that are the character's, by how many bytes follow.
+        const LEAD_BITS: [u8; 4] = [0x7F, 0x1F, 0x0F, 0x07];
+        /// The smallest character encoded with each number of following bytes; anything
+        /// smaller is encoded longer than it need be, which isn't valid.
+        const MIN_VALUE: [u32; 4] = [0, 0x80, 0x800, 0x1_0000];
 
-impl Read for PolledInput {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let lead = match self.read_byte().await {
+            Ok(Some(byte)) => byte,
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                return Err(CharError {
+                    bytes: Vec::new(),
+                    error,
+                });
+            }
+        };
+
+        let leading_ones = lead.leading_ones();
+        if leading_ones == 0 {
+            return Ok(Some(char::from(lead)));
+        }
+        let mut bytes = vec![lead];
+        if leading_ones == 1 || leading_ones > 4 {
+            return Err(CharError::invalid(bytes));
+        }
+
+        let tail_count = leading_ones - 1;
+        let mut value = u32::from(lead & LEAD_BITS[tail_count as usize]) << (6 * tail_count);
+        for index in (0..tail_count).rev() {
+            match self.read_byte().await {
+                Ok(Some(byte)) if byte & 0xC0 == 0x80 => {
+                    bytes.push(byte);
+                    value |= u32::from(byte & 0x3F) << (6 * index);
+                }
+                Ok(Some(byte)) => {
+                    self.pushed_back = Some(byte);
+                    return Err(CharError::invalid(bytes));
+                }
+                Ok(None) => {
+                    return Err(CharError {
+                        bytes,
+                        error: std::io::ErrorKind::UnexpectedEof.into(),
+                    });
+                }
+                Err(error) => return Err(CharError { bytes, error }),
+            }
+        }
+
+        if value < MIN_VALUE[tail_count as usize] {
+            return Err(CharError::invalid(bytes));
+        }
+        char::from_u32(value).map_or_else(|| Err(CharError::invalid(bytes)), |ch| Ok(Some(ch)))
+    }
+
+    /// Reads one byte, or `None` at the end of the input, enforcing the deadline on it.
+    async fn read_byte(&mut self) -> std::io::Result<Option<u8>> {
+        if let Some(byte) = self.pushed_back.take() {
+            return Ok(Some(byte));
+        }
+
         if let Some(deadline) = self.deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero()
-                || !brush_core::sys::poll::poll_for_input(&self.input, remaining)?
+                || !brush_core::sys::poll::poll_for_input_async(self.input.file(), remaining)
+                    .await?
             {
                 return Err(std::io::ErrorKind::TimedOut.into());
             }
         }
-        self.input.read(buf)
+
+        let mut byte = [0u8; 1];
+        loop {
+            match self.input.read(&mut byte).await {
+                Ok(0) => return Ok(None),
+                Ok(_) => return Ok(Some(byte[0])),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => (),
+                Err(e) => return Err(e),
+            }
+        }
     }
 }
 
@@ -440,7 +522,7 @@ struct LineReaderConfig {
 /// For example, with `-n 3` and input `a\bc` (4 bytes):
 /// - Bash processes: 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) → "abc"
 /// - The backslash is consumed but doesn't count toward the limit
-fn read_line_with_reader(
+async fn read_line_with_reader(
     reader: &mut InputReader,
     config: &LineReaderConfig,
 ) -> Result<ReadResult, brush_core::Error> {
@@ -451,7 +533,7 @@ fn read_line_with_reader(
     let mut pending_backslash = false;
 
     loop {
-        let event = reader.read_event()?;
+        let event = reader.read_event().await?;
 
         match event {
             InputEvent::Eof => {
@@ -554,7 +636,7 @@ impl ReadCommand {
     /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next
     ///   char
     /// - With `-r`: backslash is treated as a literal character
-    fn read_line(
+    async fn read_line(
         &self,
         input_file: brush_core::openfiles::OpenFile,
         mut stderr_file: impl std::io::Write,
@@ -606,7 +688,7 @@ impl ReadCommand {
             process_escapes: !self.raw_mode,
         };
 
-        read_line_with_reader(&mut reader, &config)
+        read_line_with_reader(&mut reader, &config).await
     }
 
     fn setup_terminal_settings(
@@ -739,8 +821,10 @@ mod tests {
     // `-t` needs `poll_for_input`, which only the unix backend implements; elsewhere it
     // reports `Unsupported`, so there's no timeout to observe.
     #[cfg(unix)]
-    #[test]
-    fn test_read_times_out_mid_sequence_without_losing_the_partial_bytes() {
+    #[tokio::test]
+    async fn test_read_times_out_mid_sequence_without_losing_the_partial_bytes() {
+        use std::io::Write as _;
+
         let (rx, mut tx) = std::io::pipe().unwrap();
         tx.write_all(b"\xc3").unwrap();
 
@@ -753,7 +837,7 @@ mod tests {
 
         // Holding `tx` means the continuation byte never arrives, so the deadline has to
         // be enforced on it and not just on the byte that started the sequence.
-        let result = read_line_with_reader(&mut reader, &config).unwrap();
+        let result = read_line_with_reader(&mut reader, &config).await.unwrap();
         drop(tx);
 
         assert!(matches!(result, ReadResult::TimedOut(Some(line)) if line == "\u{c3}"));

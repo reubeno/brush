@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins, jobs};
 
 /// Moves a job to run in the background.
@@ -27,14 +26,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BgCommand {
                 if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
                     let running = running_job_id(job);
                     job.move_to_background()?;
-                    warn_if_running(&context, running)?;
+                    warn_if_running(&context, running).await?;
                 } else {
-                    writeln!(
-                        context.stderr(),
+                    writeln_async!(
+                        context.stderr_async(),
                         "{}: {}: no such job",
                         context.command_name,
                         job_spec
-                    )?;
+                    )
+                    .await?;
                     exit_code = ExecutionResult::general_error();
                 }
             }
@@ -42,9 +42,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for BgCommand {
             if let Some(job) = context.shell.jobs_mut().current_job_mut() {
                 let running = running_job_id(job);
                 job.move_to_background()?;
-                warn_if_running(&context, running)?;
+                warn_if_running(&context, running).await?;
             } else {
-                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
+                writeln_async!(
+                    context.stderr_async(),
+                    "{}: no current job",
+                    context.command_name
+                )
+                .await?;
                 exit_code = ExecutionResult::general_error();
             }
         }
@@ -60,16 +65,17 @@ fn running_job_id(job: &jobs::Job) -> Option<usize> {
 }
 
 /// Warns, as bash does, that a job not known to be stopped is already in the background.
-fn warn_if_running<SE: brush_core::ShellExtensions>(
+async fn warn_if_running<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
     running_job_id: Option<usize>,
 ) -> Result<(), brush_core::Error> {
     if let Some(id) = running_job_id {
-        writeln!(
-            context.stderr(),
+        writeln_async!(
+            context.stderr_async(),
             "{}: job {id} already in background",
             context.command_name
-        )?;
+        )
+        .await?;
     }
     Ok(())
 }

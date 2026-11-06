@@ -1,5 +1,5 @@
+use brush_core::writeln_async;
 use itertools::Itertools;
-use std::io::Write;
 
 use brush_core::{ExecutionResult, builtins};
 
@@ -43,11 +43,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.set && self.unset {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: cannot set and unset shell options simultaneously",
                 context.command_name
-            )?;
+            )
+            .await?;
             return Ok(ExecutionResult::general_error());
         }
 
@@ -79,14 +80,29 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
                 if self.print {
                     if self.set_o_names_only {
                         let option_value_str = if option_value { "-o" } else { "+o" };
-                        writeln!(context.stdout(), "set {option_value_str} {}", option.name)?;
+                        writeln_async!(
+                            context.stdout_async(),
+                            "set {option_value_str} {}",
+                            option.name
+                        )
+                        .await?;
                     } else {
                         let option_value_str = if option_value { "-s" } else { "-u" };
-                        writeln!(context.stdout(), "shopt {option_value_str} {}", option.name)?;
+                        writeln_async!(
+                            context.stdout_async(),
+                            "shopt {option_value_str} {}",
+                            option.name
+                        )
+                        .await?;
                     }
                 } else {
                     let option_value_str = if option_value { "on" } else { "off" };
-                    writeln!(context.stdout(), "{:20}\t{option_value_str}", option.name)?;
+                    writeln_async!(
+                        context.stdout_async(),
+                        "{:20}\t{option_value_str}",
+                        option.name
+                    )
+                    .await?;
                 }
             }
 
@@ -123,30 +139,37 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
                             if self.print {
                                 if self.set_o_names_only {
                                     let option_value_str = if option_value { "-o" } else { "+o" };
-                                    writeln!(
-                                        context.stdout(),
+                                    writeln_async!(
+                                        context.stdout_async(),
                                         "set {option_value_str} {option_name}"
-                                    )?;
+                                    )
+                                    .await?;
                                 } else {
                                     let option_value_str = if option_value { "-s" } else { "-u" };
-                                    writeln!(
-                                        context.stdout(),
+                                    writeln_async!(
+                                        context.stdout_async(),
                                         "shopt {option_value_str} {option_name}"
-                                    )?;
+                                    )
+                                    .await?;
                                 }
                             } else {
                                 let option_value_str = if option_value { "on" } else { "off" };
-                                writeln!(context.stdout(), "{option_name:20}\t{option_value_str}")?;
+                                writeln_async!(
+                                    context.stdout_async(),
+                                    "{option_name:20}\t{option_value_str}"
+                                )
+                                .await?;
                             }
                         }
                     }
                 } else {
-                    writeln!(
-                        context.stderr(),
+                    writeln_async!(
+                        context.stderr_async(),
                         "{}: {}: invalid shell option name",
                         context.command_name,
                         option_name
-                    )?;
+                    )
+                    .await?;
                     return_value = ExecutionResult::general_error();
                 }
             }

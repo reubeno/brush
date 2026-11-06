@@ -1,5 +1,5 @@
+use brush_core::writeln_async;
 use std::borrow::Cow;
-use std::io::Write;
 
 use brush_core::{ExecutionResult, Shell, builtins};
 
@@ -47,11 +47,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnsetCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.name_interpretation.shell_functions && self.name_interpretation.shell_variables {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: cannot simultaneously unset a function and a variable",
                 context.command_name
-            )?;
+            )
+            .await?;
             return Ok(ExecutionResult::general_error());
         }
 
