@@ -470,7 +470,7 @@ cases:
       { export -Z; } 2>&1 | head -n 1
 
   - name: "Builtin I/O errors are reported as bash reports them"
-    known_failure: true # TODO(errors): brush reports "i/o error: ... (os error 2)"
+    known_failure: true # TODO(errors): the message leaves out the path
     stdin: |
       cd /nonexistent-dir
 
@@ -495,6 +495,16 @@ cases:
       (echo $((5%0))) 2>&1 | strip
       (echo $((1+))) 2>&1 | strip
       ((1/0)) 2>&1 | strip
+
+  - name: "A failed write is reported as a write error"
+    stdin: |
+      # /dev/full may not be available on all platforms.
+      [[ -e /dev/full ]] || exit 0
+      # Only the message is compared, not the prefix before the builtin's name.
+      strip() { sed -E 's/^.*: (echo|printf): /\1: /'; }
+      echo hi >/dev/full 2>err.txt; echo "echo: $?"; strip <err.txt
+      printf x >/dev/full 2>err.txt; echo "printf: $?"; strip <err.txt
+      rm err.txt
 
   - name: "Special builtin runtime error is fatal in POSIX mode"
     min_oracle_version: "5.3" # bash 5.2 reports the error and goes on
@@ -741,4 +751,39 @@ cases:
       set -o posix
       . ./bad.sh
       echo "after: $?"
+
+  - name: "A redirection error names the file as written"
+    known_failure: true # TODO(errors): brush reports "failed to redirect to" and the absolute path
+    ignore_stderr: true
+    stdin: |
+      strip() { while IFS= read -r l; do [[ $l =~ ^.*line\ [0-9]+:\ (.*)$ ]] && echo "${BASH_REMATCH[1]}"; done; }
+      mkdir adir
+      echo hi 2>err.txt >adir; echo "status: $?"; strip <err.txt
+      cat 2>err.txt </nonexistent-file; echo "status: $?"; strip <err.txt
+      rm -r err.txt adir
+
+  - name: "Reading a directory"
+    known_failure: true # TODO(errors): read's message lacks "0: read error:", and mapfile fails where bash's reads nothing
+    stdin: |
+      strip() { while IFS= read -r l; do [[ $l =~ ^.*line\ [0-9]+:\ (.*)$ ]] && echo "${BASH_REMATCH[1]}"; done; }
+      mkdir adir
+      read -r x <adir 2>err.txt; echo "read: $?"; strip <err.txt
+      mapfile lines <adir 2>err.txt; echo "mapfile: $? ${#lines[@]}"; strip <err.txt
+      rm -r err.txt adir
+
+  - name: "help to a full device"
+    known_failure: true # TODO(help): reports a write error with status 1, where bash's help succeeds
+    incompatible_platforms: ["macos"] # (No /dev/full)
+    stdin: |
+      # /dev/full may not be available on all platforms.
+      [[ -e /dev/full ]] || exit 0
+      help >/dev/full 2>/dev/null; echo "help: $?"
+
+  - name: "A hashed path that doesn't exist"
+    known_failure: true # TODO(hash): reports the command as not found, where bash reports the missing path
+    stdin: |
+      strip() { while IFS= read -r l; do [[ $l =~ ^.*line\ [0-9]+:\ (.*)$ ]] && echo "${BASH_REMATCH[1]}"; done; }
+      hash -p /nonexistent-dir/prog prog
+      prog 2>err.txt; echo "status: $?"; strip <err.txt
+      rm err.txt
 
