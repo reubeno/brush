@@ -192,6 +192,13 @@ cargo test --test brush-compat-tests -- '<name of test case>'
 
 - New optional fields are fine to add as long as the struct implements the Default trait and as long as the defaulted value is a sensible one
 
+**`#[non_exhaustive]` in `brush-parser`:**
+
+- Its error enums are `#[non_exhaustive]`, so a new error variant isn't a breaking change.
+- Its AST types (the `ast` and `word` modules) stay exhaustive, struct-like variants included (e.g.
+  `word::BraceExpressionMember::NumberSequence`). Code that walks the AST should get a compile error for
+  new syntax or a new field, not quietly fall into a `_` arm.
+
 ### Dependency Impact
 
 When changing public APIs in `brush-core` (see section 3 for breaking change policy):
