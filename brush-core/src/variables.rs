@@ -188,18 +188,34 @@ impl ShellVariable {
     }
 
     /// Converts the variable to an indexed array.
-    pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
+    ///
+    /// A dynamic variable that is already an indexed array (e.g. `PIPESTATUS`) is left as it
+    /// is, so it keeps being computed; one that is an associative array can't be converted. A
+    /// scalar one becomes an ordinary array holding its value.
+    ///
+    /// # Arguments
+    ///
+    /// * `resolved_dynamic_value` - The value a dynamic variable currently resolves to (see
+    ///   [`Self::resolve_value`]), so a scalar one keeps it; with `None`, it becomes empty.
+    pub fn convert_to_indexed_array(
+        &mut self,
+        resolved_dynamic_value: Option<&ShellValue>,
+    ) -> Result<(), error::Error> {
         match self.value() {
-            ShellValue::IndexedArray(_) => Ok(()),
-            ShellValue::AssociativeArray(_) => {
-                Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
-            }
+            ShellValue::IndexedArray(_)
+            | ShellValue::Dynamic {
+                kind: DynamicValueKind::IndexedArray,
+                ..
+            } => Ok(()),
+            ShellValue::AssociativeArray(_)
+            | ShellValue::Dynamic {
+                kind: DynamicValueKind::AssociativeArray,
+                ..
+            } => Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into()),
             _ => {
+                let source = resolved_dynamic_value.unwrap_or(&self.value);
                 let mut new_values = BTreeMap::new();
-                new_values.insert(
-                    0,
-                    self.value.to_cow_str_without_dynamic_support().to_string(),
-                );
+                new_values.insert(0, source.to_cow_str_without_dynamic_support().to_string());
                 self.value = ShellValue::IndexedArray(new_values);
                 Ok(())
             }
@@ -207,17 +223,30 @@ impl ShellVariable {
     }
 
     /// Converts the variable to an associative array.
-    pub fn convert_to_associative_array(&mut self) -> Result<(), error::Error> {
+    ///
+    /// Dynamic variables are converted as in [`Self::convert_to_indexed_array`], whose
+    /// arguments this takes.
+    pub fn convert_to_associative_array(
+        &mut self,
+        resolved_dynamic_value: Option<&ShellValue>,
+    ) -> Result<(), error::Error> {
         match self.value() {
-            ShellValue::AssociativeArray(_) => Ok(()),
-            ShellValue::IndexedArray(_) => {
-                Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into())
-            }
+            ShellValue::AssociativeArray(_)
+            | ShellValue::Dynamic {
+                kind: DynamicValueKind::AssociativeArray,
+                ..
+            } => Ok(()),
+            ShellValue::IndexedArray(_)
+            | ShellValue::Dynamic {
+                kind: DynamicValueKind::IndexedArray,
+                ..
+            } => Err(error::ErrorKind::ConvertingIndexedArrayToAssociativeArray.into()),
             _ => {
+                let source = resolved_dynamic_value.unwrap_or(&self.value);
                 let mut new_values: BTreeMap<String, String> = BTreeMap::new();
                 new_values.insert(
                     String::from("0"),
-                    self.value.to_cow_str_without_dynamic_support().to_string(),
+                    source.to_cow_str_without_dynamic_support().to_string(),
                 );
                 self.value = ShellValue::AssociativeArray(new_values);
                 Ok(())
@@ -261,7 +290,7 @@ impl ShellVariable {
                 // If we're trying to append an array to a string, we first promote the string to be
                 // an array with the string being present at index 0.
                 (ShellValue::String(_), ShellValueLiteral::Array(_)) => {
-                    self.convert_to_indexed_array()?;
+                    self.convert_to_indexed_array(None)?;
                 }
                 _ => (),
             }
@@ -336,7 +365,12 @@ impl ShellVariable {
                         ShellValueUnsetType::IndexedArray | ShellValueUnsetType::Untyped,
                     )
                     | ShellValue::String(_)
-                    | ShellValue::Dynamic { .. },
+                    // An array given to a scalar dynamic variable (e.g. `RANDOM=(1 2)`) replaces
+                    // it; an array one (e.g. `PIPESTATUS`) ignores it, below, and stays live.
+                    | ShellValue::Dynamic {
+                        kind: DynamicValueKind::Scalar,
+                        ..
+                    },
                     ShellValueLiteral::Array(literal_values),
                 ) => {
                     self.value = ShellValue::indexed_array_from_literals(literal_values);
@@ -387,7 +421,7 @@ impl ShellVariable {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
             }
             ShellValue::String(_) => {
-                self.convert_to_indexed_array()?;
+                self.convert_to_indexed_array(None)?;
             }
             _ => (),
         }
@@ -602,6 +636,9 @@ pub enum ShellValue {
     IndexedArray(BTreeMap<u64, String>),
     /// A value that is dynamically computed.
     Dynamic {
+        /// The shape of the value `getter` computes, which decides how the variable can be
+        /// converted and assigned without computing it.
+        kind: DynamicValueKind,
         /// Function that can query the value.
         /// TODO(serde): figure out how to serialize/deserialize dynamic values.
         #[cfg_attr(
@@ -617,6 +654,18 @@ pub enum ShellValue {
         )]
         setter: DynamicValueSetter,
     },
+}
+
+/// The shape of the value a dynamic variable computes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum DynamicValueKind {
+    /// A string (e.g. `RANDOM`, `SECONDS`).
+    Scalar,
+    /// An indexed array (e.g. `PIPESTATUS`, `FUNCNAME`).
+    IndexedArray,
+    /// An associative array (e.g. `BASH_ALIASES`).
+    AssociativeArray,
 }
 
 #[cfg(feature = "serde")]
@@ -1118,5 +1167,54 @@ impl From<Vec<String>> for ShellValue {
 impl From<Vec<&str>> for ShellValue {
     fn from(values: Vec<&str>) -> Self {
         Self::indexed_array_from_strs(values.as_slice())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dynamic(kind: DynamicValueKind) -> ShellVariable {
+        ShellVariable::new(ShellValue::Dynamic {
+            kind,
+            getter: |_| ShellValue::String("7".into()),
+            setter: |_| (),
+        })
+    }
+
+    #[test]
+    fn a_dynamic_array_keeps_its_shape() {
+        let mut var = dynamic(DynamicValueKind::IndexedArray);
+        assert!(var.convert_to_indexed_array(None).is_ok());
+        assert!(matches!(var.value(), ShellValue::Dynamic { .. }));
+        assert!(var.convert_to_associative_array(None).is_err());
+
+        let mut var = dynamic(DynamicValueKind::AssociativeArray);
+        assert!(var.convert_to_associative_array(None).is_ok());
+        assert!(matches!(var.value(), ShellValue::Dynamic { .. }));
+        assert!(var.convert_to_indexed_array(None).is_err());
+    }
+
+    #[test]
+    fn a_dynamic_scalar_becomes_an_array_of_its_value() {
+        let mut var = dynamic(DynamicValueKind::Scalar);
+        let value = ShellValue::String("7".into());
+        assert!(var.convert_to_indexed_array(Some(&value)).is_ok());
+        assert!(
+            matches!(var.value(), ShellValue::IndexedArray(values) if values.get(&0).is_some_and(|v| v == "7"))
+        );
+    }
+
+    #[test]
+    fn an_array_assignment_leaves_a_dynamic_array_live() {
+        let literal = || ShellValueLiteral::Array(ArrayLiteral(vec![(None, "9".into())]));
+
+        let mut var = dynamic(DynamicValueKind::IndexedArray);
+        assert!(var.assign(literal(), false).is_ok());
+        assert!(matches!(var.value(), ShellValue::Dynamic { .. }));
+
+        let mut var = dynamic(DynamicValueKind::Scalar);
+        assert!(var.assign(literal(), false).is_ok());
+        assert!(matches!(var.value(), ShellValue::IndexedArray(_)));
     }
 }

@@ -6,8 +6,8 @@ use brush_core::{
     env::{self, EnvironmentLookup, EnvironmentScope},
     parser::ast,
     variables::{
-        self, ArrayLiteral, ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable,
-        ShellVariableUpdateTransform,
+        self, ArrayLiteral, DynamicValueKind, ShellValue, ShellValueLiteral, ShellValueUnsetType,
+        ShellVariable, ShellVariableUpdateTransform,
     },
 };
 
@@ -335,6 +335,8 @@ impl DeclareCommand {
             }
         }
 
+        let resolved_dynamic_value = self.resolve_scalar_dynamic(context, &name, lookup);
+
         // Look up the variable.
         if let Some(var) = context
             .shell
@@ -342,10 +344,10 @@ impl DeclareCommand {
             .get_mut_using_policy(name.as_str(), lookup)
         {
             if change(&self.make_associative_array).is_some() {
-                var.convert_to_associative_array()?;
+                var.convert_to_associative_array(resolved_dynamic_value.as_ref())?;
             }
             if change(&self.make_indexed_array).is_some() {
-                var.convert_to_indexed_array()?;
+                var.convert_to_indexed_array(resolved_dynamic_value.as_ref())?;
             }
 
             self.apply_attributes_before_update(var)?;
@@ -392,6 +394,32 @@ impl DeclareCommand {
         }
 
         Ok(true)
+    }
+
+    /// Computes the value of a scalar dynamic variable (e.g. `RANDOM`) this declaration makes an
+    /// array, which keeps it; computing it takes the shell, so it's done before the variable is
+    /// borrowed to be changed.
+    fn resolve_scalar_dynamic(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        lookup: EnvironmentLookup,
+    ) -> Option<ShellValue> {
+        if change(&self.make_associative_array).is_none()
+            && change(&self.make_indexed_array).is_none()
+        {
+            return None;
+        }
+
+        let var = context.shell.env().get_using_policy(name, lookup)?;
+        matches!(
+            var.value(),
+            ShellValue::Dynamic {
+                kind: DynamicValueKind::Scalar,
+                ..
+            }
+        )
+        .then(|| var.resolve_value(context.shell))
     }
 
     #[expect(clippy::type_complexity)]
