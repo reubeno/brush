@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins};
 
 /// Unset a shell alias.
@@ -31,12 +30,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnaliasCommand {
         } else {
             for alias in &self.aliases {
                 if context.shell.aliases_mut().remove(alias).is_none() {
-                    writeln!(
-                        context.stderr(),
+                    writeln_async!(
+                        context.stderr_async(),
                         "{}: {}: not found",
                         context.command_name,
                         alias
-                    )?;
+                    )
+                    .await?;
                     exit_code = ExecutionResult::general_error();
                 }
             }

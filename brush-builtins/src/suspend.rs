@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Suspend the shell.
@@ -21,7 +20,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SuspendCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if context.shell.options().login_shell && !self.force {
-            writeln!(context.stderr(), "login shell cannot be suspended")?;
+            writeln_async!(context.stderr_async(), "login shell cannot be suspended").await?;
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 

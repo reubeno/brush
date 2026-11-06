@@ -1,5 +1,5 @@
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins, error, history};
-use std::io::Write;
 
 /// Process command history list.
 #[derive(winnow_args::Args)]
@@ -48,7 +48,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FcCommand {
         }
 
         if self.list {
-            return self.do_list(&context);
+            return self.do_list(&context).await;
         }
 
         error::unimp("fc editor mode is not yet implemented")
@@ -56,7 +56,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FcCommand {
 }
 
 impl FcCommand {
-    fn do_list(
+    async fn do_list(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<ExecutionResult, brush_core::Error> {
@@ -78,10 +78,16 @@ impl FcCommand {
             if let Some(item) = history.get(idx) {
                 if self.no_line_numbers {
                     // With -n, bash still outputs a tab before the command
-                    writeln!(context.stdout(), "\t {}", item.command_line)?;
+                    writeln_async!(context.stdout_async(), "\t {}", item.command_line).await?;
                 } else {
                     // Match bash's fc format: number, tab, command
-                    writeln!(context.stdout(), "{}\t {}", idx + 1, item.command_line)?;
+                    writeln_async!(
+                        context.stdout_async(),
+                        "{}\t {}",
+                        idx + 1,
+                        item.command_line
+                    )
+                    .await?;
                 }
             }
         }
@@ -134,7 +140,7 @@ impl FcCommand {
         };
 
         // Echo the command to stderr.
-        writeln!(context.stderr(), "{final_cmd}")?;
+        writeln_async!(context.stderr_async(), "{final_cmd}").await?;
 
         // Remove the fc command from history before executing the substituted command
         // This matches bash behavior where the fc command is replaced by the executed command

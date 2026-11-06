@@ -3,6 +3,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
 };
+use tokio::io::AsyncWriteExt as _;
 
 /// Query or manipulate the shell's command history.
 // TODO(history): Evaluate which of the options conflict with each other.
@@ -76,14 +77,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HistoryCommand {
             time_format: context.shell.history_time_format(),
         };
 
-        let stdout = context.stdout();
-        let stderr = context.stderr();
-
-        if let Some(history) = context.shell.history_mut() {
-            self.execute_with_history(history, &config, stdout, stderr)
+        // Each way of running writes to standard output or to standard error, not both,
+        // so what's written to each can be gathered and then written.
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let result = if let Some(history) = context.shell.history_mut() {
+            self.execute_with_history(history, &config, &mut stdout, &mut stderr)
         } else {
             Err(brush_core::ErrorKind::HistoryNotEnabled.into())
-        }
+        };
+        context.stdout_async().write_all(&stdout).await?;
+        context.stderr_async().write_all(&stderr).await?;
+        result
     }
 }
 

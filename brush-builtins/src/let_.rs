@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
@@ -28,11 +27,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for LetCommand {
         let mut result = ExecutionResult::success();
 
         if self.exprs.is_empty() {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: expression expected",
                 context.command_name
-            )?;
+            )
+            .await?;
             return Ok(ExecutionResult::general_error());
         }
 

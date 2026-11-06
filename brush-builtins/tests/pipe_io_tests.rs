@@ -91,9 +91,9 @@ fn expect(flavor: Flavor, script: &'static str, expected: &str) -> Result<()> {
 
 /// Defines a test of `script` for each flavor of runtime.
 ///
-/// On a runtime with a single thread, a builtin's read or write that would block
-/// blocks the shell: builtins read and write synchronously, so there's no yielding
-/// to the task at the other end until they do so asynchronously.
+/// On a runtime with a single thread there's no other thread to hand tasks to, so
+/// these pass there only because the builtins involved wait for a pipe by giving way
+/// to the runtime's other tasks.
 macro_rules! on_each_runtime {
     ($name:ident, $script:expr, $expected:expr) => {
         mod $name {
@@ -105,7 +105,6 @@ macro_rules! on_each_runtime {
             }
 
             #[test]
-            #[ignore = "builtins read and write synchronously, so they can't yield on a single thread"]
             fn on_the_current_thread() -> Result<()> {
                 expect(Flavor::CurrentThread, $script, $expected)
             }
@@ -181,6 +180,19 @@ on_each_runtime!(
         "f & wait; read -r result < \"$d/out\"; rm -r \"$d\""
     ),
     "hi"
+);
+
+// A FIFO opened for both reading and writing is a file, not a pipe's end, but it's
+// waited for the same way.
+on_each_runtime!(
+    large_builtin_output_through_a_fifo_open_for_reading_and_writing,
+    concat!(
+        large!(),
+        "d=$(mktemp -d); mkfifo \"$d/p\"\n",
+        "result=$(exec 3<>\"$d/p\"; printf '%s\\n' \"$s\" >&3 & read -r v <&3; echo \"${#v}\")\n",
+        "rm -r \"$d\""
+    ),
+    "2097152"
 );
 
 // What the shell writes itself, rather than a builtin through the async views, blocks

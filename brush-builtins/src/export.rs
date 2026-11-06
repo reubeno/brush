@@ -1,5 +1,5 @@
+use brush_core::{write_async, writeln_async};
 use itertools::Itertools;
-use std::io::Write;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
@@ -48,14 +48,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
         if self.declarations.is_empty() {
             // With `-f`, `-a` selects functions that are indexed arrays: none.
             if !(self.make_indexed_array && self.names_are_functions) {
-                display_all_exported_vars(&context, self.make_indexed_array)?;
+                display_all_exported_vars(&context, self.make_indexed_array).await?;
             }
             return Ok(ExecutionResult::success());
         }
 
         let mut result = ExecutionResult::success();
         for decl in &self.declarations {
-            let current_result = self.process_decl(&mut context, decl)?;
+            let current_result = self.process_decl(&mut context, decl).await?;
             if !current_result.is_success() {
                 result = current_result;
             }
@@ -66,7 +66,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
 }
 
 impl ExportCommand {
-    fn process_decl(
+    async fn process_decl(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         decl: &brush_core::CommandArg,
@@ -84,7 +84,7 @@ impl ExportCommand {
                             func.export();
                         }
                     } else {
-                        writeln!(context.stderr(), "{s}: not a function")?;
+                        writeln_async!(context.stderr_async(), "{s}: not a function").await?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
                 }
@@ -95,13 +95,13 @@ impl ExportCommand {
                         .strip_suffix('+')
                         .map_or((name, false), |name| (name, true));
                     if !env::valid_variable_name(name) {
-                        return Self::invalid_identifier(context, s);
+                        return Self::invalid_identifier(context, s).await;
                     }
 
                     let value = variables::ShellValueLiteral::Scalar(value.to_owned());
-                    return self.assign_and_mark(context, name, value, append);
+                    return self.assign_and_mark(context, name, value, append).await;
                 } else if !env::valid_variable_name(s) {
-                    return Self::invalid_identifier(context, s);
+                    return Self::invalid_identifier(context, s).await;
                 }
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
@@ -128,7 +128,8 @@ impl ExportCommand {
                 let name = match &assignment.name {
                     ast::AssignmentName::VariableName(name) => name,
                     ast::AssignmentName::ArrayElementName(name, index) => {
-                        return Self::invalid_identifier(context, &format!("{name}[{index}]"));
+                        return Self::invalid_identifier(context, &format!("{name}[{index}]"))
+                            .await;
                     }
                 };
 
@@ -145,7 +146,9 @@ impl ExportCommand {
                     }
                 };
 
-                return self.assign_and_mark(context, name, value, assignment.append);
+                return self
+                    .assign_and_mark(context, name, value, assignment.append)
+                    .await;
             }
         }
 
@@ -153,22 +156,23 @@ impl ExportCommand {
     }
 
     /// Reports `word` as an invalid name, as bash does, and returns the failure.
-    fn invalid_identifier(
+    async fn invalid_identifier(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         word: &str,
     ) -> Result<ExecutionResult, brush_core::Error> {
-        writeln!(
-            context.stderr(),
+        writeln_async!(
+            context.stderr_async(),
             "{}: `{word}': not a valid identifier",
             context.command_name
-        )?;
+        )
+        .await?;
         Ok(ExecutionResult::general_error())
     }
 
     /// Assigns `value` to `name`, appending to it for `name+=value`, and marks
     /// the variable exported (or not, for `-n`). With `-a`, the variable is first
     /// converted to an indexed array, as `declare -a` does.
-    fn assign_and_mark(
+    async fn assign_and_mark(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: &str,
@@ -215,14 +219,14 @@ impl ExportCommand {
         };
         // Bash names the builtin only when the `-a` conversion is what failed.
         if self.make_indexed_array {
-            write!(context.stderr(), "{}: ", context.command_name)?;
+            write_async!(context.stderr_async(), "{}: ", context.command_name).await?;
         }
-        writeln!(context.stderr(), "{name}: {message}")?;
+        writeln_async!(context.stderr_async(), "{name}: {message}").await?;
         Ok(ExecutionResult::general_error())
     }
 }
 
-fn display_all_exported_vars(
+async fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     indexed_arrays_only: bool,
 ) -> Result<(), brush_core::Error> {
@@ -242,11 +246,12 @@ fn display_all_exported_vars(
         } else {
             "="
         };
-        writeln!(
-            context.stdout(),
+        writeln_async!(
+            context.stdout_async(),
             "declare -{flags} {name}{separator}{}",
             value.format(variables::FormatStyle::DeclarePrint, context.shell)?
-        )?;
+        )
+        .await?;
     }
 
     Ok(())

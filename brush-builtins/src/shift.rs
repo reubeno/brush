@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Shift positional arguments.
@@ -23,11 +22,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShiftCommand {
         let n = self.n.unwrap_or(1);
 
         if n < 0 {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: {n}: shift count out of range",
                 context.command_name
-            )?;
+            )
+            .await?;
             return Ok(ExecutionResult::general_error());
         }
 
