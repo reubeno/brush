@@ -11,7 +11,7 @@ pub(crate) struct UnaliasCommand {
     remove_all: bool,
 
     /// Names of aliases to operate on.
-    #[arg(positional)]
+    #[arg(positional, required_unless("-a"))]
     aliases: Vec<String>,
 }
 
