@@ -597,8 +597,7 @@ pub fn parse_brace_expansions(
 
 /// Parses a scalar assignment from a given word.
 ///
-/// A parenthesized value is treated as scalar text; see
-/// [`parse_compound_assignment_value`] for reinterpreting such a value as a compound one.
+/// A parenthesized value is treated as scalar text.
 ///
 /// # Arguments
 ///
@@ -623,7 +622,11 @@ pub fn parse_scalar_assignment(
 /// * `value` - The candidate compound value text, including its enclosing parentheses.
 /// * `options` - The parser options to use.
 #[must_use]
-pub fn parse_compound_assignment_value(
+#[allow(
+    dead_code,
+    reason = "kept for upcoming callers; crate-private until its error handling is settled"
+)]
+pub(crate) fn parse_compound_assignment_value(
     value: &str,
     options: &ParserOptions,
 ) -> Option<Vec<(Option<ast::Word>, ast::Word)>> {
