@@ -14,30 +14,58 @@
 //! retries on `EINTR`.
 
 use std::io::{self, Read as _, Write as _};
-use std::os::fd::{AsFd as _, BorrowedFd};
+use std::os::fd::{AsFd as _, BorrowedFd, OwnedFd};
+use std::task::{Context, Poll, ready};
+
+use tokio::io::Interest;
+use tokio::io::unix::AsyncFd;
 
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 
 /// Reads from `reader` into `buf`, as [`std::io::Read::read`] does.
 pub(crate) fn read(reader: &std::io::PipeReader, buf: &mut [u8]) -> io::Result<usize> {
-    match try_read(reader.as_fd(), buf)? {
-        Some(count) => Ok(count),
-        None => without_holding_up_the_runtime(|| { reader }.read(buf)),
-    }
+    read_fd(reader.as_fd(), buf)
 }
 
 /// Writes `buf` to `writer`, as [`std::io::Write::write`] does.
 pub(crate) fn write(writer: &std::io::PipeWriter, buf: &[u8]) -> io::Result<usize> {
-    match try_write(writer.as_fd(), buf)? {
+    write_fd(writer.as_fd(), buf)
+}
+
+/// Reads from a FIFO open for reading and writing into `buf`, as [`read`] does.
+pub(crate) fn read_fifo(fifo: &std::fs::File, buf: &mut [u8]) -> io::Result<usize> {
+    read_fd(fifo.as_fd(), buf)
+}
+
+/// Writes `buf` to a FIFO open for reading and writing, as [`write`] does.
+pub(crate) fn write_fifo(fifo: &std::fs::File, buf: &[u8]) -> io::Result<usize> {
+    let fd = fifo.as_fd();
+    match try_write_fifo(fd, buf)? {
         Some(count) => Ok(count),
-        None => without_holding_up_the_runtime(|| { writer }.write(buf)),
+        None => without_holding_up_the_runtime(|| Ok(rustix::io::write(fd, buf)?)),
+    }
+}
+
+/// [`read`], on a pipe's (or FIFO's) descriptor.
+fn read_fd(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<usize> {
+    match try_read(fd, buf)? {
+        Some(count) => Ok(count),
+        None => without_holding_up_the_runtime(|| Ok(rustix::io::read(fd, buf)?)),
+    }
+}
+
+/// [`write`], on a pipe's (or FIFO's) descriptor.
+fn write_fd(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<usize> {
+    match try_write(fd, buf)? {
+        Some(count) => Ok(count),
+        None => without_holding_up_the_runtime(|| Ok(rustix::io::write(fd, buf)?)),
     }
 }
 
 /// Opens `path` as a redirection target. Opening a FIFO waits for its other end, which
-/// may be one of the shell's own tasks, so that open doesn't hold up the runtime. A
-/// FIFO opened for only reading or only writing comes back as a pipe's end, so that
-/// reads and writes on it don't either.
+/// may be one of the shell's own tasks, so that open doesn't hold up the runtime. A FIFO
+/// comes back as [`OpenFile::Fifo`](crate::openfiles::OpenFile::Fifo), whose reads and
+/// writes don't either.
 pub(crate) fn open_file(
     options: &std::fs::OpenOptions,
     path: &std::path::Path,
@@ -45,16 +73,25 @@ pub(crate) fn open_file(
     if !is_fifo(path) {
         return Ok(options.open(path)?.into());
     }
+    Ok(fifo_end(without_holding_up_the_runtime(|| {
+        options.open(path)
+    })?))
+}
 
-    let file = without_holding_up_the_runtime(|| options.open(path))?;
-    let mode = rustix::fs::fcntl_getfl(&file)? & rustix::fs::OFlags::RWMODE;
-    Ok(if mode == rustix::fs::OFlags::RDONLY {
-        std::io::PipeReader::from(std::os::fd::OwnedFd::from(file)).into()
-    } else if mode == rustix::fs::OFlags::WRONLY {
-        std::io::PipeWriter::from(std::os::fd::OwnedFd::from(file)).into()
-    } else {
-        file.into()
-    })
+/// [`open_file`] for an async caller: a FIFO is opened on a thread of its own, which
+/// the caller awaits, so the open holds up no task but the caller's, on any runtime.
+pub(crate) async fn open_file_async(
+    options: &std::fs::OpenOptions,
+    path: &std::path::Path,
+) -> io::Result<crate::openfiles::OpenFile> {
+    if !is_fifo(path) {
+        return Ok(options.open(path)?.into());
+    }
+    let (options, path) = (options.clone(), path.to_owned());
+    let file = tokio::task::spawn_blocking(move || options.open(path))
+        .await
+        .map_err(io::Error::other)??;
+    Ok(fifo_end(file))
 }
 
 /// Returns whether `path` names a FIFO.
@@ -64,9 +101,274 @@ pub(crate) fn is_fifo(path: &std::path::Path) -> bool {
     std::fs::metadata(path).is_ok_and(|m| m.file_type().is_fifo())
 }
 
+/// Returns a FIFO opened by its path as [`OpenFile::Fifo`](crate::openfiles::OpenFile::Fifo).
+fn fifo_end(file: std::fs::File) -> crate::openfiles::OpenFile {
+    crate::openfiles::OpenFile::Fifo(std::sync::Arc::new(file))
+}
+
+/// Reads and writes on an [`OpenFile`](crate::openfiles::OpenFile) that wait, when a
+/// pipe isn't ready, by giving way to the runtime's other tasks rather than blocking.
+///
+/// On a pipe's end, or a FIFO, a read or write that can go through right away does so,
+/// as with [`read`] and [`write`]. One that would block returns [`Poll::Pending`] until
+/// it can go through:
+///
+/// - On a pipe's end, the pipe is registered with the runtime, which says when it's
+///   ready. Only then is the descriptor duplicated: the registration needs one of its
+///   own.
+/// - On a FIFO, the read or write is done on the runtime's blocking pool, through a
+///   duplicate of the descriptor, and awaited. A FIFO's readiness can't be relied on:
+///   on macOS, one whose writers are all gone reports nothing at all, to `poll` or to
+///   kqueue, though a read returns the end of the input right away; and a full one may
+///   poll writable. So a FIFO write is only tried without blocking where the kernel can
+///   be told not to block.
+///
+/// Other files are read and written synchronously, as they are elsewhere. A task that
+/// runs on a thread of its own (see
+/// [`tasks::on_a_thread_of_its_own`](crate::tasks::on_a_thread_of_its_own)) blocks that
+/// thread instead, as [`read`] and [`write`] do.
+///
+/// Waiting needs the runtime's I/O driver, as the rest of the shell does.
+#[derive(Default)]
+pub(crate) struct AsyncIo {
+    registration: Registration,
+    /// A FIFO read or write that's under way on the blocking pool.
+    in_flight: Option<InFlight>,
+}
+
+/// Where an [`AsyncIo`] stands with registering its descriptor with the runtime.
+#[derive(Default)]
+enum Registration {
+    /// Not tried yet: nothing has had to wait.
+    #[default]
+    None,
+    /// Registered.
+    Registered(AsyncFd<OwnedFd>),
+    /// The runtime wouldn't take it, so reads and writes that would block, block.
+    Refused,
+}
+
+/// A FIFO read or write under way on the blocking pool.
+enum InFlight {
+    /// A read, yielding what it read.
+    Read(tokio::task::JoinHandle<io::Result<Vec<u8>>>),
+    /// A write, yielding how much it wrote.
+    Write(tokio::task::JoinHandle<io::Result<usize>>),
+}
+
+/// The most a FIFO write on the blocking pool copies of what it's given to write.
+const MAX_FIFO_WRITE: usize = 64 * 1024;
+
+impl AsyncIo {
+    /// Reads from `file` into `buf`.
+    pub(crate) fn poll_read(
+        &mut self,
+        cx: &mut Context<'_>,
+        file: &mut crate::openfiles::OpenFile,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let Some((fd, wait)) = pipe_fd(file, Direction::Read) else {
+            return Poll::Ready(file.read(buf));
+        };
+        loop {
+            match self.in_flight.take() {
+                Some(InFlight::Read(mut read)) => {
+                    let Poll::Ready(joined) = std::pin::Pin::new(&mut read).poll(cx) else {
+                        self.in_flight = Some(InFlight::Read(read));
+                        return Poll::Pending;
+                    };
+                    let data = joined.map_err(io::Error::other)??;
+                    let count = data.len().min(buf.len());
+                    buf[..count].copy_from_slice(&data[..count]);
+                    return Poll::Ready(Ok(count));
+                }
+                // A write given up on: let it finish before reading.
+                Some(InFlight::Write(mut write)) => {
+                    if std::pin::Pin::new(&mut write).poll(cx).is_pending() {
+                        self.in_flight = Some(InFlight::Write(write));
+                        return Poll::Pending;
+                    }
+                }
+                None => (),
+            }
+            if let Some(count) = try_read(fd, buf)? {
+                return Poll::Ready(Ok(count));
+            }
+            if !can_wait() {
+                return Poll::Ready(read_fd(fd, buf));
+            }
+            match wait {
+                Wait::Readiness(interest) => {
+                    let Some(registration) = self.registration(fd, interest)? else {
+                        return Poll::Ready(read_fd(fd, buf));
+                    };
+                    ready!(registration.poll_read_ready(cx))?.clear_ready();
+                }
+                Wait::BlockingPool => {
+                    let owned = fd.try_clone_to_owned()?;
+                    let len = buf.len();
+                    self.in_flight = Some(InFlight::Read(tokio::task::spawn_blocking(move || {
+                        let mut data = vec![0; len];
+                        let count = retrying_interrupts(|| rustix::io::read(&owned, &mut data))?;
+                        data.truncate(count);
+                        Ok(data)
+                    })));
+                }
+            }
+        }
+    }
+
+    /// Writes `buf` to `file`.
+    pub(crate) fn poll_write(
+        &mut self,
+        cx: &mut Context<'_>,
+        file: &mut crate::openfiles::OpenFile,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let Some((fd, wait)) = pipe_fd(file, Direction::Write) else {
+            return Poll::Ready(file.write(buf));
+        };
+        loop {
+            match self.in_flight.take() {
+                // Called again with the same data, as `AsyncWrite` asks after `Pending`.
+                Some(InFlight::Write(mut write)) => {
+                    let Poll::Ready(joined) = std::pin::Pin::new(&mut write).poll(cx) else {
+                        self.in_flight = Some(InFlight::Write(write));
+                        return Poll::Pending;
+                    };
+                    return Poll::Ready(joined.map_err(io::Error::other)?);
+                }
+                // A read given up on: let it finish before writing. What it read is lost,
+                // as it would be had the read been cancelled any other way.
+                Some(InFlight::Read(mut read)) => {
+                    if std::pin::Pin::new(&mut read).poll(cx).is_pending() {
+                        self.in_flight = Some(InFlight::Read(read));
+                        return Poll::Pending;
+                    }
+                }
+                None => (),
+            }
+            let tried = match wait {
+                Wait::Readiness(_) => try_write(fd, buf)?,
+                Wait::BlockingPool => try_write_fifo(fd, buf)?,
+            };
+            if let Some(count) = tried {
+                return Poll::Ready(Ok(count));
+            }
+            if !can_wait() {
+                return Poll::Ready(without_holding_up_the_runtime(|| {
+                    Ok(rustix::io::write(fd, buf)?)
+                }));
+            }
+            match wait {
+                Wait::Readiness(interest) => {
+                    let Some(registration) = self.registration(fd, interest)? else {
+                        return Poll::Ready(write_fd(fd, buf));
+                    };
+                    ready!(registration.poll_write_ready(cx))?.clear_ready();
+                }
+                Wait::BlockingPool => {
+                    let owned = fd.try_clone_to_owned()?;
+                    let data = buf[..buf.len().min(MAX_FIFO_WRITE)].to_vec();
+                    self.in_flight =
+                        Some(InFlight::Write(tokio::task::spawn_blocking(move || {
+                            Ok(retrying_interrupts(|| rustix::io::write(&owned, &data))?)
+                        })));
+                }
+            }
+        }
+    }
+
+    /// Returns the pipe's registration with the runtime, registering it first if need
+    /// be, or `None` if it can't be registered. A registration the runtime refused
+    /// isn't tried again.
+    fn registration(
+        &mut self,
+        fd: BorrowedFd<'_>,
+        interest: Interest,
+    ) -> io::Result<Option<&AsyncFd<OwnedFd>>> {
+        if matches!(self.registration, Registration::None) {
+            let owned = fd.try_clone_to_owned()?;
+            // SAFETY: `owned` is a descriptor of the registration's own, open until the
+            // registration drops it, and an `OwnedFd` always returns the same one.
+            self.registration = match unsafe { AsyncFd::register_with_interest(owned, interest) } {
+                Ok(registration) => Registration::Registered(registration),
+                Err(_) => Registration::Refused,
+            };
+        }
+        Ok(match &self.registration {
+            Registration::Registered(registration) => Some(registration),
+            Registration::None | Registration::Refused => None,
+        })
+    }
+}
+
+/// Returns whether the current task can wait through the runtime, rather than block: it
+/// runs on one, and not on a thread of its own.
+fn can_wait() -> bool {
+    !crate::tasks::runs_on_a_thread_of_its_own() && tokio::runtime::Handle::try_current().is_ok()
+}
+
+/// Runs `op` until it isn't interrupted by a signal.
+fn retrying_interrupts(
+    mut op: impl FnMut() -> rustix::io::Result<usize>,
+) -> rustix::io::Result<usize> {
+    loop {
+        match op() {
+            Err(rustix::io::Errno::INTR) => (),
+            other => return other,
+        }
+    }
+}
+
+/// Which way an [`AsyncIo`] read or write goes.
+#[derive(Clone, Copy)]
+enum Direction {
+    Read,
+    Write,
+}
+
+/// How an [`AsyncIo`] read or write that would block waits.
+#[derive(Clone, Copy)]
+enum Wait {
+    /// For the runtime to say the descriptor is ready for this.
+    Readiness(Interest),
+    /// On the blocking pool.
+    BlockingPool,
+}
+
+/// Returns `file`'s descriptor if it's a pipe's end or a FIFO, which are waited for, with
+/// how to wait for it. A read from a pipe's write end, or a write to its read end, isn't
+/// waited for: it fails right away, as through the
+/// [`OpenFile`](crate::openfiles::OpenFile) itself. (On a FIFO, the read or write
+/// itself fails right away.)
+///
+/// A pipe's end is registered for its own direction only: some kernels refuse to watch
+/// one for the other.
+fn pipe_fd(
+    file: &crate::openfiles::OpenFile,
+    direction: Direction,
+) -> Option<(BorrowedFd<'_>, Wait)> {
+    use crate::openfiles::OpenFile;
+
+    match (file, direction) {
+        (OpenFile::PipeReader(reader), Direction::Read) => {
+            Some((reader.as_fd(), Wait::Readiness(Interest::READABLE)))
+        }
+        (OpenFile::PipeWriter(writer), Direction::Write) => {
+            Some((writer.as_fd(), Wait::Readiness(Interest::WRITABLE)))
+        }
+        (OpenFile::Fifo(fifo), _) => Some((fifo.as_fd(), Wait::BlockingPool)),
+        _ => None,
+    }
+}
+
 /// Runs `f`, which may block, so that the runtime's other tasks can still run: on a
 /// runtime with several workers, this one hands its tasks to another thread first. On
 /// a runtime with a single thread there's nowhere to hand them to, so `f` just runs.
+///
+/// This uses [`tokio::task::block_in_place`], which is only called on a multi-threaded
+/// runtime, and which panics if the task can't hand its work to another worker thread.
 pub(crate) fn without_holding_up_the_runtime<R>(f: impl FnOnce() -> R) -> R {
     match tokio::runtime::Handle::try_current() {
         Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
@@ -79,7 +381,7 @@ pub(crate) fn without_holding_up_the_runtime<R>(f: impl FnOnce() -> R) -> R {
 /// Reads what's there to read without blocking, or returns `None` if the read would block.
 fn try_read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<Option<usize>> {
     #[cfg(target_os = "linux")]
-    if let Some(result) = nowait::attempt(|| {
+    if let Some(result) = nowait::attempt(&nowait::PIPES, || {
         let bufs = &mut [io::IoSliceMut::new(&mut *buf)];
         rustix::io::preadv2(fd, bufs, nowait::CURRENT_OFFSET, nowait::FLAGS)
     }) {
@@ -92,7 +394,7 @@ fn try_read(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<Option<usize>> {
 /// Writes what fits without blocking, or returns `None` if the write would block.
 fn try_write(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<Option<usize>> {
     #[cfg(target_os = "linux")]
-    if let Some(result) = nowait::attempt(|| {
+    if let Some(result) = nowait::attempt(&nowait::PIPES, || {
         let bufs = &[io::IoSlice::new(buf)];
         rustix::io::pwritev2(fd, bufs, nowait::CURRENT_OFFSET, nowait::FLAGS)
     }) {
@@ -100,6 +402,30 @@ fn try_write(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<Option<usize>> {
     }
 
     try_write_ready(fd, buf)
+}
+
+/// [`try_write`] for a FIFO: only where the kernel can be told not to block. A FIFO that
+/// polls writable may not take `PIPE_BUF` bytes without blocking, as a pipe would: on
+/// macOS, a full one polls writable with less room than that.
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        clippy::missing_const_for_fn,
+        clippy::unnecessary_wraps,
+        reason = "only Linux can tell a write not to block"
+    )
+)]
+fn try_write_fifo(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<Option<usize>> {
+    #[cfg(target_os = "linux")]
+    if let Some(result) = nowait::attempt(&nowait::FIFOS, || {
+        let bufs = &[io::IoSlice::new(buf)];
+        rustix::io::pwritev2(fd, bufs, nowait::CURRENT_OFFSET, nowait::FLAGS)
+    }) {
+        return result;
+    }
+
+    let _ = (fd, buf);
+    Ok(None)
 }
 
 /// [`try_read`] for when a read can't be told not to block: reads only what `FIONREAD`
@@ -114,7 +440,11 @@ fn try_read_ready(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<Option<usize
     } else {
         return Ok(None);
     };
-    Ok(Some(rustix::io::read(fd, &mut buf[..count])?))
+    // Another reader (a child sharing the pipe) may have taken what was there since the
+    // check, in which case this read blocks: let the runtime's other tasks go on meanwhile.
+    Ok(Some(without_holding_up_the_runtime(|| {
+        rustix::io::read(fd, &mut buf[..count])
+    })?))
 }
 
 /// [`try_write`] for when a write can't be told not to block: a pipe that polls
@@ -123,7 +453,11 @@ fn try_read_ready(fd: BorrowedFd<'_>, buf: &mut [u8]) -> io::Result<Option<usize
 fn try_write_ready(fd: BorrowedFd<'_>, buf: &[u8]) -> io::Result<Option<usize>> {
     if polls(fd, PollFlags::POLLOUT)? {
         let count = buf.len().min(libc::PIPE_BUF);
-        Ok(Some(rustix::io::write(fd, &buf[..count])?))
+        // Another writer (a child sharing the pipe) may have filled it since the check, in
+        // which case this write blocks: let the runtime's other tasks go on meanwhile.
+        Ok(Some(without_holding_up_the_runtime(|| {
+            rustix::io::write(fd, &buf[..count])
+        })?))
     } else {
         Ok(None)
     }
@@ -148,15 +482,21 @@ mod nowait {
     pub(super) const CURRENT_OFFSET: u64 = u64::MAX;
     pub(super) const FLAGS: ReadWriteFlags = ReadWriteFlags::NOWAIT;
 
-    /// Cleared once the kernel turns out not to take `RWF_NOWAIT` on pipes.
-    static SUPPORTED: AtomicBool = AtomicBool::new(true);
+    /// Cleared once the kernel turns out not to take `RWF_NOWAIT` on anonymous pipes.
+    pub(super) static PIPES: AtomicBool = AtomicBool::new(true);
+
+    /// Cleared once the kernel turns out not to take `RWF_NOWAIT` on FIFOs. Kept apart
+    /// from [`PIPES`]: a kernel may take it on one and refuse it on the other (Linux
+    /// 7.0 does), and a refusal on a FIFO must not slow every pipe down.
+    pub(super) static FIFOS: AtomicBool = AtomicBool::new(true);
 
     /// Runs `op`, returning how much it read or wrote, `None` inside if it would have
     /// blocked, or `None` if the kernel can't tell it not to block.
     pub(super) fn attempt(
+        supported: &AtomicBool,
         op: impl FnOnce() -> rustix::io::Result<usize>,
     ) -> Option<std::io::Result<Option<usize>>> {
-        if !SUPPORTED.load(Ordering::Relaxed) {
+        if !supported.load(Ordering::Relaxed) {
             return None;
         }
         match op() {
@@ -165,7 +505,7 @@ mod nowait {
             // An older kernel, one without `RWF_NOWAIT` for pipes, or a seccomp filter
             // that turns the call away.
             Err(Errno::OPNOTSUPP | Errno::INVAL | Errno::NOSYS | Errno::PERM) => {
-                SUPPORTED.store(false, Ordering::Relaxed);
+                supported.store(false, Ordering::Relaxed);
                 None
             }
             Err(e) => Some(Err(e.into())),
@@ -274,10 +614,9 @@ mod tests {
         Ok(())
     }
 
-    /// A FIFO opened for only reading or only writing comes back as a pipe's end;
-    /// one opened for both, and anything that isn't a FIFO, as a file.
+    /// A FIFO, opened however, comes back as a FIFO, and anything else as a file.
     #[test]
-    fn a_fifo_opens_as_a_pipe_end() -> io::Result<()> {
+    fn a_fifo_opens_as_a_fifo() -> io::Result<()> {
         use crate::openfiles::OpenFile;
 
         let dir = tempfile::tempdir()?;
@@ -294,10 +633,31 @@ mod tests {
         let w = open_file(std::fs::OpenOptions::new().write(true), &fifo)?;
         let file = open_file(std::fs::OpenOptions::new().read(true), &regular)?;
 
-        assert!(matches!(rw, OpenFile::File(_)));
-        assert!(matches!(r, OpenFile::PipeReader(_)));
-        assert!(matches!(w, OpenFile::PipeWriter(_)));
+        for opened in [rw, r, w] {
+            assert!(matches!(opened, OpenFile::Fifo(_)));
+        }
         assert!(matches!(file, OpenFile::File(_)));
+        Ok(())
+    }
+
+    /// A kernel that won't take a non-blocking write on a FIFO says nothing about pipes.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_refusal_on_a_fifo_leaves_pipes_alone() -> io::Result<()> {
+        use std::sync::atomic::Ordering;
+
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("p");
+        nix::unistd::mkfifo(&path, nix::sys::stat::Mode::S_IRWXU)?;
+        let fifo = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)?;
+
+        let pipes_before = nowait::PIPES.load(Ordering::Relaxed);
+        // Whether the kernel takes it or not, only the FIFOs' flag may change.
+        let _ = try_write_fifo(fifo.as_fd(), b"x")?;
+        assert_eq!(nowait::PIPES.load(Ordering::Relaxed), pipes_before);
         Ok(())
     }
 

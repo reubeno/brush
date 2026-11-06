@@ -240,15 +240,43 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         path: impl AsRef<Path>,
         params: &ExecutionParameters,
     ) -> Result<openfiles::OpenFile, std::io::Error> {
+        match self.resolve_file_to_open(path.as_ref(), params) {
+            ResolvedFile::Open(result) => result,
+            ResolvedFile::Path(path) => crate::sys::pipe_io::open_file(options, &path),
+        }
+    }
+
+    /// [`Self::open_file`], for a redirection or other async caller: opening a FIFO, which
+    /// waits for its other end, holds up no task but the caller's.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - The options to use opening the file.
+    /// * `path` - The path to the file to open; may be relative to the shell's working directory.
+    /// * `params` - Execution parameters.
+    pub(crate) async fn open_file_async(
+        &self,
+        options: &std::fs::OpenOptions,
+        path: impl AsRef<Path>,
+        params: &ExecutionParameters,
+    ) -> Result<openfiles::OpenFile, std::io::Error> {
+        match self.resolve_file_to_open(path.as_ref(), params) {
+            ResolvedFile::Open(result) => result,
+            ResolvedFile::Path(path) => crate::sys::pipe_io::open_file_async(options, &path).await,
+        }
+    }
+
+    /// Resolves `path` to a file the shell already has open, or to the path to open.
+    fn resolve_file_to_open(&self, path: &Path, params: &ExecutionParameters) -> ResolvedFile {
         // Give platform-specific code a chance to handle special files
         // (e.g. /dev/null on Windows, which needs to open NUL instead).
         // This is checked before absolute_path so that paths like /dev/null
         // are intercepted on platforms where they aren't valid native paths.
-        if let Some(result) = crate::sys::fs::try_open_special_file(path.as_ref()) {
-            return result.map(openfiles::OpenFile::from);
+        if let Some(result) = crate::sys::fs::try_open_special_file(path) {
+            return ResolvedFile::Open(result.map(openfiles::OpenFile::from));
         }
 
-        let path_to_open = self.absolute_path(path.as_ref());
+        let path_to_open = self.absolute_path(path);
 
         // See if this is a reference to a file descriptor. These paths should
         // reflect the shell's current execution fds, which can differ from the
@@ -256,10 +284,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         if let Some(fd_num) = shell_fd_path_to_fd(&path_to_open)
             && let Some(open_file) = params.try_fd(self, fd_num)
         {
-            return Ok(open_file);
+            return ResolvedFile::Open(Ok(open_file));
         }
 
-        crate::sys::pipe_io::open_file(options, &path_to_open)
+        ResolvedFile::Path(path_to_open)
     }
 
     /// Replaces the shell's currently configured open files with the given set.
@@ -278,6 +306,14 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     pub(crate) const fn persistent_open_files(&self) -> &openfiles::OpenFiles {
         &self.open_files
     }
+}
+
+/// What [`Shell::resolve_file_to_open`] resolves a path to.
+enum ResolvedFile {
+    /// A file already open, or the error opening a special file.
+    Open(Result<openfiles::OpenFile, std::io::Error>),
+    /// The path to open.
+    Path(std::path::PathBuf),
 }
 
 pub(super) fn shell_fd_path_to_fd(path: &Path) -> Option<ShellFd> {
