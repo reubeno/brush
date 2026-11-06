@@ -31,8 +31,22 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if let Some(mode) = &self.mode {
-            if mode.starts_with(|c: char| c.is_digit(8)) {
-                let parsed = brush_core::int_utils::parse(mode.as_str(), 8)?;
+            if mode.starts_with(|c: char| c.is_ascii_digit()) {
+                // Like bash, take any mode that starts with a digit as octal, and refuse
+                // one with a digit that isn't octal or a value past 07777.
+                let parsed = brush_core::int_utils::parse::<nix::sys::stat::mode_t>(mode, 8)
+                    .ok()
+                    .filter(|value| *value <= 0o7777);
+
+                let Some(parsed) = parsed else {
+                    writeln!(
+                        context.stderr(),
+                        "{}: {mode}: octal number out of range",
+                        context.command_name
+                    )?;
+                    return Ok(ExecutionResult::general_error());
+                };
+
                 set_umask(parsed)?;
             } else {
                 return brush_core::error::unimp("umask setting mode from symbolic value");

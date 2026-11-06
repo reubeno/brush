@@ -1,11 +1,25 @@
 name: "Builtins: umask"
 cases:
   - name: "umask with an out-of-range mode fails with status 1"
-    known_failure: true # TODO(umask): fails as unimplemented (99) or with status 2, where bash fails with 1
     ignore_stderr: true
     stdin: |
       umask 999
       echo "umask: $?"
+
+  - name: "umask refuses a mode that isn't octal or is past 07777, and keeps the old mask"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      umask 022
+      for mode in 8 0778 9a 010000; do
+        umask "$mode" 2>err.txt; echo "$mode: $?"
+        strip <err.txt
+      done
+      umask
+      umask 07777; echo "07777: $?"
+      umask
+      umask 1000; echo "1000: $?"
+      umask
+      rm err.txt
 
   - name: "umask in a subshell stays there"
     known_failure: true # TODO(umask): a subshell runs in the shell's own process, so its umask is the shell's
