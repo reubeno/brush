@@ -863,6 +863,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         } else {
             brush_parser::word::parse(word, &self.parser_options)?
         };
+        let pieces = self.expand_tilde_prefixes(word, pieces)?;
 
         let mut expansions = Vec::with_capacity(pieces.len());
         for piece in pieces {
@@ -1072,7 +1073,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
             }
             brush_parser::word::WordPiece::TildeExpansion(tilde_expr) => {
                 Expansion::from(ExpansionPiece::Unsplittable(
-                    self.expand_tilde_expression(&tilde_expr)?.to_string(),
+                    self.expand_tilde_expression(&tilde_expr, None)?.to_string(),
                 ))
             }
             brush_parser::word::WordPiece::ParameterExpansion(p) => {
@@ -1150,10 +1151,39 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         Ok(expansion)
     }
 
+    /// Expands the tilde-prefixes among a word's pieces while the word's source
+    /// text is at hand, so a tilde-prefix that doesn't expand is left exactly as
+    /// written (e.g. `~01` stays `~01`). The result isn't subject to field splitting
+    /// or pathname expansion, so it's stored as quoted text.
+    fn expand_tilde_prefixes(
+        &self,
+        word: &str,
+        mut pieces: Vec<brush_parser::word::WordPieceWithSource>,
+    ) -> Result<Vec<brush_parser::word::WordPieceWithSource>, error::Error> {
+        for piece in &mut pieces {
+            if let brush_parser::word::WordPiece::TildeExpansion(tilde_expr) = &piece.piece {
+                let unexpanded = word.get(piece.start_index..piece.end_index);
+                let expanded = self
+                    .expand_tilde_expression(tilde_expr, unexpanded)?
+                    .into_owned();
+                piece.piece = brush_parser::word::WordPiece::SingleQuotedText(expanded);
+            }
+        }
+
+        Ok(pieces)
+    }
+
+    /// Expands a tilde expression. When the expression can't be expanded, it's
+    /// left as is: `unexpanded` is the source text of the tilde-prefix, if known;
+    /// otherwise the text is rebuilt from the parsed expression.
     fn expand_tilde_expression(
         &self,
         tilde_expr: &brush_parser::word::TildeExpr,
+        unexpanded: Option<&str>,
     ) -> Result<Cow<'_, str>, error::Error> {
+        let leave_unexpanded =
+            |rebuilt: String| Cow::Owned(unexpanded.map_or(rebuilt, str::to_owned));
+
         match tilde_expr {
             brush_parser::word::TildeExpr::Home => {
                 if let Some(home_dir) = self.shell.home_dir() {
@@ -1190,7 +1220,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 } else if *n == dir_stack_count {
                     Ok(self.shell.working_dir().to_string_lossy())
                 } else {
-                    Ok(Cow::Owned(std::format!("~-{n}")))
+                    Ok(leave_unexpanded(std::format!("~-{n}")))
                 }
             }
             brush_parser::word::TildeExpr::NthDirFromTopOfDirStack { n, plus_used } => {
@@ -1206,7 +1236,7 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 }
 
                 let plus_or_nothing = if *plus_used { "+" } else { "" };
-                Ok(Cow::Owned(std::format!("~{plus_or_nothing}{n}")))
+                Ok(leave_unexpanded(std::format!("~{plus_or_nothing}{n}")))
             }
         }
     }
