@@ -133,7 +133,7 @@ brush-core = { version = "^0.5.0", path = "../brush-core" }
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }
 cfg-if = "1.0.4"
 chrono = "0.4.44"
-fancy-regex = "0.19.0"
+fancy-regex = "0.20.0"
 itertools = "0.15.0"
 strum = "0.28.0"
 thiserror = "2.0.18"
