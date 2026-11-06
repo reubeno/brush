@@ -121,9 +121,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let mut options = std::fs::File::options();
         options.read(true);
 
-        let opened_file: openfiles::OpenFile = self
-            .open_file(&options, path, params)
-            .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
+        let opened_file: openfiles::OpenFile =
+            self.open_file_async(&options, path, params)
+                .await
+                .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
 
         if opened_file.is_dir() {
             return Err(error::ErrorKind::FailedSourcingFile(
