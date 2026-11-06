@@ -59,11 +59,20 @@ cases:
       ulimit -m unlimited
 
   - name: "ulimit with an invalid number fails with status 1"
-    known_failure: true # TODO(ulimit): fails with status 2, where bash fails with 1
     ignore_stderr: true
     stdin: |
       ulimit -n abc
       echo "ulimit: $?"
+
+  - name: "ulimit reports an invalid number and leaves the limit alone"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      before=$(ulimit -S -n)
+      ulimit -S -n 12abc 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      ulimit -S -n 1+1 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      ulimit abc 2>&1 | strip; echo "rc=${PIPESTATUS[0]}"
+      [[ $(ulimit -S -n) == "$before" ]] && echo "kept"
+      ulimit -S -n 500 abc; echo "rc=$?"; ulimit -S -n
 
   - name: "ulimit in a subshell stays there"
     known_failure: true # TODO(ulimit): a subshell runs in the shell's own process, so its limits are the shell's
