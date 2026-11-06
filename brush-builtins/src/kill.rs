@@ -78,6 +78,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
             }
         }
 
+        // With -l, the remaining args are signals (or exit statuses) to look up.
+        if self.list_signals {
+            return print_signals(&context, self.args.as_ref());
+        }
+
         // Look through the remaining args for a pid/job spec or a -sigspec style option.
         let mut pid_or_job_spec = None;
         for arg in &self.args {
@@ -110,40 +115,36 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
             }
         }
 
-        if self.list_signals {
-            return print_signals(&context, self.args.as_ref());
-        } else {
-            let Some(pid_or_job_spec) = pid_or_job_spec else {
-                writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
-                return Ok(ExecutionExitCode::InvalidUsage.into());
-            };
+        let Some(pid_or_job_spec) = pid_or_job_spec else {
+            writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        };
 
-            if pid_or_job_spec.starts_with('%') {
-                // It's a job spec.
-                if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
-                    if signal_zero {
-                        job.check_signalable()?;
-                    } else {
-                        job.kill(trap_signal)?;
-                    }
+        if pid_or_job_spec.starts_with('%') {
+            // It's a job spec.
+            if let Some(job) = context.shell.jobs_mut().resolve_job_spec(pid_or_job_spec) {
+                if signal_zero {
+                    job.check_signalable()?;
                 } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {}: no such job",
-                        context.command_name,
-                        pid_or_job_spec
-                    )?;
-                    return Ok(ExecutionResult::general_error());
+                    job.kill(trap_signal)?;
                 }
             } else {
-                let pid = brush_core::int_utils::parse(pid_or_job_spec.as_str(), 10)?;
+                writeln!(
+                    context.stderr(),
+                    "{}: {}: no such job",
+                    context.command_name,
+                    pid_or_job_spec
+                )?;
+                return Ok(ExecutionResult::general_error());
+            }
+        } else {
+            let pid = brush_core::int_utils::parse(pid_or_job_spec.as_str(), 10)?;
 
-                // It's a pid.
-                if signal_zero {
-                    sys::signal::check_signalable(pid)?;
-                } else {
-                    sys::signal::kill_process(pid, trap_signal)?;
-                }
+            // It's a pid.
+            if signal_zero {
+                sys::signal::check_signalable(pid)?;
+            } else {
+                sys::signal::kill_process(pid, trap_signal)?;
             }
         }
         Ok(ExecutionResult::success())
@@ -164,11 +165,20 @@ fn print_signals(
                 Num(i32),
             }
 
-            let signal = if let Ok(n) = s.parse::<i32>() {
+            let signal = if let Ok(mut n) = s.parse::<i32>() {
+                // Like bash, take a number above 128 as the exit status of a command
+                // that a signal ended, and look up that signal.
+                if n > 128 {
+                    n -= 128;
+                }
+
                 // bash compatibility. `SIGHUP` -> `HUP`
-                TrapSignal::try_from(n).map(|s| {
-                    PrintSignal::Name(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
-                })
+                TrapSignal::try_from(n)
+                    .map(|s| {
+                        PrintSignal::Name(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
+                    })
+                    // Report the operand as given, not the number left after taking off 128.
+                    .map_err(|_| brush_core::ErrorKind::InvalidSignal(s.clone()).into())
             } else {
                 TrapSignal::try_from(s.as_str()).map(|sig| {
                     i32::try_from(sig).map_or(PrintSignal::Name(sig.as_str()), PrintSignal::Num)
