@@ -764,8 +764,12 @@ fn expansion_body<'a>(
     let mut state = TokenParseState::new(&tokenizer.cross_state.cursor);
     tokenizer.consume_nested_expansion(&mut state, expansion)?;
 
-    // The cursor is past the closing character, which is a single byte.
-    Ok(input.split_at(tokenizer.cross_state.cursor.byte_offset - 1).0)
+    // The cursor is past the closing character, which is a single byte. Slice with `get` so a
+    // cursor that ever disagreed with `input` would be a parse error, not a panic.
+    let body_len = tokenizer.cross_state.cursor.byte_offset.saturating_sub(1);
+    input
+        .get(..body_len)
+        .ok_or_else(|| expansion.unterminated_error())
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
