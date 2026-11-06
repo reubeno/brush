@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use brush_core::{ExecutionResult, builtins};
+use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
 
 /// Unset a shell alias.
 #[derive(winnow_args::Args)]
@@ -25,6 +25,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UnaliasCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         let mut exit_code = ExecutionResult::success();
+
+        if !self.remove_all && self.aliases.is_empty() {
+            writeln!(
+                context.stderr(),
+                "{}: usage: unalias [-a] name [name ...]",
+                context.command_name
+            )?;
+            return Ok(ExecutionExitCode::InvalidUsage.into());
+        }
 
         if self.remove_all {
             context.shell.aliases_mut().clear();
