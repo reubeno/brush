@@ -266,6 +266,28 @@ cases:
       value_guard=2
       echo "after readonly assignment"
 
+  - name: "Variable assignment error in a nested function call abandons the whole command"
+    ignore_stderr: true
+    stdin: |
+      f() { a=(x); a[-5]=y; echo "in f"; }
+      g() { f; echo "in g"; }
+      for i in 1 2; do g || echo "or list"; echo "loop $i"; done; echo "after loop"
+      echo "next line"
+
+  - name: "Variable assignment error in a function only ends its own pipeline stage or substitution"
+    ignore_stderr: true
+    stdin: |
+      f() { a=(x); a[-5]=y; echo "in f"; }
+      f | cat; echo "after pipeline"
+      x=$(f); echo "after substitution"
+      eval f; echo "after eval"
+
+  - name: "Redirection error on a function definition does not abandon the calling line"
+    ignore_stderr: true
+    stdin: |
+      f() { echo "in f"; } > /nonexistent-dir/file
+      f; echo "status: $?"
+
   - name: "A special builtin named by an expansion keeps its redirection error fatal in POSIX mode"
     known_failure: true # TODO(posix): a special builtin's failed redirection doesn't end the shell when an expansion names the command
     ignore_stderr: true
@@ -614,7 +636,6 @@ cases:
       unalias nosuch 2>&1 | strip
 
   - name: "An assignment error drops the rest of the line"
-    known_failure: true # TODO(errors): runs the rest of the line
     ignore_stderr: true
     stdin: |
       readonly r=1
