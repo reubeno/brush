@@ -1,7 +1,7 @@
+use brush_core::writeln_async;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::io::Write;
 use strum::IntoEnumIterator;
 
 use brush_core::completion::{self, CompleteAction, CompleteOption, Spec, SpecName, SpecialSpec};
@@ -332,7 +332,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand 
                 let mut specs: Vec<_> = context.shell.completion_config().iter().collect();
                 specs.sort_by_key(|(name, _)| *name);
                 for (name, spec) in specs {
-                    Self::display_spec(&context, name, spec)?;
+                    Self::display_spec(&context, name, spec).await?;
                 }
             }
             return Ok(ExecutionResult::success());
@@ -340,7 +340,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand 
 
         let mut result = ExecutionResult::success();
         for name in names {
-            if !self.try_process_for_command(&mut context, name)? {
+            if !self.try_process_for_command(&mut context, name).await? {
                 result = ExecutionResult::general_error();
             }
         }
@@ -350,26 +350,27 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompleteCommand 
 }
 
 impl CompleteCommand {
-    fn try_display_spec_for_command(
+    async fn try_display_spec_for_command(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: SpecName<'_>,
     ) -> Result<bool, brush_core::Error> {
         if let Some(spec) = context.shell.completion_config().get(name) {
-            Self::display_spec(context, name, spec)?;
+            Self::display_spec(context, name, spec).await?;
             Ok(true)
         } else {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "complete: {}: no completion specification",
                 name.as_str()
-            )?;
+            )
+            .await?;
             Ok(false)
         }
     }
 
     /// Displays `spec`, registered under `name`, as the `complete` command that recreates
     /// it, formatted as bash does.
-    fn display_spec(
+    async fn display_spec(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: SpecName<'_>,
         spec: &Spec,
@@ -415,24 +416,29 @@ impl CompleteCommand {
         }
 
         // Like bash, the spec's name comes last.
-        writeln!(context.stdout(), "{s} {}", spec_name_operand(name))?;
+        writeln_async!(context.stdout_async(), "{s} {}", spec_name_operand(name)).await?;
 
         Ok(())
     }
 
-    fn try_process_for_command(
+    async fn try_process_for_command(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: SpecName<'_>,
     ) -> Result<bool, brush_core::Error> {
         if self.print {
-            return Self::try_display_spec_for_command(context, name);
+            return Self::try_display_spec_for_command(context, name).await;
         } else if self.remove {
             let mut result = context.shell.completion_config_mut().remove(name);
 
             if !result {
                 if context.shell.options().interactive {
-                    writeln!(context.stderr(), "complete: {}: not found", name.as_str())?;
+                    writeln_async!(
+                        context.stderr_async(),
+                        "complete: {}: not found",
+                        name.as_str()
+                    )
+                    .await?;
                 } else {
                     // For some reason, this is not supposed to be treated as a failure
                     // in non-interactive execution.
@@ -483,7 +489,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompGenCommand {
         }
 
         for candidate in candidates {
-            writeln!(context.stdout(), "{candidate}")?;
+            writeln_async!(context.stdout_async(), "{candidate}").await?;
         }
 
         Ok(ExecutionResult::success())
@@ -575,10 +581,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
         if !self.names.is_empty()
             && (self.update_default || self.update_empty || self.update_initial_word)
         {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "compopt: cannot specify names with -D, -E, or -I"
-            )?;
+            )
+            .await?;
             return Ok(ExecutionExitCode::InvalidUsage.into());
         }
 
@@ -608,7 +615,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
                 let found = if options.is_empty() {
                     match context.shell.completion_config().get(name) {
                         Some(spec) => {
-                            Self::display_options(&context, name, &spec.options)?;
+                            Self::display_options(&context, name, &spec.options).await?;
                             true
                         }
                         None => false,
@@ -620,11 +627,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
                     false
                 };
                 if !found {
-                    writeln!(
-                        context.stderr(),
+                    writeln_async!(
+                        context.stderr_async(),
                         "compopt: {}: no completion specification",
                         name.as_str()
-                    )?;
+                    )
+                    .await?;
                     result = ExecutionResult::general_error();
                 }
             }
@@ -635,7 +643,8 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
         // options to set, show its options.
         if options.is_empty() {
             if let Some(in_progress) = context.shell.in_progress_completion() {
-                Self::display_options(&context, in_progress.spec_name(), in_progress.options())?;
+                Self::display_options(&context, in_progress.spec_name(), in_progress.options())
+                    .await?;
                 return Ok(ExecutionResult::success());
             }
         } else if let Some(in_progress_options) = context.shell.in_progress_completion_options_mut()
@@ -644,10 +653,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
             return Ok(ExecutionResult::success());
         }
 
-        writeln!(
-            context.stderr(),
+        writeln_async!(
+            context.stderr_async(),
             "compopt: not currently executing completion function"
-        )?;
+        )
+        .await?;
         Ok(ExecutionResult::general_error())
     }
 }
@@ -655,7 +665,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CompOptCommand {
 impl CompOptCommand {
     /// Displays `options`, those of the spec `name`, as the `compopt` command that sets
     /// them: each option enabled (`-o`) or disabled (`+o`), formatted as bash does.
-    fn display_options(
+    async fn display_options(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         name: SpecName<'_>,
         options: &completion::GenerationOptions,
@@ -665,7 +675,7 @@ impl CompOptCommand {
             let sign = if options.get(option) { '-' } else { '+' };
             write!(s, " {sign}o {}", <&str>::from(option))?;
         }
-        writeln!(context.stdout(), "{s} {}", spec_name_operand(name))?;
+        writeln_async!(context.stdout_async(), "{s} {}", spec_name_operand(name)).await?;
 
         Ok(())
     }

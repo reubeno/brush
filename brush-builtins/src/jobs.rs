@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins, error, jobs};
 
 /// Manage jobs.
@@ -50,7 +49,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for JobsCommand {
 
         if self.job_specs.is_empty() {
             for job in &context.shell.jobs().jobs {
-                self.display_job(&context, job)?;
+                self.display_job(&context, job).await?;
             }
         } else {
             return error::unimp("jobs with job specs");
@@ -61,7 +60,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for JobsCommand {
 }
 
 impl JobsCommand {
-    fn display_job(
+    async fn display_job(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         job: &jobs::Job,
@@ -75,10 +74,10 @@ impl JobsCommand {
 
         if self.show_pids_only {
             if let Some(pid) = job.representative_pid() {
-                writeln!(context.stdout(), "{pid}")?;
+                writeln_async!(context.stdout_async(), "{pid}").await?;
             }
         } else {
-            writeln!(context.stdout(), "{job}")?;
+            writeln_async!(context.stdout_async(), "{job}").await?;
         }
 
         Ok(())

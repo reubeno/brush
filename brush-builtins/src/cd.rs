@@ -1,4 +1,4 @@
-use std::io::Write;
+use brush_core::writeln_async;
 use std::path::PathBuf;
 
 use brush_core::{ExecutionResult, builtins, error};
@@ -52,7 +52,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
                 if let Some(oldpwd) = context.shell.env_str("OLDPWD") {
                     PathBuf::from(oldpwd.to_string())
                 } else {
-                    writeln!(context.stderr(), "OLDPWD not set")?;
+                    writeln_async!(context.stderr_async(), "OLDPWD not set").await?;
                     return Ok(ExecutionResult::general_error());
                 }
             } else {
@@ -64,7 +64,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
             if let Some(home_var) = context.shell.env_str("HOME") {
                 PathBuf::from(home_var.to_string())
             } else {
-                writeln!(context.stderr(), "HOME not set")?;
+                writeln_async!(context.stderr_async(), "HOME not set").await?;
                 return Ok(ExecutionResult::general_error());
             }
         };
@@ -91,7 +91,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
         // the directory change is successful, the absolute pathname of the new working
         // directory is written to the standard output.
         if should_print {
-            writeln!(context.stdout(), "{}", target_dir.display())?;
+            writeln_async!(context.stdout_async(), "{}", target_dir.display()).await?;
         }
 
         Ok(ExecutionResult::success())

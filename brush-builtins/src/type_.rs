@@ -1,8 +1,8 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins};
 
 use crate::lookup::{self, Resolved};
+use tokio::io::AsyncWriteExt as _;
 
 /// Inspect the type of a named shell item.
 #[derive(winnow_args::Args)]
@@ -56,7 +56,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
 
             if resolved_types.is_empty() {
                 if !self.type_only && !self.force_path_search && !self.show_path_only {
-                    writeln!(context.stderr(), "type: {name}: not found")?;
+                    writeln_async!(context.stderr_async(), "type: {name}: not found").await?;
                 }
 
                 result = ExecutionResult::general_error();
@@ -69,22 +69,27 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
                 } else if self.type_only {
                     match &resolved_type {
                         Resolved::Alias(_) => {
-                            writeln!(context.stdout(), "alias")?;
+                            writeln_async!(context.stdout_async(), "alias").await?;
                         }
                         Resolved::Keyword => {
-                            writeln!(context.stdout(), "keyword")?;
+                            writeln_async!(context.stdout_async(), "keyword").await?;
                         }
                         Resolved::Function(_) => {
-                            writeln!(context.stdout(), "function")?;
+                            writeln_async!(context.stdout_async(), "function").await?;
                         }
                         Resolved::Builtin => {
-                            writeln!(context.stdout(), "builtin")?;
+                            writeln_async!(context.stdout_async(), "builtin").await?;
                         }
                         Resolved::File { path, .. } => {
                             if self.show_path_only || self.force_path_search {
-                                writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                                writeln_async!(
+                                    context.stdout_async(),
+                                    "{}",
+                                    path.to_string_lossy()
+                                )
+                                .await?;
                             } else {
-                                writeln!(context.stdout(), "file")?;
+                                writeln_async!(context.stdout_async(), "file").await?;
                             }
                         }
                     }
@@ -96,9 +101,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TypeCommand {
                         Resolved::File { path, .. }
                             if self.show_path_only || self.force_path_search =>
                         {
-                            writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                            writeln_async!(context.stdout_async(), "{}", path.to_string_lossy())
+                                .await?;
                         }
-                        _ => lookup::describe(context.stdout(), name, &resolved_type)?,
+                        _ => {
+                            let mut text = Vec::new();
+                            lookup::describe(&mut text, name, &resolved_type)?;
+                            context.stdout_async().write_all(&text).await?;
+                        }
                     }
                 }
 

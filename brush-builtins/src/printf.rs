@@ -1,4 +1,6 @@
-use std::{ffi::OsString, io::Write, ops::ControlFlow};
+use brush_core::writeln_async;
+use std::{ffi::OsString, ops::ControlFlow};
+use tokio::io::{AsyncWrite, AsyncWriteExt as _};
 use uucore::format;
 
 use brush_core::{Error, ErrorKind, ExecutionResult, builtins, escape, expansion};
@@ -32,18 +34,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
             .iter()
             .find(|name| !valid_output_variable(name, &parser_options))
         {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: `{invalid}': not a valid identifier",
                 context.command_name
-            )?;
+            )
+            .await?;
             return Ok(ExecutionResult::new(2));
         }
 
         if let Some(variable_name) = self.output_variables.last() {
             // Format to a u8 vector.
             let mut result: Vec<u8> = vec![];
-            format(self.format_and_args.as_slice(), &mut result)?;
+            format(self.format_and_args.as_slice(), &mut result).await?;
 
             // Convert to a string.
             let result_str = String::from_utf8(result).map_err(|_| {
@@ -59,8 +62,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
             )
             .await?;
         } else {
-            format(self.format_and_args.as_slice(), context.stdout())?;
-            context.stdout().flush()?;
+            let mut stdout = context.stdout_async();
+            format(self.format_and_args.as_slice(), &mut stdout).await?;
+            stdout.flush().await?;
         }
 
         Ok(ExecutionResult::success())
@@ -83,20 +87,26 @@ fn valid_output_variable(name: &str, options: &brush_parser::ParserOptions) -> b
     }
 }
 
-fn format(format_and_args: &[String], writer: impl Write) -> Result<(), brush_core::Error> {
+async fn format(
+    format_and_args: &[String],
+    writer: &mut (impl AsyncWrite + Unpin + Send),
+) -> Result<(), brush_core::Error> {
     match format_and_args {
         // Handle format string with arguments using uucore
-        [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer),
+        [fmt, args @ ..] => format_via_uucore(fmt, args.iter(), writer).await,
         // Handle case with no format string (we shouldn't be able to get here since parsing
         // fails when the format string is missing)
         [] => Err(ErrorKind::PrintfInvalidUsage("missing operand".into()).into()),
     }
 }
 
-fn format_via_uucore(
+/// Formats into `writer` one format item at a time, so the output goes out as it's
+/// formatted, as with a synchronous writer, while a full pipe is waited for without
+/// blocking.
+async fn format_via_uucore(
     format_string: &str,
     args: impl Iterator<Item = impl Into<OsString>>,
-    mut writer: impl Write,
+    writer: &mut (impl AsyncWrite + Unpin + Send),
 ) -> Result<(), brush_core::Error> {
     // Convert string arguments to FormatArgument::Unparsed
     let format_args: Vec<_> = args
@@ -117,6 +127,9 @@ fn format_via_uucore(
         .iter()
         .any(|(item, _)| matches!(item, format::FormatItem::Spec(_)));
 
+    // What a format item formats to, before it's written.
+    let mut item_output = Vec::new();
+
     // Keep going until we've exhausted all format arguments. Also make sure to run at least once
     // even if there's no format arguments.
     while format_args.is_empty() || !format_args_wrapper.is_exhausted() {
@@ -127,12 +140,13 @@ fn format_via_uucore(
             {
                 let arg = format_args_wrapper.next_string(*position).to_string_lossy();
                 let quoted = quote_printf_q(&arg);
-                write!(writer, "{quoted}")?;
+                writer.write_all(quoted.as_bytes()).await?;
                 continue;
             }
 
-            let control_flow = item
-                .write(&mut writer, &mut format_args_wrapper)
+            item_output.clear();
+            let formatted = item
+                .write(&mut item_output, &mut format_args_wrapper)
                 .map_err(|e| match e {
                     // Propagate I/O errors directly so they can be handled appropriately
                     format::FormatError::IoError(io_err) => Error::from(io_err),
@@ -140,7 +154,10 @@ fn format_via_uucore(
                     other => Error::from(ErrorKind::PrintfInvalidUsage(std::format!(
                         "printf formatting error: {other}"
                     ))),
-                })?;
+                });
+            // What was formatted goes out even if formatting then failed.
+            writer.write_all(&item_output).await?;
+            let control_flow = formatted?;
 
             if control_flow == ControlFlow::Break(()) {
                 break;
@@ -220,7 +237,10 @@ mod tests {
         args: impl Iterator<Item = impl Into<OsString>>,
     ) -> Result<String> {
         let mut result = vec![];
-        format_via_uucore(format_string, args, &mut result)?;
+        // Writing to a vector never waits, so the future completes on its first poll.
+        tokio::runtime::Builder::new_current_thread()
+            .build()?
+            .block_on(format_via_uucore(format_string, args, &mut result))?;
 
         Ok(String::from_utf8(result)?)
     }
