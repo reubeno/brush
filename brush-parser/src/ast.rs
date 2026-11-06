@@ -2403,7 +2403,7 @@ echo there
             SourcePosition {
                 line: 1,
                 column: 1,
-                offset: 0
+                byte_offset: 0
             }
         );
         assert_eq!(
@@ -2411,7 +2411,7 @@ echo there
             SourcePosition {
                 line: 2,
                 column: 11,
-                offset: 18
+                byte_offset: 18
             }
         );
     }
@@ -2439,7 +2439,7 @@ my_func
             SourcePosition {
                 line: 1,
                 column: 1,
-                offset: 0
+                byte_offset: 0
             }
         );
         assert_eq!(
@@ -2447,7 +2447,7 @@ my_func
             SourcePosition {
                 line: 4,
                 column: 2,
-                offset: 36
+                byte_offset: 36
             }
         );
     }
@@ -2470,7 +2470,7 @@ my_func
             SourcePosition {
                 line: 1,
                 column: 1,
-                offset: 0
+                byte_offset: 0
             }
         );
         assert_eq!(
@@ -2478,7 +2478,7 @@ my_func
             SourcePosition {
                 line: 1,
                 column: 28,
-                offset: 27
+                byte_offset: 27
             }
         );
     }
@@ -2502,7 +2502,7 @@ my_func
             SourcePosition {
                 line: 2,
                 column: 1,
-                offset: 8
+                byte_offset: 8
             }
         );
         assert_eq!(
@@ -2510,11 +2510,14 @@ my_func
             SourcePosition {
                 line: 2,
                 column: 3,
-                offset: 10
+                byte_offset: 10
             }
         );
 
-        assert_eq!(input.get(loc.start.offset..loc.end.offset), Some("ls"));
+        assert_eq!(
+            input.get(loc.start.byte_offset..loc.end.byte_offset),
+            Some("ls")
+        );
     }
 
     #[test]
@@ -2536,7 +2539,7 @@ my_func
             SourcePosition {
                 line: 2,
                 column: 1,
-                offset: 18
+                byte_offset: 18
             }
         );
         assert_eq!(
@@ -2544,10 +2547,13 @@ my_func
             SourcePosition {
                 line: 2,
                 column: 3,
-                offset: 20
+                byte_offset: 20
             }
         );
 
-        assert_eq!(input.get(loc.start.offset..loc.end.offset), Some("ls"));
+        assert_eq!(
+            input.get(loc.start.byte_offset..loc.end.byte_offset),
+            Some("ls")
+        );
     }
 }

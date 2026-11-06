@@ -9,7 +9,7 @@ use std::{fmt::Display, sync::Arc};
 )]
 pub struct SourcePosition {
     /// The 0-based byte offset in the input stream.
-    pub offset: usize,
+    pub byte_offset: usize,
     /// The 1-based line number.
     pub line: usize,
     /// The 1-based column number (character count within the line).
@@ -31,7 +31,7 @@ impl SourcePosition {
     #[must_use]
     pub const fn offset(&self, offset: &SourcePositionOffset) -> Self {
         Self {
-            offset: self.offset + offset.offset,
+            byte_offset: self.byte_offset + offset.byte_offset,
             line: self.line + offset.line,
             column: if offset.line == 0 {
                 self.column + offset.column
@@ -46,7 +46,7 @@ impl SourcePosition {
 impl From<&SourcePosition> for miette::SourceOffset {
     #[allow(clippy::cast_sign_loss)]
     fn from(position: &SourcePosition) -> Self {
-        position.offset.into()
+        position.byte_offset.into()
     }
 }
 
@@ -59,7 +59,7 @@ impl From<&SourcePosition> for miette::SourceOffset {
 )]
 pub struct SourcePositionOffset {
     /// The 0-based byte offset.
-    pub offset: usize,
+    pub byte_offset: usize,
     /// The 0-based line offset.
     pub line: usize,
     /// The 0-based column offset.
@@ -82,8 +82,8 @@ pub struct SourceSpan {
 
 impl SourceSpan {
     /// Returns the length of the span in bytes.
-    pub fn length(&self) -> usize {
-        self.end.offset - self.start.offset
+    pub fn len_bytes(&self) -> usize {
+        self.end.byte_offset - self.start.byte_offset
     }
     pub(crate) fn within(start: &Self, end: &Self) -> Self {
         Self {

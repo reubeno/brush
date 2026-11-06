@@ -17,12 +17,12 @@ ParseResult(
                     value: "A",
                     loc: Some(SourceSpan(
                       start: SourcePosition(
-                        offset: 32,
+                        byte_offset: 32,
                         line: 5,
                         column: 10,
                       ),
                       end: SourcePosition(
-                        offset: 33,
+                        byte_offset: 33,
                         line: 5,
                         column: 11,
                       ),
@@ -32,12 +32,12 @@ ParseResult(
                     value: "B",
                     loc: Some(SourceSpan(
                       start: SourcePosition(
-                        offset: 34,
+                        byte_offset: 34,
                         line: 5,
                         column: 12,
                       ),
                       end: SourcePosition(
-                        offset: 35,
+                        byte_offset: 35,
                         line: 5,
                         column: 13,
                       ),
@@ -47,12 +47,12 @@ ParseResult(
                     value: "C",
                     loc: Some(SourceSpan(
                       start: SourcePosition(
-                        offset: 36,
+                        byte_offset: 36,
                         line: 5,
                         column: 14,
                       ),
                       end: SourcePosition(
-                        offset: 37,
+                        byte_offset: 37,
                         line: 5,
                         column: 15,
                       ),
@@ -69,12 +69,12 @@ ParseResult(
                               value: "echo",
                               loc: Some(SourceSpan(
                                 start: SourcePosition(
-                                  offset: 60,
+                                  byte_offset: 60,
                                   line: 8,
                                   column: 5,
                                 ),
                                 end: SourcePosition(
-                                  offset: 64,
+                                  byte_offset: 64,
                                   line: 8,
                                   column: 9,
                                 ),
@@ -85,12 +85,12 @@ ParseResult(
                                 value: "\"${f@L}\"",
                                 loc: Some(SourceSpan(
                                   start: SourcePosition(
-                                    offset: 65,
+                                    byte_offset: 65,
                                     line: 8,
                                     column: 10,
                                   ),
                                   end: SourcePosition(
-                                    offset: 73,
+                                    byte_offset: 73,
                                     line: 8,
                                     column: 18,
                                   ),
@@ -100,12 +100,12 @@ ParseResult(
                                 value: "2",
                                 loc: Some(SourceSpan(
                                   start: SourcePosition(
-                                    offset: 76,
+                                    byte_offset: 76,
                                     line: 8,
                                     column: 21,
                                   ),
                                   end: SourcePosition(
-                                    offset: 77,
+                                    byte_offset: 77,
                                     line: 8,
                                     column: 22,
                                   ),
@@ -119,12 +119,12 @@ ParseResult(
                   ]),
                   loc: SourceSpan(
                     start: SourcePosition(
-                      offset: 39,
+                      byte_offset: 39,
                       line: 5,
                       column: 17,
                     ),
                     end: SourcePosition(
-                      offset: 86,
+                      byte_offset: 86,
                       line: 10,
                       column: 8,
                     ),
@@ -132,12 +132,12 @@ ParseResult(
                 ),
                 loc: SourceSpan(
                   start: SourcePosition(
-                    offset: 23,
+                    byte_offset: 23,
                     line: 5,
                     column: 1,
                   ),
                   end: SourcePosition(
-                    offset: 86,
+                    byte_offset: 86,
                     line: 10,
                     column: 8,
                   ),
