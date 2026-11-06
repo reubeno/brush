@@ -453,7 +453,6 @@ cases:
       [[ $out == *$'\e'* ]] && echo "builtin error: colored" || echo "builtin error: plain"
 
   - name: "Expansion error in a redirected group"
-    known_failure: true # TODO(errors): the error leaves the group before it's shown, so it's shown on the shell's stderr despite the group's redirect, and the shell exits with status 1 rather than 127
     stdin: |
       unset zz
       { echo "${zz?unset}"; } 2>/dev/null
@@ -742,3 +741,11 @@ cases:
       . ./bad.sh
       echo "after: $?"
 
+
+  - name: "Error in compound command honors its redirects"
+    stdin: |
+      readonly r=1
+      { r=2; } 2>/dev/null
+      echo "status: $?"
+      if true; then r=3; fi 2>/dev/null
+      echo "status: $?"
