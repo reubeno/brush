@@ -1219,12 +1219,9 @@ impl<SE: extensions::ShellExtensions> ExecuteInPipeline<SE> for ast::SimpleComma
                     }
                 }
                 CommandPrefixOrSuffixItem::ProcessSubstitution(kind, subshell_command) => {
-                    let (installed_fd_num, substitution_file) = setup_process_substitution(
-                        &context.shell,
-                        &params,
-                        kind,
-                        subshell_command,
-                    )?;
+                    let (installed_fd_num, substitution_file) =
+                        setup_process_substitution(&context.shell, &params, kind, subshell_command)
+                            .await?;
 
                     params
                         .open_files
@@ -1933,7 +1930,8 @@ pub(crate) async fn setup_redirect(
                                 params,
                                 substitution_kind,
                                 subshell_cmd,
-                            )?;
+                            )
+                            .await?;
 
                             let target_file = substitution_file.clone();
                             params.open_files.set_fd(substitution_fd, substitution_file);
@@ -2033,7 +2031,7 @@ const fn get_default_fd_for_redirect_kind(kind: &ast::IoFileRedirectKind) -> She
     }
 }
 
-fn setup_process_substitution(
+async fn setup_process_substitution(
     shell: &Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     kind: &ast::ProcessSubstitutionKind,
@@ -2072,6 +2070,13 @@ fn setup_process_substitution(
             .execute(&mut subshell, &child_params)
             .await;
     });
+
+    // Give the subshell its chance to start before the caller reads from (or
+    // writes to) the pipe. Reading or writing the pipe blocks the caller's
+    // thread; inside a task (e.g. a command substitution's body) the subshell
+    // task would otherwise sit in that thread's slot, where no other worker
+    // takes it, and the shell would hang.
+    sys::tasks::yield_now().await;
 
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
     // available fd.

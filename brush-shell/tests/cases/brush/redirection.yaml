@@ -144,7 +144,6 @@ cases:
     expected_stderr: ""
 
   - name: "Process substitution as input"
-    known_failure_platforms: ["wasi"] # TODO(wasm): the substitution's command hasn't run when the read happens, and a read on wasm can't wait for it
     stdin: |
       while read -r l; do echo "got $l"; done < <(echo hi; echo there)
       read -r x < <(echo hello)
