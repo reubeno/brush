@@ -190,7 +190,7 @@ impl ExportCommand {
         }
 
         let converted = if self.make_indexed_array {
-            var.convert_to_indexed_array()
+            var.convert_to_indexed_array(None)
         } else {
             Ok(())
         };
