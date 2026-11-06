@@ -52,6 +52,10 @@ pub enum OpenFile {
     PipeReader(Arc<std::io::PipeReader>),
     /// A write end of a pipe.
     PipeWriter(Arc<std::io::PipeWriter>),
+    /// A FIFO (a named pipe), opened by its path. Its other end may be one of the shell's
+    /// own tasks, so reads and writes on it, like those on a pipe's end, don't hold up
+    /// the runtime.
+    Fifo(Arc<std::fs::File>),
     /// A custom stream.
     Stream(Box<dyn Stream>),
 }
@@ -67,6 +71,7 @@ impl serde::Serialize for OpenFile {
             Self::Stdout(_) => serializer.serialize_str("stdout"),
             Self::Stderr(_) => serializer.serialize_str("stderr"),
             Self::File(_) => serializer.serialize_str("file"),
+            Self::Fifo(_) => serializer.serialize_str("fifo"),
             Self::PipeReader(_) => serializer.serialize_str("pipe_reader"),
             Self::PipeWriter(_) => serializer.serialize_str("pipe_writer"),
             Self::Stream(_) => serializer.serialize_str("stream"),
@@ -85,6 +90,7 @@ impl<'de> serde::Deserialize<'de> for OpenFile {
             "stdout" => return Ok(std::io::stdout().into()),
             "stderr" => return Ok(std::io::stderr().into()),
             "file" => (),
+            "fifo" => (),
             "pipe_reader" => (),
             "pipe_writer" => (),
             "stream" => (),
@@ -111,6 +117,7 @@ impl Clone for OpenFile {
             // File and pipe handles are shared by reference count; cloning never issues a
             // syscall and so cannot fail.
             Self::File(f) => Self::File(Arc::clone(f)),
+            Self::Fifo(f) => Self::Fifo(Arc::clone(f)),
             Self::PipeReader(r) => Self::PipeReader(Arc::clone(r)),
             Self::PipeWriter(w) => Self::PipeWriter(Arc::clone(w)),
             Self::Stream(s) => Self::Stream(s.clone_box()),
@@ -125,6 +132,7 @@ impl std::fmt::Display for OpenFile {
             Self::Stdout(_) => write!(f, "stdout"),
             Self::Stderr(_) => write!(f, "stderr"),
             Self::File(_) => write!(f, "file"),
+            Self::Fifo(_) => write!(f, "fifo"),
             Self::PipeReader(_) => write!(f, "pipe reader"),
             Self::PipeWriter(_) => write!(f, "pipe writer"),
             Self::Stream(_) => write!(f, "stream"),
@@ -143,7 +151,7 @@ impl OpenFile {
             Self::Stdin(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stdout(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stderr(f) => Ok(f.as_fd().try_clone_to_owned()?),
-            Self::File(f) => Ok(f.as_fd().try_clone_to_owned()?),
+            Self::File(f) | Self::Fifo(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::PipeReader(r) => Ok(r.as_fd().try_clone_to_owned()?),
             Self::PipeWriter(w) => Ok(w.as_fd().try_clone_to_owned()?),
             Self::Stream(s) => s.try_clone_to_owned(),
@@ -163,7 +171,7 @@ impl OpenFile {
             Self::Stdin(f) => Ok(f.as_fd()),
             Self::Stdout(f) => Ok(f.as_fd()),
             Self::Stderr(f) => Ok(f.as_fd()),
-            Self::File(f) => Ok(f.as_fd()),
+            Self::File(f) | Self::Fifo(f) => Ok(f.as_fd()),
             Self::PipeReader(r) => Ok(r.as_fd()),
             Self::PipeWriter(w) => Ok(w.as_fd()),
             Self::Stream(s) => s.try_borrow_as_fd(),
@@ -174,7 +182,7 @@ impl OpenFile {
         match self {
             Self::Stdin(_) | Self::Stdout(_) | Self::Stderr(_) => false,
             Self::File(file) => file.metadata().is_ok_and(|m| m.is_dir()),
-            Self::PipeReader(_) | Self::PipeWriter(_) | Self::Stream(_) => false,
+            Self::Fifo(_) | Self::PipeReader(_) | Self::PipeWriter(_) | Self::Stream(_) => false,
         }
     }
 
@@ -185,7 +193,7 @@ impl OpenFile {
             Self::Stdout(f) => f.is_terminal(),
             Self::Stderr(f) => f.is_terminal(),
             Self::File(f) => f.is_terminal(),
-            Self::PipeReader(_) | Self::PipeWriter(_) | Self::Stream(_) => false,
+            Self::Fifo(_) | Self::PipeReader(_) | Self::PipeWriter(_) | Self::Stream(_) => false,
         }
     }
 }
@@ -243,6 +251,7 @@ impl std::io::Read for OpenFile {
             // implements `Read`). The other end of a pipe may be one of the shell's own tasks,
             // so a read from one mustn't hold up the runtime.
             Self::File(f) => f.as_ref().read(buf),
+            Self::Fifo(f) => sys::pipe_io::read_fifo(f, buf),
             Self::PipeReader(reader) => sys::pipe_io::read(reader, buf),
             Self::PipeWriter(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("pipe writer"),
@@ -264,6 +273,7 @@ impl std::io::Write for OpenFile {
             // implements `Write`). The other end of a pipe may be one of the shell's own tasks,
             // so a write to one mustn't hold up the runtime.
             Self::File(f) => f.as_ref().write(buf),
+            Self::Fifo(f) => sys::pipe_io::write_fifo(f, buf),
             Self::PipeReader(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotWritable("pipe reader"),
             )),
@@ -277,7 +287,7 @@ impl std::io::Write for OpenFile {
             Self::Stdin(_) => Ok(()),
             Self::Stdout(f) => f.flush(),
             Self::Stderr(f) => f.flush(),
-            Self::File(f) => f.as_ref().flush(),
+            Self::File(f) | Self::Fifo(f) => f.as_ref().flush(),
             Self::PipeReader(_) => Ok(()),
             Self::PipeWriter(writer) => writer.as_ref().flush(),
             Self::Stream(s) => s.flush(),
@@ -444,5 +454,219 @@ where
     fn from(iter: I) -> Self {
         let files = iter.map(|(fd, file)| (fd, Some(file))).collect();
         Self { files }
+    }
+}
+
+/// Asynchronous reads and writes on the shell's open files.
+pub mod async_file {
+    use std::borrow::Cow;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, ReadBuf};
+
+    use super::OpenFile;
+    use crate::sys;
+
+    /// An asynchronous view of an [`OpenFile`].
+    ///
+    /// A read from an empty pipe or a write to a full one waits for the pipe without
+    /// blocking the thread: the task gives way, so the task at the other end, which may
+    /// be one of the shell's own, gets to run even on a runtime with a single thread.
+    /// Other files are read and written synchronously, as through the [`OpenFile`]
+    /// itself; nothing is buffered, so what's written lands in the order it's written
+    /// with respect to other writers, child processes included.
+    ///
+    /// The view shares the [`OpenFile`]'s handle rather than duplicating it.
+    ///
+    /// Besides [`AsyncRead`] and [`AsyncWrite`], it can be written to with
+    /// [`write_async!`](crate::write_async) and [`writeln_async!`](crate::writeln_async),
+    /// awaiting the result:
+    ///
+    /// ```ignore
+    /// brush_core::writeln_async!(context.stdout_async(), "{name}={value}").await?;
+    /// ```
+    pub struct AsyncOpenFile {
+        file: OpenFile,
+        io: sys::pipe_io::AsyncIo,
+    }
+
+    impl From<OpenFile> for AsyncOpenFile {
+        fn from(file: OpenFile) -> Self {
+            Self {
+                file,
+                io: sys::pipe_io::AsyncIo::default(),
+            }
+        }
+    }
+
+    impl AsyncOpenFile {
+        /// Returns the file this is a view of.
+        pub const fn file(&self) -> &OpenFile {
+            &self.file
+        }
+
+        /// Checks if the file is a terminal.
+        pub fn is_terminal(&self) -> bool {
+            self.file.is_terminal()
+        }
+
+        /// Writes `text`; await the result. The returned future owns the text, so it's
+        /// `Send` whatever the text was made from; see [`write_async!`](crate::write_async).
+        ///
+        /// # Arguments
+        ///
+        /// * `text` - The text to write.
+        pub fn write_text(
+            &mut self,
+            text: impl Into<Cow<'static, str>>,
+        ) -> impl Future<Output = io::Result<()>> + Send + '_ {
+            let text = text.into();
+            async move { self.write_all(text.as_bytes()).await }
+        }
+    }
+
+    impl AsyncRead for AsyncOpenFile {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            let count = std::task::ready!(this.io.poll_read(
+                cx,
+                &mut this.file,
+                buf.initialize_unfilled()
+            ))?;
+            buf.advance(count);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for AsyncOpenFile {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let this = self.get_mut();
+            this.io.poll_write(cx, &mut this.file, buf)
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(io::Write::flush(&mut self.get_mut().file))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            self.poll_flush(cx)
+        }
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+    mod tests {
+        use std::io::{Read as _, Seek as _};
+        use std::sync::Arc;
+
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        use super::super::OpenFile;
+        use super::AsyncOpenFile;
+
+        fn assert_send<T: Send>(t: T) -> T {
+            t
+        }
+
+        /// A write to a full pipe and the read that drains it, on a runtime with one
+        /// thread and no other to hand tasks to: neither may block that thread. (Only
+        /// unix waits for pipes; elsewhere they're read and written synchronously.)
+        #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
+        #[test]
+        fn a_full_pipe_lets_its_reader_run_on_one_thread() -> std::io::Result<()> {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            runtime.block_on(async {
+                let (reader, writer) = std::io::pipe()?;
+                let mut reader = AsyncOpenFile::from(OpenFile::from(reader));
+                let mut writer = AsyncOpenFile::from(OpenFile::from(writer));
+                let data = vec![b'x'; 4 << 20];
+                let expected = data.len();
+                let writer_task = tokio::spawn(async move { writer.write_all(&data).await });
+                let mut all = Vec::new();
+                reader.read_to_end(&mut all).await?;
+                writer_task.await.map_err(std::io::Error::other)??;
+                assert_eq!(all.len(), expected);
+                std::io::Result::Ok(())
+            })
+        }
+
+        #[tokio::test]
+        async fn write_async_and_writeln_async_work_on_a_view() -> std::io::Result<()> {
+            let (reader, writer) = std::io::pipe()?;
+            let mut writer = AsyncOpenFile::from(OpenFile::from(writer));
+            let mut reader = AsyncOpenFile::from(OpenFile::from(reader));
+
+            let name = "x";
+            assert_send(crate::write_async!(writer, "{name}=")).await?;
+            crate::writeln_async!(writer, "1").await?;
+            crate::writeln_async!(writer, "plain").await?;
+            crate::writeln_async!(writer).await?;
+            drop(writer);
+
+            let mut text = String::new();
+            reader.read_to_string(&mut text).await?;
+            assert_eq!(text, "x=1\nplain\n\n");
+            Ok(())
+        }
+
+        /// A view writes through the descriptor its `OpenFile` holds rather than a
+        /// duplicate, so the output lands where the shell's other users of it see it.
+        #[tokio::test]
+        async fn a_file_view_shares_its_descriptor() -> std::io::Result<()> {
+            let file = OpenFile::from(tempfile::tempfile()?);
+            let OpenFile::File(shared) = &file else {
+                unreachable!("a file makes a file");
+            };
+            let shared = Arc::clone(shared);
+
+            let mut view = AsyncOpenFile::from(file);
+            assert_eq!(Arc::strong_count(&shared), 2);
+            view.write_all(b"shared").await?;
+            assert!(!view.is_terminal());
+            drop(view);
+
+            let mut file = Arc::into_inner(shared)
+                .ok_or_else(|| std::io::Error::other("the view should have released its handle"))?;
+            file.rewind()?;
+            let mut text = String::new();
+            file.read_to_string(&mut text)?;
+            assert_eq!(text, "shared");
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn the_wrong_direction_is_an_error() -> std::io::Result<()> {
+            let (reader, writer) = std::io::pipe()?;
+            let mut writer = AsyncOpenFile::from(OpenFile::from(writer));
+            let mut reader = AsyncOpenFile::from(OpenFile::from(reader));
+
+            let mut buf = [0u8; 1];
+            assert!(writer.read(&mut buf).await.is_err());
+            assert!(reader.write(b"x").await.is_err());
+            Ok(())
+        }
+
+        /// A write without a reader fails rather than waiting for one.
+        #[tokio::test]
+        async fn a_write_without_a_reader_fails() -> std::io::Result<()> {
+            let (reader, writer) = std::io::pipe()?;
+            drop(reader);
+            let mut writer = AsyncOpenFile::from(OpenFile::from(writer));
+            let err = writer.write_all(&vec![b'x'; 4 << 20]).await.err();
+            assert_eq!(err.map(|e| e.kind()), Some(std::io::ErrorKind::BrokenPipe));
+            Ok(())
+        }
     }
 }

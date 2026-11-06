@@ -207,3 +207,15 @@ on_each_runtime!(
     ),
     "2097152"
 );
+
+// A FIFO that the kernel won't take a non-blocking write on mustn't slow pipes down.
+on_each_runtime!(
+    large_builtin_output_after_a_fifo_was_used,
+    concat!(
+        "d=$(mktemp -d); mkfifo \"$d/p\"; exec 4<>\"$d/p\"; echo hi >&4; read v <&4\n",
+        "exec 4>&-; rm -r \"$d\"\n",
+        large!(),
+        "v=$(printf '%s' \"$s\"); result=${#v}"
+    ),
+    "2097152"
+);
