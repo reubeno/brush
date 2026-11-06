@@ -19,6 +19,215 @@ cases:
       export arr=(a 1 2)
       declare -p arr
 
+  - name: "Export of an absent name exports a later scalar assignment"
+    stdin: |
+      unset pending
+      export pending
+      declare -p pending
+      pending=value
+      declare -p pending
+      env | grep '^pending='
+
+  - name: "Export -a of absent names preserves later assignment types"
+    stdin: |
+      unset hooks scalar
+      export -a hooks scalar
+      echo "status: $?"
+      declare -p hooks scalar
+      hooks+=(first second)
+      scalar=hello
+      declare -p hooks scalar
+
+  - name: "Export -a of bare names preserves existing types and values"
+    stdin: |
+      scalar=hello
+      indexed=([3]=three [7]=seven)
+      declare -A associative=([key]=value)
+      export -a scalar indexed associative
+      echo "status: $?"
+      declare -p scalar indexed associative
+
+  - name: "Export -a of unset and empty arrays does not create elements"
+    stdin: |
+      declare -a pending
+      empty=()
+      declare -A associative
+      export -a pending empty associative
+      declare -p pending empty associative
+      echo "lengths: ${#pending[@]} ${#empty[@]} ${#associative[@]}"
+      pending+=(one two)
+      empty+=(three four)
+      declare -p pending empty
+
+  - name: "Export -a scalar assignments create indexed arrays"
+    stdin: |
+      scalar=old
+      export -a fresh=first scalar=next
+      echo "status: $?"
+      declare -p fresh scalar
+
+  - name: "Export -a scalar appends preserve element zero"
+    stdin: |
+      scalar=hello
+      indexed=([0]=zero [3]=three)
+      export -a fresh+=first scalar+=next indexed+=suffix
+      declare -p fresh scalar indexed
+
+  - name: "Export -a scalar assignment preserves other array indices"
+    stdin: |
+      indexed=([3]=three [7]=seven)
+      export -a indexed=zero
+      declare -p indexed
+
+  - name: "Export -a compound assignments and appends"
+    stdin: |
+      scalar=old
+      export -a scalar=(one 'two words') fresh=(three four)
+      export -a scalar+=(five six)
+      declare -p scalar fresh
+
+  - name: "Export -a assignment to unset arrays does not add empty elements"
+    stdin: |
+      declare -a pending scalar_pending
+      export -a pending+=(one two) scalar_pending+=suffix
+      declare -p pending scalar_pending
+
+  - name: "Export -a generated assignments do not expand values again"
+    stdin: |
+      assignment='generated=$(printf expanded)'
+      export -a "$assignment"
+      name=scalar
+      scalar=hello
+      export -a ${name}+=next
+      declare -p generated scalar
+
+  - name: "Export -an bare names unexport without converting or creating"
+    stdin: |
+      export scalar=hello indexed=(one two)
+      declare -Ax associative=([key]=value)
+      unset absent
+      export -an absent scalar indexed associative
+      echo "status: $?"
+      declare -p absent 2>/dev/null
+      echo "absent status: $?"
+      declare -p scalar indexed associative
+
+  - name: "Export -an assignments create unexported indexed arrays"
+    stdin: |
+      export scalar=old
+      export -an fresh=first scalar+=next compound=(one two)
+      declare -p fresh scalar compound
+
+  - name: "Export -af still exports functions"
+    stdin: |
+      example() { :; }
+      export -af example
+      echo "status: $?"
+      env | grep -q '^BASH_FUNC_example%%='
+      echo "exported: $?"
+      export -fan example
+      env | grep -q '^BASH_FUNC_example%%='
+      echo "unexported: $?"
+
+  - name: "Export -a invalid identifiers do not prevent later operands"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      { export -a first=one 1bad second=two; echo "status: $?"; declare -p first second; } 2>&1 | strip
+
+  - name: "Export -a associative assignment fails but exports and continues"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -A map=([key]=old)
+      { export -a map=new next=ok; echo "status: $?"; declare -p map next; } 2>&1 | strip
+
+  - name: "Export -a unset associative assignment fails without conversion"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -A map
+      { export -a map+=new next=ok; echo "status: $?"; declare -p map next; } 2>&1 | strip
+
+  - name: "Export -a readonly assignment fails but exports and continues"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      readonly fixed=old
+      { export -a fixed=new next=ok; echo "status: $?"; declare -p fixed next; } 2>&1 | strip
+
+  - name: "Export -a compound assignment to an associative array is fatal"
+    known_failure: true # TODO(export): bash rejects the compound assignment before export runs and ends the command; brush reports it and goes on to later operands
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      declare -A map=([key]=old)
+      { export -a map=(new) next=ok; echo "not reached"; } 2>&1 | strip
+      echo "status: ${PIPESTATUS[0]}"
+
+  - name: "Export -af without operands lists no variables"
+    stdin: |
+      example() { :; }
+      export -f example
+      export BRUSH_EXPORT_SCALAR=scalar BRUSH_EXPORT_INDEXED=(one)
+      export -af
+      echo "status: $?"
+
+  - name: "Export -a lists only exported indexed arrays with canonical values"
+    stdin: |
+      export BRUSH_EXPORT_SCALAR=scalar
+      export BRUSH_EXPORT_INDEXED=([2]='two words' [7]='quote" slash\ dollar$')
+      export BRUSH_EXPORT_EMPTY=()
+      declare -a BRUSH_EXPORT_PENDING
+      export -a BRUSH_EXPORT_PENDING BRUSH_EXPORT_UNSET
+      declare -Ax BRUSH_EXPORT_ASSOC=([key]=value)
+      BRUSH_EXPORT_LOCAL=(unexported)
+      export -a | grep BRUSH_EXPORT_
+      export -ap | grep BRUSH_EXPORT_
+
+  - name: "Export -a listings retain integer and readonly attributes"
+    stdin: |
+      declare -aix BRUSH_EXPORT_INTS=(1 2)
+      declare -arx BRUSH_EXPORT_READONLY=(fixed)
+      export -ap | grep BRUSH_EXPORT_
+
+  - name: "Export -a arrays do not become child environment strings"
+    stdin: |
+      export BRUSH_EXPORT_SCALAR=scalar
+      export -a BRUSH_EXPORT_INDEXED=(one two) BRUSH_EXPORT_ASSIGNED=value
+      declare -Ax BRUSH_EXPORT_ASSOC=([0]=zero [key]=value)
+      declare -a BRUSH_EXPORT_PENDING
+      export -a BRUSH_EXPORT_PENDING
+      env | grep '^BRUSH_EXPORT_' | sort
+
+  - name: "Export -a lists exported dynamic indexed arrays"
+    stdin: |
+      export -a DIRSTACK GROUPS
+      expected=$(declare -p DIRSTACK GROUPS)
+      actual=$(export -a | grep -E ' (DIRSTACK|GROUPS)=')
+      [[ "$actual" == "$expected" ]]
+      echo "export -a matches declarations: $?"
+      actual=$(export -ap | grep -E ' (DIRSTACK|GROUPS)=')
+      [[ "$actual" == "$expected" ]]
+      echo "export -ap matches declarations: $?"
+
+  - name: "Export -a dynamic arrays do not become child environment strings"
+    stdin: |
+      export -a DIRSTACK GROUPS
+      env | grep -E '^(DIRSTACK|GROUPS)='
+      echo "environment match: $?"
+
+  - name: "Export -a rejects assignment to dynamic associative arrays"
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      alias sample=value
+      { export -a BASH_ALIASES=new next=ok; echo "status: $?"; declare -p BASH_ALIASES next; } 2>&1 | strip
+
+  - name: "Export -a appends to a resolved dynamic scalar"
+    stdin: |
+      export -a BASH_SUBSHELL+=2
+      declare -p BASH_SUBSHELL
+
+  - name: "Export -a assigns to a dynamic integer scalar"
+    stdin: |
+      export -a RANDOM=7
+      declare -p RANDOM
+
   - name: "Export scalar assignment with parameter expansion"
     stdin: |
       value=hello
