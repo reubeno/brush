@@ -13,3 +13,12 @@ pub fn poll_for_input(_file: &OpenFile, _timeout: Duration) -> std::io::Result<b
         "poll-based timeout is not supported on this platform",
     ))
 }
+
+/// Stub implementation: there's no telling how many bytes are ready on this platform.
+///
+/// # Errors
+///
+/// Never fails.
+pub fn bytes_ready(_file: &OpenFile) -> std::io::Result<Option<usize>> {
+    Ok(None)
+}
