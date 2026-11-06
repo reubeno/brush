@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, arithmetic::Evaluatable, builtins};
+use brush_core::{ExecutionResult, arithmetic::Evaluatable, builtins};
 
 /// Evaluate arithmetic expressions.
 #[derive(winnow_args::Args)]
@@ -25,11 +25,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for LetCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut result = ExecutionExitCode::InvalidUsage.into();
+        let mut result = ExecutionResult::success();
 
         if self.exprs.is_empty() {
-            writeln!(context.stderr(), "missing expression")?;
-            return Ok(result);
+            writeln!(
+                context.stderr(),
+                "{}: expression expected",
+                context.command_name
+            )?;
+            return Ok(ExecutionResult::general_error());
         }
 
         for expr in &self.exprs {
