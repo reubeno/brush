@@ -394,7 +394,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "utf8-chars",
  "uucore",
  "winnow-args",
 ]

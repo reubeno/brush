@@ -1,4 +1,4 @@
-use std::io::Write;
+use brush_core::writeln_async;
 
 use brush_core::{ExecutionResult, builtins, jobs, sys};
 
@@ -20,7 +20,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
-        let mut stdout = context.stdout();
+        let mut stdout = context.stdout_async();
 
         // Read interactive option before taking mutable borrow on jobs
         let is_interactive = context.shell.options().interactive;
@@ -28,7 +28,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
         if let Some(job_spec) = &self.job_spec {
             if let Some(job) = context.shell.jobs_mut().resolve_job_spec(job_spec) {
                 job.move_to_foreground()?;
-                writeln!(stdout, "{}", job.command_line)?;
+                writeln_async!(stdout, "{}", job.command_line).await?;
 
                 let result = job.wait().await?;
                 if is_interactive {
@@ -38,23 +38,24 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
                 if matches!(job.state, jobs::JobState::Stopped) {
                     // N.B. We use the '\r' to overwrite any ^Z output.
                     let formatted = job.to_string();
-                    writeln!(context.stderr(), "\r{formatted}")?;
+                    writeln_async!(context.stderr_async(), "\r{formatted}").await?;
                 }
 
                 Ok(result)
             } else {
-                writeln!(
-                    context.stderr(),
+                writeln_async!(
+                    context.stderr_async(),
                     "{}: {}: no such job",
                     context.command_name,
                     job_spec
-                )?;
+                )
+                .await?;
                 Ok(ExecutionResult::general_error())
             }
         } else {
             if let Some(job) = context.shell.jobs_mut().current_job_mut() {
                 job.move_to_foreground()?;
-                writeln!(stdout, "{}", job.command_line)?;
+                writeln_async!(stdout, "{}", job.command_line).await?;
 
                 let result = job.wait().await?;
                 if is_interactive {
@@ -64,12 +65,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for FgCommand {
                 if matches!(job.state, jobs::JobState::Stopped) {
                     // N.B. We use the '\r' to overwrite any ^Z output.
                     let formatted = job.to_string();
-                    writeln!(context.stderr(), "\r{formatted}")?;
+                    writeln_async!(context.stderr_async(), "\r{formatted}").await?;
                 }
 
                 Ok(result)
             } else {
-                writeln!(context.stderr(), "{}: no current job", context.command_name)?;
+                writeln_async!(
+                    context.stderr_async(),
+                    "{}: no current job",
+                    context.command_name
+                )
+                .await?;
                 Ok(ExecutionResult::general_error())
             }
         }

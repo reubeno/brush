@@ -1,10 +1,11 @@
-use std::io::Write;
+use brush_core::writeln_async;
 use std::path::PathBuf;
 
 use brush_core::{ExecutionResult, builtins, commands, sys};
 
 use crate::lookup::{self, Resolved};
 use crate::write_alias_definition;
+use tokio::io::AsyncWriteExt as _;
 
 /// Directly invokes an external command, without going through typical search order.
 #[derive(Default, winnow_args::Args)]
@@ -40,7 +41,7 @@ impl CommandCommand {
     }
 
     /// Describes every name given, as `-v`/`-V` do; succeeds if any name was found.
-    fn describe_names<SE: brush_core::ShellExtensions>(
+    async fn describe_names<SE: brush_core::ShellExtensions>(
         &self,
         context: &brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, brush_core::Error> {
@@ -61,7 +62,7 @@ impl CommandCommand {
                 .next()
             else {
                 if self.print_verbose_description {
-                    writeln!(context.stderr(), "command: {name}: not found")?;
+                    writeln_async!(context.stderr_async(), "command: {name}: not found").await?;
                 }
                 continue;
             };
@@ -71,13 +72,16 @@ impl CommandCommand {
                 // Display in a form that could be reused as shell input.
                 match &found {
                     Resolved::Alias(target) => {
-                        write_alias_definition(context.stdout(), name, target)?;
+                        let mut text = Vec::new();
+                        write_alias_definition(&mut text, name, target)?;
+                        context.stdout_async().write_all(&text).await?;
                     }
                     Resolved::Keyword | Resolved::Function(_) | Resolved::Builtin => {
-                        writeln!(context.stdout(), "{name}")?;
+                        writeln_async!(context.stdout_async(), "{name}").await?;
                     }
                     Resolved::File { path, .. } => {
-                        writeln!(context.stdout(), "{}", path.to_string_lossy())?;
+                        writeln_async!(context.stdout_async(), "{}", path.to_string_lossy())
+                            .await?;
                     }
                 }
             } else {
@@ -96,7 +100,9 @@ impl CommandCommand {
                     *path = context.shell.absolute_path(relative);
                 }
 
-                lookup::describe(context.stdout(), name, &found)?;
+                let mut text = Vec::new();
+                lookup::describe(&mut text, name, &found)?;
+                context.stdout_async().write_all(&text).await?;
             }
         }
 
@@ -142,7 +148,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CommandCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         if self.print_description || self.print_verbose_description {
-            return self.describe_names(&context);
+            return self.describe_names(&context).await;
         }
 
         // Silently exit if no command was provided.

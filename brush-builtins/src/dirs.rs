@@ -1,6 +1,5 @@
-use std::io::Write;
-
 use brush_core::{ExecutionResult, builtins};
+use brush_core::{write_async, writeln_async};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DirError {
@@ -78,11 +77,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
 
             for (i, dir) in dirs.iter().enumerate() {
                 if !one_per_line && i > 0 {
-                    write!(context.stdout(), " ")?;
+                    write_async!(context.stdout_async(), " ").await?;
                 }
 
                 if self.print_one_per_line_with_index {
-                    write!(context.stdout(), "{i:2}  ")?;
+                    write_async!(context.stdout_async(), "{i:2}  ").await?;
                 }
 
                 let mut dir_str = dir.to_string_lossy().to_string();
@@ -91,10 +90,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DirsCommand {
                     dir_str = context.shell.tilde_shorten(dir_str);
                 }
 
-                write!(context.stdout(), "{dir_str}")?;
+                write_async!(context.stdout_async(), "{dir_str}").await?;
 
                 if one_per_line || i == dirs.len() - 1 {
-                    writeln!(context.stdout())?;
+                    writeln_async!(context.stdout_async()).await?;
                 }
             }
 
