@@ -173,9 +173,12 @@ fn print_signals(
                 }
 
                 // bash compatibility. `SIGHUP` -> `HUP`
-                TrapSignal::try_from(n).map(|s| {
-                    PrintSignal::Name(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
-                })
+                TrapSignal::try_from(n)
+                    .map(|s| {
+                        PrintSignal::Name(s.as_str().strip_prefix("SIG").unwrap_or(s.as_str()))
+                    })
+                    // Report the operand as given, not the number left after taking off 128.
+                    .map_err(|_| brush_core::ErrorKind::InvalidSignal(s.clone()).into())
             } else {
                 TrapSignal::try_from(s.as_str()).map(|sig| {
                     i32::try_from(sig).map_or(PrintSignal::Name(sig.as_str()), PrintSignal::Num)

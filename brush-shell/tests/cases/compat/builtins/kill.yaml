@@ -243,6 +243,10 @@ cases:
       kill -l 128 2>/dev/null; echo "rc=$?"
       kill -l 9 300 15 2>/dev/null; echo "rc=$?"
 
+  - name: "kill -l names the operand it couldn't look up"
+    stdin: |
+      kill -l 9 300 15 2>&1 >/dev/null | grep -o '[0-9]*: invalid signal specification'
+
   - name: "kill -l lists the signals in columns"
     known_failure: true # TODO(kill): one signal a line, not bash's table
     stdin: |
