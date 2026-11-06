@@ -764,14 +764,8 @@ fn expansion_body<'a>(
     let mut state = TokenParseState::new(&tokenizer.cross_state.cursor);
     tokenizer.consume_nested_expansion(&mut state, expansion)?;
 
-    // The cursor counts characters (not bytes) consumed, the last being the closing character;
-    // convert the characters before it to a byte length.
-    let body_len = input
-        .chars()
-        .take(tokenizer.cross_state.cursor.index - 1)
-        .map(char::len_utf8)
-        .sum();
-    Ok(input.split_at(body_len).0)
+    // The cursor is past the closing character, which is a single byte.
+    Ok(input.split_at(tokenizer.cross_state.cursor.offset - 1).0)
 }
 
 impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
@@ -783,7 +777,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             read_bodies_left_pending: true,
             cross_state: CrossTokenParseState {
                 cursor: SourcePosition {
-                    index: 0,
+                    offset: 0,
                     line: 1,
                     column: 1,
                 },
@@ -815,7 +809,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             } else {
                 self.cross_state.cursor.column += 1;
             }
-            self.cross_state.cursor.index += 1;
+            self.cross_state.cursor.offset += ch.len_utf8();
         }
 
         if let Some(unread) = self.unread.take_if(|unread| unread.chars.is_empty()) {
@@ -1550,7 +1544,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 } else {
                     // Make sure we don't include this char in the token range.
                     state.start_position.column += 1;
-                    state.start_position.index += 1;
+                    state.start_position.offset += c.len_utf8();
                 }
 
                 self.consume_char()?;
@@ -1892,7 +1886,7 @@ bc"
         assert_matches!(
             &tokenize_str("a; \\\n  c")?[..],
             [_, _, Token::Word(word, span)]
-                if word == "c" && (span.start.line, span.start.column, span.start.index) == (2, 3, 7)
+                if word == "c" && (span.start.line, span.start.column, span.start.offset) == (2, 3, 7)
         );
         Ok(())
     }
