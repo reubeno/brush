@@ -7,6 +7,127 @@ use crate::{SourceSpan, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
 
+/// Writes AST nodes back out as shell source text, carrying the state of one write in
+/// progress: how far new lines are indented, and the here-documents whose bodies are still
+/// to be written.
+///
+/// Text written through [`std::fmt::Write`] goes out unchanged. Only [`Self::newline`]
+/// starts a new line, indents it, and writes the pending here-documents before it. A line
+/// break inside a word (such as in a multi-line quoted string) is thus never followed by
+/// indentation, and a here-document's body and closing delimiter start at the beginning of
+/// the line after the command that redirects from it, where the shell reads them back.
+struct SourceWriter<'w, 'n> {
+    out: &'w mut dyn Write,
+    indent: usize,
+    pending_here_docs: Vec<&'n IoHereDocument>,
+}
+
+impl<'w, 'n> SourceWriter<'w, 'n> {
+    /// Writes `node` as source text to `out`, along with any here-document bodies it still
+    /// owes at the end.
+    fn write_node(out: &'w mut dyn Write, node: &'n impl WriteSource) -> std::fmt::Result {
+        let mut w = Self {
+            out,
+            indent: 0,
+            pending_here_docs: vec![],
+        };
+        node.write_source(&mut w)?;
+        w.write_pending_here_docs()
+    }
+
+    /// Ends the current line and starts the next one at the current indentation, writing
+    /// any pending here-document bodies in between.
+    fn newline(&mut self) -> std::fmt::Result {
+        self.write_pending_here_docs()?;
+        self.out.write_char('\n')?;
+        for _ in 0..self.indent {
+            self.out.write_str(DISPLAY_INDENT)?;
+        }
+        Ok(())
+    }
+
+    /// Writes the bodies and closing delimiters of the pending here-documents, each on the
+    /// lines that follow the current one, in the order they were redirected from.
+    fn write_pending_here_docs(&mut self) -> std::fmt::Result {
+        if self.pending_here_docs.is_empty() {
+            return Ok(());
+        }
+
+        self.out.write_char('\n')?;
+        for here_doc in std::mem::take(&mut self.pending_here_docs) {
+            self.out.write_str(&here_doc.doc.value)?;
+            self.out.write_str(&here_doc.closing_delimiter())?;
+            self.out.write_char('\n')?;
+        }
+        Ok(())
+    }
+
+    /// Calls `f` with new lines indented one more level than they are now.
+    fn indented(&mut self, f: impl FnOnce(&mut Self) -> std::fmt::Result) -> std::fmt::Result {
+        self.indent += 1;
+        let result = f(self);
+        self.indent -= 1;
+        result
+    }
+}
+
+impl Write for SourceWriter<'_, '_> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.out.write_str(s)
+    }
+}
+
+/// Implemented by AST nodes that write themselves as source text through a
+/// [`SourceWriter`], so that the nodes inside them share its state.
+trait WriteSource {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result;
+}
+
+/// Implements [`Display`] for nodes that implement [`WriteSource`].
+macro_rules! display_via_source_writer {
+    ($($node:ty),+ $(,)?) => {
+        $(
+            impl Display for $node {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    SourceWriter::write_node(f, self)
+                }
+            }
+        )+
+    };
+}
+
+display_via_source_writer!(
+    Program,
+    CompoundList,
+    CompoundListItem,
+    AndOrList,
+    AndOr,
+    Pipeline,
+    Command,
+    CompoundCommand,
+    SubshellCommand,
+    ForClauseCommand,
+    ArithmeticForClauseCommand,
+    CaseClauseCommand,
+    IfClauseCommand,
+    ElseClause,
+    CoprocessCommand,
+    CaseItem,
+    WhileOrUntilClauseCommand,
+    FunctionDefinition,
+    FunctionBody,
+    BraceGroupCommand,
+    DoGroupCommand,
+    SimpleCommand,
+    CommandPrefix,
+    CommandSuffix,
+    CommandPrefixOrSuffixItem,
+    RedirectList,
+    IoRedirect,
+    IoFileRedirectTarget,
+    IoHereDocument,
+);
+
 /// Trait implemented by all AST nodes. Used to aggregate traits expected
 /// to be implemented.
 pub trait Node: Display + SourceLocation {}
@@ -56,10 +177,10 @@ impl SourceLocation for Program {
     }
 }
 
-impl Display for Program {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for Program {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         for complete_command in &self.complete_commands {
-            write!(f, "{complete_command}")?;
+            complete_command.write_source(w)?;
         }
         Ok(())
     }
@@ -128,11 +249,11 @@ impl SourceLocation for AndOrList {
     }
 }
 
-impl Display for AndOrList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.first)?;
+impl WriteSource for AndOrList {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        self.first.write_source(w)?;
         for item in &self.additional {
-            write!(f, "{item}")?;
+            item.write_source(w)?;
         }
 
         Ok(())
@@ -246,12 +367,19 @@ impl SourceLocation for AndOr {
     }
 }
 
-impl Display for AndOr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::And(pipeline) => write!(f, " && {pipeline}"),
-            Self::Or(pipeline) => write!(f, " || {pipeline}"),
-        }
+impl WriteSource for AndOr {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        let pipeline = match self {
+            Self::And(pipeline) => {
+                write!(w, " && ")?;
+                pipeline
+            }
+            Self::Or(pipeline) => {
+                write!(w, " || ")?;
+                pipeline
+            }
+        };
+        pipeline.write_source(w)
     }
 }
 
@@ -339,20 +467,20 @@ impl SourceLocation for Pipeline {
     }
 }
 
-impl Display for Pipeline {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for Pipeline {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         if let Some(timed) = &self.timed {
-            write!(f, "{timed} ")?;
+            write!(w, "{timed} ")?;
         }
 
         if self.bang {
-            write!(f, "! ")?;
+            write!(w, "! ")?;
         }
         for (i, command) in self.seq.iter().enumerate() {
             if i > 0 {
-                write!(f, " |")?;
+                write!(w, " |")?;
             }
-            write!(f, "{command}")?;
+            command.write_source(w)?;
         }
 
         Ok(())
@@ -393,18 +521,18 @@ impl SourceLocation for Command {
     }
 }
 
-impl Display for Command {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for Command {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         match self {
-            Self::Simple(simple_command) => write!(f, "{simple_command}"),
+            Self::Simple(simple_command) => simple_command.write_source(w),
             Self::Compound(compound_command, redirect_list) => {
-                write!(f, "{compound_command}")?;
+                compound_command.write_source(w)?;
                 if let Some(redirect_list) = redirect_list {
-                    write!(f, "{redirect_list}")?;
+                    redirect_list.write_source(w)?;
                 }
                 Ok(())
             }
-            Self::Function(function_definition) => write!(f, "{function_definition}"),
+            Self::Function(function_definition) => function_definition.write_source(w),
         }
     }
 }
@@ -462,33 +590,29 @@ impl SourceLocation for CompoundCommand {
     }
 }
 
-impl Display for CompoundCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for CompoundCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         match self {
-            Self::Arithmetic(arithmetic_command) => write!(f, "{arithmetic_command}"),
+            Self::Arithmetic(arithmetic_command) => write!(w, "{arithmetic_command}"),
             Self::ArithmeticForClause(arithmetic_for_clause_command) => {
-                write!(f, "{arithmetic_for_clause_command}")
+                arithmetic_for_clause_command.write_source(w)
             }
-            Self::BraceGroup(brace_group_command) => {
-                write!(f, "{brace_group_command}")
-            }
-            Self::Subshell(subshell_command) => write!(f, "{subshell_command}"),
-            Self::ForClause(for_clause_command) => write!(f, "{for_clause_command}"),
-            Self::CaseClause(case_clause_command) => {
-                write!(f, "{case_clause_command}")
-            }
-            Self::IfClause(if_clause_command) => write!(f, "{if_clause_command}"),
+            Self::BraceGroup(brace_group_command) => brace_group_command.write_source(w),
+            Self::Subshell(subshell_command) => subshell_command.write_source(w),
+            Self::ForClause(for_clause_command) => for_clause_command.write_source(w),
+            Self::CaseClause(case_clause_command) => case_clause_command.write_source(w),
+            Self::IfClause(if_clause_command) => if_clause_command.write_source(w),
             Self::WhileClause(while_or_until_clause_command) => {
-                write!(f, "while {while_or_until_clause_command}")
+                write!(w, "while ")?;
+                while_or_until_clause_command.write_source(w)
             }
             Self::UntilClause(while_or_until_clause_command) => {
-                write!(f, "until {while_or_until_clause_command}")
+                write!(w, "until ")?;
+                while_or_until_clause_command.write_source(w)
             }
-            Self::Coprocess(coproc_clause_command) => {
-                write!(f, "{coproc_clause_command}")
-            }
+            Self::Coprocess(coproc_clause_command) => coproc_clause_command.write_source(w),
             Self::ExtendedTest(extended_test_expr_command) => {
-                write!(f, "[[ {extended_test_expr_command} ]]")
+                write!(w, "[[ {extended_test_expr_command} ]]")
             }
         }
     }
@@ -544,11 +668,13 @@ impl SourceLocation for SubshellCommand {
     }
 }
 
-impl Display for SubshellCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "( ")?;
-        write!(f, "{}", self.list)?;
-        write!(f, " )")
+impl WriteSource for SubshellCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "( ")?;
+        self.list.write_source(w)?;
+        // Here-documents redirected from inside the parentheses end inside them.
+        w.write_pending_here_docs()?;
+        write!(w, " )")
     }
 }
 
@@ -578,23 +704,24 @@ impl SourceLocation for ForClauseCommand {
     }
 }
 
-impl Display for ForClauseCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "for {} in ", self.variable_name)?;
+impl WriteSource for ForClauseCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "for {} in ", self.variable_name)?;
 
         if let Some(values) = &self.values {
             for (i, value) in values.iter().enumerate() {
                 if i > 0 {
-                    write!(f, " ")?;
+                    write!(w, " ")?;
                 }
 
-                write!(f, "{value}")?;
+                write!(w, "{value}")?;
             }
         }
 
-        writeln!(f, ";")?;
+        write!(w, ";")?;
+        w.newline()?;
 
-        write!(f, "{}", self.body)
+        self.body.write_source(w)
     }
 }
 
@@ -626,29 +753,30 @@ impl SourceLocation for ArithmeticForClauseCommand {
     }
 }
 
-impl Display for ArithmeticForClauseCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "for ((")?;
+impl WriteSource for ArithmeticForClauseCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "for ((")?;
 
         if let Some(initializer) = &self.initializer {
-            write!(f, "{initializer}")?;
+            write!(w, "{initializer}")?;
         }
 
-        write!(f, "; ")?;
+        write!(w, "; ")?;
 
         if let Some(condition) = &self.condition {
-            write!(f, "{condition}")?;
+            write!(w, "{condition}")?;
         }
 
-        write!(f, "; ")?;
+        write!(w, "; ")?;
 
         if let Some(updater) = &self.updater {
-            write!(f, "{updater}")?;
+            write!(w, "{updater}")?;
         }
 
-        writeln!(f, "))")?;
+        write!(w, "))")?;
+        w.newline()?;
 
-        write!(f, "{}", self.body)
+        self.body.write_source(w)
     }
 }
 
@@ -677,15 +805,18 @@ impl SourceLocation for CaseClauseCommand {
     }
 }
 
-impl Display for CaseClauseCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for CaseClauseCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         // Note the trailing space, which the shell emits when printing a case clause.
-        write!(f, "case {} in ", self.value)?;
-        for case in &self.cases {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{case}")?;
-        }
-        writeln!(f)?;
-        write!(f, "esac")
+        write!(w, "case {} in ", self.value)?;
+        w.indented(|w| {
+            for case in &self.cases {
+                case.write_source(w)?;
+            }
+            Ok(())
+        })?;
+        w.newline()?;
+        write!(w, "esac")
     }
 }
 
@@ -715,32 +846,31 @@ impl SourceLocation for CompoundList {
 }
 
 impl CompoundList {
-    /// Displays the list with its trailing `;` retained, the way the shell prints the
-    /// body of a block closed by a reserved word (`fi`, `else`, `done`).
-    fn terminated(&self) -> impl Display + '_ {
-        TerminatedCompoundList(self)
-    }
-
-    fn fmt_items(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
+    /// Writes the list's items, one per line. With `keep_trailing_separator`, the last
+    /// item's `;` is retained, the way the shell prints the body of a block closed by a
+    /// reserved word (`fi`, `else`, `done`).
+    fn write_items<'n>(
+        &'n self,
+        w: &mut SourceWriter<'_, 'n>,
         keep_trailing_separator: bool,
     ) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
             if i > 0 {
-                writeln!(f)?;
+                w.newline()?;
             }
 
             // Write the and-or list.
-            write!(f, "{}", item.0)?;
+            item.0.write_source(w)?;
 
-            // Write the separator... unless we're on the last list item and it's a ';'
-            // that the enclosing construct doesn't want.
-            if keep_trailing_separator
-                || i < self.0.len() - 1
-                || !matches!(item.1, SeparatorOperator::Sequence)
+            // Write the separator... unless it's a ';' that the enclosing construct doesn't
+            // want on the last list item, or that would come right before here-document
+            // bodies, which end the line anyway.
+            let is_sequence = matches!(item.1, SeparatorOperator::Sequence);
+            let ends_line_with_here_docs = !w.pending_here_docs.is_empty();
+            if !is_sequence
+                || ((keep_trailing_separator || i < self.0.len() - 1) && !ends_line_with_here_docs)
             {
-                write!(f, "{}", item.1)?;
+                write!(w, "{}", item.1)?;
             }
         }
 
@@ -748,17 +878,9 @@ impl CompoundList {
     }
 }
 
-impl Display for CompoundList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.fmt_items(f, false)
-    }
-}
-
-struct TerminatedCompoundList<'a>(&'a CompoundList);
-
-impl Display for TerminatedCompoundList<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt_items(f, true)
+impl WriteSource for CompoundList {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        self.write_items(w, false)
     }
 }
 
@@ -780,10 +902,10 @@ impl SourceLocation for CompoundListItem {
     }
 }
 
-impl Display for CompoundListItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)?;
-        write!(f, "{}", self.1)?;
+impl WriteSource for CompoundListItem {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        self.0.write_source(w)?;
+        write!(w, "{}", self.1)?;
         Ok(())
     }
 }
@@ -818,22 +940,23 @@ impl SourceLocation for IfClauseCommand {
     }
 }
 
-impl Display for IfClauseCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "if {}; then", self.condition)?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.then.terminated()
-        )?;
+impl WriteSource for IfClauseCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "if ")?;
+        self.condition.write_source(w)?;
+        write!(w, "; then")?;
+        w.indented(|w| {
+            w.newline()?;
+            self.then.write_items(w, true)
+        })?;
         if let Some(elses) = &self.elses {
             for else_clause in elses {
-                write!(f, "{else_clause}")?;
+                else_clause.write_source(w)?;
             }
         }
 
-        writeln!(f)?;
-        write!(f, "fi")?;
+        w.newline()?;
+        write!(w, "fi")?;
 
         Ok(())
     }
@@ -857,20 +980,21 @@ pub struct ElseClause {
     pub body: CompoundList,
 }
 
-impl Display for ElseClause {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f)?;
+impl WriteSource for ElseClause {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        w.newline()?;
         if let Some(condition) = &self.condition {
-            writeln!(f, "elif {condition}; then")?;
+            write!(w, "elif ")?;
+            condition.write_source(w)?;
+            write!(w, "; then")?;
         } else {
-            writeln!(f, "else")?;
+            write!(w, "else")?;
         }
 
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.body.terminated()
-        )
+        w.indented(|w| {
+            w.newline()?;
+            self.body.write_items(w, true)
+        })
     }
 }
 
@@ -903,14 +1027,14 @@ impl SourceLocation for CoprocessCommand {
     }
 }
 
-impl Display for CoprocessCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "coproc")?;
+impl WriteSource for CoprocessCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "coproc")?;
         if let Some(name) = &self.name {
-            write!(f, " {name}")?;
+            write!(w, " {name}")?;
         }
-        write!(f, " {}", self.body)?;
-        Ok(())
+        write!(w, " ")?;
+        self.body.write_source(w)
     }
 }
 
@@ -940,23 +1064,29 @@ impl SourceLocation for CaseItem {
     }
 }
 
-impl Display for CaseItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f)?;
+impl WriteSource for CaseItem {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        w.newline()?;
         for (i, pattern) in self.patterns.iter().enumerate() {
             if i > 0 {
                 // Note the spaces, which the shell puts around the pattern separator.
-                write!(f, " | ")?;
+                write!(w, " | ")?;
             }
-            write!(f, "{pattern}")?;
+            write!(w, "{pattern}")?;
         }
-        writeln!(f, ")")?;
+        write!(w, ")")?;
 
         if let Some(cmd) = &self.cmd {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{cmd}")?;
+            w.indented(|w| {
+                w.newline()?;
+                cmd.write_source(w)
+            })?;
+        } else {
+            // An empty branch leaves an empty line, with no indentation on it.
+            writeln!(w)?;
         }
-        writeln!(f)?;
-        write!(f, "{}", self.post_action)
+        w.newline()?;
+        write!(w, "{}", self.post_action)
     }
 }
 
@@ -1005,9 +1135,11 @@ impl SourceLocation for WhileOrUntilClauseCommand {
     }
 }
 
-impl Display for WhileOrUntilClauseCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}; {}", self.0, self.1)
+impl WriteSource for WhileOrUntilClauseCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        self.0.write_source(w)?;
+        write!(w, "; ")?;
+        self.1.write_source(w)
     }
 }
 
@@ -1042,11 +1174,11 @@ impl SourceLocation for FunctionDefinition {
     }
 }
 
-impl Display for FunctionDefinition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{} () ", self.fname.value)?;
-        write!(f, "{}", self.body)?;
-        Ok(())
+impl WriteSource for FunctionDefinition {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "{} () ", self.fname.value)?;
+        w.newline()?;
+        self.body.write_source(w)
     }
 }
 
@@ -1078,11 +1210,11 @@ impl SourceLocation for FunctionBody {
     }
 }
 
-impl Display for FunctionBody {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)?;
+impl WriteSource for FunctionBody {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        self.0.write_source(w)?;
         if let Some(redirect_list) = &self.1 {
-            write!(f, "{redirect_list}")?;
+            redirect_list.write_source(w)?;
         }
 
         Ok(())
@@ -1111,16 +1243,15 @@ impl SourceLocation for BraceGroupCommand {
     }
 }
 
-impl Display for BraceGroupCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{{ ")?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.list
-        )?;
-        writeln!(f)?;
-        write!(f, "}}")?;
+impl WriteSource for BraceGroupCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "{{ ")?;
+        w.indented(|w| {
+            w.newline()?;
+            self.list.write_source(w)
+        })?;
+        w.newline()?;
+        write!(w, "}}")?;
 
         Ok(())
     }
@@ -1140,16 +1271,15 @@ pub struct DoGroupCommand {
     pub loc: SourceSpan,
 }
 
-impl Display for DoGroupCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "do")?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.list.terminated()
-        )?;
-        writeln!(f)?;
-        write!(f, "done")
+impl WriteSource for DoGroupCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
+        write!(w, "do")?;
+        w.indented(|w| {
+            w.newline()?;
+            self.list.write_items(w, true)
+        })?;
+        w.newline()?;
+        write!(w, "done")
     }
 }
 
@@ -1203,34 +1333,34 @@ impl SourceLocation for SimpleCommand {
     }
 }
 
-impl Display for SimpleCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for SimpleCommand {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         let mut wrote_something = false;
 
         if let Some(prefix) = &self.prefix {
             if wrote_something {
-                write!(f, " ")?;
+                write!(w, " ")?;
             }
 
-            write!(f, "{prefix}")?;
+            prefix.write_source(w)?;
             wrote_something = true;
         }
 
         if let Some(word_or_name) = &self.word_or_name {
             if wrote_something {
-                write!(f, " ")?;
+                write!(w, " ")?;
             }
 
-            write!(f, "{word_or_name}")?;
+            write!(w, "{word_or_name}")?;
             wrote_something = true;
         }
 
         if let Some(suffix) = &self.suffix {
             if wrote_something {
-                write!(f, " ")?;
+                write!(w, " ")?;
             }
 
-            write!(f, "{suffix}")?;
+            suffix.write_source(w)?;
         }
 
         Ok(())
@@ -1257,14 +1387,14 @@ impl SourceLocation for CommandPrefix {
     }
 }
 
-impl Display for CommandPrefix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for CommandPrefix {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
             if i > 0 {
-                write!(f, " ")?;
+                write!(w, " ")?;
             }
 
-            write!(f, "{item}")?;
+            item.write_source(w)?;
         }
         Ok(())
     }
@@ -1290,14 +1420,14 @@ impl SourceLocation for CommandSuffix {
     }
 }
 
-impl Display for CommandSuffix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for CommandSuffix {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         for (i, item) in self.0.iter().enumerate() {
             if i > 0 {
-                write!(f, " ")?;
+                write!(w, " ")?;
             }
 
-            write!(f, "{item}")?;
+            item.write_source(w)?;
         }
         Ok(())
     }
@@ -1358,14 +1488,16 @@ impl SourceLocation for CommandPrefixOrSuffixItem {
     }
 }
 
-impl Display for CommandPrefixOrSuffixItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for CommandPrefixOrSuffixItem {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         match self {
-            Self::IoRedirect(io_redirect) => write!(f, "{io_redirect}"),
-            Self::Word(word) => write!(f, "{word}"),
-            Self::AssignmentWord(_assignment, word) => write!(f, "{word}"),
+            Self::IoRedirect(io_redirect) => io_redirect.write_source(w),
+            Self::Word(word) => write!(w, "{word}"),
+            Self::AssignmentWord(_assignment, word) => write!(w, "{word}"),
             Self::ProcessSubstitution(kind, subshell_command) => {
-                write!(f, "{kind}({subshell_command})")
+                write!(w, "{kind}(")?;
+                subshell_command.write_source(w)?;
+                write!(w, ")")
             }
         }
     }
@@ -1517,10 +1649,10 @@ impl SourceLocation for RedirectList {
     }
 }
 
-impl Display for RedirectList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for RedirectList {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         for item in &self.0 {
-            write!(f, "{item}")?;
+            item.write_source(w)?;
         }
         Ok(())
     }
@@ -1556,36 +1688,38 @@ impl SourceLocation for IoRedirect {
     }
 }
 
-impl Display for IoRedirect {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for IoRedirect {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         match self {
             Self::File(fd_num, kind, target) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{fd_num}")?;
+                    write!(w, "{fd_num}")?;
                 }
 
-                write!(f, "{kind} {target}")?;
+                write!(w, "{kind} ")?;
+                target.write_source(w)?;
             }
             Self::OutputAndError(target, append) => {
-                write!(f, "&>")?;
+                write!(w, "&>")?;
                 if *append {
-                    write!(f, ">")?;
+                    write!(w, ">")?;
                 }
-                write!(f, " {target}")?;
+                write!(w, " {target}")?;
             }
             Self::HereDocument(fd_num, here_doc) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{fd_num}")?;
+                    write!(w, "{fd_num}")?;
                 }
 
-                write!(f, "<<{here_doc}")?;
+                write!(w, "<<")?;
+                here_doc.write_source(w)?;
             }
             Self::HereString(fd_num, s) => {
                 if let Some(fd_num) = fd_num {
-                    write!(f, "{fd_num}")?;
+                    write!(w, "{fd_num}")?;
                 }
 
-                write!(f, "<<< {s}")?;
+                write!(w, "<<< {s}")?;
             }
         }
 
@@ -1652,15 +1786,16 @@ pub enum IoFileRedirectTarget {
     Duplicate(Word),
 }
 
-impl Display for IoFileRedirectTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl WriteSource for IoFileRedirectTarget {
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         match self {
-            Self::Filename(word) => write!(f, "{word}"),
-            Self::Fd(fd) => write!(f, "{fd}"),
+            Self::Filename(word) => write!(w, "{word}"),
+            Self::Fd(fd) => write!(w, "{fd}"),
             Self::ProcessSubstitution(kind, subshell_command) => {
-                write!(f, "{kind}{subshell_command}")
+                write!(w, "{kind}")?;
+                subshell_command.write_source(w)
             }
-            Self::Duplicate(word) => write!(f, "{word}"),
+            Self::Duplicate(word) => write!(w, "{word}"),
         }
     }
 }
@@ -1700,15 +1835,36 @@ impl SourceLocation for IoHereDocument {
     }
 }
 
-impl Display for IoHereDocument {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IoHereDocument {
+    /// Returns the line that ends the document: the delimiter with its quoting removed.
+    fn closing_delimiter(&self) -> std::borrow::Cow<'_, str> {
+        if self.requires_expansion {
+            self.here_end.value.as_str().into()
+        } else {
+            tokenizer::unquote_str(&self.here_end.value).into()
+        }
+    }
+}
+
+impl WriteSource for IoHereDocument {
+    /// Writes the delimiter that follows the operator, single-quoted if any of it was
+    /// quoted. The body and the closing delimiter are written once the current line ends.
+    fn write_source<'n>(&'n self, w: &mut SourceWriter<'_, 'n>) -> std::fmt::Result {
         if self.remove_tabs {
-            write!(f, "-")?;
+            write!(w, "-")?;
         }
 
-        writeln!(f, "{}", self.here_end)?;
-        write!(f, "{}", self.doc)?;
-        writeln!(f, "{}", self.here_end)?;
+        if self.requires_expansion {
+            write!(w, "{}", self.here_end)?;
+        } else {
+            write!(
+                w,
+                "{}",
+                tokenizer::single_quote_str(&self.closing_delimiter())
+            )?;
+        }
+
+        w.pending_here_docs.push(self);
 
         Ok(())
     }
