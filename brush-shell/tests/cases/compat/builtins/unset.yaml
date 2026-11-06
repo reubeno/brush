@@ -299,3 +299,17 @@ cases:
       rm errors.txt
       unset 1x
       echo "unset: $?"
+
+  - name: "unset refuses an element of a readonly array"
+    ignore_stderr: true
+    stdin: |
+      declare -a zz_a=(1 2)
+      readonly zz_a
+      unset 'zz_a[0]'
+      echo "status: $?"
+      declare -p zz_a
+      declare -A zz_m=([k]=1)
+      readonly zz_m
+      unset 'zz_m[k]'
+      echo "status: $?"
+      declare -p zz_m
