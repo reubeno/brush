@@ -1,4 +1,5 @@
 use brush_core::{ExecutionResult, builtins};
+use brush_core::{write_async, writeln_async};
 use std::io::Write;
 
 /// Display command help.
@@ -29,7 +30,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HelpCommand {
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.topic_patterns.is_empty() {
-            Self::display_general_help(&context)?;
+            Self::display_general_help(&context).await?;
             return Ok(ExecutionResult::success());
         }
 
@@ -37,7 +38,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HelpCommand {
         // something; return a non-zero exit code only when none of them matched.
         let mut any_matched = false;
         for topic_pattern in &self.topic_patterns {
-            if self.display_help_for_topic_pattern(&context, topic_pattern)? {
+            if self
+                .display_help_for_topic_pattern(&context, topic_pattern)
+                .await?
+            {
                 any_matched = true;
             }
         }
@@ -51,19 +55,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HelpCommand {
 }
 
 impl HelpCommand {
-    fn display_general_help(
+    async fn display_general_help(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
         const COLUMN_COUNT: usize = 3;
 
         if let Some(display_str) = context.shell.product_display_str() {
-            writeln!(context.stdout(), "{display_str}\n")?;
+            writeln_async!(context.stdout_async(), "{display_str}\n").await?;
         }
 
-        writeln!(
-            context.stdout(),
+        writeln_async!(
+            context.stdout_async(),
             "The following commands are implemented as shell built-ins:"
-        )?;
+        )
+        .await?;
 
         let builtins: Vec<_> = context.shell.builtins().iter().collect();
         let items_per_column = builtins.len().div_ceil(COLUMN_COUNT);
@@ -72,11 +77,11 @@ impl HelpCommand {
             for j in 0..COLUMN_COUNT {
                 if let Some((name, builtin)) = builtins.get(i + j * items_per_column) {
                     let prefix = if !builtin.is_enabled() { "*" } else { " " };
-                    write!(context.stdout(), "  {prefix}{name:<20}")?; // adjust 20 to the desired
+                    write_async!(context.stdout_async(), "  {prefix}{name:<20}").await?; // adjust 20 to the desired
                     // column width
                 }
             }
-            writeln!(context.stdout())?;
+            writeln_async!(context.stdout_async()).await?;
         }
 
         Ok(())
@@ -84,7 +89,7 @@ impl HelpCommand {
 
     /// Displays help for the builtins matching `topic_pattern`, returning whether
     /// at least one topic matched.
-    fn display_help_for_topic_pattern(
+    async fn display_help_for_topic_pattern(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         topic_pattern: &str,
@@ -102,7 +107,11 @@ impl HelpCommand {
         }
 
         if !matched {
-            writeln!(context.stderr(), "No help topics match '{topic_pattern}'")?;
+            writeln_async!(
+                context.stderr_async(),
+                "No help topics match '{topic_pattern}'"
+            )
+            .await?;
         }
 
         Ok(matched)

@@ -1,6 +1,7 @@
-use std::io::Write;
+use tokio::io::AsyncWriteExt as _;
 
 use brush_core::traps::TrapSignal;
+use brush_core::writeln_async;
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, sys};
 
 /// Signal a job or process.
@@ -47,12 +48,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
             if let Ok(parsed_trap_signal) = TrapSignal::try_from(signal_name.as_str()) {
                 trap_signal = parsed_trap_signal;
             } else {
-                writeln!(
-                    context.stderr(),
-                    "{}: invalid signal name: {}",
-                    context.command_name,
-                    signal_name
-                )?;
+                report(&context, format!("invalid signal name: {signal_name}")).await?;
                 return Ok(ExecutionExitCode::InvalidUsage.into());
             }
         }
@@ -67,12 +63,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
                 if let Ok(parsed_trap_signal) = TrapSignal::try_from(*signal_number as i32) {
                     trap_signal = parsed_trap_signal;
                 } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: invalid signal number: {}",
-                        context.command_name,
-                        signal_number
-                    )?;
+                    report(&context, format!("invalid signal number: {signal_number}")).await?;
                     return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             }
@@ -80,7 +71,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
 
         // With -l, the remaining args are signals (or exit statuses) to look up.
         if self.list_signals {
-            return print_signals(&context, self.args.as_ref());
+            return print_signals(&context, self.args.as_ref()).await;
         }
 
         // Look through the remaining args for a pid/job spec or a -sigspec style option.
@@ -95,28 +86,23 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
                     signal_zero = false;
                     trap_signal = parsed_trap_signal;
                 } else {
-                    writeln!(
-                        context.stderr(),
-                        "{}: {}: invalid signal specification",
-                        context.command_name,
-                        possible_sigspec
-                    )?;
+                    report(
+                        &context,
+                        format!("{possible_sigspec}: invalid signal specification"),
+                    )
+                    .await?;
                     return Ok(ExecutionResult::general_error());
                 }
             } else if pid_or_job_spec.is_none() {
                 pid_or_job_spec = Some(arg);
             } else {
-                writeln!(
-                    context.stderr(),
-                    "{}: too many jobs or processes specified",
-                    context.command_name
-                )?;
+                report(&context, "too many jobs or processes specified").await?;
                 return Ok(ExecutionExitCode::InvalidUsage.into());
             }
         }
 
         let Some(pid_or_job_spec) = pid_or_job_spec else {
-            writeln!(context.stderr(), "{}: invalid usage", context.command_name)?;
+            report(&context, "invalid usage").await?;
             return Ok(ExecutionExitCode::InvalidUsage.into());
         };
 
@@ -129,12 +115,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
                     job.kill(trap_signal)?;
                 }
             } else {
-                writeln!(
-                    context.stderr(),
-                    "{}: {}: no such job",
-                    context.command_name,
-                    pid_or_job_spec
-                )?;
+                report(&context, format!("{pid_or_job_spec}: no such job")).await?;
                 return Ok(ExecutionResult::general_error());
             }
         } else {
@@ -151,7 +132,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for KillCommand {
     }
 }
 
-fn print_signals(
+async fn print_signals(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     signals: &[String],
 ) -> Result<ExecutionResult, brush_core::Error> {
@@ -187,24 +168,36 @@ fn print_signals(
 
             match signal {
                 Ok(PrintSignal::Num(n)) => {
-                    writeln!(context.stdout(), "{n}")?;
+                    writeln_async!(context.stdout_async(), "{n}").await?;
                 }
                 Ok(PrintSignal::Name(s)) => {
-                    writeln!(context.stdout(), "{s}")?;
+                    writeln_async!(context.stdout_async(), "{s}").await?;
                 }
                 Err(e) => {
-                    writeln!(context.stderr(), "{e}")?;
+                    writeln_async!(context.stderr_async(), "{e}").await?;
                     exit_code = ExecutionResult::general_error();
                 }
             }
         }
     } else {
-        return brush_core::traps::format_signals(
-            context.stdout(),
+        let mut text = Vec::new();
+        brush_core::traps::format_signals(
+            &mut text,
             TrapSignal::iterator().filter(|s| !matches!(s, TrapSignal::Exit)),
-        )
-        .map(|()| ExecutionResult::success());
+        )?;
+        context.stdout_async().write_all(&text).await?;
+        return Ok(ExecutionResult::success());
     }
 
     Ok(exit_code)
+}
+
+/// Reports `message` on standard error, after the command's name.
+async fn report(
+    context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+    message: impl std::fmt::Display,
+) -> Result<(), brush_core::Error> {
+    let line = format!("{}: {message}", context.command_name);
+    writeln_async!(context.stderr_async(), "{line}").await?;
+    Ok(())
 }
