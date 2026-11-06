@@ -1895,6 +1895,102 @@ bc"
         Ok(())
     }
 
+    /// Returns the source text each token's span covers, checking that each position's
+    /// byte offset lands on a char boundary and agrees with its (char-based) line and column.
+    fn token_source_slices<'a>(input: &'a str, tokens: &[Token]) -> Result<Vec<&'a str>> {
+        let source = |start: usize, end: usize| {
+            input
+                .get(start..end)
+                .ok_or_else(|| anyhow::anyhow!("{start}..{end} not on char boundaries: {input:?}"))
+        };
+        tokens
+            .iter()
+            .map(|token| {
+                let loc = token.location();
+                for pos in [&loc.start, &loc.end] {
+                    let before = source(0, pos.byte_offset)?;
+                    assert_eq!(
+                        (pos.line, pos.column),
+                        (
+                            before.matches('\n').count() + 1,
+                            before.chars().rev().take_while(|&c| c != '\n').count() + 1
+                        ),
+                        "{pos:?} in {input:?}"
+                    );
+                }
+                let text = source(loc.start.byte_offset, loc.end.byte_offset)?;
+                assert_eq!(loc.len_bytes(), text.len());
+                Ok(text)
+            })
+            .collect()
+    }
+
+    #[test]
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn tokenize_multibyte_token_spans() -> Result<()> {
+        // Multibyte chars inside words, quotes and expansions: each span slices its token.
+        for input in [
+            "echo héllo \"wörld ü\" 'ç' $'ß'\n",
+            "x=$(echo “é”) y=`echo ü` z=$[ü+1] w=${v:-ü} é\n",
+            "echo $(echo $(echo ü) “é”) ö\n",
+            "case ü in é) echo ö;; esac\n",
+            "f() { echo ✓; }; [[ é == ü* ]] && echo 日本語\n",
+        ] {
+            let tokens = tokenize_str(input)?;
+            let token_strs: Vec<_> = tokens.iter().map(Token::to_str).collect();
+            assert_eq!(
+                token_source_slices(input, &tokens)?,
+                token_strs,
+                "{input:?}"
+            );
+        }
+
+        // Where a token's text isn't its source: a here-doc body's span runs through its end
+        // tag (whose own span is empty), a comment is folded into the newline after it, and a
+        // line continuation is dropped from its word. The second here-doc's body is read ahead
+        // of `é tail` and then replayed, so the tokens after it check that replay.
+        for (input, expected) in [
+            (
+                "cat <<EOF\nbödy ü\nEOF\necho é\n",
+                &[
+                    "cat",
+                    "<<",
+                    "EOF",
+                    "bödy ü\nEOF\n",
+                    "",
+                    "\n",
+                    "echo",
+                    "é",
+                    "\n",
+                ][..],
+            ),
+            (
+                "echo $(cat <<EOF) é tail\nbödy\nEOF\necho ü\n",
+                &[
+                    "echo",
+                    "$(cat <<EOF)",
+                    "é",
+                    "tail",
+                    "\nbödy\nEOF\n",
+                    "echo",
+                    "ü",
+                    "\n",
+                ],
+            ),
+            (
+                "# café\necho é\\\nü\n",
+                &["# café\n", "echo", "é\\\nü", "\n"],
+            ),
+        ] {
+            assert_eq!(
+                token_source_slices(input, &tokenize_str(input)?)?,
+                expected,
+                "{input:?}"
+            );
+        }
+        Ok(())
+    }
+
     #[test]
     fn tokenize_operator_followed_by_backslash() -> Result<()> {
         // The `;` ends before the escaped `b`. The `|` ends after the line continuation following
