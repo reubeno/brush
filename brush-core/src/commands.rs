@@ -90,6 +90,57 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
         self.params.stderr(self.shell)
     }
 
+    /// Returns the standard input file, for reading asynchronously. A read from an empty
+    /// pipe gives way to the shell's other tasks rather than blocking. If there's no
+    /// standard input, every read fails.
+    pub fn stdin_async(&self) -> openfiles::async_file::AsyncOpenFile {
+        self.fd_async(
+            openfiles::OpenFiles::STDIN_FD,
+            "standard input not available",
+        )
+    }
+
+    /// Returns the standard output file, for writing asynchronously; usable with
+    /// [`write_async!`](crate::write_async) and [`writeln_async!`](crate::writeln_async),
+    /// awaiting the result. A write to a full pipe gives way to the
+    /// shell's other tasks rather than blocking. If there's no standard output, every
+    /// write fails.
+    pub fn stdout_async(&self) -> openfiles::async_file::AsyncOpenFile {
+        self.fd_async(
+            openfiles::OpenFiles::STDOUT_FD,
+            "standard output not available",
+        )
+    }
+
+    /// Returns the standard error file, for writing asynchronously; usable with
+    /// [`write_async!`](crate::write_async) and [`writeln_async!`](crate::writeln_async),
+    /// awaiting the result. A write to a full pipe gives way to the
+    /// shell's other tasks rather than blocking. If there's no standard error, every
+    /// write fails.
+    pub fn stderr_async(&self) -> openfiles::async_file::AsyncOpenFile {
+        self.fd_async(
+            openfiles::OpenFiles::STDERR_FD,
+            "standard error not available",
+        )
+    }
+
+    /// Returns the file descriptor with the given number, for reading or writing
+    /// asynchronously. Returns `None` if the file descriptor is not open.
+    ///
+    /// # Arguments
+    ///
+    /// * `fd` - The file descriptor number to retrieve.
+    pub fn try_fd_async(&self, fd: ShellFd) -> Option<openfiles::async_file::AsyncOpenFile> {
+        self.try_fd(fd)
+            .map(openfiles::async_file::AsyncOpenFile::from)
+    }
+
+    fn fd_async(&self, fd: ShellFd, missing: &'static str) -> openfiles::async_file::AsyncOpenFile {
+        self.try_fd_async(fd).unwrap_or_else(|| {
+            openfiles::OpenFile::from(crate::ioutils::FailingReaderWriter::new(missing)).into()
+        })
+    }
+
     /// Returns the file descriptor with the given number. Returns `None`
     /// if the file descriptor is not open.
     ///
@@ -875,7 +926,6 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     } else {
         shell.task_spawner().spawn_blocking(command).await
     };
-
 
     let output_str = async_reader.read_to_string().await?;
 
