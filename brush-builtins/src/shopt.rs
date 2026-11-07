@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use std::io::Write;
 
-use brush_core::{ExecutionExitCode, ExecutionResult, builtins};
+use brush_core::{ExecutionResult, builtins};
 
 /// Manage shopt-style options.
 #[derive(winnow_args::Args)]
@@ -45,9 +45,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ShoptCommand {
         if self.set && self.unset {
             writeln!(
                 context.stderr(),
-                "cannot set and unset shell options simultaneously"
+                "{}: cannot set and unset shell options simultaneously",
+                context.command_name
             )?;
-            return Ok(ExecutionExitCode::InvalidUsage.into());
+            return Ok(ExecutionResult::general_error());
         }
 
         if self.options.is_empty() {
