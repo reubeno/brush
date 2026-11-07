@@ -45,9 +45,39 @@ cases:
       umask -p -S
 
   - name: "umask takes a symbolic mode"
-    known_failure: true # TODO(umask): a symbolic mode is not implemented
-    ignore_stderr: true
     stdin: |
       umask 022
       umask u=rwx,g=rx,o=; umask
       umask g-r; umask
+      umask g-w,o-rwx; umask
+      umask a=; umask
+      umask =rwx; umask
+      umask g=u; umask
+      umask ug=o-w; umask
+      umask u=+r; umask
+      umask +w; umask
+      umask 027; umask g=,o=g; umask
+      umask 027; umask u=g,g=u; umask
+      umask 027; umask o=ug; umask
+      umask 022; umask u=ug; umask
+      umask 027; umask o=gr-r; umask
+
+  - name: "umask refuses an invalid symbolic mode and keeps the old mask"
+    stdin: |
+      strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
+      umask 022
+      for mode in z+r u+q 'g+w,z+r' u+rz; do
+        umask "$mode" 2>err.txt; echo "$mode: $?"
+        strip <err.txt
+      done
+      umask
+      rm err.txt
+
+  - name: "umask refuses a symbolic mode missing an operator"
+    ignore_stderr: true
+    stdin: |
+      umask 022
+      for mode in u 'u+r,' ''; do
+        umask "$mode"; echo "$mode: $?"
+      done
+      umask
