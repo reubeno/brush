@@ -4,6 +4,7 @@ pub use crate::sys::stubs::fd;
 pub(crate) mod fs;
 pub use crate::sys::stubs::input;
 pub(crate) use crate::sys::stubs::network;
+pub(crate) use crate::sys::stubs::pipe_io;
 pub(crate) mod pipes;
 pub use crate::sys::stubs::poll;
 pub mod process;

@@ -1,5 +1,6 @@
+use brush_core::writeln_async;
 use itertools::Itertools;
-use std::{io::Write, sync::LazyLock};
+use std::sync::LazyLock;
 
 use brush_core::{
     ErrorKind, ExecutionResult, builtins,
@@ -125,7 +126,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
         };
 
         if matches!(verb, DeclareVerb::Local) && !context.shell.in_function() {
-            writeln!(context.stderr(), "can only be used in a function")?;
+            writeln_async!(context.stderr_async(), "can only be used in a function").await?;
             return Ok(ExecutionResult::general_error());
         }
 
@@ -133,11 +134,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
         if !self.declarations.is_empty() {
             for declaration in &self.declarations {
                 if self.print && !matches!(verb, DeclareVerb::Readonly) {
-                    if !self.try_display_declaration(&context, declaration, verb)? {
+                    if !self
+                        .try_display_declaration(&context, declaration, verb)
+                        .await?
+                    {
                         result = ExecutionResult::general_error();
                     }
                 } else {
-                    if !self.process_declaration(&mut context, declaration, verb)? {
+                    if !self
+                        .process_declaration(&mut context, declaration, verb)
+                        .await?
+                    {
                         result = ExecutionResult::general_error();
                     }
                 }
@@ -145,14 +152,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
         } else {
             // Display matching declarations from the variable environment.
             if !self.function_names_only && !self.function_names_or_defs_only {
-                self.display_matching_env_declarations(&context, verb)?;
+                self.display_matching_env_declarations(&context, verb)
+                    .await?;
             }
 
             // Do the same for functions.
             if !matches!(verb, DeclareVerb::Local | DeclareVerb::Readonly)
                 && (!self.print || self.function_names_only || self.function_names_or_defs_only)
             {
-                self.display_matching_functions(&context)?;
+                self.display_matching_functions(&context).await?;
             }
         }
 
@@ -161,7 +169,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
 }
 
 impl DeclareCommand {
-    fn try_display_declaration(
+    async fn try_display_declaration(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
@@ -170,7 +178,7 @@ impl DeclareCommand {
         let name = match declaration {
             brush_core::CommandArg::String(s) => s,
             brush_core::CommandArg::Assignment(_) => {
-                writeln!(context.stderr(), "declare: {declaration}: not found")?;
+                writeln_async!(context.stderr_async(), "declare: {declaration}: not found").await?;
                 return Ok(false);
             }
         };
@@ -185,12 +193,13 @@ impl DeclareCommand {
             if let Some(func_registration) = context.shell.funcs().get(name) {
                 if self.function_names_only {
                     if self.print {
-                        writeln!(context.stdout(), "declare -f {name}")?;
+                        writeln_async!(context.stdout_async(), "declare -f {name}").await?;
                     } else {
-                        writeln!(context.stdout(), "{name}")?;
+                        writeln_async!(context.stdout_async(), "{name}").await?;
                     }
                 } else {
-                    writeln!(context.stdout(), "{}", func_registration.definition())?;
+                    writeln_async!(context.stdout_async(), "{}", func_registration.definition())
+                        .await?;
                 }
                 Ok(true)
             } else {
@@ -210,15 +219,16 @@ impl DeclareCommand {
                 "="
             };
 
-            writeln!(
-                context.stdout(),
+            writeln_async!(
+                context.stdout_async(),
                 "declare -{cs} {name}{separator_str}{}",
                 resolved_value.format(variables::FormatStyle::DeclarePrint, context.shell)?
-            )?;
+            )
+            .await?;
 
             Ok(true)
         } else {
-            writeln!(context.stderr(), "declare: {name}: not found")?;
+            writeln_async!(context.stderr_async(), "declare: {name}: not found").await?;
             Ok(false)
         }
     }
@@ -250,7 +260,7 @@ impl DeclareCommand {
         true
     }
 
-    fn process_declaration(
+    async fn process_declaration(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         declaration: &brush_core::CommandArg,
@@ -268,7 +278,9 @@ impl DeclareCommand {
         }
 
         if self.function_names_or_defs_only || self.function_names_only {
-            return self.try_display_declaration(context, declaration, verb);
+            return self
+                .try_display_declaration(context, declaration, verb)
+                .await;
         }
 
         // Extract the variable name and the initial value being assigned (if any).
@@ -285,11 +297,8 @@ impl DeclareCommand {
 
         // Make sure it's a valid name.
         if !env::valid_variable_name(name.as_str()) {
-            writeln!(
-                context.stderr(),
-                "{}: `{name}': not a valid identifier",
-                context.command_name
-            )?;
+            let message = format!("{}: `{name}': not a valid identifier", context.command_name);
+            writeln_async!(context.stderr_async(), "{message}").await?;
             return Ok(false);
         }
 
@@ -492,7 +501,7 @@ impl DeclareCommand {
         Ok((name, assigned_index, initial_value, name_is_array, append))
     }
 
-    fn display_matching_env_declarations(
+    async fn display_matching_env_declarations(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         verb: DeclareVerb,
@@ -503,7 +512,7 @@ impl DeclareCommand {
 
         // We start by excluding all variables that are not enumerable.
         #[expect(clippy::type_complexity)]
-        let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool>> =
+        let mut filters: Vec<Box<dyn Fn((&String, &ShellVariable)) -> bool + Send + Sync>> =
             vec![Box::new(|(_, v)| v.is_enumerable())];
 
         // Add filters depending on verb.
@@ -590,36 +599,38 @@ impl DeclareCommand {
                     "="
                 };
 
-                writeln!(
-                    context.stdout(),
+                writeln_async!(
+                    context.stdout_async(),
                     "declare -{cs} {name}{separator_str}{}",
                     variable
                         .value()
                         .format(variables::FormatStyle::DeclarePrint, context.shell)?
-                )?;
+                )
+                .await?;
             } else {
-                writeln!(
-                    context.stdout(),
+                writeln_async!(
+                    context.stdout_async(),
                     "{name}={}",
                     variable
                         .value()
                         .format(variables::FormatStyle::Basic, context.shell)?
-                )?;
+                )
+                .await?;
             }
         }
 
         Ok(())
     }
 
-    fn display_matching_functions(
+    async fn display_matching_functions(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     ) -> Result<(), brush_core::Error> {
         for (name, registration) in context.shell.funcs().iter().sorted_by_key(|v| v.0) {
             if self.function_names_only {
-                writeln!(context.stdout(), "declare -f {name}")?;
+                writeln_async!(context.stdout_async(), "declare -f {name}").await?;
             } else {
-                writeln!(context.stdout(), "{}", registration.definition())?;
+                writeln_async!(context.stdout_async(), "{}", registration.definition()).await?;
             }
         }
 

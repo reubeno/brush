@@ -1,5 +1,5 @@
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins, callstack};
-use std::io::Write;
 
 /// Return the context of the current subroutine call.
 #[derive(winnow_args::Args)]
@@ -48,9 +48,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CallerCommand {
                 _ => "".into(),
             };
 
-            writeln!(context.stdout(), "{line} {function_name} {filename}")?;
+            writeln_async!(context.stdout_async(), "{line} {function_name} {filename}").await?;
         } else {
-            writeln!(context.stdout(), "{line} {filename}")?;
+            writeln_async!(context.stdout_async(), "{line} {filename}").await?;
         }
 
         Ok(ExecutionResult::success())

@@ -394,7 +394,6 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "utf8-chars",
  "uucore",
  "winnow-args",
 ]
@@ -446,6 +445,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.10.3",
  "rpds",
+ "rustix",
  "serde",
  "strum",
  "strum_macros",
