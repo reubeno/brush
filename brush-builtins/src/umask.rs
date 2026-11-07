@@ -49,7 +49,19 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
 
                 set_umask(parsed)?;
             } else {
-                return brush_core::error::unimp("umask setting mode from symbolic value");
+                let current = get_umask()?;
+                match apply_symbolic_mode(mode, current) {
+                    Ok(new_umask) => {
+                        // `mode_t` is `u32` on some platforms and narrower on others.
+                        #[allow(clippy::useless_conversion)]
+                        let new_umask = new_umask.try_into().unwrap_or(0o777);
+                        set_umask(new_umask)?;
+                    }
+                    Err(message) => {
+                        writeln!(context.stderr(), "{}: {message}", context.command_name)?;
+                        return Ok(ExecutionResult::general_error());
+                    }
+                }
             }
         } else {
             let umask = get_umask()?;
@@ -95,6 +107,76 @@ fn set_umask(value: nix::sys::stat::mode_t) -> Result<(), brush_core::Error> {
     let mode = nix::sys::stat::Mode::from_bits(value).ok_or_else(|| ErrorKind::InvalidUmask)?;
     nix::sys::stat::umask(mode);
     Ok(())
+}
+
+/// Applies a symbolic mode (e.g., `g-w,o=rx`) to the given umask, returning the new umask.
+/// Copy sources (`u`, `g`, `o`) refer to the original permissions, not those updated by earlier
+/// clauses. Symbolic modes describe the *permitted* bits, which are the complement of the umask.
+fn apply_symbolic_mode(mode: &str, umask: u32) -> Result<u32, String> {
+    let original = !umask & 0o777;
+    let mut perms = original;
+
+    for clause in mode.split(',') {
+        let mut chars = clause.chars().peekable();
+
+        let mut who = 0u32;
+        while let Some(shift) = chars.peek().and_then(|c| match c {
+            'u' => Some(0o700),
+            'g' => Some(0o070),
+            'o' => Some(0o007),
+            'a' => Some(0o777),
+            _ => None,
+        }) {
+            who |= shift;
+            chars.next();
+        }
+        if who == 0 {
+            who = 0o777;
+        }
+
+        // At least one operator is required; more may follow.
+        if !matches!(chars.peek(), Some('+' | '-' | '=')) {
+            let found = chars.peek().copied().unwrap_or(' ');
+            return Err(std::format!("`{found}': invalid symbolic mode operator"));
+        }
+
+        while let Some(op @ ('+' | '-' | '=')) = chars.peek().copied() {
+            chars.next();
+
+            let mut bits = 0u32;
+            while let Some(c) = chars.peek().copied() {
+                match c {
+                    'r' => bits |= 0o444,
+                    'w' => bits |= 0o222,
+                    'x' => bits |= 0o111,
+                    // Accepted, but have no effect on a umask.
+                    's' | 't' | 'X' => (),
+                    'u' | 'g' | 'o' => {
+                        let source = match c {
+                            'u' => (original >> 6) & 0o7,
+                            'g' => (original >> 3) & 0o7,
+                            _ => original & 0o7,
+                        };
+                        bits = source * 0o111;
+                    }
+                    '+' | '-' | '=' => break,
+                    _ => {
+                        return Err(std::format!("`{c}': invalid symbolic mode character"));
+                    }
+                }
+                chars.next();
+            }
+
+            let bits = bits & who;
+            match op {
+                '+' => perms |= bits,
+                '-' => perms &= !bits,
+                _ => perms = (perms & !who) | bits,
+            }
+        }
+    }
+
+    Ok(!perms & 0o777)
 }
 
 fn symbolic_mask_from_bits(bits: u32) -> String {
