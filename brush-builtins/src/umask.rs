@@ -51,7 +51,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
             } else {
                 let current = get_umask()?;
                 match apply_symbolic_mode(mode, current) {
-                    Ok(new_umask) => set_umask(new_umask.try_into().unwrap_or(0o777))?,
+                    Ok(new_umask) => {
+                        // `mode_t` is `u32` on some platforms and narrower on others.
+                        #[allow(clippy::useless_conversion)]
+                        let new_umask = new_umask.try_into().unwrap_or(0o777);
+                        set_umask(new_umask)?;
+                    }
                     Err(message) => {
                         writeln!(context.stderr(), "{}: {message}", context.command_name)?;
                         return Ok(ExecutionResult::general_error());
