@@ -42,6 +42,16 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for HashCommand {
         let mut result = ExecutionResult::success();
         let cmd = &context.command_name;
 
+        // -d and -t need at least one name, and bash checks this before anything else.
+        if (self.remove || self.display_paths) && self.names.is_empty() {
+            let option = if self.remove { "-d" } else { "-t" };
+            writeln!(
+                context.stderr(),
+                "{cmd}: {option}: option requires an argument"
+            )?;
+            return Ok(ExecutionResult::general_error());
+        }
+
         if self.remove_all {
             context.shell.program_location_cache_mut().reset();
         } else if self.remove {
