@@ -99,17 +99,18 @@ cases:
       echo
 
   - name: "builtin --help prints help on stdout"
-    known_failure: true # TODO(builtin): --help is looked up as a builtin's name
     stdin: |
       builtin --help >/dev/null 2>&1; echo "rc=$?"
       [[ -n $(builtin --help 2>/dev/null) ]] && echo "help on stdout"
 
   - name: "builtin rejects options"
-    known_failure: true # TODO(builtin): options are looked up as builtin names
     ignore_stderr: true
     stdin: |
       builtin -z true; echo "rc=$?"
       builtin -- true; echo "rc=$?"
+      builtin -- -z; echo "rc=$?"
+      builtin -; echo "rc=$?"
+      builtin -z -- true; echo "rc=$?"
 
   - name: "builtin drops a special builtin's fatal errors in POSIX mode"
     ignore_stderr: true
