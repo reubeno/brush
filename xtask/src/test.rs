@@ -469,10 +469,21 @@ fn run_tests_with_coverage(
 
     // Tests (e.g. umask cases) may leave coverage data files unreadable by their owner, which
     // makes `llvm-profdata merge` fail. Make sure we can read and write them.
-    if let Err(e) = find_target_dir()
-        .and_then(|dir| make_profraw_files_owner_accessible(&dir.join("llvm-cov-target")))
-    {
-        eprintln!("Warning: failed to fix permissions on coverage data: {e}");
+    // Use the location cargo-llvm-cov told us about rather than assuming a directory layout.
+    let profraw_dir = env_output
+        .lines()
+        .filter_map(|line| line.strip_prefix("export "))
+        .filter_map(|rest| rest.split_once('='))
+        .find(|(k, _)| *k == "LLVM_PROFILE_FILE")
+        .and_then(|(_, v)| {
+            Path::new(v.trim_matches(['"', '\'']))
+                .parent()
+                .map(Path::to_path_buf)
+        });
+    if let Some(dir) = profraw_dir {
+        if let Err(e) = make_profraw_files_owner_accessible(&dir) {
+            eprintln!("Warning: failed to fix permissions on coverage data: {e}");
+        }
     }
 
     // Generate coverage report (always attempt this)
