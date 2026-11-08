@@ -535,6 +535,11 @@ fn make_profraw_files_owner_accessible(dir: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(
+    clippy::missing_const_for_fn,
+    clippy::unnecessary_wraps,
+    reason = "must match the signature of the unix implementation"
+)]
 fn make_profraw_files_owner_accessible(_dir: &Path) -> Result<()> {
     Ok(())
 }
