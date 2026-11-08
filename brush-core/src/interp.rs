@@ -498,6 +498,11 @@ async fn spawn_pipeline_processes(
         pipe_writers.reserve_exact(pipeline_len - 1);
 
         for _ in 0..(pipeline_len - 1) {
+            // Unix can lazily materialize channel ends for external children.
+            // Other hosts retain their existing pipe backend for this spike.
+            #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
+            let (reader, writer) = crate::byte_pipe::channel_pipe();
+            #[cfg(not(unix))] // ast-grep-ignore: platform-cfg-outside-sys
             let (reader, writer) = sys::pipes::pipe()?;
             pipe_readers.push(Some(reader.into()));
             pipe_writers.push(Some(writer.into()));
