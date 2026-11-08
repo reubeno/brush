@@ -77,11 +77,13 @@ cases:
       shopt -o -p emacs
 
   - name: "shopt refuses to set and unset at once"
-    known_failure: true # TODO(shopt): fails with status 2, where bash fails with 1
     stdin: |
       strip() { sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]*: line [0-9]+: //; s/^error: //'; }
       shopt -s -u extglob 2>&1 | strip
       echo "shopt: ${PIPESTATUS[0]}"
+      shopt -su nullglob 2>&1 | strip
+      echo "shopt: ${PIPESTATUS[0]}"
+      shopt -p nullglob
 
   - name: "shopt takes -- and -o with -s, -u, -p and -q"
     stdin: |
