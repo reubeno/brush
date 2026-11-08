@@ -236,14 +236,14 @@ impl ResourceDescription {
         }
     }
 
-    fn set(&self, set_hard: bool, value: LimitValue) -> std::io::Result<()> {
+    fn set(&self, set_hard: bool, value: &LimitValue) -> std::io::Result<()> {
         let (soft, hard) = self.resource.get()?;
         let value = match value {
             LimitValue::Soft => soft,
             LimitValue::Hard => hard,
             LimitValue::Unlimited => rlimit::INFINITY,
-            LimitValue::Value(v) => v * self.unit.scale(),
-            LimitValue::Unset => return Ok(()),
+            LimitValue::Value(v) => *v * self.unit.scale(),
+            LimitValue::Unset | LimitValue::Invalid(_) => return Ok(()),
         };
 
         if set_hard {
@@ -282,13 +282,15 @@ impl ResourceDescription {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum LimitValue {
     Unset,
     Unlimited,
     Soft,
     Hard,
     Value(u64),
+    /// Not a number; reported when the limit would be set, as bash does.
+    Invalid(String),
 }
 
 impl FromStr for LimitValue {
@@ -299,7 +301,8 @@ impl FromStr for LimitValue {
             "unlimited" => Self::Unlimited,
             "soft" => Self::Soft,
             "hard" => Self::Hard,
-            _ => Self::Value(s.parse()?),
+            _ if s.bytes().all(|b| b.is_ascii_digit()) => Self::Value(s.parse()?),
+            _ => Self::Invalid(s.to_owned()),
         };
         Ok(v)
     }
@@ -536,7 +539,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ULimitCommand {
         }
 
         for (resource, value) in resources_to_set {
-            resource.set(self.hard, value)?;
+            if let LimitValue::Invalid(value) = value {
+                writeln!(
+                    context.stderr(),
+                    "{}: {value}: invalid number",
+                    context.command_name
+                )?;
+                return Ok(ExecutionResult::general_error());
+            }
+            resource.set(self.hard, &value)?;
         }
 
         if resources_to_get.len() == 1 {
