@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use brush_core::{ExecutionResult, builtins, escape};
 
 /// Echo text to standard output.
@@ -65,8 +63,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EchoCommand {
             s.push('\n');
         }
 
-        write!(context.stdout(), "{s}")?;
-        context.stdout().flush()?;
+        context.write_stdout(s.as_bytes()).await?;
 
         Ok(ExecutionResult::success())
     }

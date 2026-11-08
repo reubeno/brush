@@ -17,6 +17,25 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
     /// Clones the stream into a boxed trait object.
     fn clone_box(&self) -> Box<dyn Stream>;
 
+    /// Async migration hook. Legacy streams use a blocking-pool adapter on native hosts.
+    fn read_async<'a>(
+        &'a self,
+        buf: &'a mut [u8],
+    ) -> futures::future::BoxFuture<'a, std::io::Result<usize>> {
+        Box::pin(blocking_read(OpenFile::Stream(self.clone_box()), buf))
+    }
+
+    /// Async migration hook; channel streams override this with cooperative writes.
+    fn write_all_async<'a>(
+        &'a self,
+        buf: &'a [u8],
+    ) -> futures::future::BoxFuture<'a, std::io::Result<()>> {
+        Box::pin(blocking_write(
+            OpenFile::Stream(self.clone_box()),
+            buf.to_vec(),
+        ))
+    }
+
     /// Converts the stream into an `OwnedFd`. Returns an error if the operation
     /// is not supported or if it fails.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
@@ -132,7 +151,65 @@ impl std::fmt::Display for OpenFile {
     }
 }
 
+// Native compatibility boundary: never perform legacy file/terminal I/O on
+// runtime worker threads. WASM retains its existing nonblocking stream contract.
+pub(crate) async fn blocking_write(mut file: OpenFile, buf: Vec<u8>) -> std::io::Result<()> {
+    use std::io::Write;
+    let operation = move || {
+        file.write_all(&buf)?;
+        file.flush()
+    };
+    #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
+    {
+        tokio::task::spawn_blocking(operation)
+            .await
+            .map_err(std::io::Error::other)?
+    }
+    #[cfg(target_family = "wasm")] // ast-grep-ignore: platform-cfg-outside-sys
+    {
+        let mut operation = operation;
+        operation()
+    }
+}
+
+pub(crate) async fn blocking_read(mut file: OpenFile, buf: &mut [u8]) -> std::io::Result<usize> {
+    use std::io::Read;
+    let len = buf.len();
+    let operation = move || {
+        let mut bytes = vec![0; len];
+        let n = file.read(&mut bytes)?;
+        Ok::<_, std::io::Error>((bytes, n))
+    };
+    #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
+    let (bytes, n) = tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(std::io::Error::other)??;
+    #[cfg(target_family = "wasm")] // ast-grep-ignore: platform-cfg-outside-sys
+    let (bytes, n) = {
+        let mut operation = operation;
+        operation()?
+    };
+    buf[..n].copy_from_slice(&bytes[..n]);
+    Ok(n)
+}
+
 impl OpenFile {
+    /// Writes all bytes asynchronously when supported, with a legacy native I/O adapter.
+    pub async fn write_all_async(&self, buf: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Stream(stream) => stream.write_all_async(buf).await,
+            _ => blocking_write(self.clone(), buf.to_vec()).await,
+        }
+    }
+
+    /// Reads asynchronously when supported, with a legacy native I/O adapter.
+    pub async fn read_async(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Stream(stream) => stream.read_async(buf).await,
+            _ => blocking_read(self.clone(), buf).await,
+        }
+    }
+
     /// Converts the open file into an `OwnedFd`. For shared file/pipe handles this materializes
     /// a real duplicate via `dup(2)` so the caller receives an independently owned descriptor.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
