@@ -560,7 +560,11 @@ impl ReadCommand {
         mut stderr_file: impl std::io::Write,
         timeout: Option<Duration>,
     ) -> Result<ReadResult, brush_core::Error> {
-        let term_mode = self.setup_terminal_settings(&input_file)?;
+        let term_mode = if input_file.is_terminal() {
+            self.setup_terminal_settings(&input_file)?
+        } else {
+            None
+        };
 
         // Display prompt on stderr, but only if input is from a terminal (per bash behavior).
         if let Some(prompt) = &self.prompt {

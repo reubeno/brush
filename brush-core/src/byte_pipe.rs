@@ -12,7 +12,7 @@
 //! See SPIKE.md for the tradeoffs and cancellation limitations.
 
 use std::io::{self, Read, Write};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use crate::openfiles::{OpenFile, Stream};
 use bytes::Bytes;
@@ -68,6 +68,7 @@ fn would_block() -> io::Error {
     io::ErrorKind::WouldBlock.into()
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn sync_retry() -> io::Result<()> {
     #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
     {
@@ -78,6 +79,10 @@ fn sync_retry() -> io::Result<()> {
     Err(would_block())
 }
 
+fn missing(message: &'static str) -> io::Error {
+    io::Error::other(message)
+}
+
 impl ChannelReader {
     // The same mutex covers consumption and materialization. No receive future
     // survives unlocking it: a bridge can never steal chunks from a pending read.
@@ -85,21 +90,35 @@ impl ChannelReader {
         if buf.is_empty() {
             return Ok(0);
         }
-        let mut state = self.0.state.lock().unwrap();
+        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(mut reader) = self.0.native.get() {
             // This is the legacy sync path; async callers offload native I/O.
             drop(state);
             return reader.read(buf);
         }
         if state.pending.is_empty() {
-            match state.receiver.as_ref().unwrap().try_recv() {
-                Ok(chunk) => state.pending = chunk,
-                Err(flume::TryRecvError::Empty) => return Err(would_block()),
-                Err(flume::TryRecvError::Disconnected) => return Ok(0),
+            let receiver = state
+                .receiver
+                .as_ref()
+                .ok_or_else(|| missing("channel reader missing receiver"))?;
+            match receiver.try_recv() {
+                Ok(chunk) => {
+                    eprintln!("BR: chunk {}", chunk.len());
+                    state.pending = chunk;
+                }
+                Err(flume::TryRecvError::Empty) => {
+                    eprintln!("BR: empty");
+                    return Err(would_block());
+                }
+                Err(flume::TryRecvError::Disconnected) => {
+                    eprintln!("BR: disc");
+                    return Ok(0);
+                }
             }
         }
         let len = buf.len().min(state.pending.len());
         buf[..len].copy_from_slice(&state.pending.split_to(len));
+        drop(state);
         Ok(len)
     }
 
@@ -110,17 +129,27 @@ impl ChannelReader {
         // materialization could otherwise race the check and cause a blocking read.
         loop {
             let result = {
-                let mut state = self.0.state.lock().unwrap();
+                let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
                 if self.0.native.get().is_some() {
                     None
                 } else if buf.is_empty() {
                     Some(Ok(0))
                 } else {
                     if state.pending.is_empty() {
-                        match state.receiver.as_ref().unwrap().try_recv() {
-                            Ok(chunk) => state.pending = chunk,
+                        let receiver = state
+                            .receiver
+                            .as_ref()
+                            .ok_or_else(|| missing("channel reader missing receiver"))?;
+                        match receiver.try_recv() {
+                            Ok(chunk) => {
+                                eprintln!("BR: chunk {}", chunk.len());
+                                state.pending = chunk;
+                            }
                             Err(flume::TryRecvError::Empty) => {}
-                            Err(flume::TryRecvError::Disconnected) => return Ok(0),
+                            Err(flume::TryRecvError::Disconnected) => {
+                                eprintln!("BR: disc");
+                                return Ok(0);
+                            }
                         }
                     }
                     if state.pending.is_empty() {
@@ -128,6 +157,7 @@ impl ChannelReader {
                     } else {
                         let n = buf.len().min(state.pending.len());
                         buf[..n].copy_from_slice(&state.pending.split_to(n));
+                        drop(state);
                         Some(Ok(n))
                     }
                 }
@@ -135,7 +165,7 @@ impl ChannelReader {
             match result {
                 None => return crate::openfiles::blocking_read(self.clone().into(), buf).await,
                 Some(Err(e)) if e.kind() == io::ErrorKind::WouldBlock => {
-                    tokio::task::yield_now().await
+                    tokio::task::yield_now().await;
                 }
                 Some(result) => return result,
             }
@@ -143,11 +173,21 @@ impl ChannelReader {
     }
 
     /// Lazily creates the consumer-facing Unix pipe and starts the sole channel receiver.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no Tokio runtime with an I/O reactor is available, if
+    /// pipe creation/materialization fails, or if internal channel state is invalid.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub fn materialize(&self) -> io::Result<&std::io::PipeReader> {
         use std::os::fd::OwnedFd;
         use tokio::io::AsyncWriteExt;
-        let mut state = self.0.state.lock().unwrap();
+
+        if let Some(native) = self.0.native.get() {
+            return Ok(native);
+        }
+
+        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
         if self.0.native.get().is_none() {
             // Fail before modifying state when no reactor is available.
             let runtime = tokio::runtime::Handle::try_current().map_err(io::Error::other)?;
@@ -155,12 +195,16 @@ impl ChannelReader {
             let mut writer = tokio::net::unix::pipe::Sender::from_file(std::fs::File::from(
                 OwnedFd::from(writer),
             ))?;
-            let receiver = state.receiver.take().unwrap();
+            let receiver = state
+                .receiver
+                .take()
+                .ok_or_else(|| missing("channel reader missing receiver"))?;
             let pending = std::mem::take(&mut state.pending);
             self.0
                 .native
                 .set(reader)
                 .map_err(|_| io::Error::other("already materialized"))?;
+            drop(state);
             runtime.spawn(async move {
                 if writer.write_all(&pending).await.is_err() {
                     return;
@@ -173,7 +217,11 @@ impl ChannelReader {
                 // Drop writer for EOF, or receiver for BrokenPipe upstream.
             });
         }
-        Ok(self.0.native.get().unwrap())
+
+        self.0
+            .native
+            .get()
+            .ok_or_else(|| missing("native handle missing after materialization"))
     }
 }
 
@@ -182,7 +230,7 @@ impl ChannelWriter {
         if buf.is_empty() {
             return Ok(0);
         }
-        let sender = self.0.sender.lock().unwrap();
+        let sender = self.0.sender.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(mut writer) = self.0.native.get() {
             if !allow_native {
                 return Err(io::ErrorKind::Unsupported.into());
@@ -191,18 +239,30 @@ impl ChannelWriter {
             return writer.write(buf);
         }
         let n = CHUNK.min(buf.len());
-        match sender
+        let tx = sender
             .as_ref()
-            .unwrap()
-            .try_send(Bytes::copy_from_slice(&buf[..n]))
-        {
+            .ok_or_else(|| missing("channel writer missing sender"))?
+            .clone();
+        drop(sender);
+        match tx.try_send(Bytes::copy_from_slice(&buf[..n])) {
             Ok(()) => Ok(n),
-            Err(flume::TrySendError::Full(_)) => Err(would_block()),
-            Err(flume::TrySendError::Disconnected(_)) => Err(broken_pipe()),
+            Err(flume::TrySendError::Full(_)) => {
+                eprintln!("BW: full");
+                Err(would_block())
+            }
+            Err(flume::TrySendError::Disconnected(_)) => {
+                eprintln!("BW: disc");
+                Err(broken_pipe())
+            }
         }
     }
 
     /// Writes all bytes cooperatively in channel mode; native writes use the blocking pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the channel/pipe is disconnected or if a native
+    /// blocking write fails.
     pub async fn write_all_async(&self, mut buf: &[u8]) -> io::Result<()> {
         while !buf.is_empty() {
             match self.try_write(buf, false) {
@@ -219,22 +279,35 @@ impl ChannelWriter {
     }
 
     /// Lazily creates the producer-facing Unix pipe. Its bridge owns the only sender.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no Tokio runtime with an I/O reactor is available, if
+    /// pipe creation/materialization fails, or if internal channel state is invalid.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub fn materialize(&self) -> io::Result<&std::io::PipeWriter> {
         use std::os::fd::OwnedFd;
         use tokio::io::AsyncReadExt;
-        let mut sender = self.0.sender.lock().unwrap();
+
+        if let Some(native) = self.0.native.get() {
+            return Ok(native);
+        }
+
+        let mut sender_guard = self.0.sender.lock().unwrap_or_else(PoisonError::into_inner);
         if self.0.native.get().is_none() {
             let runtime = tokio::runtime::Handle::try_current().map_err(io::Error::other)?;
             let (reader, writer) = crate::sys::pipes::pipe()?;
             let mut reader = tokio::net::unix::pipe::Receiver::from_file(std::fs::File::from(
                 OwnedFd::from(reader),
             ))?;
-            let sender = sender.take().unwrap();
+            let sender = sender_guard
+                .take()
+                .ok_or_else(|| missing("channel writer missing sender"))?;
             self.0
                 .native
                 .set(writer)
                 .map_err(|_| io::Error::other("already materialized"))?;
+            drop(sender_guard);
             runtime.spawn(async move {
                 let mut buf = vec![0; CHUNK];
                 loop {
@@ -252,8 +325,14 @@ impl ChannelWriter {
                     }
                 }
             });
+        } else {
+            drop(sender_guard);
         }
-        Ok(self.0.native.get().unwrap())
+
+        self.0
+            .native
+            .get()
+            .ok_or_else(|| missing("native handle missing after materialization"))
     }
 }
 
@@ -349,6 +428,8 @@ impl From<ChannelWriter> for OpenFile {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+
     use super::*;
 
     #[test]
@@ -557,7 +638,7 @@ mod tests {
             drop(reader);
             let error = tokio::time::timeout(std::time::Duration::from_secs(5), async {
                 loop {
-                    if let Err(e) = writer.write_all_async(&[0; CHUNK]).await {
+                    if let Err(e) = writer.write_all_async(&[CHUNK as u8; CHUNK]).await {
                         break e;
                     }
                     tokio::task::yield_now().await;
