@@ -149,6 +149,8 @@ fn apply_symbolic_mode(mode: &str, umask: u32) -> Result<u32, String> {
                     'r' => bits |= 0o444,
                     'w' => bits |= 0o222,
                     'x' => bits |= 0o111,
+                    // Conditional execute: only applies if some class had execute originally.
+                    'X' if original & 0o111 != 0 => bits |= 0o111,
                     // Accepted, but have no effect on a umask.
                     's' | 't' | 'X' => (),
                     'u' | 'g' | 'o' => {
