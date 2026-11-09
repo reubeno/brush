@@ -131,9 +131,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         // the channel implementation don't stall executor workers.
         let read_result = if matches!(input_stream, brush_core::openfiles::OpenFile::Stream(_)) {
             let cmd = self.clone();
-            tokio::task::spawn_blocking(move || cmd.read_line(input_stream, std::io::sink(), timeout))
-                .await
-                .map_err(std::io::Error::other)??
+            tokio::task::spawn_blocking(move || {
+                cmd.read_line(input_stream, std::io::sink(), timeout)
+            })
+            .await
+            .map_err(std::io::Error::other)??
         } else {
             self.read_line(input_stream, context.stderr(), timeout)?
         };
@@ -424,6 +426,13 @@ impl Read for PolledInput {
                 || !brush_core::sys::poll::poll_for_input(&self.input, remaining)?
             {
                 return Err(std::io::ErrorKind::TimedOut.into());
+            }
+        }
+        // Drive Stream (channel pipe) reads through the async path to avoid
+        // sync condvar waits; `read_async` is cooperative for channels.
+        if matches!(self.input, brush_core::openfiles::OpenFile::Stream(_)) {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                return handle.block_on(self.input.read_async(buf));
             }
         }
         self.input.read(buf)
