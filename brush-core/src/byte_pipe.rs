@@ -13,6 +13,7 @@
 //! See SPIKE.md for the tradeoffs and cancellation limitations.
 
 use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
@@ -27,6 +28,9 @@ const SYNC_WAIT: Duration = Duration::from_millis(10);
 struct ChannelNotify {
     lock: Mutex<()>,
     cv: Condvar,
+    /// Number of sync waiters (Read/Write impls). Async paths never wait here,
+    /// so skip condvar wakeups when there are no sync waiters.
+    sync_waiters: AtomicUsize,
 }
 
 impl ChannelNotify {
@@ -34,19 +38,26 @@ impl ChannelNotify {
         Self {
             lock: Mutex::new(()),
             cv: Condvar::new(),
+            sync_waiters: AtomicUsize::new(0),
         }
     }
 
     fn notify_all(&self) {
-        self.cv.notify_all();
+        if self.sync_waiters.load(Ordering::Relaxed) != 0 {
+            self.cv.notify_all();
+        }
     }
 
+    #[allow(clippy::significant_drop_tightening)] // guard is moved into condvar wait then reacquired; drop order is intentional
     fn wait_timeout(&self, timeout: Duration) {
+        self.sync_waiters.fetch_add(1, Ordering::Relaxed);
         let guard = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
-        let _ = self
+        let (guard, _result) = self
             .cv
             .wait_timeout(guard, timeout)
             .unwrap_or_else(PoisonError::into_inner);
+        drop(guard);
+        self.sync_waiters.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
