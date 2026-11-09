@@ -151,8 +151,9 @@ impl std::fmt::Display for OpenFile {
     }
 }
 
-// Native compatibility boundary: never perform legacy file/terminal I/O on
-// runtime worker threads. WASM retains its existing nonblocking stream contract.
+/// Offloads legacy stream I/O to a blocking task on native hosts (e.g. a
+/// channel stream that has materialized to a native pipe). WASM runs inline.
+/// This is a compatibility boundary for I/O that may block the caller's thread.
 pub(crate) async fn blocking_write(mut file: OpenFile, buf: Vec<u8>) -> std::io::Result<()> {
     use std::io::Write;
     let operation = move || {
@@ -194,19 +195,69 @@ pub(crate) async fn blocking_read(mut file: OpenFile, buf: &mut [u8]) -> std::io
 }
 
 impl OpenFile {
-    /// Writes all bytes asynchronously when supported, with a legacy native I/O adapter.
+    /// Writes all bytes. `Stream` uses its async hook (cooperative for channels);
+    /// other variants write inline via `&T: Write` to avoid spawn/alloc overhead
+    /// on hot paths (matches pre-async-migration behavior).
     pub async fn write_all_async(&self, buf: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
         match self {
             Self::Stream(stream) => stream.write_all_async(buf).await,
-            _ => blocking_write(self.clone(), buf.to_vec()).await,
+            Self::Stdin(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("stdin"),
+            )),
+            Self::Stdout(f) => {
+                let mut w = f;
+                w.write_all(buf)?;
+                w.flush()
+            }
+            Self::Stderr(f) => {
+                let mut w = f;
+                w.write_all(buf)?;
+                w.flush()
+            }
+            Self::File(f) => {
+                let mut w = f.as_ref();
+                w.write_all(buf)?;
+                w.flush()
+            }
+            Self::PipeReader(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("pipe reader"),
+            )),
+            Self::PipeWriter(w) => {
+                let mut w = w.as_ref();
+                w.write_all(buf)?;
+                w.flush()
+            }
         }
     }
 
-    /// Reads asynchronously when supported, with a legacy native I/O adapter.
+    /// Reads bytes. `Stream` uses its async hook (cooperative for channels);
+    /// other variants read inline via `&T: Read` to avoid spawn/alloc overhead.
     pub async fn read_async(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::io::Read;
         match self {
             Self::Stream(stream) => stream.read_async(buf).await,
-            _ => blocking_read(self.clone(), buf).await,
+            Self::Stdin(f) => {
+                let mut r = f;
+                r.read(buf)
+            }
+            Self::Stdout(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stdout"),
+            )),
+            Self::Stderr(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stderr"),
+            )),
+            Self::File(f) => {
+                let mut r = f.as_ref();
+                r.read(buf)
+            }
+            Self::PipeReader(r) => {
+                let mut r = r.as_ref();
+                r.read(buf)
+            }
+            Self::PipeWriter(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("pipe writer"),
+            )),
         }
     }
 
