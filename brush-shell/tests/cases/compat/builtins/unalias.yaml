@@ -15,7 +15,16 @@ cases:
       unalias not_an_alias
 
   - name: "unalias with no names fails with status 2"
-    known_failure: true # TODO(unalias): succeeds
     ignore_stderr: true
     stdin: |
       unalias; echo "rc=$?"
+
+  - name: "unalias with no names leaves the aliases alone, and -a needs none"
+    stdin: |
+      alias a1='echo one'
+      unalias -- 2>err.txt; echo "unalias --: $?"
+      [[ -s err.txt ]] && echo "reported"
+      alias
+      unalias -a; echo "unalias -a: $?"
+      alias
+      rm err.txt
