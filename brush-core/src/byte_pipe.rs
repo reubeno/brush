@@ -31,24 +31,44 @@ struct ChannelNotify {
     /// Number of sync waiters (Read/Write impls). Async paths never wait here,
     /// so skip condvar wakeups when there are no sync waiters.
     sync_waiters: AtomicUsize,
+    readable: tokio::sync::Notify,
+    writable: tokio::sync::Notify,
 }
 
 impl ChannelNotify {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             lock: Mutex::new(()),
             cv: Condvar::new(),
             sync_waiters: AtomicUsize::new(0),
+            readable: tokio::sync::Notify::new(),
+            writable: tokio::sync::Notify::new(),
         }
     }
 
-    fn notify_all(&self) {
+    fn notify_readable(&self) {
         if self.sync_waiters.load(Ordering::Relaxed) != 0 {
             self.cv.notify_all();
         }
+        self.readable.notify_waiters();
     }
 
-    #[allow(clippy::significant_drop_tightening)] // guard is moved into condvar wait then reacquired; drop order is intentional
+    fn notify_writable(&self) {
+        if self.sync_waiters.load(Ordering::Relaxed) != 0 {
+            self.cv.notify_all();
+        }
+        self.writable.notify_waiters();
+    }
+
+    fn notify_both(&self) {
+        if self.sync_waiters.load(Ordering::Relaxed) != 0 {
+            self.cv.notify_all();
+        }
+        self.readable.notify_waiters();
+        self.writable.notify_waiters();
+    }
+
+    #[allow(clippy::significant_drop_tightening)] // guard moved into condvar wait then reacquired
     fn wait_timeout(&self, timeout: Duration) {
         self.sync_waiters.fetch_add(1, Ordering::Relaxed);
         let guard = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
@@ -58,6 +78,14 @@ impl ChannelNotify {
             .unwrap_or_else(PoisonError::into_inner);
         drop(guard);
         self.sync_waiters.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn notified_readable(&self) -> tokio::sync::futures::Notified<'_> {
+        self.readable.notified()
+    }
+
+    fn notified_writable(&self) -> tokio::sync::futures::Notified<'_> {
+        self.writable.notified()
     }
 }
 
@@ -72,6 +100,17 @@ struct ReaderInner {
     notify: Arc<ChannelNotify>,
 }
 
+impl Drop for ReaderInner {
+    fn drop(&mut self) {
+        // Disconnect receiver before notifying so writers that wake and retry
+        // observe Disconnected (and async waits don't hang on a missed wakeup).
+        if let Ok(mut state) = self.state.lock() {
+            state.receiver.take();
+        }
+        self.notify.notify_both();
+    }
+}
+
 struct WriterInner {
     sender: Mutex<Option<flume::Sender<Bytes>>>,
     native: OnceLock<std::io::PipeWriter>,
@@ -80,9 +119,14 @@ struct WriterInner {
 
 impl Drop for WriterInner {
     fn drop(&mut self) {
-        // Wake sync readers blocked on the condvar so they observe flume
-        // disconnect (EOF) when the last writer handle is dropped.
-        self.notify.notify_all();
+        // Disconnect the flume sender *before* notifying so waiters that wake
+        // and recheck observe Disconnected/EOF (avoids a lost-wakeup hang where
+        // a reader wakes, sees Empty, waits again, then sender drops with no
+        // further notification).
+        if let Ok(mut sender) = self.sender.lock() {
+            sender.take();
+        }
+        self.notify.notify_both();
     }
 }
 
@@ -153,7 +197,7 @@ impl ReaderInner {
                 state.pending = chunk;
                 // Freed a flume slot; wake writers that may be blocked on Full.
                 drop(state);
-                self.notify.notify_all();
+                self.notify.notify_writable();
                 Ok((
                     FillPending::Ready,
                     self.state.lock().unwrap_or_else(PoisonError::into_inner),
@@ -207,8 +251,8 @@ impl ChannelReader {
     #[allow(clippy::significant_drop_tightening)]
     pub async fn read_async(&self, buf: &mut [u8]) -> io::Result<usize> {
         // Once native, use the bounded runtime blocking pool for legacy handles.
-        // The mode check must happen under the state lock, including try_read:
-        // materialization could otherwise race the check and cause a blocking read.
+        // The mode check must happen under the state lock, including fill_pending:
+        // materialization could otherwise race and cause a blocking read.
         if buf.is_empty() {
             return Ok(0);
         }
@@ -225,13 +269,36 @@ impl ChannelReader {
                     drop(state);
                     return Ok(n);
                 }
+                FillPending::Eof => {
+                    drop(state);
+                    return Ok(0);
+                }
                 FillPending::Empty => {
                     drop(state);
-                    tokio::task::yield_now().await;
+                }
+            }
+            // Empty: wait event-driven with lost-wakeup protection (enable before recheck).
+            let mut notified = std::pin::pin!(self.0.notify.notified_readable());
+            notified.as_mut().enable();
+            let state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if self.0.native.get().is_some() {
+                drop(state);
+                return crate::openfiles::blocking_read(self.clone().into(), buf).await;
+            }
+            let (filled, mut state) = self.0.fill_pending(state)?;
+            match filled {
+                FillPending::Ready => {
+                    let n = ReaderInner::take_from_pending(&mut state, buf);
+                    drop(state);
+                    return Ok(n);
                 }
                 FillPending::Eof => {
                     drop(state);
                     return Ok(0);
+                }
+                FillPending::Empty => {
+                    drop(state);
+                    notified.await;
                 }
             }
         }
@@ -270,22 +337,25 @@ impl ChannelReader {
                 .set(reader)
                 .map_err(|_| io::Error::other("already materialized"))?;
             drop(state);
-            self.0.notify.notify_all();
+            self.0.notify.notify_both();
             let notify = Arc::clone(&self.0.notify);
             runtime.spawn(async move {
                 if writer.write_all(&pending).await.is_err() {
-                    notify.notify_all();
+                    drop(receiver);
+                    drop(writer);
+                    notify.notify_both();
                     return;
                 }
                 while let Ok(chunk) = receiver.recv_async().await {
                     // Freed a flume slot for channel-mode writers.
-                    notify.notify_all();
+                    notify.notify_writable();
                     if writer.write_all(&chunk).await.is_err() {
                         break;
                     }
                 }
-                // Drop writer for EOF, or receiver for BrokenPipe upstream.
-                notify.notify_all();
+                drop(receiver);
+                drop(writer);
+                notify.notify_both();
             });
         } else {
             drop(state);
@@ -319,12 +389,12 @@ impl ChannelWriter {
         drop(sender);
         match tx.try_send(Bytes::copy_from_slice(&buf[..n])) {
             Ok(()) => {
-                self.0.notify.notify_all();
+                self.0.notify.notify_readable();
                 Ok(n)
             }
             Err(flume::TrySendError::Full(_)) => Err(would_block()),
             Err(flume::TrySendError::Disconnected(_)) => {
-                self.0.notify.notify_all();
+                self.0.notify.notify_readable();
                 Err(broken_pipe())
             }
         }
@@ -338,9 +408,11 @@ impl ChannelWriter {
     /// blocking write fails.
     pub async fn write_all_async(&self, mut buf: &[u8]) -> io::Result<()> {
         while !buf.is_empty() {
+            let mut notified = std::pin::pin!(self.0.notify.notified_writable());
+            notified.as_mut().enable();
             match self.try_write(buf, false) {
                 Ok(n) => buf = &buf[n..],
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => tokio::task::yield_now().await,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => notified.await,
                 Err(e) if e.kind() == io::ErrorKind::Unsupported => {
                     return crate::openfiles::blocking_write(self.clone().into(), buf.to_vec())
                         .await;
@@ -381,7 +453,7 @@ impl ChannelWriter {
                 .set(writer)
                 .map_err(|_| io::Error::other("already materialized"))?;
             drop(sender_guard);
-            self.0.notify.notify_all();
+            self.0.notify.notify_both();
             let notify = Arc::clone(&self.0.notify);
             runtime.spawn(async move {
                 let mut buf = vec![0; CHUNK];
@@ -396,12 +468,13 @@ impl ChannelWriter {
                             {
                                 break;
                             }
-                            // Data is now in flume; wake channel-mode readers (incl. sync).
-                            notify.notify_all();
+                            // Data is now in flume; wake channel-mode readers.
+                            notify.notify_readable();
                         }
                     }
                 }
-                notify.notify_all();
+                drop(sender);
+                notify.notify_both();
             });
         } else {
             drop(sender_guard);
