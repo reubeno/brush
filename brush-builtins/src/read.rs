@@ -663,13 +663,13 @@ impl ReadCommand {
                     stash.clear();
                     pos = 0;
                 }
-                // Read more.
-                let mut buf = vec![0u8; read_size];
-                let n = input.read_async(&mut buf).await?;
+                // Read more directly into stash to avoid a per-refill temp buffer.
+                let start = stash.len();
+                stash.resize(start + read_size, 0);
+                let n = input.read_async(&mut stash[start..]).await?;
+                stash.truncate(start + n);
                 if n == 0 {
                     eof = true;
-                } else {
-                    stash.extend_from_slice(&buf[..n]);
                 }
             };
 
