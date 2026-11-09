@@ -47,6 +47,10 @@ pub enum EvalError {
     /// Expression recursion level exceeded.
     #[error("expression recursion level exceeded")]
     RecursionLimitExceeded,
+
+    /// Failed to evaluate an array subscript.
+    #[error("{0}")]
+    BadSubscript(Box<Self>),
 }
 
 /// Trait implemented by arithmetic expressions that can be evaluated.
@@ -90,17 +94,49 @@ pub(crate) async fn expand_and_eval(
     trace_if_needed: bool,
 ) -> Result<i64, EvalError> {
     // Per documentation, first shell-expand it.
+    let expanded_self = expand(shell, params, expr).await?;
+
+    // Then parse and evaluate.
+    eval_expanded(shell, params, expanded_self, trace_if_needed).await
+}
+
+/// Shell-expands an arithmetic expression without parsing or evaluating it.
+///
+/// # Arguments
+///
+/// * `shell` - The shell to use for expansion.
+/// * `params` - The execution parameters to use.
+/// * `expr` - The unexpanded arithmetic expression.
+pub(crate) async fn expand(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    expr: &str,
+) -> Result<String, EvalError> {
     let options = expansion::ExpanderOptions {
         tilde_expand: false,
         ..Default::default()
     };
-    let expanded_self = expansion::basic_expand_word_with_options(shell, params, expr, &options)
+    expansion::basic_expand_word_with_options(shell, params, expr, &options)
         .await
-        .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
+        .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))
+}
 
-    // Now parse.
-    let expr = brush_parser::arithmetic::parse(&expanded_self)
-        .map_err(|_e| EvalError::ParseError(expanded_self))?;
+/// Parses and evaluates an arithmetic expression that has already been shell-expanded.
+///
+/// # Arguments
+///
+/// * `shell` - The shell to use for evaluation.
+/// * `params` - The execution parameters to use.
+/// * `expanded_expr` - The already-expanded arithmetic expression.
+/// * `trace_if_needed` - Whether to trace the expression if tracing is enabled.
+pub(crate) async fn eval_expanded(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    expanded_expr: String,
+    trace_if_needed: bool,
+) -> Result<i64, EvalError> {
+    let expr = brush_parser::arithmetic::parse(&expanded_expr)
+        .map_err(|_e| EvalError::ParseError(expanded_expr))?;
 
     // Trace if applicable.
     if trace_if_needed && shell.options().print_commands_and_arguments {
@@ -192,6 +228,18 @@ fn get_var_value<'a>(
     Ok("".into())
 }
 
+/// Evaluates an array subscript, reporting any failure as [`EvalError::BadSubscript`].
+fn eval_subscript(
+    index_expr: &ast::ArithmeticExpr,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    depth: u32,
+) -> Result<i64, EvalError> {
+    eval_expr_impl(index_expr, shell, depth).map_err(|err| match err {
+        EvalError::BadSubscript(_) => err,
+        err => EvalError::BadSubscript(Box::new(err)),
+    })
+}
+
 fn deref_lvalue(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     lvalue: &ast::ArithmeticTarget,
@@ -200,7 +248,7 @@ fn deref_lvalue(
     let value_str: Cow<'_, str> = match lvalue {
         ast::ArithmeticTarget::Variable(name) => get_var_value(shell, name.as_str())?,
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
+            let index_str = eval_subscript(index_expr, shell, depth)?.to_string();
 
             shell
                 .env()
@@ -381,7 +429,7 @@ fn assign(
                 .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
         }
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
+            let index_str = eval_subscript(index_expr, shell, depth)?.to_string();
 
             shell
                 .env_mut()

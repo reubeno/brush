@@ -493,17 +493,23 @@ async fn apply_binary_predicate(
     }
 }
 
-/// Evaluates the operands of an arithmetic comparison (`-eq`, `-lt`, and so on) in `[[ ]]`. Like
-/// bash, a failed evaluation (a syntax error, division by zero, and so on) is reported and makes
+/// Evaluates the operands of an arithmetic comparison (`-eq`, `-lt`, and so on) in `[[ ]]`.
+///
+/// Like bash, both operands are shell-expanded first, so an expansion error is returned and
+/// expansion side effects (like `${x:=5}`) happen whatever the left operand evaluates to. A failed
+/// arithmetic evaluation (a syntax error, division by zero, and so on) is then reported and makes
 /// the comparison false instead of abandoning the rest of the command list; `None` is returned in
-/// that case, and the right operand isn't evaluated when the left one failed. Errors from
-/// expanding an operand, or from referencing an unset variable under `set -u`, are still returned.
+/// that case, and the right operand isn't evaluated when the left one failed. A bad array
+/// subscript, or a reference to an unset variable under `set -u`, is still returned as an error.
 async fn eval_arithmetic_operands(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
     left: &ast::Word,
     right: &ast::Word,
 ) -> Result<Option<(i64, i64)>, error::Error> {
+    let left = arithmetic::expand(shell, params, left.value.as_str()).await?;
+    let right = arithmetic::expand(shell, params, right.value.as_str()).await?;
+
     let Some(left) = eval_arithmetic_operand(shell, params, left).await? else {
         return Ok(None);
     };
@@ -516,13 +522,14 @@ async fn eval_arithmetic_operands(
 async fn eval_arithmetic_operand(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     params: &ExecutionParameters,
-    operand: &ast::Word,
+    expanded_operand: String,
 ) -> Result<Option<i64>, error::Error> {
-    match arithmetic::expand_and_eval(shell, params, operand.value.as_str(), false).await {
+    match arithmetic::eval_expanded(shell, params, expanded_operand, false).await {
         Ok(value) => Ok(Some(value)),
         Err(
             err @ (arithmetic::EvalError::FailedToExpandExpression(_)
-            | arithmetic::EvalError::ExpandingUnsetVariable(_)),
+            | arithmetic::EvalError::ExpandingUnsetVariable(_)
+            | arithmetic::EvalError::BadSubscript(_)),
         ) => Err(err.into()),
         Err(err) => {
             let err = error::Error::from(err);

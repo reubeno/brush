@@ -438,6 +438,9 @@ cases:
       [[ 5 -le ' 5' ]] && echo "10. -le with space"
       [[ 5 -ge ' 5' ]] && echo "11. -ge with space"
 
+      # Negative numbers with whitespace
+      [[ -5 -eq ' -5' ]] && echo "12. negative with space"
+
   - name: "Arithmetic comparison errors make the comparison false"
     ignore_stderr: true
     stdin: |
@@ -447,9 +450,17 @@ cases:
       [[ 1/0 -eq 1 || 1 -eq 1 ]] && echo "4. other side of ||"
       [[ 1/0 -eq x=5 ]]; echo "5. right side skipped: ${x-unset}"
       f() { [[ x -ge "1 +" ]]; echo "6. still in f: $?"; }; f; echo "7. f returned: $?"
+      unset x; [[ 1/0 -eq "${x:=5}" ]]; echo "8. right side expanded: ${x-unset}"
+      ( [[ 1/0 -eq ${y:?unset} ]]; echo "9. not reached" ); echo "10. right side expansion error: $?"
 
-      # Negative numbers with whitespace
-      [[ -5 -eq ' -5' ]] && echo "12. negative with space"
+  - name: "Array subscript errors in arithmetic comparisons abort the command"
+    ignore_stderr: true
+    stdin: |
+      a=(1 2); [[ a[1/0] -eq 0 ]]; echo "1. not reached"
+      echo "2. next line"
+      [[ 1 -eq a[1/0] ]] || echo "3. not reached"
+      echo "4. next line"
+      [[ 1/0 -eq a[1/0] ]]; echo "5. right side not evaluated"
 
   - name: "Terminal fd check with whitespace"
     stdin: |
