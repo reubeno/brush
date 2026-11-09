@@ -23,7 +23,7 @@ const DEFAULT_DELIMITER: char = '\n';
 const NUL_DELIMITER: char = '\0';
 
 /// Parse standard input.
-#[derive(winnow_args::Args)]
+#[derive(Clone, winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ReadCommand {
     /// Use readline-like input.
@@ -126,8 +126,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         // needed for variable assignment.
         let ifs = context.shell.ifs().into_owned();
 
-        // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        // Perform the read operation (potentially with timeout). Offload Stream
+        // (e.g. channel pipe) reads to a blocking task so sync condvar waits in
+        // the channel implementation don't stall executor workers.
+        let read_result = if matches!(input_stream, brush_core::openfiles::OpenFile::Stream(_)) {
+            let cmd = self.clone();
+            tokio::task::spawn_blocking(move || cmd.read_line(input_stream, std::io::sink(), timeout))
+                .await
+                .map_err(std::io::Error::other)??
+        } else {
+            self.read_line(input_stream, context.stderr(), timeout)?
+        };
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
