@@ -86,6 +86,7 @@ pub(crate) struct TokenizeResult {
 
 /// Represents an error that occurred during tokenization.
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum TokenizerError {
     /// An unterminated escape sequence was encountered at the end of the input stream.
     #[error("unterminated escape sequence")]
