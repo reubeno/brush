@@ -108,6 +108,17 @@ cases:
       : cmd3
       fc -l 0
 
+  - name: "fc -l keeps a history number in 32 bits"
+    known_failure: true # TODO(history): bash truncates the number to 32 bits, so 4294967295 is -1; brush reads all 64
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      fc -l 4294967295
+      fc -l 9223372036854775807
+
   - name: "fc -l defaults to last 16 commands"
     args: ["-o", "history"]
     env:

@@ -57,6 +57,22 @@ cases:
       mapfile -t -O 100 arr < <(echo -e "a\nb")
       declare -p arr
 
+  - name: "mapfile -O wraps an index past the largest origin to 0"
+    known_failure: true # TODO(mapfile): bash keeps origin + line number in 32 bits; brush doesn't wrap
+    stdin: |
+      arr=(keep)
+      mapfile -t -O 4294967295 arr <<< $'a\nb\nc'; echo "rc=$?"
+      declare -p arr
+
+  - name: "mapfile rejects a bad origin or line count with status 1"
+    known_failure: true # TODO(mapfile): an origin that isn't an i64 is a usage error (status 2), and a count from 2^32 is taken
+    ignore_stderr: true
+    stdin: |
+      mapfile -O abc arr < /dev/null; echo "-O abc: $?"
+      mapfile -O 9223372036854775808 arr < /dev/null; echo "-O 2^63: $?"
+      mapfile -n 4294967296 arr < /dev/null; echo "-n 2^32: $?"
+      mapfile -s 4294967296 arr < /dev/null; echo "-s 2^32: $?"
+
   - name: "mapfile -O negative"
     ignore_stderr: true
     stdin: |
