@@ -467,6 +467,25 @@ fn run_tests_with_coverage(
         eprintln!("Tests failed, but continuing to generate coverage report...");
     }
 
+    // Tests (e.g. umask cases) may leave coverage data files unreadable by their owner, which
+    // makes `llvm-profdata merge` fail. Make sure we can read and write them.
+    // Use the location cargo-llvm-cov told us about rather than assuming a directory layout.
+    let profraw_dir = env_output
+        .lines()
+        .filter_map(|line| line.strip_prefix("export "))
+        .filter_map(|rest| rest.split_once('='))
+        .find(|(k, _)| *k == "LLVM_PROFILE_FILE")
+        .and_then(|(_, v)| {
+            Path::new(v.trim_matches(['"', '\'']))
+                .parent()
+                .map(Path::to_path_buf)
+        });
+    if let Some(dir) = profraw_dir {
+        if let Err(e) = make_profraw_files_owner_accessible(&dir) {
+            eprintln!("Warning: failed to fix permissions on coverage data: {e}");
+        }
+    }
+
     // Generate coverage report (always attempt this)
     eprintln!("Generating coverage report...");
     if verbose {
@@ -487,5 +506,40 @@ fn run_tests_with_coverage(
     }
 
     eprintln!("Tests with coverage completed successfully.");
+    Ok(())
+}
+
+/// Recursively ensures that `*.profraw` files under `dir` are readable and writable by their
+/// owner. A missing directory is not an error.
+#[cfg(unix)]
+fn make_profraw_files_owner_accessible(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            make_profraw_files_owner_accessible(&path)?;
+        } else if path.extension().is_some_and(|ext| ext == "profraw") {
+            let mut perms = std::fs::metadata(&path)?.permissions();
+            perms.set_mode(perms.mode() | 0o600);
+            std::fs::set_permissions(&path, perms)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+#[allow(
+    clippy::missing_const_for_fn,
+    clippy::unnecessary_wraps,
+    reason = "must match the signature of the unix implementation"
+)]
+fn make_profraw_files_owner_accessible(_dir: &Path) -> Result<()> {
     Ok(())
 }
