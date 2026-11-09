@@ -260,16 +260,21 @@ impl ChannelReader {
                 .map_err(|_| io::Error::other("already materialized"))?;
             drop(state);
             self.0.notify.notify_all();
+            let notify = Arc::clone(&self.0.notify);
             runtime.spawn(async move {
                 if writer.write_all(&pending).await.is_err() {
+                    notify.notify_all();
                     return;
                 }
                 while let Ok(chunk) = receiver.recv_async().await {
+                    // Freed a flume slot for channel-mode writers.
+                    notify.notify_all();
                     if writer.write_all(&chunk).await.is_err() {
                         break;
                     }
                 }
                 // Drop writer for EOF, or receiver for BrokenPipe upstream.
+                notify.notify_all();
             });
         } else {
             drop(state);
@@ -366,6 +371,7 @@ impl ChannelWriter {
                 .map_err(|_| io::Error::other("already materialized"))?;
             drop(sender_guard);
             self.0.notify.notify_all();
+            let notify = Arc::clone(&self.0.notify);
             runtime.spawn(async move {
                 let mut buf = vec![0; CHUNK];
                 loop {
@@ -379,9 +385,12 @@ impl ChannelWriter {
                             {
                                 break;
                             }
+                            // Data is now in flume; wake channel-mode readers (incl. sync).
+                            notify.notify_all();
                         }
                     }
                 }
+                notify.notify_all();
             });
         } else {
             drop(sender_guard);
