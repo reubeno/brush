@@ -2,9 +2,10 @@
 //!
 //! Capacity is approximate: 64 messages of at most 1024 bytes, plus a reader's
 //! partial chunk. Clones share the partial chunk, so short reads cannot reorder
-//! bytes. Legacy synchronous builtins retry with a 1ms sleep (and must remain on
-//! blocking tasks). Async channel operations yield instead; bridges use flume's
-//! async operations and Tokio's nonblocking Unix pipes.
+//! bytes. Synchronous readers/writers wait on a shared `Condvar` when the channel
+//! would block (never busy-sleeping); they must still run on blocking tasks, not
+//! runtime worker threads. Async channel operations yield instead; bridges use
+//! flume's async operations and Tokio's nonblocking Unix pipes.
 //!
 //! Each end independently transitions Channel -> Bridged. Materializing both
 //! ends deliberately keeps two OS pipes and the channel between them: there is
@@ -12,12 +13,42 @@
 //! See SPIKE.md for the tradeoffs and cancellation limitations.
 
 use std::io::{self, Read, Write};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
+use std::time::Duration;
 
 use crate::openfiles::{OpenFile, Stream};
 use bytes::Bytes;
 
 const CHUNK: usize = 1024;
+/// Fallback wait to recheck state when a bridge (not `try_write`/drop) makes
+/// progress, or on spurious wakeups.
+const SYNC_WAIT: Duration = Duration::from_millis(10);
+
+struct ChannelNotify {
+    lock: Mutex<()>,
+    cv: Condvar,
+}
+
+impl ChannelNotify {
+    const fn new() -> Self {
+        Self {
+            lock: Mutex::new(()),
+            cv: Condvar::new(),
+        }
+    }
+
+    fn notify_all(&self) {
+        self.cv.notify_all();
+    }
+
+    fn wait_timeout(&self, timeout: Duration) {
+        let guard = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
+        let _ = self
+            .cv
+            .wait_timeout(guard, timeout)
+            .unwrap_or_else(PoisonError::into_inner);
+    }
+}
 
 struct ReaderState {
     receiver: Option<flume::Receiver<Bytes>>,
@@ -27,11 +58,21 @@ struct ReaderState {
 struct ReaderInner {
     state: Mutex<ReaderState>,
     native: OnceLock<std::io::PipeReader>,
+    notify: Arc<ChannelNotify>,
 }
 
 struct WriterInner {
     sender: Mutex<Option<flume::Sender<Bytes>>>,
     native: OnceLock<std::io::PipeWriter>,
+    notify: Arc<ChannelNotify>,
+}
+
+impl Drop for WriterInner {
+    fn drop(&mut self) {
+        // Wake sync readers blocked on the condvar so they observe flume
+        // disconnect (EOF) when the last writer handle is dropped.
+        self.notify.notify_all();
+    }
 }
 
 /// A cloneable channel read end. Clones share a cursor, like dup'd descriptors.
@@ -46,6 +87,7 @@ pub struct ChannelWriter(Arc<WriterInner>);
 #[must_use]
 pub fn channel_pipe() -> (ChannelReader, ChannelWriter) {
     let (sender, receiver) = flume::bounded(64);
+    let notify = Arc::new(ChannelNotify::new());
     (
         ChannelReader(Arc::new(ReaderInner {
             state: Mutex::new(ReaderState {
@@ -53,10 +95,12 @@ pub fn channel_pipe() -> (ChannelReader, ChannelWriter) {
                 pending: Bytes::new(),
             }),
             native: OnceLock::new(),
+            notify: Arc::clone(&notify),
         })),
         ChannelWriter(Arc::new(WriterInner {
             sender: Mutex::new(Some(sender)),
             native: OnceLock::new(),
+            notify,
         })),
     )
 }
@@ -66,17 +110,6 @@ fn broken_pipe() -> io::Error {
 }
 fn would_block() -> io::Error {
     io::ErrorKind::WouldBlock.into()
-}
-
-#[allow(clippy::unnecessary_wraps)]
-fn sync_retry() -> io::Result<()> {
-    #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
-    {
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        Ok(())
-    }
-    #[cfg(target_family = "wasm")] // ast-grep-ignore: platform-cfg-outside-sys
-    Err(would_block())
 }
 
 fn missing(message: &'static str) -> io::Error {
@@ -104,13 +137,13 @@ impl ChannelReader {
             match receiver.try_recv() {
                 Ok(chunk) => {
                     state.pending = chunk;
+                    // Freed a flume slot; wake writers that may be blocked on Full.
+                    drop(state);
+                    self.0.notify.notify_all();
+                    state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
                 }
-                Err(flume::TryRecvError::Empty) => {
-                    return Err(would_block());
-                }
-                Err(flume::TryRecvError::Disconnected) => {
-                    return Ok(0);
-                }
+                Err(flume::TryRecvError::Empty) => return Err(would_block()),
+                Err(flume::TryRecvError::Disconnected) => return Ok(0),
             }
         }
         let len = buf.len().min(state.pending.len());
@@ -140,11 +173,12 @@ impl ChannelReader {
                         match receiver.try_recv() {
                             Ok(chunk) => {
                                 state.pending = chunk;
+                                drop(state);
+                                self.0.notify.notify_all();
+                                state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
                             }
                             Err(flume::TryRecvError::Empty) => {}
-                            Err(flume::TryRecvError::Disconnected) => {
-                                return Ok(0);
-                            }
+                            Err(flume::TryRecvError::Disconnected) => return Ok(0),
                         }
                     }
                     if state.pending.is_empty() {
@@ -200,6 +234,7 @@ impl ChannelReader {
                 .set(reader)
                 .map_err(|_| io::Error::other("already materialized"))?;
             drop(state);
+            self.0.notify.notify_all();
             runtime.spawn(async move {
                 if writer.write_all(&pending).await.is_err() {
                     return;
@@ -211,6 +246,8 @@ impl ChannelReader {
                 }
                 // Drop writer for EOF, or receiver for BrokenPipe upstream.
             });
+        } else {
+            drop(state);
         }
 
         self.0
@@ -240,9 +277,15 @@ impl ChannelWriter {
             .clone();
         drop(sender);
         match tx.try_send(Bytes::copy_from_slice(&buf[..n])) {
-            Ok(()) => Ok(n),
+            Ok(()) => {
+                self.0.notify.notify_all();
+                Ok(n)
+            }
             Err(flume::TrySendError::Full(_)) => Err(would_block()),
-            Err(flume::TrySendError::Disconnected(_)) => Err(broken_pipe()),
+            Err(flume::TrySendError::Disconnected(_)) => {
+                self.0.notify.notify_all();
+                Err(broken_pipe())
+            }
         }
     }
 
@@ -297,6 +340,7 @@ impl ChannelWriter {
                 .set(writer)
                 .map_err(|_| io::Error::other("already materialized"))?;
             drop(sender_guard);
+            self.0.notify.notify_all();
             runtime.spawn(async move {
                 let mut buf = vec![0; CHUNK];
                 loop {
@@ -329,7 +373,9 @@ impl Read for ChannelReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
             match self.try_read(buf) {
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => sync_retry()?,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    self.0.notify.wait_timeout(SYNC_WAIT);
+                }
                 result => return result,
             }
         }
@@ -339,7 +385,9 @@ impl Write for ChannelWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         loop {
             match self.try_write(buf, true) {
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => sync_retry()?,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    self.0.notify.wait_timeout(SYNC_WAIT);
+                }
                 result => return result,
             }
         }
