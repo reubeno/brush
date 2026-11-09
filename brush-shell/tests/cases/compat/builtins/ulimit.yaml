@@ -41,7 +41,6 @@ cases:
       ulimit -v
 
   - name: "ulimit -p"
-    known_failure: true # TODO(ulimit): brush reports a pipe size of 5 blocks, where bash reports 8 (4096 bytes)
     incompatible_platforms: ["macos"] # the pipe size differs there
     stdin: |
       ulimit -p
