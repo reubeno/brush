@@ -125,8 +125,8 @@ mod unimp;
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
 
-/// Writes an alias definition in the reusable form printed by `alias` and `command -v`.
-#[cfg(any(feature = "builtin.alias", feature = "builtin.command"))]
+/// Writes an alias definition in the reusable form printed by `command -v`.
+#[cfg(feature = "builtin.command")]
 fn write_alias_definition(
     mut writer: impl std::io::Write,
     name: &str,
