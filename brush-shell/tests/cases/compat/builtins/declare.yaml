@@ -340,6 +340,22 @@ cases:
       g() { [[ -n x ]] |& cat; }
       declare -f g
 
+  - name: "Displaying a function with a quoted here-document delimiter"
+    known_failure: true # Issue #1580: brush-parser's Display writes the closing delimiter with its
+                        # quotes (`'EOF'`) and indents the body and delimiter, so the printed
+                        # function doesn't read back
+    stdin: |
+      f() {
+        cat <<'EOF'
+      x $y
+      EOF
+      }
+      declare -f f
+      src=$(declare -f f)
+      unset -f f
+      eval "$src"
+      y=1 f
+
   - name: "Displaying a function with case patterns"
     stdin: |
       f() {
