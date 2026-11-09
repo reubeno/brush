@@ -116,87 +116,112 @@ fn missing(message: &'static str) -> io::Error {
     io::Error::other(message)
 }
 
+enum FillPending {
+    Ready,
+    Empty,
+    Eof,
+}
+
+impl ReaderInner {
+    /// Ensures `state.pending` has data by pulling one chunk from flume when empty.
+    /// Drops and re-acquires the state lock around the wakeup notification (never
+    /// across an `.await`). Returns the outcome and the (possibly re-acquired) guard.
+    fn fill_pending<'a>(
+        &'a self,
+        mut state: std::sync::MutexGuard<'a, ReaderState>,
+    ) -> io::Result<(FillPending, std::sync::MutexGuard<'a, ReaderState>)> {
+        if !state.pending.is_empty() {
+            return Ok((FillPending::Ready, state));
+        }
+        let receiver = state
+            .receiver
+            .as_ref()
+            .ok_or_else(|| missing("channel reader missing receiver"))?;
+        match receiver.try_recv() {
+            Ok(chunk) => {
+                state.pending = chunk;
+                // Freed a flume slot; wake writers that may be blocked on Full.
+                drop(state);
+                self.notify.notify_all();
+                Ok((
+                    FillPending::Ready,
+                    self.state.lock().unwrap_or_else(PoisonError::into_inner),
+                ))
+            }
+            Err(flume::TryRecvError::Empty) => Ok((FillPending::Empty, state)),
+            Err(flume::TryRecvError::Disconnected) => Ok((FillPending::Eof, state)),
+        }
+    }
+
+    fn take_from_pending(state: &mut ReaderState, buf: &mut [u8]) -> usize {
+        let len = buf.len().min(state.pending.len());
+        buf[..len].copy_from_slice(&state.pending.split_to(len));
+        len
+    }
+}
+
 impl ChannelReader {
     // The same mutex covers consumption and materialization. No receive future
     // survives unlocking it: a bridge can never steal chunks from a pending read.
+    #[allow(clippy::significant_drop_tightening)]
     fn try_read(&self, buf: &mut [u8]) -> io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
-        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(mut reader) = self.0.native.get() {
             // This is the legacy sync path; async callers offload native I/O.
             drop(state);
             return reader.read(buf);
         }
-        if state.pending.is_empty() {
-            let receiver = state
-                .receiver
-                .as_ref()
-                .ok_or_else(|| missing("channel reader missing receiver"))?;
-            match receiver.try_recv() {
-                Ok(chunk) => {
-                    state.pending = chunk;
-                    // Freed a flume slot; wake writers that may be blocked on Full.
-                    drop(state);
-                    self.0.notify.notify_all();
-                    state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
-                }
-                Err(flume::TryRecvError::Empty) => return Err(would_block()),
-                Err(flume::TryRecvError::Disconnected) => return Ok(0),
+        let (filled, mut state) = self.0.fill_pending(state)?;
+        match filled {
+            FillPending::Ready => {
+                let n = ReaderInner::take_from_pending(&mut state, buf);
+                drop(state);
+                Ok(n)
+            }
+            FillPending::Empty => {
+                drop(state);
+                Err(would_block())
+            }
+            FillPending::Eof => {
+                drop(state);
+                Ok(0)
             }
         }
-        let len = buf.len().min(state.pending.len());
-        buf[..len].copy_from_slice(&state.pending.split_to(len));
-        drop(state);
-        Ok(len)
     }
 
     /// Reads without blocking the runtime worker in channel mode.
+    #[allow(clippy::significant_drop_tightening)]
     pub async fn read_async(&self, buf: &mut [u8]) -> io::Result<usize> {
         // Once native, use the bounded runtime blocking pool for legacy handles.
         // The mode check must happen under the state lock, including try_read:
         // materialization could otherwise race the check and cause a blocking read.
+        if buf.is_empty() {
+            return Ok(0);
+        }
         loop {
-            let result = {
-                let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
-                if self.0.native.get().is_some() {
-                    None
-                } else if buf.is_empty() {
-                    Some(Ok(0))
-                } else {
-                    if state.pending.is_empty() {
-                        let receiver = state
-                            .receiver
-                            .as_ref()
-                            .ok_or_else(|| missing("channel reader missing receiver"))?;
-                        match receiver.try_recv() {
-                            Ok(chunk) => {
-                                state.pending = chunk;
-                                drop(state);
-                                self.0.notify.notify_all();
-                                state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
-                            }
-                            Err(flume::TryRecvError::Empty) => {}
-                            Err(flume::TryRecvError::Disconnected) => return Ok(0),
-                        }
-                    }
-                    if state.pending.is_empty() {
-                        Some(Err(would_block()))
-                    } else {
-                        let n = buf.len().min(state.pending.len());
-                        buf[..n].copy_from_slice(&state.pending.split_to(n));
-                        drop(state);
-                        Some(Ok(n))
-                    }
+            let state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if self.0.native.get().is_some() {
+                drop(state);
+                return crate::openfiles::blocking_read(self.clone().into(), buf).await;
+            }
+            let (filled, mut state) = self.0.fill_pending(state)?;
+            match filled {
+                FillPending::Ready => {
+                    let n = ReaderInner::take_from_pending(&mut state, buf);
+                    drop(state);
+                    return Ok(n);
                 }
-            };
-            match result {
-                None => return crate::openfiles::blocking_read(self.clone().into(), buf).await,
-                Some(Err(e)) if e.kind() == io::ErrorKind::WouldBlock => {
+                FillPending::Empty => {
+                    drop(state);
                     tokio::task::yield_now().await;
                 }
-                Some(result) => return result,
+                FillPending::Eof => {
+                    drop(state);
+                    return Ok(0);
+                }
             }
         }
     }
