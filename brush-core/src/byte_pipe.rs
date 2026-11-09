@@ -18,7 +18,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use crate::openfiles::{OpenFile, Stream};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 
 const CHUNK: usize = 1024;
 /// Fallback wait to recheck state when a bridge (not `try_write`/drop) makes
@@ -528,6 +528,34 @@ impl Read for ChannelWriter {
     }
 }
 
+impl ChannelReader {
+    /// Pushes bytes back to the front of the shared cursor so the next read
+    /// returns them. Only valid in channel (non-native) mode.
+    fn unread_bytes(&self, data: &[u8]) -> io::Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        if self.0.native.get().is_some() {
+            return Err(io::ErrorKind::Unsupported.into());
+        }
+        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.0.native.get().is_some() || state.receiver.is_none() {
+            return Err(io::ErrorKind::Unsupported.into());
+        }
+        if state.pending.is_empty() {
+            state.pending = Bytes::copy_from_slice(data);
+        } else {
+            let mut buf = BytesMut::with_capacity(data.len() + state.pending.len());
+            buf.extend_from_slice(data);
+            buf.extend_from_slice(&state.pending);
+            state.pending = buf.freeze();
+        }
+        drop(state);
+        self.0.notify.notify_readable();
+        Ok(())
+    }
+}
+
 impl Stream for ChannelReader {
     fn clone_box(&self) -> Box<dyn Stream> {
         Box::new(self.clone())
@@ -537,6 +565,12 @@ impl Stream for ChannelReader {
         buf: &'a mut [u8],
     ) -> futures::future::BoxFuture<'a, io::Result<usize>> {
         Box::pin(self.read_async(buf))
+    }
+    fn can_unread(&self) -> bool {
+        self.0.native.get().is_none()
+    }
+    fn unread(&self, data: &[u8]) -> io::Result<()> {
+        self.unread_bytes(data)
     }
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, crate::Error> {

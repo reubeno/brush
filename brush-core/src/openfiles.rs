@@ -36,6 +36,17 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
         ))
     }
 
+    /// Returns `true` if `unread` is supported (best-effort; state may change).
+    fn can_unread(&self) -> bool {
+        false
+    }
+
+    /// Pushes bytes back so the next read returns them first. Returns
+    /// `Unsupported` when unread is not available for this stream.
+    fn unread(&self, _data: &[u8]) -> std::io::Result<()> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+
     /// Converts the stream into an `OwnedFd`. Returns an error if the operation
     /// is not supported or if it fails.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
@@ -258,6 +269,26 @@ impl OpenFile {
             Self::PipeWriter(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("pipe writer"),
             )),
+        }
+    }
+
+    /// Returns `true` if `unread` is supported for this file/stream.
+    pub fn can_unread(&self) -> bool {
+        match self {
+            Self::Stream(stream) => stream.can_unread(),
+            _ => false,
+        }
+    }
+
+    /// Pushes bytes back so the next read returns them first.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unsupported` if unread is not available.
+    pub fn unread(&self, data: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Stream(stream) => stream.unread(data),
+            _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
         }
     }
 

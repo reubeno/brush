@@ -593,9 +593,10 @@ fn read_line_with_reader(
 
 impl ReadCommand {
     /// Async fast-path for reading a line from a non-terminal stream (e.g. channel pipe).
-    /// Avoids `spawn_blocking`+`block_on` overhead. Reads one byte at a time to
-    /// prevent over-consuming the stream (critical when multiple reads share it).
-    /// Preserves `read_line_with_reader` semantics for line assembly.
+    /// Avoids `spawn_blocking`+`block_on` overhead. Uses chunked reads with pushback
+    /// (when supported) to avoid per-byte overhead while never consuming past the line.
+    /// Falls back to 1-byte reads on streams that cannot unread.
+    #[allow(clippy::too_many_lines)]
     async fn read_line_async(
         &self,
         input: &brush_core::openfiles::OpenFile,
@@ -604,49 +605,79 @@ impl ReadCommand {
         let mut line = String::new();
         let mut output_chars = 0usize;
         let mut pending_backslash = false;
-        let mut utf8_buf: Vec<u8> = Vec::with_capacity(4);
+
+        let chunked = input.can_unread();
+        let read_size = if chunked { 1024 } else { 1 };
+        let mut stash: Vec<u8> = Vec::new();
+        let mut pos: usize = 0;
+        let mut eof = false;
 
         loop {
-            // Decode next char, reading bytes as needed.
+            // Decode next char (UTF-8), reading bytes as needed. May consume multiple
+            // bytes from stash; on EOF returns None.
             let ch = loop {
-                if !utf8_buf.is_empty() {
-                    match std::str::from_utf8(&utf8_buf) {
+                // Try to decode from available stash bytes.
+                if pos < stash.len() {
+                    let available = &stash[pos..];
+                    match std::str::from_utf8(available) {
                         Ok(s) => {
-                            let c = s.chars().next().unwrap_or('\u{FFFD}');
-                            // All buffered bytes formed this char (or we buffered exactly it).
-                            utf8_buf.clear();
-                            break Some(c);
+                            if let Some(c) = s.chars().next() {
+                                pos += c.len_utf8();
+                                break Some(c);
+                            }
                         }
-                        Err(e) if e.error_len().is_some() => {
-                            // Invalid sequence: emit one raw byte as latin-1 char.
-                            let b = utf8_buf.remove(0);
-                            break Some(b as char);
-                        }
-                        Err(_) => {
-                            // Incomplete: need more bytes (or EOF).
+                        Err(e) => {
+                            let valid = e.valid_up_to();
+                            if valid > 0 {
+                                let s = std::str::from_utf8(&available[..valid]).unwrap_or("");
+                                if let Some(c) = s.chars().next() {
+                                    pos += c.len_utf8();
+                                    break Some(c);
+                                }
+                            } else if e.error_len().is_some() {
+                                // Invalid leading byte: emit as latin-1 (matches utf8_chars behavior).
+                                let b = available[0];
+                                pos += 1;
+                                break Some(b as char);
+                            } else if eof {
+                                // Incomplete sequence at EOF: emit raw byte.
+                                let b = available[0];
+                                pos += 1;
+                                break Some(b as char);
+                            }
+                            // else incomplete and not EOF: need more bytes
                         }
                     }
                 }
 
-                let mut b = [0u8; 1];
-                let n = input.read_async(&mut b).await?;
-                if n == 0 {
-                    // EOF: flush incomplete UTF-8 as raw bytes, else signal EOF.
-                    if let Some(&b) = utf8_buf.first() {
-                        utf8_buf.remove(0);
-                        break Some(b as char);
-                    }
+                if eof && pos >= stash.len() {
                     break None;
                 }
-                utf8_buf.push(b[0]);
-
-                // If buffer can't form a valid char and is clearly not a UTF-8 prefix
-                // continuation in progress beyond reasonable length, from_utf8 will tell us.
-                // (Handled on next loop iteration via from_utf8.)
+                // Refill: preserve any unconsumed tail (incomplete UTF-8) by keeping it.
+                if pos > 0 && pos < stash.len() {
+                    stash.copy_within(pos.., 0);
+                    let rem = stash.len() - pos;
+                    stash.truncate(rem);
+                    pos = 0;
+                } else if pos >= stash.len() {
+                    stash.clear();
+                    pos = 0;
+                }
+                // Read more.
+                let mut buf = vec![0u8; read_size];
+                let n = input.read_async(&mut buf).await?;
+                if n == 0 {
+                    eof = true;
+                } else {
+                    stash.extend_from_slice(&buf[..n]);
+                }
             };
 
             let Some(ch) = ch else {
-                // EOF: Bash discards pending backslash on EOF.
+                // EOF: discard pending backslash (bash behavior).
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
                 return Ok(ReadResult::Eof(if line.is_empty() {
                     None
                 } else {
@@ -654,6 +685,7 @@ impl ReadCommand {
                 }));
             };
 
+            let mut finished: Option<ReadResult> = None;
             // Apply line assembly (mirrors read_line_with_reader Char handling).
             if config.process_escapes {
                 if pending_backslash {
@@ -668,30 +700,44 @@ impl ReadCommand {
                     if let Some(limit) = config.char_limit
                         && output_chars >= limit
                     {
-                        return Ok(ReadResult::Line(line));
+                        finished = Some(ReadResult::Line(std::mem::take(&mut line)));
                     }
-                    continue;
-                }
-                if ch == BACKSLASH {
+                } else if ch == BACKSLASH {
                     pending_backslash = true;
-                    continue;
+                } else if let Some(delim) = config.delimiter
+                    && ch == delim
+                {
+                    finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+                } else if !ch.is_ascii_control() || ch.is_ascii_whitespace() {
+                    line.push(ch);
+                    output_chars += 1;
+                    if let Some(limit) = config.char_limit
+                        && output_chars >= limit
+                    {
+                        finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+                    }
+                }
+            } else if let Some(delim) = config.delimiter
+                && ch == delim
+            {
+                finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+            } else if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
+                // ignore
+            } else {
+                line.push(ch);
+                output_chars += 1;
+                if let Some(limit) = config.char_limit
+                    && output_chars >= limit
+                {
+                    finished = Some(ReadResult::Line(std::mem::take(&mut line)));
                 }
             }
 
-            if let Some(delim) = config.delimiter
-                && ch == delim
-            {
-                return Ok(ReadResult::Line(line));
-            }
-            if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
-                continue;
-            }
-            line.push(ch);
-            output_chars += 1;
-            if let Some(limit) = config.char_limit
-                && output_chars >= limit
-            {
-                return Ok(ReadResult::Line(line));
+            if let Some(result) = finished {
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
+                return Ok(result);
             }
         }
     }
