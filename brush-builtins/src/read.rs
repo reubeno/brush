@@ -126,10 +126,36 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         // needed for variable assignment.
         let ifs = context.shell.ifs().into_owned();
 
-        // Perform the read operation (potentially with timeout). Offload Stream
-        // (e.g. channel pipe) reads to a blocking task so sync condvar waits in
-        // the channel implementation don't stall executor workers.
-        let read_result = if matches!(input_stream, brush_core::openfiles::OpenFile::Stream(_)) {
+        // Perform the read operation (potentially with timeout).
+        let read_result = if matches!(input_stream, brush_core::openfiles::OpenFile::Stream(_))
+            && !input_stream.is_terminal()
+            && timeout.is_none()
+        {
+            // Async fast-path for channel pipes: cooperative reads, no spawn_blocking.
+            let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
+                None
+            } else if let Some(delimiter_str) = &self.delimiter {
+                if delimiter_str.is_empty() {
+                    Some(NUL_DELIMITER)
+                } else {
+                    delimiter_str.chars().next()
+                }
+            } else {
+                Some(DEFAULT_DELIMITER)
+            };
+            let char_limit = self
+                .return_after_n_chars_no_delimiter
+                .or(self.return_after_n_chars);
+            let config = LineReaderConfig {
+                delimiter,
+                char_limit,
+                process_escapes: !self.raw_mode,
+            };
+            self.read_line_async(&input_stream, &config).await?
+        } else if matches!(input_stream, brush_core::openfiles::OpenFile::Stream(_)) {
+            // Stream with timeout/terminal: offload to blocking task; sync
+            // ChannelReader waits use condvar/notify and PolledInput drives
+            // read_async via block_on.
             let cmd = self.clone();
             tokio::task::spawn_blocking(move || {
                 cmd.read_line(input_stream, std::io::sink(), timeout)
@@ -566,6 +592,110 @@ fn read_line_with_reader(
 }
 
 impl ReadCommand {
+    /// Async fast-path for reading a line from a non-terminal stream (e.g. channel pipe).
+    /// Avoids `spawn_blocking`+`block_on` overhead. Reads one byte at a time to
+    /// prevent over-consuming the stream (critical when multiple reads share it).
+    /// Preserves `read_line_with_reader` semantics for line assembly.
+    async fn read_line_async(
+        &self,
+        input: &brush_core::openfiles::OpenFile,
+        config: &LineReaderConfig,
+    ) -> Result<ReadResult, brush_core::Error> {
+        let mut line = String::new();
+        let mut output_chars = 0usize;
+        let mut pending_backslash = false;
+        let mut utf8_buf: Vec<u8> = Vec::with_capacity(4);
+
+        loop {
+            // Decode next char, reading bytes as needed.
+            let ch = loop {
+                if !utf8_buf.is_empty() {
+                    match std::str::from_utf8(&utf8_buf) {
+                        Ok(s) => {
+                            let c = s.chars().next().unwrap_or('\u{FFFD}');
+                            // All buffered bytes formed this char (or we buffered exactly it).
+                            utf8_buf.clear();
+                            break Some(c);
+                        }
+                        Err(e) if e.error_len().is_some() => {
+                            // Invalid sequence: emit one raw byte as latin-1 char.
+                            let b = utf8_buf.remove(0);
+                            break Some(b as char);
+                        }
+                        Err(_) => {
+                            // Incomplete: need more bytes (or EOF).
+                        }
+                    }
+                }
+
+                let mut b = [0u8; 1];
+                let n = input.read_async(&mut b).await?;
+                if n == 0 {
+                    // EOF: flush incomplete UTF-8 as raw bytes, else signal EOF.
+                    if let Some(&b) = utf8_buf.first() {
+                        utf8_buf.remove(0);
+                        break Some(b as char);
+                    }
+                    break None;
+                }
+                utf8_buf.push(b[0]);
+
+                // If buffer can't form a valid char and is clearly not a UTF-8 prefix
+                // continuation in progress beyond reasonable length, from_utf8 will tell us.
+                // (Handled on next loop iteration via from_utf8.)
+            };
+
+            let Some(ch) = ch else {
+                // EOF: Bash discards pending backslash on EOF.
+                return Ok(ReadResult::Eof(if line.is_empty() {
+                    None
+                } else {
+                    Some(line)
+                }));
+            };
+
+            // Apply line assembly (mirrors read_line_with_reader Char handling).
+            if config.process_escapes {
+                if pending_backslash {
+                    pending_backslash = false;
+                    if let Some(delim) = config.delimiter
+                        && ch == delim
+                    {
+                        continue;
+                    }
+                    line.push(ch);
+                    output_chars += 1;
+                    if let Some(limit) = config.char_limit
+                        && output_chars >= limit
+                    {
+                        return Ok(ReadResult::Line(line));
+                    }
+                    continue;
+                }
+                if ch == BACKSLASH {
+                    pending_backslash = true;
+                    continue;
+                }
+            }
+
+            if let Some(delim) = config.delimiter
+                && ch == delim
+            {
+                return Ok(ReadResult::Line(line));
+            }
+            if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
+                continue;
+            }
+            line.push(ch);
+            output_chars += 1;
+            if let Some(limit) = config.char_limit
+                && output_chars >= limit
+            {
+                return Ok(ReadResult::Line(line));
+            }
+        }
+    }
+
     /// Reads a line of input, optionally with a timeout.
     ///
     /// Handles backslash escape processing:
