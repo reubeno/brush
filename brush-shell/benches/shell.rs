@@ -156,6 +156,44 @@ mod unix {
                 criterion::BatchSize::SmallInput,
             );
         });
+
+        // Benchmark: pipelines (in-process/builtin stages vs pipe plumbing).
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("pipeline_builtin_2stage", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(
+                        s,
+                        "printf hi | { read -r v; : \"$v\"; } >/dev/null",
+                    ));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("pipeline_builtin_3stage", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(
+                        s,
+                        "printf hi | { read -r v; printf %s \"$v\"; } | { read -r w; : \"$w\"; } >/dev/null",
+                    ));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("pipeline_builtin_discard", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(s, "printf hi | :"));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
     }
 }
 
