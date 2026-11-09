@@ -103,15 +103,12 @@ impl ChannelReader {
                 .ok_or_else(|| missing("channel reader missing receiver"))?;
             match receiver.try_recv() {
                 Ok(chunk) => {
-                    eprintln!("BR: chunk {}", chunk.len());
                     state.pending = chunk;
                 }
                 Err(flume::TryRecvError::Empty) => {
-                    eprintln!("BR: empty");
                     return Err(would_block());
                 }
                 Err(flume::TryRecvError::Disconnected) => {
-                    eprintln!("BR: disc");
                     return Ok(0);
                 }
             }
@@ -142,12 +139,10 @@ impl ChannelReader {
                             .ok_or_else(|| missing("channel reader missing receiver"))?;
                         match receiver.try_recv() {
                             Ok(chunk) => {
-                                eprintln!("BR: chunk {}", chunk.len());
                                 state.pending = chunk;
                             }
                             Err(flume::TryRecvError::Empty) => {}
                             Err(flume::TryRecvError::Disconnected) => {
-                                eprintln!("BR: disc");
                                 return Ok(0);
                             }
                         }
@@ -246,14 +241,8 @@ impl ChannelWriter {
         drop(sender);
         match tx.try_send(Bytes::copy_from_slice(&buf[..n])) {
             Ok(()) => Ok(n),
-            Err(flume::TrySendError::Full(_)) => {
-                eprintln!("BW: full");
-                Err(would_block())
-            }
-            Err(flume::TrySendError::Disconnected(_)) => {
-                eprintln!("BW: disc");
-                Err(broken_pipe())
-            }
+            Err(flume::TrySendError::Full(_)) => Err(would_block()),
+            Err(flume::TrySendError::Disconnected(_)) => Err(broken_pipe()),
         }
     }
 
