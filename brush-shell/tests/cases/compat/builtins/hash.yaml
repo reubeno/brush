@@ -212,10 +212,19 @@ cases:
       prog 2>&1 | grep -q 'No such file' && echo "says no such file" || echo "says something else"
 
   - name: "hash -t with no names fails with status 1"
-    known_failure: true # TODO(hash): succeeds
     ignore_stderr: true
     stdin: |
       hash -t; echo "rc=$?"
+
+  - name: "hash -d or -t with no names is checked before anything else"
+    ignore_stderr: true
+    stdin: |
+      hash -p /bin/true seeded
+      hash -d; echo "rc=$?"
+      hash -dt; echo "rc=$?"
+      hash -l -t; echo "rc=$?"
+      hash -r -t; echo "rc=$?"
+      hash -t seeded; echo "rc=$?"
 
   - name: "hash -r -p empties the table, then adds the path"
     known_failure: true # TODO(hash): the table is emptied after the path is added
