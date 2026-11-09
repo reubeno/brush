@@ -50,6 +50,7 @@ mod unix {
     }
 
     /// This function defines core shell benchmarks.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
         // Construct a runtime for us to run async code on.
         let rt = tokio::runtime::Builder::new_multi_thread()
