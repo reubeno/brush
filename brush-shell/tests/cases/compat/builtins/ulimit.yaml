@@ -124,6 +124,17 @@ cases:
       ulimit -Z; echo "ulimit -Z: $?"
       ulimit -n -1; echo "ulimit -n -1: $?"
 
+  - name: "ulimit rejects a limit too large for its unit"
+    ignore_stderr: true
+    stdin: |
+      before=$(ulimit -S -c)
+      ulimit -S -c 36028797018963968; echo "ulimit -c 2^55: $?"
+      ulimit -S -c 9223372036854775807; echo "ulimit -c 2^63-1: $?"
+      ulimit -S -v 18014398509481984; echo "ulimit -v 2^54: $?"
+      [[ $(ulimit -S -c) == "$before" ]] && echo "core limit unchanged"
+      ulimit -S -c 0 -v 18014398509481984; echo "ulimit -c 0 -v 2^54: $?"
+      echo "core limit set before the bad one: $(ulimit -S -c)"
+
   - name: "ulimit lists several resources in the order given"
     known_failure: true # TODO(ulimit): brush lists them in a fixed order, with its own labels and widths
     stdin: |
