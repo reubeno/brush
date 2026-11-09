@@ -480,6 +480,43 @@ impl Execute for ast::Pipeline {
     }
 }
 
+
+fn stage_is_definitely_inprocess(
+    cmd: &ast::Command,
+    shell: &Shell<impl extensions::ShellExtensions>,
+) -> bool {
+    match cmd {
+        ast::Command::Compound(..) | ast::Command::Function(..) => true,
+        ast::Command::Simple(simple) => {
+            let Some(word) = &simple.word_or_name else {
+                // Assignments/redirections only: no external process exec.
+                return true;
+            };
+            let name = word.value.as_str();
+            if name.is_empty()
+                || name.contains(['$', '`', '(', ')', '"', '\'', '\\'])
+            {
+                // Expansion/quotes: runtime name unknown; be conservative.
+                return false;
+            }
+            // Treat `command`/`builtin`/`exec` as uncertain (they may invoke externals).
+            if matches!(name, "command" | "builtin" | "exec") {
+                return false;
+            }
+            shell.funcs().get(name).is_some() || shell.builtins().get(name).is_some()
+        }
+    }
+}
+
+#[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
+fn edge_can_use_channel(
+    left: &ast::Command,
+    right: &ast::Command,
+    shell: &Shell<impl extensions::ShellExtensions>,
+) -> bool {
+    stage_is_definitely_inprocess(left, shell) && stage_is_definitely_inprocess(right, shell)
+}
+
 async fn spawn_pipeline_processes(
     pipeline: &ast::Pipeline,
     shell: &mut Shell<impl extensions::ShellExtensions>,
@@ -497,15 +534,27 @@ async fn spawn_pipeline_processes(
         pipe_readers.reserve_exact(pipeline_len - 1);
         pipe_writers.reserve_exact(pipeline_len - 1);
 
-        for _ in 0..(pipeline_len - 1) {
-            // Unix can lazily materialize channel ends for external children.
-            // Other hosts retain their existing pipe backend for this spike.
+        for i in 0..(pipeline_len - 1) {
+            // (b) Narrow scope: use in-process channel pipes only when both adjacent
+            // stages are definitely in-process (no lazy fd materialization/bridges
+            // expected). Edges touching (or uncertain w.r.t.) external processes use
+            // plain OS pipes to avoid the two-bridge shape on materialization.
             #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
-            let (reader, writer) = crate::byte_pipe::channel_pipe();
+            let (reader, writer): (OpenFile, OpenFile) =
+                if edge_can_use_channel(&pipeline.seq[i], &pipeline.seq[i + 1], shell) {
+                    let (r, w) = crate::byte_pipe::channel_pipe();
+                    (r.into(), w.into())
+                } else {
+                    let (r, w) = sys::pipes::pipe()?;
+                    (r.into(), w.into())
+                };
             #[cfg(not(unix))] // ast-grep-ignore: platform-cfg-outside-sys
-            let (reader, writer) = sys::pipes::pipe()?;
-            pipe_readers.push(Some(reader.into()));
-            pipe_writers.push(Some(writer.into()));
+            let (reader, writer) = {
+                let (r, w) = sys::pipes::pipe()?;
+                (r.into(), w.into())
+            };
+            pipe_readers.push(Some(reader));
+            pipe_writers.push(Some(writer));
         }
         // Push `None` to the readers; it will be popped off by the *first* command, which will
         // mean that command gets its stdin from the execution parameters' current stdin.
