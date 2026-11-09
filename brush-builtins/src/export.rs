@@ -1,5 +1,5 @@
+use brush_core::writeln_async;
 use itertools::Itertools;
-use std::io::Write;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
@@ -42,13 +42,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
         mut context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         if self.declarations.is_empty() {
-            display_all_exported_vars(&context)?;
+            display_all_exported_vars(&context).await?;
             return Ok(ExecutionResult::success());
         }
 
         let mut result = ExecutionResult::success();
         for decl in &self.declarations {
-            let current_result = self.process_decl(&mut context, decl)?;
+            let current_result = self.process_decl(&mut context, decl).await?;
             if !current_result.is_success() {
                 result = current_result;
             }
@@ -59,7 +59,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ExportCommand {
 }
 
 impl ExportCommand {
-    fn process_decl(
+    async fn process_decl(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         decl: &brush_core::CommandArg,
@@ -77,7 +77,7 @@ impl ExportCommand {
                             func.export();
                         }
                     } else {
-                        writeln!(context.stderr(), "{s}: not a function")?;
+                        writeln_async!(context.stderr_async(), "{s}: not a function").await?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     }
                 }
@@ -88,13 +88,13 @@ impl ExportCommand {
                         .strip_suffix('+')
                         .map_or((name, false), |name| (name, true));
                     if !env::valid_variable_name(name) {
-                        return Self::invalid_identifier(context, s);
+                        return Self::invalid_identifier(context, s).await;
                     }
 
                     let value = variables::ShellValueLiteral::Scalar(value.to_owned());
                     self.assign_and_mark(context, name, value, append)?;
                 } else if !env::valid_variable_name(s) {
-                    return Self::invalid_identifier(context, s);
+                    return Self::invalid_identifier(context, s).await;
                 }
                 // Try to find the variable already present; if we find it, then mark it
                 // exported.
@@ -110,7 +110,8 @@ impl ExportCommand {
                 let name = match &assignment.name {
                     ast::AssignmentName::VariableName(name) => name,
                     ast::AssignmentName::ArrayElementName(name, index) => {
-                        return Self::invalid_identifier(context, &format!("{name}[{index}]"));
+                        return Self::invalid_identifier(context, &format!("{name}[{index}]"))
+                            .await;
                     }
                 };
 
@@ -135,15 +136,16 @@ impl ExportCommand {
     }
 
     /// Reports `word` as an invalid name, as bash does, and returns the failure.
-    fn invalid_identifier(
+    async fn invalid_identifier(
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         word: &str,
     ) -> Result<ExecutionResult, brush_core::Error> {
-        writeln!(
-            context.stderr(),
+        writeln_async!(
+            context.stderr_async(),
             "{}: `{word}': not a valid identifier",
             context.command_name
-        )?;
+        )
+        .await?;
         Ok(ExecutionResult::general_error())
     }
 
@@ -188,7 +190,7 @@ impl ExportCommand {
     }
 }
 
-fn display_all_exported_vars(
+async fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
 ) -> Result<(), brush_core::Error> {
     // Enumerate variables, sorted by key.
@@ -196,9 +198,9 @@ fn display_all_exported_vars(
         if variable.is_exported() {
             let value = variable.value().try_get_cow_str(context.shell);
             if let Some(value) = value {
-                writeln!(context.stdout(), "declare -x {name}=\"{value}\"")?;
+                writeln_async!(context.stdout_async(), "declare -x {name}=\"{value}\"").await?;
             } else {
-                writeln!(context.stdout(), "declare -x {name}")?;
+                writeln_async!(context.stdout_async(), "declare -x {name}").await?;
             }
         }
     }

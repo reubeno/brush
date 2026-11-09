@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{
     ErrorKind, ExecutionExitCode, ExecutionParameters, ExecutionResult, Shell, builtins, tests,
 };
@@ -32,7 +31,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for TestCommand {
             match args.last() {
                 Some(s) if s == "]" => (),
                 None | Some(_) => {
-                    writeln!(context.stderr(), "[: missing ']'")?;
+                    writeln_async!(context.stderr_async(), "[: missing ']'").await?;
                     return Ok(ExecutionExitCode::InvalidUsage.into());
                 }
             }

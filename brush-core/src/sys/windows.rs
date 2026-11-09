@@ -5,6 +5,7 @@ pub use crate::sys::stubs::fd;
 pub(crate) mod fs;
 pub(crate) use crate::sys::os_pipes as pipes;
 pub use crate::sys::stubs::input;
+pub(crate) use crate::sys::stubs::pipe_io;
 pub(crate) mod network;
 pub use crate::sys::stubs::poll;
 pub use crate::sys::stubs::resource;

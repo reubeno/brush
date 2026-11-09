@@ -1,5 +1,6 @@
+use brush_core::writeln_async;
 use brush_core::{ExecutionResult, builtins};
-use std::{borrow::Cow, io::Write, path::Path};
+use std::{borrow::Cow, path::Path};
 
 /// Display the current working directory.
 #[derive(winnow_args::Args)]
@@ -40,7 +41,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PwdCommand {
             cwd = cwd.canonicalize()?.into();
         }
 
-        writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
+        writeln_async!(context.stdout_async(), "{}", cwd.to_string_lossy()).await?;
 
         Ok(ExecutionResult::success())
     }

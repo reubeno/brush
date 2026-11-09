@@ -1,4 +1,4 @@
-use std::io::Write;
+use tokio::io::AsyncWriteExt as _;
 
 use brush_core::{ExecutionResult, builtins, escape};
 
@@ -65,8 +65,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EchoCommand {
             s.push('\n');
         }
 
-        write!(context.stdout(), "{s}")?;
-        context.stdout().flush()?;
+        let mut stdout = context.stdout_async();
+        stdout.write_all(s.as_bytes()).await?;
+        stdout.flush().await?;
 
         Ok(ExecutionResult::success())
     }

@@ -44,11 +44,11 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-tokio = { version = "1.52.3", features = ["io-util", "macros", "rt", "sync"] }
+tokio = { version = "1.54.0", features = ["io-util", "macros", "rt", "sync"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 hostname = "0.4.2"
-tokio = { version = "1.52.3", features = [
+tokio = { version = "1.54.0", features = [
     "io-util",
     "macros",
     "net",
@@ -75,6 +75,7 @@ nix = { version = "0.31.2", features = [
     "term",
     "user",
 ] }
+rustix = { version = "1.1.5", default-features = false, features = ["fs", "std"] }
 terminal_size = "0.4.4"
 terminfo = "0.9.0"
 uzers = "0.12.2"
@@ -87,4 +88,4 @@ uuid = { version = "1", features = ["js"] }
 anyhow = "1.0.102"
 pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 tempfile = "3.27.0"
-tokio = { version = "1.52.3", features = ["time"] }
+tokio = { version = "1.54.0", features = ["time"] }
