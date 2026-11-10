@@ -176,7 +176,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             }
         }
 
-        &mut self.args
+        std::sync::Arc::make_mut(&mut self.args)
     }
 }
 
