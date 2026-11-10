@@ -71,13 +71,13 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
 
     /// The builtins' state; see [`crate::ExecutionContext::state_mut`].
     #[cfg_attr(feature = "serde", serde(skip, default))]
-    builtin_states: builtins::BuiltinStates,
+    builtin_states: std::sync::Arc<builtins::BuiltinStates>,
 
     /// Trap handler configuration for the shell.
     traps: crate::traps::TrapHandlerConfig,
 
     /// Manages files opened and accessible via redirection operators.
-    open_files: openfiles::OpenFiles,
+    open_files: std::sync::Arc<openfiles::OpenFiles>,
 
     /// The current working directory.
     working_dir: PathBuf,
@@ -136,11 +136,11 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     directory_stack: std::sync::Arc<Vec<PathBuf>>,
 
     /// Programmable completion state.
-    completion: crate::completion::State,
+    completion: std::sync::Arc<crate::completion::State>,
 
     /// Shell built-in commands.
     #[cfg_attr(feature = "serde", serde(skip))]
-    builtins: builtins::Registry<SE>,
+    builtins: std::sync::Arc<builtins::Registry<SE>>,
 
     /// Shell program location cache.
     program_location_cache: std::sync::Arc<pathcache::PathCache>,
@@ -169,9 +169,9 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             error_formatter: self.error_formatter.clone(),
             process_launcher: self.process_launcher.clone(),
             task_spawner: self.task_spawner.clone(),
-            builtin_states: self.builtin_states.clone(),
+            builtin_states: std::sync::Arc::clone(&self.builtin_states),
             traps: self.traps.clone(),
-            open_files: self.open_files.clone(),
+            open_files: std::sync::Arc::clone(&self.open_files),
             working_dir: self.working_dir.clone(),
             env: self.env.clone(),
             funcs: std::sync::Arc::clone(&self.funcs),
@@ -197,8 +197,8 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             // A subshell of a completion function (e.g. `$(compgen ...)`) is in that
             // completion too. Like a forked subshell in bash, it changes only its own copy
             // (e.g. with `compopt`), which its parent doesn't see.
-            completion: self.completion.clone(),
-            builtins: self.builtins.clone(),
+            completion: std::sync::Arc::clone(&self.completion),
+            builtins: std::sync::Arc::clone(&self.builtins),
             program_location_cache: std::sync::Arc::clone(&self.program_location_cache),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
@@ -239,22 +239,22 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             error_formatter: options.error_formatter,
             process_launcher: options.process_launcher,
             task_spawner: options.task_spawner,
-            builtin_states: builtins::BuiltinStates::default(),
-            open_files: openfiles::OpenFiles::new(),
+            builtin_states: std::sync::Arc::new(builtins::BuiltinStates::default()),
+            open_files: std::sync::Arc::new(openfiles::OpenFiles::new()),
             options: runtime_options,
             name: options.shell_name,
             args: std::sync::Arc::new(options.shell_args.unwrap_or_default()),
             version: options.shell_version,
             product_display_str: options.shell_product_display_str,
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
-            builtins: options.builtins,
+            builtins: std::sync::Arc::new(options.builtins),
             parser_impl: options.parser,
             key_bindings: options.key_bindings,
             ..Self::default()
         };
 
         // Add in any open files provided.
-        shell.open_files.update_from(options.fds.into_iter());
+        std::sync::Arc::make_mut(&mut shell.open_files).update_from(options.fds.into_iter());
 
         // TODO(patterns): Without this a script that sets extglob will fail because we
         // parse the entire script with the same settings.
@@ -536,7 +536,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the shell's completion configuration.
     pub fn completion_config_mut(&mut self) -> &mut crate::completion::Config {
-        &mut self.completion.config
+        &mut std::sync::Arc::make_mut(&mut self.completion).config
     }
 
     /// Returns the shell's open files.
@@ -546,7 +546,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the shell's open files.
     pub fn open_files_mut(&mut self) -> &mut openfiles::OpenFiles {
-        &mut self.open_files
+        std::sync::Arc::make_mut(&mut self.open_files)
     }
 
     /// Returns the *current* name of the shell ($0).
