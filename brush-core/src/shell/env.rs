@@ -31,6 +31,6 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     /// * `name` - The name of the variable to add.
     /// * `var` - The variable contents to add.
     pub fn set_env_global(&mut self, name: &str, var: ShellVariable) -> Result<(), error::Error> {
-        self.env.set_global(name, var)
+        std::sync::Arc::make_mut(&mut self.env).set_global(name, var)
     }
 }
