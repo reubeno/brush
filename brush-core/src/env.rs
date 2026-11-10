@@ -68,7 +68,7 @@ impl std::fmt::Display for EnvironmentScope {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShellEnvironment {
     /// Stack of scopes, with the top of the stack being the current scope.
-    scopes: Vec<(EnvironmentScope, ShellVariableMap)>,
+    scopes: Vec<(EnvironmentScope, std::sync::Arc<ShellVariableMap>)>,
     /// Whether or not to auto-export variables on creation or modification.
     export_variables_on_modification: bool,
     /// Count of total entries (may include duplicates with shadowed variables).
@@ -85,7 +85,10 @@ impl ShellEnvironment {
     /// Returns a new shell environment.
     pub fn new() -> Self {
         Self {
-            scopes: vec![(EnvironmentScope::Global, ShellVariableMap::default())],
+            scopes: vec![(
+                EnvironmentScope::Global,
+                std::sync::Arc::new(ShellVariableMap::default()),
+            )],
             export_variables_on_modification: false,
             entry_count: 0,
         }
@@ -102,7 +105,8 @@ impl ShellEnvironment {
     ///
     /// * `scope_type` - The type of scope to push.
     pub fn push_scope(&mut self, scope_type: EnvironmentScope) {
-        self.scopes.push((scope_type, ShellVariableMap::default()));
+        self.scopes
+            .push((scope_type, std::sync::Arc::new(ShellVariableMap::default())));
     }
 
     /// Pops the top-most scope off the environment's scope stack.
@@ -212,7 +216,7 @@ impl ShellEnvironment {
     ) -> Option<(EnvironmentScope, &mut ShellVariable)> {
         // Look through scopes, from the top of the stack on down.
         for (scope_type, map) in self.scopes.iter_mut().rev() {
-            if let Some(var) = map.get_mut(name.as_ref()) {
+            if let Some(var) = std::sync::Arc::make_mut(map).get_mut(name.as_ref()) {
                 return Some((*scope_type, var));
             }
         }
@@ -266,13 +270,13 @@ impl ShellEnvironment {
                 local_count += 1;
             }
 
-            let unset_result = Self::try_unset_in_map(map, name)?;
+            let unset_result = Self::try_unset_in_map(std::sync::Arc::make_mut(map), name)?;
 
             if unset_result.is_some() {
                 // If we end up finding a local in the top-most local frame, then we replace
                 // it with a placeholder.
                 if matches!(scope_type, EnvironmentScope::Local) && local_count == 1 {
-                    map.set(
+                    std::sync::Arc::make_mut(map).set(
                         name,
                         ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped)),
                     );
@@ -351,7 +355,7 @@ impl ShellEnvironment {
             .iter_mut()
             .rev()
             .filter(|(t, _)| looks_in(*t))
-            .find_map(|(_, var_map)| var_map.get_mut(name.as_ref()))
+            .find_map(|(_, var_map)| std::sync::Arc::make_mut(var_map).get_mut(name.as_ref()))
     }
 
     /// Update a variable in the environment, or add it if it doesn't already exist.
@@ -450,7 +454,7 @@ impl ShellEnvironment {
 
         for (scope_type, map) in self.scopes.iter_mut().rev() {
             if *scope_type == target_scope {
-                let prev_var = map.set(name, var);
+                let prev_var = std::sync::Arc::make_mut(map).set(name, var);
                 if prev_var.is_none() {
                     self.entry_count += 1;
                 }
