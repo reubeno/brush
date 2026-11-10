@@ -254,7 +254,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             process_launcher: SE::ProcessLauncher::default(),
             task_spawner: SE::TaskSpawner::default(),
             builtin_states: std::sync::Arc::new(builtins::BuiltinStates::default()),
-            traps: traps::TrapHandlerConfig::default(),
+            traps: std::sync::Arc::new(traps::TrapHandlerConfig::default()),
             open_files: std::sync::Arc::new(openfiles::OpenFiles::default()),
             working_dir: PathBuf::default(),
             env: std::sync::Arc::new(env::ShellEnvironment::default()),
