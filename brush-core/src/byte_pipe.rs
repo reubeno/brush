@@ -572,6 +572,39 @@ impl Stream for ChannelReader {
     fn unread(&self, data: &[u8]) -> io::Result<()> {
         self.unread_bytes(data)
     }
+    #[allow(clippy::significant_drop_tightening)] // guard scope ends at fn end by design
+    fn is_readable_now(&self) -> Option<io::Result<bool>> {
+        // Once native, readability is a property of the OS pipe.
+        let native = self.0.native.get().and_then(|n| n.try_clone().ok());
+        if let Some(native) = native {
+            Some(crate::sys::poll::poll_for_input(
+                &OpenFile::PipeReader(Arc::new(native)),
+                Duration::ZERO,
+            ))
+        } else {
+            // Channel mode: answer from shared state without consuming. A chunk
+            // pulled here is stashed back into `pending` (we hold the lock), so
+            // the next read still sees it in order.
+            let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if !state.pending.is_empty() {
+                Some(Ok(true))
+            } else {
+                match state.receiver.as_ref() {
+                    // Disconnected reads as readable (EOF), matching poll(2) on a
+                    // pipe whose writers are all gone.
+                    None => Some(Ok(true)),
+                    Some(receiver) => match receiver.try_recv() {
+                        Ok(chunk) => {
+                            state.pending = chunk;
+                            Some(Ok(true))
+                        }
+                        Err(flume::TryRecvError::Empty) => Some(Ok(false)),
+                        Err(flume::TryRecvError::Disconnected) => Some(Ok(true)),
+                    },
+                }
+            }
+        }
+    }
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, crate::Error> {
         use std::os::fd::AsFd;

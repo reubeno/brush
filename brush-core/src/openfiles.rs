@@ -36,6 +36,13 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
         ))
     }
 
+    /// Immediate (zero-timeout) readability probe that does not require
+    /// materializing a file descriptor. Returns `None` when the stream can
+    /// only answer via native fd polling (the default).
+    fn is_readable_now(&self) -> Option<std::io::Result<bool>> {
+        None
+    }
+
     /// Returns `true` if `unread` is supported (best-effort; state may change).
     fn can_unread(&self) -> bool {
         false

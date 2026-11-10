@@ -390,8 +390,16 @@ impl InputReader {
     /// Checks if input is immediately available (for `-t 0`). Returns `false` if an error
     /// occurs while checking for available input.
     fn check_input_available(&self) -> bool {
-        brush_core::sys::poll::poll_for_input(&self.input.get_ref().input, Duration::ZERO)
-            .unwrap_or(false)
+        let input = &self.input.get_ref().input;
+        // Streams (e.g. channel pipes) can answer without materializing an fd;
+        // native polling would race the materialization bridge and miss data
+        // still queued in the channel.
+        if let brush_core::openfiles::OpenFile::Stream(stream) = input
+            && let Some(result) = stream.is_readable_now()
+        {
+            return result.unwrap_or(false);
+        }
+        brush_core::sys::poll::poll_for_input(input, Duration::ZERO).unwrap_or(false)
     }
 
     /// Reads the next input event, handling timeout and control characters.
@@ -684,6 +692,27 @@ impl ReadCommand {
                     Some(line)
                 }));
             };
+
+            // Control characters map to events before escape processing, mirroring
+            // `InputReader::read_event` on the sync path (pipe-type-independent).
+            if ch == CTRL_C {
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
+                return Ok(ReadResult::Interrupted);
+            }
+            if ch == CTRL_D {
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
+                // At line start = EOF, mid-input = flush current input.
+                // Bash discards pending backslash here too.
+                return Ok(if line.is_empty() && !pending_backslash {
+                    ReadResult::Eof(None)
+                } else {
+                    ReadResult::Line(line)
+                });
+            }
 
             let mut finished: Option<ReadResult> = None;
             // Apply line assembly (mirrors read_line_with_reader Char handling).
