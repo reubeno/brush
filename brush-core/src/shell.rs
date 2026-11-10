@@ -83,7 +83,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     working_dir: PathBuf,
 
     /// The shell environment, containing shell variables.
-    env: ShellEnvironment,
+    env: std::sync::Arc<ShellEnvironment>,
 
     /// Shell function definitions.
     funcs: std::sync::Arc<functions::FunctionEnv>,
@@ -173,7 +173,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             traps: self.traps.clone(),
             open_files: std::sync::Arc::clone(&self.open_files),
             working_dir: self.working_dir.clone(),
-            env: self.env.clone(),
+            env: std::sync::Arc::clone(&self.env),
             funcs: std::sync::Arc::clone(&self.funcs),
             options: self.options.clone(),
             jobs: jobs::JobManager::new(),
@@ -272,7 +272,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
         // Set any provided variables.
         for (var_name, var_value) in options.vars {
-            shell.env.set_global(var_name, var_value)?;
+            shell.env_mut().set_global(var_name, var_value)?;
         }
 
         // Set up history, if relevant. The history file itself is loaded later, once startup
@@ -336,7 +336,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // above).
         let value = last_arg.unwrap_or_default();
         let _ = self
-            .env
+            .env_mut()
             .set_global("_", crate::variables::ShellVariable::new(value));
     }
 
@@ -366,7 +366,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             Some(last_arg) => self.update_last_arg_variable(Some(last_arg)),
             // `_` was unset when the snapshot was taken, so put it back that way. Unsetting
             // a readonly `_` fails; ignore that, as `update_last_arg_variable` does.
-            None => _ = self.env.unset("_"),
+            None => _ = std::sync::Arc::make_mut(&mut self.env).unset("_"),
         }
     }
 
@@ -456,7 +456,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the shell environment.
     pub fn env_mut(&mut self) -> &mut ShellEnvironment {
-        &mut self.env
+        std::sync::Arc::make_mut(&mut self.env)
     }
 
     /// Returns the shell's runtime options.
@@ -661,7 +661,7 @@ mod tests {
         shell.update_last_arg_variable(Some(String::from("saved")));
         let with_value = shell.save_command_status();
 
-        shell.env.unset("_")?;
+        shell.env_mut().unset("_")?;
         let while_unset = shell.save_command_status();
 
         shell.restore_command_status(with_value);
@@ -681,7 +681,7 @@ mod tests {
             .build()
             .await?;
 
-        shell.env.set_global(
+        shell.env_mut().set_global(
             "IFS",
             crate::ShellVariable::new(crate::ShellValue::Unset(
                 crate::variables::ShellValueUnsetType::Untyped,
@@ -690,7 +690,9 @@ mod tests {
         assert_eq!(shell.env_str("IFS").as_deref(), Some(""));
         assert_eq!(shell.ifs(), " \t\n");
 
-        shell.env.set_global("IFS", crate::ShellVariable::new(""))?;
+        shell
+            .env_mut()
+            .set_global("IFS", crate::ShellVariable::new(""))?;
         assert_eq!(shell.env_str("IFS").as_deref(), Some(""));
         assert_eq!(shell.ifs(), "");
 

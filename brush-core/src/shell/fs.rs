@@ -37,7 +37,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
         let pwd = cleaned_path.to_string_lossy().to_string();
 
-        self.env.update_or_add(
+        std::sync::Arc::make_mut(&mut self.env).update_or_add(
             "PWD",
             variables::ShellValueLiteral::Scalar(pwd),
             |_| Ok(()),
@@ -46,7 +46,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         )?;
         let oldpwd = std::mem::replace(self.working_dir_mut(), cleaned_path);
 
-        self.env.update_or_add(
+        std::sync::Arc::make_mut(&mut self.env).update_or_add(
             "OLDPWD",
             variables::ShellValueLiteral::Scalar(oldpwd.to_string_lossy().to_string()),
             |_| Ok(()),

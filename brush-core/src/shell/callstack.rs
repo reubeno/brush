@@ -116,7 +116,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
 
         self.call_stack.push_function(name, function, args);
-        self.env.push_scope(env::EnvironmentScope::Local);
+        std::sync::Arc::make_mut(&mut self.env).push_scope(env::EnvironmentScope::Local);
         let leave = Leave::Function {
             frames: self.call_stack.depth(),
             scopes: self.env.scope_depth(),
@@ -127,7 +127,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
     /// Enters a new variable scope on the shell, until the returned guard is dropped.
     pub(crate) fn enter_scope(&mut self, scope: env::EnvironmentScope) -> ShellGuard<'_, SE> {
-        self.env.push_scope(scope);
+        std::sync::Arc::make_mut(&mut self.env).push_scope(scope);
         let scopes = self.env.scope_depth();
         ShellGuard::new(self, Leave::Scope { scopes, scope })
     }
@@ -259,7 +259,7 @@ impl<SE: crate::extensions::ShellExtensions> ShellGuard<'_, SE> {
     /// Pops this guard's variable scope if it's on top, `depth` scopes deep; returns whether
     /// it was.
     fn pop_scope(&mut self, depth: usize, scope_type: env::EnvironmentScope) -> bool {
-        self.shell.env.scope_depth() == depth && self.shell.env.pop_scope(scope_type).is_ok()
+        self.shell.env.scope_depth() == depth && self.shell.env_mut().pop_scope(scope_type).is_ok()
     }
 
     /// Reports that what ran in this guard didn't leave everything it entered.

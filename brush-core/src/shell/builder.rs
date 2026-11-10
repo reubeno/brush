@@ -257,7 +257,7 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             traps: traps::TrapHandlerConfig::default(),
             open_files: std::sync::Arc::new(openfiles::OpenFiles::default()),
             working_dir: PathBuf::default(),
-            env: env::ShellEnvironment::default(),
+            env: std::sync::Arc::new(env::ShellEnvironment::default()),
             funcs: std::sync::Arc::new(functions::FunctionEnv::default()),
             options: options::RuntimeOptions::default(),
             jobs: jobs::JobManager::default(),
