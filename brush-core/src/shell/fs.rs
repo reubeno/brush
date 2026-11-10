@@ -145,7 +145,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         if let Some(cached_path) = self.program_location_cache.get(&candidate_name) {
             Some(cached_path)
         } else if let Some(found_path) = self.find_first_executable_in_path(&candidate_name) {
-            self.program_location_cache
+            self.program_location_cache_mut()
                 .set(candidate_name, found_path.clone());
             Some(found_path)
         } else {
@@ -186,7 +186,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         }
 
         let found_path = self.resolve_command_in_path(candidate_name.as_ref())?;
-        self.program_location_cache
+        self.program_location_cache_mut()
             .set(candidate_name, found_path.clone());
 
         Some(found_path)

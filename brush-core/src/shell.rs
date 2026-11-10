@@ -86,7 +86,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     env: ShellEnvironment,
 
     /// Shell function definitions.
-    funcs: functions::FunctionEnv,
+    funcs: std::sync::Arc<functions::FunctionEnv>,
 
     /// Runtime shell options.
     options: RuntimeOptions,
@@ -97,7 +97,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     jobs: jobs::JobManager,
 
     /// Shell aliases.
-    aliases: HashMap<String, String>,
+    aliases: std::sync::Arc<HashMap<String, String>>,
 
     /// The status of the last completed command.
     last_exit_status: u8,
@@ -108,7 +108,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     last_exit_status_change_count: usize,
 
     /// The status of each of the commands in the last pipeline.
-    last_pipeline_statuses: Vec<u8>,
+    last_pipeline_statuses: std::sync::Arc<Vec<u8>>,
 
     /// Clone depth from the original ancestor shell.
     depth: usize,
@@ -121,7 +121,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     name: Option<String>,
 
     /// Positional shell arguments (not including shell name).
-    args: Vec<String>,
+    args: std::sync::Arc<Vec<String>>,
 
     /// Shell version
     version: Option<String>,
@@ -133,7 +133,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     call_stack: crate::callstack::CallStack,
 
     /// Directory stack used by pushd et al.
-    directory_stack: Vec<PathBuf>,
+    directory_stack: std::sync::Arc<Vec<PathBuf>>,
 
     /// Programmable completion state.
     completion: crate::completion::State,
@@ -143,7 +143,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     builtins: builtins::Registry<SE>,
 
     /// Shell program location cache.
-    program_location_cache: pathcache::PathCache,
+    program_location_cache: std::sync::Arc<pathcache::PathCache>,
 
     /// Last "SECONDS" captured time.
     last_stopwatch_time: std::time::SystemTime,
@@ -174,15 +174,15 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             open_files: self.open_files.clone(),
             working_dir: self.working_dir.clone(),
             env: self.env.clone(),
-            funcs: self.funcs.clone(),
+            funcs: std::sync::Arc::clone(&self.funcs),
             options: self.options.clone(),
             jobs: jobs::JobManager::new(),
-            aliases: self.aliases.clone(),
+            aliases: std::sync::Arc::clone(&self.aliases),
             last_exit_status: self.last_exit_status,
             last_exit_status_change_count: self.last_exit_status_change_count,
-            last_pipeline_statuses: self.last_pipeline_statuses.clone(),
+            last_pipeline_statuses: std::sync::Arc::clone(&self.last_pipeline_statuses),
             name: self.name.clone(),
-            args: self.args.clone(),
+            args: std::sync::Arc::clone(&self.args),
             version: self.version.clone(),
             product_display_str: self.product_display_str.clone(),
             call_stack: {
@@ -193,13 +193,13 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
                 cs.clear_active_trap_signals();
                 cs
             },
-            directory_stack: self.directory_stack.clone(),
+            directory_stack: std::sync::Arc::clone(&self.directory_stack),
             // A subshell of a completion function (e.g. `$(compgen ...)`) is in that
             // completion too. Like a forked subshell in bash, it changes only its own copy
             // (e.g. with `compopt`), which its parent doesn't see.
             completion: self.completion.clone(),
             builtins: self.builtins.clone(),
-            program_location_cache: self.program_location_cache.clone(),
+            program_location_cache: std::sync::Arc::clone(&self.program_location_cache),
             last_stopwatch_time: self.last_stopwatch_time,
             last_stopwatch_offset: self.last_stopwatch_offset,
             parser_impl: self.parser_impl,
@@ -243,7 +243,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
             open_files: openfiles::OpenFiles::new(),
             options: runtime_options,
             name: options.shell_name,
-            args: options.shell_args.unwrap_or_default(),
+            args: std::sync::Arc::new(options.shell_args.unwrap_or_default()),
             version: options.shell_version,
             product_display_str: options.shell_product_display_str,
             working_dir: options.working_dir.map_or_else(std::env::current_dir, Ok)?,
@@ -345,7 +345,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         SavedCommandStatus {
             exit_status: self.last_exit_status,
             exit_status_change_count: self.last_exit_status_change_count,
-            pipeline_statuses: self.last_pipeline_statuses.clone(),
+            pipeline_statuses: (*self.last_pipeline_statuses).clone(),
             last_arg: self.env_str("_").map(|value| value.into_owned()),
         }
     }
@@ -357,7 +357,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
     ///
     /// * `saved` - The snapshot to restore.
     pub fn restore_command_status(&mut self, saved: SavedCommandStatus) {
-        self.last_pipeline_statuses = saved.pipeline_statuses;
+        self.last_pipeline_statuses = std::sync::Arc::new(saved.pipeline_statuses);
         // Assigned directly rather than through `set_last_exit_status`, which would bump
         // the change counter we're about to put back.
         self.last_exit_status = saved.exit_status;
@@ -476,7 +476,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the shell's aliases.
     pub fn aliases_mut(&mut self) -> &mut HashMap<String, String> {
-        &mut self.aliases
+        std::sync::Arc::make_mut(&mut self.aliases)
     }
 
     /// Returns the shell's job manager.
@@ -506,7 +506,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the shell's directory stack.
     pub fn directory_stack_mut(&mut self) -> &mut Vec<PathBuf> {
-        &mut self.directory_stack
+        std::sync::Arc::make_mut(&mut self.directory_stack)
     }
 
     /// Returns the statuses of commands in the last pipeline.
@@ -516,7 +516,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the statuses of commands in the last pipeline.
     pub fn last_pipeline_statuses_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.last_pipeline_statuses
+        std::sync::Arc::make_mut(&mut self.last_pipeline_statuses)
     }
 
     /// Returns the shell's program location cache.
@@ -526,7 +526,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the shell's program location cache.
     pub fn program_location_cache_mut(&mut self) -> &mut pathcache::PathCache {
-        &mut self.program_location_cache
+        std::sync::Arc::make_mut(&mut self.program_location_cache)
     }
 
     /// Returns the shell's completion configuration.
