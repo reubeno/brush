@@ -270,10 +270,10 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         &mut self,
         open_fds: impl Iterator<Item = (ShellFd, openfiles::OpenFile)>,
     ) {
-        self.open_files = openfiles::OpenFiles::from(open_fds);
+        self.open_files = std::sync::Arc::new(openfiles::OpenFiles::from(open_fds));
     }
 
-    pub(crate) const fn persistent_open_files(&self) -> &openfiles::OpenFiles {
+    pub(crate) fn persistent_open_files(&self) -> &openfiles::OpenFiles {
         &self.open_files
     }
 }
