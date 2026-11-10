@@ -74,7 +74,7 @@ pub struct Shell<SE: extensions::ShellExtensions = extensions::DefaultShellExten
     builtin_states: std::sync::Arc<builtins::BuiltinStates>,
 
     /// Trap handler configuration for the shell.
-    traps: crate::traps::TrapHandlerConfig,
+    traps: std::sync::Arc<crate::traps::TrapHandlerConfig>,
 
     /// Manages files opened and accessible via redirection operators.
     open_files: std::sync::Arc<openfiles::OpenFiles>,
@@ -170,7 +170,7 @@ impl<SE: extensions::ShellExtensions> Clone for Shell<SE> {
             process_launcher: self.process_launcher.clone(),
             task_spawner: self.task_spawner.clone(),
             builtin_states: std::sync::Arc::clone(&self.builtin_states),
-            traps: self.traps.clone(),
+            traps: std::sync::Arc::clone(&self.traps),
             open_files: std::sync::Arc::clone(&self.open_files),
             working_dir: self.working_dir.clone(),
             env: std::sync::Arc::clone(&self.env),
@@ -496,7 +496,7 @@ impl<SE: extensions::ShellExtensions> ShellState for Shell<SE> {
 
     /// Returns a mutable reference to the shell's trap handler configuration.
     pub fn traps_mut(&mut self) -> &mut crate::traps::TrapHandlerConfig {
-        &mut self.traps
+        std::sync::Arc::make_mut(&mut self.traps)
     }
 
     /// Returns the shell's directory stack.
