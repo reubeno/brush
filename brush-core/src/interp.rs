@@ -480,7 +480,7 @@ impl Execute for ast::Pipeline {
     }
 }
 
-
+#[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
 fn stage_is_definitely_inprocess(
     cmd: &ast::Command,
     shell: &Shell<impl extensions::ShellExtensions>,
@@ -493,9 +493,7 @@ fn stage_is_definitely_inprocess(
                 return true;
             };
             let name = word.value.as_str();
-            if name.is_empty()
-                || name.contains(['$', '`', '(', ')', '"', '\'', '\\'])
-            {
+            if name.is_empty() || name.contains(['$', '`', '(', ')', '"', '\'', '\\']) {
                 // Expansion/quotes: runtime name unknown; be conservative.
                 return false;
             }
@@ -517,6 +515,39 @@ fn edge_can_use_channel(
     stage_is_definitely_inprocess(left, shell) && stage_is_definitely_inprocess(right, shell)
 }
 
+/// Creates the pipe connecting two adjacent pipeline stages. On Unix, edges
+/// between two definitely in-process stages use a channel pipe; all other
+/// edges (and all edges on other platforms) use a plain OS pipe.
+#[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
+fn pipeline_edge_files(
+    left: &ast::Command,
+    right: &ast::Command,
+    shell: &Shell<impl extensions::ShellExtensions>,
+) -> Result<(OpenFile, OpenFile), error::Error> {
+    // (b) Narrow scope: use in-process channel pipes only when both adjacent
+    // stages are definitely in-process (no lazy fd materialization/bridges
+    // expected). Edges touching (or uncertain w.r.t.) external processes use
+    // plain OS pipes to avoid the two-bridge shape on materialization.
+    if edge_can_use_channel(left, right, shell) {
+        let (r, w) = crate::byte_pipe::channel_pipe();
+        Ok((r.into(), w.into()))
+    } else {
+        let (r, w) = sys::pipes::pipe()?;
+        Ok((r.into(), w.into()))
+    }
+}
+
+/// Creates the pipe connecting two adjacent pipeline stages.
+#[cfg(not(unix))] // ast-grep-ignore: platform-cfg-outside-sys
+fn pipeline_edge_files(
+    _left: &ast::Command,
+    _right: &ast::Command,
+    _shell: &Shell<impl extensions::ShellExtensions>,
+) -> Result<(OpenFile, OpenFile), error::Error> {
+    let (r, w) = sys::pipes::pipe()?;
+    Ok((r.into(), w.into()))
+}
+
 async fn spawn_pipeline_processes(
     pipeline: &ast::Pipeline,
     shell: &mut Shell<impl extensions::ShellExtensions>,
@@ -535,24 +566,8 @@ async fn spawn_pipeline_processes(
         pipe_writers.reserve_exact(pipeline_len - 1);
 
         for i in 0..(pipeline_len - 1) {
-            // (b) Narrow scope: use in-process channel pipes only when both adjacent
-            // stages are definitely in-process (no lazy fd materialization/bridges
-            // expected). Edges touching (or uncertain w.r.t.) external processes use
-            // plain OS pipes to avoid the two-bridge shape on materialization.
-            #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
-            let (reader, writer): (OpenFile, OpenFile) =
-                if edge_can_use_channel(&pipeline.seq[i], &pipeline.seq[i + 1], shell) {
-                    let (r, w) = crate::byte_pipe::channel_pipe();
-                    (r.into(), w.into())
-                } else {
-                    let (r, w) = sys::pipes::pipe()?;
-                    (r.into(), w.into())
-                };
-            #[cfg(not(unix))] // ast-grep-ignore: platform-cfg-outside-sys
-            let (reader, writer) = {
-                let (r, w) = sys::pipes::pipe()?;
-                (r.into(), w.into())
-            };
+            let (reader, writer) =
+                pipeline_edge_files(&pipeline.seq[i], &pipeline.seq[i + 1], shell)?;
             pipe_readers.push(Some(reader));
             pipe_writers.push(Some(writer));
         }
