@@ -34,10 +34,11 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         params: &crate::interp::ExecutionParameters,
         command: S,
     ) {
-        // Expand the PS4 prompt variable to get our prefix.
+        // Expand the PS4 prompt variable to get our prefix; any error it reports goes to the
+        // command's stderr, as in bash.
         let mut prefix = self
             .as_mut()
-            .expand_prompt_var("PS4", "")
+            .expand_prompt_var("PS4", "", params)
             .await
             .unwrap_or_default();
 
