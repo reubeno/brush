@@ -103,23 +103,24 @@ writes before it can remove bridges without loss or reordering.
 ## Async migration boundary
 
 No existing execution `spawn_blocking` calls were removed. Legacy synchronous
-channel reads/writes use `try_recv`/`try_send`, retrying after a 1ms sleep on
-native hosts (WASM returns `WouldBlock` instead of sleeping). They must stay
-on the existing blocking execution paths; they are not suitable for general
+channel reads/writes use `try_recv`/`try_send`; when the channel would block
+they wait on a shared `Condvar` (woken by the peer end's notify, with a 10ms
+timed fallback recheck for lost-wakeup safety). They must stay on the
+existing blocking execution paths; they are not suitable for general
 runtime-worker use.
 
-The new channel async methods never call blocking flume `send`/`recv` and never
-sleep. They retry with `yield_now` under backpressure, atomically checking mode
-under the endpoint mutex. This is correctness-first and can busy-yield while
-idle: it is **not** the final wake-driven async adapter. Bridges, in contrast,
-use flume async operations and truly nonblocking Tokio pipe I/O. Native I/O
-through the async compatibility hooks runs on the blocking pool, with copied
-owned buffers. Native blocking operations are not abortable after dispatch.
+The channel async methods never call blocking flume `send`/`recv` and never
+sleep. They wait event-driven: a `tokio::sync::Notify` per direction, enabled
+before rechecking channel state under the endpoint mutex (lost-wakeup-safe).
+Bridges, in contrast, use flume async operations and truly nonblocking Tokio
+pipe I/O. Native I/O through the async compatibility hooks runs on the
+blocking pool, with copied owned buffers. Native blocking operations are not
+abortable after dispatch.
 
-Using yield/retry instead of retaining a flume receive future across
-materialization avoids a future owning a delivered chunk while a new bridge
-also receives. Production work should replace this with a mode-aware,
-wake-driven state machine, without reintroducing competing consumers.
+No flume receive future is retained across materialization, so a future can
+never own a delivered chunk while a new bridge also receives. The mode check
+happens under the endpoint mutex, so a bridge can never steal chunks from a
+pending read.
 
 ## Intentionally unchanged / risks
 
