@@ -630,7 +630,7 @@ pub(super) fn function_definition<'a>(
 
         Ok(ast::FunctionDefinition {
             fname: fname_word,
-            body,
+            body: body.into(),
         })
     }
 }

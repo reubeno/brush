@@ -1216,8 +1216,8 @@ impl Display for WhileOrUntilClauseCommand {
 pub struct FunctionDefinition {
     /// The name of the function.
     pub fname: Word,
-    /// The body of the function.
-    pub body: FunctionBody,
+    /// The body of the function. Shared, so that cloning a definition does not copy the body.
+    pub body: std::sync::Arc<FunctionBody>,
 }
 
 impl Node for FunctionDefinition {}

@@ -47,7 +47,7 @@ fn add_redirect_to_command(cmd: &mut ast::Command, redirect: ast::IoRedirect) {
             return;
         }
         ast::Command::Compound(_, redirects) => redirects,
-        ast::Command::Function(func) => &mut func.body.1,
+        ast::Command::Function(func) => &mut std::sync::Arc::make_mut(&mut func.body).1,
     };
     redirects
         .get_or_insert_with(|| ast::RedirectList(Vec::new()))
