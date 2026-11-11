@@ -463,13 +463,13 @@ peg::parser! {
         // allowed as function names (bash accepts e.g. `function for { :; }`).
         rule function_definition() -> ast::FunctionDefinition =
             specific_word("function") fname:fname() body:function_parens_and_body() {
-                ast::FunctionDefinition { fname, body }
+                ast::FunctionDefinition { fname, body: body.into() }
             } /
             fname:non_reserved_fname() body:function_parens_and_body() {
-                ast::FunctionDefinition { fname, body }
+                ast::FunctionDefinition { fname, body: body.into() }
             } /
             specific_word("function") fname:fname() linebreak() body:function_body() {
-                ast::FunctionDefinition { fname, body }
+                ast::FunctionDefinition { fname, body: body.into() }
             } /
             expected!("function definition")
 
@@ -779,7 +779,9 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) {
             }
         }
         ast::Command::Compound(_, l) => add_to_redirect_list(l, r),
-        ast::Command::Function(f) => add_to_redirect_list(&mut f.body.1, r),
+        ast::Command::Function(f) => {
+            add_to_redirect_list(&mut std::sync::Arc::make_mut(&mut f.body).1, r);
+        }
     }
 }
 
