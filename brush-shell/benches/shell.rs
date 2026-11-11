@@ -131,7 +131,8 @@ mod unix {
                         },
                     ),
                     None,
-                ),
+                )
+                .into(),
             },
             &brush_core::SourceInfo::default(),
         );
