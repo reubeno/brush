@@ -16,29 +16,34 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
 
     /// Composes the shell's post-input, pre-command prompt, applying all appropriate expansions.
     pub async fn compose_precmd_prompt(&mut self) -> Result<String, error::Error> {
-        self.expand_prompt_var("PS0", "").await
+        self.expand_prompt_var("PS0", "", &self.default_exec_params())
+            .await
     }
 
     /// Composes the shell's prompt, applying all appropriate expansions.
     pub async fn compose_prompt(&mut self) -> Result<String, error::Error> {
-        self.expand_prompt_var("PS1", self.default_prompt()).await
+        self.expand_prompt_var("PS1", self.default_prompt(), &self.default_exec_params())
+            .await
     }
 
     /// Composes the shell's alternate-side prompt, applying all appropriate expansions.
     pub async fn compose_alt_side_prompt(&mut self) -> Result<String, error::Error> {
         // This is a brush extension.
-        self.expand_prompt_var("BRUSH_PS_ALT", "").await
+        self.expand_prompt_var("BRUSH_PS_ALT", "", &self.default_exec_params())
+            .await
     }
 
     /// Composes the shell's continuation prompt.
     pub async fn compose_continuation_prompt(&mut self) -> Result<String, error::Error> {
-        self.expand_prompt_var("PS2", "> ").await
+        self.expand_prompt_var("PS2", "> ", &self.default_exec_params())
+            .await
     }
 
     pub(super) async fn expand_prompt_var(
         &mut self,
         var_name: &str,
         default: &str,
+        params: &crate::interp::ExecutionParameters,
     ) -> Result<String, error::Error> {
         //
         // TODO(prompt): bash appears to do this in a subshell; we need to investigate
@@ -58,8 +63,7 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         // Expand it. We must own the spec here: it borrows `self` (via the
         // returned `Cow`), and `expand_prompt` needs `&mut self`.
         let prompt_spec = prompt_spec.into_owned();
-        let params = self.default_exec_params();
-        let result = prompt::expand_prompt(self, &params, &prompt_spec).await;
+        let result = prompt::expand_prompt(self, params, &prompt_spec).await;
 
         self.restore_command_status(saved_status);
 

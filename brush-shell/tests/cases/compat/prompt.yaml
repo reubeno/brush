@@ -224,6 +224,40 @@ cases:
       false
       echo $?
 
+  - name: "Prompt expansion error"
+    stdin: |
+      # (Only whether an error is reported is checked; its wording differs between shells.)
+      prompt='[\$] $(( 1 + ))'
+      { echo "[${prompt@P}]"; } 2>err.txt
+      echo "rc=$?"
+      [[ -s err.txt ]] && echo "reported"
+      prompt='${x:?oops} b'
+      { echo "[${prompt@P}]"; } 2>err.txt
+      echo "rc=$?"
+      [[ -s err.txt ]] && echo "reported"
+      rm err.txt
+
+  - name: "PS4 expansion error"
+    stdin: |
+      PS4='[$(( 1 + ))] '
+      { set -x; echo "traced"; set +x; } 2>err.txt
+      grep -qF '[$(( 1 + ))] echo traced' err.txt && echo "raw PS4 prefix"
+      grep -qvF '[$(( 1 + ))]' err.txt && echo "reported"
+      rm err.txt
+
+  - name: "Prompt expansion error (interactive mode)"
+    args: ["-i"]
+    ignore_stderr: true # the prompts and their errors go to stderr; errors are checked above
+    stdin: |
+      PS1='${x:?oops}> '
+      echo "after PS1"
+      PS0='$(( 1 + ))'
+      echo "after PS0: $?"
+      PS0=''
+      set -u
+      PS1='$nope> '
+      echo "after PS1 with nounset"
+
   - name: "Brackets and var"
     stdin: |
       prompt='\[$var\]\u > '

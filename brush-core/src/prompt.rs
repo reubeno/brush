@@ -51,9 +51,18 @@ pub(crate) async fn expand_prompt(
             unquoted_backslash_handling: expansion::UnquotedBackslashHandling::DoubleQuoted,
             ..Default::default()
         };
-        formatted_prompt =
-            expansion::basic_expand_word_with_options(shell, params, &formatted_prompt, &options)
-                .await?;
+        match expansion::basic_expand_word_with_options(shell, params, &formatted_prompt, &options)
+            .await
+        {
+            Ok(expanded) => formatted_prompt = expanded,
+            // As in bash, a prompt that fails to expand (e.g., a bad substitution) is reported
+            // and shown as it was before this expansion. It's done here, not in the callers,
+            // because every prompt (PS0-PS2, PS4, `${x@P}`) wants it and only here is the
+            // unexpanded text at hand.
+            Err(err) => {
+                let _ = shell.display_error(&mut params.stderr(shell), &err);
+            }
+        }
     }
 
     Ok(formatted_prompt)
