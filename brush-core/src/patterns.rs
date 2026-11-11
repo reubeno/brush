@@ -426,6 +426,31 @@ impl Pattern {
         Ok(re)
     }
 
+    /// Compares `value` against the pattern as plain text, without building a regex.
+    /// Returns `None` if the pattern has glob syntax or is case-insensitive.
+    fn literal_matches(&self, value: &str) -> Option<bool> {
+        if self.case_insensitive {
+            return None;
+        }
+
+        let is_plain = |s: &str| !s.contains(['*', '?', '[', '\\', '(', ')']);
+        if !self.pieces.iter().all(|piece| match piece {
+            PatternPiece::Pattern(s) => is_plain(s),
+            PatternPiece::Literal(_) => true,
+        }) {
+            return None;
+        }
+
+        let mut rest = value;
+        for piece in &self.pieces {
+            let Some(tail) = rest.strip_prefix(piece.as_str()) else {
+                return Some(false);
+            };
+            rest = tail;
+        }
+        Some(rest.is_empty())
+    }
+
     /// Checks if the pattern exactly matches the given string. An error result
     /// is returned if the pattern is found to be invalid or malformed
     /// during processing.
@@ -434,6 +459,10 @@ impl Pattern {
     ///
     /// * `value` - The string to check for a match.
     pub fn exactly_matches(&self, value: &str) -> Result<bool, error::Error> {
+        if let Some(matches) = self.literal_matches(value) {
+            return Ok(matches);
+        }
+
         let re = self.to_regex(true, true)?;
         Ok(re.is_match(value)?)
     }
@@ -780,6 +809,29 @@ mod tests {
             remove_smallest_matching_suffix("rocket🚀🚀🚀", Some(&Pattern::from("🚀")))?,
             "rocket🚀🚀"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn literal_fast_path_agrees_with_the_regex_path() -> Result<()> {
+        let values = ["", "7", "8", "7.1", "a.c", "abc", "abcd", "a\nb", "-x", "é"];
+        for pattern in [
+            "", "7", "7.1", "a.c", "abc", "a\nb", "-x", "é", "a{b,c}", "x#y",
+        ] {
+            let pattern = Pattern::from(pattern);
+            for value in values {
+                let via_regex = pattern.to_regex(true, true)?.is_match(value)?;
+                assert_eq!(
+                    pattern.literal_matches(value),
+                    Some(via_regex),
+                    "{pattern:?} against {value:?}"
+                );
+            }
+        }
+
+        for pattern in ["*", "a?c", "[ab]c", "a\\.c", "@(a|b)"] {
+            assert!(Pattern::from(pattern).literal_matches("abc").is_none());
+        }
         Ok(())
     }
 
