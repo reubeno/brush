@@ -19,6 +19,8 @@
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::unwrap_used)]
 
+#[cfg(unix)]
+mod child;
 mod comparison;
 mod config;
 mod execution;
