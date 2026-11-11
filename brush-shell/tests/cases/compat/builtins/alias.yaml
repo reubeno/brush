@@ -270,7 +270,6 @@ cases:
       alias q1 q3
 
   - name: "alias lists a definition without the alias prefix in POSIX mode"
-    known_failure: true # TODO(alias): brush prints `alias x=...` in POSIX mode, where bash prints `x=...`
     stdin: |
       set -o posix
       alias x=y
@@ -292,9 +291,18 @@ cases:
       alias a 2>/dev/null; echo "rc=$?"
 
   - name: "alias prints a name that starts with - after --"
-    known_failure: true # TODO(alias): prints `alias -a='b'`, without `--`
     stdin: |
       alias -- -a=b
+      alias -- -a
+
+  - name: "alias lists every definition in POSIX mode without the prefix or --, unless -p"
+    stdin: |
+      alias -- -a=b
+      alias x=y
+      alias
+      set -o posix
+      alias
+      alias -p
       alias -- -a
 
   #

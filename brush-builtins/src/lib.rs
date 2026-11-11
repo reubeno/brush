@@ -125,16 +125,25 @@ mod unimp;
 pub use builder::ShellBuilderExt;
 pub use factory::{BuiltinSet, default_builtins};
 
-/// Writes an alias definition in the reusable form printed by `alias` and `command -v`.
+/// Writes an alias definition as `name='value'`.
+///
+/// With `prefix`, the line starts with `alias `, as `command -v` prints it. With
+/// `reusable`, it starts with `alias ` and a name that starts with `-` also gets
+/// `--`, as `alias` prints it so the output can be read back in.
 #[cfg(any(feature = "builtin.alias", feature = "builtin.command"))]
 fn write_alias_definition(
     mut writer: impl std::io::Write,
     name: &str,
     value: &str,
+    prefix: bool,
+    reusable: bool,
 ) -> std::io::Result<()> {
-    writeln!(
-        writer,
-        "alias {name}={}",
-        brush_core::escape::single_quote(value)
-    )
+    if prefix || reusable {
+        write!(writer, "alias ")?;
+    }
+    if reusable && name.starts_with('-') {
+        write!(writer, "-- ")?;
+    }
+
+    writeln!(writer, "{name}={}", brush_core::escape::single_quote(value))
 }
