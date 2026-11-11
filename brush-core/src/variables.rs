@@ -382,6 +382,13 @@ impl ShellVariable {
         value: String,
         append: bool,
     ) -> Result<(), error::Error> {
+        // Readonly is enforced here and not only in `assign`, so that every path reaching an
+        // element -- a subscripted assignment, a declaration builtin, arithmetic, or an
+        // assignment expansion -- is blocked, not just whole-variable assignment.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &self.value {
             ShellValue::Unset(_) => {
                 self.assign(ShellValueLiteral::Array(ArrayLiteral(vec![])), false)?;
@@ -505,6 +512,12 @@ impl ShellVariable {
     ///
     /// * `index` - The index at which to unset the value.
     pub fn unset_index(&mut self, index: &str) -> Result<bool, error::Error> {
+        // As with assignment, readonly is enforced here so that every path reaching an element is
+        // blocked, not just whole-variable unset.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
+
         match &mut self.value {
             ShellValue::Unset(ty) => match ty {
                 ShellValueUnsetType::Untyped => Err(error::ErrorKind::NotArray.into()),

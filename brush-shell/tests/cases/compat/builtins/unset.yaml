@@ -299,3 +299,40 @@ cases:
       rm errors.txt
       unset 1x
       echo "unset: $?"
+
+  - name: "unset refuses an element of a readonly array"
+    ignore_stderr: true
+    stdin: |
+      declare -a zz_a=(1 2)
+      readonly zz_a
+      unset 'zz_a[0]'
+      echo "status: $?"
+      declare -p zz_a
+      declare -A zz_m=([k]=1)
+      readonly zz_m
+      unset 'zz_m[k]'
+      echo "status: $?"
+      declare -p zz_m
+
+  - name: "unset goes on to the remaining names after a readonly one"
+    ignore_stderr: true
+    stdin: |
+      declare -a zz_a=(1 2)
+      declare -A zz_m=([k]=1)
+      readonly zz_a zz_m zz_r=1
+      zz_b=1 zz_c=1 zz_d=1 zz_i=0
+      unset 'zz_a[0]' zz_b
+      echo "status: $? b=${zz_b-unset}"
+      unset 'zz_m[k]' zz_c
+      echo "status: $? c=${zz_c-unset}"
+      unset zz_r zz_d
+      echo "status: $? d=${zz_d-unset}"
+      unset 'zz_a[zz_i++]'
+      echo "status: $? i=$zz_i"
+      declare -p zz_a zz_m zz_r
+      # In POSIX mode the error ends the shell, but only after the remaining names.
+      set -o posix
+      zz_e=1
+      trap 'echo "e=${zz_e-unset}"' EXIT
+      unset zz_r zz_e
+      echo "not reached"
