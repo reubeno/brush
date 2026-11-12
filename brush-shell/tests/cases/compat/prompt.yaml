@@ -190,6 +190,21 @@ cases:
       shopt -u promptvars
       echo "Prompt (without promptvars): ${prompt@P}"
 
+  - name: "Working dir above, at and beside home"
+    stdin: |
+      mkdir -p home homer/sub home/sub
+      cd home
+      HOME=$(pwd)
+
+      for dir in . sub .. ../homer ../homer/sub /; do
+        cd "$HOME"
+        cd "$dir"
+        for prompt in '\w' '\W'; do
+          echo "${dir}: '${prompt@P}'" |
+            sed "s|$(dirname "$HOME")|<parent>|; s|$(basename "$(dirname "$HOME")")|<parent-name>|"
+        done
+      done
+
   - name: "Command substitution in prompt"
     stdin: |
       prompt='$(echo Hello)'
