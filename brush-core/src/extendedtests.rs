@@ -524,15 +524,20 @@ async fn eval_arithmetic_operand(
     params: &ExecutionParameters,
     expanded_operand: String,
 ) -> Result<Option<i64>, error::Error> {
-    match arithmetic::eval_expanded(shell, params, expanded_operand, false).await {
+    match arithmetic::eval_expanded_inner(shell, params, expanded_operand, false).await {
         Ok(value) => Ok(Some(value)),
-        Err(
-            err @ (arithmetic::EvalError::FailedToExpandExpression(_)
-            | arithmetic::EvalError::ExpandingUnsetVariable(_)
-            | arithmetic::EvalError::BadSubscript(_)),
-        ) => Err(err.into()),
+        Err(err)
+            if err.in_subscript
+                || matches!(
+                    err.error,
+                    arithmetic::EvalError::FailedToExpandExpression(_)
+                        | arithmetic::EvalError::ExpandingUnsetVariable(_)
+                ) =>
+        {
+            Err(err.error.into())
+        }
         Err(err) => {
-            let err = error::Error::from(err);
+            let err = error::Error::from(err.error);
             let _ = shell.display_error(&mut params.stderr(shell), &err);
             Ok(None)
         }
