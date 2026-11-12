@@ -142,7 +142,6 @@ cases:
   - name: "mapfile -u invalid fd"
     ignore_stderr: true
     stdin: |
-      exec 99<&-  # fd 99 must be closed, but the harness can leak one in
       mapfile -u 99 arr
       echo "exit: $?"
 
@@ -260,7 +259,6 @@ cases:
     ignore_stderr: true
     stdin: |
       # Only whether it fails is compared: the status itself is a known failure.
-      exec 99<&-  # fd 99 must be closed, but the harness can leak one in
       arr=(keep); mapfile -t -s-1 -s0 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"
       arr=(keep); mapfile -t -c0 -c5000 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"
       arr=(keep); mapfile -t -n-1 -n1 arr <<< data; echo "failed=$(($? != 0)) ${arr[*]}"

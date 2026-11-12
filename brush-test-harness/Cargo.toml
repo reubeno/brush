@@ -44,7 +44,7 @@ version-compare = "0.2.1"
 walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.2", features = ["process"] }
+nix = { version = "0.31.2", features = ["fs", "process", "resource"] }
 
 [build-dependencies]
 # Defines the `pty` cfg (see build.rs) used to gate pty-based test code.

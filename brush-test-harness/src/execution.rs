@@ -4,10 +4,10 @@ use crate::config::{ShellConfig, WhichShell};
 use crate::testcase::{ShellInvocation, TestCase, TestCaseSet, TestFile};
 use anyhow::{Context, Result};
 use assert_fs::fixture::{FileWriteStr, PathChild};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 #[cfg(pty)]
 use std::os::unix::process::ExitStatusExt;
-#[cfg(unix)]
-use std::os::unix::{fs::PermissionsExt, process::CommandExt};
 use std::{path::PathBuf, process::ExitStatus};
 
 /// Default timeout for test commands in seconds.
@@ -300,21 +300,8 @@ impl TestCase {
 
     #[allow(unused_mut, reason = "only mutated on some platforms")]
     fn run_command_with_stdin(&self, mut cmd: std::process::Command) -> Result<RunResult> {
-        // SAFETY:
-        // To avoid bash trying to directly access /dev/tty and generate tty-related signals,
-        // we create a new session for the child process. The standard library has a setsid()
-        // API but it's unstable, so we use nix here. Calling pre_exec can be unsafe as
-        // it runs in the child process after fork() but before exec(), and there are constraints
-        // around what can be safely done in that context. However, calling setsid() is generally
-        // considered safe as it doesn't allocate memory or perform complex operations to forked
-        // state.
         #[cfg(unix)]
-        unsafe {
-            cmd.pre_exec(|| {
-                let _ = nix::unistd::setsid();
-                Ok(())
-            })
-        };
+        crate::child::isolate(&mut cmd);
 
         let mut test_cmd = assert_cmd::Command::from_std(cmd);
 
@@ -345,4 +332,23 @@ impl TestCase {
 fn exited_with(code: i32) -> ExitStatus {
     // (A raw wait status holds a process's exit code above its low byte.)
     ExitStatus::from_raw((code & 0xff) << 8)
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn shell_does_not_inherit_open_fds() {
+        use std::os::fd::AsRawFd;
+
+        // A dup isn't close-on-exec, like the pty fds expectrl opens in another test's thread.
+        let leaky = nix::unistd::dup(std::fs::File::open("/dev/null").unwrap()).unwrap();
+        let fd = leaky.as_raw_fd();
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c").arg(format!(": <&{fd}"));
+
+        let test_case: super::TestCase = yaml_serde::from_str("{}").unwrap();
+        let result = test_case.run_command_with_stdin(cmd).unwrap();
+        assert!(!result.exit_status.success(), "the shell inherited fd {fd}");
+    }
 }
