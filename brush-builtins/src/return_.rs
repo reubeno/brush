@@ -1,5 +1,4 @@
-use std::io::Write;
-
+use brush_core::writeln_async;
 use brush_core::{ExecutionControlFlow, ExecutionExitCode, ExecutionResult, builtins};
 
 /// Return from the current function.
@@ -33,10 +32,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReturnCommand {
 
             Ok(result)
         } else {
-            let _ = writeln!(
-                context.stderr(),
+            let _ = writeln_async!(
+                context.stderr_async(),
                 "return: can only be used in a function or sourced script"
-            );
+            )
+            .await;
             Ok(ExecutionExitCode::InvalidUsage.into())
         }
     }

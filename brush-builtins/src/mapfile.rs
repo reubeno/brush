@@ -1,4 +1,5 @@
-use std::io::{Read, Write};
+use brush_core::writeln_async;
+use tokio::io::AsyncReadExt as _;
 
 use brush_core::{ErrorKind, ExecutionExitCode, ExecutionResult, builtins, env, error, variables};
 
@@ -68,23 +69,25 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
 
         // Every -O and -u given is checked before reading, and the last one is used.
         if let Some(origin) = self.origin.iter().find(|origin| **origin < 0) {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: {origin}: invalid array origin",
                 context.command_name
-            )?;
+            )
+            .await?;
             return Ok(ExecutionExitCode::GeneralError.into());
         }
         let origin = self.origin.last().copied();
 
-        if let Some((_, var)) = context.shell.env().get(&self.array_var_name) {
-            if var.value().is_associative_array() {
-                writeln!(
-                    context.stderr(),
+        if let Some(resolved) = context.shell.env().get(&self.array_var_name) {
+            if resolved.base_var().value().is_associative_array() {
+                writeln_async!(
+                    context.stderr_async(),
                     "{}: {}: not an indexed array",
                     context.command_name,
                     self.array_var_name
-                )?;
+                )
+                .await?;
                 return Ok(ExecutionExitCode::GeneralError.into());
             }
         }
@@ -101,7 +104,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             .ok_or_else(|| ErrorKind::BadFileDescriptor(fd))?;
 
         // Read!
-        let lines = self.read_lines(input_file)?;
+        let lines = self.read_lines(input_file).await?;
 
         if let Some(origin) = origin {
             // -O: preserve existing array, assign at offset.
@@ -134,11 +137,15 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
 }
 
 impl MapFileCommand {
-    fn read_lines(
+    /// Reads the lines, one byte at a time so as not to consume any of the input past
+    /// the last line read, and through an async view, so waiting for a pipe gives way
+    /// to the task writing to it.
+    async fn read_lines(
         &self,
-        mut input_file: brush_core::openfiles::OpenFile,
+        input_file: brush_core::openfiles::OpenFile,
     ) -> Result<Vec<String>, brush_core::Error> {
         let _term_mode = setup_terminal_settings(&input_file)?;
+        let mut input_file = brush_core::openfiles::async_file::AsyncOpenFile::from(input_file);
 
         let mut entries = vec![];
         let mut read_count = 0;
@@ -156,7 +163,7 @@ impl MapFileCommand {
             let mut saw_delimiter = false;
 
             loop {
-                match input_file.read(&mut buf) {
+                match input_file.read(&mut buf).await {
                     Ok(0) => break,                                         // End of input
                     Ok(1) if buf[0] == b'\x03' => break,                    // Ctrl+C
                     Ok(1) if buf[0] == b'\x04' && line.is_empty() => break, // Ctrl+D

@@ -67,7 +67,7 @@ pub(crate) fn stdio_for(file: openfiles::OpenFile) -> std::io::Result<std::proce
         openfiles::OpenFile::Stdin(_) => Ok(Stdio::inherit()),
         openfiles::OpenFile::Stdout(s) => Ok(s.into()),
         openfiles::OpenFile::Stderr(s) => Ok(s.into()),
-        openfiles::OpenFile::File(f) => Ok(f.try_clone()?.into()),
+        openfiles::OpenFile::File(f) | openfiles::OpenFile::Fifo(f) => Ok(f.try_clone()?.into()),
         openfiles::OpenFile::PipeReader(r) => Ok(r.try_clone()?.into()),
         openfiles::OpenFile::PipeWriter(w) => Ok(w.try_clone()?.into()),
         // A custom stream has no handle to give a process.

@@ -4,6 +4,7 @@
 pub mod arithmetic;
 mod braceexpansion;
 pub mod builtins;
+mod cache;
 pub mod callstack;
 pub mod commands;
 pub mod completion;
@@ -63,3 +64,38 @@ pub use shell::{
 };
 pub use sourceinfo::SourceInfo;
 pub use variables::{ShellValue, ShellVariable};
+
+/// Writes formatted text to an [`AsyncOpenFile`](openfiles::async_file::AsyncOpenFile),
+/// as `write!` does to a synchronous writer; await the result.
+///
+/// The text is formatted before anything is awaited, so the future holds only the
+/// formatted text, not the values it was formatted from, and stays `Send`. (`write!`
+/// itself wouldn't: what it formats from lives until its statement ends, across the
+/// await.)
+///
+/// ```ignore
+/// brush_core::write_async!(context.stdout_async(), "{name}={value}").await?;
+/// ```
+#[macro_export]
+macro_rules! write_async {
+    ($dst:expr, $($arg:tt)*) => {
+        $dst.write_text(::std::format!($($arg)*))
+    };
+}
+
+/// Writes formatted text and a newline to an
+/// [`AsyncOpenFile`](openfiles::async_file::AsyncOpenFile), as `writeln!` does to a
+/// synchronous writer; await the result. See [`write_async!`].
+#[macro_export]
+macro_rules! writeln_async {
+    ($dst:expr $(,)?) => {
+        $dst.write_text("\n")
+    };
+    ($dst:expr, $($arg:tt)*) => {
+        $dst.write_text({
+            let mut text = ::std::format!($($arg)*);
+            text.push('\n');
+            text
+        })
+    };
+}

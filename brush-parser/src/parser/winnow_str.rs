@@ -1,20 +1,22 @@
-//! String-based winnow parser
+//! A shell parser written with winnow that reads the script's text directly,
+//! with no tokenizing pass.
 
-use winnow::error::ContextError;
+mod and_or;
+mod arithmetic;
+mod commands;
+mod compound;
+mod continuations;
+mod extended_test;
+mod helpers;
+mod parse_state;
+mod pipelines;
+mod position;
+mod program;
+mod redirections;
+mod types;
+mod words;
 
-use crate::ast;
-use crate::parser::{ParserOptions, SourceInfo};
-
-/// Type alias for parser error
-type PError = winnow::error::ErrMode<ContextError>;
-
-/// Parse a shell program from a string with full source location tracking
-///
-/// This is not yet implemented.
-pub fn parse_program(
-    _input: &str,
-    _options: &ParserOptions,
-    _source_info: &SourceInfo,
-) -> Result<ast::Program, PError> {
-    unimplemented!("winnow string parser is not yet implemented")
-}
+// Re-export public API
+pub use position::PositionTracker;
+pub use program::parse_program;
+pub use types::{ParseContext, StrStream};

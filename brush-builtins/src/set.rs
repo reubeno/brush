@@ -1,8 +1,10 @@
+use brush_core::writeln_async;
 use std::io::Write;
 
 use itertools::Itertools;
 
 use brush_core::{ExecutionExitCode, ExecutionResult, builtins, variables};
+use tokio::io::AsyncWriteExt as _;
 
 /// Manage set-based shell options.
 #[derive(winnow_args::Args)]
@@ -124,7 +126,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        let mut stdout = context.stdout();
+        let mut stdout = context.stdout_async();
 
         for option in &self.options {
             let options = context.shell.options_mut();
@@ -156,7 +158,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                     options.shell_functions_inherit_debug_and_return_traps = *on;
                 }
                 SetOption::Named(on, name) if name.is_empty() => {
-                    list_named_options(&context, *on, &mut stdout)?;
+                    let mut text = Vec::new();
+                    list_named_options(&context, *on, &mut text)?;
+                    stdout.write_all(&text).await?;
                 }
                 SetOption::Named(on, name) => {
                     let named = brush_core::namedoptions::options(
@@ -164,11 +168,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
                     );
                     let Some(definition) = named.get(name.as_str()) else {
                         // Like bash, stop at the bad name: what follows is not applied.
-                        writeln!(
-                            context.stderr(),
+                        writeln_async!(
+                            context.stderr_async(),
                             "{}: {name}: invalid option name",
                             context.command_name
-                        )?;
+                        )
+                        .await?;
                         return Ok(ExecutionExitCode::InvalidUsage.into());
                     };
                     definition.set(options, *on);
@@ -208,10 +213,10 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for SetCommand {
         }
 
         if self.options.is_empty() && self.positional_args.is_empty() {
-            stdout.write_all(&display_all(&context)?)?;
+            stdout.write_all(&display_all(&context)?).await?;
         }
 
-        stdout.flush()?;
+        stdout.flush().await?;
 
         Ok(ExecutionResult::success())
     }

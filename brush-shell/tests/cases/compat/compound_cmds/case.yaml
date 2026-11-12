@@ -183,3 +183,14 @@ cases:
       }
       f
       echo "Exit code: $?"
+
+  - name: "Case statement ending right before a closing paren"
+    stdin: |
+      (case x in x) echo ok;; esac)
+      (case x in esac)
+      (echo a; case x in y) echo no;; esac)
+      case x in (esac) echo pattern;; x) echo x;; esac
+
+  - name: "Case inside command substitution"
+    stdin: |
+      echo $(case a in a) echo ok ;; esac)

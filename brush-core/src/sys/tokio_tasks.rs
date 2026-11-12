@@ -33,8 +33,9 @@ where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    let handle =
-        tokio::task::spawn_blocking(move || tokio::runtime::Handle::current().block_on(future));
+    let handle = tokio::task::spawn_blocking(move || {
+        tokio::runtime::Handle::current().block_on(crate::tasks::on_a_thread_of_its_own(future))
+    });
     let task = TaskHandle::from_future(handle.map(|r| r.map_err(join_error)));
     std::future::ready(task)
 }

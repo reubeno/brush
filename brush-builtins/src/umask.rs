@@ -1,8 +1,8 @@
+use brush_core::writeln_async;
 use brush_core::{ErrorKind, ExecutionResult, builtins};
 use cfg_if::cfg_if;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 use nix::sys::stat::Mode;
-use std::io::Write;
 
 /// Manage the process umask.
 #[derive(winnow_args::Args)]
@@ -39,11 +39,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
                     .filter(|value| *value <= 0o7777);
 
                 let Some(parsed) = parsed else {
-                    writeln!(
-                        context.stderr(),
+                    writeln_async!(
+                        context.stderr_async(),
                         "{}: {mode}: octal number out of range",
                         context.command_name
-                    )?;
+                    )
+                    .await?;
                     return Ok(ExecutionResult::general_error());
                 };
 
@@ -58,7 +59,12 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
                         set_umask(new_umask)?;
                     }
                     Err(message) => {
-                        writeln!(context.stderr(), "{}: {message}", context.command_name)?;
+                        writeln_async!(
+                            context.stderr_async(),
+                            "{}: {message}",
+                            context.command_name
+                        )
+                        .await?;
                         return Ok(ExecutionResult::general_error());
                     }
                 }
@@ -76,9 +82,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for UmaskCommand {
             };
 
             if self.print_roundtrippable {
-                writeln!(context.stdout(), "umask {formatted}")?;
+                writeln_async!(context.stdout_async(), "umask {formatted}").await?;
             } else {
-                writeln!(context.stdout(), "{formatted}")?;
+                writeln_async!(context.stdout_async(), "{formatted}").await?;
             }
         }
 

@@ -1,4 +1,5 @@
-use std::{collections::HashMap, io::Write};
+use brush_core::writeln_async;
+use std::collections::HashMap;
 
 use brush_core::{ExecutionResult, builtins, env, variables};
 
@@ -97,12 +98,13 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for GetOptsCommand {
     ) -> Result<brush_core::ExecutionResult, Self::Error> {
         // Validate the target variable name.
         if !env::valid_variable_name(&self.variable_name) {
-            writeln!(
-                context.stderr(),
+            writeln_async!(
+                context.stderr_async(),
                 "{}: `{}': not a valid identifier",
                 context.command_name,
                 self.variable_name
-            )?;
+            )
+            .await?;
             return Ok(ExecutionResult::new(1));
         }
 
@@ -138,7 +140,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for GetOptsCommand {
             &owned_args
         };
 
-        let result = parse_next_option(&mut context, &spec, args_to_parse, next_index)?;
+        let result = parse_next_option(&mut context, &spec, args_to_parse, next_index).await?;
 
         update_variables(&mut context, &self.variable_name, result)
     }
@@ -149,7 +151,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for GetOptsCommand {
 /// `-pVALUE` and `-p VALUE` forms), and error reporting for unknown options or
 /// missing arguments. Tracks position within combined flags via the
 /// builtin's state.
-fn parse_next_option<SE: brush_core::ShellExtensions>(
+async fn parse_next_option<SE: brush_core::ShellExtensions>(
     context: &mut brush_core::ExecutionContext<'_, SE>,
     spec: &OptionSpec,
     args_to_parse: &[String],
@@ -226,12 +228,13 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
                 next_char_index,
                 is_last_char_in_option,
                 next_index,
-            )?;
+            )
+            .await?;
         } else {
             optarg = None;
         }
     } else {
-        (variable_value, optarg) = report_unknown_option(context, spec, c)?;
+        (variable_value, optarg) = report_unknown_option(context, spec, c).await?;
     }
 
     let optind = if is_last_char_in_option {
@@ -257,7 +260,7 @@ fn parse_next_option<SE: brush_core::ShellExtensions>(
 /// Resolves the argument for an option that takes a value. Returns the updated
 /// `(variable_value, optarg, is_last_char, next_index)` tuple.
 #[allow(clippy::too_many_arguments)]
-fn resolve_option_argument<SE: brush_core::ShellExtensions>(
+async fn resolve_option_argument<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
     spec: &OptionSpec,
     c: char,
@@ -276,10 +279,11 @@ fn resolve_option_argument<SE: brush_core::ShellExtensions>(
                 (String::from(":"), Some(String::from(c)))
             } else {
                 if is_opterr_enabled(context) {
-                    writeln!(
-                        context.stderr(),
+                    writeln_async!(
+                        context.stderr_async(),
                         "getopts: option requires an argument -- {c}"
-                    )?;
+                    )
+                    .await?;
                 }
                 (String::from("?"), None)
             };
@@ -300,13 +304,13 @@ fn resolve_option_argument<SE: brush_core::ShellExtensions>(
 }
 
 /// Handles an unknown option character, reporting an error if appropriate.
-fn report_unknown_option<SE: brush_core::ShellExtensions>(
+async fn report_unknown_option<SE: brush_core::ShellExtensions>(
     context: &brush_core::ExecutionContext<'_, SE>,
     spec: &OptionSpec,
     c: char,
 ) -> Result<(String, Option<String>), brush_core::Error> {
     if !spec.silent_errors && is_opterr_enabled(context) {
-        writeln!(context.stderr(), "getopts: illegal option -- {c}")?;
+        writeln_async!(context.stderr_async(), "getopts: illegal option -- {c}").await?;
     }
 
     let optarg = if spec.silent_errors {

@@ -161,6 +161,11 @@ pub trait TaskSpawner: Clone + Default + Send + Sync + 'static {
     /// go on: right away if the task runs elsewhere, or once it has finished if
     /// it can only run on the caller's thread.
     ///
+    /// A future run on a thread of its own should be run through
+    /// [`tasks::on_a_thread_of_its_own`](crate::tasks::on_a_thread_of_its_own), so that
+    /// its reads and writes on pipes block that thread instead of waiting through the
+    /// runtime.
+    ///
     /// # Arguments
     ///
     /// * `future` - The future to run.

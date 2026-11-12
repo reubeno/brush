@@ -152,7 +152,7 @@ fn pending_hooks<SE: brush_core::ShellExtensions>(
     // variable yields nothing; a scalar yields itself, since a scalar *is* element 0 in bash.
     let hook_names = shell
         .env_var(array_var_name)
-        .map(|var| var.value().element_values(shell))
+        .map(|var| var.resolved_value(shell).element_values(shell))
         .unwrap_or_default();
 
     hook_names

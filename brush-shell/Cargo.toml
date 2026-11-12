@@ -67,7 +67,7 @@ harness = false
 [features]
 # Input backends. Each can be enabled for any target, and is offered where it
 # works (see `build.rs`), so the defaults suit every target.
-default = ["basic", "reedline", "minimal", "vt"]
+default = ["basic", "reedline", "minimal", "vt", "experimental-parser"]
 basic = ["brush-interactive/basic"]
 minimal = ["brush-interactive/minimal"]
 reedline = ["brush-interactive/reedline"]
@@ -89,6 +89,7 @@ experimental-parser = [
     "brush-parser/winnow-parser",
 ]
 schema = ["dep:schemars"]
+debug-tracing = ["brush-parser/debug-tracing"]
 
 [lints]
 workspace = true
@@ -115,11 +116,11 @@ human-panic = "2.0.6"
 winnow-args = { version = "0.6.0", default-features = false, features = ["derive", "help-text"] }
 
 [target.'cfg(not(any(unix, windows)))'.dependencies]
-tokio = { version = "1.52.3", features = ["rt", "sync"] }
+tokio = { version = "1.54.0", features = ["rt", "sync"] }
 
 [target.'cfg(any(unix, windows))'.dependencies]
 crossterm = "0.29.0"
-tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread", "sync"] }
+tokio = { version = "1.54.0", features = ["rt", "rt-multi-thread", "sync"] }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
@@ -155,7 +156,7 @@ strip-ansi-escapes = "0.2.1"
 test-with = { version = "0.17.0", default-features = false, features = [
     "executable",
 ] }
-tokio = { version = "1.52.3", features = ["time"] }
+tokio = { version = "1.54.0", features = ["time"] }
 version-compare = "0.2.1"
 walkdir = "2.5.0"
 which = "8.0.2"

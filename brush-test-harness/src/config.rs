@@ -287,13 +287,22 @@ pub struct TestOptions {
 impl TestOptions {
     /// Returns the configured platform tags as a set. With none configured,
     /// brush runs natively, so its platform is the host's OS (e.g., "linux",
-    /// "macos", "windows").
+    /// "macos", "windows"). A brush given `--peg-parser` also has the tag
+    /// "peg-parser", for the cases only that parser fails.
     pub fn platform_tags(&self) -> HashSet<String> {
-        if self.brush_platform_tags.is_empty() {
+        let mut tags: HashSet<String> = if self.brush_platform_tags.is_empty() {
             HashSet::from([std::env::consts::OS.to_owned()])
         } else {
             self.brush_platform_tags.iter().cloned().collect()
+        };
+        if self
+            .brush_args
+            .split_whitespace()
+            .any(|arg| arg == "--peg-parser")
+        {
+            tags.insert("peg-parser".to_owned());
         }
+        tags
     }
 
     /// Builds the default `ShellConfig` for the shell under test based on

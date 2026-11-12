@@ -12,6 +12,16 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             return Ok(None);
         };
 
+        // A FIFO reports no size, so it's skipped below as an empty file would be; skip it
+        // before opening it, which would wait for a writer. (A path naming one of the
+        // shell's own open files, such as a pipe, is that file, and isn't skipped.)
+        let absolute = self.absolute_path(&history_path);
+        if super::fs::shell_fd_path_to_fd(&absolute).is_none()
+            && crate::sys::pipe_io::is_fifo(&absolute)
+        {
+            return Ok(None);
+        }
+
         let mut options = std::fs::File::options();
         options.read(true);
 
@@ -54,13 +64,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
 
     /// Saves history back to any backing storage.
     pub fn save_history(&mut self) -> Result<(), error::Error> {
-        if let Some(history_file_path) = self.history_file_path()
+        // Read these before the mutable borrow on self.history below.
+        let history_file_path = self.history_file_path();
+        let write_timestamps = self.env_is_set("HISTTIMEFORMAT");
+
+        if let Some(history_file_path) = history_file_path
             && let Some(history) = &mut self.history
         {
-            // See if there's *any* time format configured. That triggers writing out
-            // timestamps.
-            let write_timestamps = self.env.is_set("HISTTIMEFORMAT");
-
             // TODO(history): Observe options.append_to_history_file
             history.flush(
                 history_file_path,

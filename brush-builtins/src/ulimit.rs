@@ -1,5 +1,6 @@
+use brush_core::writeln_async;
 use std::{
-    io::{self, ErrorKind, Write},
+    io::{self, ErrorKind},
     str::FromStr,
 };
 
@@ -261,7 +262,7 @@ impl ResourceDescription {
     }
 
     /// Print either soft or hard limit
-    fn print(
+    async fn print(
         &self,
         context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         hard: bool,
@@ -279,13 +280,14 @@ impl ResourceDescription {
             Unit::Seconds => format!("(seconds, -{})", self.short),
         };
         let resource = self.get(hard).unwrap_or_else(|e| format!("{e}"));
-        writeln!(
-            context.stdout(),
+        writeln_async!(
+            context.stdout_async(),
             "{:<26}{:>16} {}",
             self.description,
             unit,
             resource
         )
+        .await
     }
 }
 
@@ -547,32 +549,39 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ULimitCommand {
 
         for (resource, value) in resources_to_set {
             if let LimitValue::Invalid(value) = value {
-                writeln!(
-                    context.stderr(),
+                writeln_async!(
+                    context.stderr_async(),
                     "{}: {value}: invalid number",
                     context.command_name
-                )?;
+                )
+                .await?;
                 return Ok(ExecutionResult::general_error());
             }
             // As in bash, a limit out of range stops here; the ones set before it stay set.
             if let LimitValue::Value(v) = value
                 && resource.scaled(v).is_none()
             {
-                writeln!(
-                    context.stderr(),
+                writeln_async!(
+                    context.stderr_async(),
                     "{}: {v}: limit out of range",
                     context.command_name
-                )?;
+                )
+                .await?;
                 return Ok(ExecutionResult::general_error());
             }
             resource.set(self.hard, &value)?;
         }
 
         if resources_to_get.len() == 1 {
-            writeln!(context.stdout(), "{}", resources_to_get[0].get(self.hard)?)?;
+            writeln_async!(
+                context.stdout_async(),
+                "{}",
+                resources_to_get[0].get(self.hard)?
+            )
+            .await?;
         } else {
             for resource in resources_to_get {
-                resource.print(&context, self.hard)?;
+                resource.print(&context, self.hard).await?;
             }
         }
 

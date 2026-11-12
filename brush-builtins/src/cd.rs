@@ -1,4 +1,4 @@
-use std::io::Write;
+use brush_core::writeln_async;
 use std::path::PathBuf;
 
 use brush_core::{ExecutionResult, builtins, error};
@@ -39,32 +39,28 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
         self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
-        // TODO(cd): implement 'cd -@'
         if self.file_with_xattr_as_dir {
             return error::unimp("cd -@");
         }
 
         let mut should_print = false;
         let mut target_dir = if let Some(target_dir) = &self.target_dir {
-            // `cd -', equivalent to `cd $OLDPWD'
             if target_dir.as_os_str() == "-" {
                 should_print = true;
                 if let Some(oldpwd) = context.shell.env_str("OLDPWD") {
                     PathBuf::from(oldpwd.to_string())
                 } else {
-                    writeln!(context.stderr(), "OLDPWD not set")?;
+                    writeln_async!(context.stderr_async(), "OLDPWD not set").await?;
                     return Ok(ExecutionResult::general_error());
                 }
             } else {
-                // TODO(cd): remove clone, and use temporary lifetime extension after rust 1.75
                 target_dir.clone()
             }
-        // `cd' without arguments is equivalent to `cd $HOME'
         } else {
             if let Some(home_var) = context.shell.env_str("HOME") {
                 PathBuf::from(home_var.to_string())
             } else {
-                writeln!(context.stderr(), "HOME not set")?;
+                writeln_async!(context.stderr_async(), "HOME not set").await?;
                 return Ok(ExecutionResult::general_error());
             }
         };
@@ -75,7 +71,6 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
                 .options()
                 .do_not_resolve_symlinks_when_changing_dir
         {
-            // -e is only relevant in physical mode.
             if self.exit_on_failed_cwd_resolution {
                 return error::unimp("cd -e");
             }
@@ -91,7 +86,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
         // the directory change is successful, the absolute pathname of the new working
         // directory is written to the standard output.
         if should_print {
-            writeln!(context.stdout(), "{}", target_dir.display())?;
+            writeln_async!(context.stdout_async(), "{}", target_dir.display()).await?;
         }
 
         Ok(ExecutionResult::success())

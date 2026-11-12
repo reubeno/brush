@@ -101,6 +101,8 @@ extend-ignore-re = [
     "-ot",
     # Ignore 2-letter string literals, which show up in testing a fair bit.
     '"[a-zA-Z]{2}"',
+    # e.g. mis-parsing
+    "mis-[a-zA-Z]*",
 ]
 
 [workspace.metadata.typos.default.extend-words]
@@ -108,10 +110,15 @@ extend-ignore-re = [
 "abd" = "abd"
 "hel" = "hel"
 "ba" = "ba"
+# Python package name used as an associative-array key in tests.
+"certifi" = "certifi"
 
 # These are specific component names.
 "iterm" = "iterm"
 "jod" = "jod"
+
+# POSIX names.
+"wronly" = "wronly"
 
 # Partial words completed in completion tests, allowed only in the files with those tests.
 # (A type's globs match just file names, not paths.)
@@ -122,7 +129,6 @@ extend-words = { "fo" = "fo", "whil" = "whil" }
 [profile.release]
 strip = true
 lto = "fat"
-codegen-units = 1
 panic = "abort"
 
 [profile.bench]

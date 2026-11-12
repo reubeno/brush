@@ -21,6 +21,7 @@ pub mod fd;
 pub mod fs;
 pub mod input;
 pub(crate) mod network;
+pub(crate) mod pipe_io;
 pub mod poll;
 pub mod resource;
 pub mod signal;
