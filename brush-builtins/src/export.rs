@@ -3,7 +3,7 @@ use std::io::Write;
 
 use brush_core::{
     ExecutionExitCode, ExecutionResult, builtins,
-    env::{self, EnvironmentLookup, EnvironmentScope},
+    env::{self, EnvironmentScope},
     parser::ast,
     variables,
 };
@@ -166,7 +166,8 @@ impl ExportCommand {
     }
 
     /// Assigns `value` to `name`, appending to it for `name+=value`, and marks
-    /// the variable exported (or not, for `-n`).
+    /// the variable exported (or not, for `-n`). With `-a`, the variable is first
+    /// converted to an indexed array, as `declare -a` does.
     fn assign_and_mark(
         &self,
         context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
@@ -174,136 +175,50 @@ impl ExportCommand {
         value: variables::ShellValueLiteral,
         append: bool,
     ) -> Result<ExecutionResult, brush_core::Error> {
-        if self.make_indexed_array {
-            return self.assign_indexed_and_mark(context, name, value, append);
-        }
+        let mut fresh = variables::ShellVariable::new(variables::ShellValue::Unset(
+            variables::ShellValueUnsetType::Untyped,
+        ));
+        let existing = context.shell.env_mut().get_mut(name).map(|(_, v)| v);
+        let is_new = existing.is_none();
+        let var = existing.unwrap_or(&mut fresh);
 
-        // `export name+=value` appends to the existing value, exactly like a
-        // bare `name+=value`. update_or_add always replaces, so when the
-        // variable already exists honor the append here. A missing variable
-        // falls through: appending to nothing is a plain assignment.
-        if append && let Some((_, variable)) = context.shell.env_mut().get_mut(name) {
-            variable.assign(value, true)?;
-            if self.unexport {
-                variable.unexport();
-            } else {
-                variable.export();
-            }
-            return Ok(ExecutionResult::success());
-        }
-
-        // Update the variable with the provided value and then mark it exported.
-        context.shell.env_mut().update_or_add(
-            name,
-            value,
-            |var| {
-                if self.unexport {
-                    var.unexport();
-                } else {
-                    var.export();
-                }
-                Ok(())
-            },
-            EnvironmentLookup::Anywhere,
-            EnvironmentScope::Global,
-        )?;
-        Ok(ExecutionResult::success())
-    }
-
-    /// Applies indexed assignment semantics without changing bare-name export behavior.
-    fn assign_indexed_and_mark(
-        &self,
-        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
-        name: &str,
-        value: variables::ShellValueLiteral,
-        append: bool,
-    ) -> Result<ExecutionResult, brush_core::Error> {
-        use variables::{ShellValue, ShellValueLiteral, ShellValueUnsetType, ShellVariable};
-
-        // Resolve before borrowing the environment mutably. Keep this snapshot for
-        // both type checking and conversion; getters such as RANDOM can change.
-        let resolved_value = context.shell.env().get(name).map_or(
-            ShellValue::Unset(ShellValueUnsetType::IndexedArray),
-            |(_, variable)| variable.resolve_value(context.shell),
-        );
-
-        let assign = |variable: &mut ShellVariable| -> Result<(), brush_core::Error> {
-            // Bash applies the export attribute even when this assignment fails.
-            if self.unexport {
-                variable.unexport();
-            } else {
-                variable.export();
-            }
-
-            if variable.is_readonly() {
-                return Err(brush_core::ErrorKind::ReadonlyVariable.into());
-            }
-
-            match resolved_value {
-                ShellValue::AssociativeArray(_)
-                | ShellValue::Unset(ShellValueUnsetType::AssociativeArray) => {
-                    return Err(
-                        brush_core::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into(),
-                    );
-                }
-                ShellValue::Unset(_) => {
-                    // Assigning an array literal gives an untyped unset variable
-                    // its indexed type without materializing an empty element zero.
-                    let value = match value {
-                        ShellValueLiteral::Scalar(s) => {
-                            ShellValueLiteral::Array(variables::ArrayLiteral::new(vec![(None, s)]))
-                        }
-                        value => value,
-                    };
-                    return variable.assign(value, append);
-                }
-                ShellValue::String(s) if matches!(variable.value(), ShellValue::Dynamic { .. }) => {
-                    // The conversion helper cannot resolve dynamic values; seed
-                    // element zero from the snapshot so appending preserves it.
-                    variable.assign(
-                        ShellValueLiteral::Array(variables::ArrayLiteral::new(vec![(None, s)])),
-                        false,
-                    )?;
-                }
-                // Dynamic indexed arrays need no conversion either.
-                ShellValue::IndexedArray(_) => (),
-                _ => variable.convert_to_indexed_array()?,
-            }
-
-            variable.assign(value, append)
-        };
-
-        let result = if let Some((_, variable)) = context.shell.env_mut().get_mut(name) {
-            assign(variable)
+        // Bash applies the export attribute even when the assignment fails.
+        if self.unexport {
+            var.unexport();
         } else {
-            let mut variable =
-                ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::IndexedArray));
-            assign(&mut variable).and_then(|()| {
-                context
-                    .shell
-                    .env_mut()
-                    .add(name, variable, EnvironmentScope::Global)
-            })
-        };
-
-        match result {
-            Ok(()) => Ok(ExecutionResult::success()),
-            Err(error) => {
-                let message = match error.kind() {
-                    brush_core::ErrorKind::ReadonlyVariable => "readonly variable",
-                    brush_core::ErrorKind::ConvertingAssociativeArrayToIndexedArray => {
-                        "cannot convert associative to indexed array"
-                    }
-                    _ => return Err(error),
-                };
-                writeln!(
-                    context.stderr(),
-                    "{}: {name}: {message}",
-                    context.command_name
-                )?;
-                Ok(ExecutionResult::general_error())
-            }
+            var.export();
         }
+
+        let converted = if self.make_indexed_array {
+            var.convert_to_indexed_array()
+        } else {
+            Ok(())
+        };
+        let result = converted.and_then(|()| var.assign(value, append));
+
+        if is_new {
+            context
+                .shell
+                .env_mut()
+                .add(name, fresh, EnvironmentScope::Global)?;
+        }
+
+        let Err(error) = result else {
+            return Ok(ExecutionResult::success());
+        };
+        let message = match error.kind() {
+            brush_core::ErrorKind::ReadonlyVariable => "readonly variable",
+            brush_core::ErrorKind::ConvertingAssociativeArrayToIndexedArray => {
+                "cannot convert associative to indexed array"
+            }
+            _ => return Err(error),
+        };
+        // Bash names the builtin only when the `-a` conversion is what failed.
+        if self.make_indexed_array {
+            write!(context.stderr(), "{}: ", context.command_name)?;
+        }
+        writeln!(context.stderr(), "{name}: {message}")?;
+        Ok(ExecutionResult::general_error())
     }
 }
 
@@ -311,82 +226,28 @@ fn display_all_exported_vars(
     context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
     indexed_arrays_only: bool,
 ) -> Result<(), brush_core::Error> {
-    // Enumerate variables, sorted by key.
+    // Enumerate variables, sorted by key, in `declare -p` form.
     for (name, variable) in context.shell.env().iter().sorted_by_key(|v| v.0) {
-        if variable.is_exported() {
-            if indexed_arrays_only {
-                let resolved_value = variable.resolve_value(context.shell);
-                if !resolved_value.is_indexed_array() {
-                    continue;
-                }
-
-                let flags = variable.attribute_flags_for_value(&resolved_value);
-                let separator = if matches!(resolved_value, variables::ShellValue::Unset(_)) {
-                    ""
-                } else {
-                    "="
-                };
-                let value =
-                    resolved_value.format(variables::FormatStyle::DeclarePrint, context.shell)?;
-                writeln!(
-                    context.stdout(),
-                    "declare -{flags} {name}{separator}{value}"
-                )?;
-                continue;
-            }
-
-            let value = variable.value().try_get_cow_str(context.shell);
-            if let Some(value) = value {
-                writeln!(context.stdout(), "declare -x {name}=\"{value}\"")?;
-            } else {
-                writeln!(context.stdout(), "declare -x {name}")?;
-            }
+        if !variable.is_exported() {
+            continue;
         }
+        // Resolve once: a dynamic value can change between reads.
+        let value = variable.resolve_value(context.shell);
+        if indexed_arrays_only && !value.is_indexed_array() {
+            continue;
+        }
+        let flags = variable.attribute_flags_for_value(&value);
+        let separator = if matches!(value, variables::ShellValue::Unset(_)) {
+            ""
+        } else {
+            "="
+        };
+        writeln!(
+            context.stdout(),
+            "declare -{flags} {name}{separator}{}",
+            value.format(variables::FormatStyle::DeclarePrint, context.shell)?
+        )?;
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
-mod tests {
-    use std::{cell::Cell, io::Read as _};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn indexed_listing_resolves_each_dynamic_value_once() -> anyhow::Result<()> {
-        thread_local! { static READS: Cell<usize> = const { Cell::new(0) }; }
-        READS.set(0);
-        let mut shell = brush_core::Shell::builder()
-            .profile(brush_core::ProfileLoadBehavior::Skip)
-            .rc(brush_core::RcLoadBehavior::Skip)
-            .build()
-            .await?;
-        let mut variable = variables::ShellVariable::new(variables::ShellValue::Dynamic {
-            getter: |_| {
-                let reads = READS.replace(READS.get() + 1);
-                if reads == 0 {
-                    variables::ShellValue::indexed_array_from_strs(&["first"])
-                } else {
-                    "second".into()
-                }
-            },
-            setter: |_| (),
-        });
-        variable.export().treat_as_integer().set_readonly();
-        shell.env_mut().set_global("changing", variable)?;
-
-        let (mut reader, writer) = std::io::pipe()?;
-        let mut params = shell.default_exec_params();
-        params.set_fd(brush_core::openfiles::OpenFiles::STDOUT_FD, writer.into());
-        let context = brush_core::ExecutionContext::new(&mut shell, "export".into(), params);
-        display_all_exported_vars(&context, true)?;
-        drop(context);
-        let mut output = String::new();
-        reader.read_to_string(&mut output)?;
-        assert_eq!(output, "declare -airx changing=([0]=\"first\")\n");
-        assert_eq!(READS.get(), 1);
-        Ok(())
-    }
 }

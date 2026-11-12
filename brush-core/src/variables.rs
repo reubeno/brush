@@ -187,12 +187,23 @@ impl ShellVariable {
         self
     }
 
-    /// Converts the variable to an indexed array.
+    /// Converts the variable to an indexed array. An unset value stays unset.
     pub fn convert_to_indexed_array(&mut self) -> Result<(), error::Error> {
+        // As in bash, a readonly variable is refused even when it is already an array.
+        if self.is_readonly() {
+            return Err(error::ErrorKind::ReadonlyVariable.into());
+        }
         match self.value() {
-            ShellValue::IndexedArray(_) => Ok(()),
-            ShellValue::AssociativeArray(_) => {
+            ShellValue::IndexedArray(_) | ShellValue::Unset(ShellValueUnsetType::IndexedArray) => {
+                Ok(())
+            }
+            ShellValue::AssociativeArray(_)
+            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray) => {
                 Err(error::ErrorKind::ConvertingAssociativeArrayToIndexedArray.into())
+            }
+            ShellValue::Unset(_) => {
+                self.value = ShellValue::Unset(ShellValueUnsetType::IndexedArray);
+                Ok(())
             }
             _ => {
                 let mut new_values = BTreeMap::new();

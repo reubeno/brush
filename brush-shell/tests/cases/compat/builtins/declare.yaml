@@ -172,6 +172,78 @@ cases:
       echo "STAR: ${arr[*]}"
       echo "AT: ${arr[*]}"
 
+  - name: "declare -a keeps an unset variable unset"
+    stdin: |
+      declare v
+      declare -a v
+      declare -p v
+      declare -a w
+      declare -a w+=(a b)
+      declare -p w
+
+  - name: "declare -a refuses readonly and associative variables"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      declare -a r
+      echo "status: $?"
+      declare -ra ra=(1)
+      declare -a ra
+      echo "status: $?"
+      declare -A m
+      declare -a m+=x
+      echo "status: $?"
+      declare -p r ra m
+
+  - name: "declare -a keeps a dynamic variable's value"
+    known_failure: true # TODO(dynamic): the indexed-array conversion can't see through a dynamic value, so it replaces it with an empty element zero and converts BASH_ALIASES
+    ignore_stderr: true
+    stdin: |
+      for name in DIRSTACK GROUPS; do
+        before=$(declare -p "$name")
+        declare -a "$name"
+        [[ $(declare -p "$name") == "$before" ]]
+        echo "$name unchanged: $?"
+      done
+      declare -a RANDOM
+      [[ ${RANDOM[0]} =~ ^[0-9]+$ ]]
+      echo "RANDOM is a number: $?"
+      alias sample=value
+      declare -a BASH_ALIASES
+      echo "status: $?"
+      declare -p BASH_ALIASES
+
+  - name: "declare reports a failing operand and goes on"
+    known_failure: true # TODO(declare): stops at the first operand it can't apply instead of going on to the next
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      declare -a r o=2
+      echo "status: $?"
+      declare -A m=([k]=v)
+      declare -a m p=3
+      echo "status: $?"
+      declare -p o p
+
+  - name: "declare -A keeps an unset variable unset"
+    known_failure: true # TODO(declare): the associative-array conversion gives an unset value an empty element zero
+    stdin: |
+      declare v
+      declare -A v
+      declare -p v
+
+  - name: "declare -A refuses readonly and indexed variables"
+    known_failure: true # TODO(declare): the associative-array conversion converts a readonly or unset indexed variable and returns 0
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      declare -A r
+      echo "status: $?"
+      declare -a i
+      declare -A i
+      echo "status: $?"
+      declare -p r i
+
   - name: "Declare and export variable"
     stdin: |
       declare -x myexportedvar="exported variable"
@@ -1249,6 +1321,9 @@ cases:
       readonly 'bad-name3=1' 2>&1 | strip
       export -f nosuchfn 2>&1 | strip
       export 'e[0]=1' 2>&1 | strip
+      readonly ro=1; declare -a ro 2>&1 | strip
+      declare -A am; declare -a am 2>&1 | strip
+      declare -a ia=(1); declare -A ia 2>&1 | strip
 
   - name: "declare -fx exports a function"
     stdin: |

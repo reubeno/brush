@@ -65,6 +65,14 @@ cases:
       r=2 | cat
       echo "pipeline: ${PIPESTATUS[0]}"
 
+  - name: "readonly reports a readonly variable and goes on"
+    known_failure: true # TODO(readonly): stops at a readonly variable instead of going on to the next operand
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      readonly r=4 z=5
+      echo "readonly: $? r=$r z=$z"
+
   - name: "readonly -a with an assignment converts and types the variable"
     stdin: |
       e5=x
@@ -165,3 +173,20 @@ cases:
       printf 'x\ny\n' | mapfile -t m
       echo "status: $?"
       declare -p m
+
+  - name: "readonly -a without a value does not retype an existing variable"
+    stdin: |
+      s=1
+      readonly -a s
+      echo "status: $?"
+      readonly r=1
+      readonly -a r
+      echo "status: $?"
+      readonly -A r
+      echo "status: $?"
+      declare v
+      readonly -a v
+      declare -ra ra=(1)
+      readonly -a ra
+      echo "status: $?"
+      declare -p s r v ra
