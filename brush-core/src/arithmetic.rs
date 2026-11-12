@@ -113,6 +113,123 @@ pub(crate) async fn expand_and_eval(
     expr.eval(shell)
 }
 
+/// Evaluates `value`, already expanded, as the value of an integer variable:
+/// it is only parsed and evaluated, and an empty one is 0, as in bash.
+pub(crate) fn eval_integer_value(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    value: &str,
+) -> Result<String, EvalError> {
+    if value.trim().is_empty() {
+        return Ok(String::from("0"));
+    }
+    let expr = brush_parser::arithmetic::parse(value)
+        .map_err(|_e| EvalError::ParseError(value.to_owned()))?;
+    Ok(expr.eval(shell)?.to_string())
+}
+
+/// Assigns `value` to the integer variable (`declare -i`) `name`, as bash does.
+///
+/// A scalar, or each array element, is an arithmetic expression, evaluated
+/// with the variable where the assignment finds it: an array is emptied first
+/// (unless `append`), and each element is evaluated after the ones before it
+/// are assigned. An associative array's keys are taken as written. The value
+/// is already expanded, so it is only parsed and evaluated; an empty one is
+/// 0.
+///
+/// # Arguments
+///
+/// * `shell` - The shell the variable is in.
+/// * `name` - The variable's name.
+/// * `lookup` - Where to find the variable.
+/// * `value` - The value, as expanded.
+/// * `append` - Whether to append (`+=`).
+///
+/// # Errors
+///
+/// Returns an error if the variable can't take the value, or an expression
+/// can't be parsed or evaluated. The variable must exist.
+pub fn assign_to_integer_variable(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    name: &str,
+    lookup: env::EnvironmentLookup,
+    value: variables::ShellValueLiteral,
+    append: bool,
+) -> Result<(), crate::error::Error> {
+    fn variable<'a>(
+        shell: &'a mut Shell<impl extensions::ShellExtensions>,
+        name: &str,
+        lookup: env::EnvironmentLookup,
+    ) -> Result<&'a mut variables::ShellVariable, crate::error::Error> {
+        shell
+            .env_mut()
+            .get_mut_using_policy(name, lookup)
+            .ok_or_else(|| {
+                crate::error::ErrorKind::InternalError(format!("no variable {name} to assign to"))
+                    .into()
+            })
+    }
+
+    let elements = match value {
+        variables::ShellValueLiteral::Scalar(value) => {
+            let value = eval_integer_value(shell, &value)?;
+            return variable(shell, name, lookup)?
+                .assign(variables::ShellValueLiteral::Scalar(value), append);
+        }
+        variables::ShellValueLiteral::Array(variables::ArrayLiteral(elements)) => elements,
+    };
+
+    // Empty the array, or ready it to be appended to, before any element is evaluated.
+    let var = variable(shell, name, lookup)?;
+    var.assign(
+        variables::ShellValueLiteral::Array(variables::ArrayLiteral(vec![])),
+        append,
+    )?;
+
+    // Where the next unkeyed element of an indexed array goes; none for an associative one.
+    let next_index = match var.value() {
+        variables::ShellValue::AssociativeArray(_) => None,
+        variables::ShellValue::IndexedArray(values) => {
+            Some(values.last_key_value().map_or(0, |(i, _)| i + 1))
+        }
+        _ => return Ok(()),
+    };
+
+    match next_index {
+        None => {
+            // Unkeyed elements alternate keys and values; a key with no value gets 0.
+            let mut elements = elements.into_iter();
+            while let Some((key, value)) = elements.next() {
+                let (key, value) = match key {
+                    Some(key) => (key, value),
+                    None => match elements.next() {
+                        Some((None, next)) => (value, next),
+                        None => (value, String::new()),
+                        Some((Some(_), _)) => {
+                            return crate::error::unimp(
+                                "misaligned keys/values in associative array literal",
+                            );
+                        }
+                    },
+                };
+                let value = eval_integer_value(shell, &value)?;
+                variable(shell, name, lookup)?.assign_at_index(key, value, false)?;
+            }
+        }
+        Some(mut index) => {
+            for (key, value) in elements {
+                if let Some(key) = key {
+                    index = key.parse().unwrap_or(0);
+                }
+                let value = eval_integer_value(shell, &value)?;
+                variable(shell, name, lookup)?.assign_at_index(index.to_string(), value, false)?;
+                index += 1;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Trait implemented by evaluatable arithmetic expressions.
 pub trait Evaluatable {
     /// Evaluate the given arithmetic expression, returning the resulting numeric value.
