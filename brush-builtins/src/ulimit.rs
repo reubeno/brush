@@ -36,7 +36,9 @@ impl Virtual {
     fn get(self) -> std::io::Result<(u64, u64)> {
         match self {
             Self::Pipe => {
-                let lim = nix::unistd::PathconfVar::PIPE_BUF as u64 * 512;
+                let lim = nix::unistd::pathconf("/", nix::unistd::PathconfVar::PIPE_BUF)?
+                    .and_then(|bytes| u64::try_from(bytes).ok())
+                    .unwrap_or(rlimit::INFINITY);
                 Ok((lim, lim))
             }
             Self::VMem => rlimit::Resource::AS
