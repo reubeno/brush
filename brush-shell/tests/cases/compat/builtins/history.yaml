@@ -70,6 +70,15 @@ cases:
       : cmd2
       history 2
 
+  - name: "history N with more than the history holds"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      history 5
+      history 9223372036854775807
+
   - name: "history with duplicates"
     args: ["-o", "history"]
     env:

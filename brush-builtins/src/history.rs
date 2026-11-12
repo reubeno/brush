@@ -201,7 +201,8 @@ fn display_history(
     _stderr: impl Write,
 ) -> Result<(), brush_core::Error> {
     let item_count = history.count();
-    let skip_count = item_count - max_entries.unwrap_or(item_count);
+    // Asking for more entries than there are shows them all.
+    let skip_count = item_count.saturating_sub(max_entries.unwrap_or(item_count));
 
     for (i, item) in history.iter().skip(skip_count).enumerate() {
         let mut formatted_timestamp = String::new();
