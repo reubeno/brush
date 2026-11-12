@@ -6,7 +6,7 @@ use winnow::ascii::multispace0;
 use winnow::combinator::{Infix, Postfix, Prefix};
 #[cfg(feature = "winnow-parser")]
 use winnow::combinator::{
-    alt, cut_err, delimited, expression, fail, not, opt, peek, separated_pair,
+    alt, cut_err, delimited, expression, fail, not, opt, peek, preceded, terminated,
 };
 #[cfg(feature = "winnow-parser")]
 use winnow::dispatch;
@@ -15,7 +15,7 @@ use winnow::error::{ContextError, ErrMode};
 #[cfg(feature = "winnow-parser")]
 use winnow::prelude::*;
 #[cfg(feature = "winnow-parser")]
-use winnow::token::{any, one_of, take, take_while};
+use winnow::token::{any, one_of, rest, take, take_while};
 
 use crate::ast;
 use crate::cache;
@@ -212,6 +212,20 @@ fn winnow_full_expression(i: &mut &str) -> ModalResult<ast::ArithmeticExpr> {
     .parse_next(i)
 }
 
+/// Succeeds, consuming nothing, if an assignment operator (`=`, `+=`, `<<=`, ...) comes next.
+#[cfg(feature = "winnow-parser")]
+fn assignment_operator_ahead(i: &mut &str) -> ModalResult<()> {
+    let rest = i.trim_start();
+    let compound = ["<<=", ">>=", "*=", "/=", "%=", "+=", "-=", "&=", "|=", "^="];
+    if compound.iter().any(|op| rest.starts_with(op))
+        || (rest.starts_with('=') && !rest.starts_with("=="))
+    {
+        Ok(())
+    } else {
+        Err(ErrMode::Backtrack(ContextError::default()))
+    }
+}
+
 /// Convert an expression to an assignment target (lvalue), failing if not a reference.
 #[cfg(feature = "winnow-parser")]
 fn expr_to_target(expr: ast::ArithmeticExpr) -> ModalResult<ast::ArithmeticTarget> {
@@ -307,7 +321,11 @@ fn pratt_expr<'i>(
             delimited(
                 multispace0,
                 dispatch! {peek(any);
-                    '(' => delimited('(', pratt_expr(0), cut_err(')')),
+                    '(' => terminated(
+                        delimited('(', pratt_expr(0), cut_err(')')),
+                        // As in bash, `(x) = 1` is an error: only a bare variable is assignable.
+                        cut_err(not(assignment_operator_ahead)),
+                    ),
                     _ => alt((
                         literal_number.map(ast::ArithmeticExpr::Literal),
                         lvalue_atom,
@@ -379,12 +397,23 @@ fn pratt_expr<'i>(
                 // Ternary: ? then : else
                 dispatch! {any;
                     '?' => Postfix(3, |i: &mut &'i str, cond| {
-                        let (then_e, else_e) = cut_err(separated_pair(
+                        let (then_e, else_start, else_e) = cut_err((
                             pratt_expr(0),
-                            delimited(multispace0, ':', multispace0),
+                            preceded(delimited(multispace0, ':', multispace0), peek(rest)),
                             pratt_expr(3),
                         ))
                         .parse_next(i)?;
+                        // As in bash, only a variable can be assigned to: `c ? a : x = 1` is an
+                        // error, while a parenthesized `c ? a : (x = 1)` is fine.
+                        if !else_start.starts_with('(')
+                            && matches!(
+                                else_e,
+                                ast::ArithmeticExpr::Assignment(..)
+                                    | ast::ArithmeticExpr::BinaryAssignment(..)
+                            )
+                        {
+                            return Err(ErrMode::Cut(ContextError::default()));
+                        }
                         Ok(ast::ArithmeticExpr::Conditional(
                             Box::new(cond), Box::new(then_e), Box::new(else_e),
                         ))

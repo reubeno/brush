@@ -181,8 +181,12 @@ fn assignment_word<'a>(
             let end_offset = tracker.offset_from_locating(input);
             let loc = tracker.range_to_span(start_offset..end_offset);
 
+            let name = match array_index {
+                Some(idx) => ast::AssignmentName::ArrayElementName(var_name.to_string(), idx),
+                None => ast::AssignmentName::VariableName(var_name.to_string()),
+            };
             let assignment = ast::Assignment {
-                name: ast::AssignmentName::VariableName(var_name.to_string()),
+                name,
                 value: ast::AssignmentValue::Array(elements),
                 append,
                 loc,

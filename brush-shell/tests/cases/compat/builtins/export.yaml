@@ -213,7 +213,6 @@ cases:
       echo "environment match: $?"
 
   - name: "Export -a rejects assignment to dynamic associative arrays"
-    known_failure: true # TODO(dynamic): as for `declare -a`, the indexed-array conversion can't see through a dynamic value, so it converts BASH_ALIASES
     stdin: |
       strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
       alias sample=value

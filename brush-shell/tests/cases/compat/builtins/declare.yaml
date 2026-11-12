@@ -196,7 +196,6 @@ cases:
       declare -p r ra m
 
   - name: "declare -a keeps a dynamic variable's value"
-    known_failure: true # TODO(dynamic): the indexed-array conversion can't see through a dynamic value, so it replaces it with an empty element zero and converts BASH_ALIASES
     ignore_stderr: true
     stdin: |
       for name in DIRSTACK GROUPS; do
@@ -413,9 +412,6 @@ cases:
       declare -f g
 
   - name: "Displaying a function with a quoted here-document delimiter"
-    known_failure: true # Issue #1580: brush-parser's Display writes the closing delimiter with its
-                        # quotes (`'EOF'`) and indents the body and delimiter, so the printed
-                        # function doesn't read back
     stdin: |
       f() {
         cat <<'EOF'

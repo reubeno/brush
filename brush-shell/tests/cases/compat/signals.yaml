@@ -120,7 +120,6 @@ cases:
   # Each line is longer than a pipe holds: `head` must read all of the first before it exits,
   # and the second can't be written without a reader, so it fails however the two are timed.
   - name: "SIGPIPE from a builtin's write ends a pipeline stage"
-    known_failure: true # TODO(signals): EPIPE doesn't end the shell, as SIGPIPE ends bash
     stdin: |
       i=0; while [ "$i" -lt 3 ]; do printf '%065536d\n' 0; i=$((i + 1)); done | head -n 1 > /dev/null
       echo "status=${PIPESTATUS[0]}"
