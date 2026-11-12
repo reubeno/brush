@@ -341,11 +341,14 @@ impl DeclareCommand {
             .env_mut()
             .get_mut_using_policy(name.as_str(), lookup)
         {
-            if change(&self.make_associative_array).is_some() {
-                var.convert_to_associative_array()?;
-            }
-            if change(&self.make_indexed_array).is_some() {
-                var.convert_to_indexed_array()?;
+            // A bare `readonly -a name` doesn't retype an existing variable.
+            if !matches!(verb, DeclareVerb::Readonly) || initial_value.is_some() {
+                if change(&self.make_associative_array).is_some() {
+                    var.convert_to_associative_array()?;
+                }
+                if change(&self.make_indexed_array).is_some() {
+                    var.convert_to_indexed_array()?;
+                }
             }
 
             self.apply_attributes_before_update(var)?;
