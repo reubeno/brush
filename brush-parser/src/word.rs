@@ -763,6 +763,10 @@ peg::parser! {
             !brace_expr() !stop_condition() "{" {}
 
         // Parses a complete brace expression, with no prefix or suffix.
+        // Cached: each `{` is tried both as the start of a brace expression and as plain text,
+        // and every attempt re-parses the rest of the word, so a run of unterminated `{`
+        // would otherwise take time exponential in its length.
+        #[cache]
         pub(crate) rule brace_expr() -> BraceExpression =
             "{" inner:brace_expr_inner() "}" { inner }
 
@@ -1707,6 +1711,48 @@ mod tests {
                 "{input} should not parse as a brace sequence: {pieces:?}"
             );
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_runs_of_unterminated_braces_quickly() -> Result<()> {
+        // Each `{` is tried both as the start of a brace expression and as plain text; unless
+        // the brace expression parse is memoized, that takes time exponential in the length
+        // of the run.
+        let options = ParserOptions::default();
+        let run = "{".repeat(30);
+
+        let word = std::format!("{run}.");
+        let pieces = super::parse_brace_expansions(&word, &options)?.unwrap_or_default();
+        assert_eq!(pieces, vec![BraceExpressionOrText::Text(word)]);
+
+        // A complete brace expression after the run is still found.
+        let word = std::format!("{run}{{a,b}}");
+        let pieces = super::parse_brace_expansions(&word, &options)?.unwrap_or_default();
+        assert_eq!(
+            pieces,
+            vec![
+                BraceExpressionOrText::Text(run.clone()),
+                BraceExpressionOrText::Expr(vec![
+                    BraceExpressionMember::Child(vec![BraceExpressionOrText::Text("a".into())]),
+                    BraceExpressionMember::Child(vec![BraceExpressionOrText::Text("b".into())]),
+                ]),
+            ]
+        );
+
+        // So is one that encloses the run.
+        let word = std::format!("{{a,{run}b}}");
+        let pieces = super::parse_brace_expansions(&word, &options)?.unwrap_or_default();
+        assert_eq!(
+            pieces,
+            vec![BraceExpressionOrText::Expr(vec![
+                BraceExpressionMember::Child(vec![BraceExpressionOrText::Text("a".into())]),
+                BraceExpressionMember::Child(vec![BraceExpressionOrText::Text(std::format!(
+                    "{run}b"
+                ))]),
+            ])]
+        );
 
         Ok(())
     }
