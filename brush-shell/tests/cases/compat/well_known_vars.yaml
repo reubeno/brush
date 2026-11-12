@@ -291,3 +291,56 @@ cases:
       unset BASH_ARGV; echo "BASH_ARGV: $?"
       unset FUNCNAME; echo "FUNCNAME: $?"
 
+
+  - name: "PIPESTATUS stays live after declare -a"
+    stdin: |
+      declare -a PIPESTATUS=([0]="1")
+      true | true | true
+      echo "after declare -a: ${PIPESTATUS[@]}"
+
+  - name: "PIPESTATUS stays live after an array assignment"
+    stdin: |
+      PIPESTATUS=([0]="9")
+      true | false | true
+      echo "after assignment: ${PIPESTATUS[@]}"
+
+  - name: "An array dynamic variable can't be made associative"
+    ignore_stderr: true # bash and brush word the error differently
+    stdin: |
+      true | false
+      declare -A PIPESTATUS
+      echo "declare -A: $?"
+      declare -A PIPESTATUS=([x]=9)
+      echo "declare -A with a value: $?"
+      true | true | true
+      echo "still live: ${PIPESTATUS[@]}"
+
+  - name: "An associative dynamic variable can't be made indexed"
+    ignore_stderr: true # bash and brush word the error differently
+    stdin: |
+      alias x=y
+      declare -a BASH_ALIASES
+      echo "declare -a: $?"
+      declare -a BASH_ALIASES=(q)
+      echo "declare -a with a value: $?"
+      alias z=w
+      echo "still live: ${#BASH_ALIASES[@]}"
+      printf '%s\n' "${BASH_ALIASES[@]}" | sort
+      unalias x z
+
+  - name: "A scalar dynamic variable made an array keeps its value"
+    stdin: |
+      declare -a RANDOM
+      first=${RANDOM}
+      second=${RANDOM}
+      [[ $first =~ ^[0-9]+$ ]] && echo "RANDOM kept a number"
+      [[ $first == "$second" ]] && echo "RANDOM no longer changes"
+      declare -p RANDOM | grep -q '^declare -a' && echo "RANDOM is an indexed array"
+
+      declare -A SECONDS
+      [[ ${SECONDS[0]} =~ ^[0-9]+$ ]] && echo "SECONDS kept a number"
+
+  - name: "An array assignment replaces a scalar dynamic variable"
+    stdin: |
+      RANDOM=(10 20 30)
+      echo "${RANDOM[@]} count=${#RANDOM[@]}"
