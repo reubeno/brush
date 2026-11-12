@@ -104,6 +104,17 @@ fn change(options: &[bool]) -> Option<bool> {
     }
 }
 
+/// What became of an operand that may assign more than the parser saw.
+enum Lifted {
+    /// The operand assigns this.
+    Assignment(ast::Assignment),
+    /// The operand is taken as it is.
+    Unchanged,
+    /// The operand assigns an array value that doesn't parse; that's been reported. As
+    /// in bash, the array is still declared, and assigned no elements.
+    Malformed(ast::Assignment),
+}
+
 #[derive(Clone, Copy)]
 enum DeclareVerb {
     Declare,
@@ -137,6 +148,23 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for DeclareCommand {
                         result = ExecutionResult::general_error();
                     }
                 } else {
+                    let lifted;
+                    let declaration = match self
+                        .lift_assignment(&mut context, declaration, verb)
+                        .await?
+                    {
+                        Lifted::Assignment(assignment) => {
+                            lifted = brush_core::CommandArg::Assignment(assignment);
+                            &lifted
+                        }
+                        Lifted::Unchanged => declaration,
+                        Lifted::Malformed(assignment) => {
+                            result = ExecutionResult::general_error();
+                            lifted = brush_core::CommandArg::Assignment(assignment);
+                            &lifted
+                        }
+                    };
+
                     if !self.process_declaration(&mut context, declaration, verb)? {
                         result = ExecutionResult::general_error();
                     }
@@ -256,10 +284,7 @@ impl DeclareCommand {
         declaration: &brush_core::CommandArg,
         verb: DeclareVerb,
     ) -> Result<bool, brush_core::Error> {
-        let create_var_local = matches!(verb, DeclareVerb::Local)
-            || (matches!(verb, DeclareVerb::Declare)
-                && context.shell.in_function()
-                && !self.create_global);
+        let create_var_local = self.creates_local(context, verb);
 
         if (self.function_names_or_defs_only || self.function_names_only)
             && (change(&self.make_traced).is_some() || change(&self.make_exported).is_some())
@@ -293,12 +318,7 @@ impl DeclareCommand {
             return Ok(false);
         }
 
-        // Figure out where we should look.
-        let lookup = if create_var_local {
-            EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
-        } else {
-            EnvironmentLookup::Anywhere
-        };
+        let lookup = Self::lookup(create_var_local);
 
         // `local -I x[=v]` / `declare -I` (bash 5.0+): the new local inherits
         // value and attributes from the nearest same-name variable in an
@@ -316,7 +336,7 @@ impl DeclareCommand {
                 self.apply_attributes_before_update(&mut var)?;
 
                 if let Some(initial_value) = initial_value {
-                    var.assign(initial_value, append || assigned_index.is_some())?;
+                    Self::assign_value(&mut var, initial_value, assigned_index, append)?;
                 }
 
                 if context.shell.options().export_variables_on_modification
@@ -356,7 +376,7 @@ impl DeclareCommand {
             if let Some(initial_value) = initial_value {
                 // We append for `name+=value`, or if the declaration included
                 // an explicit index.
-                var.assign(initial_value, append || assigned_index.is_some())?;
+                Self::assign_value(var, initial_value, assigned_index, append)?;
             }
 
             self.apply_attributes_after_update(var, verb)?;
@@ -376,7 +396,7 @@ impl DeclareCommand {
             self.apply_attributes_before_update(&mut var)?;
 
             if let Some(initial_value) = initial_value {
-                var.assign(initial_value, append)?;
+                Self::assign_value(&mut var, initial_value, assigned_index, append)?;
             }
 
             if context.shell.options().export_variables_on_modification && !var.value().is_array() {
@@ -395,6 +415,169 @@ impl DeclareCommand {
         }
 
         Ok(true)
+    }
+
+    /// Returns whether a declaration creates a local variable, rather than a global one.
+    fn creates_local(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        verb: DeclareVerb,
+    ) -> bool {
+        matches!(verb, DeclareVerb::Local)
+            || (matches!(verb, DeclareVerb::Declare)
+                && context.shell.in_function()
+                && !self.create_global)
+    }
+
+    /// Returns where a declaration looks for the variable it names.
+    const fn lookup(create_var_local: bool) -> EnvironmentLookup {
+        if create_var_local {
+            EnvironmentLookup::OnlyInCurrent(EnvironmentScope::Local)
+        } else {
+            EnvironmentLookup::Anywhere
+        }
+    }
+
+    /// Reads the assignments bash finds in a declaration's operands beyond those the
+    /// parser does.
+    ///
+    /// An operand that expanded into an assignment, such as `"x=$v"` or `'a=(${v})'`,
+    /// isn't one to the parser, as its word starts with a quote. It's read here: its
+    /// subscript, if any, is expanded once, and its value is taken as it is.
+    ///
+    /// A parenthesized value given to an array (one this declaration makes, or one
+    /// already there), whether the parser saw the assignment or not, is then read as
+    /// the array's elements, which are expanded as those of any array assignment.
+    async fn lift_assignment(
+        &self,
+        context: &mut brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        declaration: &brush_core::CommandArg,
+        verb: DeclareVerb,
+    ) -> Result<Lifted, brush_core::Error> {
+        // TODO(declare): bash refuses `+a` and `+A` on an array; until that's done, their
+        // operands are left as they are, which fails the ones that would assign to one.
+        if self.function_names_only
+            || self.function_names_or_defs_only
+            || change(&self.make_indexed_array) == Some(false)
+            || change(&self.make_associative_array) == Some(false)
+        {
+            return Ok(Lifted::Unchanged);
+        }
+
+        let options = context.shell.parser_options();
+        let mut assignment = match declaration {
+            brush_core::CommandArg::String(s) if s.contains('=') => {
+                let Ok(mut assignment) = brush_parser::word::parse_scalar_assignment(s, &options)
+                else {
+                    return Ok(Lifted::Unchanged);
+                };
+                if let ast::AssignmentName::ArrayElementName(_, index) = &mut assignment.name {
+                    *index = context
+                        .shell
+                        .basic_expand_string(&context.params, &*index)
+                        .await?;
+                }
+                assignment
+            }
+            brush_core::CommandArg::Assignment(assignment)
+                if self.assigns_array_literal(context, assignment, verb) =>
+            {
+                assignment.clone()
+            }
+            _ => return Ok(Lifted::Unchanged),
+        };
+
+        let literal = match &assignment.value {
+            ast::AssignmentValue::Scalar(literal)
+                if self.assigns_array_literal(context, &assignment, verb) =>
+            {
+                literal
+            }
+            _ => return Ok(Lifted::Assignment(assignment)),
+        };
+
+        // As in bash, a compound value given to an element is the whole array's: the
+        // subscript is dropped.
+        if let ast::AssignmentName::ArrayElementName(name, _) = &assignment.name {
+            assignment.name = ast::AssignmentName::VariableName(name.clone());
+        }
+
+        let Some(elements) =
+            brush_parser::word::parse_compound_assignment_value(&literal.value, &options)
+        else {
+            writeln!(
+                context.stderr(),
+                "{}: `{}': syntax error in array assignment",
+                context.command_name,
+                literal.value
+            )?;
+            assignment.value = ast::AssignmentValue::Array(vec![]);
+            return Ok(Lifted::Malformed(assignment));
+        };
+
+        assignment.value = context
+            .shell
+            .expand_assignment_value(&context.params, &ast::AssignmentValue::Array(elements))
+            .await?;
+        Ok(Lifted::Assignment(assignment))
+    }
+
+    /// Returns whether an assignment gives a parenthesized scalar value to an array,
+    /// which bash reads as the array's elements: to a whole array this declaration
+    /// makes or that's already there, or to an element of one this declaration makes.
+    fn assigns_array_literal(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        assignment: &ast::Assignment,
+        verb: DeclareVerb,
+    ) -> bool {
+        let ast::AssignmentValue::Scalar(value) = &assignment.value else {
+            return false;
+        };
+        value.value.starts_with('(')
+            && value.value.ends_with(')')
+            && match &assignment.name {
+                ast::AssignmentName::VariableName(name) => self.assigns_array(context, name, verb),
+                ast::AssignmentName::ArrayElementName(..) => self.makes_array(),
+            }
+    }
+
+    /// Returns whether this declaration makes its variables arrays.
+    fn makes_array(&self) -> bool {
+        change(&self.make_indexed_array) == Some(true)
+            || change(&self.make_associative_array) == Some(true)
+    }
+
+    /// Returns whether a declaration assigns to an array: one it makes, or one that's
+    /// already there.
+    fn assigns_array(
+        &self,
+        context: &brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
+        name: &str,
+        verb: DeclareVerb,
+    ) -> bool {
+        self.makes_array()
+            || context
+                .shell
+                .env()
+                .get_using_policy(name, Self::lookup(self.creates_local(context, verb)))
+                .is_some_and(|var| var.value().is_array())
+    }
+
+    /// Assigns a declaration's value: an element's at its index, as `a[i]=v` and
+    /// `a[i]+=v` do, and any other to the whole variable, `+=` appending to it.
+    fn assign_value(
+        var: &mut ShellVariable,
+        value: ShellValueLiteral,
+        assigned_index: Option<String>,
+        append: bool,
+    ) -> Result<(), brush_core::Error> {
+        match (assigned_index, value) {
+            (Some(index), ShellValueLiteral::Scalar(value)) => {
+                var.assign_at_index(index, value, append)
+            }
+            (index, value) => var.assign(value, append || index.is_some()),
+        }
     }
 
     #[expect(clippy::type_complexity)]
@@ -468,15 +651,9 @@ impl DeclareCommand {
 
                 match &assignment.value {
                     ast::AssignmentValue::Scalar(s) => {
-                        if let Some(index) = &assigned_index {
-                            initial_value = Some(ShellValueLiteral::Array(ArrayLiteral::new(
-                                vec![(Some(index.to_owned()), s.value.clone())],
-                            )));
-                            name_is_array = true;
-                        } else {
-                            initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
-                            name_is_array = false;
-                        }
+                        // An element's value stays a scalar, to be assigned at its index.
+                        initial_value = Some(ShellValueLiteral::Scalar(s.value.clone()));
+                        name_is_array = assigned_index.is_some();
                     }
                     ast::AssignmentValue::Array(a) => {
                         initial_value = Some(ShellValueLiteral::Array(ArrayLiteral::new(
