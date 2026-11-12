@@ -14,3 +14,12 @@ cases:
     stdin: |
       (( (0) == 0 )) && echo "0 == 0"
       (( (1) != 0 )) && echo "1 != 0"
+
+  - name: "An error in an arithmetic command fails only that command"
+    known_failure: true # TODO(arithmetic): an error in (( )) drops the rest of the line
+    ignore_stderr: true
+    stdin: |
+      x=2
+      (( x **= 10 )); echo "after a syntax error: $? x=$x"
+      (( 1 / 0 )) || echo "after division by 0: $?"
+      if (( 1 + )); then echo then; else echo "else: $?"; fi

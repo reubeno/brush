@@ -65,3 +65,11 @@ cases:
   - name: "caller not in function"
     stdin: |
       caller
+
+  - name: "caller outside a function fails with status 1 whatever its operand"
+    known_failure: true # TODO(caller): brush checks the operand first and fails a bad one with status 2
+    ignore_stderr: true
+    stdin: |
+      caller notanumber; echo "caller notanumber: $?"
+      caller 18446744073709551615; echo "caller 2^64-1: $?"
+      caller -1; echo "caller -1: $?"

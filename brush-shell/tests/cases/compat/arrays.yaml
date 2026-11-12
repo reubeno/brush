@@ -488,6 +488,15 @@ cases:
       echo "[${zz_a[]}]"
       echo "status: $?"
 
+  - name: "Compound assignment with a subscript at the edge of the index range"
+    known_failure: true # TODO(arrays): subscripts aren't evaluated, so the next index overflows (a panic in debug builds)
+    ignore_stderr: true
+    stdin: |
+      (a=([0]=keep [18446744073709551615]=x y); declare -p a)
+      (a=([18446744073709551615]=x y); declare -p a); echo "rc=$?"
+      (a=([9223372036854775807]=x y); declare -p a); echo "rc=$?"
+      (a=([18446744073709551614]=x); a+=(y z); declare -p a); echo "rc=$?"
+
   - name: "Negative index into sparse indexed array"
     stdin: |
       b=(a b c d)
