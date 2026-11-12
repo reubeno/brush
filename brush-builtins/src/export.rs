@@ -205,10 +205,17 @@ impl ExportCommand {
         value: variables::ShellValueLiteral,
         append: bool,
     ) -> Result<ExecutionResult, brush_core::Error> {
+        // The assignment lands on the nameref's target, which may not exist yet.
+        let target = context
+            .shell
+            .env()
+            .resolve_nameref_or_default(name)
+            .name()
+            .to_owned();
         let mut fresh = variables::ShellVariable::new(variables::ShellValue::Unset(
             variables::ShellValueUnsetType::Untyped,
         ));
-        let mut existing = context.shell.env_mut().get_mut(name);
+        let mut existing = context.shell.env_mut().get_mut(&target);
         let is_new = existing.is_none();
         let var = match existing.as_mut() {
             Some(resolved) => resolved.base_var_mut(),
@@ -233,7 +240,7 @@ impl ExportCommand {
             context
                 .shell
                 .env_mut()
-                .add(name, fresh, EnvironmentScope::Global)?;
+                .add(&target, fresh, EnvironmentScope::Global)?;
         }
 
         let Err(error) = result else {
