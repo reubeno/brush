@@ -216,9 +216,13 @@ impl FcCommand {
     ) -> Result<usize, brush_core::Error> {
         // Try to parse it as a number. If it's not parseable, then we need to assume
         // it's a string prefix we need to search for.
-        let Ok(num) = spec.parse::<i64>() else {
+        let num = match spec.parse::<i64>() {
+            Ok(num) => num,
+            // A number too large for i64 is still a number, and past either end anyway.
+            Err(e) if *e.kind() == std::num::IntErrorKind::PosOverflow => i64::MAX,
+            Err(e) if *e.kind() == std::num::IntErrorKind::NegOverflow => i64::MIN,
             // Not a number, treat as string prefix
-            return Self::find_command_by_prefix(history, spec);
+            Err(_) => return Self::find_command_by_prefix(history, spec),
         };
 
         let effective_count = effective_history_count(history);
@@ -242,7 +246,7 @@ impl FcCommand {
             }
             std::cmp::Ordering::Less => {
                 // Negative: offset from end (relative to effective count)
-                let offset = (-num) as usize;
+                let offset = usize::try_from(num.unsigned_abs()).unwrap_or(usize::MAX);
                 effective_count.saturating_sub(offset)
             }
         };
