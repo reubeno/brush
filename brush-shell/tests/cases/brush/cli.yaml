@@ -348,7 +348,7 @@ cases:
     expected_stdout: "brush: argument is not valid UTF-8: echo ran a�b\nrc=2\n"
 
   - name: "Script path that is not valid UTF-8 is refused"
-    incompatible_platforms: ["windows", "wasi"]
+    incompatible_platforms: ["windows", "wasi", "macos"] # (No such file name can be made on macOS)
     stdin: |
       sh -c 'name=$(printf "s\200.sh"); echo "echo ran" > "$name"; "$0" "$name"; echo "rc=$?"; rm "$name"' "$(command -v "$0")" 2>&1
     expected_exit_code: 0

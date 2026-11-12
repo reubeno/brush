@@ -9,6 +9,7 @@ cases:
       echo "rc=$?"
 
   - name: "Starting in a working dir that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
     ignore_stderr: true # brush warns that it altered the variable
     stdin: |
       sh -c 'mkdir "$(printf "x\200y")" && cd "$(printf "x\200y")" && exec "$0" -c "echo started"' "$(command -v "$0")"
@@ -50,6 +51,7 @@ cases:
       echo "rc=$?"
 
   - name: "Script path that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
     known_failure: true # brush refuses to start
     ignore_stderr: true
     stdin: |
@@ -90,6 +92,7 @@ cases:
       }
 
   - name: "Pathname expansion to a name that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
     known_failure: true # brush yields a name with U+FFFD, which names no file
     stdin: |
       sh -c 'touch "$(printf "g\200x")"'
@@ -105,6 +108,7 @@ cases:
       sh -c 'printf %s "$1" | hexdump -C' _ $'a\200b'
 
   - name: "Redirection to a file name that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
     known_failure: true # brush creates a file named with U+FFFD
     stdin: |
       echo hi > $'r\200x'
@@ -116,6 +120,7 @@ cases:
       cat <<< $'a\200b' | hexdump -C
 
   - name: "Changing to a directory whose name is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
     known_failure: true # brush's expansion of the name has U+FFFD, which names no directory
     ignore_stderr: true
     stdin: |
@@ -142,6 +147,7 @@ cases:
       sh -c 'printf "a\200b"' | cat | hexdump -C
 
   - name: "Prompt working dir that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
     known_failure: true # brush cannot hold a byte that isn't UTF-8: the dir it makes and shows has U+FFFD instead
     env:
       LC_ALL: C.UTF-8
