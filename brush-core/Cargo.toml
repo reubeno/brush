@@ -22,6 +22,8 @@ serde = ["dep:serde", "brush-parser/serde", "rpds/serde", "chrono/serde"]
 experimental-parser = ["brush-parser/winnow-parser"]
 
 [dependencies]
+bytes = "1.11.1"
+flume = { version = "0.12.0", default-features = false, features = ["async"] }
 async-recursion = "1.1.1"
 async-trait = "0.1.89"
 brush-parser = { version = "^0.4.0", path = "../brush-parser" }

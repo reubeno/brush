@@ -75,6 +75,33 @@ impl<SE: ShellExtensions> ExecutionContext<'_, SE> {
         self.shell.builtin_states_mut().get_mut_or_default()
     }
 
+    /// Writes stdout using the async stream migration API.
+    pub async fn write_stdout(&self, bytes: &[u8]) -> std::io::Result<()> {
+        self.params
+            .try_stdout(self.shell)
+            .ok_or_else(|| std::io::Error::other("standard output not available"))?
+            .write_all_async(bytes)
+            .await
+    }
+
+    /// Writes stderr using the async stream migration API.
+    pub async fn write_stderr(&self, bytes: &[u8]) -> std::io::Result<()> {
+        self.params
+            .try_stderr(self.shell)
+            .ok_or_else(|| std::io::Error::other("standard error not available"))?
+            .write_all_async(bytes)
+            .await
+    }
+
+    /// Reads stdin using the async stream migration API.
+    pub async fn read_stdin(&self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.params
+            .try_stdin(self.shell)
+            .ok_or_else(|| std::io::Error::other("standard input not available"))?
+            .read_async(bytes)
+            .await
+    }
+
     /// Returns the standard input file; usable with `write!` et al.
     pub fn stdin(&self) -> impl std::io::Read + 'static {
         self.params.stdin(self.shell)

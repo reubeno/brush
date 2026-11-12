@@ -17,6 +17,43 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
     /// Clones the stream into a boxed trait object.
     fn clone_box(&self) -> Box<dyn Stream>;
 
+    /// Async migration hook. Legacy streams use a blocking-pool adapter on native hosts.
+    fn read_async<'a>(
+        &'a self,
+        buf: &'a mut [u8],
+    ) -> futures::future::BoxFuture<'a, std::io::Result<usize>> {
+        Box::pin(blocking_read(OpenFile::Stream(self.clone_box()), buf))
+    }
+
+    /// Async migration hook; channel streams override this with cooperative writes.
+    fn write_all_async<'a>(
+        &'a self,
+        buf: &'a [u8],
+    ) -> futures::future::BoxFuture<'a, std::io::Result<()>> {
+        Box::pin(blocking_write(
+            OpenFile::Stream(self.clone_box()),
+            buf.to_vec(),
+        ))
+    }
+
+    /// Immediate (zero-timeout) readability probe that does not require
+    /// materializing a file descriptor. Returns `None` when the stream can
+    /// only answer via native fd polling (the default).
+    fn is_readable_now(&self) -> Option<std::io::Result<bool>> {
+        None
+    }
+
+    /// Returns `true` if `unread` is supported (best-effort; state may change).
+    fn can_unread(&self) -> bool {
+        false
+    }
+
+    /// Pushes bytes back so the next read returns them first. Returns
+    /// `Unsupported` when unread is not available for this stream.
+    fn unread(&self, _data: &[u8]) -> std::io::Result<()> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+    }
+
     /// Converts the stream into an `OwnedFd`. Returns an error if the operation
     /// is not supported or if it fails.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
@@ -132,7 +169,136 @@ impl std::fmt::Display for OpenFile {
     }
 }
 
+/// Offloads legacy stream I/O to a blocking task on native hosts (e.g. a
+/// channel stream that has materialized to a native pipe). WASM runs inline.
+/// This is a compatibility boundary for I/O that may block the caller's thread.
+pub(crate) async fn blocking_write(mut file: OpenFile, buf: Vec<u8>) -> std::io::Result<()> {
+    use std::io::Write;
+    let operation = move || {
+        file.write_all(&buf)?;
+        file.flush()
+    };
+    #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
+    {
+        tokio::task::spawn_blocking(operation)
+            .await
+            .map_err(std::io::Error::other)?
+    }
+    #[cfg(target_family = "wasm")] // ast-grep-ignore: platform-cfg-outside-sys
+    {
+        let mut operation = operation;
+        operation()
+    }
+}
+
+pub(crate) async fn blocking_read(mut file: OpenFile, buf: &mut [u8]) -> std::io::Result<usize> {
+    use std::io::Read;
+    let len = buf.len();
+    let operation = move || {
+        let mut bytes = vec![0; len];
+        let n = file.read(&mut bytes)?;
+        Ok::<_, std::io::Error>((bytes, n))
+    };
+    #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
+    let (bytes, n) = tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(std::io::Error::other)??;
+    #[cfg(target_family = "wasm")] // ast-grep-ignore: platform-cfg-outside-sys
+    let (bytes, n) = {
+        let mut operation = operation;
+        operation()?
+    };
+    buf[..n].copy_from_slice(&bytes[..n]);
+    Ok(n)
+}
+
 impl OpenFile {
+    /// Writes all bytes. `Stream` uses its async hook (cooperative for channels);
+    /// other variants write inline via `&T: Write` to avoid spawn/alloc overhead
+    /// on hot paths (matches pre-async-migration behavior).
+    pub async fn write_all_async(&self, buf: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
+        match self {
+            Self::Stream(stream) => stream.write_all_async(buf).await,
+            Self::Stdin(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("stdin"),
+            )),
+            Self::Stdout(f) => {
+                let mut w = f;
+                w.write_all(buf)?;
+                w.flush()
+            }
+            Self::Stderr(f) => {
+                let mut w = f;
+                w.write_all(buf)?;
+                w.flush()
+            }
+            Self::File(f) => {
+                let mut w = f.as_ref();
+                w.write_all(buf)?;
+                w.flush()
+            }
+            Self::PipeReader(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotWritable("pipe reader"),
+            )),
+            Self::PipeWriter(w) => {
+                let mut w = w.as_ref();
+                w.write_all(buf)?;
+                w.flush()
+            }
+        }
+    }
+
+    /// Reads bytes. `Stream` uses its async hook (cooperative for channels);
+    /// other variants read inline via `&T: Read` to avoid spawn/alloc overhead.
+    pub async fn read_async(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::io::Read;
+        match self {
+            Self::Stream(stream) => stream.read_async(buf).await,
+            Self::Stdin(f) => {
+                let mut r = f;
+                r.read(buf)
+            }
+            Self::Stdout(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stdout"),
+            )),
+            Self::Stderr(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("stderr"),
+            )),
+            Self::File(f) => {
+                let mut r = f.as_ref();
+                r.read(buf)
+            }
+            Self::PipeReader(r) => {
+                let mut r = r.as_ref();
+                r.read(buf)
+            }
+            Self::PipeWriter(_) => Err(std::io::Error::other(
+                error::ErrorKind::OpenFileNotReadable("pipe writer"),
+            )),
+        }
+    }
+
+    /// Returns `true` if `unread` is supported for this file/stream.
+    pub fn can_unread(&self) -> bool {
+        match self {
+            Self::Stream(stream) => stream.can_unread(),
+            _ => false,
+        }
+    }
+
+    /// Pushes bytes back so the next read returns them first.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Unsupported` if unread is not available.
+    pub fn unread(&self, data: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Stream(stream) => stream.unread(data),
+            _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
+        }
+    }
+
     /// Converts the open file into an `OwnedFd`. For shared file/pipe handles this materializes
     /// a real duplicate via `dup(2)` so the caller receives an independently owned descriptor.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys

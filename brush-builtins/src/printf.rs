@@ -59,8 +59,21 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for PrintfCommand {
             )
             .await?;
         } else {
-            format(self.format_and_args.as_slice(), context.stdout())?;
-            context.stdout().flush()?;
+            // Buffer for Stream outputs (channel pipes) so we can write async;
+            // write directly for non-stream outputs to avoid overhead.
+            if let Some(out) = context.params.try_stdout(context.shell) {
+                if matches!(out, brush_core::openfiles::OpenFile::Stream(_)) {
+                    let mut result: Vec<u8> = vec![];
+                    format(self.format_and_args.as_slice(), &mut result)?;
+                    out.write_all_async(&result).await?;
+                } else {
+                    let mut out = out;
+                    format(self.format_and_args.as_slice(), &mut out)?;
+                    out.flush()?;
+                }
+            } else {
+                return Err(std::io::Error::other("standard output not available").into());
+            }
         }
 
         Ok(ExecutionResult::success())

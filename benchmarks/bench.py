@@ -143,6 +143,32 @@ BENCHMARK_CASES: dict[str, BenchmarkCase] = {
     "if_not_taken": BenchmarkCase(
         loop_body="if [[ 0 -eq 1 ]]; then :; fi",
     ),
+    # Pipeline cases (relevant to in-process/channel pipe experiments):
+    # - pipe_builtin_*: pure builtins, target in-process pipe path.
+    # - pipe_*_ext_*: involve external commands; on channel-pipe implementations
+    #   these typically force fd materialization/bridging (regression watch).
+    "pipe_builtin_2stage": BenchmarkCase(
+        loop_body='printf hi | { read -r v; : "$v"; }',
+    ),
+    "pipe_builtin_3stage": BenchmarkCase(
+        loop_body='printf hi | { read -r v; printf %s "$v"; } | { read -r w; : "$w"; }',
+    ),
+    "pipe_builtin_discard": BenchmarkCase(
+        loop_body="printf hi | :",
+    ),
+    "pipe_builtin_to_ext": BenchmarkCase(
+        setup='CAT=$(command -v cat) || exit 1',
+        loop_body='printf hi | "$CAT" >/dev/null',
+    ),
+    "pipe_ext_to_builtin": BenchmarkCase(
+        setup='EXT_ECHO=$(command -v env) || exit 1',
+        # `env echo` exercises an external exec producing output into a builtin reader.
+        loop_body='"$EXT_ECHO" echo hi | { read -r v; : "$v"; }',
+    ),
+    "pipe_ext_to_ext": BenchmarkCase(
+        setup='CAT=$(command -v cat) && EXT_PRINTF=$(command -v env) || exit 1',
+        loop_body='"$EXT_PRINTF" printf hi | "$CAT" >/dev/null',
+    ),
 }
 
 

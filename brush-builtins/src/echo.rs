@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use brush_core::{ExecutionResult, builtins, escape};
 
 /// Echo text to standard output.
@@ -65,8 +63,20 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for EchoCommand {
             s.push('\n');
         }
 
-        write!(context.stdout(), "{s}")?;
-        context.stdout().flush()?;
+        // Avoid async adapter overhead for non-stream outputs; keep async writes
+        // for Stream (e.g. in-process channel pipes) which cooperate/yield.
+        if let Some(out) = context.params.try_stdout(context.shell) {
+            if matches!(out, brush_core::openfiles::OpenFile::Stream(_)) {
+                out.write_all_async(s.as_bytes()).await?;
+            } else {
+                use std::io::Write;
+                let mut out = out;
+                out.write_all(s.as_bytes())?;
+                out.flush()?;
+            }
+        } else {
+            return Err(std::io::Error::other("standard output not available").into());
+        }
 
         Ok(ExecutionResult::success())
     }

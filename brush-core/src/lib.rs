@@ -4,6 +4,7 @@
 pub mod arithmetic;
 mod braceexpansion;
 pub mod builtins;
+pub mod byte_pipe;
 pub mod callstack;
 pub mod commands;
 pub mod completion;

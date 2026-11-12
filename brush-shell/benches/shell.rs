@@ -50,6 +50,7 @@ mod unix {
     }
 
     /// This function defines core shell benchmarks.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn criterion_benchmark(c: &mut Criterion) {
         // Construct a runtime for us to run async code on.
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -152,6 +153,44 @@ mod unix {
                 || shell.clone(),
                 |s| {
                     rt.block_on(run_one_command(s, "for ((i = 0; i < 10; i++)); do :; done"));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        // Benchmark: pipelines (in-process/builtin stages vs pipe plumbing).
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("pipeline_builtin_2stage", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(
+                        s,
+                        "printf hi | { read -r v; : \"$v\"; } >/dev/null",
+                    ));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("pipeline_builtin_3stage", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(
+                        s,
+                        "printf hi | { read -r v; printf %s \"$v\"; } | { read -r w; : \"$w\"; } >/dev/null",
+                    ));
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+        let shell = rt.block_on(instantiate_shell());
+        c.bench_function("pipeline_builtin_discard", |b| {
+            b.iter_batched_ref(
+                || shell.clone(),
+                |s| {
+                    rt.block_on(run_one_command(s, "printf hi | :"));
                 },
                 criterion::BatchSize::SmallInput,
             );

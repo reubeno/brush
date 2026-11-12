@@ -23,7 +23,7 @@ const DEFAULT_DELIMITER: char = '\n';
 const NUL_DELIMITER: char = '\0';
 
 /// Parse standard input.
-#[derive(winnow_args::Args)]
+#[derive(Clone, winnow_args::Args)]
 #[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct ReadCommand {
     /// Use readline-like input.
@@ -127,7 +127,44 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         let ifs = context.shell.ifs().into_owned();
 
         // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        let read_result = if matches!(input_stream, brush_core::openfiles::OpenFile::Stream(_))
+            && !input_stream.is_terminal()
+            && timeout.is_none()
+        {
+            // Async fast-path for channel pipes: cooperative reads, no spawn_blocking.
+            let delimiter = if self.return_after_n_chars_no_delimiter.is_some() {
+                None
+            } else if let Some(delimiter_str) = &self.delimiter {
+                if delimiter_str.is_empty() {
+                    Some(NUL_DELIMITER)
+                } else {
+                    delimiter_str.chars().next()
+                }
+            } else {
+                Some(DEFAULT_DELIMITER)
+            };
+            let char_limit = self
+                .return_after_n_chars_no_delimiter
+                .or(self.return_after_n_chars);
+            let config = LineReaderConfig {
+                delimiter,
+                char_limit,
+                process_escapes: !self.raw_mode,
+            };
+            self.read_line_async(&input_stream, &config).await?
+        } else if matches!(input_stream, brush_core::openfiles::OpenFile::Stream(_)) {
+            // Stream with timeout/terminal: offload to blocking task; sync
+            // ChannelReader waits use condvar/notify and PolledInput drives
+            // read_async via block_on.
+            let cmd = self.clone();
+            tokio::task::spawn_blocking(move || {
+                cmd.read_line(input_stream, std::io::sink(), timeout)
+            })
+            .await
+            .map_err(std::io::Error::other)??
+        } else {
+            self.read_line(input_stream, context.stderr(), timeout)?
+        };
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -353,8 +390,16 @@ impl InputReader {
     /// Checks if input is immediately available (for `-t 0`). Returns `false` if an error
     /// occurs while checking for available input.
     fn check_input_available(&self) -> bool {
-        brush_core::sys::poll::poll_for_input(&self.input.get_ref().input, Duration::ZERO)
-            .unwrap_or(false)
+        let input = &self.input.get_ref().input;
+        // Streams (e.g. channel pipes) can answer without materializing an fd;
+        // native polling would race the materialization bridge and miss data
+        // still queued in the channel.
+        if let brush_core::openfiles::OpenFile::Stream(stream) = input
+            && let Some(result) = stream.is_readable_now()
+        {
+            return result.unwrap_or(false);
+        }
+        brush_core::sys::poll::poll_for_input(input, Duration::ZERO).unwrap_or(false)
     }
 
     /// Reads the next input event, handling timeout and control characters.
@@ -415,6 +460,13 @@ impl Read for PolledInput {
                 || !brush_core::sys::poll::poll_for_input(&self.input, remaining)?
             {
                 return Err(std::io::ErrorKind::TimedOut.into());
+            }
+        }
+        // Drive Stream (channel pipe) reads through the async path to avoid
+        // sync condvar waits; `read_async` is cooperative for channels.
+        if matches!(self.input, brush_core::openfiles::OpenFile::Stream(_)) {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                return handle.block_on(self.input.read_async(buf));
             }
         }
         self.input.read(buf)
@@ -548,6 +600,177 @@ fn read_line_with_reader(
 }
 
 impl ReadCommand {
+    /// Async fast-path for reading a line from a non-terminal stream (e.g. channel pipe).
+    /// Avoids `spawn_blocking`+`block_on` overhead. Uses chunked reads with pushback
+    /// (when supported) to avoid per-byte overhead while never consuming past the line.
+    /// Falls back to 1-byte reads on streams that cannot unread.
+    #[allow(clippy::too_many_lines)]
+    async fn read_line_async(
+        &self,
+        input: &brush_core::openfiles::OpenFile,
+        config: &LineReaderConfig,
+    ) -> Result<ReadResult, brush_core::Error> {
+        let mut line = String::new();
+        let mut output_chars = 0usize;
+        let mut pending_backslash = false;
+
+        let chunked = input.can_unread();
+        let read_size = if chunked { 1024 } else { 1 };
+        let mut stash: Vec<u8> = Vec::new();
+        let mut pos: usize = 0;
+        let mut eof = false;
+
+        loop {
+            // Decode next char (UTF-8), reading bytes as needed. May consume multiple
+            // bytes from stash; on EOF returns None.
+            let ch = loop {
+                // Try to decode from available stash bytes.
+                if pos < stash.len() {
+                    let available = &stash[pos..];
+                    match std::str::from_utf8(available) {
+                        Ok(s) => {
+                            if let Some(c) = s.chars().next() {
+                                pos += c.len_utf8();
+                                break Some(c);
+                            }
+                        }
+                        Err(e) => {
+                            let valid = e.valid_up_to();
+                            if valid > 0 {
+                                let s = std::str::from_utf8(&available[..valid]).unwrap_or("");
+                                if let Some(c) = s.chars().next() {
+                                    pos += c.len_utf8();
+                                    break Some(c);
+                                }
+                            } else if e.error_len().is_some() {
+                                // Invalid leading byte: emit as latin-1 (matches utf8_chars behavior).
+                                let b = available[0];
+                                pos += 1;
+                                break Some(b as char);
+                            } else if eof {
+                                // Incomplete sequence at EOF: emit raw byte.
+                                let b = available[0];
+                                pos += 1;
+                                break Some(b as char);
+                            }
+                            // else incomplete and not EOF: need more bytes
+                        }
+                    }
+                }
+
+                if eof && pos >= stash.len() {
+                    break None;
+                }
+                // Refill: preserve any unconsumed tail (incomplete UTF-8) by keeping it.
+                if pos > 0 && pos < stash.len() {
+                    stash.copy_within(pos.., 0);
+                    let rem = stash.len() - pos;
+                    stash.truncate(rem);
+                    pos = 0;
+                } else if pos >= stash.len() {
+                    stash.clear();
+                    pos = 0;
+                }
+                // Read more directly into stash to avoid a per-refill temp buffer.
+                let start = stash.len();
+                stash.resize(start + read_size, 0);
+                let n = input.read_async(&mut stash[start..]).await?;
+                stash.truncate(start + n);
+                if n == 0 {
+                    eof = true;
+                }
+            };
+
+            let Some(ch) = ch else {
+                // EOF: discard pending backslash (bash behavior).
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
+                return Ok(ReadResult::Eof(if line.is_empty() {
+                    None
+                } else {
+                    Some(line)
+                }));
+            };
+
+            // Control characters map to events before escape processing, mirroring
+            // `InputReader::read_event` on the sync path (pipe-type-independent).
+            if ch == CTRL_C {
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
+                return Ok(ReadResult::Interrupted);
+            }
+            if ch == CTRL_D {
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
+                // At line start = EOF, mid-input = flush current input.
+                // Bash discards pending backslash here too.
+                return Ok(if line.is_empty() && !pending_backslash {
+                    ReadResult::Eof(None)
+                } else {
+                    ReadResult::Line(line)
+                });
+            }
+
+            let mut finished: Option<ReadResult> = None;
+            // Apply line assembly (mirrors read_line_with_reader Char handling).
+            if config.process_escapes {
+                if pending_backslash {
+                    pending_backslash = false;
+                    if let Some(delim) = config.delimiter
+                        && ch == delim
+                    {
+                        continue;
+                    }
+                    line.push(ch);
+                    output_chars += 1;
+                    if let Some(limit) = config.char_limit
+                        && output_chars >= limit
+                    {
+                        finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+                    }
+                } else if ch == BACKSLASH {
+                    pending_backslash = true;
+                } else if let Some(delim) = config.delimiter
+                    && ch == delim
+                {
+                    finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+                } else if !ch.is_ascii_control() || ch.is_ascii_whitespace() {
+                    line.push(ch);
+                    output_chars += 1;
+                    if let Some(limit) = config.char_limit
+                        && output_chars >= limit
+                    {
+                        finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+                    }
+                }
+            } else if let Some(delim) = config.delimiter
+                && ch == delim
+            {
+                finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+            } else if ch.is_ascii_control() && !ch.is_ascii_whitespace() {
+                // ignore
+            } else {
+                line.push(ch);
+                output_chars += 1;
+                if let Some(limit) = config.char_limit
+                    && output_chars >= limit
+                {
+                    finished = Some(ReadResult::Line(std::mem::take(&mut line)));
+                }
+            }
+
+            if let Some(result) = finished {
+                if chunked && pos < stash.len() {
+                    input.unread(&stash[pos..])?;
+                }
+                return Ok(result);
+            }
+        }
+    }
+
     /// Reads a line of input, optionally with a timeout.
     ///
     /// Handles backslash escape processing:
@@ -560,7 +783,11 @@ impl ReadCommand {
         mut stderr_file: impl std::io::Write,
         timeout: Option<Duration>,
     ) -> Result<ReadResult, brush_core::Error> {
-        let term_mode = self.setup_terminal_settings(&input_file)?;
+        let term_mode = if input_file.is_terminal() {
+            self.setup_terminal_settings(&input_file)?
+        } else {
+            None
+        };
 
         // Display prompt on stderr, but only if input is from a terminal (per bash behavior).
         if let Some(prompt) = &self.prompt {
