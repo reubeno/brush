@@ -357,6 +357,8 @@ cases:
   - name: "Inherited variable that is not valid UTF-8 is altered with a warning"
     incompatible_platforms: ["windows", "wasi"]
     stdin: |
-      sh -c 'V=$(printf "a\200b") exec "$0" -c "printf %s \"\$V\" | hexdump -C"' "$(command -v "$0")" 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
+      # (A literal escape byte: BSD sed has no \x1b.)
+      esc=$(printf '\033')
+      sh -c 'V=$(printf "a\200b") exec "$0" -c "printf %s \"\$V\" | hexdump -C"' "$(command -v "$0")" 2>&1 | sed "s/${esc}\[[0-9;]*m//g"
     expected_exit_code: 0
     expected_stdout: " WARN environment variable V is not valid Unicode; altering it\n00000000  61 ef bf bd 62                                    |a...b|\n00000005\n"
