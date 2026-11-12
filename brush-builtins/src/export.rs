@@ -184,7 +184,9 @@ impl ExportCommand {
             },
             EnvironmentLookup::Anywhere,
             EnvironmentScope::Global,
-        )
+        )?;
+
+        Ok(())
     }
 }
 

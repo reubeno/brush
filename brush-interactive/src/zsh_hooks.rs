@@ -269,7 +269,8 @@ fn assign_global<SE: brush_core::ShellExtensions>(
         |_| Ok(()),
         brush_core::env::EnvironmentLookup::Anywhere,
         brush_core::env::EnvironmentScope::Global,
-    )
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
