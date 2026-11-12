@@ -329,3 +329,34 @@ cases:
     expected_stdout: "status=0\nbrush\n"
     # Runs brush as a child process, which WASI 0.2 cannot do.
     incompatible_platforms: ["wasi"]
+
+  # (sh makes the bytes: brush itself cannot hold one that isn't UTF-8.)
+  - name: "Positional argument that is not valid UTF-8 is refused"
+    incompatible_platforms: ["windows", "wasi"]
+    stdin: |
+      sh -c 'exec "$0" -c "echo ran" "$0" "$(printf "a\200b")"' "$(command -v "$0")" 2>&1
+      echo "rc=$?"
+    expected_exit_code: 0
+    expected_stdout: "brush: argument is not valid UTF-8: a�b\nrc=2\n"
+
+  - name: "Command string that is not valid UTF-8 is refused"
+    incompatible_platforms: ["windows", "wasi"]
+    stdin: |
+      sh -c 'exec "$0" -c "echo ran $(printf "a\200b")"' "$(command -v "$0")" 2>&1
+      echo "rc=$?"
+    expected_exit_code: 0
+    expected_stdout: "brush: argument is not valid UTF-8: echo ran a�b\nrc=2\n"
+
+  - name: "Script path that is not valid UTF-8 is refused"
+    incompatible_platforms: ["windows", "wasi"]
+    stdin: |
+      sh -c 'name=$(printf "s\200.sh"); echo "echo ran" > "$name"; "$0" "$name"; echo "rc=$?"; rm "$name"' "$(command -v "$0")" 2>&1
+    expected_exit_code: 0
+    expected_stdout: "brush: argument is not valid UTF-8: s�.sh\nrc=2\n"
+
+  - name: "Inherited variable that is not valid UTF-8 is altered with a warning"
+    incompatible_platforms: ["windows", "wasi"]
+    stdin: |
+      sh -c 'V=$(printf "a\200b") exec "$0" -c "printf %s \"\$V\" | hexdump -C"' "$(command -v "$0")" 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
+    expected_exit_code: 0
+    expected_stdout: " WARN environment variable V is not valid Unicode; altering it\n00000000  61 ef bf bd 62                                    |a...b|\n00000005\n"

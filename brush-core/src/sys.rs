@@ -63,7 +63,8 @@ pub(crate) fn lossy_host_env_vars() -> impl Iterator<Item = (String, String)> {
                 value.to_string_lossy().into_owned()
             }
         };
-        if name.contains(char::REPLACEMENT_CHARACTER) {
+        // (Owned only when the conversion had to replace something.)
+        if matches!(name, std::borrow::Cow::Owned(_)) {
             tracing::warn!("environment variable name {name} is not valid Unicode; altering it");
         }
         (name.into_owned(), value)
