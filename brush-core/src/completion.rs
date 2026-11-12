@@ -343,7 +343,7 @@ struct InProgressScope<'a, SE: extensions::ShellExtensions> {
 }
 
 impl<'a, SE: extensions::ShellExtensions> InProgressScope<'a, SE> {
-    const fn start(shell: &'a mut Shell<SE>, in_progress: InProgressCompletion) -> Self {
+    fn start(shell: &'a mut Shell<SE>, in_progress: InProgressCompletion) -> Self {
         let prev = shell.in_progress_completion_mut().replace(in_progress);
         Self { shell, prev }
     }

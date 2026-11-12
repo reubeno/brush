@@ -10,10 +10,10 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     /// * `contents` - The contents of the edit buffer.
     /// * `cursor` - The cursor position in the edit buffer.
     pub fn set_edit_buffer(&mut self, contents: String, cursor: usize) -> Result<(), error::Error> {
-        self.env
+        std::sync::Arc::make_mut(&mut self.env)
             .set_global("READLINE_LINE", ShellVariable::new(contents))?;
 
-        self.env
+        std::sync::Arc::make_mut(&mut self.env)
             .set_global("READLINE_POINT", ShellVariable::new(cursor.to_string()))?;
 
         Ok(())
@@ -22,13 +22,11 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     /// Returns the contents of the shell's edit buffer, if any. The buffer
     /// state is cleared from the shell.
     pub fn pop_edit_buffer(&mut self) -> Result<Option<(String, usize)>, error::Error> {
-        let line = self
-            .env
+        let line = std::sync::Arc::make_mut(&mut self.env)
             .unset("READLINE_LINE")?
             .map(|line| line.value().to_cow_str(self).to_string());
 
-        let point = self
-            .env
+        let point = std::sync::Arc::make_mut(&mut self.env)
             .unset("READLINE_POINT")?
             .and_then(|point| point.value().to_cow_str(self).parse::<usize>().ok())
             .unwrap_or(0);
