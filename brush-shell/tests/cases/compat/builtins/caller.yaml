@@ -62,6 +62,17 @@ cases:
     stdin: |
       caller 100
 
+  - name: "caller with a frame number out of range"
+    ignore_stderr: true
+    stdin: |
+      f() {
+        caller 18446744073709551615; echo "rc=$?"
+        caller 9223372036854775808; echo "rc=$?"
+        caller 9223372036854775807; echo "rc=$?"
+        caller -- -1; echo "rc=$?"
+      }
+      f
+
   - name: "caller not in function"
     stdin: |
       caller
