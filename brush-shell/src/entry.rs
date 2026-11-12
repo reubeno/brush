@@ -11,6 +11,7 @@ use crate::productinfo;
 use brush_builtins::ShellBuilderExt as _;
 #[cfg(feature = "experimental-builtins")]
 use brush_experimental_builtins::ShellBuilderExt as _;
+use std::ffi::OsString;
 use std::io::IsTerminal;
 use std::io::Write;
 use std::sync::LazyLock;
@@ -186,7 +187,19 @@ pub fn run() {
     //
     // Parse args.
     //
-    let args: Vec<_> = std::env::args().collect();
+    // An argument that isn't valid UTF-8 can't be represented faithfully; refuse it rather
+    // than act on an altered one. (`std::env::args()` would panic.)
+    let args: Vec<String> = match std::env::args_os().map(OsString::into_string).collect() {
+        Ok(args) => args,
+        Err(arg) => {
+            let _ = writeln!(
+                std::io::stderr(),
+                "brush: argument is not valid UTF-8: {}",
+                arg.display()
+            );
+            std::process::exit(2);
+        }
+    };
 
     let parsed_args = match CommandLineArgs::parse_shell_args(args.iter().cloned()) {
         Ok(parsed_args) => parsed_args,
