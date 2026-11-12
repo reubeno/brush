@@ -1082,11 +1082,11 @@ fn get_key_for_indexed_array(
     }
 
     // A negative index is relative to one greater than the maximum index (not the element
-    // count, which differs for sparse arrays).
-    let end = values
+    // count, which differs for sparse arrays), so -1 is the maximum index itself. Counting
+    // back from the maximum keeps a key at u64::MAX reachable.
+    values
         .last_key_value()
-        .map_or(0, |(k, _)| k.saturating_add(1));
-    end.checked_sub(index_value.unsigned_abs())
+        .and_then(|(max, _)| max.checked_sub(index_value.unsigned_abs() - 1))
         .ok_or_else(|| error::ErrorKind::ArrayIndexOutOfRange(index_str.to_owned()).into())
 }
 
@@ -1137,6 +1137,16 @@ mod tests {
         assert_eq!(
             get_key_for_indexed_array(&values, "-9223372036854775807").ok(),
             Some(2)
+        );
+
+        let values = BTreeMap::from([(u64::MAX, String::new())]);
+        assert_eq!(
+            get_key_for_indexed_array(&values, "-1").ok(),
+            Some(u64::MAX)
+        );
+        assert_eq!(
+            get_key_for_indexed_array(&values, "-9223372036854775808").ok(),
+            Some(1_u64 << 63)
         );
     }
 }
