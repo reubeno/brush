@@ -238,13 +238,18 @@ impl ResourceDescription {
         }
     }
 
+    /// The limit `v` in the resource's unit, if it fits.
+    const fn scaled(&self, v: u64) -> Option<u64> {
+        v.checked_mul(self.unit.scale())
+    }
+
     fn set(&self, set_hard: bool, value: &LimitValue) -> std::io::Result<()> {
         let (soft, hard) = self.resource.get()?;
         let value = match value {
             LimitValue::Soft => soft,
             LimitValue::Hard => hard,
             LimitValue::Unlimited => rlimit::INFINITY,
-            LimitValue::Value(v) => *v * self.unit.scale(),
+            LimitValue::Value(v) => self.scaled(*v).ok_or(ErrorKind::InvalidInput)?,
             LimitValue::Unset | LimitValue::Invalid(_) => return Ok(()),
         };
 
@@ -545,6 +550,17 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ULimitCommand {
                 writeln!(
                     context.stderr(),
                     "{}: {value}: invalid number",
+                    context.command_name
+                )?;
+                return Ok(ExecutionResult::general_error());
+            }
+            // As in bash, a limit out of range stops here; the ones set before it stay set.
+            if let LimitValue::Value(v) = value
+                && resource.scaled(v).is_none()
+            {
+                writeln!(
+                    context.stderr(),
+                    "{}: {v}: limit out of range",
                     context.command_name
                 )?;
                 return Ok(ExecutionResult::general_error());
