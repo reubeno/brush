@@ -1,6 +1,6 @@
 //! File descriptor polling utilities for timeout support.
 
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsRawFd as _, BorrowedFd};
 use std::time::{Duration, Instant};
 
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
@@ -28,8 +28,9 @@ pub fn poll_for_input(file: &OpenFile, timeout: Duration) -> std::io::Result<boo
         .try_borrow_as_fd()
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-    // Regular files are always ready - timeout has no effect (bash behavior).
-    if is_regular_file(fd) {
+    // Regular files are always ready - timeout has no effect (bash behavior). A pipe
+    // never is one, so it's spared the check.
+    if !matches!(file, OpenFile::PipeReader(_)) && is_regular_file(fd) {
         return Ok(true);
     }
 
@@ -42,6 +43,40 @@ pub fn poll_for_input(file: &OpenFile, timeout: Duration) -> std::io::Result<boo
     };
 
     poll_fd_for_input(fd, deadline)
+}
+
+/// Returns how many bytes can be read from `file` right away, without blocking, or
+/// `None` if there's no telling (e.g., `file` has no descriptor, or its kind doesn't
+/// say).
+///
+/// A count of zero means either that nothing has been written yet or that the input
+/// has ended; [`poll_for_input`] tells the two apart.
+///
+/// # Arguments
+///
+/// * `file` - The open file to ask.
+///
+/// # Errors
+///
+/// Returns an error if asking fails for any other reason.
+pub fn bytes_ready(file: &OpenFile) -> std::io::Result<Option<usize>> {
+    let Ok(fd) = file.try_borrow_as_fd() else {
+        return Ok(None);
+    };
+
+    let mut count: libc::c_int = 0;
+    // SAFETY: `FIONREAD` stores a `c_int` through its argument, which points to one.
+    let result = unsafe { libc::ioctl(fd.as_raw_fd(), libc::FIONREAD, &raw mut count) };
+    if result == -1 {
+        let err = std::io::Error::last_os_error();
+        // Not every kind of file answers.
+        return match err.raw_os_error() {
+            Some(libc::ENOTTY | libc::EINVAL) => Ok(None),
+            _ => Err(err),
+        };
+    }
+
+    Ok(usize::try_from(count).ok())
 }
 
 /// Polls a file descriptor for input readability with a deadline.
@@ -79,9 +114,14 @@ fn poll_fd_for_input(fd: BorrowedFd<'_>, deadline: Option<Instant>) -> std::io::
                 let revents = poll_fds[0].revents().unwrap_or(PollFlags::empty());
                 // POLLIN means data available. POLLHUP/POLLERR without POLLIN means
                 // EOF/error - return true so caller reads and gets the proper result.
-                return Ok(
-                    revents.intersects(PollFlags::POLLIN | PollFlags::POLLHUP | PollFlags::POLLERR)
-                );
+                // So does POLLNVAL: macOS can't poll devices such as `/dev/null`, and
+                // a read is what tells EOF or a bad descriptor apart there too.
+                return Ok(revents.intersects(
+                    PollFlags::POLLIN
+                        | PollFlags::POLLHUP
+                        | PollFlags::POLLERR
+                        | PollFlags::POLLNVAL,
+                ));
             }
             Err(nix::errno::Errno::EINTR) => (), // Retry on signal with recalculated timeout.
             Err(e) => return Err(std::io::Error::from_raw_os_error(e as i32)),
