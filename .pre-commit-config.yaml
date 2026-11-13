@@ -136,7 +136,7 @@ repos:
   # .github/workflows/workflow-checks.yaml and is not redundant with it.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f # frozen: v1.31.1
+    rev: 06a39750ec31860bb44f2acf67182c40016cd1e7 # frozen: v1.32.0
     hooks:
       - id: zizmor
         alias: workflows
@@ -183,7 +183,7 @@ repos:
   # hook would avoid it, but Dependabot skips those.
   # ---------------------------------------------------------------------------
   - repo: https://github.com/boidolr/ast-grep-pre-commit
-    rev: 13126a89e67880b0dac82cf40350abd2cfedd458 # frozen: 0.51.0
+    rev: 53cebc379f5d966fcc60b3fbf61e0dbbcaa73030 # frozen: 0.51.1
     hooks:
       - id: ast-grep
         alias: structure
