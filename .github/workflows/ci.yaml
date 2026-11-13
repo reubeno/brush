@@ -119,15 +119,16 @@ jobs:
             binary_name: "brush.wasm"
             extra_build_args: ""
             toolchain: "nightly"
-          # Build for x86_64/windows target on x86_64/linux host.
-          # cross 0.2.5's windows-gnu container exits 1, without an error, on ubuntu-26.04.
-          - host: "ubuntu-24.04"
+          # Build for x86_64/windows target on x86_64/linux host, with the host's
+          # MinGW-w64: the one in cross 0.2.5's windows-gnu container is too old
+          # for Rust 1.100+, which links against its libsynchronization.
+          - host: "ubuntu-26.04"
             target: "x86_64-pc-windows-gnu"
-            cross_command: "cross"
-            cross_tool_to_install: "cross"
+            cross_command: "cargo"
+            cross_tool_to_install: ""
             os: "windows"
             arch: "x86_64"
-            required_tools: ""
+            required_tools: "gcc-mingw-w64-x86-64"
             binary_name: "brush.exe"
             extra_build_args: ""
           # Build for x86_64/android target on x86_64/linux host.
@@ -241,7 +242,11 @@ jobs:
         if: ${{ matrix.target == '' }}
         env:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
+        # Keep cargo's JSON messages so later steps can find its outputs; the
+        # target dir's layout isn't stable across cargo versions.
+        run: >-
+          cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
+          --message-format=json-render-diagnostics > cargo-build-messages.json
 
       - name: "${{ matrix.check_only && 'Check' || 'Build' }} (cross)"
         if: ${{ matrix.target != '' }}
@@ -261,14 +266,20 @@ jobs:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
+      - name: "Collect integration test binaries"
+        if: ${{ matrix.target == '' }}
+        run: >-
+          cargo xtask test collect-binaries
+          --cargo-messages cargo-build-messages.json
+          --output-dir integration-tests
+
       - name: "Upload integration test binaries"
         if: ${{ matrix.target == '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-tests-${{ matrix.arch }}-${{ matrix.os }}
-          path: |
-            target/${{ matrix.target }}/release/deps/brush_*_tests-*
-            !**/*.d
+          path: integration-tests/
+          if-no-files-found: error
 
   # Test functional correctness
   test:

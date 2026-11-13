@@ -54,6 +54,8 @@ pub fn find_workspace_root() -> Result<PathBuf> {
 #[derive(serde::Deserialize)]
 struct Metadata {
     target_directory: PathBuf,
+    /// Absent before cargo 1.91, which had no separate build dir.
+    build_directory: Option<PathBuf>,
     packages: Vec<Package>,
 }
 
@@ -77,6 +79,15 @@ fn cargo_metadata() -> Result<Metadata> {
 /// `build.target-dir` or the default puts it.
 pub fn find_target_dir() -> Result<PathBuf> {
     Ok(cargo_metadata()?.target_directory)
+}
+
+/// Find the directory cargo puts intermediate artifacts (including test
+/// executables) in. Defaults to the target dir; `build.build-dir` moves it.
+pub fn find_build_dir() -> Result<PathBuf> {
+    let metadata = cargo_metadata()?;
+    Ok(metadata
+        .build_directory
+        .unwrap_or(metadata.target_directory))
 }
 
 /// Find the version of the workspace's package `name`.
@@ -154,6 +165,13 @@ mod tests {
         // running executable's path has its symlinks resolved.)
         let exe = std::env::current_exe().unwrap().canonicalize().unwrap();
         assert!(exe.starts_with(find_target_dir().unwrap().canonicalize().unwrap()));
+    }
+
+    #[test]
+    fn test_find_build_dir() {
+        // This test executable is itself one of the build dir's artifacts.
+        let exe = std::env::current_exe().unwrap().canonicalize().unwrap();
+        assert!(exe.starts_with(find_build_dir().unwrap().canonicalize().unwrap()));
     }
 
     #[test]

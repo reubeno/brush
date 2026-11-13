@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use xshell::{Shell, cmd};
 
-use crate::common::{BuildProfile, find_target_dir};
+use crate::common::{BuildProfile, find_build_dir, find_target_dir};
 
 /// Integration test binaries that are excluded from unit tests.
 /// These tests execute the brush binary and are slower.
@@ -102,6 +102,27 @@ pub enum TestSubcommand {
     /// Run containerized end-to-end tests against real applications.
     #[cfg(unix)]
     E2e(crate::e2e::E2eArgs),
+
+    /// Copy the `brush-*-tests` binaries from an earlier cargo build into a
+    /// directory, so they can be shipped to and run on other machines.
+    ///
+    /// Reads the JSON messages that build emitted (`--message-format=json`)
+    /// to learn where cargo put each binary; the target directory's layout
+    /// isn't stable across cargo versions.
+    CollectBinaries(CollectBinariesArgs),
+}
+
+/// Arguments for collecting test binaries.
+#[derive(Args, Clone)]
+pub struct CollectBinariesArgs {
+    /// File holding the output of a `cargo build --message-format=json` run.
+    #[clap(long)]
+    pub cargo_messages: PathBuf,
+
+    /// Directory to copy the binaries into, named after their test targets.
+    /// Created if it doesn't exist.
+    #[clap(long)]
+    pub output_dir: PathBuf,
 }
 
 /// Arguments for unit tests.
@@ -170,7 +191,81 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
         }
         #[cfg(unix)]
         TestSubcommand::E2e(args) => crate::e2e::run(&cmd.binary_args, args, verbose),
+        TestSubcommand::CollectBinaries(args) => collect_test_binaries(args),
     }
+}
+
+/// The subset of a cargo JSON message that [`find_test_binaries`] reads.
+#[derive(serde::Deserialize)]
+struct CargoMessage {
+    reason: String,
+    target: Option<CargoTarget>,
+    executable: Option<PathBuf>,
+}
+
+#[derive(serde::Deserialize)]
+struct CargoTarget {
+    name: String,
+    kind: Vec<String>,
+}
+
+/// Returns `(target name, executable path)` for each `brush-*-tests` test
+/// target in a stream of cargo JSON messages.
+fn find_test_binaries(messages: &str) -> Result<Vec<(String, PathBuf)>> {
+    let mut found = vec![];
+    for line in messages.lines() {
+        let msg: CargoMessage =
+            serde_json::from_str(line).with_context(|| format!("bad cargo message: {line}"))?;
+        if msg.reason != "compiler-artifact" {
+            continue;
+        }
+        if let (Some(target), Some(exe)) = (msg.target, msg.executable) {
+            if target.kind == ["test"]
+                && target.name.starts_with("brush-")
+                && target.name.ends_with("-tests")
+            {
+                found.push((target.name, exe));
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Copy the test binaries named in a cargo build's JSON messages into a directory.
+fn collect_test_binaries(args: &CollectBinariesArgs) -> Result<()> {
+    let messages = std::fs::read_to_string(&args.cargo_messages)
+        .with_context(|| format!("failed to read {}", args.cargo_messages.display()))?;
+    let binaries = find_test_binaries(&messages)?;
+    if binaries.is_empty() {
+        anyhow::bail!(
+            "no brush-*-tests binaries in {}",
+            args.cargo_messages.display()
+        );
+    }
+
+    // Only copy files from cargo's build dir, so a stray or tampered message
+    // can't make this ship arbitrary files.
+    let build_dir = find_build_dir()?.canonicalize()?;
+    std::fs::create_dir_all(&args.output_dir)?;
+    for (name, exe) in binaries {
+        let exe = exe
+            .canonicalize()
+            .with_context(|| format!("failed to resolve {}", exe.display()))?;
+        if !exe.is_file() || !exe.starts_with(&build_dir) {
+            anyhow::bail!(
+                "{} is not a file under the build dir ({})",
+                exe.display(),
+                build_dir.display()
+            );
+        }
+
+        let dest = args
+            .output_dir
+            .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        eprintln!("{} -> {}", exe.display(), dest.display());
+        std::fs::copy(&exe, &dest).with_context(|| format!("failed to copy {}", exe.display()))?;
+    }
+    Ok(())
 }
 
 /// Run unit tests (excludes integration test binaries).
@@ -542,4 +637,27 @@ fn make_profraw_files_owner_accessible(dir: &Path) -> Result<()> {
 )]
 fn make_profraw_files_owner_accessible(_dir: &Path) -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_test_binaries() {
+        let messages = [
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-compat-tests","kind":["test"]},"executable":"/t/a"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"pty_startup_tests","kind":["test"]},"executable":"/t/b"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-shell","kind":["bin"]},"executable":"/t/c"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-core","kind":["lib"]},"executable":null}"#,
+            r#"{"reason":"build-finished","success":true}"#,
+        ]
+        .join("\n");
+
+        assert_eq!(
+            find_test_binaries(&messages).unwrap(),
+            [("brush-compat-tests".to_owned(), PathBuf::from("/t/a"))]
+        );
+        assert!(find_test_binaries("not json").is_err());
+    }
 }

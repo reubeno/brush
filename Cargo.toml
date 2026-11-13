@@ -72,6 +72,8 @@ bool_to_int_with_if = "allow"
 cognitive_complexity = "allow"
 collapsible_else_if = "allow"
 collapsible_if = "allow"
+# The suggested replacement, the never type, isn't available at our MSRV.
+empty_enums = "allow"
 if_not_else = "allow"
 if_same_then_else = "allow"
 match_same_arms = "allow"
