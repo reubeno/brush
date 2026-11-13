@@ -169,6 +169,27 @@ cases:
       D=~+99999999999999999999
       echo "D: $D"
 
+  - name: "Tilde expansion: unexpanded dir stack index keeps its digits"
+    stdin: |
+      test_root=$(pwd)
+      echo ~01 ~+01 ~-01
+
+      mkdir a
+      pushd a >/dev/null 2>&1
+
+      echo ~-007 ~+09 ~09
+      D=~+02
+      echo "D: $D"
+      D=~-002
+      echo "D: $D"
+
+      D=~00
+      echo "~00: ${D//${test_root}/TEST_ROOT}"
+      D=~01
+      echo "~01: ${D//${test_root}/TEST_ROOT}"
+      D=~+001
+      echo "~+001: ${D//${test_root}/TEST_ROOT}"
+
   - name: "Tilde expansion in list"
     env:
       HOME: .
