@@ -16,6 +16,11 @@ pub struct Error {
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
     fatal: bool,
+
+    /// Whether or not the error escaped the body of a shell function. Such an
+    /// error abandons the command that called the function, as it would if it
+    /// had happened in that command directly.
+    from_function_body: bool,
 }
 
 /// Monolithic error type for the shell
@@ -406,6 +411,7 @@ where
         Self {
             kind: Box::new(convertible_to_kind.into()),
             fatal: false,
+            from_function_body: false,
         }
     }
 }
@@ -421,6 +427,18 @@ impl Error {
     /// Returns whether or not this error is fatal.
     pub const fn is_fatal(&self) -> bool {
         self.fatal
+    }
+
+    /// Marks this error as having escaped the body of a shell function.
+    #[must_use]
+    pub(crate) const fn into_from_function_body(mut self) -> Self {
+        self.from_function_body = true;
+        self
+    }
+
+    /// Returns whether or not this error escaped the body of a shell function.
+    pub(crate) const fn is_from_function_body(&self) -> bool {
+        self.from_function_body
     }
 
     /// Returns a reference to the error kind.
