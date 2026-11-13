@@ -527,3 +527,18 @@ cases:
       echo "status: $?"
       declare -p b 2>/dev/null
       echo "status: $?"
+
+  - name: "Braces in a subscript assigned by a builtin"
+    stdin: |
+      declare -A m
+      printf -v "m[{a,b}]" 1
+      m[{e,f}]=3
+      for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort
+
+  - name: "read into an array element"
+    known_failure: true # TODO(builtins): read ignores a subscripted name
+    stdin: |
+      declare -A m
+      read -r "m[k]" <<< 1
+      read -r "m[{c,d}]" <<< 2
+      for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort

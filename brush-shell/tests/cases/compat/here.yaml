@@ -740,3 +740,193 @@ cases:
       body
       EOF)
       echo "[$x]"
+
+  - name: "Quotes in parameter expansion words in here doc"
+    stdin: |
+      x=1
+      y='a  b'
+      cat <<EOF
+      ${x+"q"} ${u-"$y"} ${u-\$y} ${u-a\"b} ${u-a\}b}
+      ${u:-"it's"} ${u:-"'"} ${u:-"a"\"} ${u:-a "b' c"} ${u:-"don't" stop}
+      ${y/a/'z'} ${y/a/"z"} ${y#'a'} ${y%"b"}| ${y//" "/_}
+      ${u:-~} ${u:-~/x} ${u:-a:~} ${u:-*} ${u:-$(echo 'c  d')}
+      EOF
+
+  - name: "Single quotes in parameter expansion words in here doc"
+    stdin: |
+      x=1
+      y='a  b'
+      cat <<EOF
+      ${x+'q'} ${u-'$y'} ${u-a\'b} ${u-'a"b'} ${u:-'"'}
+      ${u:-'a'"b"'c'} ${u:-'$(echo hi)'} ${u:-"it's"} ${u:='q'} $u
+      EOF
+
+  - name: "Backslashes in parameter expansion words in here doc"
+    stdin: |
+      x=1
+      cat <<EOF
+      ${u:-a\zb} ${u:-\z} ${u:-a\ b}| ${u:-\~} ${u:-a\*b} ${u:-\'} ${u:-\{a,b\}}
+      ${u:-"a\zb"} ${u:-"a\"b"} ${u:-"a\}b"} ${u:-"\'"} ${u:-a\\zb} ${u:-\\} ${u:-"\\"}
+      ${x:+\n} ${x:+\w} ${x:+\101} ${x:+\[$x\]}
+      EOF
+      cat <<EOF
+      ${u=a\zb} $u
+      EOF
+
+  - name: "Quotes and backslashes in an error message word in here doc"
+    stdin: |
+      # (The message's prefix differs between shells.)
+      (cat <<EOF
+      ${u:?'msg' "q" a\zb}
+      EOF
+      ) 2>&1 | sed 's/^.*: //'
+
+  - name: "Line continuations in parameter expansion words in here doc"
+    stdin: |
+      x=1
+      cat <<EOF
+      ${x:+a\
+      b} ${x:+"c\
+      d"}
+      EOF
+
+  - name: "Tildes in parameter expansion words in here doc"
+    stdin: |
+      HOME=/home/user
+      h=$HOME/foo
+      y='a  b'
+      cat <<EOF
+      ${h#~} ${h/~/T} ${h//~/T} ${h/#~/T} ${y/a/~} ${y/a/~/x} ${h/#$HOME/~}
+      ${u:-~} ${u:+~}| ${y:+~} ${y:+~/x} ${y/a/"~"} ${y/a/\~}
+      ${u:=~} $u
+      EOF
+
+  - name: "Parameter expansions nested in patterns and words in here doc"
+    stdin: |
+      HOME=/home/user
+      h=$HOME/foo
+      y='a  b'
+      cat <<EOF
+      ${y/a/${u:-'q'}} ${y#${u:-'a'}} ${y/a/${u:-"z  z"}} ${y/a/${u:-\z}} ${y/a/${u:-~}}
+      ${u:-${y/a/'z'}} ${u:-${y/a/"z"}} ${u:-${y#'a'}} ${u:-${h#~}} ${u:-${y/a/~}}
+      ${u:-"${u:-'q'}"} ${u:-${u:-'q'}} ${y:+${u:-${u:-'deep'}}} ${u:-${y:+"it's"}}
+      ${u:-${y/a/${u:-'q'}}} ${u:-${y#${u:-'a'}}} ${u:-${y/a/${u:-~}}} ${y:+${y/a/${u:-\z}}}
+      ${u:-"${y/a/${u:-'q'}}"} ${y/a/"${u:-'q'}"} ${u:=${y/a/${u:-'q'}}} $u
+      EOF
+
+  - name: "Quoted words in array and positional parameter expansions in here doc"
+    stdin: |
+      set -- 'p  q' r
+      arr=('m  n' o)
+      cat <<EOF
+      [${arr[@]/m/'M'}] [${arr[@]/m/"M  M"}] [${arr[@]#'m'}] [${@/p/'P'}]
+      [${@:+"q  q"}] [${@:+'q  q'}] [${arr[@]:+'q'}] [${arr[5]:-'q'}] [${9:-"it's"}]
+      [${arr[@]:+${arr[@]/m/${u:-"Q"'q'}}}] [${u:-${arr[@]/m/'M'}}] [${u:-"${arr[@]}"}]
+      EOF
+
+  - name: "Parameter expansion words in arithmetic in here doc"
+    known_failure: true # bash reads the word as double-quoted text, so its quotes reach the arithmetic and fail it; brush removes them
+    stdin: |
+      arr=(m n o)
+      y=abc
+      (cat <<EOF
+      $(( ${u:-'3'} + 1 ))
+      EOF
+      ) 2>/dev/null
+      echo "rc=$?"
+      (cat <<EOF
+      ${arr[${u:-'1'}]} ${y:${u:-'1'}}
+      EOF
+      ) 2>/dev/null
+      echo "rc=$?"
+
+  - name: "Malformed parameter expansions in here doc"
+    known_failure: true # bash reports one it can't parse and doesn't run the command; brush shows it as written
+    stdin: |
+      x=XVAL
+      (cat <<EOF
+      ${bad name} $x
+      EOF
+      ) 2>/dev/null
+      echo "rc=$?"
+      (cat <<EOF
+      ${x!} $x
+      EOF
+      ) 2>/dev/null
+      echo "rc=$?"
+
+  - name: "ANSI-C quotes in here doc"
+    stdin: |
+      cat <<EOF
+      [$'a\tb'] [${u:-$'a\tb'}] [${u:-a$'\x41'b}]
+      EOF
+
+  - name: "Locale-translated quotes in parameter expansion words in here doc"
+    known_failure: true # bash drops the quotes and expands what follows the '$' as a parameter; brush keeps the '$'
+    stdin: |
+      loc=LOCV
+      cat <<EOF
+      [${u:-$"loc"}] [${u:-a$"loc"b}]
+      EOF
+
+  - name: "Braces in here doc"
+    stdin: |
+      x=1
+      cat <<EOF
+      {a,b}$x {1..3} ${u:-{a,b}} {a,b}
+      EOF
+
+  - name: "Positional parameters and arrays joined in here doc"
+    stdin: |
+      set -- 'p  q' r
+      arr=('m  n' o)
+      cat <<EOF
+      [$@] [${arr[*]}] [${arr[@]}] [${*:1}] [${*#p}]
+      EOF
+
+  - name: "$* in here doc"
+    stdin: |
+      set -- 'p  q' r
+      cat <<EOF
+      [$*] [${*}]
+      EOF
+
+  - name: "$* alongside $@ in here doc"
+    known_failure: true # in a body that also holds $@, bash collapses the spaces within each parameter of $*
+    stdin: |
+      set -- 'p  q' r
+      cat <<EOF
+      [$*] [$@]
+      EOF
+      cat <<EOF
+      [$@] [$*] [${*}]
+      EOF
+
+  - name: "$@ and array[@] in here doc with IFS set"
+    stdin: |
+      set -- 'p  q' r
+      arr=('m  n' o)
+      IFS=:
+      cat <<EOF
+      [$@] [${arr[@]}] [${arr[*]}]
+      EOF
+      IFS=
+      cat <<EOF
+      [$@] [${arr[@]}] [${arr[*]}]
+      EOF
+
+  - name: "$@ in a nested word in here doc with IFS set"
+    stdin: |
+      set -- 'p  q' r
+      IFS=:
+      cat <<EOF
+      [${u:-$@}] [${1:+$@}]
+      EOF
+
+  - name: "$* in here doc with IFS set"
+    stdin: |
+      set -- 'p  q' r
+      IFS=:
+      cat <<EOF
+      [$*] [${u:-$*}]
+      EOF

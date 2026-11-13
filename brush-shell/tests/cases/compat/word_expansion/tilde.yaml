@@ -186,3 +186,53 @@ cases:
       echo y=~/z | sed "s|${test_root}|ROOT|"
       builtin export by=~/z; echo "${by//${test_root}/ROOT}"
       command export cz=~/z; echo "${cz//${test_root}/ROOT}"
+
+  - name: "Tilde expansion: in a pattern and its replacement"
+    stdin: |
+      HOME=/home/user
+      h=$HOME/foo
+      lit='~/foo'
+      echo ${h#~} ${h##~/} ${h%~} ${lit#~}
+      echo ${h/~/T} ${h//~/T} ${lit/~/T} ${h/foo/~} ${h/foo/~/bar}
+      echo "${h#~} ${h/~/T} ${h/foo/~}"
+      x=${h/~/T}
+      echo "$x"
+
+  - name: "Tilde expansion: none after a pattern anchor"
+    stdin: |
+      HOME=/home/user
+      h=$HOME/foo
+      lit='~/foo'
+      end='foo~'
+      echo ${h/#~/T} ${h/%~/T} ${lit/#~/T} ${end/%~/T}
+      echo ${lit/#~\//T} ${h/#~*/T} ${lit/#~*/T}
+      echo "${h/#~/T} ${lit/#~/T}"
+      x=${h/#~/T}
+      echo "$x"
+
+      arr=("$h" "$lit" "$end")
+      echo ${arr[@]/#~/T} ${arr[@]/%~/T} ${arr[@]/~/T}
+      cd /
+      plus='~+/foo'
+      echo ${plus/#~+/T} ${plus/#~/T} ${PWD/#~+/T} ${PWD/~+/T}
+      [[ ${lit/#~/T} == T/foo ]] && echo "in a conditional"
+      case ${h/#~/T} in "$h") echo "in a case word" ;; esac
+
+  - name: "Tilde after a colon in a word nested in an assignment's value"
+    stdin: |
+      HOME=/home/user
+      y='a  b'
+      v=${u:-x:~}; echo "[$v]"
+      v=${y/b/x:~}; echo "[$v]"
+      v=${y/a/~:~}; echo "[$v]"
+      v=${y#a:~}; echo "[$v]"
+      v=${y/a/${u:-x:~}}; echo "[$v]"
+
+  - name: "Tilde expansion: before a character that can't end a tilde prefix"
+    known_failure: true # a tilde prefix runs to the next slash or colon or to the end of the word; brush ends it at ';' too
+    stdin: |
+      HOME=/home/user
+      var='a  b'
+      echo "[${var/a/~;~}] [${var/a/~,~}] [${var/a/~ ~}] [${var/a/~x}]"
+      echo [${var/a/~;~}]
+      echo "[${var/a/~:~}] [${var/a/~/;}]"

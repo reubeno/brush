@@ -286,3 +286,19 @@ cases:
       #send:Enter
       #expect-prompt
       #send:Ctrl+D
+
+  - name: "Rendered PS1 keeps quotes and escape output as written"
+    pty: true
+    ignore_stdout: true # Prompts don't line up
+    stdin: |
+      #expect-prompt
+      mkdir '$(echo sub)' && cd '$(echo sub)' && x=XVAL && PS1='"$x" it'\''s \W> '
+      #send:Enter
+      #expect:"XVAL" it's $(echo sub)>
+      echo "done-$((2 + 2))"
+      #send:Enter
+      #expect:done-4
+      cd .. && rmdir '$(echo sub)' && PS1='fin''ished> '
+      #send:Enter
+      #expect:finished>
+      #send:Ctrl+D

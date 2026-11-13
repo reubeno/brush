@@ -1,0 +1,175 @@
+name: "Word expansion: nested word matrix"
+cases:
+  - name: "Nested words in double quotes, unquoted words and assignments"
+    stdin: |
+      HOME=/home/user
+      y='a  b'
+      e=
+      x=XVAL
+      arr=('m  n' o)
+      set -- 'p  q' r
+      words=(
+        'q' ''\''q'\''' '"q"' '~' 'a\zb' '\z' 'a\}b' '\"' '\'\''' '\\' '\$y' '$y' '"$y"' ''\''$y'\'''
+        '$'\''a\x41b'\''' '"it'\''s"' ''\''a"b'\''' '"a'\''b"' 'a  b' '"a  b"' '*' '\*' '"*"' '{a,b}'
+        '$@' '"$@"' '$*' '${arr[@]}' '$(echo '\''c  d'\'')' '`echo e`' '$((1+2))' '""' ''\'''\'''
+        'a"b"c' '"a" "b"' '"~"' '$e' '"a\zb"' '"a\"b"' '"a\}b"'
+      )
+      forms=(
+        'W' '${u:-W}' '${y:+W}' '${u:=W}' 'x${u:-W}y' '${y/a/W}' '${y#W}' '${u:-${y/a/W}}'
+        '${y/a/${u:-W}}' '${u:-"${u:-W}"}' '${y/a/"${u:-W}"}' '${u:-${u:-W}}' '${arr[@]/m/W}'
+        '${@:+W}'
+      )
+      check() { printf '%s %s => %s\n' "$1" "$frag" "$2"; }
+      for form in "${forms[@]}"; do
+        for word in "${words[@]}"; do
+          # These cells differ from bash for reasons other cases track.
+          case "$form $word" in
+            'W "it'\''s"' | \
+            'W '\''a"b'\''' | \
+            'W "a'\''b"' | \
+            '${y#W} *' | \
+            '${u:-${y/a/W}} $@' | \
+            '${u:-${y/a/W}} ${arr[@]}') continue ;;
+          esac
+          frag=${form%%W*}$word${form#*W}
+          (
+            unset u
+            check 'quoted  ' "$(eval "printf '%s' \"[$frag]\"" 2>/dev/null || echo '(error)')"
+            check 'unquoted' "$(eval "set -- $frag" 2>/dev/null && printf '%s' "$#:<$1><$2><$3>" || echo '(error)')"
+            check 'assigned' "$(eval "v=$frag" 2>/dev/null && printf '%s' "[$v]" || echo '(error)')"
+          )
+        done
+      done
+
+  - name: "Nested words in here docs and prompts"
+    stdin: |
+      HOME=/home/user
+      y='a  b'
+      e=
+      x=XVAL
+      arr=('m  n' o)
+      set -- 'p  q' r
+      words=(
+        'q' ''\''q'\''' '"q"' '~' 'a\zb' '\z' 'a\}b' '\"' '\'\''' '\$y' '$y' '"$y"' ''\''$y'\'''
+        '$'\''a\x41b'\''' '"it'\''s"' ''\''a"b'\''' '"a'\''b"' 'a  b' '"a  b"' '*' '\*' '"*"' '{a,b}'
+        '$@' '"$@"' '$*' '${arr[@]}' '$(echo '\''c  d'\'')' '`echo e`' '$((1+2))' '""' ''\'''\'''
+        'a"b"c' '"a" "b"' '"~"' '$e' '"a\zb"' '"a\"b"' '"a\}b"'
+      )
+      forms=(
+        'W' '${u:-W}' '${y:+W}' '${u:=W}' 'x${u:-W}y' '${y/a/W}' '${y#W}' '${u:-${y/a/W}}'
+        '${y/a/${u:-W}}' '${u:-"${u:-W}"}' '${y/a/"${u:-W}"}' '${u:-${u:-W}}' '${arr[@]/m/W}'
+        '${@:+W}'
+      )
+      check() { printf '%s %s => %s\n' "$1" "$frag" "$2"; }
+      for form in "${forms[@]}"; do
+        for word in "${words[@]}"; do
+          # These cells differ from bash for reasons other cases track.
+          case "$form $word" in
+            '${y/a/W} $'\''a\x41b'\''' | \
+            '${y/a/W} "a\"b"' | \
+            '${y#W} *' | \
+            '${u:-${y/a/W}} $'\''a\x41b'\''' | \
+            '${u:-${y/a/W}} $@' | \
+            '${u:-${y/a/W}} ${arr[@]}' | \
+            '${y/a/${u:-W}} $'\''a\x41b'\''' | \
+            '${y/a/${u:-W}} "a\"b"' | \
+            '${arr[@]/m/W} $'\''a\x41b'\''' | \
+            '${arr[@]/m/W} "a\"b"') continue ;;
+          esac
+          frag=${form%%W*}$word${form#*W}
+          (
+            unset u
+            check 'here doc' "$(eval "cat <<EOF
+      [$frag]
+      EOF" 2>/dev/null || echo '(error)')"
+            prompt="[$frag]"
+            check 'prompt  ' "$({ printf '%s' "${prompt@P}"; } 2>/dev/null)"
+          )
+        done
+      done
+
+  - name: "Nested words in conditional patterns"
+    stdin: |
+      HOME=/home/user
+      y='a  b'
+      e=
+      x=XVAL
+      arr=('m  n' o)
+      set -- 'p  q' r
+      subjects=("$y" 'zz  b' '*  b' '\z  b' 'q  b' "'q'  b" "$HOME" '')
+      words=(
+        'q' ''\''q'\''' '"q"' '~' 'a\zb' '\z' 'a\}b' '\"' '\'\''' '\\' '\$y' '$y' '"$y"' ''\''$y'\'''
+        '$'\''a\x41b'\''' '"it'\''s"' ''\''a"b'\''' '"a'\''b"' 'a  b' '"a  b"' '*' '\*' '"*"' '{a,b}'
+        '$@' '"$@"' '$*' '${arr[@]}' '$(echo '\''c  d'\'')' '`echo e`' '$((1+2))' '""' ''\'''\'''
+        'a"b"c' '"a" "b"' '"~"' '$e' '"a\zb"' '"a\"b"' '"a\}b"'
+      )
+      forms=(
+        'W' '${u:-W}' '${y:+W}' '${u:=W}' 'x${u:-W}y' '${y/a/W}' '${y#W}' '${u:-${y/a/W}}'
+        '${y/a/${u:-W}}' '${u:-"${u:-W}"}' '${y/a/"${u:-W}"}' '${u:-${u:-W}}' '${arr[@]/m/W}'
+        '${@:+W}'
+      )
+      check() { printf '%s %s => %s\n' "$1" "$frag" "$2"; }
+      for form in "${forms[@]}"; do
+        for word in "${words[@]}"; do
+          # These cells differ from bash for reasons other cases track.
+          case "$form $word" in
+            'W "it'\''s"' | \
+            'W '\''a"b'\''' | \
+            'W "a'\''b"' | \
+            'W a  b' | \
+            'W "a  b"' | \
+            'W "a" "b"' | \
+            '${u:=W} \*' | \
+            '${y#W} *') continue ;;
+          esac
+          frag=${form%%W*}$word${form#*W}
+          (
+            unset u
+            check 'cond    ' "$(for s in "${subjects[@]}"; do eval "[[ \$s == $frag ]]" 2>/dev/null && printf 1 || printf 0; done)"
+            check 'cond "" ' "$(for s in "${subjects[@]}"; do eval "[[ \$s == \"$frag\" ]]" 2>/dev/null && printf 1 || printf 0; done)"
+          )
+        done
+      done
+
+  - name: "Nested words in case patterns"
+    stdin: |
+      HOME=/home/user
+      y='a  b'
+      e=
+      x=XVAL
+      arr=('m  n' o)
+      set -- 'p  q' r
+      subjects=("$y" 'zz  b' '*  b' '\z  b' 'q  b' "'q'  b" "$HOME" '')
+      words=(
+        'q' ''\''q'\''' '"q"' '~' 'a\zb' '\z' 'a\}b' '\"' '\'\''' '\\' '\$y' '$y' '"$y"' ''\''$y'\'''
+        '$'\''a\x41b'\''' '"it'\''s"' ''\''a"b'\''' '"a'\''b"' 'a  b' '"a  b"' '*' '\*' '"*"' '{a,b}'
+        '$@' '"$@"' '$*' '${arr[@]}' '$(echo '\''c  d'\'')' '`echo e`' '$((1+2))' '""' ''\'''\'''
+        'a"b"c' '"a" "b"' '"~"' '$e' '"a\zb"' '"a\"b"' '"a\}b"'
+      )
+      forms=(
+        'W' '${u:-W}' '${y:+W}' '${u:=W}' 'x${u:-W}y' '${y/a/W}' '${y#W}' '${u:-${y/a/W}}'
+        '${y/a/${u:-W}}' '${u:-"${u:-W}"}' '${y/a/"${u:-W}"}' '${u:-${u:-W}}' '${arr[@]/m/W}'
+        '${@:+W}'
+      )
+      check() { printf '%s %s => %s\n' "$1" "$frag" "$2"; }
+      for form in "${forms[@]}"; do
+        for word in "${words[@]}"; do
+          # These cells differ from bash for reasons other cases track.
+          case "$form $word" in
+            'W "it'\''s"' | \
+            'W '\''a"b'\''' | \
+            'W "a'\''b"' | \
+            'W a  b' | \
+            'W "a  b"' | \
+            'W "a" "b"' | \
+            '${u:=W} \*' | \
+            '${y#W} *') continue ;;
+          esac
+          frag=${form%%W*}$word${form#*W}
+          (
+            unset u
+            check 'case    ' "$(for s in "${subjects[@]}"; do eval "case \$s in $frag) printf 1 ;; *) printf 0 ;; esac" 2>/dev/null || printf E; done)"
+            check 'case "" ' "$(for s in "${subjects[@]}"; do eval "case \$s in \"$frag\") printf 1 ;; *) printf 0 ;; esac" 2>/dev/null || printf E; done)"
+          )
+        done
+      done

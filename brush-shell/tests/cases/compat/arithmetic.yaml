@@ -498,3 +498,22 @@ cases:
       echo "$(( x == 7 ? 1 : 0 ))"
       echo "$(( a[x = 1] = 9 )) x=$x a[1]=${a[1]}"
       echo "$(( x = 1, y = x + 1 )) x=$x y=$y"
+
+  - name: "Braces are not expanded in an arithmetic expression"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      (( x = {1..1} ))
+      echo "[$x]"
+      let 'y={1..1}' || echo "no"
+      echo "[$y]"
+      arr=(a b c)
+      echo "[${arr[{1..1}]}]"
+      echo "[$(( {1..3} ))]"
+      echo end
+
+  - name: "The list goes on after an arithmetic command fails to parse"
+    known_failure: true # TODO(arithmetic): brush abandons the rest of the list
+    ignore_stderr: true # error wording differs
+    stdin: |
+      (( 1 + )) || echo "or-ran"
+      let "1 +"; echo "rc=$?"

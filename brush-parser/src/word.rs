@@ -553,7 +553,8 @@ fn cacheable_parse(
     Ok(pieces)
 }
 
-/// Parse a heredoc body, treating `"` and `'` as literal characters.
+/// Parse a heredoc body, treating `"` and `'` as literal characters. The same as
+/// [`parse_double_quoted_text`] with [`DoubleQuotedTextKind::HereDoc`].
 ///
 /// # Arguments
 ///
@@ -563,8 +564,123 @@ pub fn parse_heredoc(
     word: &str,
     options: &ParserOptions,
 ) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
-    expansion_parser::unexpanded_heredoc_word(word, options)
-        .map_err(|err| error::WordParseError::Word(word.to_owned(), err.into()))
+    parse_double_quoted_text(word, DoubleQuotedTextKind::HereDoc, options)
+}
+
+/// A kind of double-quoted text whose quotes are elsewhere.
+///
+/// See [`parse_double_quoted_text`]. In all of them only `$`, `` ` `` and `\` are
+/// special and `'` is an ordinary character. They differ in what else a backslash
+/// escapes, whether `"` is text, and whether `$'...'` and `$"..."` are quotes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum DoubleQuotedTextKind {
+    /// The body of a here document: a backslash escapes only `$`, `` ` `` and `\`, and
+    /// `"`, `$'...'` and `$"..."` are text.
+    HereDoc,
+    /// A prompt string (`PS1` and its like): as a here document body, except that `\"`
+    /// stands for `"` and a backslash and the newline after it yield nothing.
+    Prompt,
+    /// The word of a parameter expansion (`${param:-word}` and its like) within a here
+    /// document body or a prompt: as a prompt, except that its own `"` are removed
+    /// rather than being text, `\}` stands for `}`, and between a pair of its quotes a
+    /// backslash escapes any character.
+    WordInHereDocOrPrompt,
+    /// The word of such a parameter expansion within double quotes
+    /// (`"${param:-word}"`): as [`Self::WordInHereDocOrPrompt`], except that outside
+    /// the word's own quotes `$'...'` is ANSI-C quoted text and `$"..."` a
+    /// double-quoted string to translate.
+    WordInDoubleQuotes,
+}
+
+/// The rules the grammar applies to a kind of double-quoted text; see
+/// [`DoubleQuotedTextKind`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DoubleQuotedTextRules {
+    /// Whether `\"` stands for `"`.
+    escaped_quotes: bool,
+    /// Whether a backslash and the newline after it yield nothing.
+    line_continuations: bool,
+    /// Whether an unescaped `"` is removed instead of being text, `\}` stands for `}`,
+    /// and between a pair of quotes a backslash escapes any character.
+    quotes_removed: bool,
+    /// Whether, outside a pair of quotes, `$'...'` is ANSI-C quoted text and `$"..."`
+    /// a double-quoted string to translate.
+    dollar_quotes: bool,
+}
+
+impl DoubleQuotedTextKind {
+    pub(crate) const fn rules(self) -> DoubleQuotedTextRules {
+        match self {
+            Self::HereDoc => DoubleQuotedTextRules {
+                escaped_quotes: false,
+                line_continuations: false,
+                quotes_removed: false,
+                dollar_quotes: false,
+            },
+            Self::Prompt => DoubleQuotedTextRules {
+                escaped_quotes: true,
+                line_continuations: true,
+                quotes_removed: false,
+                dollar_quotes: false,
+            },
+            Self::WordInHereDocOrPrompt => DoubleQuotedTextRules {
+                escaped_quotes: true,
+                line_continuations: true,
+                quotes_removed: true,
+                dollar_quotes: false,
+            },
+            Self::WordInDoubleQuotes => DoubleQuotedTextRules {
+                escaped_quotes: true,
+                line_continuations: true,
+                quotes_removed: true,
+                dollar_quotes: true,
+            },
+        }
+    }
+}
+
+/// Parse double-quoted text that doesn't include the quotes enclosing it.
+///
+/// Such text is a here document body, a prompt, or the word of a parameter expansion
+/// nested in either of those or in double quotes. The kind says how its backslashes
+/// and quotes are read.
+///
+/// The pieces returned are of the kinds [`parse`] finds between a pair of double quotes.
+///
+/// # Arguments
+///
+/// * `text` - The text to parse.
+/// * `kind` - The kind of text.
+/// * `options` - The parser options to use.
+pub fn parse_double_quoted_text(
+    text: &str,
+    kind: DoubleQuotedTextKind,
+    options: &ParserOptions,
+) -> Result<Vec<WordPieceWithSource>, error::WordParseError> {
+    expansion_parser::unexpanded_double_quoted_text(text, options, &kind.rules())
+        .map_err(|err| error::WordParseError::Word(text.to_owned(), err.into()))
+}
+
+impl DoubleQuotedTextKind {
+    /// Quotes text so that [`parse_double_quoted_text`] reads it, as text of this kind,
+    /// as exactly the text given: a backslash goes before each character that is
+    /// special in text of this kind.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The text to quote.
+    pub fn quote(self, text: &str) -> String {
+        let rules = self.rules();
+        let mut quoted = String::with_capacity(text.len());
+        for c in text.chars() {
+            if matches!(c, '$' | '`' | '\\') || (c == '"' && rules.escaped_quotes) {
+                quoted.push('\\');
+            }
+            quoted.push(c);
+        }
+        quoted
+    }
 }
 
 /// Parse the given word into a parameter expression.
@@ -956,33 +1072,71 @@ peg::parser! {
         rule double_quote_body_text() -> &'input str =
             $((!double_quoted_escape_sequence() !dollar_sign_word_piece() !expansion_opener() [^'\"'])+)
 
-        // Heredoc body parsing: like double-quoted content, but " and ' are literal characters.
-        pub(crate) rule unexpanded_heredoc_word() -> Vec<WordPieceWithSource> =
-            traced(<heredoc_word(<![_]>)>)
+        // Double-quoted text that doesn't include the quotes enclosing it (a heredoc body, a
+        // prompt, a word nested in a parameter expansion that is itself double-quoted).
+        pub(crate) rule unexpanded_double_quoted_text(o: &DoubleQuotedTextRules) -> Vec<WordPieceWithSource> =
+            runs:quoted_text_run(o)* ![_] { runs.into_iter().flatten().collect() }
 
-        rule heredoc_word<T>(stop_condition: rule<T>) -> Vec<WordPieceWithSource> =
-            pieces:heredoc_word_piece_with_source(<stop_condition()>)* { pieces }
+        // Either the text between a pair of quotes that are themselves removed, or one piece.
+        // (A pair left open runs to the end of the text.)
+        rule quoted_text_run(o: &DoubleQuotedTextRules) -> Vec<WordPieceWithSource> =
+            quotes_removed(o) "\"" pieces:quoted_text_piece_with_source(o, true)* "\""? {
+                pieces.into_iter().flatten().collect()
+            } /
+            piece:quoted_text_piece_with_source(o, false) { piece.into_iter().collect() }
 
-        rule heredoc_word_piece_with_source<T>(stop_condition: rule<T>) -> WordPieceWithSource =
-            !stop_condition() start_index:position!() piece:heredoc_word_piece() end_index:position!() {
-                WordPieceWithSource { piece, start_index, end_index }
+        rule quoted_text_piece_with_source(o: &DoubleQuotedTextRules, between_quotes: bool) -> Option<WordPieceWithSource> =
+            start_index:position!() piece:quoted_text_piece(o, between_quotes) end_index:position!() {
+                piece.map(|piece| WordPieceWithSource { piece, start_index, end_index })
             }
 
-        rule heredoc_word_piece() -> WordPiece =
-            arithmetic_expansion() /
-            legacy_arithmetic_expansion() /
-            command_substitution() /
-            parameter_expansion() /
-            heredoc_escape_sequence() /
-            heredoc_literal_text()
+        // Yields `None` for text that is consumed without contributing a piece.
+        rule quoted_text_piece(o: &DoubleQuotedTextRules, between_quotes: bool) -> Option<WordPiece> =
+            line_continuation(o) { None } /
+            piece:arithmetic_expansion() { Some(piece) } /
+            piece:legacy_arithmetic_expansion() { Some(piece) } /
+            piece:command_substitution() { Some(piece) } /
+            piece:quoted_text_dollar_quoted(o, between_quotes) { Some(piece) } /
+            piece:parameter_expansion() { Some(piece) } /
+            piece:quoted_text_escape_sequence(o, between_quotes) { Some(piece) } /
+            piece:quoted_text_literal(o, between_quotes) { Some(piece) }
 
-        rule heredoc_escape_sequence() -> WordPiece =
-            s:$("\\" ['$' | '`' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) }
+        rule quoted_text_escape_sequence(o: &DoubleQuotedTextRules, between_quotes: bool) -> WordPiece =
+            s:$("\\" ['$' | '`' | '\\']) { WordPiece::EscapeSequence(s.to_owned()) } /
+            escaped_quotes(o) s:$("\\\"") { WordPiece::EscapeSequence(s.to_owned()) } /
+            quotes_removed(o) s:$("\\}") { WordPiece::EscapeSequence(s.to_owned()) } /
+            s:$("\\" [_]) {? if between_quotes { Ok(WordPiece::EscapeSequence(s.to_owned())) } else { Err("escape between quotes") } }
 
-        rule heredoc_literal_text() -> WordPiece =
-            s:$((!heredoc_escape_sequence() !dollar_sign_word_piece() !expansion_opener() [^'`'])+) {
-                WordPiece::Text(s.to_owned())
-            }
+        rule quoted_text_dollar_quoted(o: &DoubleQuotedTextRules, between_quotes: bool) -> WordPiece =
+            dollar_quotes(o, between_quotes) s:ansi_c_quoted_text() { WordPiece::AnsiCQuotedText(s.to_owned()) } /
+            dollar_quotes(o, between_quotes) s:gettext_double_quoted_sequence() { WordPiece::GettextDoubleQuotedSequence(s) }
+
+        rule quoted_text_literal(o: &DoubleQuotedTextRules, between_quotes: bool) -> WordPiece =
+            s:$((!quoted_text_special(o, between_quotes) [^'`'])+) { WordPiece::Text(s.to_owned()) }
+
+        // What ends a run of literal text.
+        rule quoted_text_special(o: &DoubleQuotedTextRules, between_quotes: bool) =
+            line_continuation(o) {} /
+            quoted_text_escape_sequence(o, between_quotes) {} /
+            quoted_text_dollar_quoted(o, between_quotes) {} /
+            dollar_sign_word_piece() {} /
+            expansion_opener() {} /
+            quotes_removed(o) "\"" {}
+
+        rule line_continuation(o: &DoubleQuotedTextRules) =
+            line_continuations(o) "\\\n"
+
+        rule line_continuations(o: &DoubleQuotedTextRules) =
+            &[_] {? if o.line_continuations { Ok(()) } else { Err("no line continuations") } }
+
+        rule escaped_quotes(o: &DoubleQuotedTextRules) =
+            &[_] {? if o.escaped_quotes { Ok(()) } else { Err("no escaped quotes") } }
+
+        rule quotes_removed(o: &DoubleQuotedTextRules) =
+            &[_] {? if o.quotes_removed { Ok(()) } else { Err("quotes are text") } }
+
+        rule dollar_quotes(o: &DoubleQuotedTextRules, between_quotes: bool) =
+            &[_] {? if o.dollar_quotes && !between_quotes { Ok(()) } else { Err("no dollar quotes") } }
 
         rule normal_escape_sequence() -> WordPiece =
             s:$("\\" [c]) { WordPiece::EscapeSequence(s.to_owned()) }
@@ -1622,6 +1776,181 @@ mod tests {
             super::parse(word, &options)?;
         }
         super::parse_heredoc("cost: $5 $ $% \"$'x'\" a$\n", &options)?;
+        Ok(())
+    }
+
+    fn quoted_text(text: &str, kind: DoubleQuotedTextKind) -> Result<Vec<WordPiece>> {
+        let pieces = super::parse_double_quoted_text(text, kind, &ParserOptions::default())?;
+        Ok(pieces.into_iter().map(|piece| piece.piece).collect())
+    }
+
+    fn text(s: &str) -> WordPiece {
+        WordPiece::Text(s.to_owned())
+    }
+
+    fn escape(s: &str) -> WordPiece {
+        WordPiece::EscapeSequence(s.to_owned())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_heredoc_body() -> Result<()> {
+        use DoubleQuotedTextKind::HereDoc;
+
+        // Quotes are text, and a backslash is an escape only before `$`, `` ` `` and `\`.
+        assert_eq!(
+            quoted_text(r#"a "b" 'c' \" \$ \z \\ $'d'"#, HereDoc)?,
+            [
+                text(r#"a "b" 'c' \" "#),
+                escape(r"\$"),
+                text(r" \z "),
+                escape(r"\\"),
+                text(" $'d'"),
+            ]
+        );
+        assert_eq!(quoted_text("a\\\nb", HereDoc)?, [text("a\\\nb")]);
+        assert_eq!(quoted_text(r"a\}b", HereDoc)?, [text(r"a\}b")]);
+        assert_eq!(
+            super::parse_heredoc("a \"$x\" b\n", &ParserOptions::default())?,
+            super::parse_double_quoted_text("a \"$x\" b\n", HereDoc, &ParserOptions::default())?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_prompt() -> Result<()> {
+        use DoubleQuotedTextKind::Prompt;
+
+        // `\"` is an escape; a quote is still text.
+        assert_eq!(
+            quoted_text(r#"a\"b"c"#, Prompt)?,
+            [text("a"), escape(r#"\""#), text(r#"b"c"#)]
+        );
+        // `\\` is split off first, so the quote after it is not escaped.
+        assert_eq!(
+            quoted_text(r#"a\\"b"#, Prompt)?,
+            [text("a"), escape(r"\\"), text(r#""b"#)]
+        );
+
+        // A backslash and the newline after it yield nothing.
+        assert_eq!(quoted_text("a\\\nb", Prompt)?, [text("a"), text("b")]);
+        assert_eq!(quoted_text("\\\n", Prompt)?, []);
+        // An escaped backslash doesn't continue the line.
+        assert_eq!(
+            quoted_text("a\\\\\nb", Prompt)?,
+            [text("a"), escape(r"\\"), text("\nb")]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_word_in_heredoc_or_prompt() -> Result<()> {
+        use DoubleQuotedTextKind::WordInHereDocOrPrompt as Word;
+
+        // The word's own quotes are removed.
+        assert_eq!(
+            quoted_text(r#"a"b c"d"#, Word)?,
+            [text("a"), text("b c"), text("d")]
+        );
+        assert_eq!(quoted_text(r#""it's""#, Word)?, [text("it's")]);
+        assert_eq!(quoted_text(r#""""#, Word)?, []);
+        assert_eq!(quoted_text("", Word)?, []);
+
+        // Outside the quotes a backslash also escapes `"` and `}`; between them, anything.
+        assert_eq!(
+            quoted_text(r#"a\zb\}c\"d"#, Word)?,
+            [
+                text(r"a\zb"),
+                escape(r"\}"),
+                text("c"),
+                escape(r#"\""#),
+                text("d")
+            ]
+        );
+        assert_eq!(
+            quoted_text(r#""a\zb\'c""#, Word)?,
+            [
+                text("a"),
+                escape(r"\z"),
+                text("b"),
+                escape(r"\'"),
+                text("c")
+            ]
+        );
+
+        // A pair of quotes may enclose expansions, and a pair left open runs to the end.
+        let pieces = quoted_text(r#"x"a $y b"z"#, Word)?;
+        assert_eq!(pieces.len(), 5);
+        assert_eq!(pieces[1], text("a "));
+        assert_matches!(pieces[2], WordPiece::ParameterExpansion(_));
+        assert_eq!(pieces[3], text(" b"));
+        assert_eq!(quoted_text(r#"a"b"#, Word)?, [text("a"), text("b")]);
+
+        // `$'...'` is text, as in the body.
+        assert_eq!(quoted_text(r"a$'b\tc'd", Word)?, [text(r"a$'b\tc'd")]);
+        Ok(())
+    }
+
+    #[test]
+    fn parse_double_quoted_text_as_word_in_double_quotes() -> Result<()> {
+        use DoubleQuotedTextKind::WordInDoubleQuotes as Word;
+
+        // As a word in a here doc, except that `$'...'` and `$"..."` are quotes.
+        assert_eq!(
+            quoted_text(r"a$'b\tc'd", Word)?,
+            [
+                text("a"),
+                WordPiece::AnsiCQuotedText(r"b\tc".to_owned()),
+                text("d")
+            ]
+        );
+        let pieces = quoted_text(r#"a$"b"c"#, Word)?;
+        assert_eq!(pieces.len(), 3);
+        assert_matches!(&pieces[1], WordPiece::GettextDoubleQuotedSequence(inner) if inner.len() == 1);
+        // Not between the word's own quotes, though, where a backslash escapes anything.
+        assert_eq!(
+            quoted_text(r#""$'a\x41b'""#, Word)?,
+            [text("$'a"), escape(r"\x"), text("41b'")]
+        );
+        assert_eq!(quoted_text(r#""it's""#, Word)?, [text("it's")]);
+        assert_eq!(
+            quoted_text(r#"a\}b\"c"#, Word)?,
+            [
+                text("a"),
+                escape(r"\}"),
+                text("b"),
+                escape(r#"\""#),
+                text("c")
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn quote_double_quoted_text_round_trips() -> Result<()> {
+        use DoubleQuotedTextKind::{HereDoc, Prompt, WordInDoubleQuotes, WordInHereDocOrPrompt};
+
+        // Every character the kind treats as special, and every one it doesn't, comes
+        // back as the text it was.
+        let text: String = (b' '..=b'~').map(char::from).chain(['\t', '\n']).collect();
+        let text = text + r#"$'a\x41b' $"loc" \" \} \\" "#;
+        for kind in [HereDoc, Prompt, WordInHereDocOrPrompt, WordInDoubleQuotes] {
+            let mut read_back = String::new();
+            for piece in super::parse_double_quoted_text(
+                &kind.quote(&text),
+                kind,
+                &ParserOptions::default(),
+            )? {
+                match piece.piece {
+                    WordPiece::Text(s) => read_back.push_str(&s),
+                    WordPiece::EscapeSequence(s) => read_back.push_str(
+                        s.strip_prefix('\\')
+                            .ok_or_else(|| anyhow::anyhow!("{kind:?}: bad escape {s:?}"))?,
+                    ),
+                    other => anyhow::bail!("{kind:?}: {other:?} is not literal text"),
+                }
+            }
+            assert_eq!(read_back, text, "{kind:?}");
+        }
         Ok(())
     }
 

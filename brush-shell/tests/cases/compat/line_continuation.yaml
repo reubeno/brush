@@ -59,7 +59,6 @@ cases:
       b')) echo single-quoted;; esac
 
   - name: "Line continuation in single quotes in a parameter expansion in double quotes"
-    known_failure: true # TODO(tokenizer): in a `${...}` within double quotes, single quotes are literal, so a line continuation in them is removed
     stdin: |
       echo "${x:-'a\
       b'}"
