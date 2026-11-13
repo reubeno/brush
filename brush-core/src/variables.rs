@@ -1098,26 +1098,18 @@ fn get_key_for_indexed_array(
     values: &BTreeMap<u64, String>,
     index_str: &str,
 ) -> Result<u64, error::Error> {
-    let mut index_value = index_str.parse::<i64>().unwrap_or(0);
-
-    // Handle negative indices, but check for out-of-range values. A negative index is
-    // relative to one greater than the maximum index (not the element count, which
-    // differs for sparse arrays).
-    #[expect(clippy::cast_possible_wrap)]
-    if index_value < 0 {
-        let end = values
-            .last_key_value()
-            .map_or(0, |(k, _)| (*k as i64).saturating_add(1));
-        index_value += end;
-        if index_value < 0 {
-            return Err(error::ErrorKind::ArrayIndexOutOfRange(index_str.to_owned()).into());
-        }
+    let index_value = index_str.parse::<i64>().unwrap_or(0);
+    if index_value >= 0 {
+        return Ok(index_value.unsigned_abs());
     }
 
-    // Now that we've confirmed that the index is non-negative, we can safely convert it
-    // to a u64 without any fuss.
-    #[expect(clippy::cast_sign_loss)]
-    Ok(index_value as u64)
+    // A negative index is relative to one greater than the maximum index (not the element
+    // count, which differs for sparse arrays), so -1 is the maximum index itself. Counting
+    // back from the maximum keeps a key at u64::MAX reachable.
+    values
+        .last_key_value()
+        .and_then(|(max, _)| max.checked_sub(index_value.unsigned_abs() - 1))
+        .ok_or_else(|| error::ErrorKind::ArrayIndexOutOfRange(index_str.to_owned()).into())
 }
 
 impl From<&str> for ShellValue {
@@ -1153,5 +1145,30 @@ impl From<Vec<String>> for ShellValue {
 impl From<Vec<&str>> for ShellValue {
     fn from(values: Vec<&str>) -> Self {
         Self::indexed_array_from_strs(values.as_slice())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn negative_index_with_a_key_above_i64_max() {
+        // Such a key is out of bash's range, but array literals can still create one.
+        let values = BTreeMap::from([(1_u64 << 63, String::new())]);
+        assert_eq!(
+            get_key_for_indexed_array(&values, "-9223372036854775807").ok(),
+            Some(2)
+        );
+
+        let values = BTreeMap::from([(u64::MAX, String::new())]);
+        assert_eq!(
+            get_key_for_indexed_array(&values, "-1").ok(),
+            Some(u64::MAX)
+        );
+        assert_eq!(
+            get_key_for_indexed_array(&values, "-9223372036854775808").ok(),
+            Some(1_u64 << 63)
+        );
     }
 }
