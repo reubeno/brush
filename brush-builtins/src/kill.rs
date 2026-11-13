@@ -21,6 +21,10 @@ pub(crate) struct KillCommand {
     signal_number: Option<usize>,
 
     /// List known signal names.
+    #[allow(
+        clippy::duplicated_attributes,
+        reason = "winnow-args treats a second `short` as another letter for the same flag"
+    )]
     #[arg(short = 'l', short = 'L')]
     list_signals: bool,
 
