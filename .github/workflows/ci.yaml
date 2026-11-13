@@ -119,15 +119,16 @@ jobs:
             binary_name: "brush.wasm"
             extra_build_args: ""
             toolchain: "nightly"
-          # Build for x86_64/windows target on x86_64/linux host.
-          # cross 0.2.5's windows-gnu container exits 1, without an error, on ubuntu-26.04.
-          - host: "ubuntu-24.04"
+          # Build for x86_64/windows target on x86_64/linux host, with the host's
+          # MinGW-w64: the one in cross 0.2.5's windows-gnu container is too old
+          # for Rust 1.100+, which links against its libsynchronization.
+          - host: "ubuntu-26.04"
             target: "x86_64-pc-windows-gnu"
-            cross_command: "cross"
-            cross_tool_to_install: "cross"
+            cross_command: "cargo"
+            cross_tool_to_install: ""
             os: "windows"
             arch: "x86_64"
-            required_tools: ""
+            required_tools: "gcc-mingw-w64-x86-64"
             binary_name: "brush.exe"
             extra_build_args: ""
           # Build for x86_64/android target on x86_64/linux host.
