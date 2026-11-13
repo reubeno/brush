@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use xshell::{Shell, cmd};
 
-use crate::common::{BuildProfile, find_target_dir};
+use crate::common::{BuildProfile, find_build_dir, find_target_dir};
 
 /// Integration test binaries that are excluded from unit tests.
 /// These tests execute the brush binary and are slower.
@@ -243,8 +243,22 @@ fn collect_test_binaries(args: &CollectBinariesArgs) -> Result<()> {
         );
     }
 
+    // Only copy files from cargo's build dir, so a stray or tampered message
+    // can't make this ship arbitrary files.
+    let build_dir = find_build_dir()?.canonicalize()?;
     std::fs::create_dir_all(&args.output_dir)?;
     for (name, exe) in binaries {
+        let exe = exe
+            .canonicalize()
+            .with_context(|| format!("failed to resolve {}", exe.display()))?;
+        if !exe.is_file() || !exe.starts_with(&build_dir) {
+            anyhow::bail!(
+                "{} is not a file under the build dir ({})",
+                exe.display(),
+                build_dir.display()
+            );
+        }
+
         let dest = args
             .output_dir
             .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
