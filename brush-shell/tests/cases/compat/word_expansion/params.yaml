@@ -918,7 +918,6 @@ cases:
       echo "5 ${x/b/$r}"
 
   - name: "An ampersand in a pattern substitution's replacement stands for the match"
-    known_failure: true # TODO(expansion): patsub_replacement is not implemented
     stdin: |
       x=abc
       echo "1 ${x/b/<&>}" ${x/b/<&>}
@@ -929,10 +928,52 @@ cases:
       echo "5 ${x/b/x\$1&}"
 
   - name: "A backslash an unquoted replacement expansion yields escapes an ampersand or backslash"
-    known_failure: true # TODO(expansion): patsub_replacement is not implemented
     stdin: |
       x=abc
       r='\&'
       echo "1 ${x/b/$r}" ${x/b/$r}
       r='\\'
       echo "2 ${x/b/$r}" ${x/b/$r}
+
+  - name: "Backslashes before an ampersand in a pattern substitution's replacement"
+    stdin: |
+      x=abc
+      echo "1 ${x/b/<\\\&>}" ${x/b/<\\\&>} "${x/b/<\\\\&>}"
+      echo "2 ${x/b/'\'&}" "${x/b/"\\"&}" "${x/b/'\&'}"
+      r='\\\&'
+      echo "3 ${x/b/$r}" "${x/b/"$r"}"
+      r='\'
+      echo "4 ${x/b/$r&}" "${x/b/${r}\&}" "${x/b/${r}'&'}" "${x/b/${r}\q}"
+      echo "5 ${x/b/$r$r&}" "${x/b/$(printf '\\')&}" "${x/b/&\\}"
+
+  - name: "An ampersand stands for each match in every form of pattern substitution"
+    stdin: |
+      x=abc
+      echo "1 ${x/#a/<&>}" "${x/%c/<&>}" "${x/#/<&>}" "${x/%/<&>}"
+      echo "2 ${x//[ab]/&&}" "${x/z/&}" "${x//b*/[&]}"
+      arr=(ab cb xx)
+      echo "3 ${arr[@]/b/<&>}" ${arr[*]//?/&&}
+      set -- ab cb
+      echo "4 ${@/b/<&>}" ${*/b/[&]}
+      y='a&b'
+      echo "5 ${y/&/[&]}" "${y//?/[&]}"
+      shopt -s extglob
+      echo "6 ${x/@(b|c)/<&>}" "${x//+([a-c])/<&>}"
+
+  - name: "Field separators joining a pattern substitution's replacement are unquoted"
+    stdin: |
+      x=abc
+      a=(1 2)
+      IFS='&'
+      echo "1 ${x/b/${a[*]}}" "${x/b/"${a[*]}"}" "${x/b/${a[@]}}"
+      IFS=' '
+      set -- '&' '\'
+      echo "2 ${x/b/$@}" "${x/b/$*&}" "${x/b/"$@"}"
+
+  - name: "Enclosing double quotes don't quote a pattern substitution's replacement"
+    stdin: |
+      x=abc
+      echo "1 ${x/b/${q:-&}}" "${x/b/${q:-\&}}" "${x/b/${q:-'&'}}" "${x/b/"${q:-&}"}"
+      echo "2 ${x/b/${q:-'a\b'}}" "${x/b/${x:+'&'}}" "${x/b/${x#a}&}"
+      shopt -u patsub_replacement
+      echo "3 ${x/b/${q:-'&'}}" "${x/b/${q:-'a\b'}}" "${x/b/${q:-\&}}"
