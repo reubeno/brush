@@ -242,7 +242,11 @@ jobs:
         if: ${{ matrix.target == '' }}
         env:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
+        # Keep cargo's JSON messages so later steps can find its outputs; the
+        # target dir's layout isn't stable across cargo versions.
+        run: >-
+          cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
+          --message-format=json-render-diagnostics > cargo-build-messages.json
 
       - name: "${{ matrix.check_only && 'Check' || 'Build' }} (cross)"
         if: ${{ matrix.target != '' }}
@@ -262,14 +266,20 @@ jobs:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
+      - name: "Collect integration test binaries"
+        if: ${{ matrix.target == '' }}
+        run: >-
+          cargo xtask test collect-binaries
+          --cargo-messages cargo-build-messages.json
+          --output-dir integration-tests
+
       - name: "Upload integration test binaries"
         if: ${{ matrix.target == '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-tests-${{ matrix.arch }}-${{ matrix.os }}
-          path: |
-            target/${{ matrix.target }}/release/deps/brush_*_tests-*
-            !**/*.d
+          path: integration-tests/
+          if-no-files-found: error
 
   # Test functional correctness
   test:

@@ -47,10 +47,10 @@ path = "tests/completion_tests.rs"
 
 # N.B. tests/pty_startup_tests.rs, tests/reedline_interactive_tests.rs, and
 # tests/vt_interactive_tests.rs are deliberately left auto-discovered (no
-# `brush-*-tests` name): the CI `brush_*_tests-*` artifact glob would otherwise
-# ship them to the os-tests
-# jobs, which run prebuilt test binaries outside a cargo target dir and so
-# can't run pty-based tests (see the interactive/version test skips there).
+# `brush-*-tests` name): `cargo xtask test collect-binaries` would otherwise
+# ship them to the CI os-tests jobs, which run prebuilt test binaries outside
+# a cargo target dir and so can't run pty-based tests (see the
+# interactive/version test skips there).
 
 # Generates the config schema. Lives here so that xtask doesn't have to
 # depend on brush-shell; `cargo xtask gen schema` shells out to it.
