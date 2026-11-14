@@ -15,6 +15,24 @@ cases:
       (( (0) == 0 )) && echo "0 == 0"
       (( (1) != 0 )) && echo "1 != 0"
 
+  - name: "A failed expansion in an arithmetic command ends a script"
+    known_failure: true # TODO(arithmetic): after `(( ${u:?} ))` the script carries on with its next line
+    ignore_stderr: true # error wording differs
+    stdin: |
+      echo '(( ${u:?gone} )) || echo "or-ran"' > script.sh
+      echo 'echo "not reached"' >> script.sh
+      "$0" script.sh; echo "rc=$?"
+      rm script.sh
+
+  - name: "A failed expansion in an arithmetic expansion ends a script"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      echo 'echo $(( ${u:?gone} )); echo "not reached"' > script.sh
+      "$0" script.sh; echo "rc=$?"
+      echo 'for (( i = ${u:?gone}; i < 1; i++ )); do echo body; done; echo "not reached"' > script.sh
+      "$0" script.sh; echo "rc=$?"
+      rm script.sh
+
   - name: "An error in an arithmetic command fails only that command"
     known_failure: true # TODO(arithmetic): an error in (( )) drops the rest of the line
     ignore_stderr: true

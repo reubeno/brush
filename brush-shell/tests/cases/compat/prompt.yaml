@@ -92,6 +92,30 @@ cases:
       test_in_subdir '\w'
       test_in_subdir '\[x\]'
 
+  - name: "Working dir with several expansion and quoting characters at once"
+    stdin: |
+      HOME=$(pwd)
+      x=XVAL
+
+      function test_in_subdir() {
+        echo "------ Testing: subdir=$1 -------"
+        mkdir -p "$1/sub"
+        cd "$1"
+        for prompt in '\w' '\W' '[\w]$x' '"\W"'; do
+          echo "Prompt: '${prompt@P}'"
+        done
+        cd sub
+        prompt='\w'
+        echo "Prompt: '${prompt@P}'"
+        cd "$HOME"
+      }
+
+      test_in_subdir 'a"b$x`echo c`\d'
+      test_in_subdir "it's \"\$x\" \\"
+      test_in_subdir 'a$(echo c)'
+      test_in_subdir 'a${x}b'
+      test_in_subdir '$((1+1))'
+
   - name: "Working dir in parameter expansion words"
     stdin: |
       HOME=$(pwd)
@@ -265,6 +289,50 @@ cases:
       # (Only whether an error is reported is checked; its wording differs between shells.)
       x=XVAL
       for prompt in '${bad name} $x' '${x!} $x' '${x:+"a} $x' '${x $x'; do
+        { echo "Prompt: [${prompt@P}]"; } 2>err.txt
+        [[ -s err.txt ]] && echo "reported"
+      done
+      rm err.txt
+
+  - name: "A prompt that fails to expand is shown as written"
+    stdin: |
+      # (Only whether an error is reported is checked; its wording differs between shells.)
+      x=XVAL
+      for prompt in '$((1 +)) $x' '$((1/0)) $x' '${u:?gone} $x' '`echo unterminated $x'; do
+        { echo "Prompt: [${prompt@P}]"; } 2>err.txt
+        [[ -s err.txt ]] && echo "reported"
+      done
+
+      set -u
+      prompt='$nounset_zz $x'
+      { echo "Prompt: [${prompt@P}]"; } 2>err.txt
+      [[ -s err.txt ]] && echo "reported"
+
+      echo "still running"
+      rm err.txt
+
+  - name: "A command that fails in a prompt doesn't stop its expansion"
+    stdin: |
+      x=XVAL
+      for prompt in '$(exit 3) $x' '$(nosuchcmd_zz) $x'; do
+        { echo "Prompt: [${prompt@P}]"; } 2>err.txt
+        [[ -s err.txt ]] && echo "reported"
+      done
+      rm err.txt
+
+  - name: "Unbalanced quotes in prompts"
+    stdin: |
+      x=XVAL
+      for prompt in '"unbalanced $x' "'unbalanced \$x" '$x "' "\$x '"; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Unterminated substitutions in prompts"
+    known_failure: true # bash expands nothing: an unterminated `$(` yields an empty prompt, an unterminated `${` the prompt as written; brush shows `$(` as written and expands what's before `${`
+    stdin: |
+      # (Only whether an error is reported is checked; its wording differs between shells.)
+      x=XVAL
+      for prompt in '$(echo #x) $x' '$x ${'; do
         { echo "Prompt: [${prompt@P}]"; } 2>err.txt
         [[ -s err.txt ]] && echo "reported"
       done
