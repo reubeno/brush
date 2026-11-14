@@ -49,6 +49,32 @@ pub enum EvalError {
     RecursionLimitExceeded,
 }
 
+/// An error from evaluating an arithmetic expression, noting whether it came from an array
+/// subscript. Kept internal so that callers like `[[ ]]` can treat a bad subscript as fatal
+/// without changing the public [`EvalError`] type.
+#[derive(Debug)]
+pub(crate) struct InnerEvalError {
+    /// The underlying error.
+    pub error: EvalError,
+    /// Whether the error happened while evaluating an array subscript.
+    pub in_subscript: bool,
+}
+
+impl From<EvalError> for InnerEvalError {
+    fn from(error: EvalError) -> Self {
+        Self {
+            error,
+            in_subscript: false,
+        }
+    }
+}
+
+impl From<InnerEvalError> for EvalError {
+    fn from(err: InnerEvalError) -> Self {
+        err.error
+    }
+}
+
 /// Trait implemented by arithmetic expressions that can be evaluated.
 pub(crate) trait ExpandAndEvaluate {
     /// Evaluate the given expression, returning the resulting numeric value.
@@ -90,17 +116,59 @@ pub(crate) async fn expand_and_eval(
     trace_if_needed: bool,
 ) -> Result<i64, EvalError> {
     // Per documentation, first shell-expand it.
+    let expanded_self = expand(shell, params, expr).await?;
+
+    // Then parse and evaluate.
+    eval_expanded(shell, params, expanded_self, trace_if_needed).await
+}
+
+/// Shell-expands an arithmetic expression without parsing or evaluating it.
+///
+/// # Arguments
+///
+/// * `shell` - The shell to use for expansion.
+/// * `params` - The execution parameters to use.
+/// * `expr` - The unexpanded arithmetic expression.
+pub(crate) async fn expand(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    expr: &str,
+) -> Result<String, EvalError> {
     let options = expansion::ExpanderOptions {
         kind: expansion::WordKind::ArithmeticExpression,
         ..Default::default()
     };
-    let expanded_self = expansion::basic_expand_word_with_options(shell, params, expr, &options)
+    expansion::basic_expand_word_with_options(shell, params, expr, &options)
         .await
-        .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))?;
+        .map_err(|_e| EvalError::FailedToExpandExpression(expr.to_owned()))
+}
 
-    // Now parse.
-    let expr = brush_parser::arithmetic::parse(&expanded_self)
-        .map_err(|_e| EvalError::ParseError(expanded_self))?;
+/// Parses and evaluates an arithmetic expression that has already been shell-expanded.
+///
+/// # Arguments
+///
+/// * `shell` - The shell to use for evaluation.
+/// * `params` - The execution parameters to use.
+/// * `expanded_expr` - The already-expanded arithmetic expression.
+/// * `trace_if_needed` - Whether to trace the expression if tracing is enabled.
+pub(crate) async fn eval_expanded(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    expanded_expr: String,
+    trace_if_needed: bool,
+) -> Result<i64, EvalError> {
+    Ok(eval_expanded_inner(shell, params, expanded_expr, trace_if_needed).await?)
+}
+
+/// Like [`eval_expanded`], but also reports whether a failure came from an array subscript.
+pub(crate) async fn eval_expanded_inner(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    expanded_expr: String,
+    trace_if_needed: bool,
+) -> Result<i64, InnerEvalError> {
+    let expr = brush_parser::arithmetic::parse(&expanded_expr)
+        .map_err(|_e| EvalError::ParseError(expanded_expr))?;
 
     // Trace if applicable.
     if trace_if_needed && shell.options().print_commands_and_arguments {
@@ -110,7 +178,7 @@ pub(crate) async fn expand_and_eval(
     }
 
     // Now evaluate.
-    expr.eval(shell)
+    eval_expr_impl(&expr, shell, 0)
 }
 
 /// Trait implemented by evaluatable arithmetic expressions.
@@ -125,7 +193,7 @@ pub trait Evaluatable {
 
 impl Evaluatable for ast::ArithmeticExpr {
     fn eval(&self, shell: &mut Shell<impl extensions::ShellExtensions>) -> Result<i64, EvalError> {
-        eval_expr_impl(self, shell, 0)
+        Ok(eval_expr_impl(self, shell, 0)?)
     }
 }
 
@@ -133,7 +201,7 @@ fn eval_expr_impl(
     expr: &ast::ArithmeticExpr,
     shell: &mut Shell<impl extensions::ShellExtensions>,
     depth: u32,
-) -> Result<i64, EvalError> {
+) -> Result<i64, InnerEvalError> {
     let value = match expr {
         ast::ArithmeticExpr::Literal(l) => *l,
         ast::ArithmeticExpr::Reference(lvalue) => deref_lvalue(shell, lvalue, depth)?,
@@ -192,15 +260,27 @@ fn get_var_value<'a>(
     Ok("".into())
 }
 
+/// Evaluates an array subscript, marking any failure as coming from a subscript.
+fn eval_subscript(
+    index_expr: &ast::ArithmeticExpr,
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    depth: u32,
+) -> Result<i64, InnerEvalError> {
+    eval_expr_impl(index_expr, shell, depth).map_err(|err| InnerEvalError {
+        error: err.error,
+        in_subscript: true,
+    })
+}
+
 fn deref_lvalue(
     shell: &mut Shell<impl extensions::ShellExtensions>,
     lvalue: &ast::ArithmeticTarget,
     depth: u32,
-) -> Result<i64, EvalError> {
+) -> Result<i64, InnerEvalError> {
     let value_str: Cow<'_, str> = match lvalue {
         ast::ArithmeticTarget::Variable(name) => get_var_value(shell, name.as_str())?,
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
+            let index_str = eval_subscript(index_expr, shell, depth)?.to_string();
 
             shell
                 .env()
@@ -226,7 +306,7 @@ fn deref_lvalue(
 
     let new_depth = depth + 1;
     if new_depth > MAX_VARIABLE_DEREF_DEPTH {
-        return Err(EvalError::RecursionLimitExceeded);
+        return Err(EvalError::RecursionLimitExceeded.into());
     }
 
     eval_expr_impl(&parsed_value, shell, new_depth)
@@ -237,7 +317,7 @@ fn apply_unary_op(
     op: ast::UnaryOperator,
     operand: &ast::ArithmeticExpr,
     depth: u32,
-) -> Result<i64, EvalError> {
+) -> Result<i64, InnerEvalError> {
     let operand_eval = eval_expr_impl(operand, shell, depth)?;
 
     match op {
@@ -254,7 +334,7 @@ fn apply_binary_op(
     left: &ast::ArithmeticExpr,
     right: &ast::ArithmeticExpr,
     depth: u32,
-) -> Result<i64, EvalError> {
+) -> Result<i64, InnerEvalError> {
     // First, special-case short-circuiting operators. For those, we need
     // to ensure we don't eagerly evaluate both operands. After we
     // get these out of the way, we can easily just evaluate operands
@@ -292,20 +372,20 @@ fn apply_binary_op(
             if right >= 0 {
                 Ok(wrapping_pow_u64(left, right as u64))
             } else {
-                Err(EvalError::NegativeExponent)
+                Err(EvalError::NegativeExponent.into())
             }
         }
         ast::BinaryOperator::Multiply => Ok(left.wrapping_mul(right)),
         ast::BinaryOperator::Divide => {
             if right == 0 {
-                Err(EvalError::DivideByZero)
+                Err(EvalError::DivideByZero.into())
             } else {
                 Ok(left.wrapping_div(right))
             }
         }
         ast::BinaryOperator::Modulo => {
             if right == 0 {
-                Err(EvalError::DivideByZero)
+                Err(EvalError::DivideByZero.into())
             } else {
                 Ok(left.wrapping_rem(right))
             }
@@ -334,7 +414,7 @@ fn apply_unary_assignment_op(
     lvalue: &ast::ArithmeticTarget,
     op: ast::UnaryAssignmentOperator,
     depth: u32,
-) -> Result<i64, EvalError> {
+) -> Result<i64, InnerEvalError> {
     let value = deref_lvalue(shell, lvalue, depth)?;
 
     match op {
@@ -366,7 +446,7 @@ fn assign(
     lvalue: &ast::ArithmeticTarget,
     value: i64,
     depth: u32,
-) -> Result<i64, EvalError> {
+) -> Result<i64, InnerEvalError> {
     match lvalue {
         ast::ArithmeticTarget::Variable(name) => {
             shell
@@ -381,7 +461,7 @@ fn assign(
                 .map_err(|_err| EvalError::FailedToUpdateEnvironment)?;
         }
         ast::ArithmeticTarget::ArrayElement(name, index_expr) => {
-            let index_str = eval_expr_impl(index_expr, shell, depth)?.to_string();
+            let index_str = eval_subscript(index_expr, shell, depth)?.to_string();
 
             shell
                 .env_mut()
