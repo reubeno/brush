@@ -599,6 +599,20 @@ cases:
       declare -A m
       read -r 'm[]' <<< 1; echo "rc=$? count=${#m[@]}"
 
+  - name: "read into an associative array key that expands to nothing"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      declare -A m
+      k=
+      read -r 'm[$k]' <<< value; echo "rc=$? count=${#m[@]}"
+      read -r 'm[""]' <<< value; echo "rc=$? count=${#m[@]}"
+      printf -v 'm[$k]' %s value; echo "rc=$? count=${#m[@]}"
+      read -r 'm[ ]' <<< space; echo "rc=$? count=${#m[@]}"
+
+      a=(keep)
+      read -r 'a[$k]' <<< zero; echo "rc=$?"
+      declare -p a
+
   - name: "read into the @ and * keys of an associative array"
     stdin: |
       declare -A m

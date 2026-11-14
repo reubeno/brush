@@ -2027,6 +2027,14 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
                 let index_to_use = self
                     .expand_array_index(index.as_str(), for_set_assoc_array, context)
                     .await?;
+
+                // An associative array has no empty key.
+                if for_set_assoc_array && index_to_use.is_empty() {
+                    return Err(
+                        error::ErrorKind::BadArraySubscript(format!("{name}[{index}]")).into(),
+                    );
+                }
+
                 (name, Some(index_to_use))
             }
             // `@` and `*` are ordinary keys of an associative array; an indexed array
