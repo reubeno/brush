@@ -521,6 +521,12 @@ pub(crate) fn remove_smallest_matching_prefix<'a>(
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         let re = pattern.to_regex(true, true)?;
+
+        // The smallest match may be the empty string (e.g., for `*`).
+        if re.is_match("")? {
+            return Ok(s);
+        }
+
         let mut indices = s.char_indices();
 
         #[allow(
@@ -576,6 +582,12 @@ pub(crate) fn remove_smallest_matching_suffix<'a>(
 ) -> Result<&'a str, error::Error> {
     if let Some(pattern) = pattern {
         let re = pattern.to_regex(true, true)?;
+
+        // The smallest match may be the empty string (e.g., for `*`).
+        if re.is_match("")? {
+            return Ok(s);
+        }
+
         #[allow(
             clippy::string_slice,
             reason = "because we get the indices from char_indices()"
@@ -713,6 +725,10 @@ mod tests {
             "oof"
         );
         assert_eq!(
+            remove_smallest_matching_prefix("ooof", Some(&Pattern::from("*")))?,
+            "ooof"
+        );
+        assert_eq!(
             remove_smallest_matching_prefix("ooof", Some(&Pattern::from("ooof")))?,
             ""
         );
@@ -773,6 +789,10 @@ mod tests {
         assert_eq!(
             remove_smallest_matching_suffix("fooo", Some(&Pattern::from("o*")))?,
             "foo"
+        );
+        assert_eq!(
+            remove_smallest_matching_suffix("fooo", Some(&Pattern::from("*")))?,
+            "fooo"
         );
         assert_eq!(
             remove_smallest_matching_suffix("fooo", Some(&Pattern::from("fooo")))?,

@@ -401,7 +401,6 @@ cases:
       echo "${!ref}"
 
   - name: "Shortest prefix/suffix removal with a pattern that matches nothing"
-    known_failure: true # the shortest match of '*' is empty, so nothing is removed; brush removes one character
     stdin: |
       var="abc"
       stars="a**b"
@@ -413,6 +412,9 @@ cases:
 
       arr=("abc" "def")
       echo "[${arr[@]#*}] [${arr[@]%*}]"
+
+      shopt -s extglob
+      echo "[${var#*(a)}] [${var%*(c)}] [${var##*(a)}] [${var%%*(c)}]"
 
   - name: "Variable prefix match"
     stdin: |
