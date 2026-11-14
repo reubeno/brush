@@ -587,3 +587,33 @@ cases:
       read -r 1x <<< bad; echo "rc=$?"
       read -r 'a[' <<< bad; echo "rc=$?"
       read -r ok 'b-d' <<< "o bad"; echo "rc=$? ok=$ok"
+
+  - name: "read into an element with an empty subscript"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      a=(keep)
+      read -r 'a[]' <<< replaced; echo "rc=$?"
+      declare -p a
+      read -r x 'a[]' y <<< "1 2 3"; echo "rc=$? x=[$x] y=[$y]"
+      declare -p a
+      declare -A m
+      read -r 'm[]' <<< 1; echo "rc=$? count=${#m[@]}"
+
+  - name: "read into the @ and * keys of an associative array"
+    stdin: |
+      declare -A m
+      read -r 'm[@]' <<< at; echo "rc=$?"
+      read -r 'm[*]' <<< star; echo "rc=$?"
+      read -r p 'm[@]' 'm[k]' <<< "P at2 kv"; echo "rc=$? p=$p"
+      for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort
+
+  - name: "read into the @ or * subscript of something not an associative array"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      a=(keep); s=scalar
+      read -r 'a[@]' <<< x; echo "rc=$?"
+      read -r 'a[*]' <<< x; echo "rc=$?"
+      read -r 's[@]' <<< x; echo "rc=$?"
+      read -r 'unset_var[@]' <<< x; echo "rc=$?"
+      declare -p a s
+      declare -p unset_var 2>/dev/null || echo "unset_var is unset"

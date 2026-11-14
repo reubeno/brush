@@ -268,6 +268,10 @@ pub enum ErrorKind {
     #[error("array index out of range: {0}")]
     ArrayIndexOutOfRange(String),
 
+    /// The subscript of an array element isn't one that can be assigned to.
+    #[error("{0}: bad array subscript")]
+    BadArraySubscript(String),
+
     /// Unhandled key code.
     #[error("unhandled key code: {0:?}")]
     UnhandledKeyCode(Vec<u8>),
