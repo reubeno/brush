@@ -2,7 +2,7 @@ use itertools::Itertools;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use brush_core::{ErrorKind, builtins, env, error, variables};
+use brush_core::{ErrorKind, builtins, env, error, expansion, variables};
 
 use std::io::{Read, Write};
 use utf8_chars::BufReadCharsExt;
@@ -152,12 +152,14 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         // Assign input to variables based on options.
         assign_input_to_variables(
             context.shell,
+            &context.params,
             input_line.as_deref(),
             &ifs,
             skip_ifs_splitting,
             self.array_variable.as_deref(),
             &self.variable_names,
-        )?;
+        )
+        .await?;
 
         Ok(result)
     }
@@ -169,8 +171,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
 /// - Array mode (`-a`): Split input by IFS and assign to array elements
 /// - Named variables: Split input by IFS and assign to each variable, with remainder to last
 /// - Default (`REPLY`): Assign entire input line to the `REPLY` variable
-fn assign_input_to_variables(
+async fn assign_input_to_variables(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
+    params: &brush_core::ExecutionParameters,
     input_line: Option<&str>,
     ifs: &str,
     skip_ifs_splitting: bool,
@@ -187,7 +190,15 @@ fn assign_input_to_variables(
             env::EnvironmentScope::Global,
         )?;
     } else if !variable_names.is_empty() {
-        assign_to_named_variables(shell, input_line, ifs, skip_ifs_splitting, variable_names)?;
+        assign_to_named_variables(
+            shell,
+            params,
+            input_line,
+            ifs,
+            skip_ifs_splitting,
+            variable_names,
+        )
+        .await?;
     } else {
         shell.env_mut().update_or_add(
             "REPLY",
@@ -205,8 +216,9 @@ fn assign_input_to_variables(
 /// Fields are assigned one per variable, with any remaining fields joined by space
 /// and assigned to the last variable. If there are more variables than fields,
 /// the extra variables are set to empty strings.
-fn assign_to_named_variables(
+async fn assign_to_named_variables(
     shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
+    params: &brush_core::ExecutionParameters,
     input_line: Option<&str>,
     ifs: &str,
     skip_ifs_splitting: bool,
@@ -227,13 +239,8 @@ fn assign_to_named_variables(
             fields.pop_front().unwrap_or_default()
         };
 
-        shell.env_mut().update_or_add(
-            name,
-            variables::ShellValueLiteral::Scalar(value),
-            |_| Ok(()),
-            env::EnvironmentLookup::Anywhere,
-            env::EnvironmentScope::Global,
-        )?;
+        // A name may be subscripted (e.g., `read "arr[1]"`).
+        expansion::assign_to_named_parameter(shell, params, name, value).await?;
 
         if is_last {
             break;

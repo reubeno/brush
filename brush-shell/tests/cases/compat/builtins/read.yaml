@@ -465,7 +465,6 @@ cases:
       printf '\\\xc3\xa9\xed\x85\x8cx\n' | { read -n 2 x; echo "[$x]"; }
 
   - name: "read into an invalid variable name fails"
-    known_failure: true # TODO(read): an invalid variable name is accepted
     ignore_stderr: true
     stdin: |
       read 1x <<< "hello"
@@ -563,3 +562,28 @@ cases:
   - name: "read -h is an invalid option and prints nothing on stdout"
     stdin: |
       x=$(read -h 2>/dev/null); echo "rc=$? len=${#x}"
+
+  - name: "read into an array element"
+    stdin: |
+      declare -A m
+      read -r "m[k]" <<< 1
+      read -r "m[a b]" <<< 2
+      for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort
+
+      a=(x y z)
+      read -r "a[1]" <<< Q
+      declare -p a
+      read -r p "a[2]" <<< "P R S"
+      echo "$p"; declare -p a
+      i=0
+      read -r "a[i+1]" "a[i]" "a[-1]" <<< "one zero last"
+      declare -p a
+      read -r "new[3]" <<< v
+      declare -p new
+
+  - name: "read into an invalid name"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      read -r 1x <<< bad; echo "rc=$?"
+      read -r 'a[' <<< bad; echo "rc=$?"
+      read -r ok 'b-d' <<< "o bad"; echo "rc=$? ok=$ok"
