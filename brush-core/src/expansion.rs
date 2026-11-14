@@ -2006,29 +2006,49 @@ impl<'a, SE: extensions::ShellExtensions> WordExpander<'a, SE> {
         value: T,
         context: WordContext,
     ) -> Result<(), error::Error> {
+        let is_set_assoc_array = |shell: &Shell<SE>, name: &str| {
+            shell.env().get(name).is_some_and(|(_, var)| {
+                matches!(
+                    var.value(),
+                    ShellValue::AssociativeArray(_)
+                        | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
+                )
+            })
+        };
+
         let (variable_name, index) = match parameter {
             brush_parser::word::Parameter::Named(name) => (name, None),
             brush_parser::word::Parameter::NamedWithIndex { name, index } => {
-                let is_set_assoc_array = if let Some((_, var)) = self.shell.env().get(name) {
-                    matches!(
-                        var.value(),
-                        ShellValue::AssociativeArray(_)
-                            | ShellValue::Unset(ShellValueUnsetType::AssociativeArray)
-                    )
-                } else {
-                    false
-                };
+                if index.is_empty() {
+                    return Err(error::ErrorKind::BadArraySubscript(format!("{name}[]")).into());
+                }
 
+                let for_set_assoc_array = is_set_assoc_array(self.shell, name);
                 let index_to_use = self
-                    .expand_array_index(index.as_str(), is_set_assoc_array, context)
+                    .expand_array_index(index.as_str(), for_set_assoc_array, context)
                     .await?;
+
+                // An associative array has no empty key.
+                if for_set_assoc_array && index_to_use.is_empty() {
+                    return Err(
+                        error::ErrorKind::BadArraySubscript(format!("{name}[{index}]")).into(),
+                    );
+                }
+
                 (name, Some(index_to_use))
             }
-            brush_parser::word::Parameter::Positional(_)
-            | brush_parser::word::Parameter::NamedWithAllIndices {
-                name: _,
-                concatenate: _,
+            // `@` and `*` are ordinary keys of an associative array; an indexed array
+            // has no such element.
+            brush_parser::word::Parameter::NamedWithAllIndices { name, concatenate } => {
+                let key = if *concatenate { "*" } else { "@" };
+                if !is_set_assoc_array(self.shell, name) {
+                    return Err(
+                        error::ErrorKind::BadArraySubscript(format!("{name}[{key}]")).into(),
+                    );
+                }
+                (name, Some(key.to_owned()))
             }
+            brush_parser::word::Parameter::Positional(_)
             | brush_parser::word::Parameter::Special(_) => {
                 return Err(error::ErrorKind::CannotAssignToSpecialParameter.into());
             }

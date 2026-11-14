@@ -418,13 +418,8 @@ impl ShellEnvironment {
             updater(var)
         } else {
             let mut var = ShellVariable::new(ShellValue::Unset(ShellValueUnsetType::Untyped));
-            var.assign(
-                variables::ShellValueLiteral::Array(variables::ArrayLiteral(vec![(
-                    Some(index),
-                    value,
-                )])),
-                false,
-            )?;
+            // (This also rejects an index a new array can't have, e.g. a negative one.)
+            var.assign_at_index(index, value, false)?;
             updater(&mut var)?;
 
             self.add(name, var, scope_if_creating)

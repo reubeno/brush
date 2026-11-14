@@ -536,7 +536,6 @@ cases:
       for k in "${!m[@]}"; do echo "$k=${m[$k]}"; done | sort
 
   - name: "read into an array element"
-    known_failure: true # TODO(builtins): read ignores a subscripted name
     stdin: |
       declare -A m
       read -r "m[k]" <<< 1
