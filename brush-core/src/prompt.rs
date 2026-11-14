@@ -3,6 +3,7 @@ use crate::{
     shell::Shell,
     sys::{self, users},
 };
+use brush_parser::prompt::PromptPiece;
 use std::path::Path;
 
 const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -19,41 +20,33 @@ pub(crate) async fn expand_prompt(
 
     // Now, render each piece.
     let mut formatted_prompt = String::new();
+    let expand = shell.options().expand_prompt_strings;
     for piece in prompt_pieces {
-        // Pieces that semantically represent a literal char (e.g. user wrote
-        // `\$` meaning a literal `$`, not input for pass-2 expansion). We
-        // prepend a `\` so pass 2 consumes it and leaves the char alone.
-        let semantically_literal =
-            matches!(piece, brush_parser::prompt::PromptPiece::DollarOrPound);
+        // When further expansion is enabled, we scope expansion to source text from
+        // the original prompt spec. That also includes handling `\\`, which escapes
+        // what follows it, and `\044`, which stands for a `$` that expands.
+        let apply_quoting = expand
+            && !matches!(
+                piece,
+                PromptPiece::Literal(_)
+                    | PromptPiece::EscapedSequence(_)
+                    | PromptPiece::Backslash
+                    | PromptPiece::AsciiCharacter(_)
+            );
 
         let formatted_piece = format_prompt_piece(shell, piece)?;
 
-        // Only useful when pass 2 actually consumes a `\` for that leading
-        // byte; otherwise the `\` would leak through.
-        if shell.options().expand_prompt_strings
-            && semantically_literal
-            && formatted_piece.starts_with(expansion::DOUBLE_QUOTED_ESCAPE_CHARS)
-        {
-            formatted_prompt.push('\\');
+        if apply_quoting {
+            formatted_prompt.push_str(
+                &brush_parser::word::DoubleQuotedTextKind::Prompt.quote(&formatted_piece),
+            );
+        } else {
+            formatted_prompt.push_str(&formatted_piece);
         }
-
-        formatted_prompt.push_str(&formatted_piece);
     }
 
-    if shell.options().expand_prompt_strings {
-        // Now expand any remaining escape sequences, but without tilde-expansion.
-        // Use double-quote escape rules so that backslashes emitted in the
-        // previous step survive intact unless they precede a character that
-        // would also be escapable inside a double-quoted string.
-        let options = expansion::ExpanderOptions {
-            tilde_expand: false,
-            brace_expand: false,
-            unquoted_backslash_handling: expansion::UnquotedBackslashHandling::DoubleQuoted,
-            ..Default::default()
-        };
-        match expansion::basic_expand_word_with_options(shell, params, &formatted_prompt, &options)
-            .await
-        {
+    if expand {
+        match expansion::basic_expand_prompt_word(shell, params, &formatted_prompt).await {
             Ok(expanded) => formatted_prompt = expanded,
             // As in bash, a prompt that fails to expand (e.g., a bad substitution) is reported
             // and shown as it was before this expansion. It's done here, not in the callers,

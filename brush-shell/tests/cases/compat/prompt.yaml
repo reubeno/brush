@@ -32,6 +32,408 @@ cases:
       echo "Prompt: '${arr[@]@P}'"
       echo "Prompt: '${arr[*]@P}'"
 
+  - name: "Working dir based prompts and escaping"
+    stdin: |
+      HOME=$(pwd)
+
+      prompt='\w '
+
+      function test_in_subdir() {
+        echo "------ Testing: subdir=$1 -------"
+        mkdir "$1"
+        pushd "$1"
+        echo "Prompt: '${prompt@P}'"
+        popd
+      }
+
+      test_in_subdir subdir
+      test_in_subdir 'sub dir'
+      test_in_subdir sub\\dir
+      test_in_subdir '$((39+3))'
+      test_in_subdir '`echo hi`'
+      test_in_subdir '$prompt'
+      test_in_subdir '${prompt}'
+      test_in_subdir '$(echo hi)'
+
+  - name: "Working dir with expansion and quoting characters"
+    stdin: |
+      HOME=$(pwd)
+      x=XVAL
+
+      function test_in_subdir() {
+        echo "------ Testing: subdir=$1 -------"
+        mkdir "$1"
+        cd "$1"
+        for prompt in '\w' '\W' '\\\w' '\\\W' '\134\W' '"\w"' '\w$x'; do
+          echo "Prompt: '${prompt@P}'"
+        done
+        shopt -u promptvars
+        prompt='\w'
+        echo "Prompt (without promptvars): '${prompt@P}'"
+        shopt -s promptvars
+        cd "$HOME"
+      }
+
+      test_in_subdir '$x'
+      test_in_subdir 'a$'
+      test_in_subdir '$$'
+      test_in_subdir 'a\$x'
+      test_in_subdir 'a\\$x'
+      test_in_subdir 'a\\b'
+      test_in_subdir 'a\'
+      test_in_subdir 'a"b'
+      test_in_subdir '"q'
+      test_in_subdir 'a\"b'
+      test_in_subdir "it's"
+      test_in_subdir 'a\`b'
+      test_in_subdir '~'
+      test_in_subdir '!!'
+      test_in_subdir '*'
+      test_in_subdir '\w'
+      test_in_subdir '\[x\]'
+
+  - name: "Working dir in parameter expansion words"
+    stdin: |
+      HOME=$(pwd)
+      x=XVAL
+
+      function test_in_subdir() {
+        echo "------ Testing: subdir=$1 -------"
+        mkdir "$1"
+        cd "$1"
+        for prompt in '${u:-\W}' '${u:-"\W"}' '${x:+\w}' '${x/X/\W}' '${x/X/"\W"}'; do
+          echo "Prompt: '${prompt@P}'"
+        done
+        cd "$HOME"
+      }
+
+      test_in_subdir '$x'
+      test_in_subdir 'a"b'
+      test_in_subdir "a'b'c"
+      test_in_subdir 'a\zb'
+      test_in_subdir 'a\\b'
+      test_in_subdir 'a b'
+      test_in_subdir '`echo hi`'
+      test_in_subdir '$(echo hi)'
+
+  - name: "Shell name with expansion characters"
+    stdin: |
+      ln -s "$(command -v "$0")" 'na$x`echo hi`\$x'
+      PATH=".:$PATH" 'na$x`echo hi`\$x' -c 'x=XVAL; prompt="\s"; echo "Prompt: ${prompt@P}"'
+      rm 'na$x`echo hi`\$x'
+
+  - name: "Shell name when running a script"
+    known_failure: true # bash names the shell itself; brush names the script
+    stdin: |
+      echo 'prompt="\s"; [[ ${prompt@P} == "$(basename "$1")" ]] && echo "names the shell"' > script.sh
+      "$0" script.sh "$0"
+      rm script.sh
+
+  - name: "Working dir with non-ASCII characters"
+    known_failure: true # outside a UTF-8 locale bash shows each byte above 0x7f as M-<char>
+    stdin: |
+      HOME=$(pwd)
+      for dir in 'aéb' '日本'; do
+        mkdir "$dir"
+        cd "$dir"
+        for prompt in '\w' '\W'; do
+          printf '%s' "${prompt@P}" | hexdump -C
+        done
+        cd "$HOME"
+      done
+
+  - name: "Working dir with non-ASCII characters in a UTF-8 locale"
+    env:
+      LC_ALL: C.UTF-8
+    stdin: |
+      HOME=$(pwd)
+      for dir in 'aéb' '日本'; do
+        mkdir "$dir"
+        cd "$dir"
+        for prompt in '\w' '\W'; do
+          printf '%s' "${prompt@P}" | hexdump -C
+        done
+        cd "$HOME"
+      done
+
+  - name: "Date format with expansion characters"
+    stdin: |
+      x=XVAL
+      for prompt in '\D{$x}' '\D{`echo hi`}' '\D{$(echo hi)}' '\D{a\\b}' '\D{"$x"}' '\D{$x}$x'; do
+        echo "Prompt: '${prompt@P}'"
+      done
+
+  - name: "Octal escapes yielding expansion characters"
+    stdin: |
+      x=XVAL
+      for prompt in '\044x' '\140echo hi\140' '\134$x' '\134\134$x' '\042$x\042' '\047$x\047'; do
+        echo "Prompt: '${prompt@P}'"
+      done
+      shopt -u promptvars
+      prompt='\044x \134$x'
+      echo "Prompt (without promptvars): '${prompt@P}'"
+
+  - name: "Quotes in prompts"
+    stdin: |
+      x=XVAL
+      for prompt in '"$x"' "'\$x'" '"a' "it's" 'a"b\"c' '"\$x"' '$"x"' "\$'x\\n'" \
+                    '${x+"q"}' '${u-"$x"}' '${u:-"it'"'"'s"}' '${u:-"a"\"}' '\$ ${u:-"don'"'"'t"} $x' \
+                    '$(echo "a  b")' '"$(echo "a  b")"' "\$(echo 'a  b')" "'\$(echo hi)'"; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+      shopt -u promptvars
+      for prompt in '"$x"' "'\$x'" 'a\"b' 'a\\b' '\$x'; do
+        echo "Prompt (without promptvars): [${prompt@P}]"
+      done
+
+  - name: "Single quotes in parameter expansion words in prompts"
+    stdin: |
+      x=XVAL
+      for prompt in "\${x+'q'}" "\${u-'\$x'}" "\${u-'a\"b'}" "\${u:-'a'\"b\"'c'}" "\${u:-'\$(echo hi)'}" \
+                    "\${u:='q'}\$u"; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Backslashes in parameter expansion words in prompts"
+    stdin: |
+      x=XVAL
+      for prompt in '${x:+a\zb}' '${x:+\-}' '${u:-C:\\dir}' '${x:+\\n}' '${x:+\ }|' '${u:-\~}' '${u:-a\*b}' \
+                    '${u:-\{a,b\}}' "\${u:-\\'}" '${x:+"a\zb"}' '${x:+"a\"b"}' '${x:+a\"b}' '${x:+a\}b}' \
+                    '${x:+\$x}' '${x:+"\$x"}' '${x:+\\\\}' '${u:=a\zb}$u'; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Line continuations in parameter expansion words in prompts"
+    stdin: |
+      x=XVAL
+      prompt=$'${x:+a\\\nb} ${x:+"c\\\nd"}'
+      echo "Prompt: [${prompt@P}]"
+
+  - name: "Tildes in parameter expansion words in prompts"
+    env:
+      HOME: /home/user
+    stdin: |
+      h=$HOME/foo
+      y='a  b'
+      for prompt in '${h#~}' '${h/~/T}' '${h//~/T}' '${h/#~/T}' '${y/a/~}' '${y/a/~/x}' '${h/#$HOME/~}' \
+                    '${h/#$HOME/\~}' '${u:-~}' '${y:+~}' '${y:+~/x}' '${y/a/"~"}' '${u:=~}$u'; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Parameter expansions nested in patterns and words in prompts"
+    env:
+      HOME: /home/user
+    stdin: |
+      h=$HOME/foo
+      y='a  b'
+      for prompt in "\${y/a/\${u:-'q'}}" "\${y#\${u:-'a'}}" '${y/a/${u:-"z  z"}}' '${y/a/${u:-\z}}' '${y/a/${u:-~}}' \
+                    "\${u:-\${y/a/'z'}}" '${u:-${y/a/"z"}}' "\${u:-\${y#'a'}}" '${u:-${h#~}}' '${u:-${y/a/~}}' \
+                    "\${u:-\"\${u:-'q'}\"}" "\${u:-\${u:-'q'}}" "\${u:-\${y:+\"it's\"}}" \
+                    "\${u:-\${y/a/\${u:-'q'}}}" "\${u:-\${y#\${u:-'a'}}}" '${u:-${y/a/${u:-~}}}' '${y:+${y/a/${u:-\z}}}' \
+                    "\${u:-\"\${y/a/\${u:-'q'}}\"}" "\${y/a/\"\${u:-'q'}\"}" "\${u:=\${y/a/\${u:-'q'}}}\$u"; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Quoted words in array and positional parameter expansions in prompts"
+    stdin: |
+      set -- 'p  q' r
+      arr=('m  n' o)
+      for prompt in "[\${arr[@]/m/'M'}]" '[${arr[@]/m/"M  M"}]' "[\${@/p/'P'}]" '[${@:+"q  q"}]' "[\${@:+'q  q'}]" \
+                    "[\${arr[5]:-'q'}]" '[${arr[@]:+${arr[@]/m/${u:-"Q"'"'q'"'}}}]' "[\${u:-\${arr[@]/m/'M'}}]"; do
+        echo "Prompt: ${prompt@P}"
+      done
+
+  - name: "ANSI-C quotes in patterns and replacements in prompts"
+    known_failure: true # bash reads $'...' there as `$` and a single-quoted string whose quotes are removed (`$z  b`); brush decodes it
+    stdin: |
+      y='a  b'
+      for prompt in "\${y/a/\$'z'}" "\${y#\$'a'}"; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "ANSI-C quotes in parameter expansion words in prompts"
+    stdin: |
+      # (\x is not a prompt escape, so it reaches the second expansion as written.)
+      for prompt in "\${u:-\$'a\\x41b'}" "\${u:-a\$'\\x41'b}" "\$'a\\x41b'"; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Malformed parameter expansions in prompts"
+    known_failure: true # bash reports one it can't parse and expands nothing; brush shows it as written and expands the rest
+    stdin: |
+      # (Only whether an error is reported is checked; its wording differs between shells.)
+      x=XVAL
+      for prompt in '${bad name} $x' '${x!} $x' '${x:+"a} $x' '${x $x'; do
+        { echo "Prompt: [${prompt@P}]"; } 2>err.txt
+        [[ -s err.txt ]] && echo "reported"
+      done
+      rm err.txt
+
+  - name: "$@ and array[@] in prompts with IFS set"
+    stdin: |
+      set -- 'p  q' r
+      arr=('m  n' o)
+      IFS=:
+      for prompt in '[$@]' '[${arr[@]}]' '[$*]' '[${arr[*]}]' '[${arr[0]:+$@}]'; do
+        echo "Prompt: ${prompt@P}"
+      done
+
+  - name: "Words that are not expanded in prompts"
+    stdin: |
+      HOME=$(pwd)
+      touch file1 file2
+      for prompt in '*' 'file?' '{a,b}' '{a,b}$x' '${u:-{a,b}}' '${u:-~}' 'a  b' '<(echo hi)' '~' '~/x' 'a=~' '$((1+2))' '$[1+2]'; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Parameter expansion forms in prompts"
+    stdin: |
+      x=XVAL
+      empty=
+      arr=(one 'two  three' four)
+      declare -A assoc=([key]=value)
+      set -- p1 'p2  p3'
+      for prompt in '$x' '${x}' '$x$x' 'a${x}b' '${#x}' '${x:1:2}' '${x,,}' '${x/V/v}' '${x#X}' '${x%L}' \
+                    '${u:-default}' '${empty:-$x}' '${x:+set}' '${u-${x}}' '${!x@}' '${x@Q}' \
+                    '${arr[1]}' '${arr[@]}' '${arr[*]}' '${#arr[@]}' '${!arr[@]}' '${assoc[key]}' \
+                    '$1' '$2' '$@' '$*' '$#' '${u:=assigned}$u'; do
+        echo "Prompt: [${prompt@P}]"
+      done
+      echo "u=$u"
+
+  - name: "Special parameters in prompts"
+    stdin: |
+      prompt='$?'
+      false
+      echo "After false: [${prompt@P}]"
+      true
+      echo "After true: [${prompt@P}]"
+
+      prompt='$$'
+      [[ ${prompt@P} == $$ ]] && echo "pid matches"
+
+      prompt='$-'
+      [[ ${prompt@P} == $- ]] && echo "flags match"
+
+      prompt='$PWD:$OLDPWD:${SHLVL}:$IFS:$'
+      cd /usr
+      cd /
+      [[ ${prompt@P} == "/:/usr:$SHLVL:$IFS:$" ]] && echo "variables match"
+
+  - name: "Substitutions and arithmetic in prompts"
+    stdin: |
+      x=5
+      f() { echo "from f: $1"; }
+      for prompt in '$(echo hi)' '$(f arg)' '$(echo $(echo nested))' '$(echo `echo mixed`)' '`echo $(echo mixed)`' \
+                    '$(echo "$x")' "\$(echo '\$x')" '$(echo a; echo b)' '$(printf "a\n\n\n")|' \
+                    '$(echo "a)")' '$(echo \))' '$(exit 3)$?' \
+                    '$((x + 1))' '$((x * (2 + 1)))' '$[x + 1]' '$((x++))$x' '$(( $(echo 2) + ${x} ))' \
+                    '$(echo $((x)))' '${x}$(echo $x)$((x))`echo $x`'; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Case command with unparenthesized pattern in prompt command substitution"
+    known_failure: true # brush ends the substitution at the pattern's ')'
+    stdin: |
+      prompt='$(case a in a) echo matched;; esac)'
+      echo "Prompt: [${prompt@P}]"
+
+  - name: "Side effects of prompt expansion"
+    stdin: |
+      count=0
+      prompt='$((count += 1)) ${v:=set-by-prompt} $(inner=lost; echo sub)'
+      echo "Prompt: [${prompt@P}]"
+      echo "Prompt: [${prompt@P}]"
+      echo "count=$count v=$v inner=${inner-unset}"
+
+  - name: "Expansions next to prompt escapes"
+    stdin: |
+      HOME=$(pwd)
+      mkdir dir
+      cd dir
+      x=XVAL
+      for prompt in '\w$x' '$x\w' '\w/$x' '${x}\W${x}' '\w$(echo sub)' '$(echo sub)\w' '\w`echo sub`' \
+                    '\w$((1+2))' '\$$x' '$x\$' '\$\$' '\$(echo sub)' '\n$x\n' '\e[0m$x\e[0m' '\[$x\]' \
+                    '\[\e[1m\]$x\[\e[0m\]' '\\$x' '\\\\$x' '$x\\' '\101$x\102' '${x:+\w}' \
+                    '${u:-\w}' '$(echo "\w")' "\$(echo '\\w')" '$\w' '$\x' '\$\w' '$\{x}' '$\(echo hi)'; do
+        printf '%s' "${prompt@P}" | hexdump -C
+      done
+
+  - name: "Results of prompt expansion are not expanded again"
+    stdin: |
+      HOME=$(pwd)
+      x=XVAL
+      dollar='$x'
+      cmd='$(echo sub)'
+      tick='`echo sub`'
+      escape='\w \u \$ \n \\ \044x'
+      quoted='"q" '\''s'\'' \"'
+      for prompt in '$dollar' '${dollar}' '$cmd' '$tick' '$escape' '$quoted' '$(echo "$dollar")' \
+                    '$(echo "$cmd")' '$(echo "$escape")' '${u:-$dollar}' '$(echo \\w)'; do
+        echo "Prompt: [${prompt@P}]"
+      done
+
+  - name: "Prompt transformation of a prompt transformation"
+    stdin: |
+      HOME=$(pwd)
+      x=XVAL
+      inner='\\w \$x'
+      outer='${inner@P}'
+      echo "Once: [${inner@P}]"
+      echo "Nested: [${outer@P}]"
+      once=${inner@P}
+      echo "Twice: [${once@P}]"
+
+  - name: "Multi-line prompts with expansions"
+    stdin: |
+      x=XVAL
+      prompt=$'first $x\nsecond $(echo sub)\n\\$ '
+      echo "Prompt: [${prompt@P}]"
+
+      prompt='$(echo one
+      echo two)'
+      echo "Prompt: [${prompt@P}]"
+
+      prompt=$'a \\\n b $x \\\\\n c'
+      echo "Prompt: [${prompt@P}]"
+
+  - name: "PS4 expansions"
+    stdin: |
+      x=XVAL
+      PS4='+$x:$((1+2)):\$:${u:-default}> '
+      { set -x; echo "traced"; set +x; } 2>&1
+
+      PS4='+${FUNCNAME[0]:-main}:$LINENO> '
+      f() { echo "in f"; }
+      { set -x; f; set +x; } 2>&1
+
+  - name: "PS4 with command substitution"
+    skip: true # hangs: brush traces the substitution's commands, expanding PS4 again without end
+    stdin: |
+      PS4='+$(echo sub)> '
+      { set -x; echo "traced"; set +x; } 2>&1
+
+  - name: "PS4 with working dir holding expansion characters"
+    stdin: |
+      HOME=$(pwd)
+      mkdir '$(echo hi)'
+      cd '$(echo hi)'
+      PS4='+\w> '
+      { set -x; echo "traced"; set +x; } 2>&1
+
+  - name: "PS1 with working dir holding expansion characters"
+    args: ["-i"]
+    ignore_stderr: true
+    env:
+      PROMPT_COMMAND: 'echo "prompt: ${PS1@P}"'
+    stdin: |
+      HOME=$(pwd)
+      mkdir '$(echo hi >&2; echo hi)'
+      cd '$(echo hi >&2; echo hi)'
+      PS1='\w\$ '
+      true
+
   - name: "Non-printing chars"
     stdin: |
       prompt='\[\]Prompt>\[\]'
@@ -419,3 +821,15 @@ cases:
 
       prompt='\`'
       printf '%s' "${prompt@P}" | hexdump -C
+
+  - name: "ANSI-C quotes in a nested word in a replacement in a prompt"
+    known_failure: true # bash reads $'...' there as `$` and a single-quoted string whose quotes are removed; brush decodes it
+    stdin: |
+      y='a  b'
+      p='[${y/a/${u:-$'"'"'z'"'"'}}]'; echo "${p@P}"
+
+  - name: "Gettext quotes in a parameter expansion word in a prompt"
+    known_failure: true # bash reads $"..." there as `$` and a double-quoted string whose quotes are removed, and expands what that leaves as a parameter; brush keeps the `$` and the text
+    stdin: |
+      loc=LOCV
+      p='[${u:-$"loc"}]'; echo "${p@P}"

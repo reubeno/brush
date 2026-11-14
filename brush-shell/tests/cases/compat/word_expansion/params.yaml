@@ -400,6 +400,20 @@ cases:
       ref="arr[10]"
       echo "${!ref}"
 
+  - name: "Shortest prefix/suffix removal with a pattern that matches nothing"
+    known_failure: true # the shortest match of '*' is empty, so nothing is removed; brush removes one character
+    stdin: |
+      var="abc"
+      stars="a**b"
+      echo "[${var#*}] [${var%*}] [${stars#*}] [${stars%*}]"
+      echo "[${var##*}] [${var%%*}] [${var#?}] [${var#*b}]"
+
+      empty=
+      echo "[${stars#${empty:-*}}]" [${stars#${empty:-*}}]
+
+      arr=("abc" "def")
+      echo "[${arr[@]#*}] [${arr[@]%*}]"
+
   - name: "Variable prefix match"
     stdin: |
       var1="Hello"
@@ -498,6 +512,17 @@ cases:
       echo "\${arr[@],,}: ${arr[@],,}"
       echo "\${arr[*],,}: ${arr[*],,}"
 
+  - name: "Case modification with a pattern longer than one character"
+    known_failure: true # the pattern is tried on each character by itself, so one needing two characters matches nothing; brush matches it against longer runs
+    stdin: |
+      lower="foobar"
+      upper="FOOBAR"
+      echo "${lower^^oo} ${lower^^ob} ${lower^^foobar} ${lower^^?o} ${lower^^[o]o} ${lower^^o*}"
+      echo "${upper,,OO} ${upper,,OB} ${upper,,FOOBAR}"
+
+      arr=("foo" "boo")
+      echo "${arr[@]^^oo}"
+
   - name: "Substring replacement"
     stdin: |
       var="Hello, world!"
@@ -551,6 +576,17 @@ cases:
       echo "\${arr//world/WORLD}: ${arr//world/WORLD}"
       echo "\${arr[@]//world/WORLD}: ${arr[@]//world/WORLD}"
       echo "\${arr[*]//world/WORLD}: ${arr[*]//world/WORLD}"
+
+  - name: "Substring replacement with an empty pattern or an empty value"
+    known_failure: true # an empty pattern matches nothing unless anchored, and an empty value is left alone; brush matches at every position and anchors in an empty value
+    stdin: |
+      var="a  b"
+      empty=
+      echo "[${var///Z}] [${var//''/Z}] [${var/''/Z}] [${var//$empty/Z}] [${var/$empty/Z}]"
+      echo "[${var/#/Z}] [${var/%/Z}] [${empty/#/Z}] [${empty/%/Z}]"
+
+      arr=("foo" "boo")
+      echo "[${arr[@]///Z}]"
 
   - name: "Global substring removal"
     stdin: |
@@ -823,12 +859,75 @@ cases:
       echo $$(echo hi)
 
   - name: "ANSI-C quoting in parameter expansion in double quotes"
-    known_failure: true # TODO(expansion): with extquote (on by default), $'...' inside "${...}" is decoded; brush keeps it as is
     stdin: |
       echo "[${x:-$'a\tb'}]"
 
+  - name: "Quotes in a parameter expansion word within double quotes"
+    stdin: |
+      y='a  b'
+      set -- 'p  q' r
+      arr=(m 'n  o')
+      count() { echo "$#"; }
+
+      echo "${u:-"it's"}"
+      echo "${u:-"'"}"
+      echo "${u:-"a"\"}"
+      echo "${u:-a "b' c"}"
+      echo "${u:-"don't" stop}"
+      echo "${u:-'"'}"
+      echo "${u-'a"b'}"
+      echo "${u-'q'} ${u-'$y'} ${u-"$y"} ${u-\$y}"
+      echo "${u:-a\"b} ${u:-a\'b} ${u:-\a} ${u:-"\a"} ${u:-a\\b}"
+      echo "${u:-~} ${u:-"~"} ${u:-a:~} ${u:-*} ${u:-{a,b}}"
+      echo "${u:-"$(echo "c  d")"} ${u:-$(echo 'c  d')} ${u:-${v:-"in'ner"}}"
+      echo "[${u:-}] [${u:-""}] [${u:-" "}] [${u:-"a  b"   "c"}]"
+      echo "${u:-x"$*"y}"
+      echo "${u:-"${u:-'q'}"} ${u:-"${u:-~}"} ${u:-"${u:-a\zb}"} ${y/a/"${u:-"it's"}"}"
+      count "${u:-"$@"}"
+      count "${u:-$@}"
+      count "${u:-"${arr[@]}"}"
+      count "${u:-a b}"
+      count "${u:-}"
+
+  - name: "Escaped closing brace in a parameter expansion word within double quotes"
+    stdin: |
+      echo "${u-a\}b} ${u:-{"k":1\}} ${u:-"a\}b"}"
+
+  - name: "A quoted scalar between text in a parameter expansion word within double quotes"
+    known_failure: true # bash 5.3 loses a double-quoted `$name` and the text after it (`x`, where `${y}` in its place gives `xa  by`); brush yields `xa  by` for both
+    stdin: |
+      y='a  b'
+      echo "${u:-x"$y"y}" "${u:-x"${y}"y}"
+
+  - name: "Parameter expansions nested in a pattern or replacement within double quotes"
+    stdin: |
+      y='a  b'
+      echo "${y/a/${u:-'q'}}|${y#${u:-'a'}}|${y/a/${u:-\z}}|${y/a/${u:-"z  z"}}"
+      echo "${u:-${y/a/${u:-'q'}}}|${u:-${y#${u:-'a'}}}"
+      echo "${y/a/'z'}|${y#'a'}|${u:-'q'}|${u:-${u:-'q'}}"
+
+  - name: "Backslashes in a pattern or replacement in a conditional or case pattern"
+    stdin: |
+      y='a  b'
+      p='a/b'
+      check() { [[ $1 == 0 ]] && echo "match" || echo "no match"; }
+
+      [[ '*  b' == "${y/a/\*}" ]]; check $?
+      [[ 'zz  b' == "${y/a/\*}" ]]; check $?
+      [[ 'zz  b' == ${y/a/\*} ]]; check $?
+      [[ 'a\/b' == "${p//\//\\/}" ]]; check $?
+      [[ '\z  b' == "${y/a/\\z}" ]]; check $?
+      [[ 'b' == "${y#a\ \ }" ]]; check $?
+      [[ 'a  b' == "${y#\x}" ]]; check $?
+      [[ 'q  b' == "${y/a/${u:-'q'}}" ]]; check $?
+      [[ 'a  b' == ${y/x/\*} ]]; check $?
+
+      case '*  b' in "${y/a/\*}") echo "match" ;; *) echo "no match" ;; esac
+      case 'zz  b' in ${y/a/\*}) echo "match" ;; *) echo "no match" ;; esac
+      case 'a\/b' in "${p//\//\\/}") echo "match" ;; *) echo "no match" ;; esac
+      case 'b' in ${y#a\ \ }) echo "match" ;; *) echo "no match" ;; esac
+
   - name: "Escaped closing brace in parameter expansion in double quotes"
-    known_failure: true # TODO(expansion): bash removes the backslash from '\}' inside "${...}"; brush keeps it
     stdin: |
       echo "[${x:-\}}]"
 
@@ -936,3 +1035,38 @@ cases:
       echo "1 ${x/b/$r}" ${x/b/$r}
       r='\\'
       echo "2 ${x/b/$r}" ${x/b/$r}
+
+  - name: "Assignment of a default value in a pattern keeps its backslashes"
+    known_failure: true # TODO(expansion): the pattern's backslash mode reaches the value assigned by `:=`; bash assigns `*`, which then matches as a glob
+    stdin: |
+      unset u; [[ x == ${u:=\*} ]]; echo "[$u]"
+      unset u; [[ abc == ${u:=a\*c} ]] && echo match; echo "[$u]"
+      unset u; case abc in ${u:=a\*c}) echo match;; esac; echo "[$u]"
+
+  - name: "$@ in a replacement nested in a parameter expansion word"
+    known_failure: true # bash joins the elements with single spaces there; brush keeps each as it is
+    stdin: |
+      y='a  b'; arr=('m  n' o); set -- 'p  q' r
+      echo "[${u:-${y/a/$@}}] [${u:-${y/a/${arr[@]}}}]"
+
+  - name: "Message of a checked expansion"
+    known_failure: true # TODO(expansion): bash splits the message into words and joins them with single spaces, and has a default message for an empty one
+    stdin: |
+      y='a  b'
+      ( : ${u:?$y} ) 2>&1 | sed 's/^.*: //'
+      ( : ${u:?} ) 2>&1 | sed 's/^.*: //'
+
+  - name: "Unquoted $@ in a parameter expansion word with IFS lacking a space"
+    known_failure: true # TODO(expansion): bash yields one field per parameter; brush splits each on IFS
+    stdin: |
+      set -- 'p  q' r; arr=('m  n' o); IFS=:
+      f() { printf '<%s>' "$@"; echo; }
+      f ${u:-$@}; f ${1:+$@}; f ${u:-${arr[@]}}; f ${u:-x$@y}
+
+  - name: "Quotes in a parameter expansion word used as a subscript or offset"
+    known_failure: true # TODO(expansion): bash reads the quotes as part of the arithmetic expression and fails; brush removes them
+    ignore_stderr: true # error wording differs
+    stdin: |
+      arr=(x y); y='a  b'
+      echo "${arr[${u:-'0'}]}" ${y:${u:-'1'}}
+      echo "rc=$?"
