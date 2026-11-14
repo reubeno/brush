@@ -513,7 +513,6 @@ cases:
       echo "\${arr[*],,}: ${arr[*],,}"
 
   - name: "Case modification with a pattern longer than one character"
-    known_failure: true # the pattern is tried on each character by itself, so one needing two characters matches nothing; brush matches it against longer runs
     stdin: |
       lower="foobar"
       upper="FOOBAR"
