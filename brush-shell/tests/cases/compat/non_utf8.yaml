@@ -1,0 +1,162 @@
+name: "Non-UTF-8 data"
+# brush holds strings as UTF-8, so a byte that isn't valid UTF-8 can't pass through one
+# unchanged. These cases use `sh` to make such bytes where brush itself cannot.
+cases:
+  - name: "Starting with an inherited variable that is not valid UTF-8"
+    ignore_stderr: true # brush warns that it altered the variable
+    stdin: |
+      sh -c 'V=$(printf "a\200b") exec "$0" -c "echo started"' "$(command -v "$0")"
+      echo "rc=$?"
+
+  - name: "Starting in a working dir that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
+    ignore_stderr: true # brush warns that it altered the variable
+    stdin: |
+      sh -c 'mkdir "$(printf "x\200y")" && cd "$(printf "x\200y")" && exec "$0" -c "echo started"' "$(command -v "$0")"
+      echo "rc=$?"
+      sh -c 'rmdir "$(printf "x\200y")"'
+
+  - name: "Inherited variable value that is not valid UTF-8"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      sh -c 'V=$(printf "a\200b") exec "$0" -c "printf %s \"\$V\" | hexdump -C; echo \${#V}"' "$(command -v "$0")"
+
+  - name: "Inherited variable value that is not valid UTF-8 passed on to a child"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      sh -c 'V=$(printf "a\200b") exec "$0" -c "sh -c \"printf %s \\\"\\\$V\\\" | hexdump -C\""' "$(command -v "$0")"
+
+  - name: "Inherited variable name that is not valid UTF-8 passed on to a child"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      sh -c 'exec env "$(printf "N\200")=v" "$0" -c "env | grep -a =v\$ | hexdump -C"' "$(command -v "$0")"
+
+  - name: "Inherited variable names differing only in bytes that are not valid UTF-8"
+    known_failure: true # both names become the same one in brush, so only one variable is passed on
+    stdin: |
+      sh -c 'exec env "$(printf "N\200")=v1" "$(printf "N\201")=v2" "$0" -c "env | grep -a ^N | hexdump -C"' "$(command -v "$0")"
+
+  - name: "Positional argument that is not valid UTF-8"
+    known_failure: true # brush refuses to start
+    ignore_stderr: true
+    stdin: |
+      sh -c 'exec "$0" -c "printf %s \"\$1\" | hexdump -C" "$0" "$(printf "a\200b")"' "$(command -v "$0")"
+      echo "rc=$?"
+
+  - name: "Command string that is not valid UTF-8"
+    known_failure: true # brush refuses to start
+    ignore_stderr: true
+    stdin: |
+      sh -c 'exec "$0" -c "printf %s $(printf "a\200b") | hexdump -C"' "$(command -v "$0")"
+      echo "rc=$?"
+
+  - name: "Script path that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
+    known_failure: true # brush refuses to start
+    ignore_stderr: true
+    stdin: |
+      sh -c 'name=$(printf "s\200.sh"); echo "echo ran" > "$name"; "$0" "$name"; echo "rc=$?"; rm "$name"' "$(command -v "$0")"
+
+  - name: "ANSI-C quoted byte that is not valid UTF-8"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      v=$'a\200b'
+      printf '%s' "$v" | hexdump -C
+      echo "${#v}"
+
+  - name: "printf writing a byte that is not valid UTF-8"
+    stdin: |
+      printf 'a\200b' | hexdump -C
+      printf '%b' 'a\0200b' | hexdump -C
+
+  - name: "echo -e writing a byte that is not valid UTF-8"
+    known_failure: true # brush writes U+FFFD
+    stdin: |
+      echo -e 'a\x80b' | hexdump -C
+
+  - name: "Command substitution yielding a byte that is not valid UTF-8"
+    known_failure: true # brush reports an i/o error
+    ignore_stderr: true
+    stdin: |
+      v=$(sh -c 'printf "a\200b"')
+      echo "rc=$?"
+      printf '%s' "$v" | hexdump -C
+      echo "${#v}"
+
+  - name: "mapfile reading a byte that is not valid UTF-8"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      sh -c 'printf "a\200b\n"' | {
+        mapfile -t arr
+        printf '%s' "${arr[0]}" | hexdump -C
+      }
+
+  - name: "Pathname expansion to a name that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
+    known_failure: true # brush yields a name with U+FFFD, which names no file
+    stdin: |
+      sh -c 'touch "$(printf "g\200x")"'
+      for f in g*; do
+        printf '%s' "$f" | hexdump -C
+        [ -e "$f" ] && echo "exists"
+      done
+      sh -c 'rm "$(printf "g\200x")"'
+
+  - name: "Argument to a command that is not valid UTF-8"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      sh -c 'printf %s "$1" | hexdump -C' _ $'a\200b'
+
+  - name: "Redirection to a file name that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
+    known_failure: true # brush creates a file named with U+FFFD
+    stdin: |
+      echo hi > $'r\200x'
+      sh -c 'ls | hexdump -C; rm r*'
+
+  - name: "Here string holding a byte that is not valid UTF-8"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      cat <<< $'a\200b' | hexdump -C
+
+  - name: "Changing to a directory whose name is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
+    known_failure: true # brush's expansion of the name has U+FFFD, which names no directory
+    ignore_stderr: true
+    stdin: |
+      sh -c 'mkdir "$(printf "d\200x")"'
+      cd d*/ && pwd | sed 's|.*/||' | hexdump -C
+      cd "$OLDPWD"
+      sh -c 'rmdir "$(printf "d\200x")"'
+
+  - name: "Pattern matching a byte that is not valid UTF-8"
+    known_failure: true # brush reports an i/o error from the command substitution
+    ignore_stderr: true
+    stdin: |
+      v=$(sh -c 'printf "a\200b"')
+      case $v in a?b) echo "one char";; *) echo "no match";; esac
+
+  - name: "Exported variable holding a byte that is not valid UTF-8"
+    known_failure: true # brush replaces the byte with U+FFFD
+    stdin: |
+      export E=$'a\200b'
+      sh -c 'printf %s "$E" | hexdump -C'
+
+  - name: "Pipeline passing through a byte that is not valid UTF-8"
+    stdin: |
+      sh -c 'printf "a\200b"' | cat | hexdump -C
+
+  - name: "Prompt working dir that is not valid UTF-8"
+    incompatible_platforms: ["macos"] # (No such file name can be made there)
+    known_failure: true # brush cannot hold a byte that isn't UTF-8: the dir it makes and shows has U+FFFD instead
+    env:
+      LC_ALL: C.UTF-8
+    stdin: |
+      HOME=$(pwd)
+      mkdir $'x\200y'
+      cd $'x\200y'
+      for prompt in '\w' '\W'; do
+        printf '%s' "${prompt@P}" | hexdump -C
+      done
+      cd "$HOME"
+      rmdir $'x\200y'

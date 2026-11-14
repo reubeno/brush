@@ -48,3 +48,25 @@ pub use platform::terminal;
 pub(crate) use platform::users;
 
 pub use platform::PlatformError;
+
+/// Retrieves the host process's environment variables as strings.
+///
+/// A name or value that isn't valid Unicode has what's invalid replaced with U+FFFD, and
+/// a warning is logged; [`std::env::vars()`] would panic on it.
+pub(crate) fn lossy_host_env_vars() -> impl Iterator<Item = (String, String)> {
+    std::env::vars_os().map(|(name, value)| {
+        let name = name.to_string_lossy();
+        let value = match value.into_string() {
+            Ok(value) => value,
+            Err(value) => {
+                tracing::warn!("environment variable {name} is not valid Unicode; altering it");
+                value.to_string_lossy().into_owned()
+            }
+        };
+        // (Owned only when the conversion had to replace something.)
+        if matches!(name, std::borrow::Cow::Owned(_)) {
+            tracing::warn!("environment variable name {name} is not valid Unicode; altering it");
+        }
+        (name.into_owned(), value)
+    })
+}
