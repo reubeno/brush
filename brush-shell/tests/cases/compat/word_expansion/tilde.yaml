@@ -231,6 +231,22 @@ cases:
       v=${y#a:~}; echo "[$v]"
       v=${y/a/${u:-x:~}}; echo "[$v]"
 
+  - name: "Tilde after a colon in the word of an assigned default in an assignment's value"
+    known_failure: true # bash doesn't expand a tilde after a colon in the word of `:=`, though it does in the word of `:-`; brush expands it
+    env:
+      HOME: /home/user
+    stdin: |
+      unset u; v=${u:=x:~}; echo "[$v] [$u]"
+      unset u; declare w=${u:=x:~}; echo "[$w] [$u]"
+
+  - name: "Tilde in the word of an assigned default"
+    env:
+      HOME: /home/user
+    stdin: |
+      unset u; v=x:${u:=~}; echo "[$v] [$u]"
+      unset u; : ${u:=x:~}; echo "[$u]"
+      unset u; echo ${u:=x:~}
+
   - name: "Tilde expansion: before a character that can't end a tilde prefix"
     known_failure: true # a tilde prefix runs to the next slash or colon or to the end of the word; brush ends it at ';' too
     env:
