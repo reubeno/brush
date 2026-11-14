@@ -631,3 +631,21 @@ cases:
       read -r 'unset_var[@]' <<< x; echo "rc=$?"
       declare -p a s
       declare -p unset_var 2>/dev/null || echo "unset_var is unset"
+
+  - name: "read into a negative subscript"
+    ignore_stderr: true # error wording differs
+    stdin: |
+      unset a
+      read -r 'a[-1]' <<< v; echo "rc=$?"
+      declare -p a 2>/dev/null || echo "a is unset"
+      unset b
+      printf -v 'b[-1]' %s v; echo "rc=$?"
+      declare -p b 2>/dev/null || echo "b is unset"
+
+      e=(x y)
+      read -r 'e[-1]' <<< last; echo "rc=$?"
+      read -r 'e[-3]' <<< bad; echo "rc=$?"
+      declare -p e
+      unset f
+      read -r 'f[2]' <<< v; echo "rc=$?"
+      declare -p f
