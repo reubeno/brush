@@ -1,8 +1,9 @@
 name: "Word expansion: nested word matrix"
 cases:
   - name: "Nested words in double quotes, unquoted words and assignments"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       y='a  b'
       e=
       x=XVAL
@@ -42,8 +43,9 @@ cases:
       done
 
   - name: "Nested words in here docs and prompts"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       y='a  b'
       e=
       x=XVAL
@@ -89,8 +91,9 @@ cases:
       done
 
   - name: "Nested words in conditional patterns"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       y='a  b'
       e=
       x=XVAL
@@ -132,8 +135,9 @@ cases:
       done
 
   - name: "Nested words in case patterns"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       y='a  b'
       e=
       x=XVAL

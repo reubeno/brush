@@ -791,8 +791,9 @@ cases:
       EOF
 
   - name: "Tildes in parameter expansion words in here doc"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       h=$HOME/foo
       y='a  b'
       cat <<EOF
@@ -802,8 +803,9 @@ cases:
       EOF
 
   - name: "Parameter expansions nested in patterns and words in here doc"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       h=$HOME/foo
       y='a  b'
       cat <<EOF

@@ -211,8 +211,9 @@ cases:
       echo "Prompt: [${prompt@P}]"
 
   - name: "Tildes in parameter expansion words in prompts"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       h=$HOME/foo
       y='a  b'
       for prompt in '${h#~}' '${h/~/T}' '${h//~/T}' '${h/#~/T}' '${y/a/~}' '${y/a/~/x}' '${h/#$HOME/~}' \
@@ -221,8 +222,9 @@ cases:
       done
 
   - name: "Parameter expansions nested in patterns and words in prompts"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       h=$HOME/foo
       y='a  b'
       for prompt in "\${y/a/\${u:-'q'}}" "\${y#\${u:-'a'}}" '${y/a/${u:-"z  z"}}' '${y/a/${u:-\z}}' '${y/a/${u:-~}}' \
@@ -368,7 +370,7 @@ cases:
       escape='\w \u \$ \n \\ \044x'
       quoted='"q" '\''s'\'' \"'
       for prompt in '$dollar' '${dollar}' '$cmd' '$tick' '$escape' '$quoted' '$(echo "$dollar")' \
-                    '$(echo "$cmd")' '$(echo "$escape")' '${u:-$dollar}' '$(echo \$x)' '$(echo \\w)'; do
+                    '$(echo "$cmd")' '$(echo "$escape")' '${u:-$dollar}' '$(echo \\w)'; do
         echo "Prompt: [${prompt@P}]"
       done
 

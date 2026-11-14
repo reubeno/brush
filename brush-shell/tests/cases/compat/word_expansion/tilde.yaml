@@ -188,8 +188,9 @@ cases:
       command export cz=~/z; echo "${cz//${test_root}/ROOT}"
 
   - name: "Tilde expansion: in a pattern and its replacement"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       h=$HOME/foo
       lit='~/foo'
       echo ${h#~} ${h##~/} ${h%~} ${lit#~}
@@ -199,8 +200,9 @@ cases:
       echo "$x"
 
   - name: "Tilde expansion: none after a pattern anchor"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       h=$HOME/foo
       lit='~/foo'
       end='foo~'
@@ -219,8 +221,9 @@ cases:
       case ${h/#~/T} in "$h") echo "in a case word" ;; esac
 
   - name: "Tilde after a colon in a word nested in an assignment's value"
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       y='a  b'
       v=${u:-x:~}; echo "[$v]"
       v=${y/b/x:~}; echo "[$v]"
@@ -230,8 +233,9 @@ cases:
 
   - name: "Tilde expansion: before a character that can't end a tilde prefix"
     known_failure: true # a tilde prefix runs to the next slash or colon or to the end of the word; brush ends it at ';' too
+    env:
+      HOME: /home/user
     stdin: |
-      HOME=/home/user
       var='a  b'
       echo "[${var/a/~;~}] [${var/a/~,~}] [${var/a/~ ~}] [${var/a/~x}]"
       echo [${var/a/~;~}]
