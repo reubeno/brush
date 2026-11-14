@@ -152,6 +152,11 @@ pub enum TokenizerError {
     #[error("unterminated here document; tag(s) {0} declared at {1}")]
     UnterminatedHereDocuments(String, String),
 
+    /// An array subscript in an assignment word (e.g., the `[i + 1` in `a[i + 1]=x`) was
+    /// still open at the end of the input stream.
+    #[error("unterminated array subscript starting at {0}; expected a matching `]`")]
+    UnterminatedArraySubscript(SourcePosition),
+
     /// Expansions delimited by brackets (`$(...)`, `$((...))`, `$[...]` and `${...}`) were
     /// nested in one another more deeply than the tokenizer supports.
     #[error("expansions nested too deeply (limit: {})", MAX_EXPANSION_NESTING)]
@@ -177,6 +182,7 @@ impl TokenizerError {
                 | Self::UnterminatedExpansion
                 | Self::UnterminatedVariable
                 | Self::UnterminatedExtendedGlob(..)
+                | Self::UnterminatedArraySubscript(..)
                 | Self::UnterminatedHereDocuments(..)
                 | Self::MissingHereTagAtEndOfInput
         )
@@ -335,6 +341,118 @@ struct ExpansionFrame {
     /// arithmetic expansion's contents, `<<` is always a shift; see
     /// [`NestedExpansion::is_arithmetic`].)
     arithmetic_command_parens: usize,
+    /// Where the next word falls relative to the simple command being read; tells whether it
+    /// may be an assignment word (see [`TokenParseState::open_subscript`]). Only tracked for
+    /// the bottom frame: the contents of a nested expansion are re-tokenized on their own
+    /// later, if they're commands at all.
+    word_position: WordPosition,
+}
+
+/// Where the next word falls relative to the simple command being read, as far as it matters
+/// for recognizing assignment words. It's approximated from the preceding tokens alone, without
+/// the parser's view of the grammar; the rules follow bash's observed behavior (e.g., a subscript
+/// with blanks is one word after `;` or `then`, but not in an argument or a case pattern).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum WordPosition {
+    /// The next word may be an assignment: it starts a command, or follows only assignments
+    /// (and redirections) in one.
+    #[default]
+    AssignmentAllowed,
+    /// As [`WordPosition::AssignmentAllowed`], but right after an assignment with an empty
+    /// value (e.g., `x=`), where a `(` starts an array literal rather than a subshell.
+    AfterEmptyAssignment,
+    /// The next word is the target of a redirection; after it comes the position the
+    /// redirection was in (whether an assignment was allowed there).
+    RedirectTarget { assignment_allowed: bool },
+    /// The next word names a function being defined with the `function` keyword.
+    FunctionName,
+    /// The next word can't be an assignment (e.g., it's an argument, or a case pattern).
+    Other,
+}
+
+impl WordPosition {
+    const fn assignment_allowed(self) -> bool {
+        matches!(self, Self::AssignmentAllowed | Self::AfterEmptyAssignment)
+    }
+
+    /// Returns the position following an operator token.
+    fn after_operator(self, operator: &str) -> Self {
+        match operator {
+            // An array literal's elements aren't commands.
+            "(" if self == Self::AfterEmptyAssignment => Self::Other,
+            ";" | "&" | "&&" | "||" | "|" | "|&" | "\n" | "(" | ")" => Self::AssignmentAllowed,
+            // A case item's pattern follows these.
+            ";;" | ";&" | ";;&" => Self::Other,
+            // Otherwise, it's a redirection operator.
+            _ => Self::RedirectTarget {
+                assignment_allowed: self.assignment_allowed(),
+            },
+        }
+    }
+
+    /// Returns the position following the word `word`.
+    fn after_word(self, word: &str) -> Self {
+        match self {
+            Self::RedirectTarget { assignment_allowed } => {
+                if assignment_allowed {
+                    Self::AssignmentAllowed
+                } else {
+                    Self::Other
+                }
+            }
+            // The body of a function defined as `function f { ...; }` follows its name.
+            Self::FunctionName => Self::AssignmentAllowed,
+            Self::AssignmentAllowed | Self::AfterEmptyAssignment => match word {
+                // Reserved words after which a command starts.
+                "if" | "then" | "else" | "elif" | "while" | "until" | "do" | "{" | "!" | "time" => {
+                    Self::AssignmentAllowed
+                }
+                "function" => Self::FunctionName,
+                _ if word.ends_with('=') && is_assignment_word(word) => Self::AfterEmptyAssignment,
+                _ if is_assignment_word(word) => Self::AssignmentAllowed,
+                _ => Self::Other,
+            },
+            Self::Other => Self::Other,
+        }
+    }
+}
+
+/// Returns whether `word` is a valid variable name.
+fn is_valid_name(word: &str) -> bool {
+    let mut chars = word.chars();
+    chars
+        .next()
+        .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+}
+
+/// Returns whether `word` has the form of an assignment word: a name, optionally followed by a
+/// bracketed subscript, then `=` or `+=`.
+fn is_assignment_word(word: &str) -> bool {
+    let name_len = word
+        .find(|c: char| c != '_' && !c.is_ascii_alphanumeric())
+        .unwrap_or(word.len());
+    let (name, mut rest) = word.split_at(name_len);
+    if !is_valid_name(name) {
+        return false;
+    }
+
+    if rest.starts_with('[') {
+        let mut depth = 0usize;
+        let Some(close) = rest.find(|c| {
+            match c {
+                '[' => depth += 1,
+                ']' => depth -= 1,
+                _ => (),
+            }
+            depth == 0
+        }) else {
+            return false;
+        };
+        rest = rest.get(close + 1..).unwrap_or_default();
+    }
+
+    rest.starts_with('=') || rest.starts_with("+=")
 }
 
 impl ExpansionFrame {
@@ -418,6 +536,11 @@ struct TokenParseState {
     pub token_is_operator: bool,
     pub in_escape: bool,
     pub quote_mode: QuoteMode,
+    /// The array subscript open in the current word, if any: where its `[` is, and how many
+    /// brackets are open. In a word that may be an assignment, as in bash, everything up to
+    /// the matching `]` belongs to the word, blanks and operator chars included (e.g., the
+    /// word `a[i + 1]=x`).
+    pub open_subscript: Option<(SourcePosition, usize)>,
 }
 
 impl TokenParseState {
@@ -428,6 +551,7 @@ impl TokenParseState {
             token_is_operator: false,
             in_escape: false,
             quote_mode: QuoteMode::None,
+            open_subscript: None,
         }
     }
 
@@ -447,6 +571,7 @@ impl TokenParseState {
         end_position.clone_into(&mut self.start_position);
         self.in_escape = false;
         self.quote_mode = QuoteMode::None;
+        self.open_subscript = None;
 
         token
     }
@@ -488,6 +613,12 @@ impl TokenParseState {
         self.token_is_operator
     }
 
+    /// Returns true if the current word has an array subscript open (see
+    /// [`TokenParseState::open_subscript`]).
+    pub const fn in_subscript(&self) -> bool {
+        self.open_subscript.is_some()
+    }
+
     fn is_newline(&self) -> bool {
         self.token_so_far == "\n"
     }
@@ -509,6 +640,21 @@ impl TokenParseState {
                 reason,
                 token: None,
             }));
+        }
+
+        let frame = &mut cross_token_state.frame;
+        if frame.expansion.is_none()
+            && !matches!(
+                reason,
+                TokenEndReason::HereDocumentBodyEnd | TokenEndReason::HereDocumentEndTag
+            )
+            && !matches!(frame.here_state, HereState::InHereDocs)
+        {
+            frame.word_position = if self.token_is_operator {
+                frame.word_position.after_operator(self.current_token())
+            } else {
+                frame.word_position.after_word(self.current_token())
+            };
         }
 
         let current_here_state = std::mem::take(&mut cross_token_state.frame.here_state);
@@ -1220,6 +1366,9 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                         return Err(TokenizerError::UnterminatedDoubleQuote(pos));
                     }
                 }
+                if let Some((pos, _)) = state.open_subscript {
+                    return Err(TokenizerError::UnterminatedArraySubscript(pos));
+                }
 
                 // Verify we're not in a here document.
                 if !matches!(self.cross_state.frame.here_state, HereState::None) {
@@ -1441,6 +1590,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             else if c == '('
                 && self.options.enable_extended_globbing
                 && !in_parameter_expansion
+                && !state.in_subscript()
                 && state.unquoted()
                 && !state.in_operator()
                 && state
@@ -1518,7 +1668,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             // If the character *can* start an operator, then it will.
             //
-            } else if state.unquoted() && Self::can_start_operator(c) {
+            } else if state.unquoted() && !state.in_subscript() && Self::can_start_operator(c) {
                 if state.started_token() {
                     result = state.delimit_current_token(
                         TokenEndReason::OperatorStart,
@@ -1533,7 +1683,7 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             //
             // Whitespace gets discarded (and delimits tokens).
             //
-            } else if state.unquoted() && is_blank(c) {
+            } else if state.unquoted() && !state.in_subscript() && is_blank(c) {
                 if state.started_token() {
                     result = state.delimit_current_token(
                         TokenEndReason::NonNewLineBlank,
@@ -1567,10 +1717,23 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
                 && (in_parameter_expansion
                     || (state.started_token() && !(c == '#' && state.only_blanks_so_far())))
             {
+                if state.unquoted() && c == '[' && self.can_open_subscript(&state) {
+                    state.open_subscript = Some((self.cross_state.cursor.clone(), 0));
+                }
                 self.consume_char()?;
                 state.append_char(c);
                 if state.unquoted() {
                     self.cross_state.frame.note_unquoted_char(c);
+                    if let Some((_, depth)) = &mut state.open_subscript {
+                        match c {
+                            '[' => *depth += 1,
+                            ']' => *depth -= 1,
+                            _ => (),
+                        }
+                        if *depth == 0 {
+                            state.open_subscript = None;
+                        }
+                    }
                 }
             } else if c == '#' {
                 // Consume the '#'.
@@ -1660,6 +1823,19 @@ impl<'a, R: ?Sized + std::io::BufRead> Tokenizer<'a, R> {
             }
         }
         Ok(false)
+    }
+
+    /// Returns whether a `[` read next would open an array subscript in the current word (see
+    /// [`TokenParseState::open_subscript`]): the word so far is a name, and is where an
+    /// assignment may be (see [`WordPosition`]).
+    fn can_open_subscript(&self, state: &TokenParseState) -> bool {
+        let frame = &self.cross_state.frame;
+        frame.expansion.is_none()
+            && frame.arithmetic_command_parens == 0
+            && matches!(frame.here_state, HereState::None)
+            && frame.word_position.assignment_allowed()
+            && !state.in_subscript()
+            && is_valid_name(state.current_token())
     }
 
     const fn can_start_extglob(c: char) -> bool {
@@ -2240,6 +2416,49 @@ SOMETHING
                 "for {word:?}"
             );
         }
+    }
+
+    #[test]
+    fn tokenize_assignment_subscripts_with_blanks() {
+        // Where a word may be an assignment, an array subscript extends to its matching `]`,
+        // taking blanks and operator chars with it. Elsewhere, words split as usual.
+        for (input, expected) in [
+            ("a[i + 1]=x", &["a[i + 1]=x"][..]),
+            ("a[ b[1 + 2] ]=x", &["a[ b[1 + 2] ]=x"]),
+            ("a[1|2;3 > 4]=x", &["a[1|2;3 > 4]=x"]),
+            ("a[1 \n2]=x", &["a[1 \n2]=x"]),
+            ("a[\"]\" ]=x", &["a[\"]\" ]=x"]),
+            ("a[$(echo ]) ]=x", &["a[$(echo ]) ]=x"]),
+            ("a[1 2]", &["a[1 2]"]),
+            ("x=1 a[i + 1]=2 cmd", &["x=1", "a[i + 1]=2", "cmd"]),
+            ("x; a[i + 1]=y", &["x", ";", "a[i + 1]=y"]),
+            ("if a[i + 1]=y", &["if", "a[i + 1]=y"]),
+            (
+                "function f { a[i + 1]=y",
+                &["function", "f", "{", "a[i + 1]=y"],
+            ),
+            (">f a[i + 1]=y", &[">", "f", "a[i + 1]=y"]),
+            ("echo a[1 + 1]=y", &["echo", "a[1", "+", "1]=y"]),
+            ("x=(a[1 + 1])", &["x=", "(", "a[1", "+", "1]", ")"]),
+            ("for a[1 2]", &["for", "a[1", "2]"]),
+            ("case x in a[ y]", &["case", "x", "in", "a[", "y]"]),
+            ("x;; a[ y]", &["x", ";;", "a[", "y]"]),
+            ("(( a[1 + 1] ))", &["(", "(", "a[1", "+", "1]", ")", ")"]),
+            ("1a[1 2]=x", &["1a[1", "2]=x"]),
+            ("\"a\"[1 2]=x", &["\"a\"[1", "2]=x"]),
+        ] {
+            assert_matches!(
+                tokenize_str(input),
+                Ok(tokens) if tokens.iter().map(Token::to_str).eq(expected.iter().copied()),
+                "for {input:?}"
+            );
+        }
+
+        assert_matches!(
+            tokenize_str("a[1 2"),
+            Err(TokenizerError::UnterminatedArraySubscript(_))
+        );
+        assert_matches!(tokenize_str("a[1 2"), Err(e) if e.is_incomplete());
     }
 
     #[test]
