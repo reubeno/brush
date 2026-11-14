@@ -110,12 +110,21 @@ peg::parser! {
         }
 
         rule lvalue() -> ast::ArithmeticTarget =
-            name:variable_name() "[" index:expression() "]" {
-                ast::ArithmeticTarget::ArrayElement(name.to_owned(), Box::new(index))
+            name:variable_name() "[" raw:$(subscript_text()) "]" {
+                // Keep the subscript text: associative arrays use it verbatim as the key,
+                // so it must not be required to be a valid arithmetic expression.
+                let expr = arithmetic::full_expression(raw).ok().map(Box::new);
+                ast::ArithmeticTarget::ArrayElement(
+                    name.to_owned(),
+                    ast::ArithmeticArrayIndex { raw: raw.to_owned(), expr },
+                )
             } /
             name:variable_name() {
                 ast::ArithmeticTarget::Variable(name.to_owned())
             }
+
+        // Text between an array subscript's brackets; nested brackets must be balanced.
+        rule subscript_text() = ("[" subscript_text() "]" / [^ '[' | ']'])*
 
         rule variable_name() -> &'input str =
             $(['a'..='z' | 'A'..='Z' | '_'](['a'..='z' | 'A'..='Z' | '_' | '0'..='9']*))

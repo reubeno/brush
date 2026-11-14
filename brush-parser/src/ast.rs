@@ -2356,7 +2356,27 @@ pub enum ArithmeticTarget {
     /// A named variable.
     Variable(String),
     /// An element in an array.
-    ArrayElement(String, Box<ArithmeticExpr>),
+    ArrayElement(String, ArithmeticArrayIndex),
+}
+
+/// The subscript of an array element referenced in an arithmetic expression.
+///
+/// Whether the subscript is evaluated arithmetically depends on the kind of array it
+/// is applied to, which is only known at evaluation time: indexed arrays evaluate it as
+/// an arithmetic expression, while associative arrays use its text verbatim as the key
+/// (e.g., `m[k]` refers to the key `k`, not to the value of the variable `k`).
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(
+    any(test, feature = "serde"),
+    derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
+pub struct ArithmeticArrayIndex {
+    /// The subscript exactly as written between the brackets.
+    pub raw: String,
+    /// The subscript parsed as an arithmetic expression, or `None` if it is not a
+    /// valid arithmetic expression (in which case it may only index an associative array).
+    pub expr: Option<Box<ArithmeticExpr>>,
 }
 
 impl Node for ArithmeticTarget {}
@@ -2372,7 +2392,7 @@ impl Display for ArithmeticTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Variable(name) => write!(f, "{name}"),
-            Self::ArrayElement(name, index) => write!(f, "{name}[{index}]"),
+            Self::ArrayElement(name, index) => write!(f, "{name}[{}]", index.raw),
         }
     }
 }
