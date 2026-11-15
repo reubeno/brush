@@ -127,7 +127,9 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for ReadCommand {
         let ifs = context.shell.ifs().into_owned();
 
         // Perform the read operation (potentially with timeout).
-        let read_result = self.read_line(input_stream, context.stderr(), timeout)?;
+        let read_result = self
+            .read_line(input_stream, context.stderr(), timeout)
+            .await?;
 
         // Determine whether to skip IFS splitting (for -N option).
         let skip_ifs_splitting = self.return_after_n_chars_no_delimiter.is_some();
@@ -327,6 +329,9 @@ enum InputEvent {
     CtrlC,
     /// Ctrl+D was pressed.
     CtrlD,
+    /// No input is available yet, but more may come (e.g., an empty in-memory pipe on
+    /// wasm whose writer, another task, hasn't finished).
+    WouldBlock,
 }
 
 impl InputReader {
@@ -343,6 +348,7 @@ impl InputReader {
                     input,
                     // A deadline too far off to represent is no deadline at all.
                     deadline: timeout.and_then(|t| Instant::now().checked_add(t)),
+                    unread: VecDeque::new(),
                 },
             ),
             pending: VecDeque::new(),
@@ -367,6 +373,12 @@ impl InputReader {
             match self.input.read_char_raw() {
                 Ok(Some(ch)) => break ch,
                 Ok(None) => return Ok(InputEvent::Eof),
+                Err(e) if e.as_io_error().kind() == std::io::ErrorKind::WouldBlock => {
+                    // Nothing more to read yet, but more may come: give back the start of
+                    // any sequence it consumed, to decode once the rest arrives.
+                    self.input.get_mut().unread.extend(e.as_bytes());
+                    return Ok(InputEvent::WouldBlock);
+                }
                 Err(e) => {
                     // Hand back the bytes it consumed, one at a time; the byte that broke
                     // the sequence was left unconsumed, for the next call to re-read.
@@ -405,10 +417,15 @@ struct PolledInput {
     input: brush_core::openfiles::OpenFile,
     /// Optional deadline for timeout.
     deadline: Option<Instant>,
+    /// Bytes given back after a read that would have blocked, to read again first.
+    unread: VecDeque<u8>,
 }
 
 impl Read for PolledInput {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if !self.unread.is_empty() {
+            return self.unread.read(buf);
+        }
         if let Some(deadline) = self.deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero()
@@ -440,7 +457,7 @@ struct LineReaderConfig {
 /// For example, with `-n 3` and input `a\bc` (4 bytes):
 /// - Bash processes: 'a' (output 1), '\b' → 'b' (output 2), 'c' (output 3) → "abc"
 /// - The backslash is consumed but doesn't count toward the limit
-fn read_line_with_reader(
+async fn read_line_with_reader(
     reader: &mut InputReader,
     config: &LineReaderConfig,
 ) -> Result<ReadResult, brush_core::Error> {
@@ -478,6 +495,10 @@ fn read_line_with_reader(
             InputEvent::CtrlC => {
                 return Ok(ReadResult::Interrupted);
             }
+
+            // Let whatever feeds the input (on wasm, another task writing to the
+            // pipe) run, then try again.
+            InputEvent::WouldBlock => tokio::task::yield_now().await,
 
             InputEvent::CtrlD => {
                 // At line start = EOF, mid-input = flush current input.
@@ -554,7 +575,7 @@ impl ReadCommand {
     /// - Without `-r`: backslash-newline is line continuation, other backslashes escape the next
     ///   char
     /// - With `-r`: backslash is treated as a literal character
-    fn read_line(
+    async fn read_line(
         &self,
         input_file: brush_core::openfiles::OpenFile,
         mut stderr_file: impl std::io::Write,
@@ -606,7 +627,7 @@ impl ReadCommand {
             process_escapes: !self.raw_mode,
         };
 
-        read_line_with_reader(&mut reader, &config)
+        read_line_with_reader(&mut reader, &config).await
     }
 
     fn setup_terminal_settings(
@@ -739,8 +760,8 @@ mod tests {
     // `-t` needs `poll_for_input`, which only the unix backend implements; elsewhere it
     // reports `Unsupported`, so there's no timeout to observe.
     #[cfg(unix)]
-    #[test]
-    fn test_read_times_out_mid_sequence_without_losing_the_partial_bytes() {
+    #[tokio::test]
+    async fn test_read_times_out_mid_sequence_without_losing_the_partial_bytes() {
         let (rx, mut tx) = std::io::pipe().unwrap();
         tx.write_all(b"\xc3").unwrap();
 
@@ -753,10 +774,35 @@ mod tests {
 
         // Holding `tx` means the continuation byte never arrives, so the deadline has to
         // be enforced on it and not just on the byte that started the sequence.
-        let result = read_line_with_reader(&mut reader, &config).unwrap();
+        let result = read_line_with_reader(&mut reader, &config).await.unwrap();
         drop(tx);
 
         assert!(matches!(result, ReadResult::TimedOut(Some(line)) if line == "\u{c3}"));
+    }
+
+    // ==================== Input that isn't ready yet ====================
+
+    #[tokio::test]
+    async fn test_read_waits_for_input_that_isnt_ready_yet() {
+        // Not ready before the line starts, mid-line, and mid-way through a two-byte
+        // UTF-8 sequence.
+        let file = crate::not_ready::NotReadyYet::file([
+            None,
+            Some(b"ab".as_slice()),
+            None,
+            Some(b"c\xc3".as_slice()),
+            None,
+            Some(b"\xa9d\nrest".as_slice()),
+        ]);
+        let mut reader = InputReader::new(file, None, None);
+        let config = LineReaderConfig {
+            delimiter: Some(DEFAULT_DELIMITER),
+            char_limit: None,
+            process_escapes: false,
+        };
+
+        let result = read_line_with_reader(&mut reader, &config).await.unwrap();
+        assert!(matches!(result, ReadResult::Line(line) if line == "abc\u{e9}d"));
     }
 
     // ==================== split_line_by_ifs tests ====================
