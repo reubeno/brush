@@ -896,6 +896,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 ) -> Result<String, error::Error> {
     // Instantiate a subshell to run the command in.
     let mut subshell = shell.clone();
+    let parent_errexit = shell.options().exit_on_nonzero_command_exit;
 
     // Command substitutions don't inherit errexit by default. Only inherit it when
     // command_subst_inherits_errexit is enabled, otherwise disable errexit in the subshell.
@@ -920,7 +921,7 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     // it, and so would the reader's wait: the command goes to a thread of its own.
     let multi_threaded = tokio::runtime::Handle::try_current()
         .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
-    let command = run_substitution_command(subshell, params, s);
+    let command = run_substitution_command(subshell, params, s, parent_errexit);
     let cmd_join_handle = if multi_threaded {
         shell.task_spawner().spawn(command)
     } else {
@@ -946,6 +947,7 @@ async fn run_substitution_command(
     mut shell: Shell<impl extensions::ShellExtensions>,
     mut params: ExecutionParameters,
     command: String,
+    parent_errexit: bool,
 ) -> Result<ExecutionResult, error::Error> {
     // Parse the string into a whole shell program.
     let parse_result = shell.parse_string(command);
@@ -955,8 +957,16 @@ async fn run_substitution_command(
     // If we failed to parse, then we'll fall below and handle it there.
     if let Ok(program) = &parse_result {
         if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
+            if matches!(
+                redir,
+                ast::IoRedirect::File(_, _, ast::IoFileRedirectTarget::ProcessSubstitution(..))
+            ) {
+                // The producer of this shorthand inherits the caller's errexit setting,
+                // even when an ordinary command substitution would clear it.
+                shell.options_mut().exit_on_nonzero_command_exit = parent_errexit;
+            }
             interp::setup_redirect(&mut shell, &mut params, redir).await?;
-            std::io::copy(&mut params.stdin(&shell), &mut params.stdout(&shell))?;
+            copy_substitution_input(params.stdin(&shell), params.stdout(&shell)).await?;
             return Ok(ExecutionResult::new(0));
         }
     }
@@ -968,6 +978,25 @@ async fn run_substitution_command(
     shell
         .run_parsed_result(parse_result, &source_info, &params)
         .await
+}
+
+async fn copy_substitution_input(
+    mut input: impl std::io::Read,
+    mut output: impl std::io::Write,
+) -> std::io::Result<()> {
+    let mut buffer = [0; 8192];
+    loop {
+        match input.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(n) => output.write_all(&buffer[..n])?,
+            Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                // WASM pipes need the producer task to run before a read can succeed.
+                tokio::task::yield_now().await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
 }
 
 // Detects a subshell command that consists solely of a single input redirection
@@ -1012,12 +1041,14 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
         return None;
     };
 
-    // ...that is a file input redirection to a filename, targeting stdin.
+    // ...that is an input redirection to a filename or readable process substitution,
+    // targeting stdin.
     match redir {
         ast::IoRedirect::File(
             fd,
             ast::IoFileRedirectKind::Read,
-            ast::IoFileRedirectTarget::Filename(..),
+            ast::IoFileRedirectTarget::Filename(..)
+            | ast::IoFileRedirectTarget::ProcessSubstitution(ast::ProcessSubstitutionKind::Read, _),
         ) if fd.is_none_or(|fd| fd == openfiles::OpenFiles::STDIN_FD) => Some(redir),
         _ => None,
     }
@@ -1026,6 +1057,43 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn substitution_input_waits_for_a_cooperative_writer() -> anyhow::Result<()> {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        struct DelayedInput {
+            ready: Arc<AtomicBool>,
+            bytes: &'static [u8],
+        }
+
+        impl std::io::Read for DelayedInput {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                if !self.ready.load(Ordering::SeqCst) {
+                    return Err(std::io::ErrorKind::WouldBlock.into());
+                }
+                self.bytes.read(buffer)
+            }
+        }
+
+        let ready = Arc::new(AtomicBool::new(false));
+        let input = DelayedInput {
+            ready: ready.clone(),
+            bytes: b"first\nsecond\n",
+        };
+        let writer = tokio::spawn(async move { ready.store(true, Ordering::SeqCst) });
+        let mut output = Vec::new();
+        copy_substitution_input(input, &mut output).await?;
+        writer.await?;
+        anyhow::ensure!(
+            output == b"first\nsecond\n",
+            "unexpected output: {output:?}"
+        );
+        Ok(())
+    }
 
     fn assignment(name: ast::AssignmentName, value: &str, append: bool) -> CommandArg {
         CommandArg::Assignment(ast::Assignment {
