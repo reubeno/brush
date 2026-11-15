@@ -101,7 +101,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
             .ok_or_else(|| ErrorKind::BadFileDescriptor(fd))?;
 
         // Read!
-        let lines = self.read_lines(input_file)?;
+        let lines = self.read_lines(input_file).await?;
 
         if let Some(origin) = origin {
             // -O: preserve existing array, assign at offset.
@@ -134,7 +134,7 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for MapFileCommand {
 }
 
 impl MapFileCommand {
-    fn read_lines(
+    async fn read_lines(
         &self,
         mut input_file: brush_core::openfiles::OpenFile,
     ) -> Result<Vec<String>, brush_core::Error> {
@@ -169,6 +169,11 @@ impl MapFileCommand {
                         }
                     }
                     Ok(_) => unreachable!("input can only be 0, 1, or error"),
+                    // Nothing to read yet, but more may come (e.g., an empty in-memory pipe
+                    // on wasm whose writer, another task, hasn't finished): let it run.
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        tokio::task::yield_now().await;
+                    }
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -209,4 +214,33 @@ fn setup_terminal_settings(
     }
 
     Ok(mode)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn read_lines_waits_for_input_that_isnt_ready_yet() {
+        let file = crate::not_ready::NotReadyYet::file([
+            None,
+            Some(b"a\nb".as_slice()),
+            None,
+            Some(b"\nc".as_slice()),
+        ]);
+        let command = MapFileCommand {
+            delimiter: None,
+            max_count: 0,
+            origin: vec![],
+            skip_count: 0,
+            remove_delimiter: true,
+            fd: vec![],
+            callback: None,
+            callback_group_size: 5000,
+            array_var_name: "MAPFILE".to_owned(),
+        };
+
+        let lines = command.read_lines(file).await.unwrap();
+        assert_eq!(lines, ["a", "b", "c"]);
+    }
 }
