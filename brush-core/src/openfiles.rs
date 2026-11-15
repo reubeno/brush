@@ -17,6 +17,14 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
     /// Clones the stream into a boxed trait object.
     fn clone_box(&self) -> Box<dyn Stream>;
 
+    /// Returns how many bytes have been written to the stream and not yet read, if it
+    /// buffers them in memory. The in-memory pipes on wasm do; they hold everything
+    /// written to them, so a writer that can wait may use this to let its reader catch
+    /// up rather than grow the buffer without bound.
+    fn pending_bytes(&self) -> Option<usize> {
+        None
+    }
+
     /// Converts the stream into an `OwnedFd`. Returns an error if the operation
     /// is not supported or if it fails.
     #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
@@ -175,6 +183,15 @@ impl OpenFile {
             Self::Stdin(_) | Self::Stdout(_) | Self::Stderr(_) => false,
             Self::File(file) => file.metadata().is_ok_and(|m| m.is_dir()),
             Self::PipeReader(_) | Self::PipeWriter(_) | Self::Stream(_) => false,
+        }
+    }
+
+    /// Returns how many bytes have been written to the open file and not yet read, if
+    /// it's a stream that buffers them in memory (see [`Stream::pending_bytes`]).
+    pub fn pending_bytes(&self) -> Option<usize> {
+        match self {
+            Self::Stream(stream) => stream.pending_bytes(),
+            _ => None,
         }
     }
 
@@ -442,5 +459,16 @@ where
     fn from(iter: I) -> Self {
         let files = iter.map(|(fd, file)| (fd, Some(file))).collect();
         Self { files }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_in_memory_streams_report_pending_bytes() {
+        assert_eq!(OpenFile::from(std::io::stdin()).pending_bytes(), None);
+        assert_eq!(OpenFile::from(std::io::stdout()).pending_bytes(), None);
     }
 }

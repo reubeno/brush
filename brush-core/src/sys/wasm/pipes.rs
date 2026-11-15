@@ -91,6 +91,10 @@ impl Stream for PipeReader {
     fn clone_box(&self) -> Box<dyn Stream> {
         Box::new(self.clone())
     }
+
+    fn pending_bytes(&self) -> Option<usize> {
+        Some(self.0.lock().buffer.len())
+    }
 }
 
 impl From<PipeReader> for OpenFile {
@@ -147,6 +151,10 @@ impl Stream for PipeWriter {
     fn clone_box(&self) -> Box<dyn Stream> {
         Box::new(self.clone())
     }
+
+    fn pending_bytes(&self) -> Option<usize> {
+        Some(self.0.lock().buffer.len())
+    }
 }
 
 impl From<PipeWriter> for OpenFile {
@@ -184,6 +192,24 @@ mod tests {
         let mut read = String::new();
         other_reader.read_to_string(&mut read)?;
         assert_eq!(read, "hi");
+        Ok(())
+    }
+
+    #[test]
+    fn pending_bytes_counts_what_is_written_and_not_yet_read() -> std::io::Result<()> {
+        let (reader, mut writer) = pipe()?;
+        let (reader, writer_file) = (OpenFile::from(reader), writer.clone());
+        let writer_file = OpenFile::from(writer_file);
+        assert_eq!(reader.pending_bytes(), Some(0));
+
+        writer.write_all(b"hello")?;
+        assert_eq!(reader.pending_bytes(), Some(5));
+        assert_eq!(writer_file.pending_bytes(), Some(5));
+
+        let mut reader = reader;
+        let mut buf = [0; 2];
+        reader.read_exact(&mut buf)?;
+        assert_eq!(writer_file.pending_bytes(), Some(3));
         Ok(())
     }
 
