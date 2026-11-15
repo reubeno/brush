@@ -416,11 +416,21 @@ cases:
       printf '<%2q>\n' 'foo bar'
 
   - name: "printf %q width and precision semantics"
-    known_failure: true # Requires q/Q modifier metadata from uucore
     stdin: |
       printf '<%12q>\n' 'foo bar'
       printf '<%.5q>\n' 'foo bar'
       printf '<%.5Q>\n' 'foo bar'
+
+  - name: "printf %q width and precision edge cases"
+    stdin: |
+      printf '<%-12q>\n' 'foo bar'
+      printf '<%.q>|<%.0Q>\n' 'a b' 'a b'
+      printf '<%3q>|<%.1q>\n' '' ''
+      printf '<%05q>|<%+3q>|<% 3q>\n' a b c
+      printf '<%lq>|<%-4hQ>\n' x y
+      printf '<%.2Q>|<%.4q>\n' $'a\tb' $'a\tb'
+      printf '<%8q>\n' 'a,b' 'x y'
+      printf -v v '[%6q]' 'a b'; echo "$v"
 
   - name: "printf %q dynamic and positional modifiers"
     known_failure: true # Dynamic modifiers are unsupported; positional forms follow uucore
@@ -438,7 +448,6 @@ cases:
 
   - name: "printf %q alternate form edge cases"
     min_oracle_version: "5.3" # Alternate form forces single quoting starting in bash 5.3
-    known_failure: true # Requires alternate-form and width metadata from uucore
     stdin: |
       printf '<%#q>\n' 'foo'
       printf '<%#12q>\n' 'foo bar'
