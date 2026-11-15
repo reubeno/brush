@@ -86,7 +86,7 @@ mod pwd;
 #[cfg(feature = "builtin.read")]
 mod read;
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "builtin.read", feature = "builtin.mapfile")))]
 mod not_ready;
 #[cfg(feature = "builtin.return")]
 mod return_;
