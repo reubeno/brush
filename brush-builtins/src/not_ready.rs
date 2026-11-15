@@ -51,12 +51,12 @@ impl brush_core::openfiles::Stream for NotReadyYet {
         Box::new(self.clone())
     }
 
-    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
+    #[cfg(unix)]
     fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, brush_core::Error> {
         Err(brush_core::ErrorKind::CannotConvertToNativeFd.into())
     }
 
-    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
+    #[cfg(unix)]
     fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, brush_core::Error> {
         Err(brush_core::ErrorKind::CannotConvertToNativeFd.into())
     }
