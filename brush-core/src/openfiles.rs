@@ -186,12 +186,14 @@ impl OpenFile {
         }
     }
 
-    /// Returns how many bytes have been written to the open file and not yet read, if
-    /// it's a stream that buffers them in memory (see [`Stream::pending_bytes`]).
+    /// Returns how many bytes have been written to the open file and not yet read, where
+    /// that's cheap to tell: for a stream that buffers them in memory (see
+    /// [`Stream::pending_bytes`]), or on Unix, for a pipe, FIFO, socket or terminal. Returns
+    /// `None` for regular files and wherever it can't tell.
     pub fn pending_bytes(&self) -> Option<usize> {
         match self {
             Self::Stream(stream) => stream.pending_bytes(),
-            _ => None,
+            _ => crate::sys::poll::pending_bytes(self),
         }
     }
 
@@ -459,16 +461,5 @@ where
     fn from(iter: I) -> Self {
         let files = iter.map(|(fd, file)| (fd, Some(file))).collect();
         Self { files }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_in_memory_streams_report_pending_bytes() {
-        assert_eq!(OpenFile::from(std::io::stdin()).pending_bytes(), None);
-        assert_eq!(OpenFile::from(std::io::stdout()).pending_bytes(), None);
     }
 }
