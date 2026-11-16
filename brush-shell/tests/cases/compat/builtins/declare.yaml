@@ -1738,3 +1738,39 @@ cases:
       v=TVAR
       typeset ${v}="tval"
       echo "TVAR=[$TVAR]"
+
+  - name: "declare -f keeps here-document body and delimiter unindented"
+    stdin: |
+      f() {
+      	cat <<-EOF
+      	hi $1
+      	EOF
+      }
+      g() {
+      	if true; then
+      		cat <<PLAIN
+      body
+      PLAIN
+      	fi
+      }
+      declare -f f g
+
+      # The printed form must be loadable again.
+      eval "$(declare -f f)"
+      f there
+
+  - name: "declare -f round-trips quoted delimiters and here-documents in pipelines"
+    stdin: |
+      f() {
+      	cat <<-'EOF2'
+      	raw $x
+      	EOF2
+      	cat <<EOF3 | tr a-z A-Z
+      plain text
+      EOF3
+      	cat <<EOF4 && echo ok
+      more
+      EOF4
+      }
+      eval "$(declare -f f)"
+      f
