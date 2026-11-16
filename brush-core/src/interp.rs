@@ -2138,6 +2138,16 @@ fn setup_process_substitution(
         }
     };
 
+    // The child owns its inherited descriptors, so persistent redirections such as
+    // `exec 1>&-` can close the last copy of its pipe end.
+    #[expect(
+        clippy::needless_collect,
+        reason = "release the shell borrow before replacing its files"
+    )]
+    let child_fds = child_params.iter_fds(&subshell).collect::<Vec<_>>();
+    subshell.replace_open_files(child_fds.into_iter());
+    child_params.open_files = OpenFiles::default();
+
     // Asynchronously spawn off the subshell; we intentionally don't block on its
     // completion.
     let subshell_cmd = subshell_cmd.to_owned();
@@ -2152,7 +2162,9 @@ fn setup_process_substitution(
     // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
     // available fd.
     let mut candidate_fd_num = 63;
-    while params.open_files.contains_fd(candidate_fd_num) {
+    while params.open_files.contains_fd(candidate_fd_num)
+        || shell.persistent_open_files().contains_fd(candidate_fd_num)
+    {
         candidate_fd_num -= 1;
         if candidate_fd_num == 0 {
             return error::unimp("no available file descriptors");

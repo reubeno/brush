@@ -894,9 +894,16 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     params: &ExecutionParameters,
     s: String,
 ) -> Result<String, error::Error> {
+    let parse_result = shell.parse_string(s);
+
+    if let Ok(program) = &parse_result {
+        if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
+            return invoke_input_redirection_substitution(shell, params, redir).await;
+        }
+    }
+
     // Instantiate a subshell to run the command in.
     let mut subshell = shell.clone();
-    let parent_errexit = shell.options().exit_on_nonzero_command_exit;
 
     // Command substitutions don't inherit errexit by default. Only inherit it when
     // command_subst_inherits_errexit is enabled, otherwise disable errexit in the subshell.
@@ -921,7 +928,13 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     // it, and so would the reader's wait: the command goes to a thread of its own.
     let multi_threaded = tokio::runtime::Handle::try_current()
         .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
-    let command = run_substitution_command(subshell, params, s, parent_errexit);
+    let command = async move {
+        // TODO(source-info): review this
+        let source_info = crate::SourceInfo::from("main");
+        subshell
+            .run_parsed_result(parse_result, &source_info, &params)
+            .await
+    };
     let cmd_join_handle = if multi_threaded {
         shell.task_spawner().spawn(command)
     } else {
@@ -943,41 +956,40 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
     Ok(output_str)
 }
 
-async fn run_substitution_command(
-    mut shell: Shell<impl extensions::ShellExtensions>,
-    mut params: ExecutionParameters,
-    command: String,
-    parent_errexit: bool,
-) -> Result<ExecutionResult, error::Error> {
-    // Parse the string into a whole shell program.
-    let parse_result = shell.parse_string(command);
+async fn invoke_input_redirection_substitution(
+    shell: &mut Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+    redir: &ast::IoRedirect,
+) -> Result<String, error::Error> {
+    // This shorthand expands its redirection in the caller, not a subshell.
+    let mut redirect_params = params.clone();
+    redirect_params.process_group_policy = ProcessGroupPolicy::SameProcessGroup;
 
-    // Check for a command that is only an input redirection ("< file").
-    // If detected, emulate `cat file` to stdout and return immediately.
-    // If we failed to parse, then we'll fall below and handle it there.
-    if let Ok(program) = &parse_result {
-        if let Some(redir) = try_unwrap_bare_input_redir_program(program) {
-            if matches!(
-                redir,
-                ast::IoRedirect::File(_, _, ast::IoFileRedirectTarget::ProcessSubstitution(..))
-            ) {
-                // The producer of this shorthand inherits the caller's errexit setting,
-                // even when an ordinary command substitution would clear it.
-                shell.options_mut().exit_on_nonzero_command_exit = parent_errexit;
+    if let Err(err) = interp::setup_redirect(shell, &mut redirect_params, redir).await {
+        if matches!(
+            err.kind(),
+            error::ErrorKind::RedirectionFailure(..) | error::ErrorKind::InvalidRedirection
+        ) {
+            if let Some(mut stderr) = params.try_stderr(shell) {
+                shell.display_error(&mut stderr, &err)?;
             }
-            interp::setup_redirect(&mut shell, &mut params, redir).await?;
-            copy_substitution_input(params.stdin(&shell), params.stdout(&shell)).await?;
-            return Ok(ExecutionResult::new(0));
+            shell.set_last_exit_status(ExecutionExitCode::from(&err).into());
+            return Ok(String::new());
         }
+        return Err(err);
     }
 
-    // TODO(source-info): review this
-    let source_info = crate::SourceInfo::from("main");
-
-    // Handle the parse result using default shell behavior.
-    shell
-        .run_parsed_result(parse_result, &source_info, &params)
-        .await
+    let input = redirect_params.stdin(shell);
+    let (reader, writer) = sys::pipes::pipe()?;
+    let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
+    let copy_handle = shell
+        .task_spawner()
+        .spawn_blocking(copy_substitution_input(input, writer))
+        .await;
+    let output = async_reader.read_to_string().await?;
+    copy_handle.await??;
+    shell.set_last_exit_status(0);
+    Ok(output)
 }
 
 async fn copy_substitution_input(
@@ -1013,6 +1025,10 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
         return None;
     };
 
+    if matches!(item.1, ast::SeparatorOperator::Async) {
+        return None;
+    }
+
     // ...with a single pipeline (no && or || chaining)...
     let and_or = &item.0;
     if !and_or.additional.is_empty() {
@@ -1021,7 +1037,7 @@ fn try_unwrap_bare_input_redir_program(program: &ast::Program) -> Option<&ast::I
 
     // ...not negated...
     let pipeline = &and_or.first;
-    if pipeline.bang {
+    if pipeline.bang || pipeline.timed.is_some() {
         return None;
     }
 
