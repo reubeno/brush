@@ -2,8 +2,9 @@
 //!
 //! WASM targets have no OS pipes, and the shell's execution there is
 //! single-threaded and cooperative. These pipes buffer everything written to
-//! them (without bound) until it's read. Once every read end is gone, writes
-//! fail with [`std::io::ErrorKind::BrokenPipe`], as they would on an OS pipe,
+//! them (without bound) until it's read. Once every read end is gone, what's
+//! buffered is discarded and writes fail with
+//! [`std::io::ErrorKind::BrokenPipe`], as they would on an OS pipe,
 //! so a writer whose reader has stopped (e.g., `yes` in `yes | head`) stops
 //! too rather than filling memory. A read from an empty pipe never
 //! blocks: once all writers are gone it reports end-of-file, and while a
@@ -55,7 +56,14 @@ impl Clone for PipeReader {
 
 impl Drop for PipeReader {
     fn drop(&mut self) {
-        self.0.lock().readers -= 1;
+        let mut state = self.0.lock();
+        state.readers -= 1;
+        // Nothing can read what's buffered any more. Discard it, as an OS pipe
+        // would, so its memory is freed and `pending_bytes` falls to 0 for a
+        // writer waiting for the reader to catch up.
+        if state.readers == 0 {
+            state.buffer = VecDeque::new();
+        }
     }
 }
 
@@ -210,6 +218,27 @@ mod tests {
         let mut buf = [0; 2];
         reader.read_exact(&mut buf)?;
         assert_eq!(writer_file.pending_bytes(), Some(3));
+        Ok(())
+    }
+
+    #[test]
+    fn closing_the_last_reader_discards_unread_bytes() -> std::io::Result<()> {
+        // A writer throttled on `pending_bytes` (say, until it falls below
+        // 64 KiB) must see the count fall when the reader goes away, so it
+        // writes again and finds the pipe broken.
+        let (mut reader, mut writer) = pipe()?;
+        let writer_file = OpenFile::from(writer.clone());
+        writer.write_all(&vec![0; 65_540])?;
+        let mut buf = [0; 3];
+        reader.read_exact(&mut buf)?;
+        assert_eq!(writer_file.pending_bytes(), Some(65_537));
+
+        drop(reader);
+        assert_eq!(writer_file.pending_bytes(), Some(0));
+        assert!(matches!(
+            writer.write(b"hi"),
+            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe
+        ));
         Ok(())
     }
 
