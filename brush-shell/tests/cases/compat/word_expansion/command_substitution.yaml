@@ -245,6 +245,16 @@ cases:
       printf 'continued: <%s>\n' "$x"
       { x=$(< missing.txt); printf 'closed stderr: %s\n' "$?"; } 2>&-
 
+  - name: "Input-only command substitution survives failed diagnostic writes"
+    stdin: |
+      [[ -e /dev/full ]] || exit 0
+      {
+        x=$(< missing.txt)
+        printf 'assignment: <%s> status=%s\n' "$x" "$?"
+        printf 'value: <%s>\n' "$(< missing.txt)"
+      } 2>/dev/full
+      printf 'continued: %s\n' "$?"
+
   - name: "Input-only command substitution propagates fatal expansion errors"
     ignore_exit_status: true
     ignore_stderr: true

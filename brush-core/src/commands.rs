@@ -971,7 +971,7 @@ async fn invoke_input_redirection_substitution(
             error::ErrorKind::RedirectionFailure(..) | error::ErrorKind::InvalidRedirection
         ) {
             if let Some(mut stderr) = params.try_stderr(shell) {
-                shell.display_error(&mut stderr, &err)?;
+                let _ = shell.display_error(&mut stderr, &err);
             }
             shell.set_last_exit_status(ExecutionExitCode::from(&err).into());
             return Ok(String::new());
