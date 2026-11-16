@@ -7,6 +7,73 @@ use crate::{SourceSpan, tokenizer};
 
 const DISPLAY_INDENT: &str = "    ";
 
+std::thread_local! {
+    /// Set while a here-document's body and closing delimiter are being
+    /// written. [`write_indented`] consults it so those lines are never
+    /// re-indented, however deeply nested the enclosing command is. A
+    /// thread-local because `Display::fmt` can't carry extra context.
+    static SUPPRESS_INDENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+std::thread_local! {
+    /// Here-document bodies waiting for the end of the line that carries their
+    /// operators; one frame per [`AndOrList`] being rendered. A here-document's
+    /// body starts on the line *after* its `<<`, which can go on past the
+    /// command (`cat <<EOF | tr a-z A-Z`).
+    static PENDING_HEREDOCS: std::cell::RefCell<Vec<Vec<String>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Writes (and clears) the here-document bodies queued on the innermost open
+/// line, starting on a fresh line. Does nothing if none are queued.
+fn flush_pending_heredocs(f: &mut std::fmt::Formatter<'_>) -> Result<bool, std::fmt::Error> {
+    let bodies = PENDING_HEREDOCS
+        .with_borrow_mut(|frames| frames.last_mut().map(std::mem::take).unwrap_or_default());
+    if bodies.is_empty() {
+        return Ok(false);
+    }
+    writeln!(f)?;
+    let _suppress = SuppressIndent::enter();
+    bodies.iter().try_for_each(|body| f.write_str(body))?;
+    Ok(true)
+}
+
+/// RAII guard that sets [`SUPPRESS_INDENT`] and restores its previous value
+/// on drop, so nested guards compose.
+struct SuppressIndent(bool);
+
+impl SuppressIndent {
+    fn enter() -> Self {
+        Self(SUPPRESS_INDENT.replace(true))
+    }
+}
+
+impl Drop for SuppressIndent {
+    fn drop(&mut self) {
+        SUPPRESS_INDENT.set(self.0);
+    }
+}
+
+/// Renders `value` indented by [`DISPLAY_INDENT`], except for here-document
+/// body and delimiter lines. Indenting those would corrupt the content, and
+/// for `<<-` it would stop the delimiter from matching (only leading tabs are
+/// stripped, not spaces).
+fn write_indented(f: &mut std::fmt::Formatter<'_>, value: &impl Display) -> std::fmt::Result {
+    let mut inserter = |_line: usize, f: &mut dyn std::fmt::Write| {
+        if SUPPRESS_INDENT.get() {
+            Ok(())
+        } else {
+            f.write_str(DISPLAY_INDENT)
+        }
+    };
+    write!(
+        indenter::indented(f).with_format(indenter::Format::Custom {
+            inserter: &mut inserter,
+        }),
+        "{value}"
+    )
+}
+
 /// Trait implemented by all AST nodes. Used to aggregate traits expected
 /// to be implemented.
 pub trait Node: Display + SourceLocation {}
@@ -130,12 +197,16 @@ impl SourceLocation for AndOrList {
 
 impl Display for AndOrList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.first)?;
-        for item in &self.additional {
-            write!(f, "{item}")?;
-        }
-
-        Ok(())
+        PENDING_HEREDOCS.with_borrow_mut(|frames| frames.push(Vec::new()));
+        let result = (|| {
+            write!(f, "{}", self.first)?;
+            for item in &self.additional {
+                write!(f, "{item}")?;
+            }
+            flush_pending_heredocs(f).map(|_| ())
+        })();
+        PENDING_HEREDOCS.with_borrow_mut(Vec::pop);
+        result
     }
 }
 
@@ -351,6 +422,10 @@ impl Display for Pipeline {
         for (i, command) in self.seq.iter().enumerate() {
             if i > 0 {
                 write!(f, " |")?;
+                // Any here-document body goes right after the line holding its operator.
+                if flush_pending_heredocs(f)? {
+                    write!(f, "  ")?;
+                }
             }
             write!(f, "{command}")?;
         }
@@ -682,7 +757,7 @@ impl Display for CaseClauseCommand {
         // Note the trailing space, which the shell emits when printing a case clause.
         write!(f, "case {} in ", self.value)?;
         for case in &self.cases {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{case}")?;
+            write_indented(f, case)?;
         }
         writeln!(f)?;
         write!(f, "esac")
@@ -732,11 +807,22 @@ impl CompoundList {
             }
 
             // Write the and-or list.
-            write!(f, "{}", item.0)?;
+            let mut tracker = LastCharTracker {
+                inner: &mut *f,
+                last: None,
+            };
+            write!(tracker, "{}", item.0)?;
+            let last = tracker.last;
+
+            // A here-document leaves the output already at the start of a line, where a
+            // `;` would be a syntax error on its own; the shell prints a blank line instead.
+            let ends_line = last == Some('\n');
 
             // Write the separator... unless we're on the last list item and it's a ';'
             // that the enclosing construct doesn't want.
-            if keep_trailing_separator
+            if ends_line && matches!(item.1, SeparatorOperator::Sequence) {
+                // Nothing to write: the newline that follows supplies the blank line.
+            } else if keep_trailing_separator
                 || i < self.0.len() - 1
                 || !matches!(item.1, SeparatorOperator::Sequence)
             {
@@ -745,6 +831,21 @@ impl CompoundList {
         }
 
         Ok(())
+    }
+}
+
+/// Forwards writes unchanged while remembering the last character written.
+struct LastCharTracker<'a, W: std::fmt::Write> {
+    inner: &'a mut W,
+    last: Option<char>,
+}
+
+impl<W: std::fmt::Write> std::fmt::Write for LastCharTracker<'_, W> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        if let Some(c) = s.chars().next_back() {
+            self.last = Some(c);
+        }
+        self.inner.write_str(s)
     }
 }
 
@@ -821,11 +922,7 @@ impl SourceLocation for IfClauseCommand {
 impl Display for IfClauseCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "if {}; then", self.condition)?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.then.terminated()
-        )?;
+        write_indented(f, &self.then.terminated())?;
         if let Some(elses) = &self.elses {
             for else_clause in elses {
                 write!(f, "{else_clause}")?;
@@ -866,11 +963,7 @@ impl Display for ElseClause {
             writeln!(f, "else")?;
         }
 
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.body.terminated()
-        )
+        write_indented(f, &self.body.terminated())
     }
 }
 
@@ -953,7 +1046,7 @@ impl Display for CaseItem {
         writeln!(f, ")")?;
 
         if let Some(cmd) = &self.cmd {
-            write!(indenter::indented(f).with_str(DISPLAY_INDENT), "{cmd}")?;
+            write_indented(f, cmd)?;
         }
         writeln!(f)?;
         write!(f, "{}", self.post_action)
@@ -1114,11 +1207,7 @@ impl SourceLocation for BraceGroupCommand {
 impl Display for BraceGroupCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{ ")?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.list
-        )?;
+        write_indented(f, &self.list)?;
         writeln!(f)?;
         write!(f, "}}")?;
 
@@ -1143,11 +1232,7 @@ pub struct DoGroupCommand {
 impl Display for DoGroupCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "do")?;
-        write!(
-            indenter::indented(f).with_str(DISPLAY_INDENT),
-            "{}",
-            self.list.terminated()
-        )?;
+        write_indented(f, &self.list.terminated())?;
         writeln!(f)?;
         write!(f, "done")
     }
@@ -1706,9 +1791,28 @@ impl Display for IoHereDocument {
             write!(f, "-")?;
         }
 
+        // The closing line holds the delimiter with its quoting removed.
+        let body = format!(
+            "{}{}\n",
+            self.doc,
+            tokenizer::unquote_str(&self.here_end.value)
+        );
+
+        // Queue the body until the end of the line, if a line is open.
+        let queued = PENDING_HEREDOCS.with_borrow_mut(|frames| match frames.last_mut() {
+            Some(frame) => {
+                frame.push(body.clone());
+                true
+            }
+            None => false,
+        });
+        if queued {
+            return write!(f, "{}", self.here_end);
+        }
+
         writeln!(f, "{}", self.here_end)?;
-        write!(f, "{}", self.doc)?;
-        writeln!(f, "{}", self.here_end)?;
+        let _suppress = SuppressIndent::enter();
+        write!(f, "{body}")?;
 
         Ok(())
     }

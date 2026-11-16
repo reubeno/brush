@@ -413,9 +413,6 @@ cases:
       declare -f g
 
   - name: "Displaying a function with a quoted here-document delimiter"
-    known_failure: true # Issue #1580: brush-parser's Display writes the closing delimiter with its
-                        # quotes (`'EOF'`) and indents the body and delimiter, so the printed
-                        # function doesn't read back
     stdin: |
       f() {
         cat <<'EOF'
@@ -1549,3 +1546,39 @@ cases:
       echo "status: $?"
       declare -pF f
       declare -p f
+
+  - name: "declare -f keeps here-document body and delimiter unindented"
+    stdin: |
+      f() {
+      	cat <<-EOF
+      	hi $1
+      	EOF
+      }
+      g() {
+      	if true; then
+      		cat <<PLAIN
+      body
+      PLAIN
+      	fi
+      }
+      declare -f f g
+
+      # The printed form must be loadable again.
+      eval "$(declare -f f)"
+      f there
+
+  - name: "declare -f round-trips quoted delimiters and here-documents in pipelines"
+    stdin: |
+      f() {
+      	cat <<-'EOF2'
+      	raw $x
+      	EOF2
+      	cat <<EOF3 | tr a-z A-Z
+      plain text
+      EOF3
+      	cat <<EOF4 && echo ok
+      more
+      EOF4
+      }
+      eval "$(declare -f f)"
+      f
