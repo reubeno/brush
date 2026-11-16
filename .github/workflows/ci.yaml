@@ -21,6 +21,20 @@ env:
   CARGO_TERM_COLOR: always
   CLICOLOR: 1
   CLICOLOR_FORCE: 1
+  # The toolchain that every job needing nightly uses: matrix legs that say
+  # `toolchain: "nightly"` resolve to it, and check-deps uses it directly.
+  # (`env` isn't available in `strategy.matrix`, hence the indirection.)
+  #
+  # NIGHTLY PIN (temporary): this is nightly-2026-10-31 (rustc 92b5b8c87,
+  # 2026-10-29) rather than floating `nightly`. The next nightly,
+  # nightly-2026-11-01 (rustc f9ceb4a4d), fails to compile brush-core with
+  # "error[E0391]: cycle detected when computing when `ArithmeticTarget` needs
+  # async drop": a rustc regression on mutually recursive enums held across an
+  # `.await`, likely from rust-lang/rust#164987 (stable and beta are
+  # unaffected). Once a nightly compiles brush again, set this back to
+  # `nightly`. analyze-public-api doesn't use it and stays on floating
+  # `nightly`: rustdoc doesn't hit the regression.
+  NIGHTLY_TOOLCHAIN: nightly-2026-10-31
 
 permissions:
   actions: read
@@ -54,7 +68,7 @@ jobs:
           # Build for x86_64/linux using musl as target C runtime.
           # We don't bother pinning to an earlier version of Ubuntu because
           # the produced binary will statically link the C runtime anyhow.
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "x86_64-unknown-linux-musl"
             cross_command: "cross"
             cross_tool_to_install: "cross"
@@ -73,7 +87,7 @@ jobs:
             binary_name: "brush"
             extra_build_args: ""
           # Build for aarch64/linux target on x86_64/Linux host.
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "aarch64-unknown-linux-gnu"
             cross_command: "cross"
             cross_tool_to_install: "cross"
@@ -83,7 +97,7 @@ jobs:
             binary_name: "brush"
             extra_build_args: ""
           # Build for wasm32 target on x86_64/linux host.
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "wasm32-unknown-unknown"
             cross_command: "cross"
             cross_tool_to_install: "cross"
@@ -95,7 +109,7 @@ jobs:
           # Build for WASI-0.3 target on x86_64/linux host. wasm32-wasip3 first
           # ships prebuilt std in Rust 1.100; until rust-toolchain.toml is at
           # 1.100+, use nightly. Drop `toolchain` once it is.
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "wasm32-wasip3"
             cross_command: "cargo"
             cross_tool_to_install: ""
@@ -105,18 +119,20 @@ jobs:
             binary_name: "brush.wasm"
             extra_build_args: ""
             toolchain: "nightly"
-          # Build for x86_64/windows target on x86_64/linux host.
-          - host: "ubuntu-24.04"
+          # Build for x86_64/windows target on x86_64/linux host, with the host's
+          # MinGW-w64: the one in cross 0.2.5's windows-gnu container is too old
+          # for Rust 1.100+, which links against its libsynchronization.
+          - host: "ubuntu-26.04"
             target: "x86_64-pc-windows-gnu"
-            cross_command: "cross"
-            cross_tool_to_install: "cross"
+            cross_command: "cargo"
+            cross_tool_to_install: ""
             os: "windows"
             arch: "x86_64"
-            required_tools: ""
+            required_tools: "gcc-mingw-w64-x86-64"
             binary_name: "brush.exe"
             extra_build_args: ""
           # Build for x86_64/android target on x86_64/linux host.
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "x86_64-linux-android"
             cross_command: "cargo ndk"
             cross_tool_to_install: "cargo-ndk"
@@ -131,7 +147,7 @@ jobs:
           # final link of a real binary fails. Checking still validates that the
           # shell compiles for the target; producing a binary is a TODO (would
           # need a full sysroot with those libraries present).
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "x86_64-unknown-freebsd"
             cross_command: "cross"
             cross_tool_to_install: "cross"
@@ -143,7 +159,7 @@ jobs:
             check_only: true
           # x86_64/NetBSD target on x86_64/linux host, via cross. Compile-check
           # only for the same reason as FreeBSD above.
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "x86_64-unknown-netbsd"
             cross_command: "cross"
             cross_tool_to_install: "cross"
@@ -160,7 +176,7 @@ jobs:
           # builds std + panic_unwind). Compile-check only, like the other BSDs;
           # check links nothing, so no C cross-compiler/sysroot/linker is needed
           # (none of the workspace's C-compiling deps are in this default graph).
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             target: "x86_64-unknown-openbsd"
             cross_command: "cargo"
             cross_tool_to_install: ""
@@ -188,7 +204,7 @@ jobs:
         env:
           # Empty -- meaning the toolchain pinned in rust-toolchain.toml -- for
           # every leg that doesn't set `toolchain` itself.
-          TOOLCHAIN: ${{ matrix.toolchain }}
+          TOOLCHAIN: ${{ matrix.toolchain == 'nightly' && env.NIGHTLY_TOOLCHAIN || matrix.toolchain }}
           TARGET: ${{ !matrix.skip_rustup_target && matrix.target || '' }}
           COMPONENTS: ${{ matrix.components }}
         run: |
@@ -206,7 +222,7 @@ jobs:
           if [[ -n "${COMPONENTS}" ]]; then rustup component add "${COMPONENTS}"; fi
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: "${{ matrix.target }}"
 
@@ -218,7 +234,7 @@ jobs:
 
       - name: Install cross-compilation toolchain
         if: ${{ matrix.cross_tool_to_install != '' }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: ${{ matrix.cross_tool_to_install }}
 
@@ -226,7 +242,11 @@ jobs:
         if: ${{ matrix.target == '' }}
         env:
           EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        run: cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
+        # Keep cargo's JSON messages so later steps can find its outputs; the
+        # target dir's layout isn't stable across cargo versions.
+        run: >-
+          cargo build --release --all-targets ${EXTRA_BUILD_ARGS}
+          --message-format=json-render-diagnostics > cargo-build-messages.json
 
       - name: "${{ matrix.check_only && 'Check' || 'Build' }} (cross)"
         if: ${{ matrix.target != '' }}
@@ -246,14 +266,20 @@ jobs:
           name: binaries-${{ matrix.arch }}-${{ matrix.os }}
           path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
 
+      - name: "Collect integration test binaries"
+        if: ${{ matrix.target == '' }}
+        run: >-
+          cargo xtask test collect-binaries
+          --cargo-messages cargo-build-messages.json
+          --output-dir integration-tests
+
       - name: "Upload integration test binaries"
         if: ${{ matrix.target == '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-tests-${{ matrix.arch }}-${{ matrix.os }}
-          path: |
-            target/${{ matrix.target }}/release/deps/brush_*_tests-*
-            !**/*.d
+          path: integration-tests/
+          if-no-files-found: error
 
   # Test functional correctness
   test:
@@ -261,7 +287,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             variant: "linux-x86_64"
             artifact_suffix: "linux-x86_64"
             name_suffix: "(linux/x86_64)"
@@ -269,7 +295,7 @@ jobs:
             coverage: true
             coverage_min_percent: 70
 
-          - host: "ubuntu-24.04-arm"
+          - host: "ubuntu-26.04-arm"
             variant: "linux-aarch64"
             artifact_suffix: "linux-aarch64"
             name_suffix: "(linux/aarch64)"
@@ -293,7 +319,7 @@ jobs:
             coverage: true
             coverage_min_percent: 20
 
-          - host: "ubuntu-24.04"
+          - host: "ubuntu-26.04"
             variant: "wasi"
             artifact_suffix: "-wasi"
             name_suffix: "(wasm32/wasi-0.3)"
@@ -320,7 +346,7 @@ jobs:
         env:
           # Empty -- meaning the toolchain pinned in rust-toolchain.toml -- for
           # every leg that doesn't set `toolchain` itself.
-          TOOLCHAIN: ${{ matrix.toolchain }}
+          TOOLCHAIN: ${{ matrix.toolchain == 'nightly' && env.NIGHTLY_TOOLCHAIN || matrix.toolchain }}
           TARGETS: ${{ matrix.extra_rust_targets }}
         # Targets/components are added separately: the nameless
         # `rustup toolchain install` form ignores --target and --component.
@@ -336,22 +362,22 @@ jobs:
           if [[ -n "${TARGETS}" ]]; then rustup target add "${TARGETS}"; fi
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: cargo-nextest
 
       - name: Install cargo-llvm-cov
         if: ${{ matrix.coverage }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: cargo-llvm-cov
 
       - name: Install WASI runtime
         if: ${{ matrix.wasi_runtime }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: ${{ matrix.wasi_runtime }}
 
@@ -360,7 +386,7 @@ jobs:
         id: set-up-homebrew
         # We ignore the stale-action-refs check because this action does not have any releases or tags.
         # We're forced to pick a specific commit.
-        uses: Homebrew/actions/setup-homebrew@4790763c0a3ba4036f72634dc079c4a7dfcd4878 # zizmor: ignore[stale-action-refs]
+        uses: Homebrew/actions/setup-homebrew@63a2d4d8d4193eab3e62b1b782ff3ab8408f5b29 # zizmor: ignore[stale-action-refs]
         with:
           stable: true
 
@@ -443,7 +469,7 @@ jobs:
         # latest stable release; the label is kept so check names don't change.
         rust-version: ["stable", "1.88.0"]
         # Run checks on Linux, Windows, and macOS.
-        os: ["ubuntu-24.04", "windows-2025", "macos-latest"]
+        os: ["ubuntu-26.04", "windows-2025", "macos-latest"]
         # Extra args for the build check, per toolchain. Spelled out for both
         # legs so it's clear that stable compiles every crate in the workspace.
         include:
@@ -475,7 +501,7 @@ jobs:
           fi
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Format check
         run: cargo xtask check fmt
@@ -493,7 +519,7 @@ jobs:
   # Check for unneeded dependencies.
   check-deps:
     name: "Check for unneeded dependencies"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -504,21 +530,22 @@ jobs:
       # so the pinned toolchain doesn't have to be installed as well.
       - name: Set up nightly rust toolchain
         run: |
-          rustup toolchain install nightly --profile minimal
-          rustup override set nightly
+          rustup toolchain install "${NIGHTLY_TOOLCHAIN}" --profile minimal
+          rustup override set "${NIGHTLY_TOOLCHAIN}"
 
       - name: Install cargo-udeps
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: cargo-udeps
 
+      # xtask runs `cargo +<toolchain> udeps`, which takes precedence over the override.
       - name: Check for unused dependencies
-        run: cargo xtask check unused-deps
+        run: cargo xtask check unused-deps --toolchain "${NIGHTLY_TOOLCHAIN}"
 
   # Check that generated schemas are up-to-date
   check-schemas:
     name: "Check generated schemas"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -529,7 +556,7 @@ jobs:
         run: rustup toolchain install --profile minimal
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Check generated schemas
         run: cargo xtask check schemas
@@ -538,7 +565,7 @@ jobs:
   analyze-public-api:
     if: github.event_name == 'pull_request'
     name: "Analyze public API"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -553,7 +580,7 @@ jobs:
           rustup override set nightly
 
       - name: Install cargo-public-api
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: cargo-public-api
 
@@ -575,7 +602,7 @@ jobs:
   benchmark:
     if: github.event_name == 'pull_request'
     name: "Benchmarks"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout PR sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -597,7 +624,7 @@ jobs:
         working-directory: pr
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             ./pr
@@ -637,7 +664,7 @@ jobs:
   # e2e/README.md).
   e2e-tests:
     name: "External tests / e2e suites"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: build
     timeout-minutes: 45
     steps:
@@ -659,7 +686,7 @@ jobs:
         run: rustup toolchain install --profile minimal
 
       - name: Enable cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Run e2e suites
         run: |
@@ -716,7 +743,7 @@ jobs:
 
           - container: "mcr.microsoft.com/azurelinux/core:4"
             description: "Azure Linux/4"
-            prereqs_command: "dnf install -y bash-completion ca-certificates git iputils grep less sed util-linux which"
+            prereqs_command: "dnf install -y bash-completion ca-certificates git iputils grep less procps-ng sed util-linux which"
 
           - container: "debian:testing"
             description: "Debian/testing"
@@ -736,7 +763,7 @@ jobs:
             prereqs_command: "zypper install -y bash-completion git which"
 
     name: "OS target tests (${{ matrix.description }})"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # The floating tags in the matrix above are deliberate: the whole point of
     # this job is to catch breakage against *current* distro releases, so
     # digest-pinning these images would defeat it.

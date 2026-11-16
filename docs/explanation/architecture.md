@@ -27,13 +27,13 @@ on the others (not counting dev-dependencies) are:
 
 ```text
 brush                        → brush-shell
-brush-shell                  → brush-interactive, brush-builtins, brush-clap-adapter,
-                               brush-core,
+brush-shell                  → brush-interactive, brush-builtins, brush-core,
+                               brush-winnow-args-adapter,
                                brush-experimental-builtins (optional),
                                brush-coreutils-builtins (optional)
 brush-interactive            → brush-core, brush-parser
-brush-builtins               → brush-clap-adapter, brush-core, brush-parser
-brush-experimental-builtins  → brush-clap-adapter, brush-core
+brush-builtins               → brush-core, brush-parser, brush-winnow-args-adapter
+brush-experimental-builtins  → brush-core, brush-winnow-args-adapter
 brush-clap-adapter           → brush-core
 brush-winnow-args-adapter    → brush-core
 brush-core                   → brush-parser
@@ -48,8 +48,8 @@ without its front end. Keep that in mind when deciding what to export.
 
 - Shells are built with `Shell::builder()`, a type-safe builder.
 - `Shell` is generic over `ShellExtensions`, which lets embedders swap in parts of its
-  behavior (today, how errors are formatted and how processes are launched) at compile
-  time.
+  behavior (today, how errors are formatted, how processes are launched, and how the
+  tasks the shell runs concurrently with itself are started) at compile time.
 - Platform-specific code lives under the `sys` module, so the rest of the crate stays
   platform-neutral.
 - Builtins meet the shell at one contract, `brush_core::builtins`, which names no

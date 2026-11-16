@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use xshell::{Shell, cmd};
 
-use crate::common::{BuildProfile, find_workspace_root};
+use crate::common::{BuildProfile, find_build_dir, find_target_dir};
 
 /// Integration test binaries that are excluded from unit tests.
 /// These tests execute the brush binary and are slower.
@@ -102,6 +102,27 @@ pub enum TestSubcommand {
     /// Run containerized end-to-end tests against real applications.
     #[cfg(unix)]
     E2e(crate::e2e::E2eArgs),
+
+    /// Copy the `brush-*-tests` binaries from an earlier cargo build into a
+    /// directory, so they can be shipped to and run on other machines.
+    ///
+    /// Reads the JSON messages that build emitted (`--message-format=json`)
+    /// to learn where cargo put each binary; the target directory's layout
+    /// isn't stable across cargo versions.
+    CollectBinaries(CollectBinariesArgs),
+}
+
+/// Arguments for collecting test binaries.
+#[derive(Args, Clone)]
+pub struct CollectBinariesArgs {
+    /// File holding the output of a `cargo build --message-format=json` run.
+    #[clap(long)]
+    pub cargo_messages: PathBuf,
+
+    /// Directory to copy the binaries into, named after their test targets.
+    /// Created if it doesn't exist.
+    #[clap(long)]
+    pub output_dir: PathBuf,
 }
 
 /// Arguments for unit tests.
@@ -170,7 +191,81 @@ pub fn run(cmd: &TestCommand, verbose: bool) -> Result<()> {
         }
         #[cfg(unix)]
         TestSubcommand::E2e(args) => crate::e2e::run(&cmd.binary_args, args, verbose),
+        TestSubcommand::CollectBinaries(args) => collect_test_binaries(args),
     }
+}
+
+/// The subset of a cargo JSON message that [`find_test_binaries`] reads.
+#[derive(serde::Deserialize)]
+struct CargoMessage {
+    reason: String,
+    target: Option<CargoTarget>,
+    executable: Option<PathBuf>,
+}
+
+#[derive(serde::Deserialize)]
+struct CargoTarget {
+    name: String,
+    kind: Vec<String>,
+}
+
+/// Returns `(target name, executable path)` for each `brush-*-tests` test
+/// target in a stream of cargo JSON messages.
+fn find_test_binaries(messages: &str) -> Result<Vec<(String, PathBuf)>> {
+    let mut found = vec![];
+    for line in messages.lines() {
+        let msg: CargoMessage =
+            serde_json::from_str(line).with_context(|| format!("bad cargo message: {line}"))?;
+        if msg.reason != "compiler-artifact" {
+            continue;
+        }
+        if let (Some(target), Some(exe)) = (msg.target, msg.executable) {
+            if target.kind == ["test"]
+                && target.name.starts_with("brush-")
+                && target.name.ends_with("-tests")
+            {
+                found.push((target.name, exe));
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Copy the test binaries named in a cargo build's JSON messages into a directory.
+fn collect_test_binaries(args: &CollectBinariesArgs) -> Result<()> {
+    let messages = std::fs::read_to_string(&args.cargo_messages)
+        .with_context(|| format!("failed to read {}", args.cargo_messages.display()))?;
+    let binaries = find_test_binaries(&messages)?;
+    if binaries.is_empty() {
+        anyhow::bail!(
+            "no brush-*-tests binaries in {}",
+            args.cargo_messages.display()
+        );
+    }
+
+    // Only copy files from cargo's build dir, so a stray or tampered message
+    // can't make this ship arbitrary files.
+    let build_dir = find_build_dir()?.canonicalize()?;
+    std::fs::create_dir_all(&args.output_dir)?;
+    for (name, exe) in binaries {
+        let exe = exe
+            .canonicalize()
+            .with_context(|| format!("failed to resolve {}", exe.display()))?;
+        if !exe.is_file() || !exe.starts_with(&build_dir) {
+            anyhow::bail!(
+                "{} is not a file under the build dir ({})",
+                exe.display(),
+                build_dir.display()
+            );
+        }
+
+        let dest = args
+            .output_dir
+            .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        eprintln!("{} -> {}", exe.display(), dest.display());
+        std::fs::copy(&exe, &dest).with_context(|| format!("failed to copy {}", exe.display()))?;
+    }
+    Ok(())
 }
 
 /// Run unit tests (excludes integration test binaries).
@@ -294,10 +389,9 @@ fn run_integration_tests_wasi(
     }
 
     // Locate the wasm module that was (or should have been) produced.
-    let workspace_root = find_workspace_root()?;
     let profile_dir = if is_release { "release" } else { "debug" };
-    let wasm_path = workspace_root
-        .join("target/wasm32-wasip3")
+    let wasm_path = find_target_dir()?
+        .join("wasm32-wasip3")
         .join(profile_dir)
         .join("brush.wasm");
     let wasm_path = wasm_path.canonicalize().with_context(|| {
@@ -385,8 +479,7 @@ fn run_nextest(
 
 /// Copy the nextest `JUnit` XML results to the given output path.
 fn copy_nextest_results(output: &Path) -> Result<()> {
-    let workspace_root = find_workspace_root()?;
-    let source = workspace_root.join("target/nextest/default/test-results.xml");
+    let source = find_target_dir()?.join("nextest/default/test-results.xml");
     std::fs::copy(&source, output).with_context(|| {
         format!(
             "Failed to copy nextest results from {} to {}",
@@ -469,6 +562,25 @@ fn run_tests_with_coverage(
         eprintln!("Tests failed, but continuing to generate coverage report...");
     }
 
+    // Tests (e.g. umask cases) may leave coverage data files unreadable by their owner, which
+    // makes `llvm-profdata merge` fail. Make sure we can read and write them.
+    // Use the location cargo-llvm-cov told us about rather than assuming a directory layout.
+    let profraw_dir = env_output
+        .lines()
+        .filter_map(|line| line.strip_prefix("export "))
+        .filter_map(|rest| rest.split_once('='))
+        .find(|(k, _)| *k == "LLVM_PROFILE_FILE")
+        .and_then(|(_, v)| {
+            Path::new(v.trim_matches(['"', '\'']))
+                .parent()
+                .map(Path::to_path_buf)
+        });
+    if let Some(dir) = profraw_dir {
+        if let Err(e) = make_profraw_files_owner_accessible(&dir) {
+            eprintln!("Warning: failed to fix permissions on coverage data: {e}");
+        }
+    }
+
     // Generate coverage report (always attempt this)
     eprintln!("Generating coverage report...");
     if verbose {
@@ -490,4 +602,62 @@ fn run_tests_with_coverage(
 
     eprintln!("Tests with coverage completed successfully.");
     Ok(())
+}
+
+/// Recursively ensures that `*.profraw` files under `dir` are readable and writable by their
+/// owner. A missing directory is not an error.
+#[cfg(unix)]
+fn make_profraw_files_owner_accessible(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            make_profraw_files_owner_accessible(&path)?;
+        } else if path.extension().is_some_and(|ext| ext == "profraw") {
+            let mut perms = std::fs::metadata(&path)?.permissions();
+            perms.set_mode(perms.mode() | 0o600);
+            std::fs::set_permissions(&path, perms)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+#[allow(
+    clippy::missing_const_for_fn,
+    clippy::unnecessary_wraps,
+    reason = "must match the signature of the unix implementation"
+)]
+fn make_profraw_files_owner_accessible(_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_test_binaries() {
+        let messages = [
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-compat-tests","kind":["test"]},"executable":"/t/a"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"pty_startup_tests","kind":["test"]},"executable":"/t/b"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-shell","kind":["bin"]},"executable":"/t/c"}"#,
+            r#"{"reason":"compiler-artifact","target":{"name":"brush-core","kind":["lib"]},"executable":null}"#,
+            r#"{"reason":"build-finished","success":true}"#,
+        ]
+        .join("\n");
+
+        assert_eq!(
+            find_test_binaries(&messages).unwrap(),
+            [("brush-compat-tests".to_owned(), PathBuf::from("/t/a"))]
+        );
+        assert!(find_test_binaries("not json").is_err());
+    }
 }

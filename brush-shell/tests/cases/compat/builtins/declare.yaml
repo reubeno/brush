@@ -71,6 +71,20 @@ cases:
       num+=10
       echo $num
 
+  - name: "Appending to an integer wraps around on overflow"
+    stdin: |
+      declare -i n=1
+      n+=9223372036854775807
+      echo "$n"
+
+      declare -ai arr=(1)
+      arr[0]+=9223372036854775807
+      declare -p arr
+
+      declare -Ai assoc=([key]=-2)
+      assoc[key]+=-9223372036854775807
+      declare -p assoc
+
   - name: "Declare integer with non-integer string"
     stdin: |
       declare -i var=value
@@ -105,7 +119,7 @@ cases:
       var=value
       declare -p var
 
-  - name: "Update integer array with non-integer string"
+  - name: "Update integer indexed array with non-integer string"
     stdin: |
       declare -ai arr=()
       declare -p arr
@@ -113,7 +127,7 @@ cases:
       arr[0]="value"
       declare -p arr
 
-  - name: "Update integer array with non-integer string"
+  - name: "Update integer associative array with non-integer string"
     stdin: |
       declare -Ai arr=()
       declare -p arr
@@ -157,6 +171,78 @@ cases:
       echo "[z]: ${arr[x3]}"
       echo "STAR: ${arr[*]}"
       echo "AT: ${arr[*]}"
+
+  - name: "declare -a keeps an unset variable unset"
+    stdin: |
+      declare v
+      declare -a v
+      declare -p v
+      declare -a w
+      declare -a w+=(a b)
+      declare -p w
+
+  - name: "declare -a refuses readonly and associative variables"
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      declare -a r
+      echo "status: $?"
+      declare -ra ra=(1)
+      declare -a ra
+      echo "status: $?"
+      declare -A m
+      declare -a m+=x
+      echo "status: $?"
+      declare -p r ra m
+
+  - name: "declare -a keeps a dynamic variable's value"
+    known_failure: true # TODO(dynamic): the indexed-array conversion can't see through a dynamic value, so it replaces it with an empty element zero and converts BASH_ALIASES
+    ignore_stderr: true
+    stdin: |
+      for name in DIRSTACK GROUPS; do
+        before=$(declare -p "$name")
+        declare -a "$name"
+        [[ $(declare -p "$name") == "$before" ]]
+        echo "$name unchanged: $?"
+      done
+      declare -a RANDOM
+      [[ ${RANDOM[0]} =~ ^[0-9]+$ ]]
+      echo "RANDOM is a number: $?"
+      alias sample=value
+      declare -a BASH_ALIASES
+      echo "status: $?"
+      declare -p BASH_ALIASES
+
+  - name: "declare reports a failing operand and goes on"
+    known_failure: true # TODO(declare): stops at the first operand it can't apply instead of going on to the next
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      declare -a r o=2
+      echo "status: $?"
+      declare -A m=([k]=v)
+      declare -a m p=3
+      echo "status: $?"
+      declare -p o p
+
+  - name: "declare -A keeps an unset variable unset"
+    known_failure: true # TODO(declare): the associative-array conversion gives an unset value an empty element zero
+    stdin: |
+      declare v
+      declare -A v
+      declare -p v
+
+  - name: "declare -A refuses readonly and indexed variables"
+    known_failure: true # TODO(declare): the associative-array conversion converts a readonly or unset indexed variable and returns 0
+    ignore_stderr: true
+    stdin: |
+      readonly r=1
+      declare -A r
+      echo "status: $?"
+      declare -a i
+      declare -A i
+      echo "status: $?"
+      declare -p r i
 
   - name: "Declare and export variable"
     stdin: |
@@ -325,6 +411,22 @@ cases:
       declare -f f
       g() { [[ -n x ]] |& cat; }
       declare -f g
+
+  - name: "Displaying a function with a quoted here-document delimiter"
+    known_failure: true # Issue #1580: brush-parser's Display writes the closing delimiter with its
+                        # quotes (`'EOF'`) and indents the body and delimiter, so the printed
+                        # function doesn't read back
+    stdin: |
+      f() {
+        cat <<'EOF'
+      x $y
+      EOF
+      }
+      declare -f f
+      src=$(declare -f f)
+      unset -f f
+      eval "$src"
+      y=1 f
 
   - name: "Displaying a function with case patterns"
     stdin: |
@@ -1101,10 +1203,24 @@ cases:
       declare -p b 2>&1
 
   #
+  # An attribute option given as both `-` and `+`.
+  #
+  - name: "An attribute given as both - and + is not set"
+    stdin: |
+      declare +x -x zzx=1; declare -p zzx
+      declare -x +x zzy=1; declare -p zzy
+      declare +i -i zzi=1+1; declare -p zzi
+      declare zzo=1; declare +x -x zzo; declare -p zzo
+
+  - name: "An attribute given as both - and + is removed"
+    stdin: |
+      declare -x zzx=1; declare -x +x zzx; declare -p zzx
+      declare -i zzi=1; declare +i -i zzi; declare -p zzi
+
+  #
   # Attribute-filtered display.
   #
   - name: "Display filtered by readonly and trace attributes"
-    known_failure: true # TODO: declare improvements required
     stdin: |
       declare -r zzro=1
       declare -t zztr=2
@@ -1124,13 +1240,19 @@ cases:
       declare -prt | grep zz | sort
 
   - name: "Display is not filtered by a plus attribute option"
-    # brush treats `+x` as a request for variables lacking the attribute; a shell applies no
-    # filter at all in that case. This affects every attribute, not just the one shown here.
-    known_failure: true
     stdin: |
       declare -x zzex=1
       zzplain=2
       declare +x | grep zz | sort
+
+  - name: "Display is filtered by -X, not +X, when both are given"
+    stdin: |
+      declare -x zzex=1
+      declare -i zzint=2
+      zzplain=3
+      declare -p -x +x | grep zz
+      declare -p +x -x | grep zz
+      declare -p -i +x | grep zz
 
   - name: "Combining -a and -A is rejected"
     # A shell treats `-a` and `-A` together as an invalid option combination. brush accepts it and
@@ -1141,6 +1263,17 @@ cases:
       declare -aA both=(x)
       echo "status: $?"
       declare -p both 2>&1
+
+  - name: "Combining -a and -A with a compound operand still creates the variable"
+    # bash reports the invalid option combination and still creates the variable from the
+    # compound operand, as an associative array. brush creates nothing.
+    known_failure: true
+    ignore_stderr: true
+    stdin: |
+      declare -aA both=(x)
+      echo "status: $?"
+      declare -p both 2>/dev/null
+      echo "declare_status: $?"
 
   - name: "Display diagnostics name the builtin as invoked"
     known_failure: true # TODO: declare improvements required
@@ -1155,6 +1288,13 @@ cases:
       check "typeset: nosuch: not found" "$(typeset -p nosuch 2>&1)"
       f() { check "local: nosuch: not found" "$(local -p nosuch 2>&1)"; }
       f
+
+  - name: "Display quotes an associative key of @"
+    # bash quotes both `*` and `@` when displaying an associative key; brush quotes only `*`.
+    known_failure: true
+    stdin: |
+      declare -A zzat=(['@']=at ['*']=star [k]=v)
+      declare -p zzat
 
   - name: "Display filtered by array attributes includes unassigned arrays"
     known_failure: true # TODO: declare improvements required
@@ -1181,6 +1321,9 @@ cases:
       readonly 'bad-name3=1' 2>&1 | strip
       export -f nosuchfn 2>&1 | strip
       export 'e[0]=1' 2>&1 | strip
+      readonly ro=1; declare -a ro 2>&1 | strip
+      declare -A am; declare -a am 2>&1 | strip
+      declare -a ia=(1); declare -A ia 2>&1 | strip
 
   - name: "declare -fx exports a function"
     stdin: |
@@ -1191,6 +1334,23 @@ cases:
       count_exported
       declare +x -f f; echo "rc=$?"
       count_exported
+
+  - name: "declare -f with both -x and +x leaves a function unexported"
+    stdin: |
+      f() { :; }
+      count_exported() { env | grep -c "^BASH_FUNC_f"; }
+      declare -f -x +x f; echo "rc=$?"
+      count_exported
+      declare -fx f; declare -f +x -x f; echo "rc=$?"
+      count_exported
+
+  - name: "declare -F -x lists only exported functions"
+    known_failure: true # TODO(declare): brush lists every function
+    stdin: |
+      f() { :; }
+      g() { :; }
+      declare -fx g
+      declare -F -x
 
   - name: "declare -f with attribute flags doesn't display the function"
     stdin: |
@@ -1293,3 +1453,99 @@ cases:
       declare -p c
       f() { local x=1 -r 2>/dev/null; echo "local: $?"; x=2; declare -p x; }
       f
+
+  - name: "the integer attribute evaluates an arithmetic value on assignment"
+    known_failure: true # TODO: integer-attributed assignments are not evaluated arithmetically
+    stdin: |
+      declare -i x=1+1
+      declare -p x
+      declare -i y
+      y=2*3
+      declare -p y
+      declare -ai a=(1+1 2*3)
+      declare -p a
+
+  #
+  # `declare -g` names a global, but a shell resolves a subscripted operand's kind against the
+  # local that shadows it and then assigns there -- so the global is left untouched.
+  #
+  - name: "declare -g with a subscripted operand under a shadowing local"
+    stdin: |
+      declare -A g=([x]=1)
+      f() {
+        local -a g=(9)
+        declare -g g[y]=2
+        declare -p g
+      }
+      f
+      declare -p g
+
+  #
+  # A declaration naming a nameref acts on the variable it references.
+  #
+  - name: "declare assigns through a nameref"
+    known_failure: true # TODO: declaration builtins do not follow namerefs
+    stdin: |
+      declare -n nr=tgt
+      declare nr=hello
+      declare -p tgt nr
+
+  - name: "a subscripted assignment through a nameref targets the referenced array"
+    known_failure: true # TODO: subscripted assignments do not follow namerefs
+    stdin: |
+      declare -A m
+      declare -n r=m
+      r[key]=v
+      declare -p m
+      declare r[other]=w
+      declare -p m
+
+  #
+  # Every one of `declare`'s options has a `+X` form, including the four that select a mode rather
+  # than an attribute. For those four `+X` means "off", which is already the default, so they are
+  # accepted and (except for `+p`) do nothing: `+f` and `+F` drop the function restriction, `+g`
+  # drops global creation, and `+p` prints just as `-p` does. brush models those four as plain
+  # boolean flags with no plus form, so the word is rejected outright and the command exits 2.
+  # This also takes down any combined form that includes one of them, such as `+ft`.
+  #
+  - name: "declare +f drops the function restriction"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      strip() { sed -E 's/^[^ ]*: line [0-9]+: //'; }
+      f() { :; }
+      { declare +fp f; echo "status: $?"; } 2>&1 | strip
+
+  - name: "declare +F drops names-only display and declares a variable instead"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      f() { :; }
+      declare -F f
+      declare +F f
+      echo "status: $?"
+      declare -p f
+
+  - name: "declare +g declares locally inside a function"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      g=outer
+      f() { declare +g g=inner; echo "inside: $g"; }
+      f
+      echo "outside: $g"
+
+  - name: "declare +p displays just as -p does"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      x=1
+      declare -p x
+      declare +p x
+      echo "status: $?"
+
+  - name: "declare +ft combines a mode option and an attribute option"
+    known_failure: true # TODO(declare): -f/-F/-g/-p have no `+X` form
+    stdin: |
+      f() { :; }
+      declare -ft f
+      declare +ft f
+      echo "status: $?"
+      declare -pF f
+      declare -p f

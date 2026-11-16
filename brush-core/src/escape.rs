@@ -426,21 +426,8 @@ pub fn single_quote(s: &str) -> Cow<'_, str> {
 }
 
 fn double_quote(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-
-    result.push('"');
-
-    for c in s.chars() {
-        if matches!(c, '$' | '`' | '"' | '\\') {
-            result.push('\\');
-        }
-
-        result.push(c);
-    }
-
-    result.push('"');
-
-    result
+    let quoted = brush_parser::word::DoubleQuotedTextKind::WordInDoubleQuotes.quote(s);
+    format!("\"{quoted}\"")
 }
 
 fn ansi_c_quote(s: &str) -> String {

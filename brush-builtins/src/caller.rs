@@ -1,15 +1,17 @@
 use brush_core::{ExecutionResult, builtins, callstack};
-use clap::Parser;
 use std::io::Write;
 
 /// Return the context of the current subroutine call.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct CallerCommand {
     /// The number of call frames to go back.
-    expr: Option<usize>,
+    // Signed as in bash: a number too large for i64 is invalid, not just a missing frame.
+    #[arg(positional)]
+    expr: Option<i64>,
 }
 
-brush_clap_adapter::impl_parse_args!(CallerCommand);
+brush_winnow_args_adapter::impl_parse_args!(CallerCommand);
 
 impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CallerCommand {
     type Error = brush_core::Error;
@@ -31,7 +33,11 @@ impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CallerCommand {
             .collect();
 
         // Look for the last-known location in the parent of frame N.
-        let Some(calling_frame) = frames.get(expr + 1) else {
+        let Some(calling_frame) = usize::try_from(expr)
+            .ok()
+            .and_then(|n| n.checked_add(1))
+            .and_then(|n| frames.get(n))
+        else {
             return Ok(ExecutionResult::general_error());
         };
 

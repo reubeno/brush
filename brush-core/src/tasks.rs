@@ -25,7 +25,7 @@ impl<T> TaskHandle<T> {
     /// # Arguments
     ///
     /// * `future` - The future to await for the task's output.
-    pub(crate) fn from_future(
+    pub fn from_future(
         future: impl Future<Output = Result<T, error::Error>> + Send + Sync + 'static,
     ) -> Self {
         Self {

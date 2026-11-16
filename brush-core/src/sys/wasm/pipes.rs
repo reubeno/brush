@@ -2,7 +2,10 @@
 //!
 //! WASM targets have no OS pipes, and the shell's execution there is
 //! single-threaded and cooperative. These pipes buffer everything written to
-//! them (without bound) until it's read. A read from an empty pipe never
+//! them (without bound) until it's read. Once every read end is gone, writes
+//! fail with [`std::io::ErrorKind::BrokenPipe`], as they would on an OS pipe,
+//! so a writer whose reader has stopped (e.g., `yes` in `yes | head`) stops
+//! too rather than filling memory. A read from an empty pipe never
 //! blocks: once all writers are gone it reports end-of-file, and while a
 //! writer remains it fails with [`std::io::ErrorKind::WouldBlock`], as a
 //! nonblocking pipe would, since nothing else could run to fill the pipe while
@@ -17,6 +20,7 @@ use crate::openfiles::{OpenFile, Stream};
 #[derive(Default)]
 struct PipeState {
     buffer: VecDeque<u8>,
+    readers: usize,
     writers: usize,
 }
 
@@ -34,8 +38,26 @@ impl Pipe {
 }
 
 /// The read end of an in-memory pipe.
-#[derive(Clone)]
 pub(crate) struct PipeReader(Arc<Pipe>);
+
+impl PipeReader {
+    fn new(pipe: Arc<Pipe>) -> Self {
+        pipe.lock().readers += 1;
+        Self(pipe)
+    }
+}
+
+impl Clone for PipeReader {
+    fn clone(&self) -> Self {
+        Self::new(self.0.clone())
+    }
+}
+
+impl Drop for PipeReader {
+    fn drop(&mut self) {
+        self.0.lock().readers -= 1;
+    }
+}
 
 impl std::io::Read for PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -107,7 +129,12 @@ impl std::io::Read for PipeWriter {
 
 impl std::io::Write for PipeWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().buffer.extend(buf);
+        let mut state = self.0.lock();
+        if state.readers == 0 {
+            return Err(std::io::ErrorKind::BrokenPipe.into());
+        }
+        state.buffer.extend(buf);
+        drop(state);
         Ok(buf.len())
     }
 
@@ -135,5 +162,42 @@ impl From<PipeWriter> for OpenFile {
 )]
 pub(crate) fn pipe() -> std::io::Result<(PipeReader, PipeWriter)> {
     let pipe = Arc::new(Pipe::default());
-    Ok((PipeReader(pipe.clone()), PipeWriter::new(pipe)))
+    Ok((PipeReader::new(pipe.clone()), PipeWriter::new(pipe)))
+}
+
+#[cfg(test)]
+#[allow(clippy::panic_in_result_fn, reason = "assertions in a fallible test")]
+mod tests {
+    use std::io::{Read as _, Write as _};
+
+    use super::*;
+
+    #[test]
+    fn writes_succeed_while_a_reader_remains() -> std::io::Result<()> {
+        let (reader, mut writer) = pipe()?;
+        let mut other_reader = reader.clone();
+        drop(reader);
+
+        writer.write_all(b"hi")?;
+        drop(writer);
+
+        let mut read = String::new();
+        other_reader.read_to_string(&mut read)?;
+        assert_eq!(read, "hi");
+        Ok(())
+    }
+
+    #[test]
+    fn writes_fail_with_broken_pipe_once_every_reader_is_gone() -> std::io::Result<()> {
+        let (reader, mut writer) = pipe()?;
+        let other_reader = reader.clone();
+        drop(reader);
+        drop(other_reader);
+
+        assert!(matches!(
+            writer.write(b"hi"),
+            Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe
+        ));
+        Ok(())
+    }
 }

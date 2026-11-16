@@ -2,6 +2,17 @@
 
 This guide helps AI agents work efficiently on the `brush` codebase by providing essential context about architecture, patterns, and development workflows.
 
+## Required: Independent Implementation
+
+Before investigating or implementing a change, read and follow the
+[independent-implementation and provenance policy](CONTRIBUTING.md#independent-implementation-and-provenance).
+It is the canonical policy for contributors and all agents, including delegated
+agents and their tools. Use Bash as a black-box behavioral oracle, not as
+implementation source material. If you encounter Bash implementation material,
+stop implementation and disclose the exposure; do not translate, summarize, or
+rewrite it into brush. Disclose this to the human contributor to clarify how
+to proceed.
+
 ## 1. Architecture Overview & Navigation
 
 ### Architecture
@@ -31,8 +42,8 @@ the architecture changes.
 ### Module Dependencies
 
 ```text
-brush-shell → brush-interactive ──────────────────→ brush-core → brush-parser
-            ↘ brush-builtins → brush-clap-adapter ↗
+brush-shell → brush-interactive ─────────────────────────→ brush-core → brush-parser
+            ↘ brush-builtins → brush-winnow-args-adapter ↗
 ```
 
 ## 2. Testing Strategy
@@ -180,6 +191,13 @@ cargo test --test brush-compat-tests -- '<name of test case>'
 **Adding new fields to public structs:**
 
 - New optional fields are fine to add as long as the struct implements the Default trait and as long as the defaulted value is a sensible one
+
+**`#[non_exhaustive]` in `brush-parser`:**
+
+- Its error enums are `#[non_exhaustive]`, so a new error variant isn't a breaking change.
+- Its AST types (the `ast` and `word` modules) stay exhaustive, struct-like variants included (e.g.
+  `word::BraceExpressionMember::NumberSequence`). Code that walks the AST should get a compile error for
+  new syntax or a new field, not quietly fall into a `_` arm.
 
 ### Dependency Impact
 

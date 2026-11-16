@@ -11,7 +11,7 @@ use brush_parser::ast;
 use crate::{
     ErrorKind, ExecutionControlFlow, ExecutionExitCode, ExecutionParameters, ExecutionResult,
     Shell, ShellFd, builtins, commands, env, error, escape,
-    extensions::{self, ProcessLauncher as _, ShellExtensions},
+    extensions::{self, ProcessLauncher as _, ShellExtensions, TaskSpawner as _},
     functions,
     interp::{self, Execute, ProcessGroupPolicy},
     openfiles::{self, OpenFiles},
@@ -280,10 +280,12 @@ fn compose_env(
     // Add in exported variables, but `_`, if it's to be set below.
     for (k, v) in shell.env().iter_exported() {
         // NOTE: To match bash behavior, we only include exported variables
-        // that are set (i.e., have a value). This means a variable that
-        // shows up in `declare -p` but has no *set* value will be omitted.
-        if v.value().is_set() && (program.is_none() || k != "_") {
-            env.push((k.clone(), v.value().to_cow_str(shell).into_owned()));
+        // that are set and are not arrays. Arrays retain their export attribute
+        // in the shell but are not serialized into a child process's environment.
+        if (program.is_none() || k != "_")
+            && let variables::ShellValue::String(value) = v.resolve_value(shell)
+        {
+            env.push((k.clone(), value));
         }
     }
 
@@ -511,7 +513,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         let last_arg = Self::take_last_arg(&args);
         // Builtins may block (e.g., reading input), so keep them from holding up the
         // rest of the pipeline.
-        let task = sys::tasks::spawn_blocking(async move {
+        let spawner = shell.task_spawner().clone();
+        let task = spawner.spawn_blocking(async move {
             // The stage runs in a shell of its own, as a subshell does, so an
             // error ends the stage alone: it's reported on the stage's
             // standard error and becomes the stage's status.
@@ -594,7 +597,8 @@ impl<'a, SE: extensions::ShellExtensions> SimpleCommand<'a, SE> {
         args: Vec<CommandArg>,
     ) -> impl Future<Output = ExecutionSpawnResult> + use<SE> {
         let last_arg = Self::take_last_arg(&args);
-        let task = sys::tasks::spawn_blocking(async move {
+        let spawner = shell.task_spawner().clone();
+        let task = spawner.spawn_blocking(async move {
             // The stage runs in a shell of its own, as a subshell does, so an
             // error ends the stage alone.
             let stderr = params.try_stderr(&shell);
@@ -858,7 +862,13 @@ pub(crate) async fn invoke_command_in_subshell_and_get_output(
 
     let mut async_reader = sys::async_pipe::AsyncPipeReader::new(reader)?;
 
-    let cmd_join_handle = sys::tasks::spawn(run_substitution_command(subshell, params, s));
+    // The command may block writing to the pipe (e.g., a builtin writing more than the
+    // pipe's buffer holds), so don't run it on a thread that drives the runtime's I/O:
+    // that thread must stay free to deliver readiness to the reader below.
+    let cmd_join_handle = shell
+        .task_spawner()
+        .spawn_blocking(run_substitution_command(subshell, params, s))
+        .await;
 
     let output_str = async_reader.read_to_string().await?;
 

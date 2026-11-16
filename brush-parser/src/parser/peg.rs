@@ -109,12 +109,21 @@ peg::parser! {
             expected!("compound command")
 
         pub(crate) rule arithmetic_command() -> ast::ArithmeticCommand =
-            start:specific_operator("(") specific_operator("(") expr:arithmetic_expression() specific_operator(")") end:specific_operator(")") {
+            start:specific_operator("(") open:specific_operator("(") expr:arithmetic_expression() close:specific_operator(")") end:specific_operator(")") {?
+                // As in bash, `((` and `))` only form an arithmetic command when each pair of
+                // parentheses touch. Otherwise (e.g., `( (cmd) )`) we decline, and the text is
+                // read as nested subshells instead.
+                if !locations_are_contiguous(start.location(), open.location())
+                    || !locations_are_contiguous(close.location(), end.location())
+                {
+                    return Err("arithmetic command");
+                }
+
                 let loc = SourceSpan::within(
                     start.location(),
                     end.location()
                 );
-                ast::ArithmeticCommand { expr, loc }
+                Ok(ast::ArithmeticCommand { expr, loc })
             }
 
         pub(crate) rule arithmetic_expression() -> ast::UnexpandedArithmeticExpr =
@@ -227,15 +236,21 @@ peg::parser! {
             --
             specific_operator("(") linebreak() e:extended_test_expression() specific_operator(")") linebreak() { ast::ExtendedTestExpr::Parenthesized(Box::from(e)) }
             --
-            // As in bash, an unquoted unary operator always starts a unary test and takes the
-            // next word as its operand, so it is never the left side of a binary test (`-z == x`
-            // is a syntax error) nor a bare string test (`-n || x` is one too).
             !extended_unary_predicate() e:extended_test_binary_predicate() linebreak() { e }
             --
-            p:extended_unary_predicate() f:word() linebreak() { ast::ExtendedTestExpr::UnaryTest(p, ast::Word::from(f)) }
+            p:extended_unary_predicate() f:extended_unary_operand() linebreak() { ast::ExtendedTestExpr::UnaryTest(p, ast::Word::from(f)) }
             --
             !extended_unary_predicate() w:word() { ast::ExtendedTestExpr::UnaryTest(ast::UnaryPredicate::StringHasNonZeroLength, ast::Word::from(w)) }
         }
+
+        // An unquoted unary operator (e.g. `-z`) at the start of a test is always read as that
+        // operator, never as the left side of a binary test or as a bare string; this is why the
+        // binary and bare-word alternatives above are guarded. The operator takes the next word
+        // as its operand, even when that word looks like an operator itself (`[[ -z == ]]` tests
+        // the string "=="). Only the closing `]]` and operator tokens (`&&`, `)`, `<`, ...) can't
+        // be the operand; in those cases, the expression is a syntax error.
+        rule extended_unary_operand() -> &'input Token =
+            !specific_word("]]") w:word() { w }
 
         rule extended_test_binary_predicate() -> ast::ExtendedTestExpr =
             // Arithmetic operators
@@ -770,7 +785,7 @@ fn add_pipe_extension_redirection(c: &mut ast::Command) {
 
 #[inline]
 fn locations_are_contiguous(loc_left: &crate::SourceSpan, loc_right: &crate::SourceSpan) -> bool {
-    loc_left.end.index == loc_right.start.index
+    loc_left.end.byte_offset == loc_right.start.byte_offset
 }
 
 impl peg::Parse for Tokens<'_> {
@@ -828,13 +843,13 @@ impl<'a> peg::ParseSlice<'a> for Tokens<'a> {
             let loc = token.location();
 
             if let Some(prev_end) = prev_end_index {
-                if loc.start.index > prev_end {
+                if loc.start.byte_offset > prev_end {
                     result.push(' ');
                 }
             }
 
             result.push_str(token.to_str());
-            prev_end_index = Some(loc.end.index);
+            prev_end_index = Some(loc.end.byte_offset);
         }
 
         result

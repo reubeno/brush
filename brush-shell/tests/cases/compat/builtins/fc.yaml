@@ -44,6 +44,17 @@ cases:
       : cmd5
       fc -l -3 -1
 
+  - name: "fc -l with a negative index past the start"
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      fc -l -- -9223372036854775808
+      fc -l -9223372036854775807 -1
+      fc -l -- -9223372036854775809
+
   - name: "fc -l with string search"
     args: ["-o", "history"]
     env:
@@ -107,6 +118,17 @@ cases:
       : cmd2
       : cmd3
       fc -l 0
+
+  - name: "fc -l keeps a history number in 32 bits"
+    known_failure: true # TODO(history): bash truncates the number to 32 bits, so 4294967295 is -1; brush reads all 64
+    args: ["-o", "history"]
+    env:
+      HISTFILE: "history-file.txt"
+    stdin: |
+      : cmd1
+      : cmd2
+      fc -l 4294967295
+      fc -l 9223372036854775807
 
   - name: "fc -l defaults to last 16 commands"
     args: ["-o", "history"]
@@ -320,3 +342,9 @@ cases:
       : b
       fc -l
       fc -l
+
+  - name: "fc rejects -h and an unknown option with status 2"
+    ignore_stderr: true
+    stdin: |
+      (fc -h); echo "rc=$?"
+      (fc -z); echo "rc=$?"

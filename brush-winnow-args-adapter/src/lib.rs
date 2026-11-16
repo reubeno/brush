@@ -15,7 +15,7 @@
 
 mod adapter;
 
-pub use adapter::to_usage_error;
+pub use adapter::{HELP_PALETTE, to_usage_error};
 
 /// What the exported macros expand to. Not part of the API, so it can change
 /// in any release.

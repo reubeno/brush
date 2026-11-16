@@ -210,6 +210,13 @@ cases:
       sh -c 'kill -INT $PPID; kill -INT $$'
       echo "after=$?"
 
+  - name: "Programs inherit an ignored SIGINT after the shell first waits for one"
+    skip: true # TODO(signals): flaky; tokio's SIGINT listener replaces the inherited ignore, but a wait for a program sets it up only once its select! polls it (in random order), so the ignore survives when the first program has already exited
+    # The shell starts another one ignoring SIGINT; that one waits for one program, and then
+    # another sends itself SIGINT.
+    stdin: |
+      sh -c 'trap "" INT; exec "$0" -c "$1"' "$BASH" 'sh -c "exit 0"; sh -c "kill -INT \$\$; echo survived"'
+
   - name: "SIGINT during a command substitution ends the shell"
     stdin: |
       x=$(kill -INT $$; echo inner)

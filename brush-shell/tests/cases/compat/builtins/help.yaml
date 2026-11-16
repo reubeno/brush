@@ -25,6 +25,5 @@ cases:
       help echo this-is-not-a-real-builtin
 
   - name: "help -s frames each synopsis on its own line"
-    known_failure: true # TODO(help): help -s doesn't print bash's `name: synopsis` lines
     stdin: |
       help -s true false :

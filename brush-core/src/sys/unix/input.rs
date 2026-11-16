@@ -56,7 +56,7 @@ fn build_terminfo_key_map() -> HashMap<Vec<u8>, interfaces::Key> {
 
         for (key, v) in key_capabilities {
             if let Some(Ok(v)) = v {
-                map.insert(v.clone(), key.clone());
+                map.insert(v, key);
             }
         }
     }

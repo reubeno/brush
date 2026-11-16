@@ -39,6 +39,18 @@ fn parse_arithmetic_complex() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn parse_arithmetic_open_with_line_continuations() -> Result<()> {
+    // Line continuations are removed, so the parentheses still touch.
+    let input = "(\\\n(\\\n10+3))";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
 // Arithmetic for clause
 
 #[test]
@@ -139,6 +151,28 @@ fn parse_subshell_multiple_commands() -> Result<()> {
 #[test]
 fn parse_nested_subshell() -> Result<()> {
     let input = "( ( echo nested ) )";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_nested_subshell_split_open() -> Result<()> {
+    let input = "( (sleep 6))";
+    let result = test_with_snapshot(input)?;
+    assert_snapshot_redacted!(ParseResult {
+        input,
+        result: &result
+    });
+    Ok(())
+}
+
+#[test]
+fn parse_nested_subshell_split_close() -> Result<()> {
+    let input = "((sleep 6) )";
     let result = test_with_snapshot(input)?;
     assert_snapshot_redacted!(ParseResult {
         input,

@@ -151,7 +151,7 @@ There's room here for you, too.
 brush stands on the shoulders of excellent open source projects, including (but not limited to):
 
 - [reedline](https://github.com/nushell/reedline) for line editing and interactive features
-- [clap](https://github.com/clap-rs/clap) for command-line parsing
+- [winnow-args](https://github.com/lu-zero/winnow-args) for command-line parsing
 - [fancy-regex](https://github.com/fancy-regex/fancy-regex) for regular expressions
 - [tokio](https://github.com/tokio-rs/tokio) as the async runtime
 - [nix](https://github.com/nix-rust/nix) for accessing Unix and POSIX APIs

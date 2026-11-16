@@ -175,5 +175,6 @@ what they would otherwise each reinvent:
 | blesh | upstream `ble.sh --test`, one pytest case per test section with a process-group timeout (`BLESH_TEST_TIMEOUT`, default 180s); sections are read from ble.sh's own build output, so a section added upstream runs rather than being missed; full output and leftover per-section artifacts are retained; args select sections: `cargo xtask test e2e blesh -- util`. Every section is currently expected to fail: ble.sh gets far enough to emit no section summary at all |
 | mise | selected upstream bash activation tests (pytest), run directly against the shell under test |
 | nvm | upstream `test/fast/Listing versions` suite (urchin) plus interactive regression coverage for [#1173](https://github.com/reubeno/brush/issues/1173) |
+| oh-my-git | our own suite in `oh-my-git/tests/` (pytest + direct PTY); upstream has no tests or releases, so the scripts are cloned at a pinned commit |
 | starship | our own suite in `starship/tests/` (pytest + direct PTY) |
 | zoxide | our own suite in `zoxide/tests/` (pytest + direct PTY) |

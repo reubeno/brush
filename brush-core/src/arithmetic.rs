@@ -91,7 +91,7 @@ pub(crate) async fn expand_and_eval(
 ) -> Result<i64, EvalError> {
     // Per documentation, first shell-expand it.
     let options = expansion::ExpanderOptions {
-        tilde_expand: false,
+        kind: expansion::WordKind::ArithmeticExpression,
         ..Default::default()
     };
     let expanded_self = expansion::basic_expand_word_with_options(shell, params, expr, &options)

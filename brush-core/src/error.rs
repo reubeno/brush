@@ -208,6 +208,10 @@ pub enum ErrorKind {
     #[error("invalid test command")]
     TestCommandParseError(#[from] crate::parser::TestCommandParseError),
 
+    /// An operand of an arithmetic comparison in a test command isn't an integer.
+    #[error("{0}: integer expression expected")]
+    IntegerExpressionExpected(String),
+
     /// Unable to parse a key binding specification.
     #[error(transparent)]
     BindingParseError(#[from] crate::parser::BindingParseError),
@@ -368,6 +372,7 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             ErrorKind::ParseError(..) => Self::InvalidUsage,
             ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
             ErrorKind::TestCommandParseError(..) => Self::InvalidUsage,
+            ErrorKind::IntegerExpressionExpected(..) => Self::InvalidUsage,
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
             ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
             ErrorKind::IoError(io_err) => io_err.into(),

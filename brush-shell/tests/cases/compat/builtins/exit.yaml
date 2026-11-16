@@ -113,3 +113,8 @@ cases:
           echo "after exit"
     stdin: |
       echo "not run"
+
+  - name: "exit takes -- and a negative status"
+    stdin: |
+      (exit -- 4); echo "a=$?"
+      (exit -1); echo "b=$?"
