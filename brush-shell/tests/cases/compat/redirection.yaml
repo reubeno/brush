@@ -116,6 +116,29 @@ cases:
       echo "Done."
       echo "${var}"
 
+  - name: "Process substitution: read inside a command substitution"
+    stdin: |
+      shopt -u -o posix
+      x=$(read -r y < <(echo hello); echo "$y")
+      echo "x=[$x]"
+      x=$(while read -r l; do echo "got $l"; done < <(echo hi; echo there))
+      echo "x=[$x]"
+
+  - name: "Process substitution: read inside a function in a command substitution"
+    stdin: |
+      shopt -u -o posix
+      f() { local n=0; while read -r l; do n=$((n + 1)); done < <(seq 1 1000); echo "$n"; }
+      x=$(f)
+      echo "x=[$x]"
+
+  - name: "Process substitution: read inside nested substitutions"
+    stdin: |
+      shopt -u -o posix
+      x=$( (read -r y < <(echo subshell); echo "$y") )
+      echo "x=[$x]"
+      x=$(x=$(read -r y < <(echo deep); echo "$y"); echo "$x")
+      echo "x=[$x]"
+
   - name: "Input redirection from /dev/null"
     stdin: |
       cat < /dev/null
