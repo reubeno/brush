@@ -202,8 +202,168 @@ cases:
       x=$(<file.txt)
       echo "x: $x"
 
+  - name: "Input-only command substitution reading a directory is not fatal"
+    known_failure: true # TODO: a read error currently aborts the shell
+    ignore_stderr: true
+    stdin: |
+      x=$(< .)
+      printf 'value: <%s> status: %s\n' "$x" "$?"
+      echo "continued"
+
+  - name: "Input-only command substitution from process substitution"
+    stdin: |
+      echo $(< <(echo x) )
+      [[ $(< <(echo foo) ) == foo ]]
+      echo "status: $?"
+      x=`< <(echo legacy)`
+      echo "backquote: $x"
+
+  - name: "Input-only command substitution preserves producer subshell depth"
+    stdin: |
+      x=$(< <(printf '%s' "$BASH_SUBSHELL"))
+      printf 'depth: %s\n' "$x"
+      (x=$(< <(printf '%s' "$BASH_SUBSHELL")); printf 'nested: %s\n' "$x")
+      x=$(< <(printf '%s' "$BASH_SUBSHELL"; (printf ':%s' "$BASH_SUBSHELL")))
+      printf 'producer: %s\n' "$x"
+
+  - name: "Input-only command substitution expands its filename in the caller"
+    test_files:
+      - path: file.txt
+        contents: |
+          content
+      - path: file-0.txt
+        contents: |
+          caller
+      - path: file-1.txt
+        contents: |
+          subshell
+    stdin: |
+      unset file
+      x=$(< "${file:=file.txt}")
+      printf 'value: %s file: %s\n' "$x" "${file-unset}"
+      x=$(< "file-$BASH_SUBSHELL.txt")
+      printf 'depth: %s\n' "$x"
+      x=$(< "$(printf 'file-%s.txt' "$BASH_SUBSHELL")")
+      printf 'nested expansion: %s\n' "$x"
+
+  - name: "Input-only command substitution missing file is not fatal"
+    ignore_stderr: true
+    stdin: |
+      x=$(< missing.txt) || printf 'failure: %s\n' "$?"
+      printf 'continued: <%s>\n' "$x"
+      { x=$(< missing.txt); printf 'closed stderr: %s\n' "$?"; } 2>&-
+
+  - name: "Input-only command substitution survives failed diagnostic writes"
+    stdin: |
+      [[ -e /dev/full ]] || exit 0
+      {
+        x=$(< missing.txt)
+        printf 'assignment: <%s> status=%s\n' "$x" "$?"
+        printf 'value: <%s>\n' "$(< missing.txt)"
+      } 2>/dev/full
+      printf 'continued: %s\n' "$?"
+
+  - name: "Input-only command substitution propagates fatal expansion errors"
+    ignore_exit_status: true
+    ignore_stderr: true
+    stdin: |
+      set -u
+      x=$(< "$unset_filename")
+      echo "unexpected continuation"
+
+  - name: "Input-only command substitution excludes background and timed redirects"
+    test_files:
+      - path: file.txt
+        contents: |
+          content
+    stdin: |
+      x=$(< file.txt &)
+      printf 'background file: <%s>\n' "$x"
+      x=$(< <(printf value) &)
+      printf 'background process: <%s>\n' "$x"
+      { x=$(time < file.txt); } 2>timing.txt
+      printf 'timed file: <%s> ' "$x"
+      if [[ -s timing.txt ]]; then echo reported; else echo missing; fi
+      { x=$(time < <(printf value)); } 2>timing.txt
+      printf 'timed process: <%s> ' "$x"
+      if [[ -s timing.txt ]]; then echo reported; else echo missing; fi
+      rm timing.txt
+
+  - name: "Input-only command substitution completes when producer closes stdout"
+    timeout_in_seconds: 5
+    stdin: |
+      mkfifo gate
+      x=$(< <(exec 1>&-; read -r line < gate; printf '%s\n' "$line" >result))
+      echo "substitution returned"
+      printf 'released\n' >gate
+      while [[ ! -f result ]]; do sleep 0.01; done
+      cat result
+      rm gate result
+
+  - name: "Input-only command substitution preserves inherited process descriptors"
+    test_files:
+      - path: file.txt
+        contents: |
+          original
+    stdin: |
+      read_input() { read -r value; printf '%s\n' "$value"; }
+      outer() {
+        x=$(< <(read_input <(printf 'replacement\n') <&63))
+        printf '%s\n' "$x"
+      }
+      outer 63<file.txt
+
+  - name: "Input-only command substitution from process substitution with explicit stdin"
+    stdin: |
+      x=$(0< <(echo explicit))
+      echo "x: $x"
+
+  - name: "Input-only command substitution from delayed process substitution"
+    stdin: |
+      x=$(< <(sleep 0.05; printf 'first\nsecond\n\n'))
+      printf '<%s> length: %s\n' "$x" "${#x}"
+
+  - name: "Input-only command substitution from large process substitution"
+    stdin: |
+      x=$(< <(printf '%0131072d\n' 0))
+      printf 'length: %s first: %s last: %s\n' "${#x}" "${x:0:1}" "${x: -1}"
+
+  - name: "Input-only command substitution ignores process substitution exit status"
+    stdin: |
+      x=$(< <(printf value; exit 7))
+      printf 'value: %s status: %s\n' "$x" "$?"
+
+  - name: "Input-only command substitution process substitution inherits errexit"
+    stdin: |
+      set -e
+      x=$(< <(printf before; false; printf after))
+      printf 'errexit: <%s>\n' "$x"
+      x=$(< <(false; printf continued)) || :
+      printf 'conditional: <%s>\n' "$x"
+      if x=$(< <(false; printf continued)); then printf 'if: <%s>\n' "$x"; fi
+      x=$(< <(false; printf continued)) && printf 'and: <%s>\n' "$x"
+      ! x=$(< <(false; printf continued))
+      printf 'negated: <%s>\n' "$x"
+      x=`< <(false; printf continued)`
+      printf 'backquote: <%s>\n' "$x"
+      x=$(< <([[ $- == *e* ]] && printf enabled || printf disabled))
+      printf 'option: <%s>\n' "$x"
+      set +e
+      x=$(< <(false; printf continued))
+      printf 'disabled: <%s>\n' "$x"
+
+  - name: "Process substitution redirection without input-only command substitution"
+    stdin: |
+      x=$(3< <(echo ignored))
+      printf 'other fd: <%s>\n' "$x"
+      x=$(< <(echo ignored); :)
+      printf 'command list: <%s>\n' "$x"
+      x=$(< <(echo ignored) | cat)
+      printf 'pipeline: <%s>\n' "$x"
+      x=$(< <(echo ignored) 2>/dev/null)
+      printf 'additional redirect: <%s>\n' "$x"
+
   - name: "Command substitution with only input redir in pipeline"
-    known_failure: true
     ignore_stderr: true
     test_files:
       - path: file.txt

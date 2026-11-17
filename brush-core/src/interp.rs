@@ -2039,8 +2039,11 @@ fn setup_process_substitution(
     kind: &ast::ProcessSubstitutionKind,
     subshell_cmd: &ast::SubshellCommand,
 ) -> Result<(ShellFd, OpenFile), error::Error> {
-    // TODO(execute): Don't execute synchronously!
-    // Execute in a subshell.
+    // Find a descriptor before launching the command: if none is available, fail
+    // without starting a command whose pipe the caller cannot access.
+    let candidate_fd_num = available_process_substitution_fd(shell, params)?;
+
+    // Run the process-substitution command in a subshell to isolate its shell state.
     let mut subshell = shell.clone();
 
     // Set up execution parameters for the child execution.
@@ -2062,6 +2065,18 @@ fn setup_process_substitution(
         }
     };
 
+    // Execution parameters override the shell's persistent descriptor table.
+    // Put the child's effective descriptors in that table and clear the overrides:
+    // otherwise `exec 1>&-` closes stdout there but an override still holds the
+    // pipe's writer open, so a reader waiting for EOF never finishes.
+    #[expect(
+        clippy::needless_collect,
+        reason = "release the shell borrow before replacing its files"
+    )]
+    let child_fds = child_params.iter_fds(&subshell).collect::<Vec<_>>();
+    subshell.replace_open_files(child_fds.into_iter());
+    child_params.open_files = OpenFiles::default();
+
     // Asynchronously spawn off the subshell; we intentionally don't block on its
     // completion.
     let subshell_cmd = subshell_cmd.to_owned();
@@ -2073,17 +2088,22 @@ fn setup_process_substitution(
             .await;
     });
 
-    // Starting at 63 (a.k.a. 64-1)--and decrementing--look for an
-    // available fd.
-    let mut candidate_fd_num = 63;
-    while params.open_files.contains_fd(candidate_fd_num) {
-        candidate_fd_num -= 1;
-        if candidate_fd_num == 0 {
-            return error::unimp("no available file descriptors");
-        }
-    }
-
     Ok((candidate_fd_num, target_file))
+}
+
+fn available_process_substitution_fd(
+    shell: &Shell<impl extensions::ShellExtensions>,
+    params: &ExecutionParameters,
+) -> Result<ShellFd, error::Error> {
+    // Match Bash's observed preference: search down from 63, then up from 64.
+    // Never use stdin (0), and stop at our existing descriptor-allocation limit.
+    // try_fd checks the effective mapping: local overrides, including closed
+    // descriptors, take precedence over descriptors inherited from the shell.
+    (1..=63)
+        .rev()
+        .chain(64..=OpenFiles::MAX_FD)
+        .find(|fd| params.try_fd(shell, *fd).is_none())
+        .ok_or_else(|| error::ErrorKind::TooManyOpenFiles.into())
 }
 
 fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Error> {
@@ -2105,6 +2125,35 @@ fn setup_open_file_with_contents(contents: &str) -> Result<OpenFile, error::Erro
     drop(writer);
 
     Ok(reader.into())
+}
+
+#[cfg(test)]
+mod process_substitution_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn descriptor_allocation_respects_context_and_bound() -> anyhow::Result<()> {
+        let mut shell = Shell::builder().build().await?;
+        let file: OpenFile = std::io::stdout().into();
+        shell.open_files_mut().set_fd(63, file.clone());
+        let mut params = shell.default_exec_params();
+
+        anyhow::ensure!(available_process_substitution_fd(&shell, &params)? == 62);
+        params.open_files.remove_fd(63);
+        anyhow::ensure!(available_process_substitution_fd(&shell, &params)? == 63);
+
+        for fd in 1..OpenFiles::MAX_FD {
+            params.set_fd(fd, file.clone());
+        }
+        anyhow::ensure!(available_process_substitution_fd(&shell, &params)? == OpenFiles::MAX_FD);
+        params.set_fd(OpenFiles::MAX_FD, file);
+        let result = available_process_substitution_fd(&shell, &params);
+        anyhow::ensure!(
+            matches!(result, Err(ref err) if matches!(err.kind(), error::ErrorKind::TooManyOpenFiles)),
+            "expected descriptor exhaustion"
+        );
+        Ok(())
+    }
 }
 
 // Sizes depend on the platform's types, so they're only checked where they were measured.

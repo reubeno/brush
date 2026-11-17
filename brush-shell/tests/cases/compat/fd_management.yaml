@@ -17,6 +17,18 @@ name: "File descriptor management"
 # correct (sharing) behavior several-fold headroom. These cases assume Unix
 # `ulimit -n` semantics.
 cases:
+  - name: "Process substitutions use available descriptors above 63"
+    incompatible_platforms: ["windows", "wasi"]
+    stdin: |
+      printf 'initial: %s\n' <(:)
+      exec 63</dev/null
+      printf 'occupied 63: %s\n' <(:)
+      for ((i=3; i<=63; i++)); do eval "exec $i</dev/null"; done
+      printf 'occupied through 63: %s\n' <(:)
+      exec 64</dev/null
+      printf 'occupied through 64: %s\n' <(:)
+      cat <(printf 'content\n')
+
   # Concurrent fan-out: every backgrounded job is alive simultaneously (they are
   # all launched before `wait`), so copying the inherited descriptors per job
   # would multiply the live descriptor count by the number of jobs.
